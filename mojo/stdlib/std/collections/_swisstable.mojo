@@ -211,13 +211,35 @@ struct Group(Copyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
+def _all_trivial_del[*Ts: AnyType]() -> Bool:
+    """Return whether every type in `Ts` is trivially destructible.
+
+    Returns `False` for any type that is not `ImplicitlyDeletable` (for example
+    `@explicit_destroy` types) or that has a non-trivial destructor.
+    """
+    comptime for i in range(Ts.size):
+        comptime if conforms_to(Ts[i], ImplicitlyDeletable):
+            if not is_trivially_destructible[Ts[i]]():
+                return False
+        else:
+            return False
+    return True
+
+
 @fieldwise_init
+@explicit_destroy(
+    "A `SwissTableEntry` with non-`ImplicitlyDeletable` keys or values must be"
+    " explicitly destroyed with `destroy_with()`."
+)
 struct SwissTableEntry[
-    K: KeyElement & ImplicitlyDeletable,
-    V: Movable & ImplicitlyDeletable,
+    K: KeyElement,
+    V: Movable,
     H: Hasher,
 ](
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
+    ImplicitlyDeletable where conforms_to(
+        K, ImplicitlyDeletable
+    ) and conforms_to(V, ImplicitlyDeletable),
     Movable,
 ):
     """Store a key-value pair entry inside a Swiss Table-based collection.
@@ -225,10 +247,15 @@ struct SwissTableEntry[
     Parameters:
         K: The key type. Must be `Movable`, `Hashable`, and `Equatable`.
             `Copyable` is required only for entry copy construction.
-        V: The value type. Must be `Movable` and `ImplicitlyDeletable`.
-            `Copyable` is required only for entry copy construction.
+        V: The value type. Must be `Movable`. `Copyable` is required only for
+            entry copy construction.
         H: The type of the hasher used to hash the key.
     """
+
+    # TODO(MOCO-4228)
+    comptime __del__is_trivial = _all_trivial_del[Self.K, Self.V]()
+    """The explicit `__del__` below would otherwise mark this type
+    non-trivially-destructible even when `K` and `V` are trivial."""
 
     var hash: UInt64
     """`key.__hash__()`, stored so hashing isn't re-computed during lookup."""
@@ -248,16 +275,52 @@ struct SwissTableEntry[
         self.key = key^
         self.value = value^
 
-    def reap_key(deinit self) -> Self.K:
+    # TODO(MOCO-4228): Let the compiler synthesize this method
+    def __del__(
+        deinit self,
+    ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
+        Self.V, ImplicitlyDeletable
+    ):
+        """Destroy the entry's key and value.
+
+        Constraints:
+            Both `K` and `V` must be `ImplicitlyDeletable`. When either is not,
+            the entry has no implicit destructor and must be torn down with
+            `destroy_with()`.
+        """
+        # The key and value are destroyed member-wise; `hash` is trivial.
+        pass
+
+    def destroy_with(
+        deinit self, destroy_func: Some[def(var Self.K, var Self.V)]
+    ):
+        """Destroy the entry's key and value using a caller-provided closure.
+
+        Args:
+            destroy_func: A closure that consumes the entry's key and value.
+        """
+        destroy_func(self.key^, self.value^)
+
+    def reap_key(
+        deinit self,
+    ) -> Self.K where conforms_to(Self.V, ImplicitlyDeletable):
         """Take the key from an owned entry, discarding hash and value.
+
+        Constraints:
+            `V` must be `ImplicitlyDeletable`, since the value is discarded.
 
         Returns:
             The key of the entry.
         """
         return self.key^
 
-    def reap_value(deinit self) -> Self.V:
+    def reap_value(
+        deinit self,
+    ) -> Self.V where conforms_to(Self.K, ImplicitlyDeletable):
         """Take the value from an owned entry.
+
+        Constraints:
+            `K` must be `ImplicitlyDeletable`, since the key is discarded.
 
         Returns:
             The value of the entry.
@@ -270,12 +333,19 @@ struct SwissTableEntry[
 # ===-----------------------------------------------------------------------===#
 
 
+@explicit_destroy(
+    "A `SwissTable` with non-`ImplicitlyDeletable` keys or values must be"
+    " explicitly destroyed with `destroy_with()`."
+)
 struct SwissTable[
-    K: KeyElement & ImplicitlyDeletable,
-    V: Movable & ImplicitlyDeletable,
+    K: KeyElement,
+    V: Movable,
     H: Hasher = default_hasher,
 ](
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
+    ImplicitlyDeletable where conforms_to(
+        K, ImplicitlyDeletable
+    ) and conforms_to(V, ImplicitlyDeletable),
     Movable,
 ):
     """Raw Swiss Table providing the hash table core for Dict and HashMap.
@@ -287,8 +357,8 @@ struct SwissTable[
     Parameters:
         K: The key type. Must be `Movable`, `Hashable`, and `Equatable`.
             `Copyable` is required only for table copy construction.
-        V: The value type. Must be `Movable` and `ImplicitlyDeletable`.
-            `Copyable` is required only for table copy construction.
+        V: The value type. Must be `Movable`. `Copyable` is required only for
+            table copy construction.
         H: The hasher type.
     """
 
@@ -391,10 +461,41 @@ struct SwissTable[
             if is_occupied(self._ctrl[i]):
                 (self._slots + i).init_pointee_copy((copy._slots + i)[])
 
-    def __del__(deinit self):
-        """Destroy all entries and free memory."""
-        self._destroy_occupied_entries()
+    def __del__(
+        deinit self,
+    ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
+        Self.V, ImplicitlyDeletable
+    ):
+        """Destroy all entries and free memory.
 
+        Constraints:
+            Both `K` and `V` must be `ImplicitlyDeletable`. When either is not,
+            the table has no implicit destructor and must be torn down with
+            `destroy_with()`.
+        """
+        self._delete_occupied_entries()
+        self^._deallocate_storage()
+
+    def destroy_with(
+        var self, destroy_func: Some[def(var Self.K, var Self.V)], /
+    ):
+        """Destroy all entries with a caller-provided closure, then free memory.
+
+        Use this to tear down a `SwissTable` whose keys or values are not
+        `ImplicitlyDeletable`. The closure is called once per occupied entry.
+
+        Args:
+            destroy_func: A closure that consumes each entry's key and value.
+        """
+        self._delete_occupied_entries_with(destroy_func)
+        self^._deallocate_storage()
+
+    def _deallocate_storage(deinit self):
+        """Free the control and slot arrays without touching entry contents.
+
+        The caller must have already destroyed or moved out every occupied
+        entry (see `__del__` and `destroy_with`).
+        """
         if self._capacity > 0:
             dealloc(
                 ThinAllocation(
@@ -408,7 +509,11 @@ struct SwissTable[
             )
 
     @always_inline
-    def _destroy_occupied_entries(mut self):
+    def _delete_occupied_entries(
+        mut self,
+    ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
+        Self.V, ImplicitlyDeletable
+    ):
         """Run destructors on every occupied slot.
 
         Skips the loop entirely when the entry type is trivially destructible.
@@ -417,6 +522,10 @@ struct SwissTable[
         in an invalid state afterward: the caller must either reset the control
         bytes (see `clear`) or be about to free the backing storage (see
         `__del__`).
+
+        Constraints:
+            Both `K` and `V` must be `ImplicitlyDeletable`, since entries are
+            destroyed in place.
         """
         comptime if not is_trivially_destructible[
             SwissTableEntry[Self.K, Self.V, Self.H]
@@ -424,6 +533,18 @@ struct SwissTable[
             for i in range(self._capacity):
                 if is_occupied(self._ctrl[i]):
                     (self._slots + i).destroy_pointee()
+
+    @always_inline
+    def _delete_occupied_entries_with(
+        mut self, destroy_func: Some[def(var Self.K, var Self.V)]
+    ):
+        """Destroy every occupied slot using a caller-provided closure.
+
+        The closure counterpart of `_delete_occupied_entries`.
+        """
+        for i in range(self._capacity):
+            if is_occupied(self._ctrl[i]):
+                (self._slots + i).take_pointee().destroy_with(destroy_func)
 
     # ===-------------------------------------------------------------------===#
     # Core operations
@@ -577,12 +698,39 @@ struct SwissTable[
                 return (pos + bit) & (self._capacity - 1)
             pos = (pos + GROUP_WIDTH) & (self._capacity - 1)
 
-    def clear(mut self):
-        """Remove all elements, destroying occupied entries."""
+    def clear(
+        mut self,
+    ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
+        Self.V, ImplicitlyDeletable
+    ):
+        """Remove all elements, destroying occupied entries.
+
+        Constraints:
+            Both `K` and `V` must be `ImplicitlyDeletable`, since every entry is
+            destroyed in place.
+        """
         if self._capacity == 0:
             return
 
-        self._destroy_occupied_entries()
+        self._delete_occupied_entries()
+
+        memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
+        self._len = 0
+        self._growth_left = self._capacity * 7 // 8
+
+    def clear_with(mut self, destroy_func: Some[def(var Self.K, var Self.V)]):
+        """Remove all elements, disposing each entry with a caller closure.
+
+        The closure counterpart of `clear`: it hands each entry's key and value
+        to `destroy_func` instead of dropping them implicitly.
+
+        Args:
+            destroy_func: A closure that consumes each entry's key and value.
+        """
+        if self._capacity == 0:
+            return
+
+        self._delete_occupied_entries_with(destroy_func)
 
         memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
         self._len = 0
