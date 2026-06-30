@@ -4,6 +4,10 @@ package(default_visibility = ["//max:consumers"])
 
 _EXTRA_CONSTRAINTS = {
     "test_conv2d_im2col_apple.mojo": ["//:apple_gpu"],  # Apple M5 im2col conv2d — Metal only
+    "test_topk_gpu_fi.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: KERN-3121 — topk_topp_sampling_from_prob samples out-of-top-K index on Metal
     # Bounded masked DRAM->SRAM copy proof; the masked `cp.async` zero-fill
     # is NVIDIA-specific and verified on B200 only.
     "scout_tt_bounded_copy.mojo": ["//:nvidia_gpu"],

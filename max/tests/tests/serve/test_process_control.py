@@ -23,6 +23,14 @@ from typing import NoReturn, ParamSpec, TypeVar
 import pytest
 from max.serve.process_control import SubprocessExit, subprocess_manager
 
+# FIXME: SERVSYS-1275 — subprocess-control tests hang past their timeout on
+# contended macOS CI workers, pushing the macOS job past its 2h cap. Skip on
+# macOS until the serve-test slowness is addressed.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="SERVSYS-1275: too slow on macOS CI; exceeds the 2h job timeout",
+)
+
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
