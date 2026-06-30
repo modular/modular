@@ -176,6 +176,17 @@ comptime RuntimeBundleHandle = Handle[M_driver_runtime_bundle]
 comptime ExecuteConfigHandle = Handle[M_driver_queue_execute_config]
 comptime CompilationOptionsHandle = Handle[M_driver_bundle_compilation_options]
 
+
+@fieldwise_init
+struct M_driver_memory_view(Copyable, Movable):
+    var memory: MemoryHandle
+    var offset: UInt64
+    var size: UInt64
+
+
+comptime MemoryViewHandle = Handle[M_driver_memory_view]
+
+
 comptime PluginResultCode = Int64
 
 
@@ -418,12 +429,13 @@ struct RawDriver(Movable):
     def copy_to_device(
         self,
         queue: QueueHandle,
-        dst: MemoryHandle,
+        dst: M_driver_memory_view,
         src: UnsafePointer[mut=False, UInt8, _],
-        size: UInt64,
     ) raises HALError:
         var status = self._raw.queue_copy_to_device.f(
-            queue, dst, src.as_unsafe_any_origin(), size
+            queue,
+            rebind[MemoryViewHandle](UnsafePointer(to=dst)),
+            src.as_unsafe_any_origin(),
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -436,11 +448,12 @@ struct RawDriver(Movable):
         self,
         queue: QueueHandle,
         dst: UnsafePointer[mut=True, UInt8, _],
-        src: MemoryHandle,
-        size: UInt64,
+        src: M_driver_memory_view,
     ) raises HALError:
         var status = self._raw.queue_copy_from_device.f(
-            queue, dst.as_unsafe_any_origin(), src, size
+            queue,
+            dst.as_unsafe_any_origin(),
+            rebind[MemoryViewHandle](UnsafePointer(to=src)),
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -452,11 +465,14 @@ struct RawDriver(Movable):
     def copy_intra_device(
         self,
         queue: QueueHandle,
-        dst: MemoryHandle,
-        src: MemoryHandle,
-        size: UInt64,
+        dst: M_driver_memory_view,
+        src: M_driver_memory_view,
     ) raises HALError:
-        var status = self._raw.queue_copy_intra_device.f(queue, dst, src, size)
+        var status = self._raw.queue_copy_intra_device.f(
+            queue,
+            rebind[MemoryViewHandle](UnsafePointer(to=dst)),
+            rebind[MemoryViewHandle](UnsafePointer(to=src)),
+        )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
             raise HALError(
@@ -467,13 +483,15 @@ struct RawDriver(Movable):
     def set_memory(
         self,
         queue: QueueHandle,
-        dst: MemoryHandle,
-        size: UInt64,
+        dst: M_driver_memory_view,
         value: UInt64,
         value_size: UInt64,
     ) raises HALError:
         var status = self._raw.queue_set_memory.f(
-            queue, dst, size, value, value_size
+            queue,
+            rebind[MemoryViewHandle](UnsafePointer(to=dst)),
+            value,
+            value_size,
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -816,9 +834,8 @@ struct RawPlugin(Movable):
         "M_driver_queue_copy_to_device",
         def(
             queue: QueueHandle,
-            dst: MemoryHandle,
+            dst: MemoryViewHandle,
             src: UnsafePointer[UInt8, ImmutAnyOrigin],
-            size: UInt64,
         ) thin -> PluginResultCode,
     ]
     var queue_copy_from_device: HALFunction[
@@ -826,25 +843,22 @@ struct RawPlugin(Movable):
         def(
             queue: QueueHandle,
             dst: UnsafePointer[UInt8, MutAnyOrigin],
-            src: MemoryHandle,
-            size: UInt64,
+            src: MemoryViewHandle,
         ) thin -> PluginResultCode,
     ]
     var queue_copy_intra_device: HALFunction[
         "M_driver_queue_copy_intra_device",
         def(
             queue: QueueHandle,
-            dst: MemoryHandle,
-            src: MemoryHandle,
-            size: UInt64,
+            dst: MemoryViewHandle,
+            src: MemoryViewHandle,
         ) thin -> PluginResultCode,
     ]
     var queue_set_memory: HALFunction[
         "M_driver_queue_set_memory",
         def(
             queue: QueueHandle,
-            dst: MemoryHandle,
-            size: UInt64,
+            dst: MemoryViewHandle,
             value: UInt64,
             value_size: UInt64,
         ) thin -> PluginResultCode,

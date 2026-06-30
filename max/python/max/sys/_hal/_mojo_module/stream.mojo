@@ -76,7 +76,9 @@ struct Stream(Movable, Writable):
         # Route through HALStream so the chain-wait / chain-signal logic
         # (needed to preserve in-order semantics on non-stream queues)
         # runs around the copy.
-        self_ptr[]._arc[].copy_to_device(dst_ptr[]._hal, src_ptr, size)
+        self_ptr[]._arc[].copy_to_device(
+            dst_ptr[]._hal.view(byte_offset=0, byte_size=size), src_ptr
+        )
 
     @staticmethod
     def copy_from_device(
@@ -91,7 +93,9 @@ struct Stream(Movable, Writable):
         var dst_ptr = UnsafePointer[UInt8, MutAnyOrigin](
             unsafe_from_address=Int(py=dst_addr_obj)
         )
-        self_ptr[]._arc[].copy_from_device(dst_ptr, src_ptr_buf[]._hal, size)
+        self_ptr[]._arc[].copy_from_device(
+            dst_ptr, src_ptr_buf[]._hal.view(byte_offset=0, byte_size=size)
+        )
 
     @staticmethod
     def copy_intra_device(
@@ -105,7 +109,8 @@ struct Stream(Movable, Writable):
         var src_ptr_buf = src_obj.downcast_value_ptr[Buffer]()
         var size = UInt64(Int(py=size_obj))
         self_ptr[]._arc[].copy_intra_device(
-            dst_ptr[]._hal, src_ptr_buf[]._hal, size
+            dst_ptr[]._hal.view(byte_offset=0, byte_size=size),
+            src_ptr_buf[]._hal.view(byte_offset=0, byte_size=size),
         )
 
     @staticmethod

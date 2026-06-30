@@ -756,9 +756,8 @@ struct DeviceContext(
             If the operation fails.
         """
         self._stream[].copy_to_device(
-            dst_buf._inner[]._buffer,
+            dst_buf._inner[]._buffer.view(),
             src_ptr.bitcast[UInt8](),
-            dst_buf._inner[]._buffer.byte_size,
         )
 
     def enqueue_copy[
@@ -783,8 +782,7 @@ struct DeviceContext(
         """
         self._stream[].copy_from_device(
             dst_ptr.bitcast[UInt8](),
-            src_buf._inner[]._buffer,
-            src_buf._inner[]._buffer.byte_size,
+            src_buf._inner[]._buffer.view(),
         )
 
     def enqueue_copy[
@@ -805,9 +803,8 @@ struct DeviceContext(
             If the operation fails.
         """
         self._stream[].copy_intra_device(
-            dst_buf._inner[]._buffer,
-            src_buf._inner[]._buffer,
-            dst_buf._inner[]._buffer.byte_size,
+            dst_buf._inner[]._buffer.view(),
+            src_buf._inner[]._buffer.view(),
         )
 
     def enqueue_copy[
@@ -828,9 +825,8 @@ struct DeviceContext(
             If the operation fails.
         """
         self._stream[].copy_to_device(
-            dst_buf._inner[]._buffer,
+            dst_buf._inner[]._buffer.view(),
             src_buf.unsafe_ptr().bitcast[UInt8](),
-            dst_buf._inner[]._buffer.byte_size,
         )
 
     def enqueue_copy[
@@ -852,8 +848,7 @@ struct DeviceContext(
         """
         self._stream[].copy_from_device(
             dst_buf.unsafe_ptr().bitcast[UInt8](),
-            src_buf._inner[]._buffer,
-            src_buf._inner[]._buffer.byte_size,
+            src_buf._inner[]._buffer.view(),
         )
 
     def enqueue_copy[
@@ -878,9 +873,8 @@ struct DeviceContext(
             If the operation fails.
         """
         self._stream[].copy_to_device(
-            dst_buf._inner[]._buffer,
+            dst_buf._inner[]._buffer.view(),
             src_ptr.bitcast[UInt8](),
-            dst_buf._inner[]._buffer.byte_size,
         )
 
     def enqueue_copy[
@@ -905,8 +899,7 @@ struct DeviceContext(
         """
         self._stream[].copy_from_device(
             dst_ptr.bitcast[UInt8](),
-            src_buf._inner[]._buffer,
-            src_buf._inner[]._buffer.byte_size,
+            src_buf._inner[]._buffer.view(),
         )
 
     def enqueue_copy[
@@ -927,9 +920,8 @@ struct DeviceContext(
             If the operation fails.
         """
         self._stream[].copy_intra_device(
-            dst_buf._inner[]._buffer,
-            src_buf._inner[]._buffer,
-            dst_buf._inner[]._buffer.byte_size,
+            dst_buf._inner[]._buffer.view(),
+            src_buf._inner[]._buffer.view(),
         )
 
     def enqueue_copy[
