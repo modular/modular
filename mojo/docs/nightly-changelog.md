@@ -141,6 +141,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `List.remove(value)` method that removes the first occurrence of a
+  value from the list, raising an error if the value is not found.
+
 - `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
   to this `Scalar` type. Because of this some conversions have become more
   strict.
