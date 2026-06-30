@@ -1249,7 +1249,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             // materializes from its reader. This sets up its parse cursor.
             if constexpr (std::is_same_v<FileModuleOp, decltype(op)>) {
               if (decl.getCursor().isInvalid() &&
-                  failed(shared.materializeDeferredModule(decl))) {
+                  failed(shared.materializeDeferredModule(decl, loc))) {
                 decl.setErroneous();
                 return;
               }

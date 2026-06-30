@@ -292,8 +292,9 @@ public:
   void registerSourcePackageChildren(ASTDecl &packageDecl);
 
   /// Open and lex the source file of a deferred module, wiring up its parse
-  /// cursor so its body can be resolved.
-  LogicalResult materializeDeferredModule(ASTDecl &decl);
+  /// cursor so its body can be resolved. The loc is the location that triggered
+  /// materialization (e.g. the import that first referenced the module).
+  LogicalResult materializeDeferredModule(ASTDecl &decl, llvm::SMLoc loc);
 
   /// Create a new module with the given name, location, and body.
   ASTDecl &createModule(StringRef moduleName,

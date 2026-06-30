@@ -1652,7 +1652,7 @@ SharedState::createDeferredModuleState(StringAttr declName, StringRef filePath,
       /*cursor=*/LexerCursor(), /*endCursor=*/LexerCursor(), filePath);
 }
 
-LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl) {
+LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
   // Only a deferred source module (FileModuleOp with an invalid cursor and a
   // recorded source path) needs materializing; everything else is a no-op.
   ModuleState *state = impl->moduleStates.lookup(&decl);
@@ -1660,7 +1660,7 @@ LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl) {
     return success();
 
   const llvm::MemoryBuffer *moduleBuffer =
-      openModuleFile(*state->sourcePath, SMLoc());
+      openModuleFile(*state->sourcePath, loc);
   if (!moduleBuffer) {
     emitError(decl.getLoc(),
               "unable to open module file '" + *state->sourcePath + "'");
