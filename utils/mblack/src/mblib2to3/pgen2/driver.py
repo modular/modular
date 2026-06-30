@@ -60,8 +60,11 @@ Path = Union[str, "os.PathLike[str]"]
 _COLON_ONLY_LINE = re.compile(r"^\s+:\s*$")
 
 
-def _join_colon_next_line(prev: str, line: str) -> str | None:
+def _join_colon_next_line(prev: str, line: str, head_indent: int) -> str | None:
     """Move a standalone colon from its own indented line to the previous line.
+
+    *head_indent* is unused here (a lone colon needs no indent test) but is
+    accepted so every normalizer shares one signature.
 
     In Mojo, this is valid syntax::
 
@@ -86,7 +89,9 @@ def _starts_with_keyword(line: str, keyword: str) -> bool:
     return bool(rest) and not (rest[0].isalnum() or rest[0] == "_")
 
 
-def _join_multiline_ternary(prev: str, line: str) -> str | None:
+def _join_multiline_ternary(
+    prev: str, line: str, head_indent: int
+) -> str | None:
     """Join ternary continuations that appear on an indented next line.
 
     In Mojo, these are valid syntax::
@@ -112,13 +117,12 @@ def _join_multiline_ternary(prev: str, line: str) -> str | None:
     if not is_continuation:
         return None
     cur_indent = len(line) - len(line.lstrip())
-    prev_indent = len(prev) - len(prev.lstrip())
     if (
         prev
         and not prev.endswith(":")
         and not prev.endswith("\\")
         and not prev.lstrip().startswith("#")
-        and cur_indent > prev_indent
+        and cur_indent > head_indent
     ):
         return prev + " " + stripped
     return None
@@ -130,7 +134,9 @@ def _join_multiline_ternary(prev: str, line: str) -> str | None:
 _TRAILING_OP_RE = re.compile(r"[-+*/%&|^<>=]\s*$|\b(?:and|or)\s*$")
 
 
-def _join_trailing_operator(prev: str, line: str) -> str | None:
+def _join_trailing_operator(
+    prev: str, line: str, head_indent: int
+) -> str | None:
     """Join a continuation line when the previous line ends with an operator.
 
     In Mojo, implicit line continuation is allowed when a line ends with
@@ -144,8 +150,7 @@ def _join_trailing_operator(prev: str, line: str) -> str | None:
     The lib2to3-based parser requires these on the same logical line.
     """
     cur_indent = len(line) - len(line.lstrip())
-    prev_indent = len(prev) - len(prev.lstrip())
-    if cur_indent > prev_indent and _TRAILING_OP_RE.search(prev):
+    if cur_indent > head_indent and _TRAILING_OP_RE.search(prev):
         return prev + " " + line.lstrip()
     return None
 
@@ -154,7 +159,9 @@ def _join_trailing_operator(prev: str, line: str) -> str | None:
 _LEADING_STRING = re.compile(r"""^\s+["']""")
 
 
-def _join_string_continuation(prev: str, line: str) -> str | None:
+def _join_string_continuation(
+    prev: str, line: str, head_indent: int
+) -> str | None:
     """Join an implicit string concatenation from a continuation line.
 
     In Mojo, adjacent string literals on a further-indented continuation
@@ -171,7 +178,7 @@ def _join_string_continuation(prev: str, line: str) -> str | None:
         return None
     if not prev.rstrip() or prev.rstrip()[-1] not in ('"', "'"):
         return None
-    if len(line) - len(line.lstrip()) > len(prev) - len(prev.lstrip()):
+    if len(line) - len(line.lstrip()) > head_indent:
         return prev + " " + line.lstrip()
     return None
 
@@ -182,7 +189,9 @@ def _join_string_continuation(prev: str, line: str) -> str | None:
 _LEADING_DOT = re.compile(r"^\s+\.[A-Za-z_]")
 
 
-def _join_dot_continuation(prev: str, line: str) -> str | None:
+def _join_dot_continuation(
+    prev: str, line: str, head_indent: int
+) -> str | None:
     """Join a dot-prefixed method call from a continuation line.
 
     In Mojo, method chains can start on a further-indented continuation
@@ -196,10 +205,9 @@ def _join_dot_continuation(prev: str, line: str) -> str | None:
     if not _LEADING_DOT.match(line):
         return None
     cur_indent = len(line) - len(line.lstrip())
-    prev_indent = len(prev) - len(prev.lstrip())
     if (
         prev
-        and cur_indent > prev_indent
+        and cur_indent > head_indent
         and not prev.endswith(":")
         and not prev.endswith("\\")
         and not prev.lstrip().startswith("#")
@@ -210,8 +218,10 @@ def _join_dot_continuation(prev: str, line: str) -> str | None:
 
 # Normalizers are applied in order; the *first* one that returns a
 # non-None replacement wins and the rest are skipped.  Each receives the
-# previous result line (with any trailing comment already stripped) and
-# the current raw line.
+# previous result line (with any trailing comment already stripped), the
+# current raw line, and the indent of the current logical statement's head
+# (so continuations compare against the head, not an interior line such as
+# the closing bracket of a multi-line operand).
 _MOJO_LINE_NORMALIZERS = [
     _join_colon_next_line,
     _join_multiline_ternary,
@@ -243,17 +253,18 @@ def _split_trailing_comment(line: str) -> tuple[str, str]:
     return line, ""
 
 
-def _try_merge_line(result: list[str], line: str) -> bool:
+def _try_merge_line(result: list[str], line: str, head_indent: int) -> bool:
     """Try to merge *line* into the last element of *result*.
 
     Strips the trailing comment from the previous result line before
     calling each normalizer, then reattaches it so normalizers only
-    see code.  Returns ``True`` if any normalizer matched.
+    see code.  *head_indent* is the indent of the current logical
+    statement's head.  Returns ``True`` if any normalizer matched.
     """
     prev_code, comment = _split_trailing_comment(result[-1])
     merged = False
     for normalizer in _MOJO_LINE_NORMALIZERS:
-        replacement = normalizer(prev_code, line)
+        replacement = normalizer(prev_code, line, head_indent)
         if replacement is not None:
             prev_code = replacement
             merged = True
@@ -324,6 +335,7 @@ def _normalize_mojo_source(text: str) -> str:
     ml_quote: str | None = None
     in_fmt_off = False
     bracket_depth = 0
+    head_indent = 0
 
     for line in lines:
         stripped = line.lstrip()
@@ -334,15 +346,21 @@ def _normalize_mojo_source(text: str) -> str:
         elif stripped in FMT_ON:
             in_fmt_off = False
 
-        # Try to merge this line into the previous one.
-        can_normalize = (
-            not in_multiline_string
-            and not in_fmt_off
-            and bracket_depth == 0
-            and result  # need a previous line to merge into
+        at_statement_level = (
+            bracket_depth == 0 and not in_multiline_string and not in_fmt_off
         )
-        if not (can_normalize and _try_merge_line(result, line)):
+        # Try to merge this line into the previous one. Needs a previous
+        # line to merge into.
+        can_normalize = at_statement_level and result
+        if not (can_normalize and _try_merge_line(result, line, head_indent)):
             result.append(line)
+            # A line appended at bracket depth 0 (outside any string or
+            # ``# fmt: off`` region) begins a new logical statement; record
+            # its indent so later continuation lines compare against the
+            # statement head rather than an interior line such as the closing
+            # bracket of a multi-line operand.
+            if at_statement_level:
+                head_indent = len(line) - len(stripped)
 
         # Update bracket/string state for the next iteration, counting only
         # brackets that appear in code -- never inside strings or comments.
