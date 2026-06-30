@@ -860,6 +860,7 @@ def build_realize_future_token_graph(
     devices: Sequence[DeviceRef],
     enable_dp: int,
     num_speculative_tokens: int,
+    data_parallel_degree: int = 1,
 ) -> Graph:
     """Builds a graph that prepares the input for the next batch."""
     device0 = devices[0]
@@ -1077,9 +1078,11 @@ def build_realize_future_token_graph(
                     batch_increments_i64, spec_decode.signal_buffers
                 )
 
+                tp_degree = len(devices) // data_parallel_degree
                 for i in range(len(devices)):
-                    start_offset = spec_decode.data_parallel_splits[i]
-                    end_offset = spec_decode.data_parallel_splits[i + 1]
+                    replica = i // tp_degree
+                    start_offset = spec_decode.data_parallel_splits[replica]
+                    end_offset = spec_decode.data_parallel_splits[replica + 1]
 
                     batch_increments_local = ops.slice_tensor(
                         batch_increments_distributed[i],
@@ -1141,12 +1144,14 @@ class RealizeFutureTokenProcessor:
         devices: Sequence[DeviceRef],
         num_speculative_tokens: int = 0,
         enable_dp: bool = False,
+        data_parallel_degree: int = 1,
     ) -> None:
         with CompilationTimer("realize_future_token") as timer:
             graph = build_realize_future_token_graph(
                 devices=devices,
                 num_speculative_tokens=num_speculative_tokens,
                 enable_dp=enable_dp,
+                data_parallel_degree=data_parallel_degree,
             )
             timer.mark_build_complete()
             self._graph = session.load(graph)
@@ -1668,6 +1673,7 @@ class OverlapTextGenerationPipeline(
                 ],
                 num_speculative_tokens=num_speculative_tokens,
                 enable_dp=model_config.data_parallel_degree > 1,
+                data_parallel_degree=model_config.data_parallel_degree,
             )
             if self._pipeline_config.runtime.pipeline_role
             in ("prefill_and_decode", "decode_only")
