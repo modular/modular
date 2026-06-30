@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Architecture registration for BertForMaskedLM """
+"""Architecture registration for BertForMaskedLM"""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.bert.model import BertPipelineModel
