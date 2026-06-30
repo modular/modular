@@ -137,10 +137,7 @@ class NemotronHModel(LlamaModelBase):
 
     @traced
     def load_model(self, session: InferenceSession) -> Model:
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size is not None, (
-            "max_batch_size must be set in runtime config"
-        )
+        max_batch_size = self.max_batch_size
 
         with CompilationTimer("model") as timer:
             graph = self._build_graph(self.weights, self.adapter)
