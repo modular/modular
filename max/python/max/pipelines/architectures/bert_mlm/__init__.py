@@ -15,4 +15,6 @@
 
 from .arch import bert_for_masked_lm_arch
 
-__all__ = ["bert_for_masked_lm_arch"]
+ARCHITECTURES = [bert_for_masked_lm_arch]
+
+__all__ = ["ARCHITECTURES", "bert_for_masked_lm_arch"]
