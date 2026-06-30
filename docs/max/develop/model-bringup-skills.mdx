@@ -16,7 +16,9 @@ decisions and verifying the final inference results.
 
 You can use `import-model` to assist in bringing up a model from an existing
 architecture, and `debug-model` to track down output divergences when the new
-model produces incorrect results.
+model produces incorrect results. Once the model runs correctly, the
+[`profile-model`](/max/gpu-system-profiling) skill helps you find where it
+spends time and whether the GPU is saturated.
 
 ## Install the MAX skills
 
@@ -91,7 +93,7 @@ presents the bring-up plan for your review.
 A brought-up model can load, compile, and generate tokens yet still disagree
 with the original model: it might return gibberish, pick the wrong greedy token,
 or stay coherent for a while and then drift. The
-[`debug-model`](https://github.com/modular/skills/blob/main/debug-model/README.md)
+[`debug-model`](https://github.com/modular/skills/blob/main/debug-model/SKILL.md)
 skill is a parity-debugging protocol for exactly this case, when the model
 serves but its output is wrong. (Fixing a crash on load or an unfinished graph
 is `import-model`'s job, not this skill's.)
@@ -122,7 +124,7 @@ The `import-model` skill drives a three-phase workflow (decide and plan,
 implement, then verify), and you remain the coordinator and validator at each
 checkpoint. The sections below describe what the agent delivers in each phase
 and how you steer it. For the full procedure, see the skill's
-[`README.md`](https://github.com/modular/skills/blob/main/import-model/README.md).
+[`SKILL.md`](https://github.com/modular/skills/blob/main/import-model/SKILL.md).
 
 ### Decide and plan
 
