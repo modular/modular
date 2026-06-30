@@ -1281,7 +1281,7 @@ def mogg_tensor_init[
     input: IO,
     alignment: Int,
 ](
-    ptr: OpaquePointer[MutAnyOrigin],
+    ptr: UnsafePointer[mut=True, NoneType, _],
     layout: LayoutType,
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
