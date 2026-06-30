@@ -38,12 +38,8 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext) raises:
         for i in range(length):
             in_host[i] = abs((Scalar[type](i) - length // 2) + epsilon)
 
-    var in_buffer = Span[Scalar[type]](
-        ptr=in_device.unsafe_ptr(), length=length
-    )
-    var out_buffer = Span[Scalar[type]](
-        ptr=out_device.unsafe_ptr(), length=length
-    )
+    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=length)
+    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=length)
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer, exponent)

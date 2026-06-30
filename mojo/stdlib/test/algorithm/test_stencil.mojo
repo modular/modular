@@ -74,12 +74,12 @@ def test_stencil_avg_pool() raises:
     var input_stack = InlineArray[
         Scalar[dtype], Int(input_shape_dims.flattened_length())
     ](uninitialized=True)
-    var input = Span[Scalar[dtype]](input_stack)
+    var input = Span(input_stack)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
     var output_stack = InlineArray[
         Scalar[dtype], Int(output_shape_dims.flattened_length())
     ](uninitialized=True)
-    var output = Span[Scalar[dtype]](output_stack)
+    var output = Span(output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
 
     fill_span(input, Int(input_shape_dims.flattened_length()))
@@ -197,12 +197,12 @@ def test_stencil_avg_pool_padded() raises:
     var input_stack = InlineArray[
         Scalar[dtype], input_shape_dims.flattened_length()
     ](uninitialized=True)
-    var input = Span[Scalar[dtype]](input_stack)
+    var input = Span(input_stack)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
     var output_stack = InlineArray[
         Scalar[dtype], output_shape_dims.flattened_length()
     ](uninitialized=True)
-    var output = Span[Scalar[dtype]](output_stack)
+    var output = Span(output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
 
     fill_span(input, input_shape_dims.flattened_length())
@@ -318,12 +318,12 @@ def test_stencil_avg_pool_stride_2() raises:
     var input_stack = InlineArray[
         Scalar[dtype], Int(input_shape_dims.flattened_length())
     ](uninitialized=True)
-    var input = Span[Scalar[dtype]](input_stack)
+    var input = Span(input_stack)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
     var output_stack = InlineArray[
         Scalar[dtype], Int(output_shape_dims.flattened_length())
     ](uninitialized=True)
-    var output = Span[Scalar[dtype]](output_stack)
+    var output = Span(output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
 
     fill_span(input, Int(input_shape_dims.flattened_length()))
@@ -442,12 +442,12 @@ def test_stencil_max_pool_dilation_2() raises:
     var input_stack = InlineArray[
         Scalar[dtype], Int(input_shape_dims.flattened_length())
     ](uninitialized=True)
-    var input = Span[Scalar[dtype]](input_stack)
+    var input = Span(input_stack)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
     var output_stack = InlineArray[
         Scalar[dtype], Int(output_shape_dims.flattened_length())
     ](uninitialized=True)
-    var output = Span[Scalar[dtype]](output_stack)
+    var output = Span(output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
 
     fill_span(input, Int(input_shape_dims.flattened_length()))

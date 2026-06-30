@@ -44,8 +44,8 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
             in_host[i] = Scalar[dtype](i)
             out_host[i] = Scalar[dtype](length + i)
 
-    var in_buffer = Span[Scalar[dtype]](ptr=in0.unsafe_ptr(), length=length)
-    var out_buffer = Span[Scalar[dtype]](ptr=out.unsafe_ptr(), length=length)
+    var in_buffer = Span(ptr=in0.unsafe_ptr(), length=length)
+    var out_buffer = Span(ptr=out.unsafe_ptr(), length=length)
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer)

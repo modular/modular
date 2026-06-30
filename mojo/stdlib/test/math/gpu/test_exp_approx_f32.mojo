@@ -33,12 +33,8 @@ def run_exp_approx_test[simd_width: Int](ctx: DeviceContext) raises:
         for i in range(length):
             in_host[i] = 0.001 * (Scalar[dtype](i) - length // 2)
 
-    var in_buffer = Span[Scalar[dtype]](
-        ptr=in_device.unsafe_ptr(), length=length
-    )
-    var out_buffer = Span[Scalar[dtype]](
-        ptr=out_device.unsafe_ptr(), length=length
-    )
+    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=length)
+    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=length)
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
