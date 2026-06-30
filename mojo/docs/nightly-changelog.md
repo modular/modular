@@ -141,6 +141,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Span.__eq__` now uses `memcmp` for integer and boolean element types
+  instead of an element-by-element loop.
+
 - `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
   to this `Scalar` type. Because of this some conversions have become more
   strict.

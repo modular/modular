@@ -190,6 +190,98 @@ def test_equality() raises:
     assert_true(sp[0:0] == sp3[0:0])
 
 
+def test_byte_span_equality() raises:
+    # equal spans (same content, different pointers)
+    var a: List[Byte] = [1, 2, 3, 4]
+    var b: List[Byte] = [1, 2, 3, 4]
+    assert_true(Span(a) == Span(b))
+    assert_false(Span(a) != Span(b))
+    # not equal
+    var c: List[Byte] = [1, 2, 3, 5]
+    assert_false(Span(a) == Span(c))
+    assert_true(Span(a) != Span(c))
+    # different lengths
+    var d: List[Byte] = [1, 2, 3]
+    assert_false(Span(a) == Span(d))
+    # empty spans
+    var e: List[Byte] = []
+    var f: List[Byte] = []
+    assert_true(Span(e) == Span(f))
+    # same pointer (identity check)
+    assert_true(Span(a) == Span(a))
+    # single element
+    var g: List[Byte] = [0]
+    var h: List[Byte] = [0]
+    assert_true(Span(g) == Span(h))
+    var i: List[Byte] = [1]
+    assert_false(Span(g) == Span(i))
+
+
+def test_integer_span_equality() raises:
+    """Verify memcmp fast path works for various integer types."""
+    # Int32
+    var a: List[Int32] = [1, 2, 3]
+    var b: List[Int32] = [1, 2, 3]
+    assert_true(Span(a) == Span(b))
+    var c: List[Int32] = [1, 2, 4]
+    assert_false(Span(a) == Span(c))
+
+    # Int64
+    var d: List[Int64] = [100, 200]
+    var e: List[Int64] = [100, 200]
+    assert_true(Span(d) == Span(e))
+    var f: List[Int64] = [100, 201]
+    assert_false(Span(d) == Span(f))
+
+    # UInt16
+    var g: List[UInt16] = [0, 65535]
+    var h: List[UInt16] = [0, 65535]
+    assert_true(Span(g) == Span(h))
+
+    # Bool
+    var i: List[Bool] = [True, False, True]
+    var j: List[Bool] = [True, False, True]
+    assert_true(Span(i) == Span(j))
+    var k: List[Bool] = [True, True, True]
+    assert_false(Span(i) == Span(k))
+
+
+def test_float_span_equality() raises:
+    """Verify float spans use element-wise comparison (not memcmp).
+
+    IEEE 754 requires: NaN != NaN, and +0.0 == -0.0. These would fail
+    if memcmp were used, since memcmp compares raw bytes.
+    """
+    from std.utils.numerics import nan
+
+    # NaN != NaN (element-wise), but memcmp would say True (same bits)
+    var nan64 = nan[DType.float64]()
+    var a = List[Float64]()
+    a.append(nan64)
+    var b = List[Float64]()
+    b.append(nan64)
+    assert_false(Span(a) == Span(b))
+    assert_true(Span(a) != Span(b))
+
+    # +0.0 == -0.0 (element-wise), but memcmp would say False (different bits)
+    var c: List[Float64] = [0.0]
+    var d: List[Float64] = [-0.0]
+    assert_true(Span(c) == Span(d))
+    assert_false(Span(c) != Span(d))
+
+    # Same checks for Float32
+    var nan32 = nan[DType.float32]()
+    var e = List[Float32]()
+    e.append(nan32)
+    var f = List[Float32]()
+    f.append(nan32)
+    assert_false(Span(e) == Span(f))
+
+    var g: List[Float32] = [Float32(0.0)]
+    var h: List[Float32] = [Float32(-0.0)]
+    assert_true(Span(g) == Span(h))
+
+
 def test_fill() raises:
     var a = [0, 1, 2, 3, 4, 5, 6, 7, 8]
     var s = Span(a)
