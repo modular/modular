@@ -50,12 +50,12 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import ReturnLogits, forward_sequential_layers
+from max.nn.transformer import forward_sequential_layers
 from max.nn.transformer.distributed_transformer import (
-    extract_hs,
     forward_sharded_layers,
 )
 
+from ..deepseekV3.deepseekV3 import deepseek_logits_postprocess
 from .layers import DeepseekV3_2MLP, DeepseekV3_2MoE, DeepseekV3_2TopKRouter
 from .layers.sparse_mla import (
     DataParallelSparseLatentAttentionWithRopeFp8,
@@ -385,6 +385,8 @@ class DeepseekV3_2DecoderLayer(Module):
         mla_decode_scalar_args: list[TensorValue] | None = None,
         mla_num_partitions_scalars: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
+        # Note: this is only used for MTP iterations after step 0.
+        reuse_prev_topk: bool = False,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
         # subgraphs have only max.graph.Values as arguments.
@@ -452,6 +454,7 @@ class DeepseekV3_2DecoderLayer(Module):
             input_row_offsets=input_row_offsets,
             mla_prefill_metadata=mla_prefill_metadata,
             prev_topk_indices=prev_topk,
+            reuse_prev_topk=reuse_prev_topk,
         )
 
         hs = self._post_attention(xs, attn_outs, signal_buffers)
@@ -815,94 +818,20 @@ class DeepseekV3_2(Module):
         # Strip the trailing top-k selection carried alongside hidden states.
         h = h[:num_devices]
 
-        if self.config.data_parallel_degree > 1:
-            last_token_per_dev: list[TensorValue] = []
-            for dev_idx in range(len(devices)):
-                h0 = h[dev_idx]
-                last_token_indices = input_row_offsets_[dev_idx][1:] - 1
-                last_token_h = ops.gather(h0, last_token_indices, axis=0)
-                last_token_per_dev.append(last_token_h)
-            last_token_distributed = ops.allgather(
-                last_token_per_dev, signal_buffers
-            )
-        else:
-            last_token_distributed = [
-                ops.gather(h_i, offsets_i[1:] - 1, axis=0)
-                for h_i, offsets_i in zip(h, input_row_offsets_, strict=True)
-            ]
-
-        # Apply norm to each shard
-        norm_last_token = forward_sharded_layers(
-            self.norm_shards, last_token_distributed
-        )
-        last_logits = ops.cast(
-            self.lm_head(norm_last_token, signal_buffers)[0],
-            DType.float32,
-        )
-
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = ops.range(
-                start=return_n_logits[0],
-                stop=0,
-                step=-1,
-                out_dim="return_n_logits_range",
-                dtype=DType.int64,
-                device=devices[0],
-            )
-            offsets = (
-                ops.unsqueeze(input_row_offsets_[0][1:], -1)
-                - return_n_logits_range
-            )
-            last_indices = ops.reshape(offsets, shape=(-1,))
-            logits = ops.gather(
-                ops.cast(
-                    self.lm_head(
-                        forward_sharded_layers(self.norm_shards, h),
-                        signal_buffers,
-                    )[0],
-                    DType.float32,
-                ),
-                last_indices,
-                axis=0,
-            )
-            offsets = ops.range(
-                0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=devices[0],
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(
-                self.lm_head(
-                    forward_sharded_layers(self.norm_shards, h),
-                    signal_buffers,
-                )[0],
-                DType.float32,
-            )
-            offsets = input_row_offsets_[0]
-
-        if self.logits_scaling != 1.0:
-            last_logits = last_logits / self.logits_scaling
-            if logits is not None:
-                logits = logits / self.logits_scaling
-
-        ret_val: tuple[TensorValue, ...] = (last_logits,)
-        if logits is not None and offsets is not None:
-            ret_val += (logits, offsets)
-
-        ret_val += extract_hs(
+        return deepseek_logits_postprocess(
+            h=h,
+            input_row_offsets=input_row_offsets_,
+            all_logits_input_row_offsets=None,
+            return_n_logits=return_n_logits,
+            norm_shards=self.norm_shards,
+            lm_head=self.lm_head,
+            signal_buffers=signal_buffers,
+            devices=devices,
+            is_data_parallel_attention=self.config.data_parallel_degree > 1,
+            return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
-            last_token_hs_distributed=last_token_distributed,
-            all_hs_distributed=h,
-            normalizer=self.norm_shards,
+            logits_scaling=self.logits_scaling,
         )
-
-        return ret_val
 
     def input_types(
         self, kv_params: KVCacheParamInterface

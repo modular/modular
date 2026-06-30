@@ -12,6 +12,14 @@ This version is still a work in progress.
 
 - Added GLM-5.2 (`GlmMoeDsaForCausalLM`) support, extending the existing
   GLM-5.1 sparse-attention architecture with cross-layer index sharing.
+- Added multi-token prediction (MTP) speculative decoding for GLM-5.2
+  (`UnifiedMTPGlm5_2ForCausalLM`). The baked-in NextN layer is served as a
+  single-layer sparse-MLA draft (its own lightning indexer plus a paired
+  `{mla, indexer}` KV cache); per `index_share_for_mtp_iteration`, the draft
+  computes its top-k selection on the first MTP step and reuses it on the
+  rest. Enabled automatically for GLM checkpoints that ship a NextN layer when
+  speculative decoding is requested with no separate draft model. Validated on
+  `zai-org/GLM-5.2-FP8` across 8 B200s (`--speculative-method mtp`).
 - Added Laguna (`LagunaForCausalLM`), poolside's decoder-only sparse-MoE
   language model. It uses sigmoid expert routing with a per-expert
   score-correction bias, a per-element softplus attention-output gate, and
