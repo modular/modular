@@ -13,11 +13,8 @@
 """Unified layout system for mixed compile-time and runtime indices."""
 
 from std.os import abort
-from std.sys.intrinsics import _type_is_eq
 from std.utils import IndexList
 from std.math.uutils import umod, ufloordiv
-
-from std.sys.intrinsics import _type_is_eq_parse_time
 
 
 trait CoordLike(
@@ -659,7 +656,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             else:
                 # Runtime value - use _get_flattened to get the value
                 var val = _get_flattened[i](self)
-                comptime if _type_is_eq[FlatType, Int]():
+                comptime if FlatType == Int:
                     UnsafePointer(to=flat_tuple[i]).init_pointee_copy(
                         rebind[FlatType](val)
                     )
@@ -1357,9 +1354,7 @@ comptime _AllStatic[*element_types: CoordLike] = _AllStaticFlat[
 """True iff every leaf element in the (possibly nested) variadic is a
 compile-time-known dim."""
 
-comptime _AllEqualPredicate[
-    T1: AnyType, T2: type_of(T1)
-] = _type_is_eq_parse_time[T1, T2]()
+comptime _AllEqualPredicate[T1: AnyType, T2: type_of(T1)] = T1 == T2
 
 comptime _AllEqual[
     T: AnyType, *element_types: AnyType
@@ -1804,7 +1799,7 @@ struct _RegTuple[*element_types: CoordLike](
         """
 
         comptime for i in range(type_of(self).__len__()):
-            comptime if _type_is_eq[Self.element_types[i], T]():
+            comptime if Self.element_types[i] == T:
                 if rebind[T](self[i]) == value:
                     return True
 
@@ -1929,7 +1924,7 @@ def _linear_idx_to_coord(idx: Int, stride: Int, shape: Int) -> Int:
 
 @always_inline
 def _coerce_dynamic[T: CoordLike](value: Int) -> T:
-    comptime if _type_is_eq_parse_time[T, Int]():
+    comptime if T == Int:
         return rebind[T](value)
     else:
         return rebind[T](Scalar[T.DTYPE](value))

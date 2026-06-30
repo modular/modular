@@ -31,7 +31,6 @@ Fragment layout differs by MMA size:
 from std.math.constants import log2e
 from std.math.uutils import umod
 from std.sys import _RegisterPackType
-from std.sys.intrinsics import _type_is_eq
 from std.sys._assembly import inlined_assembly
 from std.gpu import block_idx, lane_id
 from std.utils import IndexList
@@ -226,7 +225,7 @@ struct MaskTileOp[
                 var score_col = mask_frag_col
                 var score_col_with_cache_start_pos = score_col + cache_start_pos
                 var score_row_with_start_pos = score_row + start_pos
-                comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
+                comptime is_causal_mask = Self.mask_t == CausalMask
 
                 # Load the whole MMA fragment once, mutate lanes on a local
                 # SIMD (which `SIMD.__setitem__` supports), and store back

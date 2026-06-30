@@ -57,7 +57,6 @@ from std.sys.info import (
     _TargetType,
     is_triple,
 )
-from std.sys.intrinsics import _type_is_eq
 from std.sys.defines import _is_bool_like
 
 from std.reflection import call_location, SourceLocation
@@ -3172,9 +3171,7 @@ struct DeviceFunction[
                 declared_arg_type
             ]()
 
-            comptime if _type_is_eq[
-                actual_arg_type, actual_arg_type.device_type
-            ]():
+            comptime if actual_arg_type == actual_arg_type.device_type:
                 # Now check if they handed in the *correct* device dtype.
                 comptime assert is_convertible, String(
                     "argument #",

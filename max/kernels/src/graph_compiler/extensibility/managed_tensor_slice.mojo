@@ -36,7 +36,7 @@ from std.memory import AddressSpace
 from std.runtime.tracing import trace_arg
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, is_gpu
-from std.sys.intrinsics import _type_is_eq, strided_load, strided_store
+from std.sys.intrinsics import strided_load, strided_store
 from std.utils import IndexList, StaticTuple, product
 from std.utils._serialize import _serialize
 
@@ -422,14 +422,12 @@ struct StaticTensorSpec[
         address_space: AddressSpace,
     ):
         comptime assert Self.rank == Self.static_layout.rank, "rank mismatch"
-        comptime _has_in = not _type_is_eq[Self.InFusion, _NoFusionIn]()
-        comptime _has_out = not _type_is_eq[Self.OutFusion, _NoFusionOut]()
-        comptime _has_compute = not _type_is_eq[
-            Self.ComputeFusion, _NoComputeFusion
-        ]()
-        comptime _has_compute_tile = not _type_is_eq[
-            Self.ComputeFusionTile, _NoComputeFusionTile
-        ]()
+        comptime _has_in = Self.InFusion != _NoFusionIn
+        comptime _has_out = Self.OutFusion != _NoFusionOut
+        comptime _has_compute = Self.ComputeFusion != _NoComputeFusion
+        comptime _has_compute_tile = (
+            Self.ComputeFusionTile != _NoComputeFusionTile
+        )
         comptime assert (
             Int(_has_in)
             + Int(_has_out)
@@ -446,14 +444,12 @@ struct StaticTensorSpec[
         """
         Returns a StaticTensorSpec from a StaticTensorSpecInternal.
         """
-        comptime _has_in = not _type_is_eq[Self.InFusion, _NoFusionIn]()
-        comptime _has_out = not _type_is_eq[Self.OutFusion, _NoFusionOut]()
-        comptime _has_compute = not _type_is_eq[
-            Self.ComputeFusion, _NoComputeFusion
-        ]()
-        comptime _has_compute_tile = not _type_is_eq[
-            Self.ComputeFusionTile, _NoComputeFusionTile
-        ]()
+        comptime _has_in = Self.InFusion != _NoFusionIn
+        comptime _has_out = Self.OutFusion != _NoFusionOut
+        comptime _has_compute = Self.ComputeFusion != _NoComputeFusion
+        comptime _has_compute_tile = (
+            Self.ComputeFusionTile != _NoComputeFusionTile
+        )
         comptime assert (
             Int(_has_in)
             + Int(_has_out)
@@ -1082,15 +1078,11 @@ struct ManagedTensorSlice[
     # populates OutFusion instead of ComputeFusion.
     comptime _is_unfused: Bool = not Self.input.is_fused()
     comptime _has_input_fusion: Bool = (Self.input == IO.FusedInput)
-    comptime _has_output_store_fusion: Bool = not _type_is_eq[
-        Self.OutFusion, _NoFusionOut
-    ]()
-    comptime _has_compute_fusion: Bool = not _type_is_eq[
-        Self.ComputeFusion, _NoComputeFusion
-    ]()
-    comptime _has_compute_fusion_tile: Bool = not _type_is_eq[
-        Self.ComputeFusionTile, _NoComputeFusionTile
-    ]()
+    comptime _has_output_store_fusion: Bool = Self.OutFusion != _NoFusionOut
+    comptime _has_compute_fusion: Bool = Self.ComputeFusion != _NoComputeFusion
+    comptime _has_compute_fusion_tile: Bool = (
+        Self.ComputeFusionTile != _NoComputeFusionTile
+    )
 
     comptime RuntimeLayout = TileLayout[
         shape_types=Self.static_spec.static_layout._shape_types,
@@ -1110,7 +1102,7 @@ struct ManagedTensorSlice[
         """Return a sentinel InFusion value, or an uninitialized placeholder
         when the type parameter is a real fusion struct (never reached at
         runtime, but must compile for all instantiations)."""
-        comptime if _type_is_eq[Self.InFusion, _NoFusionIn]():
+        comptime if Self.InFusion == _NoFusionIn:
             return rebind[Self.InFusion](_NoFusionIn())
         else:
             var f: Self.InFusion
@@ -1124,7 +1116,7 @@ struct ManagedTensorSlice[
     def _sentinel_out_fusion() -> Self.OutFusion:
         """Return a sentinel OutFusion value, or an uninitialized placeholder
         when the type parameter is a real fusion struct."""
-        comptime if _type_is_eq[Self.OutFusion, _NoFusionOut]():
+        comptime if Self.OutFusion == _NoFusionOut:
             return rebind[Self.OutFusion](_NoFusionOut())
         else:
             var f: Self.OutFusion
@@ -1138,7 +1130,7 @@ struct ManagedTensorSlice[
     def _sentinel_compute_fusion() -> Self.ComputeFusion:
         """Return a sentinel ComputeFusion value, or an uninitialized
         placeholder when the type parameter is a real fusion struct."""
-        comptime if _type_is_eq[Self.ComputeFusion, _NoComputeFusion]():
+        comptime if Self.ComputeFusion == _NoComputeFusion:
             return rebind[Self.ComputeFusion](_NoComputeFusion())
         else:
             var f: Self.ComputeFusion
@@ -1152,7 +1144,7 @@ struct ManagedTensorSlice[
     def _sentinel_compute_fusion_tile() -> Self.ComputeFusionTile:
         """Return a sentinel ComputeFusionTile value, or an uninitialized
         placeholder when the type parameter is a real fusion struct."""
-        comptime if _type_is_eq[Self.ComputeFusionTile, _NoComputeFusionTile]():
+        comptime if Self.ComputeFusionTile == _NoComputeFusionTile:
             return rebind[Self.ComputeFusionTile](_NoComputeFusionTile())
         else:
             var f: Self.ComputeFusionTile
@@ -2307,9 +2299,7 @@ struct _FusedInputVariadicTensors[
         fusions: _FusionPack[*Self.FusionTypes],
     ):
         comptime for i in range(Self.size):
-            comptime assert not _type_is_eq[
-                Self.FusionTypes[i], _NoFusionIn
-            ](), (
+            comptime assert Self.FusionTypes[i] != _NoFusionIn, (
                 "_FusedInputVariadicTensors requires a real fusion struct"
                 " for every element; use plain VariadicTensors for unfused"
                 " inputs"
@@ -2399,9 +2389,7 @@ struct _FusedOutputVariadicTensors[
         fusions: _FusionPack[*Self.FusionTypes],
     ):
         comptime for i in range(Self.size):
-            comptime assert not _type_is_eq[
-                Self.FusionTypes[i], _NoFusionOut
-            ](), (
+            comptime assert Self.FusionTypes[i] != _NoFusionOut, (
                 "_FusedOutputVariadicTensors requires a real fusion struct"
                 " for every element; use plain VariadicTensors for unfused"
                 " outputs"

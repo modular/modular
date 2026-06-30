@@ -16,7 +16,6 @@ from std.math import iota
 from std.gpu import global_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.reflection import reflect
-from std.sys.intrinsics import _type_is_eq
 from std.testing import assert_equal
 
 
@@ -42,14 +41,10 @@ def test_declared_arg_types(ctx: DeviceContext) raises:
     assert_equal(arg_types.size, 5)
 
     # Indexing yields the declared argument types in order.
-    comptime assert _type_is_eq[
-        arg_types[0], UnsafePointer[Float32, ImmutAnyOrigin]
-    ]()
-    comptime assert _type_is_eq[
-        arg_types[2], UnsafePointer[Float32, MutAnyOrigin]
-    ]()
-    comptime assert _type_is_eq[arg_types[3], Int]()
-    comptime assert _type_is_eq[arg_types[4], Int]()
+    comptime assert arg_types[0] == UnsafePointer[Float32, ImmutAnyOrigin]
+    comptime assert arg_types[2] == UnsafePointer[Float32, MutAnyOrigin]
+    comptime assert arg_types[3] == Int
+    comptime assert arg_types[4] == Int
 
     assert_equal(reflect[arg_types[0]].base_name(), "UnsafePointer")
 

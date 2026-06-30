@@ -29,7 +29,6 @@ from std.sys import (
     size_of,
 )
 from std.sys.info import _is_amd_rdna
-from std.sys.intrinsics import _type_is_eq
 import std.gpu.primitives.warp as warp
 from std.gpu.primitives.grid_controls import (
     PDLLevel,

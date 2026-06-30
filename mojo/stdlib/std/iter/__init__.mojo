@@ -56,7 +56,6 @@ for squared in map[square](values):
 import std.memory
 from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
-from std.sys.intrinsics import _type_is_eq_parse_time
 
 
 from std.builtin.variadics import TypeList
@@ -885,7 +884,7 @@ def peekable(
 
 comptime _all_yield_same_ref_condition[
     T0: Movable, origin: Origin, T: Iterable
-] = _type_is_eq_parse_time[T.IteratorType[origin].Element, T0]()
+] = T.IteratorType[origin].Element == T0
 
 comptime _all_yield_same_ref[
     origin: Origin, *Ts: Iterable
@@ -895,7 +894,7 @@ comptime _all_yield_same_ref[
 
 comptime _all_yield_same_owned_condition[
     T0: Movable, T: IterableOwned
-] = _type_is_eq_parse_time[T.IteratorOwnedType.Element, T0]()
+] = T.IteratorOwnedType.Element == T0
 
 comptime _all_yield_same_owned[*Ts: IterableOwned]: Bool = Ts.all_satisfies[
     _all_yield_same_owned_condition[Ts[0].IteratorOwnedType.Element, _]

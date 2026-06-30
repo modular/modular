@@ -36,7 +36,6 @@ Run:
 
 from std.collections import OptionalReg
 from std.sys import get_defined_bool, get_defined_int
-from std.sys.intrinsics import _type_is_eq
 
 from std.benchmark import (
     Bench,
@@ -66,7 +65,7 @@ from nn.attention.gpu.mha import mha_gpu_naive
 
 
 def _mask_label[mask_t: MHAMask]() -> String:
-    comptime if _type_is_eq[mask_t, CausalMask]():
+    comptime if mask_t == CausalMask:
         return "causal"
     else:
         return "null"

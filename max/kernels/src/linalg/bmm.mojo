@@ -22,7 +22,6 @@ from std.sys.info import (
     is_nvidia_gpu,
     simd_width_of,
 )
-from std.sys.intrinsics import _type_is_eq
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.algorithm import elementwise, sync_parallelize
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
@@ -201,7 +200,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
                 comptime for batch_idx in range(rank - 3):
                     shape_val *= Int(tensor.layout.shape[batch_idx]().value())
 
-            comptime if _type_is_eq[ShapeType, Int]():
+            comptime if ShapeType == Int:
                 shape_ptr.init_pointee_copy(rebind[ShapeType](shape_val))
             else:
                 shape_ptr.init_pointee_copy(

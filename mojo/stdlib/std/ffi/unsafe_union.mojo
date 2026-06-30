@@ -34,7 +34,6 @@ from std.memory import (
     is_trivially_movable,
 )
 from std.sys import align_of, size_of
-from std.sys.intrinsics import _type_is_eq
 
 
 # ===----------------------------------------------------------------------=== #
@@ -50,7 +49,7 @@ def _all_types_unique[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime for j in range(i + 1, Ts.size):
-            if _type_is_eq[Ts[i], Ts[j]]():
+            if Ts[i] == Ts[j]:
                 return False
     return True
 

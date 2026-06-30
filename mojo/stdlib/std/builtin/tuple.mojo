@@ -22,7 +22,6 @@ from std.format._utils import (
     FormatStruct,
 )
 from std.hashlib.hasher import Hasher
-from std.sys.intrinsics import _type_is_eq
 
 from std.reflection.type_info import _unqualified_type_name
 
@@ -240,7 +239,7 @@ struct Tuple[*element_types: Movable](
         """
 
         comptime for i in range(type_of(self).__len__()):
-            comptime if _type_is_eq[Self.element_types[i], T]():
+            comptime if Self.element_types[i] == T:
                 if rebind[T](self[i]) == value:
                     return True
 

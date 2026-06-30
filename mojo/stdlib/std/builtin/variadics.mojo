@@ -18,7 +18,6 @@ These are Mojo built-ins, so you don't need to import them.
 from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, TypeNames
-from std.sys.intrinsics import _type_is_eq_parse_time
 from std.builtin.globals import global_constant
 
 
@@ -67,7 +66,6 @@ struct TypeList[
 
     ```mojo
     from std.builtin.variadics import TypeList
-    from std.sys.intrinsics import _type_is_eq
     from std.testing import assert_equal
 
     # Create a type list
@@ -82,7 +80,7 @@ struct TypeList[
         comptime assert not tl.contains[Bool]()
 
         # Index into the list
-        comptime assert _type_is_eq[tl[0], Int]()
+        comptime assert tl[0] == Int
     ```
     """
 
@@ -451,7 +449,7 @@ struct TypeList[
     comptime _ContainsTypePredicate[
         search: AnyType,
         element: Self.Trait,
-    ] = _type_is_eq_parse_time[element, search]()
+    ] = element == search
 
     @always_inline("builtin")
     @staticmethod

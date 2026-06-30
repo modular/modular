@@ -15,7 +15,6 @@ from std.compile import compile_info
 from std.ffi import external_call
 from std.memory import UnsafeMaybeUninit
 from std.sys import align_of, size_of
-from std.sys.intrinsics import _type_is_eq
 import std.memory.alloc
 
 from test_utils import (

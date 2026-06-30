@@ -13,7 +13,6 @@
 
 from std.ffi import _CPointer
 from std.os import abort
-from std.sys.intrinsics import _type_is_eq
 
 from std.python import PythonObject as PO  # for brevity of signatures below
 from std.python._cpython import PyObjectPtr
@@ -1780,9 +1779,9 @@ struct PyObjectFunction[
             This function will abort if downcasting fails for non-PythonObject types.
         """
 
-        comptime assert not _type_is_eq[
-            Self.self_type, NoneType
-        ](), "Cannot get self arg for NoneType"
+        comptime assert (
+            Self.self_type != NoneType
+        ), "Cannot get self arg for NoneType"
         try:
             return py_self.downcast_value_ptr[Self.self_type]()
         except e:
@@ -1803,7 +1802,7 @@ struct PyObjectFunction[
     @staticmethod
     @always_inline("nodebug")
     def _has_type[other_func_type: TrivialRegisterPassable]() -> Bool:
-        return _type_is_eq[Self.func_type, other_func_type]()
+        return Self.func_type == other_func_type
 
     @staticmethod
     @always_inline("nodebug")

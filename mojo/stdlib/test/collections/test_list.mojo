@@ -37,7 +37,6 @@ from std.testing.prop import PropTest
 # TODO(MOCO-522): Figure out desired behavior for importing files with only
 # extensions in them.
 from std.testing.prop.strategy import SIMD, List
-from std.sys.intrinsics import _type_is_eq
 
 
 def test_mojo_issue_698() raises:
@@ -1188,7 +1187,7 @@ def test_list_comprehension() raises:
 def test_list_can_infer_iterable_element_type() raises:
     var string = "Mojo🔥"
     var l = List(string.codepoints())
-    assert_true(_type_is_eq[type_of(l), List[Codepoint]]())
+    assert_true(type_of(l) == List[Codepoint])
     assert_equal(
         l,
         [

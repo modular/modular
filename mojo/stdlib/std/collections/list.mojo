@@ -27,7 +27,6 @@ from std.collections._asan_annotations import (
 )
 from std.os import abort
 from std.sys import size_of
-from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 from std.memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
