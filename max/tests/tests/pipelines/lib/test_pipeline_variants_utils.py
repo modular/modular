@@ -306,7 +306,7 @@ class TestAdvanceFsmAndComputeBitmasks:
         consuming_batch = [preempted, survivor]
 
         # Mirror an in-flight preemption: the scheduler resets the context
-        # (requeueing it to context encoding) after the callback was enqueued.
+        # (requeuing it to context encoding) after the callback was enqueued.
         preempted.reset()
         assert preempted.is_initial_prompt
 
