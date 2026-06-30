@@ -10,15 +10,12 @@ modular_py_library(
         "//max/python/max/nn/hooks",
     ],
     deps = [
-        requirement("numpy"),
         requirement("transformers"),
         requirement("typing-extensions"),
         "//max/python/max/pipelines/architectures/bert",
-        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
         # Hooks added for convenience for when we want to print the model layers
         "//max/python/max/nn/hooks",
         "//max/python/max/pipelines/context",
