@@ -6,6 +6,7 @@
 
 #include "ParametricIREvaluator.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -457,24 +458,7 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateContextSpecific(
     ContextuallyEvaluatedAttrInterface attr) {
   // Don't try to evaluate a parameter operator that still contains parametric
   // things in it, since it may be transitory.
-  struct IndexRefFinder : IndexParameterReplacer<IndexRefFinder> {
-    Attribute tryReplace(Attribute attr, size_t depth) {
-      if (auto ref = dyn_cast<ParamIndexRefAttr>(attr)) {
-        // This check means it's referring to a param-decl *outside* `attr`, see
-        // PSTIAIRAID.
-        if (ref.getDepth() >= depth) {
-          escapingReference = true;
-          return attr;
-        }
-      }
-      return nullptr;
-    }
-    Type tryReplace(Type, size_t) { return nullptr; }
-
-    bool escapingReference = false;
-  } finder;
-  finder.replace(attr);
-  if (finder.escapingReference)
+  if (EscapingReferenceFinder::check(attr))
     return cast<TypedAttr>(attr);
 
   if (auto genref = dyn_cast<TypeGeneratorRefAttr>(attr)) {

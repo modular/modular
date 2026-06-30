@@ -121,6 +121,39 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// EscapingReferenceFinder
+//===----------------------------------------------------------------------===//
+
+/// Detects whether an attribute or type contains a `ParamIndexRefAttr` that
+/// refers to a parameter-decl *outside* the walked value -- an "escaping"
+/// reference. The walk is depth-aware (see PSTIAIRAID), so a ref counts as
+/// escaping when `getDepth() >=` the current signature depth. Such a reference
+/// means the value is still abstract in the current scope, so it must not be
+/// treated as fully concrete.
+struct EscapingReferenceFinder
+    : public IndexParameterReplacer<EscapingReferenceFinder> {
+  Attribute tryReplace(Attribute attr, size_t depth) {
+    if (auto ref = dyn_cast<ParamIndexRefAttr>(attr);
+        ref && ref.getDepth() >= depth) {
+      escapingReference = true;
+      return attr;
+    }
+    return nullptr;
+  }
+  Type tryReplace(Type, size_t) { return {}; }
+
+  /// Returns whether `value` contains an escaping parameter reference.
+  template <typename T>
+  static bool check(T value) {
+    EscapingReferenceFinder finder;
+    finder.replace(value);
+    return finder.escapingReference;
+  }
+
+  bool escapingReference = false;
+};
+
+//===----------------------------------------------------------------------===//
 // ParameterCollector
 //===----------------------------------------------------------------------===//
 
