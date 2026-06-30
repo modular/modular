@@ -31,6 +31,7 @@ modular_py_library(
         "//max/python/max/profiler",
         "//max/python/max/serve:config",
         requirement("aiohttp"),
+        requirement("cyclopts"),
         requirement("datasets"),
         requirement("huggingface-hub"),
         requirement("msgspec"),
