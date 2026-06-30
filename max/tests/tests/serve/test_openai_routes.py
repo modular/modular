@@ -1806,6 +1806,31 @@ def test_create_response_format_json_schema() -> None:
     assert "age" in result.json_schema["properties"]
 
 
+def test_create_response_format_boolean_schema_true() -> None:
+    """A boolean schema ``true`` (any value) de-sugars to ``{}``."""
+    result = _create_response_format(
+        {"type": "json_schema", "json_schema": {"name": "t", "schema": True}},
+        enable_response_format_schema=True,
+    )
+    assert result is not None
+    assert result.json_schema == {}
+
+
+def test_create_response_format_boolean_schema_false() -> None:
+    """A boolean schema ``false`` (matches nothing) de-sugars to the
+    unsatisfiable ``{"anyOf": [False]}`` and is rejected as a clean 400 -- no
+    output can satisfy it. (``{"anyOf": [False]}`` is used over ``{"not": {}}``
+    because llguidance lacks ``not`` and reports a misleading error.)"""
+    with pytest.raises(InputError, match="grammar"):
+        _create_response_format(
+            {
+                "type": "json_schema",
+                "json_schema": {"name": "t", "schema": False},
+            },
+            enable_response_format_schema=True,
+        )
+
+
 def test_create_response_format_text() -> None:
     """Test that text format returns empty json_schema."""
     result = _create_response_format(
