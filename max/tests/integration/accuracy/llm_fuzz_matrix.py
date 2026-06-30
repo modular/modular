@@ -80,6 +80,14 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.b200.8",
         timeout=90,
     ),
+    PipelineEntry(
+        pipeline="amd/MiniMax-M3-MXFP4-ep-tp",
+        model_path="amd/MiniMax-M3-MXFP4",
+        runner="modrunner-mi355-4x",
+        gpu_flag="--devices gpu:0,1,2,3",
+        instance_type="bm.gpu.mi355x.4",
+        timeout=90,
+    ),
 ]
 
 
