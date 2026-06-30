@@ -141,6 +141,11 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `StringSlice.startswith()` and `StringSlice.endswith()` now use a direct
+  `memcmp` against the prefix/suffix bytes instead of going through `find()`,
+  avoiding the cost of a full search when the answer is determined by a single
+  bounded comparison.
+
 - `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
   to this `Scalar` type. Because of this some conversions have become more
   strict.
