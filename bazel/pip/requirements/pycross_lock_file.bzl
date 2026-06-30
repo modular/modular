@@ -168,6 +168,7 @@ PINS = {
     "uvloop": "uvloop@0.22.1",
     "vllm": "vllm@multiple",
     "wheel": "wheel@0.45.1",
+    "zstandard": "zstandard@0.25.0",
 }
 
 # buildifier: disable=unnamed-macro
