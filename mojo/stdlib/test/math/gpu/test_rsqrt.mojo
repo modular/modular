@@ -42,12 +42,8 @@ def run_elementwise[
             in_host2[i] = 0.001 * abs(Scalar[dtype](i) - length // 2)
         in_host = in_host2^
 
-    var in_buffer = Span[Scalar[dtype]](
-        ptr=in_device.unsafe_ptr(), length=length
-    )
-    var out_buffer = Span[Scalar[dtype]](
-        ptr=out_device.unsafe_ptr(), length=length
-    )
+    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=length)
+    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=length)
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)

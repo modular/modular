@@ -45,13 +45,13 @@ def test_elementwise() raises:
         shape: IndexList[outer_rank],
     ](ctx: DeviceContext) raises:
         var memory1 = InlineArray[Float32, numelems](uninitialized=True)
-        var buffer1 = Span[Float32](memory1)
+        var buffer1 = Span(memory1)
 
         var memory2 = InlineArray[Float32, numelems](uninitialized=True)
-        var buffer2 = Span[Float32](memory2)
+        var buffer2 = Span(memory2)
 
         var memory3 = InlineArray[Float32, numelems](uninitialized=True)
-        var out_buffer = Span[Float32](memory3)
+        var out_buffer = Span(memory3)
 
         var x: Float32 = 1.0
         for i in range(numelems):
@@ -93,7 +93,7 @@ def test_elementwise() raises:
 def test_elementwise_implicit_runtime() raises:
     var ctx = DeviceContext(api="cpu")
     var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
-    var vector = Span[Scalar[DType.int]](vector_stack)
+    var vector = Span(vector_stack)
 
     for i in range(len(vector)):
         vector.unsafe_ptr()[i] = Scalar[DType.int](i)

@@ -68,7 +68,7 @@ def test_span_list_str() raises:
 
 def test_span_array_int() raises:
     var l: InlineArray[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
-    var s = Span[Int](array=l)
+    var s = Span(array=l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
         assert_equal(l[i], s[i])
@@ -91,7 +91,7 @@ def test_span_array_int() raises:
 
 def test_span_array_str() raises:
     var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
-    var s = Span[String](array=l)
+    var s = Span(array=l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
         assert_equal(l[i], s[i])
@@ -114,7 +114,7 @@ def test_span_array_str() raises:
 
 def test_indexing() raises:
     var l: InlineArray[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
-    var s = Span[Int](array=l)
+    var s = Span(array=l)
     assert_equal(s[Int(0)], 1)
     assert_equal(s[3], 4)
 
@@ -151,7 +151,7 @@ def test_copy_from() raises:
 
 def test_bool() raises:
     var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
-    var s = Span[String](l)
+    var s = Span(l)
     assert_true(s)
     assert_true(not s[0:0])
 
@@ -177,8 +177,8 @@ def test_contains_non_scalar() raises:
 def test_equality() raises:
     var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
     var l2 = [String("a"), "b", "c", "d", "e", "f", "g"]
-    var sp = Span[String](l)
-    var sp2 = Span[String](l)
+    var sp = Span(l)
+    var sp2 = Span(l)
     var sp3 = Span(l2)
     # same pointer
     assert_true(sp == sp2)
@@ -203,14 +203,14 @@ def test_fill() raises:
 
 def test_ref() raises:
     var l: InlineArray[Int, 3] = [1, 2, 3]
-    var s = Span[Int](array=l)
+    var s = Span(array=l)
     assert_true(s.as_ref() == Pointer(to=l.unsafe_ptr()[]))
 
 
 def test_reversed() raises:
     var forward: InlineArray[Int, 3] = [1, 2, 3]
     var backward: InlineArray[Int, 3] = [3, 2, 1]
-    var s = Span[Int](forward)
+    var s = Span(forward)
     var i = 0
     for num in reversed(s):
         assert_equal(num, backward[i])
@@ -375,14 +375,14 @@ def test_count_func() raises:
     def is_2[w: SIMDSize](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
         return v.eq(2)
 
-    var data = Span[Byte]([Byte(0), 1, 2, 1, 2, 1, 2])
+    var data = Span([Byte(0), 1, 2, 1, 2, 1, 2])
     assert_equal(3, Int(data.count(is_2)))
     assert_equal(2, Int(data[:-1].count(is_2)))
     assert_equal(1, Int(data[:3].count(is_2)))
 
 
 def test_unsafe_subspan() raises:
-    var data = Span[Int]([0, 1, 2, 3, 4])
+    var data = Span([0, 1, 2, 3, 4])
 
     var subspan1 = data.unsafe_subspan(offset=0, length=4)
     assert_equal(List(subspan1), [0, 1, 2, 3])

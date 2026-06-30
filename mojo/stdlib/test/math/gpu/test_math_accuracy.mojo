@@ -32,12 +32,8 @@ def run_elementwise[
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
 
-    var in_buffer = Span[Scalar[dtype]](
-        ptr=in_device.unsafe_ptr(), length=length
-    )
-    var out_buffer = Span[Scalar[dtype]](
-        ptr=out_device.unsafe_ptr(), length=length
-    )
+    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=length)
+    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=length)
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
