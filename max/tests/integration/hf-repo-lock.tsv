@@ -131,6 +131,7 @@ nvidia/Kimi-K2.6-Eagle3	60f9ba6e143963e7aaacb6d6f346594d65de3f72
 nvidia/Kimi-K2.6-NVFP4	2fd3a800dedd098b8327eb49e93ebc75f85da19f
 nvidia/Llama-3.1-405B-Instruct-NVFP4	8ddfc523e75da0cd52d8d486895aa984282f6db9
 nvidia/Llama-3.1-8B-Instruct-NVFP4	bdb54e24298451af785c0ac63c1b485e9b7400a2
+nvidia/MiniMax-M3-NVFP4	901464083161bf8612a29ff7ad29914cd4ab4a85
 nvidia/diffusiongemma-26B-A4B-it-NVFP4	2ea837236295d617ac27f8c17d61228081932c40
 openai/gpt-oss-20b	6cee5e81ee83917806bbde320786a8fb61efebee
 openai/whisper-large-v3	06f233fe06e710322aca913c1bc4249a0d71fce1
