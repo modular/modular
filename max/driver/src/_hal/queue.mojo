@@ -154,14 +154,26 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     def set_memory(
         self,
         dst: BufferView,
+        value: UInt8,
+    ) raises HALError:
+        """
+        Set every byte of `dst` to `value`. Enqueues on this queue. Sets
+        `dst.byte_size` bytes.
+        """
+        self._raw[].set_memory(self._handle, dst._view, value)
+
+    def fill(
+        self,
+        dst: BufferView,
         value: UInt64,
         value_size: UInt64,
     ) raises HALError:
         """
         Fill `dst` with a repeated `value_size`-byte `value`. Enqueues on this
-        queue. Fills `dst.byte_size` bytes.
+        queue. Fills `dst.byte_size` bytes. `value_size` must be one of 1, 2, 4,
+        or 8; a `value_size` of 1 is equivalent to `set_memory`.
         """
-        self._raw[].set_memory(self._handle, dst._view, value, value_size)
+        self._raw[].fill(self._handle, dst._view, value, value_size)
 
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,
