@@ -11,26 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Graph-compiler unary-elementwise model cache for the MO interpreter.
+"""Graph-compiler binary-elementwise model cache for the MO interpreter.
+
+Covers both arithmetic/bitwise binary ops (``Add``, ``Sub``, ``Mul``, ``Div``,
+``Mod``, ``Max``, ``Min``, ``And``, ``Or``, ``Xor``, ``Pow``) and the comparison
+predicates (``Equal``, ``Greater``, ``GreaterEqual``, ``NotEqual``). A comparison
+graph emits ``bool``; the handler reads the realized output dtype, so the two
+families share one builder and cache.
 
 Two compile modes, selected by ``MAX_EAGER_OP_PRECOMPILE`` (see
 :func:`gc_compile.should_precompile`):
 
 - **Lazy per-target (default).** First dispatch for a target compiles just that
   one rank-1 graph.
-- **Precompile sweep (``=1``).** :func:`compile_unary_sweep` compiles the full
-  matrix at import; a :func:`unary_model` miss is then a hard error.
+- **Precompile sweep (``=1``).** :func:`compile_binary_sweep` compiles the full
+  matrix at import; a :func:`binary_model` miss is then a hard error.
 
 Lazy mode avoids a trivial program JIT-compiling the whole kernel library on a
 cold cache (~3000+ kernels, minutes; MXF-508). Models serve the eager handler
-via :func:`unary_model`. Must not import from ``handlers.py``.
+via :func:`binary_model`. Must not import from ``handlers.py``.
 
-The swept dtype set is deliberately conservative (floats-first): the IR type
-category is only a ceiling, so transcendental/activation ops are swept on float
-dtypes only, ``Abs``/``Negative`` additionally get integer dtypes, and ``Not``
-gets ``bool``. CPU floats are f32/f64 (no 16-bit); GPU floats are f16/f32/bf16
-(no f64). ``dtype_class`` keys the *input*; ``IsNan``/``IsInf`` take a float
-input and emit a constant ``bool``.
+Both operands reach the handler already cast to a common dtype and broadcast to
+a common shape (the RMO->MO lowering inserts the ``BroadcastToOp`` chain), so a
+graph with one dtype shared by both rank-1 inputs is exact.
+
+The swept dtype set is deliberately conservative (the IR type category is only a
+ceiling): general arithmetic (``Add``/``Sub``/``Mul``/``Max``/``Min``/``Mod``),
+``Pow``, and the comparisons sweep floats + integers; ``Div`` sweeps floats only;
+the logical ops (``And``/``Or``/``Xor``) sweep ``bool``. CPU floats are f32/f64
+(no 16-bit); GPU floats are f16/f32/bf16 (no f64). ``dtype_class`` keys the
+*input* dtype.
 """
 
 import logging
@@ -51,107 +61,81 @@ from max.driver import (
     load_devices,
 )
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, Module, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, Module, TensorType, TensorValue
+from max.graph.ops import elementwise
 
 logger = logging.getLogger(__name__)
 
-# Float dtypes diverge by device (only f32 is shared). CPU: f32 + f64 (the
-# 16-bit float kernels don't compile on CPU). GPU: f16/f32/bf16 (no f64 —
-# NVIDIA rejects it for approx ops, Metal lacks it; f64-on-GPU tracked in
-# https://linear.app/modularml/issue/MSTDL-2711).
+# Float dtypes diverge by device (only f32 is shared), matching
+# unary_elementwise_gc. CPU: f32 + f64 (the 16-bit float kernels don't compile
+# on CPU). GPU: f16/f32/bf16 (no f64 — NVIDIA rejects it for some ops, Metal
+# lacks it; f64-on-GPU tracked in MSTDL-2711).
 _CPU_FLOAT_DTYPES = [DType.float32, DType.float64]
 _GPU_FLOAT_DTYPES = [DType.float16, DType.float32, DType.bfloat16]
 _SIGNED_INT_DTYPES = [DType.int8, DType.int16, DType.int32, DType.int64]
 _UNSIGNED_INT_DTYPES = [DType.uint8, DType.uint16, DType.uint32, DType.uint64]
 
 
-# Builds an op's graph body from its input tensor (e.g. ``ops.sqrt``).
-MoOpBuilder: TypeAlias = Callable[[TensorValue], TensorValue]
+# Builds an op's graph body from its two input tensors (e.g. ``elementwise.add``).
+MoBinaryOpBuilder: TypeAlias = Callable[[TensorValue, TensorValue], TensorValue]
 
 
 class DTypeClass(Enum):
     """The input-dtype set an op is swept over (see ``_supported_dtypes``)."""
 
+    NUMERIC = "numeric"
     FLOAT = "float"
-    ABS = "abs"
-    NEGATIVE = "negative"
     BOOL = "bool"
 
 
 @dataclass(frozen=True)
-class UnarySpec:
-    """How to build one unary op's graph and which dtype class it sweeps."""
+class BinarySpec:
+    """How to build one binary op's graph and which dtype class it sweeps."""
 
-    builder: MoOpBuilder
+    builder: MoBinaryOpBuilder
     dtype_class: DTypeClass
 
 
-def _gelu_none(x: TensorValue) -> TensorValue:
-    return ops.gelu(x, approximate="none")
-
-
-def _gelu_tanh(x: TensorValue) -> TensorValue:
-    return ops.gelu(x, approximate="tanh")
-
-
-def _gelu_quick(x: TensorValue) -> TensorValue:
-    return ops.gelu(x, approximate="quick")
-
-
-# The builder is a callable (an op or a named helper), so the Gelu variants and
-# the plain one-op wrappers share one registry shape.
-_UNARY_OPS: dict[type[_core.Operation], UnarySpec] = {
-    mo.NegativeOp: UnarySpec(ops.negate, DTypeClass.NEGATIVE),
-    mo.AbsOp: UnarySpec(ops.abs, DTypeClass.ABS),
-    mo.CeilOp: UnarySpec(ops.ceil, DTypeClass.FLOAT),
-    mo.FloorOp: UnarySpec(ops.floor, DTypeClass.FLOAT),
-    mo.RoundOp: UnarySpec(ops.round, DTypeClass.FLOAT),
-    mo.ExpOp: UnarySpec(ops.exp, DTypeClass.FLOAT),
-    mo.LogOp: UnarySpec(ops.log, DTypeClass.FLOAT),
-    mo.Log1pOp: UnarySpec(ops.log1p, DTypeClass.FLOAT),
-    mo.SqrtOp: UnarySpec(ops.sqrt, DTypeClass.FLOAT),
-    mo.RsqrtOp: UnarySpec(ops.rsqrt, DTypeClass.FLOAT),
-    mo.TanhOp: UnarySpec(ops.tanh, DTypeClass.FLOAT),
-    mo.AtanhOp: UnarySpec(ops.atanh, DTypeClass.FLOAT),
-    mo.TruncOp: UnarySpec(ops.trunc, DTypeClass.FLOAT),
-    mo.SinOp: UnarySpec(ops.sin, DTypeClass.FLOAT),
-    mo.CosOp: UnarySpec(ops.cos, DTypeClass.FLOAT),
-    mo.ErfOp: UnarySpec(ops.erf, DTypeClass.FLOAT),
-    mo.SigmoidOp: UnarySpec(ops.sigmoid, DTypeClass.FLOAT),
-    mo.SiluOp: UnarySpec(ops.silu, DTypeClass.FLOAT),
-    mo.GeluOp: UnarySpec(_gelu_none, DTypeClass.FLOAT),
-    mo.GeluTanhOp: UnarySpec(_gelu_tanh, DTypeClass.FLOAT),
-    mo.GeluQuickOp: UnarySpec(_gelu_quick, DTypeClass.FLOAT),
-    mo.NotOp: UnarySpec(ops.logical_not, DTypeClass.BOOL),
-    # Predicates: float input, constant bool output; dtype_class keys input.
-    mo.IsNanOp: UnarySpec(ops.is_nan, DTypeClass.FLOAT),
-    mo.IsInfOp: UnarySpec(ops.is_inf, DTypeClass.FLOAT),
+# The builder is a two-arg elementwise op; comparison builders emit a bool
+# tensor, which the handler picks up from the realized output dtype.
+_BINARY_OPS: dict[type[_core.Operation], BinarySpec] = {
+    mo.AddOp: BinarySpec(elementwise.add, DTypeClass.NUMERIC),
+    mo.SubOp: BinarySpec(elementwise.sub, DTypeClass.NUMERIC),
+    mo.MulOp: BinarySpec(elementwise.mul, DTypeClass.NUMERIC),
+    mo.MaxOp: BinarySpec(elementwise.max, DTypeClass.NUMERIC),
+    mo.MinOp: BinarySpec(elementwise.min, DTypeClass.NUMERIC),
+    mo.ModOp: BinarySpec(elementwise.mod, DTypeClass.NUMERIC),
+    # div promotes int operands to f64 in the lowering, so an int div never
+    # reaches the handler; pow has no such promotion, so it must sweep ints.
+    mo.DivOp: BinarySpec(elementwise.div, DTypeClass.FLOAT),
+    mo.PowOp: BinarySpec(elementwise.pow, DTypeClass.NUMERIC),
+    mo.AndOp: BinarySpec(elementwise.logical_and, DTypeClass.BOOL),
+    mo.OrOp: BinarySpec(elementwise.logical_or, DTypeClass.BOOL),
+    mo.XorOp: BinarySpec(elementwise.logical_xor, DTypeClass.BOOL),
+    # Comparison predicates: numeric input, bool output.
+    mo.EqualOp: BinarySpec(elementwise.equal, DTypeClass.NUMERIC),
+    mo.GreaterOp: BinarySpec(elementwise.greater, DTypeClass.NUMERIC),
+    mo.GreaterEqualOp: BinarySpec(
+        elementwise.greater_equal, DTypeClass.NUMERIC
+    ),
+    mo.NotEqualOp: BinarySpec(elementwise.not_equal, DTypeClass.NUMERIC),
 }
 
-UNARY_GC_OPS = tuple(_UNARY_OPS)
+BINARY_GC_OPS = tuple(_BINARY_OPS)
 
 # Indexed by op name so an rmo dispatch resolves to the mo-keyed spec; see
 # gc_compile.canonical_op_name.
-_UNARY_OPS_BY_NAME = {
-    op_type.__name__: spec for op_type, spec in _UNARY_OPS.items()
+_BINARY_OPS_BY_NAME = {
+    op_type.__name__: spec for op_type, spec in _BINARY_OPS.items()
 }
 
 
-def _spec_for(op_type: type[_core.Operation]) -> UnarySpec | None:
-    name = gc_compile.canonical_op_name(op_type, _UNARY_OPS_BY_NAME)
-    return _UNARY_OPS_BY_NAME.get(name)
+def _spec_for(op_type: type[_core.Operation]) -> BinarySpec | None:
+    name = gc_compile.canonical_op_name(op_type, _BINARY_OPS_BY_NAME)
+    return _BINARY_OPS_BY_NAME.get(name)
 
 
-# These lower to libm calls the GC backend only supports on CPU ("libm
-# operations are only available on CPU targets") — verified failing on both
-# Metal and CUDA (B200). Swept on CPU only, matching the historical interpreter
-# binding's GPU allowlist, which excluded exactly these four. Keyed by canonical
-# name so the guard also catches the ``rmo`` aliases (``MoLog1pOp`` etc.).
-_CPU_ONLY_OP_NAMES = frozenset(
-    op.__name__ for op in (mo.Log1pOp, mo.AtanhOp, mo.ErfOp, mo.GeluOp)
-)
-
-_UNARY_MODEL_CACHE: dict[str, engine.Model] = {}
+_BINARY_MODEL_CACHE: dict[str, engine.Model] = {}
 
 
 def _float_dtypes(device: Device) -> list[DType]:
@@ -162,10 +146,8 @@ def _supported_dtypes(dtype_class: DTypeClass, device: Device) -> list[DType]:
     """Conservative swept dtype set for a (dtype_class, device)."""
     if dtype_class is DTypeClass.FLOAT:
         return _float_dtypes(device)
-    if dtype_class is DTypeClass.ABS:
+    if dtype_class is DTypeClass.NUMERIC:
         return _float_dtypes(device) + _SIGNED_INT_DTYPES + _UNSIGNED_INT_DTYPES
-    if dtype_class is DTypeClass.NEGATIVE:
-        return _float_dtypes(device) + _SIGNED_INT_DTYPES
     if dtype_class is DTypeClass.BOOL:
         return [DType.bool]
     raise ValueError(f"Unknown dtype_class: {dtype_class!r}")
@@ -181,8 +163,8 @@ def _graph_name(
     op_type: type[_core.Operation], device: Device, dtype: DType
 ) -> str:
     """Graph ``sym_name`` and cache key for one (op, device, dtype)."""
-    name = gc_compile.canonical_op_name(op_type, _UNARY_OPS_BY_NAME)
-    return f"unary_{name}_{device.label}_{device.id}_{dtype.name}"
+    name = gc_compile.canonical_op_name(op_type, _BINARY_OPS_BY_NAME)
+    return f"binary_{name}_{device.label}_{device.id}_{dtype.name}"
 
 
 def canonical_shape(shape: Sequence[int]) -> tuple[int]:
@@ -190,24 +172,24 @@ def canonical_shape(shape: Sequence[int]) -> tuple[int]:
     return (prod(shape),)
 
 
-def _build_unary_graph(
+def _build_binary_graph(
     module: Module,
     op_type: type[_core.Operation],
-    spec: UnarySpec,
+    spec: BinarySpec,
     device: Device,
     dtype: DType,
 ) -> None:
-    """Adds one fully-symbolic rank-1 unary graph into *module* in-place."""
+    """Adds one fully-symbolic rank-1 binary graph into *module* in-place."""
     dev_ref = DeviceRef.from_device(device)
     in_type = TensorType(dtype, ["n"], device=dev_ref)
     g = Graph(
         _graph_name(op_type, device, dtype),
-        input_types=[in_type],
+        input_types=[in_type, in_type],
         module=module,
     )
     with g:
-        (x,) = g.inputs
-        g.output(spec.builder(x.tensor))
+        lhs, rhs = g.inputs
+        g.output(spec.builder(lhs.tensor, rhs.tensor))
 
 
 def _is_supported(
@@ -215,19 +197,13 @@ def _is_supported(
 ) -> bool:
     """Whether (op, device, dtype) is in the conservatively-supported set.
 
-    Single source of truth for the swept matrix: :func:`compile_unary_sweep`
+    Single source of truth for the swept matrix: :func:`compile_binary_sweep`
     filters its candidates through this predicate, and lazy mode uses it as the
-    support guard in :func:`unary_model`, so the two can't diverge. CPU-only ops
-    are unsupported on accelerators, and each op supports only its
-    ``dtype_class``'s dtypes.
+    support guard in :func:`binary_model`, so the two can't diverge. Each op
+    supports only its ``dtype_class``'s dtypes.
     """
     spec = _spec_for(op_type)
     if spec is None:
-        return False
-    if device.label != "cpu" and (
-        gc_compile.canonical_op_name(op_type, _UNARY_OPS_BY_NAME)
-        in _CPU_ONLY_OP_NAMES
-    ):
         return False
     return dtype in _supported_dtypes(spec.dtype_class, device)
 
@@ -237,8 +213,8 @@ _swept = False
 
 
 @in_default_mlir_context
-def compile_unary_sweep() -> None:
-    """Compile every supported (op, device, dtype) unary target in one batched
+def compile_binary_sweep() -> None:
+    """Compile every supported (op, device, dtype) binary target in one batched
     ``load_all`` (parallel compile), warming the in-process cache.
 
     Used three ways, all the same call: the import-time precompile (``=1``);
@@ -247,39 +223,38 @@ def compile_unary_sweep() -> None:
     ``load_all`` loads rather than recompiles).
 
     Candidates are filtered through :func:`_is_supported` so an unsupported
-    target never reaches the backend; a derived supported set is the real fix
-    (MXF-477).
+    target never reaches the backend.
     """
     global _swept
     module = Module()
-    for op_type, spec in _UNARY_OPS.items():
+    for op_type, spec in _BINARY_OPS.items():
         for device in _DEVICES:
             for dtype in _supported_dtypes(spec.dtype_class, device):
                 if _is_supported(op_type, device, dtype):
-                    _build_unary_graph(module, op_type, spec, device, dtype)
+                    _build_binary_graph(module, op_type, spec, device, dtype)
     session = engine.InferenceSession(devices=list(_DEVICES))
-    _UNARY_MODEL_CACHE.update(session.load_all(module, weights_registry={}))
+    _BINARY_MODEL_CACHE.update(session.load_all(module, weights_registry={}))
     _swept = True
 
 
 @in_default_mlir_context
-def _compile_unary_target(
+def _compile_binary_target(
     op_type: type[_core.Operation], device: Device, dtype: DType
 ) -> engine.Model:
-    """Build and compile a single (op, device, dtype) unary graph."""
+    """Build and compile a single (op, device, dtype) binary graph."""
     module = Module()
     spec = _spec_for(op_type)
     assert spec is not None, f"unsupported op {op_type!r} reached compile"
-    _build_unary_graph(module, op_type, spec, device, dtype)
+    _build_binary_graph(module, op_type, spec, device, dtype)
     session = gc_compile.session_for(device)
-    _UNARY_MODEL_CACHE.update(session.load_all(module, weights_registry={}))
-    return _UNARY_MODEL_CACHE[_graph_name(op_type, device, dtype)]
+    _BINARY_MODEL_CACHE.update(session.load_all(module, weights_registry={}))
+    return _BINARY_MODEL_CACHE[_graph_name(op_type, device, dtype)]
 
 
-def unary_model(
+def binary_model(
     op_type: type[_core.Operation], device: Device, dtype: DType
 ) -> engine.Model:
-    """Returns the unary :class:`~max.engine.Model` for *op_type* / *device* / *dtype*.
+    """Returns the binary :class:`~max.engine.Model` for *op_type* / *device* / *dtype*.
 
     Lazy by default: compiled on first use and cached for the process lifetime.
     With ``MAX_EAGER_OP_PRECOMPILE=1`` it was precompiled at import and this is a
@@ -289,39 +264,39 @@ def unary_model(
 
     Args:
         op_type: The concrete ``mo.*Op`` type of the op being handled.
-        device: The realized input's device.
-        dtype: The realized input's dtype.
+        device: The realized inputs' device.
+        dtype: The realized inputs' (shared) dtype.
 
     Returns:
         The compiled model ready for execution.
 
     Raises:
         KeyError: If the (op, device, dtype) is outside the supported set (e.g.
-            a transcendental op on an int dtype); or, with
-            ``MAX_EAGER_OP_PRECOMPILE=1``, if a supported target was not swept.
+            ``Div`` on an int dtype); or, with ``MAX_EAGER_OP_PRECOMPILE=1``, if
+            a supported target was not swept.
     """
     key = _graph_name(op_type, device, dtype)
-    model = _UNARY_MODEL_CACHE.get(key)
+    model = _BINARY_MODEL_CACHE.get(key)
     if model is not None:
         return model
     if not _is_supported(op_type, device, dtype):
         spec = _spec_for(op_type)
         supported = _supported_dtypes(spec.dtype_class, device) if spec else []
         raise KeyError(
-            f"Unsupported unary op/device/dtype for key {key!r}."
+            f"Unsupported binary op/device/dtype for key {key!r}."
             f"  Supported dtypes for this op/device: {supported}"
         )
     if gc_compile.should_precompile():
         # TODO(MXF-510): raise UnsupportedGraphError so executors fall back.
         raise KeyError(
-            f"No pre-compiled unary model for key {key!r}."
-            f"  Available: {sorted(_UNARY_MODEL_CACHE)}."
+            f"No pre-compiled binary model for key {key!r}."
+            f"  Available: {sorted(_BINARY_MODEL_CACHE)}."
             f"  Unset {gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR} (the default)"
             " to compile targets lazily on first use."
         )
     with gc_compile.COMPILE_LOCK:
         # Re-check under the lock (another thread may have compiled it).
-        model = _UNARY_MODEL_CACHE.get(key)
+        model = _BINARY_MODEL_CACHE.get(key)
         if model is not None:
             return model
         global _swept
@@ -330,14 +305,14 @@ def unary_model(
             # so an adoption failure falls through to per-target, not the op.
             _swept = True
             try:
-                compile_unary_sweep()
+                compile_binary_sweep()
             except Exception:
                 logger.warning(
                     "Eager interpreter warm-cache adoption failed; compiling"
-                    " unary targets on demand.",
+                    " binary targets on demand.",
                     exc_info=True,
                 )
-            model = _UNARY_MODEL_CACHE.get(key)
+            model = _BINARY_MODEL_CACHE.get(key)
             if model is not None:
                 return model
-        return _compile_unary_target(op_type, device, dtype)
+        return _compile_binary_target(op_type, device, dtype)
