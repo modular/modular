@@ -28,6 +28,10 @@ from internal_utils import arg_parse
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
 from nn.topk import _top_k_cpu, _topk_gpu, _topk_topp_sampling_fi, topk_gpu
+from nn.topk_bitonic import (
+    PERSISTENT_TOPK_MAX_N,
+    persistent_topk_block,
+)
 from std.testing import assert_almost_equal, assert_equal
 
 from std.utils import IndexList
@@ -699,5 +703,67 @@ def bench_dispatch_all() raises:
                 bench_dispatch[dtype, -1](b, ctx, bs, v)
                 bench_dispatch[dtype, 20](b, ctx, bs, v)
                 bench_dispatch[dtype, 50](b, ctx, bs, v)
+
+        # Bitonic sort top-k (MLA indexer shape: k = N = 2048).
+        bench_bitonic_topk(b, ctx)
+
         print()
         b.dump_report()
+
+
+def bench_bitonic_topk(mut b: Bench, ctx: DeviceContext) raises:
+    """Benchmark persistent_topk_block at the MLA indexer shape (N=K=2048).
+
+    Uses the Bench harness so results appear in the same table as the
+    existing topk_gpu entries for easy side-by-side comparison.
+    """
+    comptime dtype = DType.float32
+    var batch_size = 1
+    var N = PERSISTENT_TOPK_MAX_N  # 2048
+    var K = N
+
+    var scores_buf = ctx.enqueue_create_buffer[dtype](batch_size * N)
+    var idxs_buf = ctx.enqueue_create_buffer[DType.int32](batch_size * K)
+    # Fill scores with a non-trivial pattern so the sort is exercised.
+    var scores_tt = TileTensor(scores_buf, row_major(batch_size, N))
+    scores_buf.enqueue_fill(Scalar[dtype](0.5))
+    ctx.synchronize()
+
+    @parameter
+    @always_inline
+    @__copy_capture(scores_tt, idxs_buf)
+    def bench_fn(mut bb: Bencher):
+        @parameter
+        @always_inline
+        def launch(dctx: DeviceContext) raises:
+            persistent_topk_block(
+                dctx,
+                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                    scores_tt.ptr
+                ),
+                rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+                    idxs_buf.unsafe_ptr()
+                ),
+                N,
+                K,
+                batch_size,
+            )
+
+        bb.iter_custom[launch](ctx)
+
+    b.bench_function[bench_fn](
+        BenchId(
+            String(
+                "topk_gpu_bitonic",
+                "/N=",
+                N,
+                "/K=",
+                K,
+                "/batch_size=",
+                batch_size,
+            )
+        )
+    )
+
+    _ = scores_buf
+    _ = idxs_buf
