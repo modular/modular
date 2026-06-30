@@ -31,20 +31,43 @@ mojo_shared_library(
     ],
 )
 
+mojo_shared_library(
+    name = "block_offload_ops",
+    srcs = ["block_offload_ops.mojo"],
+    data = [
+        "@mojo//:python",
+    ],
+    shared_lib_name = "block_offload_ops.so",
+    target_compatible_with = [":linux_has_gpu"],
+    deps = [
+        "//max:comm",
+        "//max:layout",
+        "@mojo//:std",
+    ],
+)
+
 filegroup(
     name = "_mojo_srcs",
-    srcs = ["distributed_ops.mojo"],
+    srcs = [
+        "block_offload_ops.mojo",
+        "distributed_ops.mojo",
+    ],
 )
 
 modular_py_library(
     name = "_distributed_ops",
     srcs = ["__init__.py"],
     data = select({
-        ":linux_has_gpu": [":distributed_ops"],
+        ":linux_has_gpu": [
+            ":block_offload_ops",
+            ":distributed_ops",
+        ],
         "//conditions:default": [":_mojo_srcs"],
     }),
     ignore_unresolved_imports = [
-        # mojo.importer registers this symbol at runtime; not visible to pydeps.
+        # mojo.importer registers these symbols at runtime; not visible to pydeps.
+        ".block_offload_ops.copy_d2h",
+        ".block_offload_ops.copy_h2d",
         ".distributed_ops.broadcast_kernel",
     ],
     deps = [

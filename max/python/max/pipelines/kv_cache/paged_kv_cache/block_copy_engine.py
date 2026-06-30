@@ -20,6 +20,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from max._distributed_ops import batched_copy_d2h, batched_copy_h2d
 from max.driver import (
     Buffer,
     Device,
@@ -254,7 +255,6 @@ class BlockOffloadEngine:
                 stream.synchronize()
         _unsafe_free_fast_pinned_buffer(self.host_buffer)
 
-    @traced
     def memcpy_h2d(
         self, dsts: list[int], srcs: list[int], replica_idx: int = 0
     ) -> None:
@@ -264,63 +264,43 @@ class BlockOffloadEngine:
 
         replica = self._replicas[replica_idx]
 
-        # h2d on auxiliary stream.
-        for dst, src in zip(dsts, srcs, strict=True):
-            offset = 0
-            for buf in replica.device_buffers_on_aux_stream:
-                page_bytes = buf.shape[1]
-                buf[dst, :].inplace_copy_from(
-                    self.host_buffer[src, offset : offset + page_bytes]
-                )
-                offset += page_bytes
+        if replica.replicated_units:
+            root_and_peer_buffers = [
+                [unit.buffer, *unit.peers] for unit in replica.replicated_units
+            ]
+            main_streams = list(replica.main_streams.values())
+        else:
+            root_and_peer_buffers = []
+            main_streams = []
 
-        if not replica.replicated_units:
-            return
+        with Tracer(f"memcpy_h2d of {len(dsts)} blocks"):
+            batched_copy_h2d(
+                self.host_buffer,
+                replica.device_buffers_on_aux_stream,
+                dsts,
+                srcs,
+                main_streams=main_streams,
+                root_and_peer_buffers=root_and_peer_buffers,
+                signal_buffers=replica.signal_buffers,
+                broadcast_devices=replica.broadcast_devices,
+            )
 
-        # Imported lazily: instantiating the GPU broadcast collective at module
-        # load compiles it for the active GPU target, which fails on backends
-        # without a GPUInfo entry. Only the multi-device replicated path needs
-        # it, so defer the import (and its compile) to here.
-        from max._distributed_ops import distributed_broadcast
-
-        # main stream waits for completion of h2d on auxiliary stream.
-        for main_stream, d2h_auxiliary_stream in zip(
-            replica.main_streams.values(),
-            replica.d2h_auxiliary_streams.values(),
-            strict=True,
-        ):
-            main_stream.wait_for(d2h_auxiliary_stream)
-
-        # Broadcast all blocks to the other devices on main stream.
-        for dst in dsts:
-            for unit in replica.replicated_units:
-                root = unit.buffer
-                with Tracer("distributed_broadcast"):
-                    distributed_broadcast(
-                        input_buffer=root[dst, :],
-                        output_buffers=[
-                            root[dst, :],
-                            *(p[dst, :] for p in unit.peers),
-                        ],
-                        signal_buffers=replica.signal_buffers,
-                        devices=replica.broadcast_devices,
-                        root=0,
-                    )
-
-    @traced
     def memcpy_d2h(
         self, dsts: list[int], srcs: list[int], replica_idx: int = 0
     ) -> None:
         """Copies blocks from ``replica_idx``'s device(s) to host."""
+        if not dsts:
+            return
+
         replica = self._replicas[replica_idx]
-        for dst, src in zip(dsts, srcs, strict=True):
-            offset = 0
-            for buf in replica.device_buffers_on_aux_stream:
-                page_bytes = buf.shape[1]
-                self.host_buffer[
-                    dst, offset : offset + page_bytes
-                ].inplace_copy_from(buf[src, :])
-                offset += page_bytes
+
+        with Tracer(f"memcpy_d2h of {len(dsts)} blocks"):
+            batched_copy_d2h(
+                self.host_buffer,
+                replica.device_buffers_on_aux_stream,
+                dsts,
+                srcs,
+            )
 
     @traced
     def wait_for_completion(self) -> None:
