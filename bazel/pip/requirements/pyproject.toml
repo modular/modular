@@ -97,6 +97,7 @@ dependencies = [
   "uvloop>=0.21.0",
   "uvicorn",
   "wheel",
+  "zstandard",
 
   # modeltool
   "google-auth>=2.48.0",
