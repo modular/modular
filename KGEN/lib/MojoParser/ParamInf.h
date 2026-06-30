@@ -75,7 +75,7 @@ private:
 
   // Infer any missing parameter from defaulted value (this is supposed to be
   // invoked after both parameter list and argument list has been scanned).
-  LogicalResult inferFromDefaults();
+  LogicalResult inferFromDefaults(bool installOnlyInferredOnly = false);
 
   // Finalize the inference by making any remaining uninferred parameter to
   // UnboundAttr.

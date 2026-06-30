@@ -75,7 +75,7 @@ getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
                                                     structSelfType, expr);
 
   // Only bind the `Self`, leave the rest unbound.
-  bindings.relaxBindingKindTo(ParamBindings::kWithEllipsis);
+  bindings.relaxBindingKindTo(ParamBindings::kUnbindAll);
 
   // Leave the rest alone.
   for (Type type : paramTypes.drop_front())
