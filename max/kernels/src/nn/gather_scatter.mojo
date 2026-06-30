@@ -1214,12 +1214,15 @@ def gather_shape[
 
 @always_inline
 def scatter_elements[
-    reduce_fn: def[dtype: DType, width: SIMDSize](
-        SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing -> SIMD[dtype, width],
     rank: Int,
     input_type: DType,
     indices_type: DType,
+    *,
+    ReduceFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[dtype: DType, width: SIMDSize](
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) -> SIMD[dtype, width],
 ](
     input: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     indices: ManagedTensorSlice[dtype=indices_type, rank=rank, ...],
@@ -1227,6 +1230,7 @@ def scatter_elements[
     _axis: Int,
     output: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     ctx: DeviceContext,
+    reduce_fn: ReduceFn,
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
@@ -1269,7 +1273,7 @@ def scatter_elements[
         )
         var curr = output.to_tile_tensor()[Coord(output_coords)]
         output.to_tile_tensor()[Coord(output_coords)] = reduce_fn[
-            input_type, 1
+            dtype=input_type, width=1
         ](curr, updates.to_tile_tensor()[indices_coords])
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
