@@ -31,6 +31,7 @@ from max._core.dialects import builtin, kgen, mo, mosh
 from max._interpreter_ops import (
     elementwise_binary_gc,
     matmul_gc,
+    reduce_axis_gc,
     unary_elementwise_gc,
 )
 from max.driver import CPU, Buffer, Device
@@ -1321,205 +1322,53 @@ def _handle_param_to_value(
     )
 
 
-# Reduce operations
+# Reduce-along-axis operations (reduce / softmax / argmax / cumsum)
 
 
-def reduce_handler(op_type: type) -> OpHandler:
-    op_binding = ops.REDUCE[op_type]
-
-    def handler(
-        op: _core.Operation,
-        inputs: Sequence[Buffer | None],
-    ) -> Sequence[Buffer]:
-        result_type = graph.Type.from_mlir(list(op.results)[0].type)
-        assert isinstance(result_type, graph.TensorType)
-        target_device = result_type.device.to_device()
-
-        assert isinstance(inputs[0], Buffer)
-
-        input_buffer = inputs[0]
-
-        # `axis` is a compile-time `index` attribute, not an operand.
-        axis = cast(_HasAxis, op).axis
-
-        # Calculate output shape (same as input with reduced axis dim = 1)
-        output_shape = list(input_buffer.shape)
-        output_shape[axis] = 1
-
-        output = Buffer(
-            shape=output_shape,
-            dtype=input_buffer.dtype,
-            device=target_device,
-        )
-
-        op_binding(
-            output, input_buffer, axis, target_device._device_context_ptr()
-        )
-
-        return [output]
-
-    return handler
-
-
-for op_type in ops.REDUCE:
-    register_op_handler(op_type)(reduce_handler(op_type))
-
-
-# ArgMax / ArgMin operations
-
-
-def _argmax_min_handler(
-    op: _core.Operation,
-    inputs: Sequence[Buffer | None],
-    kernel_fn: Any,
+def _handle_reduce_axis(
+    op: _core.Operation, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Shared implementation for ArgMaxOp and ArgMinOp.
+    """Dispatches an eager reduce-along-axis op to its GC model.
 
-    Both ops reduce along an axis and return int64 indices. ``axis`` is a
-    compile-time ``index`` attribute carried on the op (not an operand).
+    Reading the op's MLIR result type for the output shape and dtype keeps this
+    handler family-agnostic: reduced-axis ops (``[d0, 1, d2]``, ``int64`` for
+    argmax) and same-shape ops (``[d0, d1, d2]``) share one path. The operand is
+    view-shimmed to canonical rank 3 and the result back, both zero-copy.
 
     Args:
-        op: The argmax/argmin operation.
-        inputs: Input buffers - the input tensor.
-        kernel_fn: The Mojo kernel to call (ArgMax or ArgMin).
+        op: The reduce/softmax/argmax/cumsum operation being handled.
+        inputs: The realized input buffers; the first is the operand.
 
     Returns:
-        List containing the output int64 index tensor.
+        A single-element list holding the result buffer.
     """
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
 
-    assert isinstance(inputs[0], Buffer)
-
-    input_buffer = inputs[0]
+    x = inputs[0]
+    assert isinstance(x, Buffer)
+    _check_buffers_on_device(inputs, target_device)
 
     axis = cast(_HasAxis, op).axis
-    in_shape = list(input_buffer.shape)
-    ndim = len(in_shape)
+    variant = reduce_axis_gc.variant_for(op)
+    model = reduce_axis_gc.reduce_model(type(op), x.device, x.dtype, variant)
 
-    if axis < 0:
-        axis += ndim
-
-    # Normalize to 3D: [dim0, dim1, dim2]
-    dim0 = prod(in_shape[:axis]) if axis > 0 else 1
-    dim1 = in_shape[axis]
-    dim2 = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
-
-    # Output shape: same as input with shape[axis] = 1, dtype always int64
-    output_shape = list(in_shape)
-    output_shape[axis] = 1
-    output = Buffer(shape=output_shape, dtype=DType.int64, device=target_device)
-
-    kernel_fn(
-        output,
-        input_buffer,
-        (dim0, dim1, dim2),
-        target_device._device_context_ptr(),
-    )
-
-    return [output]
+    d0, d1, d2 = reduce_axis_gc.canonical_rank3(x.shape, axis)
+    x_view = x.view(x.dtype, (d0, d1, d2))
+    (out,) = model(x_view)
+    out_shape = tuple(int(dim) for dim in result_type.shape)
+    return [out.view(result_type.dtype, out_shape)]
 
 
-@register_op_handler(mo.ReduceArgMaxOp)
-def _handle_argmax(
-    op: mo.ReduceArgMaxOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.reduce.arg_max by dispatching to Mojo argmax kernel."""
-    return _argmax_min_handler(op, inputs, ops.argmax_ops.ArgMax)
+# Wrapped in a function so the REDUCE_AXIS_GC_OPS access is deferred past the
+# import cycle between this module and reduce_axis_gc (via the package).
+def _register_reduce_axis_handlers() -> None:
+    for op_type in reduce_axis_gc.REDUCE_AXIS_GC_OPS:
+        register_op_handler(op_type)(_handle_reduce_axis)
 
 
-@register_op_handler(mo.ReduceArgMinOp)
-def _handle_argmin(
-    op: mo.ReduceArgMinOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.reduce.arg_min by dispatching to Mojo argmin kernel."""
-    return _argmax_min_handler(op, inputs, ops.argmax_ops.ArgMin)
-
-
-# Softmax operations
-
-
-def softmax_handler(op_type: type) -> OpHandler:
-    op_binding = ops.SOFTMAX[op_type]
-
-    def handler(
-        op: _core.Operation,
-        inputs: Sequence[Buffer | None],
-    ) -> Sequence[Buffer]:
-        result_type = graph.Type.from_mlir(list(op.results)[0].type)
-        assert isinstance(result_type, graph.TensorType)
-        target_device = result_type.device.to_device()
-
-        assert isinstance(inputs[0], Buffer)
-
-        input_buffer = inputs[0]
-
-        # `axis` is a compile-time `index` attribute.
-        axis = cast(_HasAxis, op).axis
-
-        # Output shape is the same as input (not reduced)
-        output = Buffer(
-            shape=input_buffer.shape,
-            dtype=input_buffer.dtype,
-            device=target_device,
-        )
-
-        op_binding(
-            output, input_buffer, axis, target_device._device_context_ptr()
-        )
-
-        return [output]
-
-    return handler
-
-
-for op_type in ops.SOFTMAX:
-    register_op_handler(op_type)(softmax_handler(op_type))
-
-
-# Cumsum operation
-
-
-@register_op_handler(mo.CumsumOp)
-def _handle_cumsum(
-    op: mo.CumsumOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.cumsum by dispatching to Mojo cumsum kernel.
-
-    Args:
-        op: The cumsum operation.
-        inputs: Input buffers - the input tensor. ``axis`` is a compile-time
-            ``index`` attribute.
-
-    Returns:
-        List containing the cumsum tensor buffer.
-    """
-    assert isinstance(inputs[0], Buffer)  # input tensor
-
-    input_buffer = inputs[0]
-
-    # Extract axis, exclusive and reverse from op attributes
-    axis = op.axis
-    exclusive = op.exclusive
-    reverse = op.reverse
-
-    # Output shape is the same as input shape (cumsum preserves shape)
-    output = Buffer(
-        shape=input_buffer.shape,
-        dtype=input_buffer.dtype,
-        device=input_buffer.device,
-    )
-
-    ops.misc_ops.CumSum(
-        output,
-        input_buffer,
-        axis,
-        exclusive,
-        reverse,
-    )
-
-    return [output]
+_register_reduce_axis_handlers()
 
 
 # Layer norm operations
