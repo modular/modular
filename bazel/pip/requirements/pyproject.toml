@@ -27,6 +27,7 @@ dependencies = [
   "flask",
   "fire ", # For mistral-evals.
   "gguf",
+  "grpcio",
   "hf-transfer",
   "httpx==0.27.2",
   "huggingface-hub[hf_xet]>=0.27.1",
