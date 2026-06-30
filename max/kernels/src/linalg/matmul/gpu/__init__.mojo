@@ -509,6 +509,38 @@ def _matmul_gpu[
             pdl_level=PDLLevel.ON,
         ](c, a, b, ctx)
 
+    # Helper for the SIMT (non-tensor-core) naive kernel. Works on any GPU
+    # architecture since it only uses scalar FMA — used as the universal
+    # fallback and for GPUs that lack tensor-core support for the dtype.
+    @always_inline
+    @parameter
+    def _naive_dispatch() raises:
+        logger.info("Executing: Naive MATMUL kernel")
+        comptime BLOCK_DIM = 16
+
+        comptime kernel = matmul_kernel_naive[
+            c_type,
+            a_type,
+            b_type,
+            type_of(c).LayoutType,
+            type_of(a).LayoutType,
+            type_of(b).LayoutType,
+            BLOCK_DIM,
+            transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_wrapper,
+        ]
+
+        ctx.enqueue_function[kernel](
+            c,
+            a,
+            b,
+            m,
+            n,
+            k,
+            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+            block_dim=(BLOCK_DIM, BLOCK_DIM),
+        )
+
     # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
     # TODO: Need to find a better dispatch strategy.
     var h100_matmul_cond = (
@@ -625,6 +657,17 @@ def _matmul_gpu[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_wrapper,
         ](c, a, b, ctx)
+
+    # Pre-Ampere NVIDIA GPUs (Volta sm_70, Turing sm_75) lack the bf16/tf32
+    # tensor cores and the `ldmatrix` codegen support that the tensor-core
+    # matmul and gemv kernels rely on. Route them to the SIMT naive kernel so
+    # that models still run on these GPUs (see issue #6653).
+    comptime if (
+        has_nvidia_gpu_accelerator()
+        and ctx.default_device_info.compute < A100.compute
+    ):
+        _naive_dispatch()
+        return
 
     comptime if (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()):
         return matmul_dispatch_sm100[
@@ -1356,31 +1399,7 @@ def _matmul_gpu[
             ]()
             return
 
-    logger.info("Executing: Naive MATMUL kernel")
-    comptime BLOCK_DIM = 16
-
-    comptime kernel = matmul_kernel_naive[
-        c_type,
-        a_type,
-        b_type,
-        type_of(c).LayoutType,
-        type_of(a).LayoutType,
-        type_of(b).LayoutType,
-        BLOCK_DIM,
-        transpose_b,
-        elementwise_lambda_fn=elementwise_lambda_wrapper,
-    ]
-
-    ctx.enqueue_function[kernel](
-        c,
-        a,
-        b,
-        m,
-        n,
-        k,
-        grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-        block_dim=(BLOCK_DIM, BLOCK_DIM),
-    )
+    _naive_dispatch()
 
 
 @always_inline
