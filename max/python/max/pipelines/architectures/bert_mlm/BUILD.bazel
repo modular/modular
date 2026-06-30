@@ -13,8 +13,6 @@ modular_py_library(
         requirement("transformers"),
         requirement("typing-extensions"),
         "//max/python/max/pipelines/architectures/bert",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/graph",
         # Hooks added for convenience for when we want to print the model layers
         "//max/python/max/nn/hooks",
