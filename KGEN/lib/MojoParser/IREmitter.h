@@ -259,6 +259,13 @@ public:
   PValue emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
                                        TraitType trait);
 
+  /// Emit an upcast of a type value (`valueExpr`) to a trait-typed value
+  /// (`toType`).
+  /// Returns a null `PValue` on a diagnosed error and `failure()` when the
+  /// conversion is not applicable.
+  FailureOr<PValue> emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
+                                               ASTType toType);
+
   /// This returns an instance of Tuple[...] with the specified element types
   /// installed.
   ASTType getBuiltinTupleInstantiation(SMLoc loc, ArrayRef<Type> elements);

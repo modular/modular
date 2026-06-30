@@ -10,7 +10,6 @@
 # way when a constraint is written directly on a trait parameter and when the
 # same type value is rebound to an ancestor trait parameter.
 
-from std.builtin.stubs import _type_is_eq_parse_time
 
 
 trait WithA:
@@ -18,7 +17,7 @@ trait WithA:
 
 
 @fieldwise_init
-struct Concat[a: WithA, b: WithA] where _type_is_eq_parse_time[a.A, b.A]():
+struct Concat[a: WithA, b: WithA] where a.A == b.A:
     pass
 
 
@@ -31,5 +30,5 @@ trait WithASum(WithA):
 # CHECK-SAME: #kgen.get_witness<:!WithA_WithASum_AnyType p, "constraint_trait_alias_upcast::WithA", "A">
 def concat_add[
     p: WithASum, o: WithA
-](lhs: p, rhs: o) -> Concat[p, o] where _type_is_eq_parse_time[p.A, o.A]():
+](lhs: p, rhs: o) -> Concat[p, o] where p.A == o.A:
     return {}

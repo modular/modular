@@ -1881,6 +1881,95 @@ bool IREmitter::canImplicitlyConvertToType(
   return isConvertible;
 }
 
+FailureOr<PValue>
+IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
+                                      ASTType toType) {
+  ASTType fromType = valueExpr.ir.getRValueType();
+  auto emitFnLiteralUpCastToTrait = [&](TypedAttr fnPValue,
+                                        AnyTraitType anyTrait) {
+    TraitType closureTrait = anyTrait.getTraitType();
+    if (auto traitDecl = getClosureTraitDecl(shared, closureTrait)) {
+      ASTType structWrapper =
+          shared.getClosureEmitter().getConcreteClosureWrapperTypeForFnSymbol(
+              declScope, valueExpr.expr->getLoc(), fnPValue);
+      (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
+          structWrapper, traitDecl);
+      return emitMetaTypeToTraitConversion(
+          {PValue(structWrapper), valueExpr.expr}, closureTrait);
+    }
+    // FnTypeGeneratorType is still a non-struct type...
+    return bindNonStructTypeToTrait(valueExpr, anyTrait.getTraitType());
+  };
+  // Emit metatype conversions to trait types if the metatype implements
+  // the specified trait.
+  if (auto anyTrait = sugarDynCast<AnyTraitType>(toType.extractMetaType())) {
+    TraitType trait = anyTrait.getTraitType();
+    if (sugarIsa<NonStructTypeType>(fromType)) {
+      // Conversions from MLIR types.
+      return bindNonStructTypeToTrait(valueExpr, trait);
+    }
+
+    if (sugarIsa<StructMetaMetaType>(fromType.extractMetaType()) ||
+        sugarIsa<AnyTraitType>(fromType.extractMetaType())) {
+      // Augment the witness table of closure wrapper with rebind if
+      // necessary. We do this for every closure trait in the type.
+      for (const auto &symbol : trait.getSymbols()) {
+        auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+        if (auto traitDeclOp =
+                dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
+            traitDeclOp && traitDeclOp.getDefinesClosure()) {
+          (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
+              fromType, &symbolDecl);
+        }
+      }
+      // Conversions from structs or traits.
+      return emitMetaTypeToTraitConversion(valueExpr, trait);
+    }
+
+    if (auto fnGen =
+            sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaType>(fromType)) {
+      return emitFnLiteralUpCastToTrait(fnGen.getType().getSymbolConstantAttr(),
+                                        anyTrait);
+    }
+  }
+
+  // We can convert from AnyTraitType[Derived] to AnyTraitType[Base].
+  // This is a conversion of things like "the Movable type" (which has
+  // type "AnyTraitType[Movable]") to "AnyTraitType[AnyType]".
+  if (auto anyTrait = sugarDynCast<AnyTraitType>(toType)) {
+    if (auto fnGen = sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaMetaType>(
+            fromType)) {
+      auto closureMetaType = emitFnLiteralUpCastToTrait(
+          fnGen.getType().getType().getSymbolConstantAttr(), anyTrait);
+      return PValue(TypeParamAttr::get(closureMetaType.getType(), anyTrait));
+    }
+
+    PValue typePValue = valueExpr.ir.getIfPValue();
+    if (!typePValue) {
+      emitError(valueExpr.expr->getLoc(),
+                "existentials are not supported yet!");
+      return PValue();
+    }
+
+    ASTType concreteType;
+    if (auto rvAnyTrait = sugarDynCast<AnyTraitType>(fromType)) {
+      concreteType = ASTType(rvAnyTrait.getTraitType());
+    } else if (auto mmType = sugarDynCast<StructMetaMetaType>(fromType)) {
+      concreteType = ASTType(mmType.getType());
+    }
+
+    if (concreteType &&
+        concreteType.checkConformance(anyTrait.getTraitType(), shared, {}) ==
+            ConformanceResult::Yes) {
+      // This is just the trait itself, not a conformance, just upcast.
+      return PValue(TypeParamAttr::get(ASTType(typePValue), anyTrait));
+    }
+  }
+
+  // Not applicable
+  return failure();
+}
+
 /// This emits an implicit conversion to the specified type if the types
 /// differ, including emitting any implicit constructor calls as well as
 /// implicit promotions like origin conversions.
@@ -1931,97 +2020,8 @@ CValue IREmitter::emitImplicitConversionToType(
     }
   }
 
-  auto emitTypeValueUpCastToTrait =
-      [this](ASTExprAnd<CValue> valueExpr, ASTType fromType,
-             ASTType toType) -> FailureOr<PValue> {
-    auto emitFnLiteralUpCastToTrait = [&](TypedAttr fnPValue,
-                                          AnyTraitType anyTrait) {
-      TraitType closureTrait = anyTrait.getTraitType();
-      if (auto traitDecl = getClosureTraitDecl(shared, closureTrait)) {
-        ASTType structWrapper =
-            shared.getClosureEmitter().getConcreteClosureWrapperTypeForFnSymbol(
-                declScope, valueExpr.expr->getLoc(), fnPValue);
-        (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
-            structWrapper, traitDecl);
-        return emitMetaTypeToTraitConversion(
-            {PValue(structWrapper), valueExpr.expr}, closureTrait);
-      }
-      // FnTypeGeneratorType is still a non-struct type...
-      return bindNonStructTypeToTrait(valueExpr, anyTrait.getTraitType());
-    };
-    // Emit metatype conversions to trait types if the metatype implements
-    // the specified trait.
-    if (auto anyTrait = sugarDynCast<AnyTraitType>(toType.extractMetaType())) {
-      TraitType trait = anyTrait.getTraitType();
-      if (sugarIsa<NonStructTypeType>(fromType)) {
-        // Conversions from MLIR types.
-        return bindNonStructTypeToTrait(valueExpr, trait);
-      }
-
-      if (sugarIsa<StructMetaMetaType>(fromType.extractMetaType()) ||
-          sugarIsa<AnyTraitType>(fromType.extractMetaType())) {
-        // Augment the witness table of closure wrapper with rebind if
-        // necessary. We do this for every closure trait in the type.
-        for (const auto &symbol : trait.getSymbols()) {
-          auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
-          if (auto traitDeclOp =
-                  dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
-              traitDeclOp && traitDeclOp.getDefinesClosure()) {
-            (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
-                fromType, &symbolDecl);
-          }
-        }
-        // Conversions from structs or traits.
-        return emitMetaTypeToTraitConversion(valueExpr, trait);
-      }
-
-      if (auto fnGen =
-              sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaType>(fromType)) {
-        return emitFnLiteralUpCastToTrait(
-            fnGen.getType().getSymbolConstantAttr(), anyTrait);
-      }
-    }
-
-    // We can convert from AnyTraitType[Derived] to AnyTraitType[Base].
-    // This is a conversion of things like "the Movable type" (which has
-    // type "AnyTraitType[Movable]") to "AnyTraitType[AnyType]".
-    if (auto anyTrait = sugarDynCast<AnyTraitType>(toType)) {
-      if (auto fnGen =
-              sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaMetaType>(
-                  fromType)) {
-        auto closureMetaType = emitFnLiteralUpCastToTrait(
-            fnGen.getType().getType().getSymbolConstantAttr(), anyTrait);
-        return PValue(TypeParamAttr::get(closureMetaType.getType(), anyTrait));
-      }
-
-      PValue typePValue = valueExpr.ir.getIfPValue();
-      if (!typePValue) {
-        emitError(valueExpr.expr->getLoc(),
-                  "existentials are not supported yet!");
-        return PValue();
-      }
-
-      ASTType concreteType;
-      if (auto rvAnyTrait = sugarDynCast<AnyTraitType>(fromType)) {
-        concreteType = ASTType(rvAnyTrait.getTraitType());
-      } else if (auto mmType = sugarDynCast<StructMetaMetaType>(fromType)) {
-        concreteType = ASTType(mmType.getType());
-      }
-
-      if (concreteType &&
-          concreteType.checkConformance(anyTrait.getTraitType(), shared, {}) ==
-              ConformanceResult::Yes) {
-        // This is just the trait itself, not a conformance, just upcast.
-        return PValue(TypeParamAttr::get(ASTType(typePValue), anyTrait));
-      }
-    }
-
-    // Not applicable
-    return failure();
-  };
-
   FailureOr<PValue> typeValueCast =
-      emitTypeValueUpCastToTrait(valueExpr, rvType, requiredType);
+      emitTypeValueUpCastToTrait(valueExpr, requiredType);
   // This handles nullptr case too.
   if (succeeded(typeValueCast))
     return emitCResult(*typeValueCast, expr, dest);
@@ -2065,8 +2065,8 @@ CValue IREmitter::emitImplicitConversionToType(
         // TODO(MOCO-2742): overwriting the type below should not be necessary.
         fromEltTp = ASTType(elt).extractMetaType();
         if (fromEltTp.mlirType != toEltTp.mlirType) {
-          FailureOr<PValue> castToOr = emitTypeValueUpCastToTrait(
-              {elt, valueExpr.expr}, fromEltTp, toEltTp);
+          FailureOr<PValue> castToOr =
+              emitTypeValueUpCastToTrait({elt, valueExpr.expr}, toEltTp);
           if (failed(castToOr) || castToOr->isNull())
             return {};
           converted.push_back(*castToOr);
