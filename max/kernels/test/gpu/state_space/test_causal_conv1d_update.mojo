@@ -26,9 +26,7 @@ from layout import (
 from std.random import rand
 from state_space.causal_conv1d import (
     causal_conv1d_update_cpu,
-    causal_conv1d_update_cpu_no_bias,
     causal_conv1d_update_gpu,
-    causal_conv1d_update_gpu_no_bias,
 )
 from std.testing import TestSuite, assert_almost_equal
 
@@ -210,92 +208,53 @@ def run_causal_conv1d_update_gpu[
         row_major(batch, dim, seqlen),
     )
 
-    # Run GPU kernel
+    # Run GPU kernel (bias presence selected at runtime via Int8(has_bias);
+    # bias_device_tt is always supplied but only read when has_bias is True).
     comptime kNThreads = 128
     with ctx.push_context():
-        if has_bias:
-            var compiled_func = ctx.compile_function[
-                causal_conv1d_update_gpu[
-                    dtype,
-                    dtype,
-                    dtype,
-                    dtype,
-                    dtype,
-                    kNThreads,
-                    input_device_tt.LayoutType,
-                    conv_state_device_tt.LayoutType,
-                    weight_device_tt.LayoutType,
-                    output_device_tt.LayoutType,
-                    bias_device_tt.LayoutType,
-                ]
-            ]()
-            ctx.enqueue_function(
-                compiled_func,
-                batch,
-                dim,
-                seqlen,
-                width,
-                state_len,
-                input_device_tt,
-                conv_state_device_tt,
-                weight_device_tt,
-                output_device_tt,
-                bias_device_tt,
-                x_batch_stride,
-                x_c_stride,
-                x_l_stride,
-                conv_state_batch_stride,
-                conv_state_c_stride,
-                conv_state_l_stride,
-                weight_c_stride,
-                weight_width_stride,
-                out_batch_stride,
-                out_c_stride,
-                out_l_stride,
-                silu_activation_int8,
-                grid_dim=(batch, ceildiv(dim, kNThreads)),
-                block_dim=(kNThreads),
-            )
-        else:
-            var compiled_func = ctx.compile_function[
-                causal_conv1d_update_gpu_no_bias[
-                    dtype,
-                    dtype,
-                    dtype,
-                    dtype,
-                    kNThreads,
-                    input_device_tt.LayoutType,
-                    conv_state_device_tt.LayoutType,
-                    weight_device_tt.LayoutType,
-                    output_device_tt.LayoutType,
-                ]
-            ]()
-            ctx.enqueue_function(
-                compiled_func,
-                batch,
-                dim,
-                seqlen,
-                width,
-                state_len,
-                input_device_tt,
-                conv_state_device_tt,
-                weight_device_tt,
-                output_device_tt,
-                x_batch_stride,
-                x_c_stride,
-                x_l_stride,
-                conv_state_batch_stride,
-                conv_state_c_stride,
-                conv_state_l_stride,
-                weight_c_stride,
-                weight_width_stride,
-                out_batch_stride,
-                out_c_stride,
-                out_l_stride,
-                silu_activation_int8,
-                grid_dim=(batch, ceildiv(dim, kNThreads)),
-                block_dim=(kNThreads),
-            )
+        var compiled_func = ctx.compile_function[
+            causal_conv1d_update_gpu[
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                kNThreads,
+                input_device_tt.LayoutType,
+                conv_state_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                output_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
+            ]
+        ]()
+        ctx.enqueue_function(
+            compiled_func,
+            batch,
+            dim,
+            seqlen,
+            width,
+            state_len,
+            input_device_tt,
+            conv_state_device_tt,
+            weight_device_tt,
+            output_device_tt,
+            bias_device_tt,
+            x_batch_stride,
+            x_c_stride,
+            x_l_stride,
+            conv_state_batch_stride,
+            conv_state_c_stride,
+            conv_state_l_stride,
+            weight_c_stride,
+            weight_width_stride,
+            out_batch_stride,
+            out_c_stride,
+            out_l_stride,
+            Int8(has_bias),
+            silu_activation_int8,
+            grid_dim=(batch, ceildiv(dim, kNThreads)),
+            block_dim=(kNThreads),
+        )
 
     # Copy results back from device
     with ctx.push_context():
@@ -321,66 +280,37 @@ def run_causal_conv1d_update_gpu[
     )
 
     # Run CPU reference
-    if has_bias:
-        causal_conv1d_update_cpu[
-            dtype,
-            dtype,
-            dtype,
-            dtype,
-            dtype,
-        ](
-            batch,
-            dim,
-            seqlen,
-            width,
-            state_len,
-            input_tt,
-            conv_state_cpu_tt,
-            weight_tt,
-            result_cpu_tt,
-            bias_tt,
-            x_batch_stride,
-            x_c_stride,
-            x_l_stride,
-            conv_state_batch_stride,
-            conv_state_c_stride,
-            conv_state_l_stride,
-            weight_c_stride,
-            weight_width_stride,
-            out_batch_stride,
-            out_c_stride,
-            out_l_stride,
-            silu_activation,
-        )
-    else:
-        causal_conv1d_update_cpu_no_bias[
-            dtype,
-            dtype,
-            dtype,
-            dtype,
-        ](
-            batch,
-            dim,
-            seqlen,
-            width,
-            state_len,
-            input_tt,
-            conv_state_cpu_tt,
-            weight_tt,
-            result_cpu_tt,
-            x_batch_stride,
-            x_c_stride,
-            x_l_stride,
-            conv_state_batch_stride,
-            conv_state_c_stride,
-            conv_state_l_stride,
-            weight_c_stride,
-            weight_width_stride,
-            out_batch_stride,
-            out_c_stride,
-            out_l_stride,
-            silu_activation,
-        )
+    causal_conv1d_update_cpu[
+        dtype,
+        dtype,
+        dtype,
+        dtype,
+        dtype,
+        has_bias,
+    ](
+        batch,
+        dim,
+        seqlen,
+        width,
+        state_len,
+        input_tt,
+        conv_state_cpu_tt,
+        weight_tt,
+        result_cpu_tt,
+        bias_tt,
+        x_batch_stride,
+        x_c_stride,
+        x_l_stride,
+        conv_state_batch_stride,
+        conv_state_c_stride,
+        conv_state_l_stride,
+        weight_c_stride,
+        weight_width_stride,
+        out_batch_stride,
+        out_c_stride,
+        out_l_stride,
+        silu_activation,
+    )
 
     # Compare results
     var flattened_size = batch * dim * seqlen
