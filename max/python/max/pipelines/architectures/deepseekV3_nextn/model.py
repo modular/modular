@@ -61,7 +61,7 @@ class DeepseekV3NextNInputs(DeepseekV3Inputs):
 class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
     model_config_cls: ClassVar[type[Any]] = DeepseekV3NextNConfig
     batch_processor_cls: ClassVar[type[DeepseekV3NextNBatchProcessor]] = (
-        DeepseekV3NextNBatchProcessor  # type: ignore[assignment]
+        DeepseekV3NextNBatchProcessor
     )
 
     def __init__(

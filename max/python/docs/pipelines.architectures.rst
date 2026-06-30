@@ -70,6 +70,7 @@ family.
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
    pipelines.architectures.unified_mtp_gemma4
+   pipelines.architectures.unified_mtp_glm5_2
    pipelines.architectures.wan
 
 Text generation
@@ -123,6 +124,7 @@ Text generation
    ~max.pipelines.architectures.unified_eagle_llama3
    ~max.pipelines.architectures.unified_mtp_deepseekV3
    ~max.pipelines.architectures.unified_mtp_gemma4
+   ~max.pipelines.architectures.unified_mtp_glm5_2
 
 Embeddings
 ----------

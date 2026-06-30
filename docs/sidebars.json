@@ -440,6 +440,7 @@
                 "max/api/python/pipelines.architectures.unified_eagle_llama3",
                 "max/api/python/pipelines.architectures.unified_mtp_deepseekV3",
                 "max/api/python/pipelines.architectures.unified_mtp_gemma4",
+                "max/api/python/pipelines.architectures.unified_mtp_glm5_2",
                 "max/api/python/pipelines.architectures.wan"
               ]
             },

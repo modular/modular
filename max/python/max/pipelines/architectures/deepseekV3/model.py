@@ -82,7 +82,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
     model_config_cls: ClassVar[type[Any]] = DeepseekV3Config
     batch_processor_cls: ClassVar[type[DeepseekV3BatchProcessor]] = (
-        DeepseekV3BatchProcessor  # type: ignore[assignment]
+        DeepseekV3BatchProcessor
     )
 
     def _create_model_config(

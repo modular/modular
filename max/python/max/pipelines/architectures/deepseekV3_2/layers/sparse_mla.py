@@ -234,6 +234,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         input_row_offsets: TensorValue,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
         prev_topk_indices: TensorValue | None = None,
+        reuse_prev_topk: bool = False,
     ) -> tuple[TensorValue, TensorValue]:
         wqkv, wqkv_scale = self.wqkv
         qkv = quantized_matmul(
@@ -262,7 +263,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
 
         freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
-        if self.indexer is not None:
+        if self.indexer is not None and not reuse_prev_topk:
             # ``full`` layer: run the lightning indexer and select top-k keys.
             topk_indices = self.indexer(
                 x,
@@ -490,6 +491,7 @@ class DataParallelSparseLatentAttentionWithRopeFp8(
         input_row_offsets: Sequence[TensorValue],
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
         prev_topk_indices: Sequence[TensorValue] | None = None,
+        reuse_prev_topk: bool = False,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -550,6 +552,7 @@ class DataParallelSparseLatentAttentionWithRopeFp8(
                 input_row_offsets=input_row_offsets[i],
                 mla_prefill_metadata=mla_prefill_metadata_i,
                 prev_topk_indices=prev_topk_i,
+                reuse_prev_topk=reuse_prev_topk,
             )
             outs.append(out_i)
             topk_indices.append(topk_i)
@@ -602,6 +605,7 @@ class TensorParallelSparseLatentAttentionWithRopeFp8(
         input_row_offsets: Sequence[TensorValue],
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
         prev_topk_indices: Sequence[TensorValue] | None = None,
+        reuse_prev_topk: bool = False,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -646,6 +650,7 @@ class TensorParallelSparseLatentAttentionWithRopeFp8(
                 prev_topk_indices=(
                     prev_topk_indices[i] if prev_topk_indices else None
                 ),
+                reuse_prev_topk=reuse_prev_topk,
             )
             outs.append(out_i)
             topk_indices.append(topk_i)

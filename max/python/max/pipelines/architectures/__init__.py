@@ -298,6 +298,11 @@ def register_all_models() -> None:
             ".unified_mtp_gemma4",
             "unified_mtp_gemma4_arch",
         ),
+        _LazyArch(
+            "UnifiedMTPGlmMoeDsaForCausalLM",
+            ".unified_mtp_glm5_2",
+            "unified_mtp_glm5_2_arch",
+        ),
         _LazyArch("WanPipeline", ".wan", "wan_arch"),
         _LazyArch("WanImageToVideoPipeline", ".wan", "wan_i2v_arch"),
         _LazyArch("ZImagePipeline", ".z_image_modulev3", "z_image_arch"),

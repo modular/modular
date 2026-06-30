@@ -997,6 +997,20 @@ class PipelineConfig(ConfigFileModel):
                 target_archs[0] = (
                     "UnifiedMTPMiniMaxM3SparseForConditionalGeneration"
                 )
+        if target_archs[0] == "GlmMoeDsaForCausalLM":
+            # GLM-5.2 bakes a NextN MTP layer into the target checkpoint, so
+            # there is no separate draft model. GLM-5.1 shares the arch name
+            # but has no MTP layer; only override when MTP weights exist.
+            has_mtp = (
+                getattr(
+                    self.model.huggingface_config,
+                    "num_nextn_predict_layers",
+                    0,
+                )
+                or 0
+            ) > 0
+            if self.draft_model is None and has_mtp:
+                target_archs[0] = "UnifiedMTPGlmMoeDsaForCausalLM"
 
     def resolve(
         self,
