@@ -168,59 +168,19 @@ class YourConfig(Llama3Config):
         return config
 ```
 
-## Map weight names
+## Map checkpoint weights
 
-You can't load Hugging Face weights directly into a MAX model because both
-frameworks derive weight names as attribute paths through an `nn.Module`
-hierarchy, and those hierarchies don't match. To load weights, you need a
-function that translates Hugging Face checkpoint keys to MAX weight slot names.
+When you construct your MAX `Module`, you declare each weight with a name,
+shape, dtype, and quantization encoding. Checkpoint weights rarely match your
+declared weights, so you write a weight adapter function. The function
+converts the checkpoint into the weights your `Module` expects.
 
-The model's `.safetensors.index.json` file (in the **Files and versions** tab
-on Hugging Face) shows the checkpoint's key names and shapes. Use it to
-identify the prefix and naming patterns your weight adapter must translate:
+Renaming is the most common transformation needed in a weight adapter. However,
+you might also need to cast dtypes, drop weights the `Module` doesn't use, and
+transform tensor layouts. To learn how to implement these transformations, see
+[Write a weight adapter](/max/develop/weight-adapters).
 
-```text
-model.embed_tokens.weight                    [vocab_size, hidden_size]  BF16
-model.layers.0.input_layernorm.weight        [hidden_size]              BF16
-model.layers.0.self_attn.q_proj.weight       [hidden_size, hidden_size] BF16
-model.layers.0.mlp.gate_proj.weight          [ffn_size, hidden_size]    BF16
-model.norm.weight                            [hidden_size]              BF16
-```
-
-The most common transformation is stripping a top-level prefix. A rename map
-and a conversion function registered in `arch.py` are all you need to handle
-it:
-
-```python title="weight_adapters.py"
-YOUR_MODEL_SAFETENSOR_MAPPING = {
-    "model.": "",  # removes the top-level "model." prefix
-}
-
-# pass this function to SupportedArchitecture(weight_adapters=...) in arch.py
-def convert_safetensor_state_dict(state_dict, huggingface_config, model_config):
-    ...
-```
-
-After MAX compiles the compute graph, it walks the model's `state_dict()` to
-get a list of named weight slots. It calls your adapter to translate Hugging
-Face checkpoint keys into slot names, then fills each slot by name. For all
-weights to load correctly, your adapter must map every checkpoint key to a slot
-name that exists in the model, and the attribute path your `nn.Module`
-hierarchy assigns to each parameter must match what the adapter returns. For
-quantized models, check the precision of weights and scales and cast to match
-kernel expectations before returning them from the adapter.
-
-MAX supports multiple weight formats through
-[`load_weights()`](/max/api/python/generated/max.graph.weights.load_weights/):
-
-- `.safetensors` (Safetensors)
-- `.gguf` (GGUF)
-
-Write a separate adapter function for each format you need to support, following
-the same rename-map pattern. For the full API, see
-[`max.graph.weights`](/max/api/python/graph.weights/).
-
-### FP8 and FP4 checkpoints
+:::note FP8 and FP4 checkpoints
 
 For architectures that load FP8 or FP4 checkpoints, use
 [`QuantFormat`](/max/api/python/generated/max.nn.QuantFormat) and
@@ -230,6 +190,8 @@ For architectures that load FP8 or FP4 checkpoints, use
 per-layer scaling settings: which layers are quantized, the granularity and
 dtype of weight and activation scales, and the block sizes that the
 hardware-accelerated kernels require.
+
+:::
 
 ## Connect to the KV cache
 
@@ -420,13 +382,11 @@ file in `layers/` rather than putting everything in `model.py`.
 
 ## Expose the architecture
 
-<!-- rumdl-disable MD013 -->
 The `arch.py` file ties the rest of the package together. It should include one
 or more
 [`SupportedArchitecture`](/max/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)
-instances that point MAX at your config class, model class, weight
-adapters, and more:
-<!-- rumdl-enable MD013 -->
+instances that point MAX at your config class, model class, weight adapters, and
+more:
 
 ```python title="arch.py"
 qwen2_arch = SupportedArchitecture(
