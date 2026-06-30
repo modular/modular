@@ -25,8 +25,8 @@ from layout import (
 )
 from std.random import rand
 from state_space.causal_conv1d import (
-    causal_conv1d_channel_first_fwd_cpu,
     causal_conv1d_channel_first_fwd_gpu,
+    causal_conv1d_fwd_cpu,
 )
 from std.testing import TestSuite, assert_almost_equal
 
@@ -51,6 +51,9 @@ def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
 def run_causal_conv1d_gpu[
     dtype: DType,
     activation: StaticString,
+    kNThreads: Int = 128,
+    kNElts: Int = 4,
+    has_seq_idx: Bool = False,
 ](
     batch: Int,
     dim: Int,
@@ -59,7 +62,13 @@ def run_causal_conv1d_gpu[
     ctx: DeviceContext,
     rtol: Float64 = 0.01,
 ) raises:
-    """Test causal conv1d GPU kernel against CPU reference."""
+    """Test causal conv1d GPU kernel against the CPU reference.
+
+    When `has_seq_idx` is set, a packed-sequence mask is supplied (two segments
+    split at seqlen//2) so the GPU scalar fallback — which the vectorized fast
+    path defers to whenever seq_idx is active — is exercised against the CPU
+    reference computing the same masked convolution.
+    """
     # Allocate host memory
     comptime layout_3d = Layout.row_major[3]()
     comptime layout_2d = Layout.row_major[2]()
@@ -77,6 +86,12 @@ def run_causal_conv1d_gpu[
     var bias_heap = ctx.enqueue_create_host_buffer[dtype](dim)
     var bias_h = LayoutTensor[dtype, layout_1d, _](
         bias_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
+    )
+    # seq_idx (B, L) packed-sequence tags. Always allocated (passed to both the
+    # CPU ref and the GPU kernel); only read when has_seq_idx is True.
+    var seq_idx_heap = ctx.enqueue_create_host_buffer[dtype](batch * seqlen)
+    var seq_idx_h = LayoutTensor[dtype, layout_2d, _](
+        seq_idx_heap, RuntimeLayout[layout_2d].row_major(Index(batch, seqlen))
     )
     var result_gpu_heap = ctx.enqueue_create_host_buffer[dtype](
         batch * dim * seqlen
@@ -97,6 +112,14 @@ def run_causal_conv1d_gpu[
     rand[dtype](input_h.ptr, input_h.size())
     rand[dtype](weight_h.ptr, weight_h.size())
     rand[dtype](bias_h.ptr, bias_h.size())
+    # Two packed segments split at seqlen // 2 (so taps near the split are
+    # masked); a single segment (all zeros) otherwise.
+    var split = seqlen // 2
+    for b in range(batch):
+        for l in range(seqlen):
+            seq_idx_h.ptr[b * seqlen + l] = Scalar[dtype](
+                1 if (has_seq_idx and l >= split) else 0
+            )
 
     var input_buf = input_h
     var weight_buf = weight_h
@@ -113,6 +136,8 @@ def run_causal_conv1d_gpu[
     var out_c_stride: UInt32 = UInt32(seqlen)
     var out_l_stride: UInt32 = 1
     var bias_stride: UInt32 = 1
+    var seq_idx_batch_stride: UInt32 = UInt32(seqlen)
+    var seq_idx_l_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
 
@@ -128,22 +153,27 @@ def run_causal_conv1d_gpu[
     var result_cpu_tt = TileTensor(
         result_cpu_buf.ptr, row_major(batch, dim, seqlen)
     )
+    var seq_idx_tt = TileTensor(seq_idx_h.ptr, row_major(batch, seqlen))
 
-    # Run CPU reference
-    causal_conv1d_channel_first_fwd_cpu[
+    # Run CPU reference (same has_seq_idx as the GPU launch below).
+    causal_conv1d_fwd_cpu[
         dtype,
         dtype,
         dtype,
         dtype,
+        dtype,
+        True,
+        has_seq_idx,
     ](
         batch,
         dim,
         seqlen,
         width,
-        input_tt,
-        weight_tt,
+        input_tt.as_immut(),
+        weight_tt.as_immut(),
         result_cpu_tt,
-        bias_tt,
+        bias_tt.as_immut(),
+        seq_idx_tt.as_immut(),
         x_batch_stride,
         x_c_stride,
         x_l_stride,
@@ -153,6 +183,8 @@ def run_causal_conv1d_gpu[
         out_c_stride,
         out_l_stride,
         bias_stride,
+        seq_idx_batch_stride,
+        seq_idx_l_stride,
         silu_activation,
     )
 
@@ -160,6 +192,7 @@ def run_causal_conv1d_gpu[
     var input_device = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
     var weight_device = ctx.enqueue_create_buffer[dtype](dim * width)
     var bias_device = ctx.enqueue_create_buffer[dtype](dim)
+    var seq_idx_device = ctx.enqueue_create_buffer[dtype](batch * seqlen)
     var output_device = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
 
     # Copy data to device
@@ -167,6 +200,7 @@ def run_causal_conv1d_gpu[
         ctx.enqueue_copy(input_device, input_buf.ptr)
         ctx.enqueue_copy(weight_device, weight_buf.ptr)
         ctx.enqueue_copy(bias_device, bias_buf.ptr)
+        ctx.enqueue_copy(seq_idx_device, seq_idx_h.ptr)
 
     # Create TileTensors for GPU kernel
     var input_device_tt = TileTensor(
@@ -183,183 +217,77 @@ def run_causal_conv1d_gpu[
             dim,
         ),
     )
+    var seq_idx_device_tt = TileTensor(
+        seq_idx_device,
+        row_major(batch, seqlen),
+    )
     var output_device_tt = TileTensor(
         output_device,
         row_major(batch, dim, seqlen),
     )
 
-    # Run GPU kernel
-    comptime kNThreads = 128
-    comptime kNElts = 4
+    # Run GPU kernel. seq_idx is unused (has_seq_idx=False); bias_device_tt
+    # stands in as a valid tensor argument and is never dereferenced.
+    var silu_activation_int8 = Int8(silu_activation)
+
+    @parameter
+    @always_inline
+    def launch[kWidth: Int]() raises:
+        var compiled_func = ctx.compile_function[
+            causal_conv1d_channel_first_fwd_gpu[
+                dtype,
+                dtype,
+                dtype,
+                kNThreads,
+                kWidth,
+                kNElts,
+                dtype,
+                dtype,
+                input_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                output_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
+                seq_idx_device_tt.LayoutType,
+            ]
+        ]()
+        with ctx.push_context():
+            ctx.enqueue_function(
+                compiled_func,
+                batch,
+                dim,
+                seqlen,
+                width,
+                input_device_tt.as_immut(),
+                weight_device_tt.as_immut(),
+                output_device_tt,
+                bias_device_tt.as_immut(),
+                seq_idx_device_tt.as_immut(),
+                x_batch_stride,
+                x_c_stride,
+                x_l_stride,
+                weight_c_stride,
+                weight_width_stride,
+                out_batch_stride,
+                out_c_stride,
+                out_l_stride,
+                bias_stride,
+                seq_idx_batch_stride,
+                seq_idx_l_stride,
+                Int8(True),
+                Int8(has_seq_idx),
+                silu_activation_int8,
+                grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
+                block_dim=(kNThreads),
+            )
 
     if width == 1:
-        comptime kWidth = 1
-        var compiled_func = ctx.compile_function[
-            causal_conv1d_channel_first_fwd_gpu[
-                dtype,
-                dtype,
-                dtype,
-                kNThreads,
-                kWidth,
-                kNElts,
-                dtype,
-                input_device_tt.LayoutType,
-                weight_device_tt.LayoutType,
-                output_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
-            ]
-        ]()
-        var silu_activation_int8 = Int8(silu_activation)
-        with ctx.push_context():
-            ctx.enqueue_function(
-                compiled_func,
-                batch,
-                dim,
-                seqlen,
-                width,
-                input_device_tt,
-                weight_device_tt,
-                output_device_tt,
-                bias_device_tt,
-                x_batch_stride,
-                x_c_stride,
-                x_l_stride,
-                weight_c_stride,
-                weight_width_stride,
-                out_batch_stride,
-                out_c_stride,
-                out_l_stride,
-                bias_stride,
-                silu_activation_int8,
-                grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
-                block_dim=(kNThreads),
-            )
+        launch[1]()
     elif width == 2:
-        comptime kWidth = 2
-        var compiled_func = ctx.compile_function[
-            causal_conv1d_channel_first_fwd_gpu[
-                dtype,
-                dtype,
-                dtype,
-                kNThreads,
-                kWidth,
-                kNElts,
-                dtype,
-                input_device_tt.LayoutType,
-                weight_device_tt.LayoutType,
-                output_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
-            ]
-        ]()
-        var silu_activation_int8 = Int8(silu_activation)
-        with ctx.push_context():
-            ctx.enqueue_function(
-                compiled_func,
-                batch,
-                dim,
-                seqlen,
-                width,
-                input_device_tt,
-                weight_device_tt,
-                output_device_tt,
-                bias_device_tt,
-                x_batch_stride,
-                x_c_stride,
-                x_l_stride,
-                weight_c_stride,
-                weight_width_stride,
-                out_batch_stride,
-                out_c_stride,
-                out_l_stride,
-                bias_stride,
-                silu_activation_int8,
-                grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
-                block_dim=(kNThreads),
-            )
+        launch[2]()
     elif width == 3:
-        comptime kWidth = 3
-        var compiled_func = ctx.compile_function[
-            causal_conv1d_channel_first_fwd_gpu[
-                dtype,
-                dtype,
-                dtype,
-                kNThreads,
-                kWidth,
-                kNElts,
-                dtype,
-                input_device_tt.LayoutType,
-                weight_device_tt.LayoutType,
-                output_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
-            ]
-        ]()
-        var silu_activation_int8 = Int8(silu_activation)
-        with ctx.push_context():
-            ctx.enqueue_function(
-                compiled_func,
-                batch,
-                dim,
-                seqlen,
-                width,
-                input_device_tt,
-                weight_device_tt,
-                output_device_tt,
-                bias_device_tt,
-                x_batch_stride,
-                x_c_stride,
-                x_l_stride,
-                weight_c_stride,
-                weight_width_stride,
-                out_batch_stride,
-                out_c_stride,
-                out_l_stride,
-                bias_stride,
-                silu_activation_int8,
-                grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
-                block_dim=(kNThreads),
-            )
+        launch[3]()
     elif width == 4:
-        comptime kWidth = 4
-        var compiled_func = ctx.compile_function[
-            causal_conv1d_channel_first_fwd_gpu[
-                dtype,
-                dtype,
-                dtype,
-                kNThreads,
-                kWidth,
-                kNElts,
-                dtype,
-                input_device_tt.LayoutType,
-                weight_device_tt.LayoutType,
-                output_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
-            ]
-        ]()
-        var silu_activation_int8 = Int8(silu_activation)
-        with ctx.push_context():
-            ctx.enqueue_function(
-                compiled_func,
-                batch,
-                dim,
-                seqlen,
-                width,
-                input_device_tt,
-                weight_device_tt,
-                output_device_tt,
-                bias_device_tt,
-                x_batch_stride,
-                x_c_stride,
-                x_l_stride,
-                weight_c_stride,
-                weight_width_stride,
-                out_batch_stride,
-                out_c_stride,
-                out_l_stride,
-                bias_stride,
-                silu_activation_int8,
-                grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
-                block_dim=(kNThreads),
-            )
+        launch[4]()
     else:
         raise Error(
             "Unsupported kernel width: only widths 1, 2, 3, 4 are supported"
@@ -455,4 +383,101 @@ def test_gpu_causal_conv1d_strict_tolerance() raises:
         return
     run_causal_conv1d_gpu[DType.float32, "silu"](
         1, 1536, 7, 4, ctx=ctx, rtol=0.0001
+    )
+
+
+def test_gpu_causal_conv1d_vectorized_fast_path() raises:
+    """Exercise the vectorized fast path (vector load + warp-shuffle halo).
+
+    The fast path engages only when L-contiguous, no seq_idx, kNElts-aligned,
+    and blocks are full: seqlen % (kNThreads * kNElts) == 0. The launcher here
+    uses kNThreads=128, kNElts=4, so seqlen must be a multiple of 512. Covers
+    every width (the halo spans width-1 prior elements, pulled across lanes by
+    warp shuffle) and both activations, with multiple channels/batches so the
+    per-(batch, channel) base offsets are exercised.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    for width in [1, 2, 3, 4]:
+        # Single full block (seqlen == kNThreads*kNElts) and two full blocks.
+        run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 512, width, ctx=ctx)
+        run_causal_conv1d_gpu[DType.float32, "silu"](2, 8, 512, width, ctx=ctx)
+        run_causal_conv1d_gpu[DType.float32, "silu"](1, 4, 1024, width, ctx=ctx)
+
+
+def test_gpu_causal_conv1d_vectorized_mamba_prefill() raises:
+    """Vectorized fast path at mamba prefill dimensions (dim=1536, L=512)."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_causal_conv1d_gpu[DType.float32, "silu"](1, 1536, 512, 4, ctx=ctx)
+
+
+def test_gpu_causal_conv1d_bf16_fast_path() raises:
+    """bf16 fast path: 128-bit load is kNElts=8, accumulation stays float32.
+
+    64 threads x 8 bf16 == 512-position tile, full utilization. bf16 carries
+    ~8 mantissa bits, so the tolerance is looser than fp32 but the float32
+    accumulator keeps it well within a few bf16 ULPs.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    for width in [1, 2, 3, 4]:
+        run_causal_conv1d_gpu[DType.bfloat16, "none", 64, 8](
+            2, 8, 512, width, ctx=ctx, rtol=0.03
+        )
+        run_causal_conv1d_gpu[DType.bfloat16, "silu", 64, 8](
+            1, 1536, 512, width, ctx=ctx, rtol=0.03
+        )
+
+
+def test_gpu_causal_conv1d_fp16_fast_path() raises:
+    """fp16 fast path: kNElts=8 (128-bit), float32 accumulation."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    for width in [2, 4]:
+        run_causal_conv1d_gpu[DType.float16, "silu", 64, 8](
+            1, 1536, 512, width, ctx=ctx, rtol=0.01
+        )
+
+
+def test_gpu_causal_conv1d_seq_idx() raises:
+    """Packed-sequence (seq_idx) path: the vectorized fast path defers to the
+    scalar fallback whenever seq_idx is active, so this validates that fallback
+    (with masking across the segment boundary) against the CPU reference.
+    Covers all widths and both a full-tile (L=512) and a small (L=16) shape.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    for width in [1, 2, 3, 4]:
+        run_causal_conv1d_gpu[DType.float32, "silu", 128, 4, True](
+            2, 8, 16, width, ctx=ctx
+        )
+        run_causal_conv1d_gpu[DType.float32, "silu", 128, 4, True](
+            1, 1536, 512, width, ctx=ctx
+        )
+
+
+def test_gpu_causal_conv1d_datacenter_scale() raises:
+    """Correctness at larger-model / datacenter shapes.
+
+    Wide channels (grid.y = dim) and long sequences (grid.x scales with L) and
+    multi-stream batches (grid.z = batch). Confirms the kernel stays correct and
+    within grid limits (dim, batch <= 65535) at scale; the op launches the same
+    64x4 config, whose grid.x grows with L so every block stays full.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    # Wide model (mamba-1.4B-ish dim) with a long prefill.
+    run_causal_conv1d_gpu[DType.float32, "silu"](1, 4096, 2048, 4, ctx=ctx)
+    # Batched prefill (multi-stream serving).
+    run_causal_conv1d_gpu[DType.float32, "silu"](8, 1536, 512, 4, ctx=ctx)
+    # bf16 wide model.
+    run_causal_conv1d_gpu[DType.bfloat16, "silu", 64, 8](
+        2, 5120, 512, 4, ctx=ctx, rtol=0.03
     )

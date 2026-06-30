@@ -200,6 +200,8 @@ _CPU_TESTS = glob(
             # Needs `-D fp32_scores/cadence` (gated FP32-scores path);
             # the generic glob can't pass them. Dedicated target below.
             "gpu/nn/bench_mla_prefill_v2.mojo",
+            "gpu/state_space/bench_causal_conv1d.mojo",
+            "gpu/state_space/bench_causal_conv1d_update.mojo",
         ],
     )
 ]
@@ -219,6 +221,8 @@ _CPU_TESTS = glob(
             # Needs `-D fp32_scores/cadence` (gated FP32-scores path);
             # the generic glob can't pass them. Dedicated target below.
             "gpu/nn/bench_mla_prefill_v2.mojo",
+            "gpu/state_space/bench_causal_conv1d.mojo",
+            "gpu/state_space/bench_causal_conv1d_update.mojo",
         ],
     )
 ]
@@ -254,6 +258,53 @@ build_test(
     name = "gpu/nn/bench_mla_prefill_v2.test",
     tags = ["gpu"],
     targets = ["gpu/nn/bench_mla_prefill_v2"],
+)
+
+# causal_conv1d bench needs the state_space kernel package (not in the glob deps).
+mojo_binary(
+    name = "gpu/state_space/bench_causal_conv1d",
+    srcs = ["gpu/state_space/bench_causal_conv1d.mojo"],
+    enable_assertions = False,
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:nn",
+        "//max:state_space",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/state_space/bench_causal_conv1d.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/state_space/bench_causal_conv1d"],
+)
+
+mojo_binary(
+    name = "gpu/state_space/bench_causal_conv1d_update",
+    srcs = ["gpu/state_space/bench_causal_conv1d_update.mojo"],
+    enable_assertions = False,
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:nn",
+        "//max:state_space",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/state_space/bench_causal_conv1d_update.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/state_space/bench_causal_conv1d_update"],
 )
 
 # Runnable GPU benchmark targets (mojo_test wrappers so they execute on the
