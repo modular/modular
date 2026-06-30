@@ -54,8 +54,12 @@ public:
     // or `_`, but STILL INSTALL default value unless unbound explicitly.
     kContextual = 1,
     // This typically means that there is explicit `...` in the parameter list.
-    // Allow producing partially bound type, also NOT install default values.
+    // Allow producing partially bound type, also NOT install default values
+    // (expect for inferred-only parameters).
     kWithEllipsis = 2,
+    // Unbind all parameters, there is no mojo syntax for the tier yet, only
+    // used by compiler.
+    kUnbindAll = 3,
   };
 
   /// This is the declaration that we do name lookup against.

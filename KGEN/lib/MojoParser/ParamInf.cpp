@@ -865,8 +865,9 @@ VerifiedParamBindings ParamInf::inferForStruct() {
   if (failed(inferFromParamList()))
     return {};
 
-  if (paramBindings.bindingKind != ParamBindings::kWithEllipsis &&
-      failed(inferFromDefaults())) {
+  if (paramBindings.bindingKind != ParamBindings::kUnbindAll &&
+      failed(inferFromDefaults(paramBindings.bindingKind ==
+                               ParamBindings::kWithEllipsis))) {
     return {};
   }
 
@@ -885,7 +886,7 @@ VerifiedParamBindings ParamInf::inferForStruct() {
 
 // Infer any missing parameter from defaulted value (this is supposed to be
 // invoked after both parameter list and argument list has been scanned).
-LogicalResult ParamInf::inferFromDefaults() {
+LogicalResult ParamInf::inferFromDefaults(bool installOnlyInferredOnly) {
 
   auto setDefault = [&](TypedAttr value, size_t idx) -> LogicalResult {
     // The default value is explicitly unbound.
@@ -922,6 +923,12 @@ LogicalResult ParamInf::inferFromDefaults() {
 
     // If available, we use a default parameter value.
     if (TypedAttr defaultParam = declaredParamPogs.getDefault(idx)) {
+      // Install default when seeing `...` only on inferred-only parameters.
+      if (installOnlyInferredOnly &&
+          declaredParamPogs.getPogs()[idx].getPassingKind() !=
+              PassingKind::Inferred)
+        continue;
+
       // Default parameter values may reference other parameter values, so we
       // need to evaluate these.
       // If the default value is dependent, and we can not fully resolve all its
@@ -930,6 +937,9 @@ LogicalResult ParamInf::inferFromDefaults() {
         return failure();
       continue;
     }
+
+    if (installOnlyInferredOnly)
+      continue;
 
     // FIXME: this need a more systematical fix.
     // Determine if we can use a default parameter for CTAD
@@ -977,6 +987,10 @@ LogicalResult ParamInf::inferFromDefaults() {
       }
     }
   }
+
+  // Stop here if this there is a `...`
+  if (installOnlyInferredOnly)
+    return success();
 
   // Do another pass to fill in empty variadic, we need to do it after user
   // provided default value is installed, the variadic might be dependent by

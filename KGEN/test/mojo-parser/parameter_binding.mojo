@@ -88,3 +88,21 @@ def use[K: KE & Copyable](e: Entry[K]):
     # Make sure we can look through sugar rebind due to `KE`.
     # CHECK: lit.call{{.*}}#kgen.get_witness<:!{{.*}} K, "{{.*}}Copyable", "copy($0)">
     var _k = (e.key).copy()
+
+
+# // -----
+
+
+struct MySpan[
+    mut: Bool = False,
+    //,
+]:
+    pass
+
+
+# CHECK:    lit.alias.decl *"F0{{.*}}": meta<!lit.struct<#MySpan <:!Bool ?>, <"mut": !Bool = {:scalar<bool> false}, +>>>
+comptime F0 = MySpan
+
+# `...` bind default values on inferred parameters.
+# CHECK:    lit.alias.decl *"F1{{.*}}": meta<!lit.struct<#MySpan <:!Bool {:scalar<bool> false}>>> =
+comptime F1 = MySpan[...]
