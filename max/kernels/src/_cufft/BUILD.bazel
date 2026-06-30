@@ -6,6 +6,7 @@ mojo_library(
     name = "_cufft",
     srcs = glob(["**/*.mojo"]),
     docs_base_path = "kernels",
+    use_production_compiler_for_asan = True,
     deps = [
         "@mojo//:std",
     ],

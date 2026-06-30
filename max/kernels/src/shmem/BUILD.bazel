@@ -28,6 +28,7 @@ mojo_library(
         ],
         "//conditions:default": [],
     }),
+    use_production_compiler_for_asan = True,
     validate_missing_docs = False,
     deps = [
         "//max:layout",

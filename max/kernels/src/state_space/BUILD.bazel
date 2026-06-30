@@ -8,6 +8,7 @@ mojo_library(
         ["*.mojo"],
         exclude = ["*_test.mojo"],
     ),
+    use_production_compiler_for_asan = True,
     validate_missing_docs = False,
     deps = [
         "//max:extensibility",

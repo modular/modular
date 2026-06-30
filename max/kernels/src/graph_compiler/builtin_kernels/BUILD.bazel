@@ -6,6 +6,7 @@ mojo_library(
     name = "builtin_kernels",
     srcs = glob(["**/*.mojo"]),
     docs_base_path = "kernels",
+    use_production_compiler_for_asan = True,
     validate_missing_docs = False,
     deps = [
         "//Kernels/lib/msa",
