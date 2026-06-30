@@ -35,13 +35,12 @@ def dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
     # First, check on exact value of M
     print("Checking exact m configs ...")
 
-    @parameter
     @always_inline
-    def rule_eq_nk(x: TuningConfigAMD) -> Bool:
+    def rule_eq_nk(x: TuningConfigAMD) {} -> Bool:
         return x.k == static_k and x.n == static_n
 
     # First, filter by static params N and K
-    comptime nk_idx_list = TuningTableAMD.query_index[rule_eq_nk]()
+    comptime nk_idx_list = TuningTableAMD.query_index(rule=rule_eq_nk)
 
     # equivalently:
     # - select n==static_n
@@ -51,12 +50,13 @@ def dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
 
     # Get unique the values of M in the config for the subset of NK indices.
     # Note: this is faster if numerically close values of M are placed close together in the list.
-    @parameter
     @always_inline
-    def get_m(x: TuningConfigAMD) -> Int:
+    def get_m(x: TuningConfigAMD) {} -> Int:
         return x.m
 
-    comptime m_values = TuningTableAMD.query_values[Int, get_m, nk_idx_list]()
+    comptime m_values = TuningTableAMD.query_values[Int, domain=nk_idx_list](
+        rule=get_m
+    )
     comptime expected_m_values: List[Int] = [1, 2, 16]
     comptime assert len(m_values) == len(expected_m_values)
 
@@ -65,9 +65,8 @@ def dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
 
     comptime for i in range(1, len(m_values)):
 
-        @parameter
         @always_inline
-        def rule_m(x: TuningConfigAMD) -> Bool:
+        def rule_m(x: TuningConfigAMD) {} -> Bool:
             return x.m == materialize[m_values[i]]()
 
         if materialize[m_values[i - 1]]() < m <= materialize[m_values[i]]():
@@ -80,9 +79,9 @@ def dispatch_matmul_amd[static_n: Int, static_k: Int](m: Int) raises:
                 materialize[m_values[i]](),
                 sep="",
             )
-            comptime idx_list = TuningTableAMD.query_index[
-                rule_m, domain=nk_idx_list
-            ]()
+            comptime idx_list = TuningTableAMD.query_index[domain=nk_idx_list](
+                rule=rule_m
+            )
 
             comptime if idx_list:
                 print("Found dispatch for next value of m", m)
@@ -99,13 +98,12 @@ def dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
     # First, check on exact value of M
     print("Checking exact m configs ...")
 
-    @parameter
     @always_inline
-    def rule_eq_nk(x: TuningConfigNvidia) -> Bool:
+    def rule_eq_nk(x: TuningConfigNvidia) {} -> Bool:
         return x.N == static_k and x.N == static_n
 
     # First, filter by static params N and K
-    comptime nk_idx_list = TuningTableNvidia.query_index[rule_eq_nk]()
+    comptime nk_idx_list = TuningTableNvidia.query_index(rule=rule_eq_nk)
 
     """
     equivalently:
@@ -117,14 +115,13 @@ def dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
 
     # Get unique the values of M in the config for the subset of NK indices.
     # Note: this is faster if numerically close values of M are placed close together in the list.
-    @parameter
     @always_inline
-    def get_m(x: TuningConfigNvidia) -> Int:
+    def get_m(x: TuningConfigNvidia) {} -> Int:
         return x.M
 
-    comptime m_values = TuningTableNvidia.query_values[
-        Int, get_m, nk_idx_list
-    ]()
+    comptime m_values = TuningTableNvidia.query_values[Int, domain=nk_idx_list](
+        rule=get_m
+    )
 
     comptime expected_m_values: List[Int] = [
         1,
@@ -144,9 +141,8 @@ def dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
 
     comptime for i in range(1, len(m_values)):
 
-        @parameter
         @always_inline
-        def rule_m(x: TuningConfigNvidia) -> Bool:
+        def rule_m(x: TuningConfigNvidia) {} -> Bool:
             return x.M == materialize[m_values[i]]()
 
         if materialize[m_values[i - 1]]() < m <= materialize[m_values[i]]():
@@ -160,8 +156,8 @@ def dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
                 sep="",
             )
             comptime idx_list = TuningTableNvidia.query_index[
-                rule_m, domain=nk_idx_list
-            ]()
+                domain=nk_idx_list
+            ](rule=rule_m)
 
             comptime if idx_list:
                 print("Found dispatch for next value of m", m)
