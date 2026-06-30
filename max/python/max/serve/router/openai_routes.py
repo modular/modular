@@ -117,6 +117,7 @@ from max.serve.schemas.openai import (
     MaxModel,
     Model,
     PromptTokensDetails,
+    ResponseFormat,
     TopLogprob,
     UnloadLoraRequest,
 )
@@ -139,13 +140,6 @@ from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
 from openai.types.create_embedding_response import Usage as EmbeddingUsage
-from openai.types.shared_params import (
-    ResponseFormatJSONObject as ResponseFormatJsonObject,
-)
-from openai.types.shared_params import (
-    ResponseFormatJSONSchema as ResponseFormatJsonSchema,
-)
-from openai.types.shared_params import ResponseFormatText as ResponseFormatText
 from PIL import Image
 from pydantic import AnyUrl, BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
@@ -1851,10 +1845,7 @@ def _validate_json_schema(json_schema: dict[str, Any]) -> None:
 
 
 def _create_response_format(
-    response_format: ResponseFormatText
-    | ResponseFormatJsonObject
-    | ResponseFormatJsonSchema
-    | None,
+    response_format: ResponseFormat | None,
     enable_response_format_schema: bool,
 ) -> TextGenerationResponseFormat | None:
     """Convert OpenAI response format to TextGenerationResponseFormat.
@@ -1896,7 +1887,13 @@ def _create_response_format(
         json_schema_param = cast(dict[str, Any], response_format).get(
             "json_schema", {}
         )
-        if (schema := json_schema_param.get("schema")) is not None:
+        schema = json_schema_param.get("schema")
+        if isinstance(schema, bool):
+            # Boolean JSON Schema: ``true`` -> any value, ``false`` ->
+            # unsatisfiable (``{"anyOf": [False]}`` compiles to an honest
+            # "Unsatisfiable schema" error; ``{"not": {}}`` does not).
+            json_schema = {} if schema else {"anyOf": [False]}
+        elif schema is not None:
             json_schema = dict(schema)
 
     # Validate the schema early to return 400 instead of crashing the model worker.

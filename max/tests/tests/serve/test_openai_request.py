@@ -21,7 +21,7 @@ bazel+mypy complain about this import not being available even though it is part
 Explicitly importing //max/python/max/serve/schemas in the test's BUILD file hasn't worked either.
 """
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from max.serve.schemas.openai import CreateChatCompletionRequest
@@ -551,6 +551,34 @@ def test_openai_chat_completion_accepts_explicit_null_tool_choice() -> None:
     }
     request = CreateChatCompletionRequest.model_validate(body)
     assert request.tool_choice is None
+
+
+def test_openai_response_format_schema_advertises_boolean() -> None:
+    """The generated JSON/OpenAPI schema must advertise the boolean ``schema``
+    so the published docs match what the endpoint actually accepts."""
+    schema = CreateChatCompletionRequest.model_json_schema()
+    schema_field = schema["$defs"]["JSONSchema"]["properties"]["schema"]
+    types = {
+        opt.get("type") for opt in schema_field.get("anyOf", [schema_field])
+    }
+    assert "boolean" in types
+
+
+@pytest.mark.parametrize("schema", [True, False])
+def test_openai_response_format_accepts_boolean_schema(schema: bool) -> None:
+    """A boolean is a valid JSON Schema; the request must accept it verbatim
+    (de-sugaring to a dict happens later, in ``_create_response_format``)."""
+    body = {
+        "model": "test",
+        "messages": [{"role": "user", "content": "hi"}],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "target", "schema": schema},
+        },
+    }
+    request = CreateChatCompletionRequest.model_validate(body)
+    response_format = cast(dict[str, Any], request.response_format)
+    assert response_format["json_schema"]["schema"] is schema
 
 
 def test_openai_chat_message_validates_structure() -> None:
