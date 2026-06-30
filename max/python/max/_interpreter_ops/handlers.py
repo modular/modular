@@ -28,7 +28,11 @@ import max._interpreter_ops as ops
 import numpy as np
 from max import _core, graph
 from max._core.dialects import builtin, kgen, mo, mosh
-from max._interpreter_ops import matmul_gc, unary_elementwise_gc
+from max._interpreter_ops import (
+    elementwise_binary_gc,
+    matmul_gc,
+    unary_elementwise_gc,
+)
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 
@@ -674,71 +678,49 @@ def _check_buffers_on_device(
             )
 
 
-# Binary elementwise operations
+# Binary elementwise operations (arithmetic, bitwise, and comparison)
 
 
-def binary_elementwise_handler(op_type: type) -> OpHandler:
-    op_binding = ops.BINARY_ELEMENTWISE[op_type]
+def _handle_binary_elementwise(
+    op: _core.Operation, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Dispatches an eager binary-elementwise op to its GC model.
 
-    def handler(
-        op: _core.Operation,
-        inputs: Sequence[Buffer | None],
-    ) -> Sequence[Buffer]:
-        assert isinstance(inputs[0], Buffer)
-        assert isinstance(inputs[1], Buffer)
+    Models are compiled once per (op, device, input dtype) at rank 1 (see
+    :func:`elementwise_binary_gc.binary_model`), so both operands are flattened
+    around the call and the result reshaped back (zero-copy views). The two
+    operands arrive already cast to a common dtype and broadcast to a common
+    shape, so a single rank-1 dtype keys the model exactly. The output dtype is
+    whatever the model produces — the same dtype for arithmetic/bitwise ops,
+    ``bool`` for the comparison predicates.
 
-        target_device = _get_target_device(op)
-        _check_buffers_on_device(inputs, target_device)
+    Args:
+        op: The binary-elementwise operation being handled.
+        inputs: The realized input buffers (``lhs``, ``rhs``).
 
-        output = Buffer(
-            shape=inputs[0].shape,
-            dtype=inputs[0].dtype,
-            device=target_device,
-        )
+    Returns:
+        A single-element list holding the result buffer.
+    """
+    lhs, rhs = inputs
+    assert isinstance(lhs, Buffer)
+    assert isinstance(rhs, Buffer)
 
-        op_binding(
-            output, inputs[0], inputs[1], target_device._device_context_ptr()
-        )
-
-        return [output]
-
-    return handler
-
-
-for op_type in ops.BINARY_ELEMENTWISE:
-    register_op_handler(op_type)(binary_elementwise_handler(op_type))
-
-
-def binary_comparison_handler(op_type: type) -> OpHandler:
-    op_binding = ops.BINARY_ELEMENTWISE_COMPARISON[op_type]
-
-    def handler(
-        op: _core.Operation,
-        inputs: Sequence[Buffer | None],
-    ) -> Sequence[Buffer]:
-        assert isinstance(inputs[0], Buffer)
-        assert isinstance(inputs[1], Buffer)
-
-        target_device = _get_target_device(op)
-        _check_buffers_on_device(inputs, target_device)
-
-        output = Buffer(
-            shape=inputs[0].shape,
-            dtype=DType.bool,
-            device=target_device,
-        )
-
-        op_binding(
-            output, inputs[0], inputs[1], target_device._device_context_ptr()
-        )
-
-        return [output]
-
-    return handler
+    model = elementwise_binary_gc.binary_model(type(op), lhs.device, lhs.dtype)
+    shape = elementwise_binary_gc.canonical_shape(lhs.shape)
+    lhs_view = lhs.view(lhs.dtype, shape)
+    rhs_view = rhs.view(rhs.dtype, shape)
+    (out,) = model(lhs_view, rhs_view)
+    return [out.view(out.dtype, lhs.shape)]
 
 
-for op_type in ops.BINARY_ELEMENTWISE_COMPARISON:
-    register_op_handler(op_type)(binary_comparison_handler(op_type))
+# Wrapped in a function so the BINARY_GC_OPS access is deferred past the import
+# cycle between this module and elementwise_binary_gc (via the package).
+def _register_binary_elementwise_handlers() -> None:
+    for op_type in elementwise_binary_gc.BINARY_GC_OPS:
+        register_op_handler(op_type)(_handle_binary_elementwise)
+
+
+_register_binary_elementwise_handlers()
 
 
 # Unary elementwise operations
@@ -1869,7 +1851,7 @@ def _handle_select(
         device=target_device,
     )
 
-    ops.elementwise_comparison_ops.Select(
+    ops.select_ops.Select(
         output,
         inputs[0],
         inputs[1],

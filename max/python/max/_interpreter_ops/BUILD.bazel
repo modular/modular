@@ -21,15 +21,7 @@ EXTRA_DEPS = {
         "//max:layout",
         "//max:builtin_kernels",
     ],
-    "elementwise_binary_ops": [
-        "//max:builtin_kernels",
-        "//max:extensibility",
-    ],
     "elementwise_cast_ops": [
-        "//max:builtin_kernels",
-        "//max:extensibility",
-    ],
-    "elementwise_comparison_ops": [
         "//max:builtin_kernels",
         "//max:extensibility",
     ],
@@ -52,6 +44,9 @@ EXTRA_DEPS = {
     "rms_norm_ops": [
         "//max:nn",
         "//max:extensibility",
+    ],
+    "select_ops": [
+        "//max:builtin_kernels",
     ],
     "softmax_ops": [
         "//max:nn",

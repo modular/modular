@@ -32,14 +32,37 @@ import json
 import os
 import platform
 import threading
+from collections.abc import Container
 from pathlib import Path
 
-from max import engine
+from max import _core, engine
 from max.driver import (
     Device,
     accelerator_architecture_name,
     accelerator_count,
 )
+
+
+def canonical_op_name(
+    op_type: type[_core.Operation], known_names: Container[str]
+) -> str:
+    """Canonical ``mo`` op-class name for an mo- or rmo-dialect *op_type*.
+
+    The ops library emits ``rmo`` ops while the GC caches key on ``mo`` names, and
+    the interpreter's name-based ``lookup_handler`` can dispatch either dialect
+    into a GC handler. ``rmo`` binary ops share the ``mo`` name (``AddOp``) but
+    other families are ``Mo``-prefixed (``rmo.MoExpOp`` vs ``mo.ExpOp``), so strip
+    a leading ``Mo`` when that yields a name in *known_names* (the module's ``mo``
+    op-name set), keeping an ``rmo`` dispatch on the same spec and cache entry the
+    ``mo`` sweep produced. Unknown names pass through (treated as unsupported).
+    """
+    name = op_type.__name__
+    if name in known_names:
+        return name
+    if name.startswith("Mo") and name[2:] in known_names:
+        return name[2:]
+    return name
+
 
 # Lazy-per-dispatch by default; ``=1`` precompiles the whole matrix at import
 # (MXF-508).
