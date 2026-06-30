@@ -27,6 +27,12 @@ using namespace M::KGEN;
 static Type
 tryConcretizeDeferredType(Type type,
                           ParameterEvaluationContext *evaluationContext) {
+  // An escaping parameter reference (a param of an enclosing `def(...)`
+  // signature) stays abstract until the callee is instantiated, so the type
+  // can't be built yet -- leave it deferred and skip the doomed parse.
+  if (EscapingReferenceFinder::check(type))
+    return type;
+
   auto deferredType = dyn_cast<MLIRDeferredType>(type);
   if (!deferredType)
     return type;

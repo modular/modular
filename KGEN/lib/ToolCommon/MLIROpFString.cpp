@@ -276,23 +276,9 @@ Operation *lowerFStringMLIROp(OpBuilder &builder, Location loc,
   parsedOp->remove();
   builder.insert(parsedOp);
 
-  // Parse-time verification was disabled to tolerate synthetic block-arg
-  // operands; re-verify now that real operands are wired in.
-  {
-    std::string verifyErrors;
-    llvm::raw_string_ostream errsOS(verifyErrors);
-    ScopedDiagnosticHandler diagHandler(context, [&](Diagnostic &diag) {
-      errsOS << diag.str() << "\n";
-      for (auto &note : diag.getNotes())
-        errsOS << "  note: " << note.str() << "\n";
-    });
-    if (failed(mlir::verify(parsedOp))) {
-      errorMsg =
-          "f-string MLIR op failed verification" + inTmpl + ": " + verifyErrors;
-      parsedOp->erase();
-      return nullptr;
-    }
-  }
+  // NOTE: this operation is not verified at this stage. KGENVerifier,
+  // which is invoked after Elaborator, will verify all operations
+  // from dialects used by Mojo: KGEN, LIT, POP, NVVM, HLCF, ROCDL.
 
   return parsedOp;
 }
