@@ -29,7 +29,7 @@ from state_space.selective_scan import softplus
 
 # LOG2E constant for converting exp to exp2 (faster on GPU)
 comptime LOG2E = 1.4426950408889634
-comptime MAX_DSTATE = 256  # Larger for Mamba-2 models
+comptime MAX_D_STATE = 256  # Larger for Mamba-2 models
 
 # Stride types for passing tensor strides to kernels
 comptime Strides1D = IndexList[1]
@@ -40,7 +40,7 @@ comptime Strides4D = IndexList[4]
 
 def varlen_selective_state_update_gpu[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
     state_LT: TensorLayout,
     x_LT: TensorLayout,
     dt_LT: TensorLayout,
@@ -76,13 +76,13 @@ def varlen_selective_state_update_gpu[
     state_batch_indices: TileTensor[
         DType.int32, state_batch_indices_LT, MutUntrackedOrigin
     ],
-    state_strides: Strides4D,  # (batch, nheads, dim, dstate)
+    state_strides: Strides4D,  # (batch, nheads, dim, d_state)
     x_strides: Strides3D,  # (batch, nheads, dim)
     dt_strides: Strides3D,  # (batch, nheads, dim)
     dt_bias_strides: Strides2D,  # (nheads, dim)
-    A_strides: Strides3D,  # (nheads, dim, dstate)
-    B_strides: Strides3D,  # (batch, ngroups, dstate)
-    C_strides: Strides3D,  # (batch, ngroups, dstate)
+    A_strides: Strides3D,  # (nheads, dim, d_state)
+    B_strides: Strides3D,  # (batch, ngroups, d_state)
+    C_strides: Strides3D,  # (batch, ngroups, d_state)
     D_strides: Strides2D,  # (nheads, dim)
     z_strides: Strides3D,  # (batch, nheads, dim)
     out_strides: Strides3D,  # (batch, nheads, dim)
@@ -150,8 +150,8 @@ def varlen_selective_state_update_gpu[
 
         var out_val = Float32(0.0)
 
-        # Process each dstate element
-        comptime for n in range(DSTATE):
+        # Process each d_state element
+        comptime for n in range(D_STATE):
             # Load A value
             var A_offset = UInt32(
                 pid_h * A_strides[0] + m * A_strides[1] + n * A_strides[2]
@@ -238,7 +238,7 @@ def varlen_selective_state_update_gpu[
 
 def varlen_selective_scan_fwd_gpu[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
     u_LT: TensorLayout,
     delta_LT: TensorLayout,
     A_LT: TensorLayout,
@@ -264,16 +264,16 @@ def varlen_selective_scan_fwd_gpu[
     A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin],
     B: TileTensor[
         kernel_dtype, B_LT, MutUntrackedOrigin
-    ],  # (ngroups, dstate, total_length)
+    ],  # (ngroups, d_state, total_length)
     C: TileTensor[
         kernel_dtype, C_LT, MutUntrackedOrigin
-    ],  # (ngroups, dstate, total_length)
+    ],  # (ngroups, d_state, total_length)
     D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin],
     z: TileTensor[kernel_dtype, z_LT, MutUntrackedOrigin],
     delta_bias: TileTensor[kernel_dtype, delta_bias_LT, MutUntrackedOrigin],
     ssm_states: TileTensor[
         kernel_dtype, ssm_states_LT, MutUntrackedOrigin
-    ],  # (batch, dim, dstate)
+    ],  # (batch, dim, d_state)
     output: TileTensor[
         kernel_dtype, output_LT, MutUntrackedOrigin
     ],  # Output written here (or to z if z is present)
@@ -288,13 +288,13 @@ def varlen_selective_scan_fwd_gpu[
     ],  # (batch,)
     u_strides: Strides2D,  # (dim, total_length)
     delta_strides: Strides2D,  # (dim, total_length)
-    A_strides: Strides2D,  # (dim, dstate)
-    B_strides: Strides3D,  # (ngroups, dstate, total_length)
-    C_strides: Strides3D,  # (ngroups, dstate, total_length)
+    A_strides: Strides2D,  # (dim, d_state)
+    B_strides: Strides3D,  # (ngroups, d_state, total_length)
+    C_strides: Strides3D,  # (ngroups, d_state, total_length)
     D_strides: Strides1D,  # (dim,)
     z_strides: Strides2D,  # (dim, total_length)
     delta_bias_strides: Strides1D,  # (dim,)
-    ssm_states_strides: Strides3D,  # (batch, dim, dstate)
+    ssm_states_strides: Strides3D,  # (batch, dim, d_state)
     out_strides: Strides2D,  # (dim, total_length)
 ):
     """GPU kernel for variable-length selective scan."""
@@ -341,9 +341,9 @@ def varlen_selective_scan_fwd_gpu[
         ).cast[DType.float32]()
 
     # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
-    var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+    var A_vals = SIMD[DType.float32, MAX_D_STATE](0.0)
 
-    comptime for n in range(DSTATE):
+    comptime for n in range(D_STATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
             Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
@@ -355,7 +355,7 @@ def varlen_selective_scan_fwd_gpu[
     var group_id = d // group_size
 
     # Initialize state - either from cache or zeros
-    var state = SIMD[DType.float32, MAX_DSTATE](0.0)
+    var state = SIMD[DType.float32, MAX_D_STATE](0.0)
 
     # Load initial state if requested
     var use_initial_state = False
@@ -364,7 +364,7 @@ def varlen_selective_scan_fwd_gpu[
         use_initial_state = Bool(init_state_val)
 
     if use_initial_state:
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             var state_offset = UInt32(
                 cache_idx * ssm_states_strides[0]
                 + d * ssm_states_strides[1]
@@ -403,10 +403,10 @@ def varlen_selective_scan_fwd_gpu[
         var delta_u = delta_val * u_val
 
         # Load B and C values for this timestep
-        var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-        var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+        var B_vals = SIMD[DType.float32, MAX_D_STATE](0.0)
+        var C_vals = SIMD[DType.float32, MAX_D_STATE](0.0)
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             var B_offset = UInt32(
                 group_id * B_strides[0]
                 + n * B_strides[1]
@@ -460,7 +460,7 @@ def varlen_selective_scan_fwd_gpu[
             )
 
     # Store final state to cache
-    comptime for n in range(DSTATE):
+    comptime for n in range(D_STATE):
         var state_offset = UInt32(
             cache_idx * ssm_states_strides[0]
             + d * ssm_states_strides[1]
@@ -473,7 +473,7 @@ def varlen_selective_scan_fwd_gpu[
 
 def varlen_selective_state_update_cpu[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
 ](
     batch: Int,
     nheads: Int,
@@ -560,8 +560,8 @@ def varlen_selective_state_update_cpu[
 
         var out_val = Float32(0.0)
 
-        # Process each dstate element
-        comptime for n in range(DSTATE):
+        # Process each d_state element
+        comptime for n in range(D_STATE):
             # Load A value
             var A_offset = UInt32(
                 h * A_strides[0] + m * A_strides[1] + n * A_strides[2]
@@ -646,7 +646,7 @@ def varlen_selective_state_update_cpu[
 
 def varlen_selective_scan_fwd_cpu[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
 ](
     dim: Int,
     ngroups: Int,
@@ -707,9 +707,9 @@ def varlen_selective_scan_fwd_cpu[
             ).cast[DType.float32]()
 
         # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
-        var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+        var A_vals = SIMD[DType.float32, MAX_D_STATE](0.0)
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
                 Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
@@ -734,7 +734,7 @@ def varlen_selective_scan_fwd_cpu[
                     continue
 
             # Initialize state
-            var state = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var state = SIMD[DType.float32, MAX_D_STATE](0.0)
 
             var use_initial_state = False
             if has_initial_state_tensor:
@@ -742,7 +742,7 @@ def varlen_selective_scan_fwd_cpu[
                 use_initial_state = Bool(init_state_val)
 
             if use_initial_state:
-                comptime for n in range(DSTATE):
+                comptime for n in range(D_STATE):
                     var state_offset = UInt32(
                         cache_idx * ssm_states_strides[0]
                         + d * ssm_states_strides[1]
@@ -781,10 +781,10 @@ def varlen_selective_scan_fwd_cpu[
 
                 var delta_u = delta_val * u_val
 
-                var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-                var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                var B_vals = SIMD[DType.float32, MAX_D_STATE](0.0)
+                var C_vals = SIMD[DType.float32, MAX_D_STATE](0.0)
 
-                comptime for n in range(DSTATE):
+                comptime for n in range(D_STATE):
                     var B_offset = UInt32(
                         group_id * B_strides[0]
                         + n * B_strides[1]
@@ -833,7 +833,7 @@ def varlen_selective_scan_fwd_cpu[
                     )
 
             # Store final state
-            comptime for n in range(DSTATE):
+            comptime for n in range(D_STATE):
                 var state_offset = UInt32(
                     cache_idx * ssm_states_strides[0]
                     + d * ssm_states_strides[1]
