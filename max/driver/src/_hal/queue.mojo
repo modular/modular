@@ -17,7 +17,8 @@ from .plugin import (
     QueueHandle,
     FunctionHandle,
 )
-from .context import Context, Buffer
+from .buffer import BufferView
+from .context import Context
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable, _EventInner
 from .device import DeviceSpec
 from .status import STATUS_SUCCESS, HALError
@@ -112,59 +113,55 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def copy_to_device(
         self,
-        dst: Buffer[Self.device_spec],
+        dst: BufferView,
         src: UnsafePointer[mut=False, UInt8, _],
-        size: UInt64,
     ) raises HALError:
         """
-        Explicit host-to-device buffer copy. Enqueues on this queue.
-        Totally ordered with respect to other operations within this queue
-        if backed by a stream.
+        Explicit host-to-device copy of `dst.byte_size` bytes into `dst`.
+        Enqueues on this queue. Totally ordered with respect to other
+        operations within this queue if backed by a stream.
         """
-        self._raw[].copy_to_device(self._handle, dst._handle, src, size)
+        self._raw[].copy_to_device(self._handle, dst._view, src)
 
     def copy_from_device(
         self,
         dst: UnsafePointer[mut=True, UInt8, _],
-        src: Buffer[Self.device_spec],
-        size: UInt64,
+        src: BufferView,
     ) raises HALError:
         """
-        Explicit device-to-host buffer copy. Enqueues on this queue.
-        Totally ordered with respect to other operations within this queue
-        if backed by a stream.
+        Explicit device-to-host copy of `src.byte_size` bytes from `src`.
+        Enqueues on this queue. Totally ordered with respect to other
+        operations within this queue if backed by a stream.
         """
-        self._raw[].copy_from_device(self._handle, dst, src._handle, size)
+        self._raw[].copy_from_device(self._handle, dst, src._view)
 
     def copy_intra_device(
         self,
-        dst: Buffer[Self.device_spec],
-        src: Buffer[Self.device_spec],
-        size: UInt64,
+        dst: BufferView,
+        src: BufferView,
     ) raises HALError:
         """
-        Same-device buffer copy. Enqueues on this queue.
-        Totally ordered with respect to other operations within this queue
-        if backed by a stream.
+        Same-device copy of `dst.byte_size` bytes from `src` into `dst`.
+        Enqueues on this queue. Totally ordered with respect to other
+        operations within this queue if backed by a stream.
         """
-        self._raw[].copy_intra_device(
-            self._handle, dst._handle, src._handle, size
+        debug_assert(
+            src.byte_size() >= dst.byte_size(),
+            "copy_intra_device source view smaller than destination",
         )
+        self._raw[].copy_intra_device(self._handle, dst._view, src._view)
 
     def set_memory(
         self,
-        dst: Buffer[Self.device_spec],
-        size: UInt64,
+        dst: BufferView,
         value: UInt64,
         value_size: UInt64,
     ) raises HALError:
         """
         Fill `dst` with a repeated `value_size`-byte `value`. Enqueues on this
-        queue.
+        queue. Fills `dst.byte_size` bytes.
         """
-        self._raw[].set_memory(
-            self._handle, dst._handle, size, value, value_size
-        )
+        self._raw[].set_memory(self._handle, dst._view, value, value_size)
 
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,

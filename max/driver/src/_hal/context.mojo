@@ -18,7 +18,6 @@ from .plugin import (
     OutParam,
     ContextHandle,
     FunctionHandle,
-    MemoryHandle,
     RuntimeBundleHandle,
     StaticBundleHandle,
     CompilationOptionsHandle,
@@ -27,6 +26,7 @@ from .plugin import (
     M_driver_bundle_compilation_options,
 )
 
+from .buffer import Buffer
 from .device import DeviceSpec
 from .stream import Stream
 
@@ -299,32 +299,6 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def unload_function(self, func: FunctionHandle) raises HALError:
         self._raw[].unload_function(self._handle, func)
-
-
-@fieldwise_init
-struct Buffer[device_spec: DeviceSpec](Movable):
-    """A device memory allocation.
-
-    Tracks the allocation handle, its byte size, and a strong reference to
-    the owning `Context`.
-
-    Holding the context `ArcPointer` keeps the context (and its driver) alive
-    for the buffer's lifetime, and lets transport-dispatching APIs such as
-    `copy` recover the buffer's residency (via the context's device) and
-    obtain a queue for synchronous transfers.
-
-    Parameters:
-        device_spec: The compilation target whose memory this buffer lives on.
-    """
-
-    # TODO(Sawyer): decide Buffer ownership. Currently leaks unless the user
-    # calls `Context.free_sync`; `_context` is carried for residency only, not
-    # to drive an auto-freeing destructor. Either give Buffer a destructor or
-    # document it as a non-owning view and remove `Movable`.
-
-    var _handle: MemoryHandle
-    var byte_size: UInt64
-    var _context: ArcPointer[Context[Self.device_spec]]
 
 
 @fieldwise_init
