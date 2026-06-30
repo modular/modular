@@ -7,7 +7,6 @@
 # RUN: %mojo -debug-level full %s 2 3 | FileCheck %s
 
 from std.utils.type_functions import ConditionalType
-from std.sys.intrinsics import _type_is_eq
 
 
 struct ConditionalArraySize[T: AnyType]:
@@ -54,8 +53,8 @@ def main() raises:
 
     var _list_int = ConditionalValueType[IsImplicitlyCopyable]()
     # CHECK: True
-    print(_type_is_eq[List[Int], type_of(_list_int.value)]())
+    print(List[Int] == type_of(_list_int.value))
 
     var _string = ConditionalValueType[IsNotImplicitlyCopyable]()
     # CHECK: True
-    print(_type_is_eq[String, type_of(_string.value)]())
+    print(String == type_of(_string.value))

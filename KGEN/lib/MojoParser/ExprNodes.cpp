@@ -3593,6 +3593,32 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                               ExprDest &dest, const ExprNode *callExpr,
                               IREmitter &emitter) {
 
+  // Sugar for Type1 == Type2
+  if (kind == ExprNode::Kind::kCmpEQ || kind == ExprNode::Kind::kCmpNE) {
+    PValue lhsPV = lhs.ir.getIfPValue();
+    PValue rhsPV = rhs.ir.getIfPValue();
+    // TODO: maybe we can extend this to any type value at the same depth, for
+    // now, just handle the most common case.
+    if (lhsPV && rhsPV && LIT::isFirstLevelTypeExpr(lhsPV) &&
+        LIT::isFirstLevelTypeExpr(rhsPV)) {
+      TraitType anyTypeTrait =
+          emitter.shared.lookupBuiltinTraitType("AnyType", callExpr->getLoc());
+      // First upcast the type value to AnyType, this ensures us we encode mlir
+      // type consistently.
+      FailureOr<PValue> lhsOr =
+          emitter.emitTypeValueUpCastToTrait({lhsPV, lhs.expr}, anyTypeTrait);
+      FailureOr<PValue> rhsOr =
+          emitter.emitTypeValueUpCastToTrait({rhsPV, rhs.expr}, anyTypeTrait);
+
+      assert(succeeded(lhsOr) && succeeded(rhsOr) &&
+             "failed to upcast type values");
+      PValue res = ParamOperatorAttr::get(POC::EQ, {*lhsOr, *rhsOr});
+      if (kind == ExprNode::Kind::kCmpNE)
+        res = ParamOperatorAttr::getNot(res);
+      return emitter.emitBool({res, callExpr}, dest);
+    }
+  }
+
   // If this is a 'not in' emit the 'in' expression and then invert the result.
   //  We use this style to make sure that a direct emission emits into
   // the ExprDest directly.
