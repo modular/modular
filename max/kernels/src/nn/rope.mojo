@@ -234,14 +234,18 @@ def rope_ragged[
                     f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
                     f_c_temp = freqs_cis.load[width=width, alignment=1](
-                        coord[freqs_cis.linear_idx_type](
-                            (position_ids_idx, head_dim_idx - unroped_dim)
+                        (
+                            Scalar[freqs_cis.linear_idx_type](position_ids_idx),
+                            Scalar[freqs_cis.linear_idx_type](
+                                head_dim_idx - unroped_dim
+                            ),
                         )
                     )
             else:
                 f_c_temp = freqs_cis.load[width=width, alignment=1](
-                    coord[freqs_cis.linear_idx_type](
-                        (position_ids_idx, head_dim_idx)
+                    (
+                        Scalar[freqs_cis.linear_idx_type](position_ids_idx),
+                        Scalar[freqs_cis.linear_idx_type](head_dim_idx),
                     )
                 )
             apply_rope[

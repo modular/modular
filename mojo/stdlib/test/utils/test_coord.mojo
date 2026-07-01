@@ -52,12 +52,12 @@ def test_flatten_empty() raises:
 
 
 def test_construction_from_int_variadic_empty() raises:
-    var t = coord[]()
+    var t = coord[]
     assert_equal(len(t), 0)
 
 
 def test_construction_from_int_variadic() raises:
-    var t = coord[1, 2, 3]()
+    var t = coord[1, 2, 3]
     assert_equal(len(t), 3)
     assert_equal(t[0].value(), 1)
     assert_equal(t[1].value(), 2)
@@ -65,7 +65,7 @@ def test_construction_from_int_variadic() raises:
 
 
 def test_construction_from_int_variadic_list() raises:
-    var t = coord[DType.int32]((1, 2, 3))
+    var t = Coord(Int32(1), Int32(2), Int32(3))
     assert_equal(len(t), 3)
     assert_equal(t[0].value(), 1)
     assert_equal(t[1].value(), 2)
@@ -73,7 +73,7 @@ def test_construction_from_int_variadic_list() raises:
 
 
 def test_static_product() raises:
-    comptime p = coord[1, 2, 3]().static_product
+    comptime p = coord[1, 2, 3].static_product
     assert_equal(p, 6)
 
 

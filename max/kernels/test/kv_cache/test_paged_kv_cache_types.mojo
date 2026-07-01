@@ -22,11 +22,12 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     UNKNOWN_VALUE,
-    coord,
+    Coord,
 )
 from std.memory import alloc
 from std.testing import assert_true
 
+from std.utils.coord import dyn_coord
 from std.utils.index import IndexList
 from std.collections import OptionalReg
 
@@ -309,7 +310,7 @@ def test_paged_kv_cache_offset_correctness() raises:
     # we'd compute wrong offset: 1*16 + 0*8 + 1*4 + 2 = 22 (wrong!)
 
     # Access via the blocks TileTensor - this tests the layout offset computation
-    var idx = coord[DType.int64](Tuple(1, 0, 1, 2))
+    var idx = dyn_coord[DType.int64]((1, 0, 1, 2))
     var value = key_cache.blocks.raw_load[width=1](key_cache.blocks.layout(idx))
     var expected_value = Float32(expected_6d_offset)
 

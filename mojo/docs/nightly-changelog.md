@@ -10,6 +10,16 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- `coord` is now a comptime expression, and `coord[DType]()` has been renamed
+  to `dyn_coord[DType]()`.
+  Now one can just write:
+
+   ```mojo
+   var my_coord = coord[1, 2, 3]
+   ```
+
+   to create a `Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]]`
+
 - Mojo now support `==` and `!=` for type equality check, and `_type_is_eq` is
   removed.
 
