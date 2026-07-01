@@ -50,6 +50,15 @@ trait TensorStorage:
     """
 
     @staticmethod
+    def write_type_name_to(mut writer: Some[Writer]):
+        """Write the storage type name representation to the writer.
+
+        Args:
+            writer: The `Writer` to output to.
+        """
+        reflect[Self].name().write_to(writer)
+
+    @staticmethod
     def unsafe_cast[
         to_mut: Bool,
         //,
@@ -268,6 +277,15 @@ struct PointerStorage[*, element_width: Int = 1](TensorStorage):
         origin: The origin tracking the lifetime of the borrowed storage.
         address_space: The address space the borrowed storage resides in.
     """
+
+    @staticmethod
+    def write_type_name_to(mut writer: Some[Writer]):
+        """Write the storage type name representation to the writer.
+
+        Args:
+            writer: The `Writer` to output to.
+        """
+        t"PointerStorage[element_size={Self.element_size}]".write_to(writer)
 
     @staticmethod
     @always_inline

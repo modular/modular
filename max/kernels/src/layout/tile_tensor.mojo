@@ -287,18 +287,16 @@ struct TileTensor[
         Returns:
             The host type's name.
         """
-
-        return String(
-            "TileTensor[mut = ",
-            Self.mut,
-            ", dtype = ",
-            Self.dtype,
-            ", address_space = ",
-            Self.address_space,
-            ", linear_idx_type = ",
-            Self.linear_idx_type,
-            "]",
+        var writer = String()
+        t"TileTensor[mut={Self.mut}, dtype={Self.dtype}, Storage=".write_to(
+            writer
         )
+        Self.Storage.write_type_name_to(writer)
+        (
+            t", address_space={Self.address_space},"
+            t" linear_idx_type={Self.linear_idx_type}]"
+        ).write_to(writer)
+        return writer^
 
     comptime GenericType = TileTensor[
         Self.dtype,
