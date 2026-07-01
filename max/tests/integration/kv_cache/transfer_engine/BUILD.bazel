@@ -160,7 +160,7 @@ modular_py_test(
         "@nixl_upstream//:libplugin_UCX.so",
     ],
     exec_properties = {
-        "test.resources:gpu-memory": "5",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = [
         "//:has_gpu",
@@ -189,7 +189,7 @@ modular_py_test(
         "@nixl_upstream//:libplugin_UCX.so",
     ],
     exec_properties = {
-        "test.resources:gpu-memory": "3",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = [
         "//:has_gpu",
