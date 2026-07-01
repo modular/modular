@@ -389,4 +389,11 @@ This version is still a work in progress.
   an unexpected device synchronization. Slices and views now preserve the
   `DevicePinnedBuffer` type.
 
+- Fixed DeepSeek-V3.1-NVFP4 multi-token prediction (MTP) failing to load with
+  `dispatch_quant_config must be specified when dispatch_dtype is not
+  bfloat16` when expert parallelism was enabled. When a quantized model has no
+  resolvable quantization config for its draft (BF16 NextN) weights, the draft
+  config is now built with a bfloat16 dispatch dtype instead of constructing an
+  invalid `EPConfig`.
+
 ## Mojo language

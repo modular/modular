@@ -111,6 +111,13 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         dtype = self.dtype
         if dtype in (DType.float8_e4m3fn, DType.uint8, DType.float4_e2m1fn):
             quant_config = parse_quant_config(config, state_dict, dtype)
+            if quant_config is None:
+                # No quant config resolved, so these weights aren't
+                # quantized -- e.g. a BF16 NextN draft that inherited the
+                # target's NVFP4 dtype. Fall back to bfloat16: a quantized
+                # dispatch dtype is only valid when paired with a
+                # dispatch_quant_config, which we don't have here.
+                dtype = DType.bfloat16
         else:
             quant_config = None
 
@@ -188,6 +195,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         model_config = DeepseekV3Config.initialize(self.pipeline_config)
 
         # Finalize config with state_dict-dependent parameters
+        # `dtype` is downgraded to bfloat16 above when a quantized target has
+        # no resolvable quant config (BF16 draft); otherwise it equals
+        # self.dtype, so this is a no-op for the normal path.
+        model_config.dtype = dtype
         model_config.norm_dtype = norm_dtype
         model_config.gate_dtype = gate_dtype
         model_config.correction_bias_dtype = correction_bias_dtype
