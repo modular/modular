@@ -321,6 +321,7 @@ _GPU_MEMORY = {
     "test_matmul_sm90_hilbert.mojo": "1",
     "test_block_scaled_matmul_mxfp8_dispatch.mojo": "4",
     "test_mfma_32x32x64_f8f6f4.mojo": "1",
+    "test_mxfp4_grouped_matmul_amd_kernels.mojo": "2",
     "test_mxfp4_matmul_amd.mojo": "2",
     "test_mxfp4_moe_matmul_amd_routed.mojo": "8",
     "test_ping_pong_shapes.mojo": "2",
