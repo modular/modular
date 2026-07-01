@@ -288,7 +288,7 @@ modular_py_test(
     size = "medium",
     srcs = ["test_generate_llm_logits_gpu.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "23",
+        "test.resources:gpu-memory": "22",
     },
     gpu_constraints = ["//:has_gpu"],
     tags = [
