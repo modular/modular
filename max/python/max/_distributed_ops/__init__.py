@@ -24,12 +24,15 @@ from max.driver import (
     Device,
     DevicePinnedBuffer,
     DeviceStream,
+    accelerator_api,
     accelerator_count,
 )
 
-# The mojo source comptime-instantiates a GPU kernel, which fails to JIT on
-# hosts without a GPU toolchain.
-if sys.platform == "linux" and accelerator_count() > 0:
+if (
+    sys.platform == "linux"
+    and accelerator_count() > 0
+    and accelerator_api() in ("cuda", "hip")
+):
     try:
         from .block_offload_ops import (  # type: ignore[import-not-found]
             copy_d2h as _copy_d2h,
@@ -38,12 +41,6 @@ if sys.platform == "linux" and accelerator_count() > 0:
             copy_h2d as _copy_h2d,
         )
     except ImportError:
-        # copy_h2d comptime-instantiates the same GPU broadcast collective as
-        # the broadcast kernel below (it fans replicated blocks out to peers via
-        # comm.broadcast). On an accelerator whose architecture the collective
-        # does not support, the JIT raises at import. Degrade to the no-kernel
-        # path so merely importing this module does not fail; batched_copy_h2d /
-        # batched_copy_d2h still raise a clear error if actually called.
         _copy_h2d = None
         _copy_d2h = None
 
@@ -52,11 +49,6 @@ if sys.platform == "linux" and accelerator_count() > 0:
             broadcast_kernel as _broadcast_kernel,
         )
     except ImportError:
-        # The broadcast kernel only compiles for some GPU architectures; on an
-        # accelerator whose architecture it does not support the JIT raises at
-        # import. Degrade to the no-kernel path so merely importing this module
-        # (e.g. transitively via the pipelines entrypoint) does not fail.
-        # distributed_broadcast still raises a clear error if actually called.
         _broadcast_kernel = None
 else:
     _broadcast_kernel = None
