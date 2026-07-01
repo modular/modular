@@ -36,14 +36,11 @@ from std.logger import Logger
 from std.utils.index import Index, IndexList
 
 from .dispatch import (
+    DISPATCH_HIT,
     matmul_dispatch_sm100,
     sm100_heuristic_and_outliers_dispatch,
-    small_MN_gemms,
+    try_small_MN_gemms_bf16,
     _vendor_blas_matmul_sm100,
-)
-from .tuning_configs import (
-    TuningConfigSmallMNGemms,
-    _get_tuning_list_small_MN_gemms_bf16,
 )
 
 comptime logger = Logger()
@@ -102,28 +99,12 @@ def fused_bias_residual_matmul_dispatch_sm100[
             coords, rebind[SIMD[c.dtype, _width]](val + resid)
         )
 
-    comptime small_MN_gemms_table = Table(
-        _get_tuning_list_small_MN_gemms_bf16(), "small_MN_gemms_configs"
-    )
-
-    @always_inline
-    def small_MN_gemms_rule(x: TuningConfigSmallMNGemms) {} -> Bool:
-        return x.K == static_K and x.N == static_N
-
-    comptime small_MN_gemms_configs = small_MN_gemms_table.find(
-        rule=small_MN_gemms_rule
-    )
-
-    comptime if small_MN_gemms_configs:
-        comptime for config in small_MN_gemms_configs:
-            if m >= config.M and m < config.M_end:
-                logger.info("Dispatching to small_MN_gemms: ", config)
-                small_MN_gemms[
-                    config=config,
-                    elementwise_lambda_fn=bias_residual_elementwise_lambda,
-                    pdl_level=pdl_level,
-                ](c, a, b, ctx)
-                return
+    var small_mn_status = try_small_MN_gemms_bf16[
+        elementwise_lambda_fn=bias_residual_elementwise_lambda,
+        pdl_level=pdl_level,
+    ](c, a, b, ctx)
+    if small_mn_status == DISPATCH_HIT:
+        return
 
     comptime low_perf_shapes = [
         Index(2112, 14336),

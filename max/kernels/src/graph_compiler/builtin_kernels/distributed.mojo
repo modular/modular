@@ -27,22 +27,29 @@ import extensibility as compiler
 from comm.allgather import allgather
 from comm.allreduce import allreduce
 
+from comm.allreduce_lamport_rmsnorm import lamport_allreduce_rmsnorm
 from comm.allreduce_residual_rmsnorm import allreduce_residual_rmsnorm
+from comm.lamport import Lamport
+from std.gpu import WARP_SIZE
 from comm.reducescatter import reducescatter
 from comm.broadcast import broadcast
 from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
-from std.gpu.host import DeviceContextList
+from std.gpu.host import DeviceContext, DeviceContextList
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from extensibility import (
     InputTensor,
     InputVariadicTensors,
+    OutputTensor,
     OutputVariadicTensors,
 )
 from extensibility import (
     _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
+)
+from extensibility import (
+    _MutableInputTensor as MutableInputTensor,
 )
 from extensibility import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
@@ -784,3 +791,104 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             )
 
         _launch_device_collective[num_devices](launch_fused_allreduce, dev_ctxs)
+
+
+@compiler.register("lamport_allreduce_rmsnorm")
+struct LamportAllreduceRMSNorm:
+    """Per-rank fused Lamport allreduce + RMSNorm (high-perf protocol).
+
+    Built on `comm.allreduce_lamport_rmsnorm`; the Lamport comm region is
+    embedded in `Signal` (`Signal.lamport_region`), so the caller sizes/
+    initializes the signal buffers as `sizeof(Signal)` bytes. `ngpus` is
+    inferred from the number of signal buffers passed in (must be in [2, 8]).
+
+    Shape constraints (also checked inside `lamport_allreduce_rmsnorm`, but
+    surfaced here for op-level diagnostics):
+    - `cols % atomic_width == 0`  (whole 128-bit Lamport packs only;
+      `atomic_width = 16 / size_of[dtype]`, so bf16 needs `cols % 8 == 0`).
+    - `cols / atomic_width <= BLOCK_SIZE`  (one pack per thread / row;
+      `BLOCK_SIZE = floor(max_tpb / WARP_SIZE) * WARP_SIZE`, e.g. 1024 on
+      Hopper/Blackwell, capping bf16 hidden at 8192).
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+        my_rank: Int,
+        pdl: Bool = True,
+        early_launch: Bool = True,
+    ](
+        output: OutputTensor[rank=2, ...],
+        act: InputTensor[dtype=output.dtype, rank=2, ...],
+        gamma: InputTensor[dtype=output.dtype, rank=1, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert target == "gpu", "lamport_allreduce_rmsnorm: gpu only"
+        comptime ngpus = signal_buffers.size
+        comptime assert (
+            ngpus >= 2 and ngpus <= MAX_GPUS
+        ), "lamport_allreduce_rmsnorm: signal_buffers.size must be in [2, 8]"
+        comptime assert (
+            my_rank >= 0 and my_rank < ngpus
+        ), "lamport_allreduce_rmsnorm: my_rank must be in [0, ngpus)"
+        comptime epsilon = Float32(1e-6)
+        comptime dtype = output.dtype
+
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](uninitialized=True)
+        comptime for i in range(ngpus):
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
+
+        var rows = act.dim_size[0]()
+        var cols = act.dim_size[1]()
+
+        # Surface kernel shape constraints at the op boundary so the failure is
+        # attributed to the op rather than to the kernel-host launcher. Mirrors
+        # the checks in `comm.allreduce_lamport_rmsnorm`.
+        comptime atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
+        comptime max_tpb = ctx.default_device_info.max_thread_block_size
+        comptime BLOCK_SIZE = (max_tpb // WARP_SIZE) * WARP_SIZE
+        if cols % atomic_width != 0:
+            raise Error(
+                "lamport_allreduce_rmsnorm: cols (",
+                cols,
+                ") must be a multiple of atomic_width (",
+                atomic_width,
+                ") -- whole 128-bit Lamport packs required",
+            )
+        if cols // atomic_width > BLOCK_SIZE:
+            raise Error(
+                "lamport_allreduce_rmsnorm: cols/atomic_width (",
+                cols // atomic_width,
+                ") exceeds BLOCK_SIZE (",
+                BLOCK_SIZE,
+                ") -- one pack per thread required",
+            )
+
+        var src = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](act._ptr)
+        var dst = rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+            output._ptr
+        )
+        var gm = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            gamma._ptr
+        )
+
+        lamport_allreduce_rmsnorm[
+            dtype, ngpus, pdl=pdl, early_launch=early_launch
+        ](
+            my_rank,
+            src,
+            dst,
+            gm,
+            rank_sigs,
+            rows,
+            cols,
+            epsilon.cast[dtype](),
+            ctx,
+        )
