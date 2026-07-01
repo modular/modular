@@ -346,6 +346,12 @@ This version is still a work in progress.
   invalid operand. The kernels now read the tensor-memory base once after it
   is published and carry it in a register, so there is no in-loop re-read to
   race.
+- Enabled the low-latency (Lamport) all-reduce on B200 for small messages
+  (up to 1 MiB at 2, 4, and 8 GPUs), where it beats the one-stage path by
+  roughly 1.1-1.68x. The barrier-free protocol marks unwritten slots with a
+  negative-zero sentinel, so its communication region is now initialized when
+  pipeline signal buffers are allocated; without that the region read as
+  already-written and produced non-deterministic results.
 
 ## Breaking changes
 
