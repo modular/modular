@@ -21,6 +21,7 @@ from std.sys import (
     align_of,
     get_defined_bool,
     has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -767,7 +768,7 @@ def flash_attention_dispatch[
                     and output.dtype == DType.bfloat16
                     and (config.depth == 64 or config.depth == 128)
                     and has_amd_gpu_accelerator()
-                    and not _is_amd_rdna()
+                    and not has_amd_rdna_gpu_accelerator()
                     and (k_t.page_size == 0 or k_t.page_size >= 64)
                 )
 
@@ -958,6 +959,49 @@ def flash_attention_dispatch[
 
                 comptime BM = config.block_m()
                 comptime smem_use = config.shared_mem_bytes[is_shared_kv]()
+                comptime if has_amd_rdna_gpu_accelerator():
+                    comptime rdna_kernel = mha_rdna_prefill[
+                        config.dtype,
+                        k_t,
+                        v_t,
+                        output.dtype,
+                        mask_t,
+                        type_of(valid_length.value()).layout,
+                        config,
+                        group=group,
+                        ragged=ragged,
+                        sink=sink,
+                        _use_valid_length=_use_valid_length,
+                        _is_cache_length_accurate=_is_cache_length_accurate,
+                        _padded_ndbuffer=_padded_ndbuffer,
+                    ]
+
+                    ctx.enqueue_function[rdna_kernel](
+                        q_device,
+                        k,
+                        v,
+                        output_device,
+                        scale,
+                        batch_size,
+                        max_prompt_len,
+                        max_cache_valid_length,
+                        valid_length.value(),
+                        kv_input_row_offsets,
+                        sink_weights,
+                        mask_functor,
+                        grid_dim=LaunchDim(
+                            config.num_heads,
+                            ceildiv(max_prompt_len, BM),
+                            batch_size,
+                        ),
+                        block_dim=(config.num_threads(), 1, 1),
+                        shared_mem_bytes=smem_use,
+                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                            UInt32(smem_use)
+                        ),
+                    )
+                    return
+
                 comptime kernel = mha[
                     config.dtype,
                     k_t,
@@ -1886,6 +1930,143 @@ def get_waves_per_eu(depth: Int) -> Int:
 # ===-----------------------------------------------------------------------===#
 # Flash attention for context encoding
 # ===-----------------------------------------------------------------------===#
+
+
+@__llvm_metadata(`rocdl.waves_per_eu`=SIMDSize(get_waves_per_eu(config.depth)))
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(config.num_threads())
+    )
+)
+@__llvm_metadata(`rocdl.no_agpr`=SIMDSize(1))
+@__name(
+    t"mha_rdna_prefill_depth{config.depth}_{q_type}_{output_type}_{ragged}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
+)
+def mha_rdna_prefill[
+    q_type: DType,
+    k_t: MHAOperand,
+    v_t: MHAOperand,
+    output_type: DType,
+    mask_t: MHAMask,
+    valid_length_layout: Layout,
+    config: MHAConfig,
+    group: Int = 1,
+    ragged: Bool = False,
+    sink: Bool = False,
+    _use_valid_length: Bool = False,
+    _is_cache_length_accurate: Bool = False,
+    _padded_ndbuffer: Bool = False,
+](
+    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    k: k_t,
+    v: v_t,
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    scale: Float32,
+    batch_size: Int,
+    seq_len_arg: Int,
+    num_keys_arg: Int,
+    valid_length: LayoutTensor[
+        DType.uint32,
+        valid_length_layout,
+        ImmutAnyOrigin,
+    ],
+    kv_input_row_offsets: OptionalReg[
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        ]
+    ],
+    sink_weights: OptionalReg[
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ],
+    mask: mask_t,
+):
+    comptime assert (
+        _is_amd_rdna()
+    ), "mha_rdna_prefill must only be instantiated for AMD RDNA targets"
+
+    var batch_idx = block_idx.z
+
+    var seq_len: Int
+    var max_seq_len = seq_len_arg
+    var num_keys: Int
+    var start_pos: UInt32 = 0
+
+    @always_inline
+    def q_block_idx() -> Int:
+        return block_idx.y
+
+    comptime if ragged:
+        start_of_seq = Int(valid_length[batch_idx])
+        end_of_seq = Int(valid_length[batch_idx + 1])
+        seq_len = end_of_seq - start_of_seq
+
+        if seq_len < q_block_idx() * config.block_m():
+            return
+
+        comptime if not _is_cache_length_accurate:
+            start_pos = UInt32(k.cache_length(batch_idx))
+
+        if kv_input_row_offsets:
+            var kv_row_offsets = kv_input_row_offsets.value()
+            kv_seq_start = Int(kv_row_offsets[batch_idx])
+            kv_seq_end = Int(kv_row_offsets[batch_idx + 1])
+            cur_kv_len = kv_seq_end - kv_seq_start
+            num_keys = cur_kv_len + Int(start_pos)
+        else:
+            num_keys = seq_len + Int(start_pos)
+
+        q_batch_offset = start_of_seq * config.depth * config.num_heads
+
+    elif _use_valid_length and not _padded_ndbuffer:
+        seq_len = Int(valid_length[batch_idx])
+
+        if seq_len < q_block_idx() * config.block_m():
+            return
+
+        comptime if not _is_cache_length_accurate:
+            var cache_length = k.cache_length(batch_idx)
+            start_pos = UInt32(cache_length)
+
+        num_keys = seq_len + k.cache_length(batch_idx)
+        q_batch_offset = (
+            config.depth * config.num_heads * max_seq_len * batch_idx
+        )
+    else:
+        comptime if _padded_ndbuffer:
+            seq_len = Int(valid_length[batch_idx])
+            num_keys = seq_len
+        else:
+            seq_len = seq_len_arg
+            num_keys = num_keys_arg
+
+        if seq_len < q_block_idx() * config.block_m():
+            return
+        q_batch_offset = (
+            config.depth * config.num_heads * max_seq_len * batch_idx
+        )
+
+        start_pos = UInt32(num_keys - seq_len)
+
+    var sink_weights_ptr = OptionalReg[
+        UnsafePointer[Scalar[q_type], ImmutAnyOrigin]
+    ]()
+    comptime if sink:
+        sink_weights_ptr = sink_weights.value().ptr
+
+    var attention = AttentionRDNA[config, group, sink](
+        output_ptr + q_batch_offset,
+        q_ptr + q_batch_offset,
+        k,
+        v,
+        mask,
+        sink_weights_ptr,
+        batch_idx,
+        scale,
+        seq_len,
+        num_keys,
+        Int(start_pos),
+    )
+    attention.mha_prefill()
 
 
 @__llvm_metadata(`rocdl.waves_per_eu`=SIMDSize(get_waves_per_eu(config.depth)))

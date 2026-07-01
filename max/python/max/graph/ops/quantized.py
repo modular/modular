@@ -15,6 +15,11 @@
 from collections.abc import Callable
 from typing import Literal
 
+from max.driver import (
+    Accelerator,
+    get_virtual_device_target_arch,
+    is_virtual_device_mode,
+)
 from max.dtype import DType
 
 from ..dim import StaticDim
@@ -63,6 +68,21 @@ def _repack_quantized_weights(
 # Sadly, MMA does not support float16 currently, so we must use bfloat16 for
 # now.
 MODE_TO_DTYPE = {"gptq": DType.bfloat16, "vroom": DType.float32}
+
+
+def should_use_w4a16_gptq(device) -> bool:  # noqa: ANN001
+    """Returns whether GPTQ should use the generic W4A16 path on this device."""
+    if not device.is_gpu:
+        return False
+    if is_virtual_device_mode():
+        return get_virtual_device_target_arch().startswith(
+            ("gfx11", "gfx12")
+        )
+    try:
+        arch = Accelerator(device.id).architecture_name
+    except Exception:
+        return False
+    return arch.startswith(("gfx11", "gfx12"))
 
 
 def _packed_qmatmul(
@@ -142,6 +162,87 @@ def _repack_then_matmul(
     return impl
 
 
+def _gptq_w4a16_matmul(
+    lhs: TensorValue,
+    rhs: tuple[TensorValue, ...],
+    config: QuantizationConfig,
+) -> TensorValue:
+    if rhs[0].dtype is not DType.uint8:
+        raise TypeError(f"Right-hand side must be uint8, but got {rhs[0]=}")
+    if config.bits != 4 or config.group_size != 128 or not config.sym:
+        raise ValueError(
+            "W4A16 GPTQ path only supports bits=4, group_size=128, sym=True"
+        )
+
+    input_dtype = lhs.dtype
+    lhs_matrix = lhs
+    if lhs_matrix.dtype is not DType.float16:
+        lhs_matrix = lhs_matrix.cast(DType.float16)
+    if len(lhs_matrix.shape) != 2:
+        lhs_matrix = lhs_matrix.reshape((-1, lhs_matrix.shape[-1]))
+
+    weight = rhs[0]
+    if weight.device != lhs_matrix.device:
+        weight = weight.to(lhs_matrix.device)
+
+    group_size = config.group_size
+    assert group_size is not None
+    k_dim = lhs_matrix.shape[-1]
+    n_dim = weight.shape[1]
+    qweight_rows = k_dim // 2
+    scale_rows = (k_dim // group_size) * 2
+    qweight_bytes = weight[:qweight_rows, :]
+    scales_bytes = weight[qweight_rows : qweight_rows + scale_rows, :]
+
+    custom_values = [qweight_bytes, scales_bytes]
+    custom_op = "gptq_to_w4a16"
+    if config.desc_act:
+        if len(rhs) < 2:
+            raise ValueError("GPTQ desc_act requires a permutation tensor")
+        perm_idx = rhs[1]
+        if perm_idx.device != lhs_matrix.device:
+            perm_idx = perm_idx.to(lhs_matrix.device)
+        custom_values.append(perm_idx)
+        custom_op = "gptq_to_w4a16_perm"
+
+    qweight, qzeros, scales = (
+        value.tensor
+        for value in custom(
+            custom_op,
+            lhs_matrix.device,
+            custom_values,
+            out_types=[
+                TensorType(DType.int32, (k_dim, n_dim // 8), device=lhs_matrix.device),
+                TensorType(
+                    DType.int32,
+                    (k_dim // group_size, n_dim // 8),
+                    device=lhs_matrix.device,
+                ),
+                TensorType(
+                    DType.float16,
+                    (k_dim // group_size, n_dim),
+                    device=lhs_matrix.device,
+                ),
+            ],
+        )
+    )
+
+    out = custom(
+        "gemm_w4a16_fp16",
+        lhs_matrix.device,
+        [lhs_matrix, qweight, qzeros, scales],
+        out_types=[
+            TensorType(DType.float16, (lhs_matrix.shape[0], n_dim), lhs_matrix.device)
+        ],
+    )[0].tensor
+
+    if len(lhs.shape) != 2:
+        out = out.reshape((*lhs.shape[:-1], n_dim))
+    if input_dtype is not DType.float16:
+        out = out.cast(input_dtype)
+    return out
+
+
 # We do not know for sure that all future quantization encodings will best be
 # served by the "repack and then matmul" scheme, so this design lets us better
 # support future alternative schemes while continuing to support the current
@@ -204,7 +305,12 @@ def qmatmul(
     """
     if encoding == QuantizationEncoding.GPTQ:
         assert config
-        encoding_str = f"{config.quant_method}_b{config.bits}_g{config.group_size}_a{config.desc_act}"
+        if should_use_w4a16_gptq(lhs.device):
+            return _gptq_w4a16_matmul(lhs, rhs, config)
+        encoding_str = (
+            f"{config.quant_method}_b{config.bits}_g"
+            f"{config.group_size}_a{config.desc_act}"
+        )
         strategy = _QMATMUL_STRATEGIES.get(encoding_str)
     else:
         strategy = _QMATMUL_STRATEGIES.get(encoding)

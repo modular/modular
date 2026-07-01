@@ -23,11 +23,13 @@ from max.graph import (
     BufferValue,
     DeviceRef,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     Weight,
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
+from max.graph.ops.quantized import should_use_w4a16_gptq
 from max.graph.weight import _compute_shard_range
 from max.nn.quant_config import QuantConfig
 
@@ -886,12 +888,96 @@ class GPTQAttentionWithRope(AttentionWithRope):
                 device=self.devices[0],
             )
 
+    def _w4a16_gptq_weight(
+        self,
+        x: TensorValue,
+        qweight_weight: Weight,
+        scales_weight: Weight,
+    ) -> TensorValue:
+        qweight_dtype, qweight_shape = qweight_weight.original_dtype_and_shape
+        qweight_bytes = ops.reshape(
+            qweight_weight,
+            (qweight_shape[0] * qweight_dtype.size_in_bytes, qweight_shape[1]),
+        )
+        scales_dtype, scales_shape = scales_weight.original_dtype_and_shape
+        scales_bytes = ops.reshape(
+            scales_weight,
+            (scales_shape[0] * scales_dtype.size_in_bytes, scales_shape[1]),
+        )
+        device = self.devices[0] if self.devices else None
+        if device:
+            qweight_bytes = qweight_bytes.to(device)
+            scales_bytes = scales_bytes.to(device)
+
+        k_dim = qweight_shape[0] * 8
+        n_dim = qweight_shape[1]
+        group_size = self.quantization_config.group_size
+        assert group_size is not None
+
+        custom_values = [qweight_bytes, scales_bytes]
+        custom_op = "gptq_to_w4a16"
+        if self.perm_idx is not None:
+            perm_idx: TensorValue = self.perm_idx
+            if device:
+                perm_idx = perm_idx.to(device)
+            custom_values.append(perm_idx)
+            custom_op = "gptq_to_w4a16_perm"
+
+        qweight, qzeros, scales = (
+            value.tensor
+            for value in ops.custom(
+                custom_op,
+                x.device,
+                custom_values,
+                out_types=[
+                    TensorType(DType.int32, (k_dim, n_dim // 8), device=x.device),
+                    TensorType(
+                        DType.int32,
+                        (k_dim // group_size, n_dim // 8),
+                        device=x.device,
+                    ),
+                    TensorType(
+                        DType.float16,
+                        (k_dim // group_size, n_dim),
+                        device=x.device,
+                    ),
+                ],
+            )
+        )
+
+        input_dtype = x.dtype
+        x_matrix = x
+        if self.perm_idx is not None:
+            perm_idx: TensorValue = self.perm_idx
+            if device:
+                perm_idx = perm_idx.to(device)
+            x_matrix = ops.gather(x_matrix, perm_idx, axis=(x_matrix.rank - 1))
+        if x_matrix.dtype is not DType.float16:
+            x_matrix = x_matrix.cast(DType.float16)
+        if x_matrix.rank != 2:
+            x_matrix = x_matrix.reshape((-1, x_matrix.shape[-1]))
+
+        res = ops.custom(
+            "gemm_w4a16_fp16",
+            x_matrix.device,
+            [x_matrix, qweight, qzeros, scales],
+            out_types=[
+                TensorType(DType.float16, (x_matrix.shape[0], n_dim), x.device)
+            ],
+        )[0].tensor
+        if x.rank != 2:
+            res = res.reshape((*x.shape[:-1], n_dim))
+        if input_dtype is not DType.float16:
+            res = res.cast(input_dtype)
+        return res
+
     @property
     def wqkv(self) -> TensorValue:
         """The concatenation of q, k, and v weight vectors (packed + scales)."""
         # fmt: off
-        # The `qweight` tensor for a QuantLinear is of type uint32. When allocated as bytes, we reshape the
-        # uint8 tensor to [cols, rows * 4] so concatenating the uint8 tensors along axis=1 is equivalent to
+        # The `qweight` tensor for a QuantLinear is of type uint32. When
+        # allocated as bytes, we reshape the uint8 tensor to [cols, rows * 4]
+        # so concatenating the uint8 tensors along axis=1 is equivalent to
         # concatenating the original uint32 tensors along axis=1.
         wq_qweight = ops.reshape(self.q_proj_qweight, (-1, self.hidden_size * 4))
         wk_qweight = ops.reshape(self.k_proj_qweight, (-1, self.kv_weight_dim * 4))
@@ -901,7 +987,8 @@ class GPTQAttentionWithRope(AttentionWithRope):
             ops.concat((wq_qweight, wk_qweight, wv_qweight), axis=1),
             (-1, self.hidden_size + 2 * self.kv_weight_dim),
         )
-        # `scales` tensor is in f16/bf16 type, so we reshape the uint8 tensor to [cols, rows * 2].
+        # `scales` tensor is in f16/bf16 type, so we reshape the uint8 tensor
+        # to [cols, rows * 2].
         wq_scales = ops.reshape(self.q_proj_scales, (-1, self.hidden_size * 2))
         wk_scales = ops.reshape(self.k_proj_scales, (-1, self.kv_weight_dim * 2))
         wv_scales = ops.reshape(self.v_proj_scales, (-1, self.kv_weight_dim * 2))
@@ -923,6 +1010,42 @@ class GPTQAttentionWithRope(AttentionWithRope):
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
+
+        if should_use_w4a16_gptq(x.device):
+            xq = self._w4a16_gptq_weight(
+                x, self.q_proj_qweight, self.q_proj_scales
+            )
+            xk = self._w4a16_gptq_weight(
+                x, self.k_proj_qweight, self.k_proj_scales
+            )
+            xv = self._w4a16_gptq_weight(
+                x, self.v_proj_qweight, self.v_proj_scales
+            )
+            qkv = ops.concat((xq, xk, xv), axis=-1)
+            freqs_cis = ops.cast(freqs_cis, qkv.dtype).to(qkv.device)
+            xq = rope_split_store_ragged(
+                kv_params=self.kv_params,
+                qkv=qkv,
+                input_row_offsets=input_row_offsets,
+                freqs_cis=freqs_cis,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=self.n_heads,
+                interleaved=self.rope.interleaved,
+                fuse=True,
+            )
+            xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
+            attn_out = flash_attention_ragged(
+                self.kv_params,
+                input=xq,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                input_row_offsets=input_row_offsets,
+                mask_variant=self.mask_variant,
+                scale=self.scale,
+            )
+            attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
+            return self.o_proj(attn_out)
 
         wqkv = self.wqkv
         if self.devices:

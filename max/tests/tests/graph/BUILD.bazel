@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_binary", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -24,6 +24,7 @@ _SEPARATELY_TESTED_OPS = [
     "ops/test_layer_norm.py",
     "ops/test_reduction.py",
     "ops/test_tile.py",
+    "ops/test_w4a16_builtin.py",
     "ops/elementwise/test_div.py",
     "ops/elementwise/test_is_nan.py",
     "ops/test_nonzero.py",
@@ -102,6 +103,34 @@ modular_py_test(
         "//max/python/max/mlir",
         requirement("hypothesis"),
         requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_w4a16_builtin",
+    srcs = ["ops/test_w4a16_builtin.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_binary(
+    name = "w4a16_llama_shape_sweep",
+    srcs = ["ops/test_w4a16_builtin.py"],
+    main = "ops/test_w4a16_builtin.py",
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+        requirement("pytest"),
         requirement("torch"),
     ],
 )
