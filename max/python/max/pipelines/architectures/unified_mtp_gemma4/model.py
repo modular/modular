@@ -170,12 +170,14 @@ class UnifiedMTPGemma4Model(
                 draft_hf_config, config.devices
             )
             # -- 5. Create unified module --
-            assert self.pipeline_config.speculative is not None
+            spec_cfg = self.pipeline_config.speculative
+            assert spec_cfg is not None
             nn_model = UnifiedMTPGemma4(
                 config,
                 draft_config,
-                speculative_config=self.pipeline_config.speculative,
+                speculative_config=spec_cfg,
                 enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
+                use_greedy_acceptance=spec_cfg.use_greedy_acceptance,
             )
 
             # Set return modes on the target model
