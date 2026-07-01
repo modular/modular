@@ -579,6 +579,7 @@ def _sfb_cpasync_produce_tile[
     sfb_batch_stride: Int,
     sfb_n_stride: Int,
     sfb_k_tiles: Int,
+    sfb_n_total: Int,
     load_mma_pipeline: ProducerConsumerPipeline[num_sfb_pipeline_stages],
     mut smem_release_state: PipelineState[num_sfb_pipeline_stages],
 ):
@@ -590,7 +591,8 @@ def _sfb_cpasync_produce_tile[
     MMA_N.  OOB k-tiles (beyond sfb_k_tiles) are zero-filled since
     cp.async does not auto-fill zeros like TMA, and garbage bytes
     that decode as NaN in float8_e4m3fn would corrupt the accumulator
-    (NaN * 0 = NaN).
+    (NaN * 0 = NaN).  OOB N lanes (abs_pos >= sfb_n_total) are also
+    zero-filled to avoid reading past the SFB allocation.
 
     Waits on load_mma_pipeline's empty barriers (fired by
     tcgen05.commit) instead of sfb_pipeline.wait_consumer() to
@@ -663,8 +665,10 @@ def _sfb_cpasync_produce_tile[
                             + smem_row * ROW_STRIDE
                             + smem_sub_col * SF_ATOM_K
                         )
-                        # K bounds check: OOB k-atoms are zero-filled.
-                        if k_tile_base + k_atom < sfb_k_tiles:
+                        if (
+                            k_tile_base + k_atom < sfb_k_tiles
+                            and abs_pos < sfb_n_total
+                        ):
                             var global_offset = (
                                 batch * sfb_batch_stride
                                 + n_group * sfb_n_stride
@@ -721,6 +725,7 @@ def _sfb_cpasync_produce_tile_warpwide[
     sfb_batch_stride: Int,
     sfb_n_stride: Int,
     sfb_k_tiles: Int,
+    sfb_n_total: Int,
     load_mma_pipeline: ProducerConsumerPipeline[num_sfb_pipeline_stages],
     mut smem_release_state: PipelineState[num_sfb_pipeline_stages],
 ):
@@ -773,10 +778,13 @@ def _sfb_cpasync_produce_tile_warpwide[
     var my_pos = lane_id() % MMA_N
     var active = lane_id() < MMA_N * num_sf_k_tiles
 
-    # Per-tile address components for this lane's position.
-    var outer = umod(Int(work_info.n) * MMA_N, SF_MN_GROUP_SIZE) + my_pos
+    # Per-lane absolute N position; compute n_group/outer per-lane so that
+    # tiles straddling an SF_MN_GROUP_SIZE boundary are handled correctly
+    # (e.g. MMA_N=24 can land across the 128-element group boundary).
+    var abs_pos = Int(work_info.n) * MMA_N + my_pos
+    var n_group = abs_pos // SF_MN_GROUP_SIZE
+    var outer = umod(abs_pos, SF_MN_GROUP_SIZE)
     var sub_column, row_in_atom = udivmod_unchecked(outer, SF_ATOM_M[0])
-    var n_group = (Int(work_info.n) * MMA_N) // SF_MN_GROUP_SIZE
     var batch = Int(work_info.k_start)
 
     for i in range(num_iters // UInt32(k_group_size)):
@@ -803,15 +811,14 @@ def _sfb_cpasync_produce_tile_warpwide[
             # dp 0..MMA_N-1, TMEM column 0 (no sfb_tmem_adj needed).
             if active:
                 var smem_offset = my_k_atom * K_TILE_ELEMS + my_pos * ROW_STRIDE
-                # K bounds check: OOB k-atoms are zero-filled
-                # because cp.async has no auto-fill and NaN
-                # scales would corrupt the accumulator.
-                # N bounds check is unnecessary: the scale
-                # tensor is allocated with align_up(MMA_N,
-                # SF_MN_GROUP_SIZE) padding, so OOB lanes
-                # read valid memory whose values are harmless
-                # (multiplied against zero-padded B tiles).
-                if k_tile_base + my_k_atom < sfb_k_tiles:
+                # K and N bounds check: OOB k-atoms and N-edge
+                # lanes (abs_pos >= sfb_n_total) are zero-filled.
+                # cp.async has no auto-fill, and reading past the
+                # SFB allocation end causes an illegal global read.
+                if (
+                    k_tile_base + my_k_atom < sfb_k_tiles
+                    and abs_pos < sfb_n_total
+                ):
                     var global_offset = (
                         batch * sfb_batch_stride
                         + n_group * sfb_n_stride
@@ -918,6 +925,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     sfb_batch_stride: Int,
     sfb_n_stride: Int,
     sfb_k_tiles: Int,
+    sfb_n_total: Int,
 ):
     comptime assert c_type != DType.float32, "c_type cannot be float32"
     comptime assert transpose_b, "only support k-major B"
@@ -1411,6 +1419,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         sfb_batch_stride,
                         sfb_n_stride,
                         sfb_k_tiles,
+                        sfb_n_total,
                         load_mma_pipeline,
                         smem_release_state,
                     )
@@ -1431,6 +1440,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         sfb_batch_stride,
                         sfb_n_stride,
                         sfb_k_tiles,
+                        sfb_n_total,
                         load_mma_pipeline,
                         smem_release_state,
                     )
@@ -1924,6 +1934,7 @@ def _create_tma_and_launch[
         sfb_batch_stride_val,
         sfb_n_stride_val,
         sfb_k_tiles,
+        N_maybe_swapped,
         grid_dim=grid_dim,
         # 1 TMA, 1 SFB_LOAD, 1 MMA, 1 Scheduler, 4 EPILOGUE (+1 SFB_READY for 2CTA)
         block_dim=(

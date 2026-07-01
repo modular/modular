@@ -226,6 +226,7 @@ _B200_TESTS = [
     "test_matmul_sm100_1sm_fp8_normal_epilogue.mojo",
     "test_matmul_sm100_1sm_bf16_normal_epilogue.mojo",
     "test_matmul_sm100_block_scaled_mxfp8_small_bn.mojo",
+    "test_matmul_sm100_block_scaled_mxfp8_small_bn_2sm.mojo",
     "test_block_scaled_matmul_mxfp8_dispatch.mojo",
     "test_matmul_sm100_block_scaled_fp4_small_bn.mojo",
     "test_matmul_sm100_block_scaled_fp4_small_bn_2sm.mojo",
@@ -336,6 +337,7 @@ _GPU_MEMORY = {
     "test_tma_pair_mma_sm100_mxfp8.mojo": "1.5",
     "test_vendor_blas.mojo": "4",
     "test_warp_specialization_gemm_with_cluster.mojo": "2",
+    "test_matmul_sm100_block_scaled_mxfp8_small_bn_2sm.mojo": "4",
 }
 
 [
