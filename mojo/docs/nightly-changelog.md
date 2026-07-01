@@ -53,7 +53,7 @@ This version is still a work in progress.
   ```
 
 - Struct fields are no longer allowed to hide `UnsafeAnyOrigin` within a
-  struct, e.g. this is no longer accepted:
+  struct. For example, this is no longer accepted:
 
   ```mojo
   struct Example:
@@ -88,6 +88,19 @@ This version is still a work in progress.
 
   Previously the behavior was unspecified and would pick whichever matching
   name it found in the directory first.
+
+- Added support for checking variadic type-list operands with `conforms_to()`.
+  For example, a variadic parameter list can pass its type-list value directly:
+
+  ```mojo
+  def copy_variadic_elements[*Ts: AnyType](
+      *args: *Ts
+  ) where conforms_to(Ts.values, Copyable):
+      pass
+  ```
+
+  To check several distinct standalone types against a trait, conjoin scalar
+  checks, for example `conforms_to(T, Trait) and conforms_to(U, Trait)`.
 
 ## Language changes
 
