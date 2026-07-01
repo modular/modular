@@ -227,6 +227,15 @@ def listdir[PathLike: stdPathLike](path: PathLike) raises -> List[String]:
 
     Raises:
         If the operation fails.
+
+    Example:
+    ```mojo
+    from std.os import listdir
+
+    var entries = listdir("/tmp")
+    for entry in entries:
+        print(entry[])
+    ```
     """
     var dir = _DirHandle(path.__fspath__())
     return dir.list()
@@ -362,6 +371,13 @@ def remove[PathLike: stdPathLike](path: PathLike) raises:
 
     Raises:
         If the operation fails.
+
+    Example:
+    ```mojo
+    from std.os import remove
+
+    # remove("my_temp_file.txt")  # deletes the file
+    ```
     """
     var fspath = path.__fspath__()
     var error = external_call["unlink", Int32](
@@ -497,6 +513,15 @@ def mkdir[PathLike: stdPathLike](path: PathLike, mode: Int = 0o777) raises:
 
     Raises:
         If the operation fails.
+
+    Example:
+    ```mojo
+    from std.os import mkdir, rmdir
+
+    mkdir("/tmp/my_new_dir")
+    # ... use the directory ...
+    rmdir("/tmp/my_new_dir")
+    ```
     """
 
     var fspath = path.__fspath__()
@@ -524,6 +549,13 @@ def makedirs[
 
     Raises:
         If the operation fails.
+
+    Example:
+    ```mojo
+    from std.os import makedirs
+
+    makedirs("/tmp/a/b/c", exist_ok=True)  # creates all intermediate dirs
+    ```
     """
     var head, tail = split(path)
     if not tail:
@@ -563,6 +595,14 @@ def rmdir[PathLike: stdPathLike](path: PathLike) raises:
 
     Raises:
         If the operation fails.
+
+    Example:
+    ```mojo
+    from std.os import mkdir, rmdir
+
+    mkdir("/tmp/my_temp_dir")
+    rmdir("/tmp/my_temp_dir")  # removes the empty directory
+    ```
     """
     var fspath = path.__fspath__()
     var error = external_call["rmdir", Int32](
