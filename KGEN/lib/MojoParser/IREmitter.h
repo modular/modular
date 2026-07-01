@@ -120,13 +120,24 @@ public:
     return canZeroCostConvert(fromType, toType, shared);
   }
 
-  // Returns true/false to indicate that whether a type value can be upcast to a
-  // trait.
-  // Returns failure when it is an non-applicable cases (i.e., `fromType` is not
-  // a typetype and/or `toType` is not a trait type).
-  static FailureOr<bool> canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
-                                             ASTType fromType, ASTType toType,
-                                             ASTDecl *declScope);
+  // Returns the upcastability verdict for converting a type value to a trait:
+  //   - `Yes`           the type value can be upcast to the trait;
+  //   - `No`            it definitively cannot;
+  //   - `NeedsEvidence` conformance is unprovable but not contradicted, so the
+  //                     upcast is potentially satisfiable based on the context.
+  // Returns failure for non-applicable cases (i.e., `fromType` is not a
+  // typetype and/or `toType` is not a trait type).
+  //
+  // When `scopeDependent` is non-null, it is set to whether the returned
+  // verdict was derived from `declScope`'s `where` assumptions rather than from
+  // the `(fromType, toType)` pair alone. An assumption-derived `Yes`/`No` is
+  // scope-dependent: the same type pair can yield a different verdict in a
+  // scope with a different assumption set, so callers that memoize keyed on the
+  // type pair must not cache a scope-dependent verdict.
+  static FailureOr<ConformanceResult>
+  canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
+                      ASTType toType, ASTDecl *declScope,
+                      bool *scopeDependent = nullptr);
 
   /// Given a value of a type that can be zero cost converted to another type,
   /// emit a rebind or other operation to get it in the right type.
@@ -290,9 +301,13 @@ public:
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations.  This does not generate
   /// any IR.
+  // When `deferralCtx` is non-null and the only obstacle to the conversion is
+  // an unprovable (`NeedsEvidence`) trait conformance, the conversion is
+  // reported as convertible (and not cached since it's context-dependent).
   static bool canImplicitlyConvertToType(
       ASTExprAnd<CValue> value, ASTType requiredType, ASTDecl &declScope,
-      ArrayRef<ConstraintAttr> additionalAssumptions = {});
+      ArrayRef<ConstraintAttr> additionalAssumptions = {},
+      DeferredTypingContext *deferralCtx = nullptr);
 
   /// This emits an implicit conversion to the specified type if the types
   /// differ, including emitting any implicit constructor calls as well as

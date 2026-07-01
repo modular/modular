@@ -452,7 +452,10 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
 FailureOr<TypedAttr>
 ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
                                ASTType expectedType, size_t paramIdx) {
-  IREmitter emitter(getDeclScope(), EC_ParameterList);
+  // Forward any deferral context so that binding a value into a trait-bounded
+  // slot whose conformance is only unprovable is deferred by the conversion
+  // machinery rather than hard-erroring here.
+  IREmitter emitter(getDeclScope(), EC_ParameterList, deferredTypingContext);
 
   // We don't typecheck the '_' magic parameter, we propagate it.
   //
@@ -552,7 +555,8 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
       return ParamOperatorAttr::getRebind(candidate, expectedType);
 
     if (!IREmitter::canImplicitlyConvertToType(
-            {candidate, binding.expr}, expectedType, emitter.getDeclScope()))
+            {candidate, binding.expr}, expectedType, emitter.getDeclScope(),
+            /*additionalAssumptions=*/{}, emitter.deferredTypingContext))
       return {};
 
     return emitter

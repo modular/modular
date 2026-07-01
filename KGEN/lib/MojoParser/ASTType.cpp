@@ -654,9 +654,9 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
     if (!trait)
       return !decl;
 
-    return IREmitter::canMetaTypeUpCastTo(shared, loc, type.extractMetaType(),
-                                          trait, decl)
-        .value_or(false);
+    FailureOr<ConformanceResult> upCast = IREmitter::canMetaTypeUpCastTo(
+        shared, loc, type.extractMetaType(), trait, decl);
+    return succeeded(upCast) && *upCast == ConformanceResult::Yes;
   };
 
   if (checkPR("TrivialRegisterPassable"))
