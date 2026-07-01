@@ -10,6 +10,8 @@
 
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
+from std.utils import Variant
+
 
 # A wrapper struct with conditional Copyable conformance.
 # ConditionalCopyableWrapper[T] is Copyable if and only if T is Copyable.
@@ -46,6 +48,18 @@ struct MovableOnlyType(ImplicitlyDeletable, Movable):
 
     def __moveinit__(out self, deinit move: Self):
         self.x = take.x
+
+
+trait HasCopyableValue:
+    comptime Value: Copyable
+
+
+# `VariantFromMovablePack` claims to satisfy `HasCopyableValue`, but its
+# `Value = Variant[*Self.T]` requires every element of `*T` to be Copyable
+# while the pack bound only requires Movable. This must be rejected at the
+# conformance check; see the CHECK directive at the bottom of the file.
+struct VariantFromMovablePack[*T: Movable](HasCopyableValue):
+    comptime Value = Variant[*Self.T]
 
 
 # ===========================================================================
@@ -211,3 +225,6 @@ def main():
     var rp_wrapped = ConditionalRPWrapper(MovableOnlyType(99))
     # CHECK: argument type 'ConditionalRPWrapper[MovableOnlyType]' does not conform to trait 'RegisterPassable'
     needs_rp(rp_wrapped)
+
+
+# CHECK: comptime member 'Value' type 'AnyStruct[Variant[T]]' does not conform to trait's required type 'Copyable'

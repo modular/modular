@@ -20,6 +20,9 @@ trait LeakTestTrait:
         ...
 
 
+comptime AllCopyableAttr[*Ts: AnyType]: Bool = conforms_to(Ts.values, Copyable)
+
+
 # --- Refinement should NOT leak to a different parameter ---
 
 
@@ -142,6 +145,21 @@ def test_nested_assert_refinement_does_not_leak[
         comptime assert conforms_to(T, LeakTestTrait)
         _ = needs_leak_trait_4(val)
     return needs_leak_trait_4(val)  # expected-error {{cannot be converted}}
+
+
+# --- Variadic helper refinement must NOT persist past comptime if ---
+
+# expected-note @below {{function declared here}}
+def needs_copyable_trait[T: Copyable](x: T):
+    pass
+
+
+def test_variadic_refinement_does_not_leak_past_branch[
+    *Ts: ImplicitlyDeletable & Movable
+](*args: *Ts):
+    comptime if AllCopyableAttr[*Ts]:
+        needs_copyable_trait(args[0])
+    needs_copyable_trait(args[0])  # expected-error {{cannot be converted}}
 
 
 # --- Refined-but-still-failing type-value parameter binding mentions the
