@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from .buffer import Buffer
+from .buffer import Buffer, BufferView
 from .event import Event
 from .function import Function
 
@@ -52,20 +52,14 @@ class Stream:
     def record_event(self) -> Event:
         return Event._wrap(self._inner.record_event())
 
-    def copy_to_device(
-        self, dst: Buffer, src_address: int, byte_size: int
-    ) -> None:
-        self._inner.copy_to_device(dst._inner, src_address, byte_size)
+    def copy_to_device(self, dst: BufferView, src_address: int) -> None:
+        self._inner.copy_to_device(dst._inner, src_address)
 
-    def copy_from_device(
-        self, dst_address: int, src: Buffer, byte_size: int
-    ) -> None:
-        self._inner.copy_from_device(dst_address, src._inner, byte_size)
+    def copy_from_device(self, dst_address: int, src: BufferView) -> None:
+        self._inner.copy_from_device(dst_address, src._inner)
 
-    def copy_intra_device(
-        self, dst: Buffer, src: Buffer, byte_size: int
-    ) -> None:
-        self._inner.copy_intra_device(dst._inner, src._inner, byte_size)
+    def copy_intra_device(self, dst: BufferView, src: BufferView) -> None:
+        self._inner.copy_intra_device(dst._inner, src._inner)
 
     def set_memory(self, dst: Buffer, value: int, byte_size: int) -> None:
         self._inner.set_memory(dst._inner, value, byte_size)

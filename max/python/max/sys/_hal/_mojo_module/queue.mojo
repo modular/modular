@@ -21,7 +21,7 @@ from _hal.event import EVENT_FLAG_CPU_VISIBLE
 from _hal.plugin import EventHandle, FunctionHandle, RawDriver
 from _hal.queue import Queue as HALQueue
 
-from .buffer import Buffer
+from .buffer import Buffer, BufferView
 from .event import Event
 from .function import Function
 
@@ -65,50 +65,37 @@ struct Queue(Movable, Writable):
         py_self: PythonObject,
         dst_obj: PythonObject,
         src_addr_obj: PythonObject,
-        size_obj: PythonObject,
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
-        var dst_ptr = dst_obj.downcast_value_ptr[Buffer]()
-        var size = UInt64(Int(py=size_obj))
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
         var src_ptr = UnsafePointer[UInt8, ImmutAnyOrigin](
             unsafe_from_address=Int(py=src_addr_obj)
         )
-        self_ptr[]._arc[].copy_to_device(
-            dst_ptr[]._hal.view(byte_offset=0, byte_size=size), src_ptr
-        )
+        self_ptr[]._arc[].copy_to_device(dst_view[]._hal, src_ptr)
 
     @staticmethod
     def copy_from_device(
         py_self: PythonObject,
         dst_addr_obj: PythonObject,
         src_obj: PythonObject,
-        size_obj: PythonObject,
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
-        var src_ptr_buf = src_obj.downcast_value_ptr[Buffer]()
-        var size = UInt64(Int(py=size_obj))
+        var src_view = src_obj.downcast_value_ptr[BufferView]()
         var dst_ptr = UnsafePointer[UInt8, MutAnyOrigin](
             unsafe_from_address=Int(py=dst_addr_obj)
         )
-        self_ptr[]._arc[].copy_from_device(
-            dst_ptr, src_ptr_buf[]._hal.view(byte_offset=0, byte_size=size)
-        )
+        self_ptr[]._arc[].copy_from_device(dst_ptr, src_view[]._hal)
 
     @staticmethod
     def copy_intra_device(
         py_self: PythonObject,
         dst_obj: PythonObject,
         src_obj: PythonObject,
-        size_obj: PythonObject,
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
-        var dst_ptr = dst_obj.downcast_value_ptr[Buffer]()
-        var src_ptr_buf = src_obj.downcast_value_ptr[Buffer]()
-        var size = UInt64(Int(py=size_obj))
-        self_ptr[]._arc[].copy_intra_device(
-            dst_ptr[]._hal.view(byte_offset=0, byte_size=size),
-            src_ptr_buf[]._hal.view(byte_offset=0, byte_size=size),
-        )
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
+        var src_view = src_obj.downcast_value_ptr[BufferView]()
+        self_ptr[]._arc[].copy_intra_device(dst_view[]._hal, src_view[]._hal)
 
     @staticmethod
     def set_memory(

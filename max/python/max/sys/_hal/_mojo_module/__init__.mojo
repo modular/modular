@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Mojo-side type definitions for the ``max.sys._hal`` Python module."""
 
-from .buffer import Buffer
+from .buffer import Buffer, BufferView
 from .bundle import Bundle, compile_to_python_bundle
 from .context import Context
 from .device import Device
