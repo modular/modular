@@ -1609,11 +1609,16 @@ async def openai_create_chat_completion(
             fold_reasoning_into_content=fold_reasoning_into_content,
             emit_reasoning_content=pipeline_config.runtime.emit_reasoning_content,
         )
-        # Use request-level temperature/thinking_temperature if provided, else server defaults.
+        # Use request-level sampling params if provided, else server defaults.
         temp = (
             completion_request.temperature
             if completion_request.temperature is not None
             else pipeline_config.runtime.temperature
+        )
+        top_k = (
+            completion_request.top_k
+            if completion_request.top_k is not None
+            else pipeline_config.runtime.top_k
         )
         thinking_temp = (
             completion_request.thinking_temperature
@@ -1627,7 +1632,7 @@ async def openai_create_chat_completion(
         )
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
-                top_k=completion_request.top_k,
+                top_k=top_k,
                 top_p=completion_request.top_p,
                 min_p=completion_request.min_p,
                 temperature=temp,
@@ -2504,11 +2509,16 @@ async def openai_create_completion(
         )
         prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []
-        # Use request-level temperature/thinking_temperature if provided, else server defaults.
+        # Use request-level sampling params if provided, else server defaults.
         temp = (
             completion_request.temperature
             if completion_request.temperature is not None
             else pipeline_config.runtime.temperature
+        )
+        top_k = (
+            completion_request.top_k
+            if completion_request.top_k is not None
+            else pipeline_config.runtime.top_k
         )
         thinking_temp = (
             completion_request.thinking_temperature
@@ -2519,7 +2529,7 @@ async def openai_create_completion(
             prompt = cast(str | Sequence[int], prompt)
             sampling_params = SamplingParams.from_input_and_generation_config(
                 SamplingParamsInput(
-                    top_k=completion_request.top_k,
+                    top_k=top_k,
                     top_p=completion_request.top_p,
                     min_p=completion_request.min_p,
                     temperature=temp,
