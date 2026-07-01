@@ -58,6 +58,7 @@ from structured_kernels.tile_types import SMemTileArray2DRowMajor
 from structured_kernels.barriers import WarpGroupBarrier
 from .config import OutputPipelineConfig
 from .tile_pipeline import OutputStage
+from .output_writer_trait import OutputWriter
 from .tile_scheduler_splitk import TileScheduler, WorkInfo
 from .epilogue_components import (
     AccumBarrier,
@@ -102,6 +103,7 @@ struct TileWriter[
     register_based_epilogue: Bool = True,
     batched: Bool = False,
     problem_n: Int = 0,
+    num_peers: Int = 1,  # this is a local epilogue
 ](TrivialRegisterPassable):
     """Output tile writer for SM100 matmul epilogue.
 
@@ -130,6 +132,13 @@ struct TileWriter[
         Self.c_type, Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
     ]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
+    # Whole-array pointer accepted by the `TileWriterLike` ctor (one descriptor
+    # for the standard store; the ctor uses element [0]).
+    comptime TmaOpArray = InlineArray[Self.TmaOp, Self.num_peers]
+    comptime TmaOpArrayPtr = Pointer[Self.TmaOpArray, Self.tma_origin]
+
+    # No cross-GPU synchronization for a local TMA store.
+    comptime needs_sync = False
     # C tile array (output and source tiles)
     comptime CTileArray = SMemTileArray2DRowMajor[
         Self.c_type,
@@ -194,6 +203,19 @@ struct TileWriter[
             Self.stage_stride_cols > 0
         ), "stage_stride_cols must be positive"
         self.c_tma_op = c_tma_op
+
+    @always_inline
+    def __init__(out self, c_tma_ops: Self.TmaOpArrayPtr):
+        """Initialize from the `c_tma_ops` array pointer (`TileWriterLike`).
+
+        The standard local store targets a single descriptor, so this uses
+        element `[0]` of the array. Unifies construction with the
+        reduce-scatter writer, which retains all `num_peers` descriptors.
+        """
+        comptime assert (
+            Self.stage_stride_cols > 0
+        ), "stage_stride_cols must be positive"
+        self.c_tma_op = Pointer(to=c_tma_ops[][0])
 
     @always_inline
     @staticmethod
@@ -2267,3 +2289,83 @@ struct TileWriter[
                 UInt32(warp_id),
                 UInt32(lane),
             )
+
+
+# ===----------------------------------------------------------------------=== #
+# StandardOutputWriter - default OutputWriter policy (local TMA store)
+# ===----------------------------------------------------------------------=== #
+
+
+struct StandardOutputWriter(OutputWriter):
+    """Default `OutputWriter` policy: local TMA store via `TileWriter`.
+
+    One peer, no cross-GPU synchronization. This is the writer policy
+    `BlackwellMatmulSM100Kernel` uses unless a reduce-scatter policy is
+    injected. Target hardware: SM100 (B200).
+    """
+
+    comptime needs_sync = False
+    comptime num_peers = 1
+
+    @staticmethod
+    @always_inline
+    def write_batched[
+        tma_origin: ImmutOrigin,
+        c_type: DType,
+        c_rank: Int,
+        c_tile_shape: IndexList[c_rank],
+        c_desc_shape: IndexList[c_rank],
+        a_type: DType,
+        accum_type: DType,
+        block_tile_shape: IndexList[3],
+        mma_shape: IndexList[3],
+        opc: OutputPipelineConfig,
+        c_swizzle: TensorMapSwizzle,
+        transpose_c: Bool,
+        c_smem_dim0: Int,
+        c_smem_dim1: Int,
+        num_output_stages: Int,
+        num_output_warps: Int,
+        elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+        elementwise_compute_lambda_fn: Optional[
+            elementwise_compute_lambda_type
+        ],
+        register_based_epilogue: Bool,
+    ](
+        c_tma_ops: Pointer[
+            InlineArray[
+                TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
+                Self.num_peers,
+            ],
+            tma_origin,
+        ],
+        c_tiles: SMemTileArray2DRowMajor[
+            c_type, c_smem_dim0, c_smem_dim1, num_output_stages
+        ],
+        stage: OutputStage[opc],
+        tile_coord: Tuple[UInt32, UInt32, UInt32],
+        shape: Tuple[UInt32, UInt32],
+        alpha: Float32 = Float32(1.0),
+    ):
+        """Local TMA store of one batched output tile (uses descriptor [0])."""
+        # The descriptor params (tma_origin, c_type, c_rank, c_tile_shape,
+        # c_desc_shape) are inferred from the `c_tma_ops` ctor arg.
+        var writer = TileWriter[
+            a_type=a_type,
+            accum_type=accum_type,
+            block_tile_shape=block_tile_shape,
+            mma_shape=mma_shape,
+            opc=opc,
+            c_swizzle=c_swizzle,
+            transpose_c=transpose_c,
+            c_smem_dim0=c_smem_dim0,
+            c_smem_dim1=c_smem_dim1,
+            num_output_stages=num_output_stages,
+            num_output_warps=num_output_warps,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            register_based_epilogue=register_based_epilogue,
+            batched=True,
+            num_peers=1,
+        ](c_tma_ops)
+        writer.write_batched(c_tiles, stage, tile_coord, shape, alpha)

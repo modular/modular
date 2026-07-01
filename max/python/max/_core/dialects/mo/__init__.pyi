@@ -413,6 +413,64 @@ class CompositeBundledAllreduceAddRmsNormQuantFp8Op(max._core.Operation):
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
 
+class CompositeDistributedMatmulReduceScatterSumOp(max._core.Operation):
+    """
+    Each device computes a matmul (A_i @ B_i^T) and the results are
+    reduce-scattered across devices along the M axis. On Blackwell GPUs
+    this maps to a fused kernel that overlaps compute with cross-GPU TMA
+    reductions; on other targets it falls back to separate matmul + reduce-scatter.
+
+    All A inputs must be rank-2 with the same shape, and all B inputs must be
+    rank-2 with the same shape. The matmul is always performed with B transposed
+    (K-major layout).
+
+    When `has_residual` is true, the `residual` tensor is added to the matmul
+    output on the device it resides on before the reduce-scatter communication.
+    The `residual_peer` attribute identifies which input index (and thus
+    device) holds the residual; the add is applied only on that peer so the
+    reduce-scatter sum yields `sum_j(A_j @ B_j) + residual`.
+    This fuses the `add(residual, matmul) -> reduce_scatter` pattern from
+    tensor-parallel attention (e.g. DeepseekV3/KimiK2.5 with TP+EP).
+    When `has_residual` is false, `residual` and `residual_peer` are ignored.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        outputs: Sequence[max._core.Type],
+        out_chain: ChainType,
+        inputs_a: Sequence[max._core.Value[max._core.Type]],
+        inputs_b: Sequence[max._core.Value[max._core.Type]],
+        residual: max._core.Value[TensorType],
+        has_residual: max._core.dialects.builtin.BoolAttr,
+        residual_peer: max._core.dialects.builtin.IntegerAttr,
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @property
+    def inputs_a(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def inputs_b(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def residual(self) -> max._core.Value[TensorType]: ...
+    @property
+    def has_residual(self) -> bool: ...
+    @has_residual.setter
+    def has_residual(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def residual_peer(self) -> int: ...
+    @residual_peer.setter
+    def residual_peer(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+
 class CompositeConcatSliceOp(max._core.Operation):
     """
     This operation performs two operations at once:

@@ -57,6 +57,9 @@ def _process_cc_deps(data, deps):
         elif dep == "//Kernels/lib/msa":
             new_deps.append("@modular_wheel//:msa_lib")
             needs_wheel = True
+        elif dep == "//Kernels/lib/matmul_rs":
+            new_deps.append("@modular_wheel//:matmul_rs_lib")
+            needs_wheel = True
         else:
             new_deps.append(dep)
 
@@ -118,6 +121,8 @@ def modular_py_binary(mojo_deps = [], **kwargs):
     for dep in mojo_deps:
         if dep == "//Kernels/lib/msa":
             new_mojo_deps.append("@modular_wheel//:msa_lib")
+        elif dep == "//Kernels/lib/matmul_rs":
+            new_mojo_deps.append("@modular_wheel//:matmul_rs_lib")
         else:
             new_mojo_deps.append(dep)
     _modular_py_binary(mojo_deps = new_mojo_deps, **kwargs)
@@ -128,6 +133,8 @@ def mef(**kwargs):
     for dep in MOJO_DEPS:
         if dep == "//Kernels/lib/msa":
             new_deps.append("@modular_wheel//:msa_lib")
+        elif dep == "//Kernels/lib/matmul_rs":
+            new_deps.append("@modular_wheel//:matmul_rs_lib")
         else:
             new_deps.append(dep)
     _mef(mojo_deps = new_deps, **kwargs)

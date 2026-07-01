@@ -27,7 +27,12 @@ The SM100 epilogue pipeline flows as:
 from std.sys import align_of, size_of, simd_width_of
 
 from std.gpu import WARP_SIZE, lane_id, warp_id
-from std.gpu.memory import fence_async_view_proxy
+from std.gpu.memory import (
+    fence_async_view_proxy,
+    cp_async_bulk_tensor_reduce_global_shared_cta,
+    ReduceOp,
+)
+from std.gpu.sync import cp_async_bulk_commit_group
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from structured_kernels.barriers import WarpGroupBarrier
 from layout import (
@@ -45,7 +50,7 @@ from layout.layout import blocked_product, upcast, zipped_divide
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
-from std.utils.index import IndexList
+from std.utils.index import Index, IndexList
 from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
@@ -673,6 +678,93 @@ struct TMAStoreExecutor[
                             store_coords.coord_n,
                         ),
                     )
+
+
+# =============================================================================
+# TMAReduceExecutor - Execute TMA reduce-add stores with proper SMEM tiling
+# =============================================================================
+
+
+struct TMAReduceExecutor[
+    c_type: DType,
+    c_smem_dim0: Int,
+    c_smem_dim1: Int,
+    epc: EpilogueConfig,
+    stage_contiguous_size: Int,
+    c_swizzle: TensorMapSwizzle,
+    batched: Bool = False,
+](TrivialRegisterPassable):
+    """Execute TMA reduce-add from SMEM to GMEM.
+
+    Mirrors TMAStoreExecutor but uses cp_async_bulk_tensor_reduce_global_shared_cta (add)
+    instead of cp_async_bulk_tensor_global_shared_cta (store).
+    Takes a typed TMATensorTile value (not a raw pointer) so the
+    descriptor keeps its grid_constant provenance end-to-end -- otherwise
+    the compiler drops the constant-memory optimization and each TMA
+    issue refetches the descriptor.
+    Only supports non-transpose path.
+    """
+
+    comptime stageN = Self.epc.stageN
+    comptime cta_group = Self.epc.cta_group
+    comptime c_smem_shape0 = Self.c_smem_dim0
+    comptime CG1_TMA_BM = Self.c_smem_shape0
+    comptime CG2_TMA_BM = Self.c_smem_shape0 if Self.epc.MMA_M == 256 else Self.epc.BM
+    comptime TMA_BM = Self.CG2_TMA_BM if Self.cta_group == 2 else Self.CG1_TMA_BM
+
+    @staticmethod
+    @always_inline
+    def execute[
+        tma_rank: Int,
+        tile_shape: IndexList[tma_rank],
+        desc_shape: IndexList[tma_rank],
+    ](
+        c_smem_tile: TileTensor[
+            dtype=Self.c_type, address_space=AddressSpace.SHARED, ...
+        ],
+        store_coords: TMAStoreCoords[
+            Self.epc,
+            Self.c_smem_shape0,
+            _,
+            Self.batched,
+        ],
+        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
+        warp_id: UInt32,
+        lane: UInt32,
+    ):
+        """Execute TMA reduce-add from SMEM to GMEM via typed descriptor."""
+        comptime assert (
+            not Self.epc.transpose_c
+        ), "TMAReduceExecutor only supports non-transpose path"
+        if store_coords.elect_one_warp and lane == 0:
+            fence_async_view_proxy()
+
+            var c_smem_split = c_smem_tile.tile[Self.TMA_BM, Self.stageN](
+                Coord(Int(store_coords.c_smem_coord_m), Idx[0])
+            )
+
+            comptime if Self.batched:
+                cp_async_bulk_tensor_reduce_global_shared_cta[
+                    reduction_kind=ReduceOp.ADD
+                ](
+                    c_smem_split.ptr,
+                    UnsafePointer(to=c_tma_op.descriptor).bitcast[NoneType](),
+                    Index(
+                        store_coords.coord_n,
+                        store_coords.coord_m,
+                        store_coords.coord_b,
+                    ),
+                )
+            else:
+                cp_async_bulk_tensor_reduce_global_shared_cta[
+                    reduction_kind=ReduceOp.ADD
+                ](
+                    c_smem_split.ptr,
+                    UnsafePointer(to=c_tma_op.descriptor).bitcast[NoneType](),
+                    Index(store_coords.coord_n, store_coords.coord_m),
+                )
+
+            cp_async_bulk_commit_group()
 
 
 # =============================================================================

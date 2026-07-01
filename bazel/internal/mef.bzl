@@ -6,6 +6,7 @@ load(":modular_py_binary.bzl", "modular_py_binary")
 
 # All transitive mojo dependencies of //max:kernels
 MOJO_DEPS = [
+    "//Kernels/lib/matmul_rs",
     "//Kernels/lib/msa",
     "//max:builtin_kernels",
     "//max:builtin_primitives",

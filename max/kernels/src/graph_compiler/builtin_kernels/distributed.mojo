@@ -60,6 +60,16 @@ from std.logger import Logger
 comptime logger = Logger()
 
 from std.utils import IndexList
+from std.utils.index import Index
+from std.collections import InlineArray, Optional
+
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    MatmulConfig,
+)
+from linalg.utils import (
+    elementwise_compute_lambda_type as matmul_elementwise_compute_lambda_type,
+)
+from matmul_rs.matmul_reducescatter import matmul_reducescatter_dispatch
 
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
@@ -791,6 +801,141 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             )
 
         _launch_device_collective[num_devices](launch_fused_allreduce, dev_ctxs)
+
+
+@compiler.register("mo.composite.distributed.matmul_reduce_scatter.sum")
+struct DistributedMatmulReduceScatterSum:
+    @staticmethod
+    def execute[
+        a_type: DType,
+        b_type: DType,
+        c_type: DType,
+        rank: Int,
+        has_residual: Bool,
+        residual_peer: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        outputs: OutputVariadicTensors[dtype=c_type, rank=rank, ...],
+        inputs_a: InputVariadicTensors[dtype=a_type, rank=rank, ...],
+        inputs_b: InputVariadicTensors[dtype=b_type, rank=rank, ...],
+        residual: InputTensor[dtype=c_type, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        dev_ctxs_input: DeviceContextList,
+    ) capturing raises:
+        comptime num_devices = inputs_a.size
+        comptime assert (
+            inputs_b.size == num_devices
+        ), "expected same number of A and B inputs"
+        comptime assert (
+            signal_buffers.size == num_devices
+        ), "expected 1 signal buffer per device"
+
+        _check_signal_buffer_size(signal_buffers[0].size(), 0)
+
+        # Marshal output tensors into TileTensors (one per peer GPU).
+        # Each output[i] may have a different comptime static spec, so
+        # rebind to a common type derived from output[0].
+        comptime OutputTileType = type_of(
+            outputs[0].to_tile_tensor[DType.int64]()
+        )
+        var c_peer_tt = InlineArray[OutputTileType, num_devices](
+            uninitialized=True
+        )
+        comptime for i in range(num_devices):
+            c_peer_tt[i] = rebind[OutputTileType](
+                outputs[i].to_tile_tensor[DType.int64]()
+            )
+
+        # Marshal signal buffers.
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](uninitialized=True)
+        comptime for i in range(num_devices):
+            rank_sigs[i] = (
+                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
+            )
+
+        # Pinned MatmulConfig for the fused matmul+RS kernel.
+        # The SM100 GEMM heuristic picks larger tiles (e.g.
+        # (256,224,16)/cta_group=2) which work well for standalone matmul
+        # but push the fused matmul+RS kernel over the register-pressure
+        # cliff (~128 regs/thread).
+        comptime matmul_config = MatmulConfig[a_type, b_type, c_type, True](
+            mma_shape=Index(128, 128, 16),
+            cluster_shape=Index(1, 1, 1),
+            cta_group=1,
+        )
+
+        comptime if has_residual:
+            if residual.dim_size(0) != inputs_a[0].dim_size(0):
+                raise Error(
+                    "matmul+RS residual.dim_size(0)="
+                    + String(residual.dim_size(0))
+                    + " must equal inputs_a[0].dim_size(0)="
+                    + String(inputs_a[0].dim_size(0))
+                )
+
+        # Build the residual-add compute lambda. The residual lives on a
+        # single peer (the device of the residual tensor in the graph).
+        # Mirroring the asymmetric DeepseekV3/KimiK2.5 pattern, only that
+        # peer applies the residual-add lambda; the other peers launch
+        # without it, so after RS-sum the output contains
+        # `sum_j(A_j @ B_j) + residual` rather than `... + ngpus*residual`.
+        @parameter
+        @always_inline
+        @__copy_capture(residual)
+        def residual_add_fn[
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) capturing -> SIMD[
+            _dtype, _width
+        ]:
+            return val + rebind[SIMD[_dtype, _width]](
+                residual.load[width=_width, element_alignment=alignment](coords)
+            )
+
+        comptime compute_lambda = Optional[
+            matmul_elementwise_compute_lambda_type
+        ](residual_add_fn)
+
+        # Marshal per-peer input TileTensors. All peers' A (and B) share
+        # the same comptime spec; rebind to a common type so we can build
+        # one InlineArray per kind.
+        comptime InputATileType = type_of(
+            inputs_a[0].to_tile_tensor[DType.int64]()
+        )
+        var a_per_peer = InlineArray[InputATileType, num_devices](
+            uninitialized=True
+        )
+        comptime for i in range(num_devices):
+            a_per_peer[i] = rebind[InputATileType](
+                inputs_a[i].to_tile_tensor[DType.int64]()
+            )
+
+        comptime InputBTileType = type_of(
+            inputs_b[0].to_tile_tensor[DType.int64]()
+        )
+        var b_per_peer = InlineArray[InputBTileType, num_devices](
+            uninitialized=True
+        )
+        comptime for i in range(num_devices):
+            b_per_peer[i] = rebind[InputBTileType](
+                inputs_b[i].to_tile_tensor[DType.int64]()
+            )
+
+        # Hand off to the dispatcher: it picks fused vs unfused based on
+        # a comptime arch check and a runtime shape check on M, and
+        # drives the per-peer parallel launch.
+        matmul_reducescatter_dispatch[
+            transpose_b=True,
+            config=matmul_config,
+            ngpus=num_devices,
+            has_residual=has_residual,
+            residual_peer=residual_peer,
+            elementwise_compute_lambda_fn=compute_lambda,
+        ](c_peer_tt, a_per_peer, b_per_peer, rank_sigs, dev_ctxs_input)
 
 
 @compiler.register("lamport_allreduce_rmsnorm")

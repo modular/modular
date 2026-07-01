@@ -89,7 +89,7 @@ class Signals:
     # ``max/kernels/src/comm/sync.mojo``; the Lamport region offset below is
     # exact (a wrong value silently corrupts Lamport), so keep them in lockstep.
     _MAX_GPUS = 8
-    _MAX_NUM_BLOCKS = 512
+    _MAX_NUM_BLOCKS = 1024
     # Number of disjoint barrier counter banks. MUST match ``NUM_BARRIER_DOMAINS``
     # in ``max/kernels/src/comm/sync.mojo``. Each domain gets its own
     # self_counter + peer_counter grids so grouped (subgroup) and full-world
