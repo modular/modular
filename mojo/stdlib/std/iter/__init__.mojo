@@ -141,6 +141,14 @@ trait Iterator(ImplicitlyDeletable, Movable):
 
     comptime Element: Movable
 
+    def __iter__(var self) -> Self:
+        """Returns the iterator.
+
+        Returns:
+            An iterator.
+        """
+        return self^
+
     def __next__(mut self) raises StopIteration -> Self.Element:
         """Returns the next element from the iterator.
 

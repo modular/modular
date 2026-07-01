@@ -806,6 +806,26 @@ def test_list_iter_bounds() raises:
     _test_list_iter_bounds(reversed(list), len(list))
 
 
+def test_list_iter_ctors() raises:
+    var elems = [0, 1, 2, 3]
+    var res = List(iter(elems))
+    for i in range(4):
+        assert_equal(elems[i], res[i])
+
+    var str_elems = ["0", "1", "2", "3"]
+    var str_res = List(iter(str_elems))
+    for i in range(4):
+        assert_equal(str_res[i], str_elems[i])
+
+    var res_owned = List(iter([0, 1, 2, 3]))
+    for i in range(4):
+        assert_equal(elems[i], res_owned[i])
+
+    var str_res_owned = List(iter(["0", "1", "2", "3"]))
+    for i in range(4):
+        assert_equal(str_res[i], str_res_owned[i])
+
+
 def test_list_span() raises:
     var vs = [1, 2, 3]
 
