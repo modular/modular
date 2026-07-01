@@ -357,7 +357,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @staticmethod
     def dict(**kwargs: PythonObject) raises -> PythonObject:
-        """Construct an Python dictionary from keyword arguments.
+        """Construct a Python dictionary from keyword arguments.
 
         Args:
             kwargs: The keyword arguments to construct the dictionary with.
@@ -388,7 +388,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     def dict(
         tuples: Span[Tuple[PythonObject, PythonObject], _]
     ) raises -> PythonObject:
-        """Construct an Python dictionary from a list of key-value tuples.
+        """Construct a Python dictionary from a list of key-value tuples.
 
         Args:
             tuples: The list of key-value tuples to construct the dictionary
@@ -434,7 +434,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @staticmethod
     def list(var *values: PythonObject) raises -> PythonObject:
-        """Construct an Python list of objects.
+        """Construct a Python list of objects.
 
         Args:
             values: The values to initialize the list with.
@@ -454,7 +454,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @staticmethod
     def tuple(var *values: PythonObject) raises -> PythonObject:
-        """Construct an Python tuple of objects.
+        """Construct a Python tuple of objects.
 
         Args:
             values: The values to initialize the tuple with.
