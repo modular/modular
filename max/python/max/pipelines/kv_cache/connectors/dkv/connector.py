@@ -39,6 +39,15 @@ from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
+# dKV keys every block under a composite (tp_shard_id, group_id, seq_hash). MAX's
+# paged KV cache is single-group (full attention) today; SWA/hybrid groups are not
+# yet wired through this connector (block_manager has no group dimension), so we key
+# all load/offload under the full-attention group. REVISIT when windowed-KV groups
+# land. Mirrors GroupId::FullAttention (== 1) in the dkv proto
+# (dkv/dkv-proto/src/gen/modular.dkv.v1.rs). GroupId::Unspecified (== 0) is rejected
+# server-side (no geometry), so 0 is never a valid substitute.
+_DKV_GROUP_FULL_ATTENTION = 1
+
 
 def _to_dkv_u64(h: bytes) -> int:
     """Packs a connector-level block hash into the 64-bit dkv wire key.
@@ -208,8 +217,9 @@ class DKVConnector:
         their first 8 bytes at the dkv boundary (see :func:`_to_dkv_u64`).
         """
         return self._clients[replica_idx].load(
-            device_block_ids,
-            [_to_dkv_u64(h) for h in block_hashes],
+            group_id=_DKV_GROUP_FULL_ATTENTION,
+            device_block_ids=device_block_ids,
+            block_hashes=[_to_dkv_u64(h) for h in block_hashes],
         )
 
     def offload(
@@ -232,8 +242,9 @@ class DKVConnector:
         (and the NUMA striping plan) from the hashes alone.
         """
         self._clients[replica_idx].offload(
-            block_ids,
-            [_to_dkv_u64(h) for h in block_hashes],
+            group_id=_DKV_GROUP_FULL_ATTENTION,
+            block_ids=block_ids,
+            block_hashes=[_to_dkv_u64(h) for h in block_hashes],
         )
 
     def wait_for_loads(self) -> None:
@@ -275,7 +286,8 @@ class DKVConnector:
 
     def reset_metrics(self) -> None:
         """Clear Rust-side transfer counters after the scheduler samples a batch."""
-        self._client.reset_metrics()
+        for client in self._clients:
+            client.reset_metrics()
 
     @property
     def metrics(self) -> KVCacheMetrics:

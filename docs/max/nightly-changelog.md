@@ -364,6 +364,11 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed MAX Serve crashing the model worker on the first host KV-cache
+  offload/reload when run with `--kv-connector dkv`. The dKV connector had
+  drifted out of sync with its client and no longer passed the required
+  attention group on the load/offload path; it now supplies it, so the
+  same-host prefix-cache path completes instead of raising.
 - Fixed inflated `maxserve.cache.h2d_blocks_copied` and
   `maxserve.cache.d2h_blocks_copied` telemetry on tiered and local KV cache
   deployments. The scheduler now resets connector transfer counters after each
