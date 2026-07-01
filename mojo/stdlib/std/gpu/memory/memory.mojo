@@ -2508,10 +2508,29 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
     - The TMA descriptor must be properly initialized before use.
     - The reduction operation is performed atomically to ensure correctness.
     """
-    comptime assert rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"
+    comptime assert rank in (
+        1,
+        2,
+        3,
+    ), "Expecting rank-1, rank-2, or rank-3 tensors"
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
-    comptime if rank == 2:
+    comptime if rank == 3:
+        llvm_intrinsic[
+            "llvm.nvvm.cp.async.bulk.tensor.reduce."
+            + reduction_kind.mnemonic()
+            + ".tile.3d",
+            NoneType,
+        ](
+            src_mem,
+            tma_descriptor,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+            UInt64(eviction_policy._value),
+            cache_hint,
+        )
+    elif rank == 2:
         llvm_intrinsic[
             "llvm.nvvm.cp.async.bulk.tensor.reduce."
             + reduction_kind.mnemonic()

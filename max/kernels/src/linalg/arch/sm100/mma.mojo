@@ -168,6 +168,9 @@ struct MmaOpSM100_SS[
         comptime assert (
             Self.a_type == Self.b_type
         ), "a_type and b_type must be the same"
+        comptime assert (
+            Self.mma_shape[2] == 32 // size_of[Self.a_type]()
+        ), "MMA_K must be 32 // size_of(a_type) (16 for 16-bit, 32 for 8-bit)"
 
         self.idesc = UMMAInsDescriptor[
             Self._get_umma_kind[Self.a_type]()

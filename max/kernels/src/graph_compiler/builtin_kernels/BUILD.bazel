@@ -9,6 +9,7 @@ mojo_library(
     use_production_compiler_for_asan = True,
     validate_missing_docs = False,
     deps = [
+        "//Kernels/lib/matmul_rs",
         "//Kernels/lib/msa",
         "//max:builtin_primitives",
         "//max:comm",
