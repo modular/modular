@@ -42,4 +42,6 @@ ernie45_arch = SupportedArchitecture(
     },
     task=PipelineTask.TEXT_GENERATION,
     config=ERNIE45Config,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )
