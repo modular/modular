@@ -372,25 +372,22 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         var input = StringSlice("123")
         var iter = input.codepoints()
 
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
+        assert_equal(iter.peek_next().value(), Codepoint("1"))
+        assert_equal(iter.peek_next().value(), Codepoint("1"))
+        assert_equal(iter.peek_next().value(), Codepoint("1"))
 
         # A call to `next()` return the same value as `peek_next()` had,
         # but also advance the iterator.
-        assert_equal(iter.next().value(), Codepoint.ord("1"))
+        assert_equal(iter.next().value(), Codepoint("1"))
 
         # Later `peek_next()` calls will return the _new_ next character:
-        assert_equal(iter.peek_next().value(), Codepoint.ord("2"))
+        assert_equal(iter.peek_next().value(), Codepoint("2"))
         ```
         """
         if self._slice.byte_length() > 0:
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
             #   to contain valid UTF-8.
-            codepoint, _ = Codepoint.unsafe_decode_utf8_codepoint(
-                self._slice._slice
-            )
-            return codepoint
+            return Codepoint(unsafe_parse_first=self._slice)
         else:
             return None
 
@@ -595,9 +592,9 @@ struct GraphemeSliceIter[
                 continue
 
             # Slow path: decode one codepoint and feed the state machine.
-            var sub = Span[Byte, Self.origin](ptr=ptr + pos, length=total - pos)
-            var cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(sub)
-            if _is_grapheme_break(state, cp.to_u32()):
+            var sub = StringSlice(ptr=ptr + pos, length=total - pos)
+            var cp, num_bytes = Codepoint.unsafe_decode_utf8_to_utf32(sub)
+            if _is_grapheme_break(state, cp):
                 count += 1
             pos += num_bytes
 
@@ -635,14 +632,12 @@ struct GraphemeSliceIter[
         var consumed = 0
 
         # Decode the first codepoint of this grapheme cluster.
-        var cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
-            self._slice._slice
-        )
+        var cp, num_bytes = Codepoint.unsafe_decode_utf8_to_utf32(self._slice)
 
         if not self._state_primed:
             # First call, or state is not yet primed: feed this codepoint
             # to the state machine to establish the initial state.
-            _ = _is_grapheme_break(self._state, cp.to_u32())
+            _ = _is_grapheme_break(self._state, cp)
         # else: state was already updated for this codepoint when the
         # previous next() detected the break. Skip re-feeding.
 
@@ -651,13 +646,13 @@ struct GraphemeSliceIter[
         # Continue consuming codepoints until we hit a break.
         var found_break = False
         while consumed < total_bytes:
-            var remaining = Span[Byte, Self.origin](
+            var remaining = StringSlice(
                 ptr=self._slice.unsafe_ptr() + consumed,
                 length=total_bytes - consumed,
             )
-            cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(remaining)
+            cp, num_bytes = Codepoint.unsafe_decode_utf8_to_utf32(remaining)
 
-            if _is_grapheme_break(self._state, cp.to_u32()):
+            if _is_grapheme_break(self._state, cp):
                 # Found a break — the grapheme ends before this codepoint.
                 # The state machine has already been updated with this
                 # codepoint, so mark as primed for the next call.
@@ -753,22 +748,21 @@ struct GraphemeSliceIter[
         Returns:
             The byte offset `<= end` that begins the last grapheme cluster.
         """
-        var span = self._slice.as_bytes()
         # Invalidate the cache when the iter has shrunk down to (or past) the
         # cached safe-start: an empty forward-scan range would return that
         # offset as the boundary, producing a zero-length cluster and an
         # infinite loop.
         if not self._back_safe_known or self._back_safe_start >= end:
-            self._back_safe_start = _find_safe_grapheme_start(span, end)
+            self._back_safe_start = _find_safe_grapheme_start(self._slice, end)
             self._back_safe_known = True
         var state = _GraphemeBreakState()
         var last_boundary = self._back_safe_start
         var pos = self._back_safe_start
         while pos < end:
-            var cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
-                span[pos:end]
+            var cp, num_bytes = Codepoint.unsafe_decode_utf8_to_utf32(
+                self._slice[byte=pos:end]
             )
-            if _is_grapheme_break(state, cp.to_u32()):
+            if _is_grapheme_break(state, cp):
                 last_boundary = pos
             pos += num_bytes
         return last_boundary
