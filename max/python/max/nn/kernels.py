@@ -288,6 +288,10 @@ def rope_split_store_ragged(
     mrope_section: list[int] | None = None,
     fuse: bool = True,
     q_out_dtype: DType | None = None,
+    q_norm_weight: TensorValue | None = None,
+    k_norm_weight: TensorValue | None = None,
+    rms_norm_eps: float | None = None,
+    k_eq_v: bool = False,
 ) -> TensorValue:
     """Apply rope to Q and K from flat QKV buffer, store K/V to cache.
 
@@ -313,6 +317,19 @@ def rope_split_store_ragged(
             emit separate split, rope, and store ops for testing graph
             compiler fusion.
         q_out_dtype: Dtype for the roped Q output. Defaults to ``qkv.dtype``.
+        q_norm_weight: Optional per-head RMSNorm gamma ``[head_dim]`` for Q. When
+            given (with ``k_norm_weight`` and ``rms_norm_eps``), the per-head
+            Q/K/V RMS-norm is fused into the op (q/k use their gammas, v is a bare
+            norm), removing the separate norm ops. Mutually exclusive with
+            ``position_ids``.
+        k_norm_weight: Per-head RMSNorm gamma ``[head_dim]`` for K (see
+            ``q_norm_weight``).
+        rms_norm_eps: Epsilon for the fused qk-norm; required when
+            ``q_norm_weight`` is set.
+        k_eq_v: When True (only valid with ``q_norm_weight``), V has no own
+            projection and reuses K's: ``qkv`` is ``[q|k]`` (no V region) and the
+            kernel reads the K head for both the K and V stores, sharing the norm
+            reduction. When False (default), ``qkv`` is ``[q|k|v]``.
 
     Returns:
         Roped Q output [total_seq_len, n_heads * head_dim].
@@ -370,6 +387,15 @@ def rope_split_store_ragged(
         else:
             parameters["mrope_section"] = ""
 
+    if (q_norm_weight is None) != (k_norm_weight is None):
+        raise ValueError(
+            "q_norm_weight and k_norm_weight must be provided together"
+        )
+    if q_norm_weight is not None and position_ids is not None:
+        raise ValueError(
+            "qk-norm fusion and position_ids are not supported together"
+        )
+
     if position_ids is not None:
         op_name = "mo.rope_split_store.ragged.paged.with_position_id"
         values = [
@@ -378,6 +404,29 @@ def rope_split_store_ragged(
             freqs_cis,
             *kv_collection.flatten_without_attention_dispatch_metadata(),
             position_ids,
+            layer_idx,
+        ]
+    elif q_norm_weight is not None:
+        # Fused per-head Q/K/V RMS-norm folded into the RoPE+store op: q/k use
+        # the learned gammas, v is a bare norm. `eps` is passed as its integer
+        # reciprocal (custom-op params reject float; eps is negligible vs
+        # mean(x^2), so this is ample precision).
+        assert k_norm_weight is not None
+        if rms_norm_eps is None:
+            raise ValueError("rms_norm_eps is required with q_norm_weight")
+        op_name = "mo.rope_split_store.ragged.paged.with_qk_norm"
+        parameters["eps_recip"] = round(1.0 / rms_norm_eps)
+        # When `k_eq_v`, V has no projection: `qkv` is `[q|k]` and the kernel
+        # reads the K region for both K and V (sharing one norm reduction)
+        # rather than a duplicated V region.
+        parameters["k_eq_v"] = k_eq_v
+        values = [
+            qkv,
+            input_row_offsets,
+            freqs_cis,
+            q_norm_weight,
+            k_norm_weight,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ]
     else:
