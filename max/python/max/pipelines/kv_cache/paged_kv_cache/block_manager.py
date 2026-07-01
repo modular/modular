@@ -763,8 +763,8 @@ class BlockManager:
         for block in ordered_blocks:
             pool.free_block(block)
 
-        self.req_to_blocks[request_id] = []
-        self.req_to_hashes[request_id] = []
+        self.req_to_blocks.pop(request_id, None)
+        self.req_to_hashes.pop(request_id, None)
         self.req_to_replica.pop(request_id, None)
 
         # Committed idx is only used with the prefix cache
