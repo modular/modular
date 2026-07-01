@@ -785,12 +785,15 @@ def flash_attention_dispatch[
                 # non-causal masks don't blow up `norm_vec` in the
                 # epilogue (see comment there).
                 comptime _v2_eligible = (
-                    config.dtype == DType.bfloat16
-                    and output.dtype == DType.bfloat16
-                    and (config.depth == 64 or config.depth == 128)
-                    and has_amd_gpu_accelerator()
-                    and not _is_amd_rdna()
-                    and (k_t.page_size == 0 or k_t.page_size >= 64)
+                    # TODO(KERN-3053): Disable this kernel to debug race
+                    # conditions that lead to E2E model failures.
+                    False
+                    # config.dtype == DType.bfloat16
+                    # and output.dtype == DType.bfloat16
+                    # and (config.depth == 64 or config.depth == 128)
+                    # and has_amd_gpu_accelerator()
+                    # and not _is_amd_rdna()
+                    # and (k_t.page_size == 0 or k_t.page_size >= 64)
                 )
 
                 comptime if _v2_eligible:
