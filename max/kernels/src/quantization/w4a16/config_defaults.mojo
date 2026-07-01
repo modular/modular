@@ -1,0 +1,42 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+comptime DEFAULT_USE_FP16 = True
+
+comptime DEFAULT_BM = 32
+comptime DEFAULT_BN = 64
+comptime DEFAULT_BK = 64
+comptime DEFAULT_GROUP_SIZE = 128
+comptime DEFAULT_ZP_BIAS = 8
+comptime DEFAULT_USE_QZEROS = False
+comptime DEFAULT_ZERO_OFFSET = 0
+comptime DEFAULT_SMEM_PAD = 8
+
+comptime DEFAULT_RING_PRODUCER_WARPS = 1
+comptime DEFAULT_NUM_STAGES = 2
+comptime DEFAULT_BLOCK_SWIZZLE_SCALE = 0
+comptime DEFAULT_GROUP_SIZE_M = 0
+comptime DEFAULT_USE_LDS_SWIZZLE = False
+comptime DEFAULT_RING_STARTUP_ALL_WARPS = True
+comptime DEFAULT_LOAD_B_BY_QPACK = True
+comptime DEFAULT_QPACK_K_VECTOR_WIDTH = 2
+comptime DEFAULT_DEQUANT_B_IN_BF16 = False
+comptime DEFAULT_SCALE_AFTER_GROUP = True
+comptime DEFAULT_ASSUME_EVEN_K = False
+comptime DEFAULT_ASSUME_EVEN_MN = False
+comptime DEFAULT_ASSUME_EVEN_N = False
+
+comptime DEFAULT_KERNEL_VARIANT = "ring_bonly"
+
+comptime DEFAULT_WARPS_M = 1
+comptime DEFAULT_WARPS_N = 2
