@@ -21,7 +21,13 @@ from std.collections._swisstable import GROUP_WIDTH
 
 from std.hashlib import Hasher, default_comp_time_hasher
 
-from test_utils import CopyCounter, DelCounter, MoveOnly, check_write_to
+from test_utils import (
+    CopyCounter,
+    DelCounter,
+    ExplicitDestroy,
+    MoveOnly,
+    check_write_to,
+)
 from std.testing import (
     assert_equal,
     assert_false,
@@ -1517,6 +1523,49 @@ def test_dict_move_only_key_and_value() raises:
     ref already = d.setdefault(MoveOnly[Int](1), MoveOnly[Int](999))
     assert_equal(already, MoveOnly[Int](10))
     assert_equal(len(d), 1)
+
+
+def test_dict_conditional_implicitly_deletable() raises:
+    assert_true(conforms_to(Dict[Int, Int], ImplicitlyDeletable))
+
+    assert_false(conforms_to(Dict[Int, ExplicitDestroy], ImplicitlyDeletable))
+
+
+def test_dict_destroy_with() raises:
+    # `destroy_with` must hand every entry's key/value to the closure exactly
+    # once. Uses a deletable value type because populating a linear-valued dict
+    # isn't supported yet (tracked in the linear-usability follow-up).
+    var d = Dict[Int, Int]()
+    d[1] = 10
+    d[2] = 20
+    d[3] = 30
+
+    var destroyed = List[Int]()
+
+    def dispose(var key: Int, var value: Int) {mut}:
+        destroyed.append(value)
+
+    d^.destroy_with(dispose)
+
+    # Order follows slot layout, not insertion, so check membership.
+    assert_equal(len(destroyed), 3)
+    assert_true(10 in destroyed)
+    assert_true(20 in destroyed)
+    assert_true(30 in destroyed)
+
+
+def test_dict_destroy_with_empty() raises:
+    # `destroy_with` on an empty (linear-valued) dict must run and free the
+    # backing without invoking the closure — there are no entries.
+    var d = Dict[Int, ExplicitDestroy]()
+    var calls = 0
+
+    def dispose(var key: Int, var value: ExplicitDestroy) {mut}:
+        calls += 1
+        value^.destroy()
+
+    d^.destroy_with(dispose)
+    assert_equal(calls, 0)
 
 
 def main() raises:
