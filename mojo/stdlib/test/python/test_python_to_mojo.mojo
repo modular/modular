@@ -80,6 +80,22 @@ def test_int_subclass_override_takes_fallback() raises:
     assert_equal(Int(py=my_int), 99)
 
 
+def test_int_from_bool() raises:
+    # `bool` is a subclass of `int` in CPython, so `PyLong_CheckExact` rejects
+    # it and we take the slow path through `py.__int__()`. Verify the standard
+    # int(True) == 1, int(False) == 0 contract is preserved.
+    assert_equal(Int(py=PythonObject(True)), 1)
+    assert_equal(Int(py=PythonObject(False)), 0)
+
+
+def test_int_overflow_from_big_pyint() raises:
+    # Python ints larger than `Py_ssize_t` must raise on conversion. This
+    # exercises the `self == -1 and PyErr_Occurred()` disambiguation after
+    # `PyLong_AsSsize_t` on the fast path.
+    with assert_raises(contains="too large to convert"):
+        _ = Int(py=Python.evaluate("1 << 100"))
+
+
 def test_numpy_float() raises:
     var np = Python.import_module("numpy")
     var py_numpy_float = np.float64(1.0)
