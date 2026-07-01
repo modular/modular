@@ -407,7 +407,13 @@ modular_cc_library(
 
 modular_cc_library(
     name = "Profiling",
-    srcs = glob(["lib/Profiling/*.cpp"]),
+    # RangeKineto.cpp is the libkineto backend; it lives in :ProfilingKineto so
+    # libkineto stays out of this Mojo-facing library. RangeBackend.h is the
+    # private header both sides share (quote-included from the same directory).
+    srcs = glob(
+        ["lib/Profiling/*.cpp"],
+        exclude = ["lib/Profiling/RangeKineto.cpp"],
+    ) + ["lib/Profiling/RangeBackend.h"],
     hdrs = glob(["include/Support/Profiling/*.h"]),
     # TracyRocm.cpp uses a constructor to promote Tracy symbols to RTLD_GLOBAL
     # so that the rocprofiler-sdk plugin can resolve them via dlsym.
@@ -457,6 +463,55 @@ modular_cc_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+# libkineto backend for the Range API (MXTOOLS-190). This is the ONLY target
+# that links libkineto + the on-demand CUPTI / cudart stubs; the base :Profiling
+# library above stays free of them so it can be linked into the Mojo compiler
+# runtime (KGEN CompilerRT, MLRT) without dragging libkineto's GPU-profiling
+# shared objects into the Mojo package (which the release linter rejects).
+# It also keeps the @libkineto repo "used" (find_unused_repos) even though no
+# Mojo-reachable target depends on it.
+#
+# Range.cpp is dormant at this point in the stack, so nothing calls the backend
+# yet; #86355 wires Range.cpp's recording paths through it and links this target
+# into the MAX runtime (max._core). When linked into a process, RangeKineto.cpp's
+# static initializer registers the KinetoBackend function table.
+#
+# Tracy and libkineto are mutually exclusive at build time (both subscribe to
+# CUPTI), so this is gated to Linux x86_64 with Tracy disabled.
+modular_cc_library(
+    name = "ProfilingKineto",
+    srcs = [
+        "lib/Profiling/RangeBackend.h",
+        "lib/Profiling/RangeKineto.cpp",
+    ],
+    # -Wno-global-constructors: the backend registers itself through a
+    # file-scope Registrar whose constructor runs at load time (same pattern as
+    # :Profiling's TracyRocm constructor).
+    copts = [
+        "-Wno-global-constructors",
+        "-fvisibility=default",
+    ],
+    # Nothing depends on this target until #86355 wires it into max._core, so
+    # the unused-targets linter would flag it (and its libkineto / CUPTI-stub /
+    # config-setting deps) as dead. "top-level" marks it a root for that linter
+    # query (bazel/internal/unused-targets.query) — the tag has no other
+    # consumer, so it has no build side effects — which also covers the
+    # `linux_x86_64_no_tracy` config_setting_group that can't carry a tag of its
+    # own. Drop the tag once #86355 gives it a real reverse dependency.
+    tags = ["top-level"],
+    target_compatible_with = select({
+        "//:linux_x86_64_no_tracy": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":Profiling",
+        "//bazel/third-party:libcudart_tracy_stub",
+        "//bazel/third-party:libcupti_tracy_stub",
+        "@libkineto",
+        "@libkineto//:libkineto_headers",
+    ],
 )
 
 modular_cc_library(
