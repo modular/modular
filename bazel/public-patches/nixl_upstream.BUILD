@@ -477,6 +477,27 @@ cc_import(
     target_compatible_with = _LINUX_X86,
 )
 
+# Consumption wrapper for in-tree consumers (libmax, MLRT tests): NIXL public
+# headers everywhere; on linux_x86_64 it also links libnixl.so (:nixl_shared)
+# and carries the dlopen'd transport plugins as runfiles. Degrades to
+# headers-only on macOS/aarch64 (the Linux-only targets enter the graph only via
+# the linux_x86_64 select arm) so downstream targets like libmax still build
+# there. This replaces the former //MLRT:Driver/NIXL wrapper.
+cc_library(
+    name = "nixl_runtime",
+    data = select({
+        "@@//:linux_x86_64": [
+            ":libplugin_LIBFABRIC.so",
+            ":libplugin_UCX.so",
+        ],
+        "//conditions:default": [],
+    }),
+    deps = [":nixl_api_headers"] + select({
+        "@@//:linux_x86_64": [":nixl_shared"],
+        "//conditions:default": [],
+    }),
+)
+
 # --- Install prefix -------------------------------------------------------
 # Public C++ API headers in their api/cpp-relative layout. nixl.h includes its
 # siblings as `#include "nixl_types.h"`, so a consumer points -I at
