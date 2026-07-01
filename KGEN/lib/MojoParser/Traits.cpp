@@ -1103,7 +1103,16 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
       hasUnprovenRequired = true;
       continue;
     }
-    // Symbol is not provided at all.
+
+    // Symbol is not provided at all. If the type's concrete identity is
+    // unknown, i.e. its metatype is a trait bound rather than a concrete struct
+    // metatype, then a missing trait is not definitively absent: A `where
+    // conforms_to(...)` assumption could supply it. Report NeedsEvidence.
+    if (concreteType) {
+      Type meta = ASTType(getCanonicalType(concreteType)).extractMetaType();
+      if (sugarIsa<AnyTraitType, TraitType>(meta))
+        return ConformanceResult::NeedsEvidence;
+    }
     return ConformanceResult::No;
   }
 
@@ -1408,13 +1417,34 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // Check that the struct or super trait implements the trait.
   // Assumptions needed: e.g. `where AllWritable[*Ts]` proves
   // Tuple[*Ts]: Writable.
-  if (type.checkConformance(
-          trait, shared, ASTDecl::getAssumptionsFromScope(&getDeclScope())) ==
-      ConformanceResult::No) {
+  ConformanceResult verdict = type.checkConformance(
+      trait, shared, ASTDecl::getAssumptionsFromScope(&getDeclScope()));
+  if (verdict == ConformanceResult::No) {
     MojoInflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                             << type << " to trait " << ASTType(trait)
                             << value.expr->getRange();
     return {};
+  }
+
+  // If conformance is unprovable (but not contradicted) and a deferral context
+  // is installed, record the conformance obligation as deferred, and emit a
+  // downcast into the target trait type.
+  if (verdict == ConformanceResult::NeedsEvidence && deferredTypingContext) {
+    // Canonicalize the trait's ancestor symbols so the obligation matches the
+    // spelling of the `where`-clause assumption that discharges it.
+    SmallVector<SymbolRefAttr> symbols(trait.getSymbols());
+    canonicalizeTraitCompositionSymbols(shared, symbols);
+    TraitType canonTrait = TraitType::get(trait.getContext(), symbols);
+    // A parameter's trait bound is always unconditional.
+    assert(!canonTrait.hasConstraints() &&
+           "deferred conformance bound should always bean unconditional trait");
+    TypedAttr conformsTo =
+        TypeConformsToTraitAttr::get(typePValue, canonTrait.getPValue());
+    deferredTypingContext->deferredConstraints.push_back(
+        {ConstraintAttr::get(
+             conformsTo, shared.diags.translateLocation(value.expr->getLoc())),
+         value.expr->getLoc()});
+    return DowncastAttr::get(trait, typePValue);
   }
 
   // Create the new type value with the trait metatype.

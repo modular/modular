@@ -1602,22 +1602,35 @@ static ASTDecl *getClosureTraitDecl(SharedState &shared,
   return nullptr;
 }
 
-// Returns true/false to indicate that whether a type value can be upcast to a
-// trait.
-// Returns failure when it is an non-applicable cases (i.e., `fromType` is not a
-// typetype and/or `toType` is not a trait type).
-FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
-                                               ASTType fromType, ASTType toType,
-                                               ASTDecl *declScope) {
+/// The definite conformance verdict for a settled check: `Yes` when proven,
+/// `No` otherwise. Never yields `NeedsEvidence`, so use this only where the
+/// outcome is already fully proven.
+static ConformanceResult getProvenConformance(bool proven) {
+  return proven ? ConformanceResult::Yes : ConformanceResult::No;
+}
+
+// Returns the upcastability verdict (`Yes`/`No`/`NeedsEvidence`) for converting
+// a type value to a trait. Returns failure for non-applicable cases (i.e.,
+// `fromType` is not a typetype and/or `toType` is not a trait type).
+FailureOr<ConformanceResult>
+IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
+                               ASTType toType, ASTDecl *declScope,
+                               bool *scopeDependent) {
+  // By default the verdict depends only on the (fromType, toType) pair. The
+  // branches below that consult `declScope`'s assumptions set this, since an
+  // assumption-derived verdict is scope-dependent and must not be memoized.
+  if (scopeDependent)
+    *scopeDependent = false;
+
   if (isEqualCanon(fromType, toType))
-    return true;
+    return ConformanceResult::Yes;
 
   // Trait metatypes/struct MetaMetaType are allowed to upcast to trivial
   // types.
   FailureOr<bool> upCastable =
       isValidUpCastToTypeType(shared, fromType, toType);
   if (succeeded(upCastable))
-    return upCastable;
+    return getProvenConformance(*upCastable);
 
   auto canFnLiteralUpCastToTrait = [&](TypedAttr fnPValue,
                                        AnyTraitType anyTrait) {
@@ -1655,7 +1668,7 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
               traitDeclOp && traitDeclOp.getDefinesClosure()) {
             if (succeeded(shared.closureEmitter->isCompatibleWith(
                     fromType, &symbolDecl))) {
-              return true;
+              return ConformanceResult::Yes;
             }
           }
         }
@@ -1666,19 +1679,20 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
         // Writable
         // inside a fn with `where AllWritable[*Ts]`.
         auto assumptions = ASTDecl::getAssumptionsFromScope(declScope);
-        return fromType.checkConformance(trait, shared, assumptions) ==
-               ConformanceResult::Yes;
+        if (scopeDependent && !assumptions.empty())
+          *scopeDependent = true;
+        return fromType.checkConformance(trait, shared, assumptions);
       }
     } else if (auto fnGen =
                    sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaType>(
                        fromType)) {
-      return canFnLiteralUpCastToTrait(fnGen.getType().getSymbolConstantAttr(),
-                                       anyTrait);
+      return getProvenConformance(canFnLiteralUpCastToTrait(
+          fnGen.getType().getSymbolConstantAttr(), anyTrait));
     } else {
       // This isn't relevant, e.g. in function pointer to closure case.
       return failure();
     }
-    return result;
+    return getProvenConformance(result);
   }
 
   if (auto anyTrait = sugarDynCast<AnyTraitType>(toType)) {
@@ -1688,8 +1702,8 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
     // one metatype level up.
     if (auto fnGen = sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaMetaType>(
             fromType)) {
-      return canFnLiteralUpCastToTrait(
-          fnGen.getType().getType().getSymbolConstantAttr(), anyTrait);
+      return getProvenConformance(canFnLiteralUpCastToTrait(
+          fnGen.getType().getType().getSymbolConstantAttr(), anyTrait));
     }
 
     ASTType concreteType;
@@ -1706,9 +1720,10 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
     // upcast when the Copyable conformance depends on caller assumptions.
     if (concreteType) {
       auto assumptions = ASTDecl::getAssumptionsFromScope(declScope);
+      if (scopeDependent && !assumptions.empty())
+        *scopeDependent = true;
       return concreteType.checkConformance(anyTrait.getTraitType(), shared,
-                                           assumptions) ==
-             ConformanceResult::Yes;
+                                           assumptions);
     }
   }
 
@@ -1761,7 +1776,8 @@ static bool isClosureWrapperStruct(SharedState &shared, PValue value,
 /// CAUTION: This method must line up with `emitImplicitConversionToType`!!!
 bool IREmitter::canImplicitlyConvertToType(
     ASTExprAnd<CValue> value, ASTType requiredType, ASTDecl &declScope,
-    ArrayRef<ConstraintAttr> additionalAssumptions) {
+    ArrayRef<ConstraintAttr> additionalAssumptions,
+    DeferredTypingContext *deferralCtx) {
   auto &shared = declScope.getShared();
   assert(value.ir && "Should only query valid values");
   ASTType rvType = value.ir.getRValueType();
@@ -1785,10 +1801,16 @@ bool IREmitter::canImplicitlyConvertToType(
   if (cache.has_value())
     return cache.value();
 
+  // Cache and return a convertibility verdict. When `scopeDependent` is true
+  // the verdict was derived from this scope's assumptions rather than being a
+  // stable function of the (from, to) pair, so it is returned without caching:
+  // the cache is keyed only on the type pair and would otherwise poison queries
+  // from scopes with a different assumption set.
   auto cacheAndReturnVal = [&shared](ASTType from, ASTType to,
-                                     bool isConvertible) -> bool {
-    // Cache the result of this convertibility check.
-    shared.cacheImplicitConvertibility(from, to, isConvertible);
+                                     bool isConvertible,
+                                     bool scopeDependent = false) -> bool {
+    if (!scopeDependent)
+      shared.cacheImplicitConvertibility(from, to, isConvertible);
     return isConvertible;
   };
 
@@ -1804,6 +1826,21 @@ bool IREmitter::canImplicitlyConvertToType(
     return conv.isConvertible;
   };
 
+  // Resolve a tri-state conformance verdict into a boolean result that is
+  // potentially cached. Returns the boolean result.
+  auto resolveTriStateVerdict = [&](ConformanceResult verdict,
+                                    bool scopeDependent) -> bool {
+    switch (verdict) {
+    case ConformanceResult::Yes:
+      return cacheAndReturnVal(rvType, requiredType, true, scopeDependent);
+    case ConformanceResult::NeedsEvidence:
+      return deferralCtx != nullptr;
+    case ConformanceResult::No:
+      return cacheAndReturnVal(rvType, requiredType, false, scopeDependent);
+    }
+    llvm_unreachable("unhandled ConformanceResult verdict");
+  };
+
   // Empty generators are zero-cost convertible to their body type when the
   // generator's body constraints are satisfied by this scope's assumptions.
   // A conversion that "applies" but fails the convertibility check returns
@@ -1813,10 +1850,12 @@ bool IREmitter::canImplicitlyConvertToType(
               value, requiredType, declScope, additionalAssumptions)))
     return *resolved;
 
-  FailureOr<bool> canUpCast = canMetaTypeUpCastTo(
-      shared, value.expr->getLoc(), rvType, requiredType, &declScope);
+  bool upCastScopeDependent = false;
+  FailureOr<ConformanceResult> canUpCast =
+      canMetaTypeUpCastTo(shared, value.expr->getLoc(), rvType, requiredType,
+                          &declScope, &upCastScopeDependent);
   if (succeeded(canUpCast))
-    return cacheAndReturnVal(rvType, requiredType, canUpCast.value());
+    return resolveTriStateVerdict(*canUpCast, upCastScopeDependent);
 
   if (sugarIsa<ParamListType>(rvType) &&
       sugarIsa<ParamListType>(requiredType)) {
@@ -1831,10 +1870,12 @@ bool IREmitter::canImplicitlyConvertToType(
     ASTType toEltTp = sugarCast<ParamListType>(requiredType).getElementType();
     ASTType fromEltTp = sugarCast<ParamListType>(rvType).getElementType();
     // Reuse assumptions from above for variadic element upcast.
-    FailureOr<bool> canUpCast = canMetaTypeUpCastTo(
-        shared, value.expr->getLoc(), fromEltTp, toEltTp, &declScope);
+    bool eltUpCastScopeDependent = false;
+    FailureOr<ConformanceResult> canUpCast =
+        canMetaTypeUpCastTo(shared, value.expr->getLoc(), fromEltTp, toEltTp,
+                            &declScope, &eltUpCastScopeDependent);
     if (succeeded(canUpCast))
-      return cacheAndReturnVal(rvType, requiredType, canUpCast.value());
+      return resolveTriStateVerdict(*canUpCast, eltUpCastScopeDependent);
   }
 
   // Support implicit conversions of generator types, including dropping
@@ -2078,10 +2119,10 @@ CValue IREmitter::emitImplicitConversionToType(
       return emitCResult(ParamListAttr::get(converted, dstVATp), expr, dest);
     } else {
       // Must match the check in canImplicitlyConvertToType.
-      FailureOr<bool> canUpCast =
+      FailureOr<ConformanceResult> canUpCast =
           canMetaTypeUpCastTo(shared, valueExpr.expr->getLoc(), fromEltTp,
                               toEltTp, &getDeclScope());
-      if (failed(canUpCast) || !canUpCast.value())
+      if (failed(canUpCast) || *canUpCast != ConformanceResult::Yes)
         return emitVariadicError();
 
       // The source is not resolved yet, this is a simple upcast.

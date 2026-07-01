@@ -231,12 +231,12 @@ def partial_discharge[A: Int, B: Int, X: PosForPartial[A],
 
 
 struct IntableForParam[T: AnyType]
-    # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, AnyType & ImplicitlyDeletable & Intable)'}}
+    # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, Intable)'}}
     where conforms_to(T, Intable):
     pass
 
 
-# expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(T, AnyType & ImplicitlyDeletable & Intable)'}}
+# expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(T, Intable)'}}
 def undischarged_trait_param[T: AnyType,
                              # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
                              X: IntableForParam[T]]():
@@ -249,12 +249,12 @@ def undischarged_trait_param[T: AnyType,
 
 
 struct IntableForArg[T: AnyType]
-    # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, AnyType & ImplicitlyDeletable & Intable)'}}
+    # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, Intable)'}}
     where conforms_to(T, Intable):
     pass
 
 
-# expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(T, AnyType & ImplicitlyDeletable & Intable)'}}
+# expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(T, Intable)'}}
 def undischarged_trait_arg[T: AnyType](
         # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
         x: IntableForArg[T]):
@@ -323,4 +323,132 @@ def multi_cand_deferral_rejected[K: Int](
     # expected-note @below {{provide evidence for or against the constraints here to aid in candidate selection}}
     # expected-note @below {{body constraints cannot be deferred because more than one candidate is inconclusive}}
     x: MCReceiver[mc_target[K](0)]):
+    pass
+
+
+##===----------------------------------------------------------------------===##
+# Trait-bounded parameter slot conformance — discharged via trailing `where`
+##===----------------------------------------------------------------------===##
+# Distinct from the cases above: here the *slot itself* is trait-bounded
+# (`T: Copyable`), so binding a value whose current bound is weaker (e.g. a
+# `Movable` type parameter) fails the metatype conversion at the binding site
+# rather than producing a nested body constraint. The conformance obligation is
+# reified and deferred, then discharged by the trailing
+# `where conforms_to(..., Copyable)`. These cases should type-check without
+# diagnostics.
+
+
+struct NeedsCopyable[T: Copyable]:
+    pass
+
+
+# Return type position.
+def slot_discharged_ret[T: Movable]() -> NeedsCopyable[T]
+    where conforms_to(T, Copyable):
+    pass
+
+
+# Argument type position.
+def slot_discharged_arg[T: Movable](x: NeedsCopyable[T])
+    where conforms_to(T, Copyable):
+    pass
+
+
+# Parameter declaration position.
+def slot_discharged_param[T: Movable, X: NeedsCopyable[T]]()
+    where conforms_to(T, Copyable):
+    pass
+
+
+# Thrown type position (`raises T`).
+def slot_discharged_throws[T: Movable]() raises NeedsCopyable[T]
+    where conforms_to(T, Copyable):
+    pass
+
+
+# Method form (the MOCO-4190 reproducer): `Self.T` from the parent struct.
+struct SlotContainer[T: Movable]:
+    def get(self) -> NeedsCopyable[Self.T] where conforms_to(Self.T, Copyable):
+        pass
+
+
+# Struct parameter declaration position.
+struct SlotDischargedStruct[T: Movable, X: NeedsCopyable[T]]
+    where conforms_to(T, Copyable):
+    pass
+
+
+##===----------------------------------------------------------------------===##
+# Trait-bounded parameter slot conformance — undischarged
+##===----------------------------------------------------------------------===##
+# Without a trailing `where`, the deferred conformance obligation remains
+# unprovable and the discharge loop reports it at the binding site, pointing the
+# user at the `where` clause they should add.
+
+
+# expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
+# expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, Copyable)'}}
+# expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(T, Copyable)'}}
+def slot_undischarged_ret[T: Movable]() -> NeedsCopyable[T]:
+    pass
+
+
+##===----------------------------------------------------------------------===##
+# Trait-bounded parameter slot conformance — concrete receiver stays a hard error
+##===----------------------------------------------------------------------===##
+# A concrete type that does not conform to the slot's trait can never be rescued
+# by a trailing `where`, so deferral must NOT apply: the precise binding-site
+# diagnostic is preserved. This guards the type-parameter gate on deferral.
+
+
+struct MoveOnly(Movable):
+    pass
+
+
+# expected-note @below {{'NeedsCopyableConcrete' declared here}}
+struct NeedsCopyableConcrete[T: Copyable]:
+    pass
+
+
+# expected-error @below {{'NeedsCopyableConcrete' parameter 'T' has 'Copyable' type, but value has type 'AnyStruct[MoveOnly]'}}
+def concrete_non_copyable() -> NeedsCopyableConcrete[MoveOnly]:
+    pass
+
+
+##===----------------------------------------------------------------------===##
+# Trait-bounded slot conformance — compound (conditionally-conforming) receiver
+##===----------------------------------------------------------------------===##
+# The receiver need not be a bare type parameter. A compound parametric type
+# with a *conditional* conformance (e.g. `CondCopyable[U]`, which is `Copyable`
+# only when `U` is) reports `NeedsEvidence` rather than `No`, so it is also
+# deferred. The obligation is the conformance of the whole receiver, so it is
+# discharged by a trailing `where` that names the compound type directly.
+#
+# Note: a `where` on just the *condition* (`where conforms_to(U, Copyable)`)
+# does not yet discharge this — that needs the constraint solver to reduce a
+# conditional conformance to its condition during implication, which is tracked
+# separately.
+
+
+struct CondCopyable[T: Movable & ImplicitlyDeletable](
+    Copyable where conforms_to(T, Copyable), Movable
+):
+    var value: Self.T
+
+    def __init__(out self, var value: Self.T):
+        self.value = value^
+
+
+# Discharged: the trailing `where` names the compound receiver's conformance.
+def cond_discharged[U: Movable & ImplicitlyDeletable]() -> NeedsCopyable[CondCopyable[U]]
+    where conforms_to(CondCopyable[U], Copyable):
+    pass
+
+
+# Undischarged: no trailing `where`, so the deferred obligation stays unprovable
+# and the discharge loop points at the `where` that would satisfy it.
+# expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
+# expected-note @below {{constraint declared here needs evidence for 'conforms_to(CondCopyable[U], Copyable)'}}
+# expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(CondCopyable[U], Copyable)'}}
+def cond_undischarged[U: Movable & ImplicitlyDeletable]() -> NeedsCopyable[CondCopyable[U]]:
     pass

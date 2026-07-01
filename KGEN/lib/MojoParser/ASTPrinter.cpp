@@ -1089,16 +1089,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       printParam(os, UpcastAttr::strip(conformsTo.getTypeValue()), ctx);
     }
     os << ", ";
-    auto traitSymbolsOr = conformsTo.getTraitSymbols();
-    if (traitSymbolsOr) {
-      llvm::interleave(
-          conformsTo.getTraitSymbols().value_or(ArrayRef<SymbolRefAttr>()), os,
-          [&](SymbolRefAttr sym) { os << sym.getLeafReference().getValue(); },
-          " & ");
-    } else {
-      // This is a unresolved trait parameter, print as a normal param value.
-      printParam(os, conformsTo.getTraitType(), ctx);
-    }
+    printParam(os, conformsTo.getTraitType(), ctx);
     os << ")";
     return;
   }
