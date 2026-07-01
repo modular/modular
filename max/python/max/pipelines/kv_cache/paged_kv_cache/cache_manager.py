@@ -582,9 +582,11 @@ class PagedKVCacheManager:
                 ),
             )
 
-        # Barrier for in-flight loads before the forward pass: connectors whose
-        # loads complete off the device stream (dKV's NIXL READs) must land here,
-        # since this runs before the model executes. No-op for host/disk tiers.
+        # Order in-flight loads before the forward pass, since this runs before
+        # the model executes. For dKV's off-stream remote (NIXL) READs this is a
+        # host wait until they land; for dKV's same-host loads it enqueues a
+        # cross-stream CUDA event wait so the compute stream is GPU-ordered after
+        # the copies (no host block). No-op for host/disk tiers.
         replica.connector.wait_for_loads()
 
         # Initiate saves to external cache tiers.
