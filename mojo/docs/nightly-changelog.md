@@ -264,6 +264,16 @@ This version is still a work in progress.
       a non-conforming element type at the bound rather than failing later
       inside `__iter__()`. For deletable element types (the common case) this is
       transparent.
+  - `Dict[KeyType, ValueType, HasherType]`
+    - Element-destroying and key/value-copying operations (`__setitem__`,
+      `setdefault`, `fromkeys`, `update`, `__or__`, `__ior__`, `pop`, `clear`)
+      still require the `K` key and `V` value types to be `ImplicitlyDeletable`,
+      so a `Dict` with non-`ImplicitlyDeletable` keys or values can currently be
+      constructed and torn down with `destroy_with()` but not populated or
+      mutated. For deletable key/value types (the common case) this is
+      transparent.
+    - Consuming iteration (`for entry in dict^`) is likewise conditional,
+      requiring `ValueType` to be `ImplicitlyDeletable`.
 
 - Is is now possible to iterate over owned elements in
   `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`
