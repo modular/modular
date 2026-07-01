@@ -1811,6 +1811,7 @@ def mla_decode_branch_bf16[
         DType.bfloat16, width
     ],
     target: StaticString = "cpu",
+    sparse_mla: Bool = False,
 ](
     output: TileTensor[
         mut=True, DType.bfloat16, address_space=AddressSpace.GENERIC, ...
@@ -1831,6 +1832,12 @@ def mla_decode_branch_bf16[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    indices_stride: Int = 0,
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
 ) raises:
@@ -1868,9 +1875,15 @@ def mla_decode_branch_bf16[
     if seq_len == 0:
         return
 
-    # First, create a input buffer for the mla decode kernel
+    # Sparse decode Q TMA uses SWIZZLE_128B over BK=576 elements; that requires
+    # bf16 Q (1152 B). FP8 sparse uses the same bf16 staging buffer (see
+    # mla_decode_branch_fp8). Non-sparse bf16 decode may still stage Q in the
+    # KV cache dtype when the cache is FP8.
+    comptime mla_decode_input_dtype = (
+        DType.bfloat16 if sparse_mla else collection_t.CacheType.dtype
+    )
     var mla_decode_input_buf = ctx.enqueue_create_buffer[
-        collection_t.CacheType.dtype
+        mla_decode_input_dtype
     ](seq_len * num_heads * k_cache_dim)
     var mla_decode_input = TileTensor(
         mla_decode_input_buf,
@@ -1954,6 +1967,7 @@ def mla_decode_branch_bf16[
     generic_flare_mla_decode_kv_cache_ragged[
         target=target,
         mask_str=mask_str,
+        sparse_mla=sparse_mla,
     ](
         mla_decode_input,
         input_row_offsets,
@@ -1963,6 +1977,10 @@ def mla_decode_branch_bf16[
         raw_output,
         scalar_args_buf,
         ctx,
+        d_indices=d_indices,
+        indices_stride=indices_stride,
+        topk_lengths=topk_lengths,
+        attn_sink_ptr=attn_sink_ptr,
         num_partitions_in=num_partitions_in,
     )
 

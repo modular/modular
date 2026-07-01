@@ -2426,6 +2426,115 @@ struct Struct_mla_decode_graph_bf16_paged:
             )
 
 
+@compiler.register("mo.mla.graph.decode.paged.sparse")
+struct Struct_mla_decode_graph_bf16_paged_sparse:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        kv_dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+        indices_stride: Int,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        w_uk: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        w_uv: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        sparse_indices: InputTensor[dtype=DType.int32, rank=2, ...],
+        topk_lengths: InputTensor[dtype=DType.int32, rank=1, ...],
+        attn_sink: InputTensor[dtype=DType.float32, rank=1, ...],
+        num_partitions_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+        )
+
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.graph.decode.paged.sparse is only supported on GPU"
+
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+        var dev_ctx = context
+        var num_indices_sparse = sparse_indices.size()
+
+        var topk_lengths_ptr = topk_lengths.to_layout_tensor().ptr
+        var attn_sink_ptr = attn_sink.to_layout_tensor().ptr
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.decode.paged.sparse",
+            task_id=get_safe_task_id(context),
+        ):
+            var scratch_sparse_indices = dev_ctx.enqueue_create_buffer[
+                DType.int32
+            ](num_indices_sparse)
+            paged_sparse_kv_index_remap[
+                target, mla_page_size, indices_stride, kv_dtype
+            ](
+                scratch_sparse_indices.unsafe_ptr(),
+                sparse_indices,
+                input_row_offsets,
+                kv_lookup_table,
+                kv_blocks,
+                context,
+            )
+            mla_decode_branch_bf16[
+                mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
+                target=target,
+                sparse_mla=True,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                scalar_args.to_tile_tensor[DType.int64](),
+                context,
+                scratch_sparse_indices.unsafe_ptr().unsafe_origin_cast[
+                    MutAnyOrigin
+                ](),
+                indices_stride,
+                topk_lengths_ptr,
+                attn_sink_ptr,
+                num_partitions_in=None,
+            )
+
+
 @compiler.register("mo.mla.graph.prefill.decode.paged.fp8")
 struct Struct_mla_prefill_graph_decode_paged_fp8:
     @always_inline
