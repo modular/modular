@@ -23,6 +23,7 @@ from std.gpu.host import (
 )
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from layout.tma_async import RaggedTMA3DTile
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.common import (
@@ -41,7 +42,11 @@ from nn.attention.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
-from .attention_utils import kv_sub_tile_rows
+from .attention_utils import (
+    kv_sub_tile_rows,
+    kv_tma_fold_chunks,
+    o_store_tma_blocks_per_op,
+)
 from .kernel import SM100MHA2Q
 
 comptime logger = Logger()
@@ -106,6 +111,11 @@ def mha_sm100_dispatch[
     @always_inline
     def with_fa4_config[fa4_config: FA4Config[KVType.dtype]]() raises:
         comptime swizzle_mode = fa4_config.swizzle_mode
+        # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
+        # Q/K/V/S/P buffers governed by `swizzle_mode`). The softmax warp loads
+        # O one-row-per-thread and writes it row-major, avoiding cross-thread
+        # shuffles and swizzling while staying bank-conflict-free.
+        comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE
         comptime BM = fa4_config.BM
         comptime fuse_gqa = fa4_config.fuse_gqa
         comptime num_threads = fa4_config.num_threads
@@ -116,19 +126,36 @@ def mha_sm100_dispatch[
         comptime BM_per_mma = fa4_config.MMA_M // fa4_config.cta_group()
         comptime assert BM == 128 or BM == 256
 
+        # Batch the O store into one TMA per issuer: the box covers
+        # `ceil(n_blocks/2)` swizzle-granularity blocks, so the single-issuer
+        # writeback emits 2 pipelined copies and the 1Q combine emits 1 per WG
+        # (vs `n_blocks` per-block copies). Fused GQA (group > 1) batches too —
+        # the RaggedTMA3DTile (middle_dim, rows) selector merge keeps it within
+        # the 5D TMA limit (rank-5; rank-4 for group==1). Only swizzled-output
+        # callers fall back to per-block (0). Shared formula keeps this in sync
+        # with the kernel param type.
+        comptime store_blocks_per_op = o_store_tma_blocks_per_op[
+            output_type,
+            output_swizzle_mode,
+            fa4_config.ov_depth,
+            fa4_config.group if fuse_gqa else 1,
+            depth_splits=2,
+        ]()
+
         comptime RaggedStoreType = RaggedTMA3DTile[
             output_type,
-            swizzle_mode,
+            output_swizzle_mode,
             BM=BM_per_mma,
             BN=fa4_config.ov_depth,
+            middle_dim=fa4_config.num_kv_heads if fuse_gqa else fa4_config.num_q_heads,
             group=fa4_config.group if fuse_gqa else 1,
+            tma_blocks_per_op=store_blocks_per_op,
         ]
 
         var ragged_tma_store = RaggedStoreType.create(
             ctx,
             output.unsafe_ptr(),
             rows=num_rows_q,
-            middle_dim=fa4_config.num_kv_heads if fuse_gqa else fa4_config.num_q_heads,
         )
 
         q_tma_op = q_tma[
@@ -141,17 +168,71 @@ def mha_sm100_dispatch[
             fuse_gqa=fuse_gqa,
             num_qk_stages=fa4_config.num_qk_stages,
         ](ctx, q, num_rows_q)
+        # Depth-chunk TMA fold (SM100): fold the BK0 (K) / v_cols_per_cta (V)
+        # depth chunks into one rank-4 TMA when byte-equivalent. Each
+        # `kv_tma_fold_chunks` is the single source of truth shared with the
+        # `tma_copy_k` / `tma_copy_v` issue sites in `load_warp.mojo`; the builder
+        # and issue site must pass identical args so the baked descriptor rank and
+        # issue-coord rank agree.
+        #   K: smem_BN == k_rows_per_cta (K's per-CTA tile_rows); box_rows ==
+        #      kv_sub_tile_rows(k_rows_per_cta, page_size).
+        #   V: smem_BN == BN (V's tile_rows, num_v_sub_tiles == 1); box_rows ==
+        #      kv_sub_tile_rows(BN, page_size).
+        comptime k_sub_BN = kv_sub_tile_rows(
+            fa4_config.k_rows_per_cta(), KVType.page_size
+        )
+        comptime k_row_major = fa4_config.k_row_major()
+        comptime k_fold_chunks = kv_tma_fold_chunks[
+            KVType.dtype,
+            fa4_config.swizzle_mode,
+            BK=fa4_config.BK0,
+            head_size=fa4_config.qk_depth,
+            box_rows=k_sub_BN,
+            smem_BN=fa4_config.k_rows_per_cta(),
+            page_size=KVType.page_size,
+            row_major=k_row_major,
+        ]()
+        # Producer/consumer agreement: if the Q@K' consumer reads the page-dense
+        # (row-major) K layout, the producer MUST have actually folded it
+        # (`k_fold_chunks >= 2`). `k_row_major()` mirrors this predicate, so a
+        # mismatch here means the two drifted.
+        comptime assert (not k_row_major) or (
+            k_fold_chunks > 1
+        ), "k_row_major() implies the K row-major fold; predicate drift"
         k_tma_op = k.create_tma_tile[
             fa4_config.swizzle_mode,
-            BN=kv_sub_tile_rows(fa4_config.k_rows_per_cta(), KVType.page_size),
+            BN=k_sub_BN,
             depth=fa4_config.qk_depth,
             BK=fa4_config.BK0,
+            fold_chunks=k_fold_chunks,
+            row_major=k_row_major,
         ](ctx)
+        comptime v_sub_BN = kv_sub_tile_rows(fa4_config.BN, KVType.page_size)
+        comptime v_row_major = fa4_config.v_row_major()
+        comptime v_fold_chunks = kv_tma_fold_chunks[
+            KVType.dtype,
+            fa4_config.swizzle_mode,
+            BK=fa4_config.v_cols_per_cta(),
+            head_size=fa4_config.ov_depth,
+            box_rows=v_sub_BN,
+            smem_BN=fa4_config.BN,
+            page_size=KVType.page_size,
+            row_major=v_row_major,
+        ]()
+        # Producer/consumer agreement: if the P@V consumer reads the page-dense
+        # (row-major) V layout, the producer MUST have actually folded it
+        # (`v_fold_chunks >= 2`). `v_row_major()` mirrors this predicate, so a
+        # mismatch here means the two drifted.
+        comptime assert (not v_row_major) or (
+            v_fold_chunks > 1
+        ), "v_row_major() implies the V row-major fold; predicate drift"
         v_tma_op = v.create_tma_tile[
             fa4_config.swizzle_mode,
-            BN=kv_sub_tile_rows(fa4_config.BN, KVType.page_size),
+            BN=v_sub_BN,
             depth=fa4_config.ov_depth,
             BK=fa4_config.v_cols_per_cta(),
+            fold_chunks=v_fold_chunks,
+            row_major=v_row_major,
         ](ctx)
         comptime PairBM_eff = fa4_config.PairBM_eff()
         comptime SchedulerType = TransientScheduler[

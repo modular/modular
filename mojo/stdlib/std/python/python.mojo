@@ -19,7 +19,6 @@ from std.python import Python
 ```
 """
 
-from std.collections.dict import OwnedKwargsDict
 from std.os import abort
 from std.ffi import _Global
 
@@ -316,7 +315,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             # Safety: `module` pointer lives long enough because its reference
             #   argument.
             module._obj_ptr,
-            functions,
+            functions.as_unsafe_any_origin(),
         )
         if errno == -1:
             raise cpy.unsafe_get_error()
@@ -346,7 +345,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpy = Self().cpython()
         var errno = cpy.PyModule_AddObjectRef(
             module._obj_ptr,
-            name.as_c_string_slice().unsafe_ptr(),
+            name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
             value._obj_ptr,
         )
         if errno == -1:
@@ -355,28 +354,6 @@ struct Python(Defaultable, ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
-
-    @doc_hidden
-    @staticmethod
-    def _dict(kwargs: OwnedKwargsDict[PythonObject]) raises -> PyObjectPtr:
-        """Construct a Python dictionary from keyword arguments.
-
-        Return value: New reference.
-        """
-        ref cpy = Self().cpython()
-        var dict_ptr = cpy.PyDict_New()
-        for entry in kwargs.items():
-            var key_ptr = cpy.PyUnicode_DecodeUTF8(StringSlice(entry.key))
-            if not key_ptr:
-                raise cpy.unsafe_get_error()
-            # PyDict_SetItem doesn't steal the value.
-            var errno = cpy.PyDict_SetItem(
-                dict_ptr, key_ptr, entry.value._obj_ptr
-            )
-            cpy.Py_DecRef(key_ptr)
-            if errno == -1:
-                raise cpy.unsafe_get_error()
-        return dict_ptr
 
     @staticmethod
     def dict(**kwargs: PythonObject) raises -> PythonObject:
@@ -392,7 +369,20 @@ struct Python(Defaultable, ImplicitlyCopyable):
             On failure to construct the dictionary or convert the values to
             Python objects.
         """
-        return PythonObject(from_owned=Self._dict(kwargs))
+        ref cpy = Self().cpython()
+        var dict_ptr = cpy.PyDict_New()
+        for entry in kwargs.items():
+            var key_ptr = cpy.PyUnicode_DecodeUTF8(StringSlice(entry.key))
+            if not key_ptr:
+                raise cpy.unsafe_get_error()
+            # PyDict_SetItem doesn't steal the value.
+            var errno = cpy.PyDict_SetItem(
+                dict_ptr, key_ptr, entry.value._obj_ptr
+            )
+            cpy.Py_DecRef(key_ptr)
+            if errno == -1:
+                raise cpy.unsafe_get_error()
+        return PythonObject(from_owned=dict_ptr)
 
     @staticmethod
     def dict(

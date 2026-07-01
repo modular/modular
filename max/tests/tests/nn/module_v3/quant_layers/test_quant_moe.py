@@ -141,13 +141,19 @@ def test_moe_stacked_weights_bf16(mock_accelerator: MagicMock) -> None:
         ).to(device)
 
         gate_up = layer.gate_up_proj
-        assert isinstance(gate_up, Tensor)
+        assert len(gate_up) == 1
+        assert isinstance(gate_up[0], Tensor)
         # gate || up stacked on the output axis: 2 * moe_dim.
-        assert list(gate_up.shape) == [_NUM_EXPERTS, 2 * _MOE_DIM, _HIDDEN_DIM]
+        assert list(gate_up[0].shape) == [
+            _NUM_EXPERTS,
+            2 * _MOE_DIM,
+            _HIDDEN_DIM,
+        ]
 
         down = layer.down_proj
-        assert isinstance(down, Tensor)
-        assert list(down.shape) == [_NUM_EXPERTS, _HIDDEN_DIM, _MOE_DIM]
+        assert len(down) == 1
+        assert isinstance(down[0], Tensor)
+        assert list(down[0].shape) == [_NUM_EXPERTS, _HIDDEN_DIM, _MOE_DIM]
 
 
 def test_moe_stacked_weights_fp8(
@@ -165,18 +171,20 @@ def test_moe_stacked_weights_fp8(
         ).to(device)
 
         gate_up = layer.gate_up_proj
-        assert isinstance(gate_up, FP8BlockTensor)
-        assert gate_up.data.dtype == DType.float8_e4m3fn
-        assert gate_up.scale_inv.dtype == DType.float32
-        assert list(gate_up.data.shape) == [
+        assert len(gate_up) == 1
+        assert isinstance(gate_up[0], FP8BlockTensor)
+        assert gate_up[0].data.dtype == DType.float8_e4m3fn
+        assert gate_up[0].scale_inv.dtype == DType.float32
+        assert list(gate_up[0].data.shape) == [
             _NUM_EXPERTS,
             2 * _MOE_DIM,
             _HIDDEN_DIM,
         ]
 
         down = layer.down_proj
-        assert isinstance(down, FP8BlockTensor)
-        assert list(down.data.shape) == [_NUM_EXPERTS, _HIDDEN_DIM, _MOE_DIM]
+        assert len(down) == 1
+        assert isinstance(down[0], FP8BlockTensor)
+        assert list(down[0].data.shape) == [_NUM_EXPERTS, _HIDDEN_DIM, _MOE_DIM]
 
 
 # --------------------------------------------------------------------------- #

@@ -17,11 +17,11 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn.common_layers.functional_kernels import (
+    moe_router_group_limited,
+)
 from max.experimental.nn.common_layers.moe import MoEGate
 from max.experimental.tensor import Tensor
-from max.nn.kernels import moe_router_group_limited as _moe_router_group_limited
-
-moe_router_group_limited = F.functional(_moe_router_group_limited)
 
 
 class DeepseekV3TopKRouter(MoEGate):
@@ -42,6 +42,7 @@ class DeepseekV3TopKRouter(MoEGate):
         n_group: int,
         topk_group: int,
         norm_topk_prob: bool,
+        correction_bias_dtype: DType | None,
     ) -> None:
         """
         Args:
@@ -55,6 +56,7 @@ class DeepseekV3TopKRouter(MoEGate):
             n_group: Number of expert groups.
             topk_group: Number of expert groups selected per token.
             norm_topk_prob: Whether to normalize the top-k probabilities.
+            correction_bias_dtype: Data type of the correction bias.
         """
         super().__init__(
             hidden_dim=hidden_dim,
@@ -86,8 +88,12 @@ class DeepseekV3TopKRouter(MoEGate):
         self.routed_scaling_factor = routed_scaling_factor
         self.norm_topk_prob = norm_topk_prob
 
+        if correction_bias_dtype is None:
+            raise ValueError(
+                "correction_bias_dtype must be set for noaux_tc router"
+            )
         self.e_score_correction_bias = Tensor.zeros(
-            [num_experts], dtype=DType.float32
+            [num_experts], dtype=correction_bias_dtype
         )
 
     def forward(self, hidden_states: Tensor) -> tuple[Tensor, Tensor]:

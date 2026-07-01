@@ -19,9 +19,26 @@ from std.sys import (
     num_physical_cores,
     size_of,
 )
+from std.sys.info import stdlib_plugin
 
 from std.testing import assert_equal, assert_true
 from std.testing import TestSuite
+
+
+comptime _target_default_plugin = __mlir_attr[
+    `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+    `arch = "sm_80", `,
+    `features = "+ptx81"`,
+    `> : !kgen.target`,
+]
+
+comptime _target_named_plugin = __mlir_attr[
+    `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+    `arch = "sm_80", `,
+    `stdlib_plugin = "cuda", `,
+    `features = "+ptx81"`,
+    `> : !kgen.target`,
+]
 
 
 def test_size_of() raises:
@@ -82,6 +99,15 @@ def test_target_has_feature() raises:
     _has_feature = CompilationTarget.has_neon_int8_matmul()
     _has_feature = CompilationTarget.has_sse4()
     _has_feature = CompilationTarget.has_vnni()
+
+
+def test_stdlib_plugin() raises:
+    # The plugin name defaults to "default" when omitted from the target
+    # attribute.
+    assert_equal(stdlib_plugin[_target_default_plugin](), "default")
+
+    # A plugin name is extracted from the target attribute when present.
+    assert_equal(stdlib_plugin[_target_named_plugin](), "cuda")
 
 
 def main() raises:

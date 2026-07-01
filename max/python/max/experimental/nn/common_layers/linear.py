@@ -11,75 +11,56 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Row- and column-parallel linear layers with pre-defined sharding intent.
-
-These layers extend :class:`~max.experimental.nn.linear.Linear` by tagging
-the weight tensor with device placements, which come into use when the Module
-is transferred to a multi-device mesh.
-"""
+"""Row- and column-parallel linear layers with pre-defined sharding intent."""
 
 from __future__ import annotations
 
-from max.experimental import functional as F
+from typing import Literal, Protocol, TypeVar
+
 from max.experimental.nn.linear import Linear
 from max.experimental.sharding import NamedMapping
 from max.experimental.tensor import Tensor
-from max.graph import DimLike
 
 from .mesh_axis import TP
 
 
-class _DistributedLinear(Linear):
-    """Temporary class that redefines Linear.forward() to use F.
-
-    Will be removed when F is merged in with F.
-    """
-
-    @F.functional
-    def forward(self, x: Tensor) -> Tensor:
-        """Applies row-parallel linear transformation.
-
-        Args:
-            x: Input tensor of shape ``(..., in_dim)``.
-
-        Returns:
-            Output tensor with shape ``(..., out_dim)``.
-        """
-        y = F.matmul(x, F.transpose(self.weight, -1, -2))
-        if isinstance(self.bias, Tensor):
-            y = F.add(y, self.bias)
-        return y
+class _LinearProtocol(Protocol):
+    weight: Tensor
+    bias: Tensor | Literal[0]
 
 
-class RowParallelLinear(_DistributedLinear):
-    """Linear layer with row-parallel weight sharding."""
-
-    def __init__(
-        self,
-        in_dim: DimLike,
-        out_dim: DimLike,
-        *,
-        bias: bool = True,
-    ):
-        super().__init__(in_dim, out_dim, bias=bias)
-        self.weight._mapping = NamedMapping(self.weight.mesh, (None, TP))
-
-        if isinstance(self.bias, Tensor):
-            self.bias._mapping = NamedMapping(self.bias.mesh, (None,))
+_LinearLayer = TypeVar("_LinearLayer", bound=_LinearProtocol)
 
 
-class ColumnParallelLinear(_DistributedLinear):
+def col_parallel(layer: _LinearLayer) -> _LinearLayer:
+    """Parallelize the linear layer across the column dimension."""
+    # Note that the first dimension of the weight is sharded because MAX's
+    # linear layer applies ``x @ W.T`` (the transpose of W)
+    layer.weight._mapping = NamedMapping(layer.weight.mesh, (TP, None))
+    if isinstance(layer.bias, Tensor):
+        layer.bias._mapping = NamedMapping(layer.bias.mesh, (TP,))
+    return layer
+
+
+def row_parallel(layer: _LinearLayer) -> _LinearLayer:
+    """Parallelize the linear layer across the row dimension."""
+    layer.weight._mapping = NamedMapping(layer.weight.mesh, (None, TP))
+    if isinstance(layer.bias, Tensor):
+        layer.bias._mapping = NamedMapping(layer.bias.mesh, (None,))
+    return layer
+
+
+class ColumnParallelLinear(Linear):
     """Linear layer with column-parallel weight sharding."""
 
-    def __init__(
-        self,
-        in_dim: DimLike,
-        out_dim: DimLike,
-        *,
-        bias: bool = True,
-    ):
-        super().__init__(in_dim, out_dim, bias=bias)
-        self.weight._mapping = NamedMapping(self.weight.mesh, (TP, None))
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        col_parallel(self)
 
-        if isinstance(self.bias, Tensor):
-            self.bias._mapping = NamedMapping(self.bias.mesh, (TP,))
+
+class RowParallelLinear(Linear):
+    """Linear layer with row-parallel weight sharding."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        row_parallel(self)

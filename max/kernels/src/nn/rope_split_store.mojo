@@ -48,6 +48,14 @@ from std.utils.index import IndexList
 # ===-----------------------------------------------------------------------===#
 
 
+# HACK: `k_cache` and `v_cache` are the key/value halves (kv_idx 0 vs 1) of the
+# same `blocks` buffer, so they share the collection's mutable `blocks_origin`
+# (and `scales_origin`). They are only ever stored to at disjoint offsets, but
+# the exclusivity checker cannot prove that and rejects capturing both as
+# separately-writable values in the store closure. Disabling the nested-origin
+# exclusivity check is a stopgap workaround; the proper fix is to give the k/v
+# views provably-disjoint origins instead of sharing the collection's.
+@__unsafe_disable_nested_origin_exclusivity
 @always_inline
 def _rope_split_store_ragged_impl[
     dtype: DType,
@@ -60,9 +68,9 @@ def _rope_split_store_ragged_impl[
     interleaved: Bool = True,
     get_freq_pos: def(Int, Int, Int) capturing -> Int,
 ](
-    qkv: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    freqs_cis: TileTensor[freq_dtype, ...],
+    qkv: TileTensor[mut=False, dtype, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
     q_output: TileTensor[mut=True, q_out_dtype, ...],
@@ -116,6 +124,10 @@ def _rope_split_store_ragged_impl[
     var combined_dim = Int(qkv.dim[1]())
     var qk_offset = q_dim + k_dim
 
+    # TODO: This elementwise body captures KV cache views (`CacheType`), which
+    # fail codegen when stored into a unified closure ('pop.store' pointer
+    # element-type verification). Keep using the deprecated parameter-closure
+    # overload until cache captures in unified closures are supported.
     @parameter
     @__copy_capture(
         q_dim,
@@ -351,6 +363,11 @@ def _rope_split_store_ragged_impl[
 # ===-----------------------------------------------------------------------===#
 
 
+# HACK: forwards the `k_cache`/`v_cache` pair (disjoint k/v halves of one
+# `blocks` buffer that share the collection's mutable origins) on to the store
+# impl, so it inherits the same false-positive aliasing rejection. See
+# `_rope_split_store_ragged_impl` for the full rationale. Stopgap workaround.
+@__unsafe_disable_nested_origin_exclusivity
 @always_inline
 def _rope_split_store_ragged[
     dtype: DType,
@@ -362,9 +379,9 @@ def _rope_split_store_ragged[
     target: StaticString,
     interleaved: Bool = True,
 ](
-    qkv: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    freqs_cis: TileTensor[freq_dtype, ...],
+    qkv: TileTensor[mut=False, dtype, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
     q_output: TileTensor[mut=True, q_out_dtype, ...],
@@ -411,9 +428,9 @@ def rope_split_store_paged_ragged[
     target: StaticString = "cpu",
     interleaved: Bool = True,
 ](
-    qkv: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    freqs_cis: TileTensor[freq_dtype, ...],
+    qkv: TileTensor[mut=False, dtype, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     q_output: TileTensor[mut=True, q_out_dtype, ...],
@@ -441,6 +458,11 @@ def rope_split_store_paged_ragged[
 # ===-----------------------------------------------------------------------===#
 
 
+# HACK: forwards the `k_cache`/`v_cache` pair (disjoint k/v halves of one
+# `blocks` buffer that share the collection's mutable origins) on to the store
+# impl, so it inherits the same false-positive aliasing rejection. See
+# `_rope_split_store_ragged_impl` for the full rationale. Stopgap workaround.
+@__unsafe_disable_nested_origin_exclusivity
 @always_inline
 def _rope_split_store_ragged_with_position_ids[
     dtype: DType,
@@ -458,12 +480,14 @@ def _rope_split_store_ragged_with_position_ids[
         *Coord[Int64, Int64].element_types
     ],
 ](
-    qkv: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    freqs_cis: TileTensor[freq_dtype, ...],
+    qkv: TileTensor[mut=False, dtype, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
-    position_ids: TileTensor[DType.uint32, PositionIdsLayoutType, ...],
+    position_ids: TileTensor[
+        mut=False, DType.uint32, PositionIdsLayoutType, ...
+    ],
     q_output: TileTensor[mut=True, dtype, ...],
     context: Optional[DeviceContext],
 ) raises:
@@ -551,11 +575,13 @@ def rope_split_store_paged_ragged_with_position_ids[
         *Coord[Int64, Int64].element_types
     ],
 ](
-    qkv: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    freqs_cis: TileTensor[freq_dtype, ...],
+    qkv: TileTensor[mut=False, dtype, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     kv_collection: PagedKVCacheCollection,
-    position_ids: TileTensor[DType.uint32, PositionIdsLayoutType, ...],
+    position_ids: TileTensor[
+        mut=False, DType.uint32, PositionIdsLayoutType, ...
+    ],
     layer_idx: UInt32,
     q_output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,

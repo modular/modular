@@ -20,6 +20,7 @@ from std.collections import Optional
 
 import std.benchmark
 from layout import Coord, Idx, TileTensor, row_major
+from layout.tensor_storage import PointerStorage
 from std.memory import alloc
 from linalg.bmm import batched_matmul
 from linalg.matmul import matmul
@@ -49,11 +50,11 @@ def bench_run[
 
 
 def gemm_naive[
-    transpose_b: Bool, element_size: Int
+    transpose_b: Bool
 ](
-    a: TileTensor[element_size=element_size, ...],
-    b: TileTensor[element_size=element_size, ...],
-    c: TileTensor[mut=True, element_size=element_size, ...],
+    a: TileTensor[Storage=PointerStorage[element_width=1], ...],
+    b: TileTensor[Storage=PointerStorage[element_width=1], ...],
+    c: TileTensor[mut=True, Storage=PointerStorage[element_width=1], ...],
     m: Int,
     n: Int,
     k: Int,
@@ -72,11 +73,11 @@ def gemm_naive[
 
 
 def gemm_naive_elementwise[
-    transpose_b: Bool, element_size: Int
+    transpose_b: Bool
 ](
-    a: TileTensor[element_size=element_size, ...],
-    b: TileTensor[element_size=element_size, ...],
-    c: TileTensor[mut=True, element_size=element_size, ...],
+    a: TileTensor[Storage=PointerStorage[element_width=1], ...],
+    b: TileTensor[Storage=PointerStorage[element_width=1], ...],
+    c: TileTensor[mut=True, Storage=PointerStorage[element_width=1], ...],
     m: Int,
     n: Int,
     k: Int,
@@ -100,8 +101,6 @@ def gemm_naive_elementwise[
 
 
 def test_matmul[
-    element_size: Int,
-    //,
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -112,28 +111,28 @@ def test_matmul[
     c: TileTensor[
         mut=True,
         c_type,
-        element_size=element_size,
+        Storage=PointerStorage[element_width=1],
         address_space=AddressSpace.GENERIC,
         ...,
     ],
     a: TileTensor[
         mut=False,
         a_type,
-        element_size=element_size,
+        Storage=PointerStorage[element_width=1],
         address_space=AddressSpace.GENERIC,
         ...,
     ],
     b: TileTensor[
         mut=False,
         b_type,
-        element_size=element_size,
+        Storage=PointerStorage[element_width=1],
         address_space=AddressSpace.GENERIC,
         ...,
     ],
     bp: TileTensor[
         mut=True,
         b_type,
-        element_size=element_size,
+        Storage=PointerStorage[element_width=1],
         address_space=AddressSpace.GENERIC,
         ...,
     ],
@@ -144,7 +143,9 @@ def test_matmul[
 ) raises -> Int:
     var c1_ptr = alloc[Scalar[c_type]](m * n, alignment=alignment)
     var golden_shape = row_major(Coord(m, n))
-    var golden = TileTensor[element_size=element_size](c1_ptr, golden_shape)
+    var golden = TileTensor[Storage=PointerStorage[element_width=1]](
+        c1_ptr, golden_shape
+    )
     for i in range(m):
         for j in range(n):
             golden[i, j] = 0
@@ -436,9 +437,9 @@ def test_types[b_packed: Bool, mixed_kernels: Bool]() raises:
 
 
 def bmm_naive(
-    c: TileTensor[mut=True, element_size=1, ...],
-    a: TileTensor[element_size=1, ...],
-    b: TileTensor[element_size=1, ...],
+    c: TileTensor[mut=True, Storage=PointerStorage[element_width=1], ...],
+    a: TileTensor[Storage=PointerStorage[element_width=1], ...],
+    b: TileTensor[Storage=PointerStorage[element_width=1], ...],
     batches: Int,
     m: Int,
     n: Int,
@@ -471,13 +472,22 @@ def test_batched_matmul[
     has_lambda: Bool
 ](
     c: TileTensor[
-        mut=True, address_space=AddressSpace.GENERIC, element_size=1, ...
+        mut=True,
+        address_space=AddressSpace.GENERIC,
+        Storage=PointerStorage[element_width=1],
+        ...,
     ],
     a: TileTensor[
-        mut=True, address_space=AddressSpace.GENERIC, element_size=1, ...
+        mut=True,
+        address_space=AddressSpace.GENERIC,
+        Storage=PointerStorage[element_width=1],
+        ...,
     ],
     b: TileTensor[
-        mut=True, address_space=AddressSpace.GENERIC, element_size=1, ...
+        mut=True,
+        address_space=AddressSpace.GENERIC,
+        Storage=PointerStorage[element_width=1],
+        ...,
     ],
     batches: Int,
     m: Int,

@@ -76,9 +76,9 @@ def matmul[
             row_major(Coord(Int(c.dim[0]()), Int(c.dim[1]()))),
         )
 
-        @parameter
-        @__copy_capture(c_tt)
-        def epilogue_wrapper[simd_width: Int, alignment: Int = 1](idx: Coord):
+        def epilogue_wrapper[
+            simd_width: Int, alignment: Int = 1
+        ](idx: Coord) {var}:
             var c_val = c_tt.load[
                 width=simd_width,
                 # Load takes alignment in bytes, lambda takes number of elements
@@ -101,4 +101,4 @@ def matmul[
             c_row_major=True,
             transpose_b=transpose_b,
         )
-        elementwise[epilogue_wrapper, simd_size, target="gpu"]((m, n), ctx)
+        elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)

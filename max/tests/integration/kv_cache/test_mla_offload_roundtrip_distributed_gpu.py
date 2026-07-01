@@ -33,12 +33,14 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
+    MLAKVCacheParams,
 )
 from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     ReplicatedKVCacheMemory,
 )
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
+from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 
 
 def _u8_view(buf: Buffer) -> Buffer:
@@ -81,13 +83,11 @@ def _u8_device_buffer(
 
 
 def _make_mla_fp8_params(num_devices: int) -> KVCacheParams:
-    return KVCacheParams(
+    return MLAKVCacheParams(
         dtype=DType.float8_e4m3fn,
-        n_kv_heads=1,
         head_dim=512,
         num_layers=2,
         num_q_heads=num_devices,
-        is_mla=True,
         page_size=128,
         enable_prefix_caching=True,
         kv_connector=KVConnectorType.local,
@@ -139,13 +139,13 @@ def test_mla_replicated_fp8_offload_roundtrip() -> None:
         _write_page(s, src_page, scale_bytes)
 
     connector = LocalConnector(
-        kv_memory=kv_buf.to_memory(),
+        replica_kv_memory=[kv_buf.to_memory()],
         total_num_host_blocks=4,
     )
 
-    block_hash = 0xABCD
+    block_hash = to_block_hash_bytes(0xABCD)
     connector.offload([src_page], [block_hash])
-    connector.sync()
+    connector.wait_for_offloads()
 
     # Clobber the destination page on every rank.
     for v in values:
@@ -154,7 +154,7 @@ def test_mla_replicated_fp8_offload_roundtrip() -> None:
         _zero_page(s, dst_page)
 
     loaded = connector.load([dst_page], [block_hash])
-    connector.sync()
+    connector.wait_for_offloads()
     assert loaded == 1, "expected the offloaded block to be a host-cache hit"
 
     # Every rank's reloaded page must match the original bytes.
@@ -218,11 +218,13 @@ def test_mixed_replicated_and_sharded_offload_roundtrip() -> None:
     _write_page(rep_peer, src_page, rep_bytes)
     _write_page(sharded, src_page, sharded_bytes)
 
-    connector = LocalConnector(kv_memory=kv_memory, total_num_host_blocks=4)
+    connector = LocalConnector(
+        replica_kv_memory=[kv_memory], total_num_host_blocks=4
+    )
 
-    block_hash = 0xBEEF
+    block_hash = to_block_hash_bytes(0xBEEF)
     connector.offload([src_page], [block_hash])
-    connector.sync()
+    connector.wait_for_offloads()
 
     # Clobber the destination page on every buffer.
     _zero_page(rep_root, dst_page)
@@ -230,7 +232,7 @@ def test_mixed_replicated_and_sharded_offload_roundtrip() -> None:
     _zero_page(sharded, dst_page)
 
     loaded = connector.load([dst_page], [block_hash])
-    connector.sync()
+    connector.wait_for_offloads()
     assert loaded == 1, "expected the offloaded block to be a host-cache hit"
 
     # Replicated unit: rank-0 and the broadcast peer must match the original.

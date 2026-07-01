@@ -43,12 +43,21 @@ def test_swap_method() -> None:
 
 
 def test_error_handling() -> None:
-    """Test error handling for invalid initialization arguments."""
-    # These should raise appropriate errors
-    with pytest.raises(Exception):
+    """Test error handling for invalid initialization arguments.
+
+    A raising ``__init__`` flows through ``_py_init_function_wrapper``, which
+    translates the Mojo ``Error`` into a Python ``ValueError`` (the wrapper's
+    ``exc_type``). Assert the concrete type and message, not just
+    ``Exception``, to cover that translation end-to-end.
+    """
+    with pytest.raises(
+        ValueError, match="Failed to convert first argument to integer"
+    ):
         mojo_module.MojoPair("not_a_number", 10)
 
-    with pytest.raises(Exception):
+    with pytest.raises(
+        ValueError, match="Failed to convert second argument to integer"
+    ):
         mojo_module.MojoPair(42, "not_a_number")
 
 

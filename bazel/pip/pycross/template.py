@@ -117,7 +117,7 @@ def targets():
         actual = select({{
             "@@//:use_sglang_setting": ":transformers@5.3.0",
             "@@//:use_vllm_setting": ":transformers@5.8.0",
-            "//conditions:default": ":transformers@5.2.0",
+            "//conditions:default": ":transformers@5.12.1",
         }}),
     )
 

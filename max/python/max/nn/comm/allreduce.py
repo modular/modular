@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 
+import numpy as np
 from max.driver import Accelerator, Buffer, enable_all_peer_access
 from max.dtype import DType
 from max.graph import (
@@ -84,15 +85,36 @@ class Signals:
     synchronization, and to hold intermediate communication results.
     """
 
-    NUM_BYTES = (1 + 256) * 1024 * 1024
+    # ---- Per-GPU signal buffer layout. These MUST match ``Signal`` in
+    # ``max/kernels/src/comm/sync.mojo``; the Lamport region offset below is
+    # exact (a wrong value silently corrupts Lamport), so keep them in lockstep.
+    _MAX_GPUS = 8
+    _MAX_NUM_BLOCKS = 512
+    # Number of disjoint barrier counter banks. MUST match ``NUM_BARRIER_DOMAINS``
+    # in ``max/kernels/src/comm/sync.mojo``. Each domain gets its own
+    # self_counter + peer_counter grids so grouped (subgroup) and full-world
+    # collectives never share a barrier bank on the same Signal buffer.
+    _NUM_BARRIER_DOMAINS = _MAX_GPUS
+    # Per domain: self_counter (1x) + peer_counter (2x) over the
+    # [MAX_NUM_BLOCKS x MAX_GPUS] uint32 grid; times NUM_BARRIER_DOMAINS domains,
+    # plus the 16-byte lamport_state block -> the Lamport region's byte offset
+    # within the Signal struct.
+    _LAMPORT_REGION_OFFSET = (
+        _NUM_BARRIER_DOMAINS * 3 * _MAX_NUM_BLOCKS * _MAX_GPUS * 4 + 16
+    )
+    # Embedded Lamport comm region: 3 generations x MAX_GPUS slots x per-slot max.
+    _LAMPORT_MAX_SMALL_MESSAGE_BYTES = 1024 * 1024
+    _LAMPORT_REGION_BYTES = 3 * _MAX_GPUS * _LAMPORT_MAX_SMALL_MESSAGE_BYTES
+    # Variable 2-stage / broadcast scratch, trailing the struct (disjoint from
+    # the Lamport region, so the two collective families can interleave).
+    _SCRATCH_BYTES = 256 * 1024 * 1024
+    # Universal "-0.0" sentinel: fp32 -0.0 per uint32, detected as -0.0 under
+    # bf16/fp16/fp32 (see ``set_neg_zero`` in lamport.mojo). Lets the region
+    # init below be a dtype-agnostic uint32 fill.
+    _LAMPORT_SENTINEL_U32 = 0x80000000
+
+    NUM_BYTES = _LAMPORT_REGION_OFFSET + _LAMPORT_REGION_BYTES + _SCRATCH_BYTES
     """The size of the signal buffers used for communication in allreduce."""
-    # NOTE: ``NUM_BYTES`` must stay in sync with the size of the ``Signal``
-    # Mojo struct + the size of the intermediate buffer for communication.
-    # Breakdown: 1 MB for the Signal struct + 1024 MB scratch. The 1024 MB
-    # scratch sizes the allgather intermediate that holds
-    # ``hidden_dim * max_batch_input_tokens * dtype_bytes`` per peer; 1 GiB
-    # gives ~60% headroom over Kimi-K2.5 (hidden_dim=20480,
-    # max_batch_input_tokens=16384, bf16 → 640 MiB).
 
     devices: list[DeviceRef]
     """List of graph devices that these signals communicate between."""
@@ -125,7 +147,9 @@ class Signals:
                 "Collective operations will fall back to slower paths."
             )
 
-        # Contents of signal buffer should be filled with zeros.
+        # Zero-fill: barrier counters and lamport_state start at 0 (their
+        # correct init). The embedded Lamport comm region is initialized
+        # to -0.0 below.
         accelerators = [Accelerator(id=dev.id) for dev in self.devices]
         signal_buffers = [
             Buffer.zeros(
@@ -135,6 +159,36 @@ class Signals:
             )
             for accel in accelerators
         ]
+
+        if (
+            Signals.NUM_BYTES
+            < Signals._LAMPORT_REGION_OFFSET + Signals._LAMPORT_REGION_BYTES
+        ):
+            raise ValueError(
+                f"Expected signal buffer to be at least "
+                f"{Signals._LAMPORT_REGION_OFFSET + Signals._LAMPORT_REGION_BYTES}"
+                f" bytes, but got {Signals.NUM_BYTES}."
+            )
+        # Fill the Lamport region with the universal sentinel via a dtype-
+        # agnostic uint32 fill (the sentinel is fp32 -0.0 per uint32; see
+        # `set_neg_zero` in lamport.mojo). This is the once-per-buffer init; the
+        # synchronize below guarantees every rank's region is sentinel before
+        # any allreduce runs (so no rank pushes into a peer's region before that
+        # peer has initialized it).
+        start = Signals._LAMPORT_REGION_OFFSET // 4
+        end = start + Signals._LAMPORT_REGION_BYTES // 4
+        # Slice assignment isn't supported on a device `Buffer`, but a sliced
+        # `__getitem__` returns a contiguous sub-view sharing the memory, which
+        # `inplace_copy_from` can fill from a host buffer (host -> device).
+        sentinel = Buffer.from_numpy(
+            np.full(end - start, np.uint32(Signals._LAMPORT_SENTINEL_U32))
+        )
+        for buf in signal_buffers:
+            region = buf.view(DType.uint32, shape=(Signals.NUM_BYTES // 4,))[
+                start:end
+            ]
+            region.inplace_copy_from(sentinel)
+
         for accel in accelerators:
             accel.synchronize()
 

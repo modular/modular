@@ -86,6 +86,8 @@ class ProcessMetricClient(MetricClient):
             logger.warning(
                 f"Telemetry Queue is full.  Dropping {len(self.detailed_buffer)} measurements"
             )
+        except (ValueError, OSError):
+            logger.debug("Telemetry Queue is closed.  Dropping data")
         finally:
             if self.detailed_buffer:
                 # NOTE: we want to create a new list here to avoid
@@ -109,6 +111,8 @@ class ProcessMetricClient(MetricClient):
         except queue.Full:
             # we would rather lose data than slow the server
             logger.warning("Telemetry Queue is full.  Dropping data")
+        except Exception:
+            logger.debug("Telemetry Queue is unavailable.  Dropping data")
         finally:
             if self.detailed_buffer:
                 self.detailed_buffer.clear()
@@ -128,6 +132,13 @@ class ProcessTelemetryController:
     def Client(self, settings: Settings) -> MetricClient:
         return ProcessMetricClient(settings, self.queue)
 
+    def close(self) -> None:
+        # Metrics are lossy. Do not let multiprocessing wait at interpreter
+        # shutdown for a QueueFeederThread to flush to a worker that may already
+        # be gone after a crash.
+        self.queue.cancel_join_thread()
+        self.queue.close()
+
 
 @asynccontextmanager
 async def start_process_consumer(
@@ -139,16 +150,20 @@ async def start_process_consumer(
     mp = multiprocessing.get_context("spawn")
     async with subprocess_manager("Metrics Worker") as proc:
         metrics_q = mp.Queue()
+        controller = ProcessTelemetryController(metrics_q)
         alive = mp.Event()
 
-        proc.start(init_and_process, settings, metrics_q, alive, handle_fn)
+        try:
+            proc.start(init_and_process, settings, metrics_q, alive, handle_fn)
 
-        await proc.ready(alive, settings.telemetry_worker_spawn_timeout)
+            await proc.ready(alive, settings.telemetry_worker_spawn_timeout)
 
-        if settings.use_heartbeat:
-            proc.watch_heartbeat(alive, timeout=5)
+            if settings.use_heartbeat:
+                proc.watch_heartbeat(alive, timeout=5)
 
-        yield ProcessTelemetryController(metrics_q)
+            yield controller
+        finally:
+            controller.close()
 
 
 def init_and_process(

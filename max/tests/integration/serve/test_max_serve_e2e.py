@@ -43,10 +43,10 @@ def serve_main() -> None:
     This function configures and launches the serve API server with model worker.
     It blocks in uvloop.run(server.serve()) until the server is shut down.
     """
-    from max.driver import DeviceSpec
-    from max.entrypoints.cli.serve.serve_api_and_model_worker import (
+    from max._entrypoints.cli.serve.serve_api_and_model_worker import (
         serve_api_server_and_model_worker,
     )
+    from max.driver import DeviceSpec
     from max.pipelines import PipelineConfig
     from max.pipelines.lib.config.model_config import MAXModelConfig
     from max.pipelines.lib.model_manifest import ModelManifest

@@ -19,6 +19,7 @@ from std.python import PythonObject
 ```
 """
 
+from . import ConvertibleToPython
 from std.os import abort
 from std.sys import bit_width_of
 from std.ffi import _CPointer, c_double, c_long, c_size_t, c_ssize_t
@@ -1278,7 +1279,7 @@ struct PythonObject(
             _ = cpy.PyTuple_SetItem(
                 args_ptr, i, cpy.Py_NewRef(args[i].steal_data())
             )
-        var kwargs_ptr = Python._dict(kwargs)
+        var kwargs_ptr = Python.dict(**kwargs^).steal_data()
         var res_ptr = cpy.PyObject_Call(self._obj_ptr, args_ptr, kwargs_ptr)
         cpy.Py_DecRef(args_ptr)
         cpy.Py_DecRef(kwargs_ptr)

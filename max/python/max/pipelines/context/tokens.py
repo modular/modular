@@ -50,7 +50,13 @@ from typing import Any, TypeAlias
 import numpy as np
 import numpy.typing as npt
 
-__all__ = ["ImageMetadata", "Range", "TokenBuffer", "TokenSlice"]
+__all__ = [
+    "ImageMetadata",
+    "Range",
+    "TokenBuffer",
+    "TokenHashOverride",
+    "TokenSlice",
+]
 
 
 @dataclasses.dataclass(frozen=False, slots=True)
@@ -785,3 +791,28 @@ class ImageMetadata:
 
     def __repr__(self):
         return f"ImageMetadata(start_idx={self.start_idx}, end_idx={self.end_idx}, pixel_values={self.pixel_values.shape})"
+
+
+@dataclasses.dataclass(kw_only=True)
+class TokenHashOverride:
+    """Content hash to use in place of a token when hashing KV-cache blocks.
+
+    The token stream itself is unchanged. The override is applied only while
+    computing block hashes, so content that is represented by placeholder tokens
+    can participate in prefix-cache keys.
+    """
+
+    token_idx: int
+    """Index of the token to replace while hashing."""
+
+    token_hash: int
+    """Hash value to use at ``token_idx`` while hashing."""
+
+    source: str = "media"
+    """Human-readable label describing where the hash override came from (e.g. "image", "video")."""
+
+    def __post_init__(self) -> None:
+        if self.token_idx < 0:
+            raise ValueError(
+                "Token hash overrides must have a valid token index"
+            )

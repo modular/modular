@@ -321,10 +321,10 @@ struct Conv:
     ](
         output: FusedOutputTensor[...],
         input: InputTensor[rank=output.rank, ...],
-        filter: InputTensor[...],
-        strides: InputTensor[...],
-        dilation: InputTensor[...],
-        paddings: InputTensor[...],
+        filter: InputTensor,
+        strides: InputTensor,
+        dilation: InputTensor,
+        paddings: InputTensor,
         num_groups: Scalar,
         ctx: DeviceContext,
     ) capturing raises:
@@ -442,8 +442,6 @@ struct Conv:
                 filter_packed == False
             ), "only unpacked filter is supported on cuda gpu"
 
-            var cuda_ctx = ctx
-
             var pad_tuple = IndexList[2 * (input.rank - 2)](0)
 
             comptime for i in range(2 * (input.rank - 2)):
@@ -463,14 +461,14 @@ struct Conv:
                 dilation_tuple,
                 pad_tuple,
                 Int(num_groups),
-                cuda_ctx,
+                ctx,
             )
 
 
 @compiler.register_shape_function("mo.conv")
 def mo_conv_shape(
-    input: InputTensor[...],
-    filter: InputTensor[...],
+    input: InputTensor,
+    filter: InputTensor,
     strides: InputTensor[rank=1, ...],
     dilations: InputTensor[rank=1, ...],
     paddings: InputTensor[rank=1, ...],
@@ -540,7 +538,6 @@ struct Conv2dResidualAdd:
             target
         ](), "conv2d_residual_add is only supported on GPU"
 
-        var cuda_ctx = ctx
         var input_tt = input.to_tile_tensor[DType.int64]()
         var filter_tt = filter.to_tile_tensor[DType.int64]()
         var output_tt = output.to_tile_tensor[DType.int64]()
@@ -564,7 +561,7 @@ struct Conv2dResidualAdd:
             dilation_tuple,
             pad_tuple,
             1,  # num_groups
-            cuda_ctx,
+            ctx,
             source.unsafe_ptr().as_unsafe_any_origin(),
             Float32(1.0),  # beta
         )
@@ -592,7 +589,7 @@ struct ConvTranspose:
     ](
         output: FusedOutputTensor[...],
         input: InputTensor[rank=output.rank, ...],
-        filter: InputTensor[...],
+        filter: InputTensor,
         strides: InputTensor[rank=1, ...],
         dilation: InputTensor[rank=1, ...],
         paddings: InputTensor[rank=1, ...],
@@ -689,7 +686,6 @@ struct ConvTranspose:
                 filter_packed == False
             ), "only unpacked filter is supported on cuda gpu"
 
-            var cuda_ctx = ctx
             var pad_tuple = IndexList[
                 type_of(input.to_tile_tensor[DType.int64]()).rank - 2
             ](0)
@@ -714,7 +710,7 @@ struct ConvTranspose:
                 stride_tuple,
                 dilation_tuple,
                 pad_tuple,
-                cuda_ctx,
+                ctx,
             )
 
 

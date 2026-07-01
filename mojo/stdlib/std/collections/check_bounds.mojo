@@ -13,6 +13,7 @@
 """Contains a bounds check which is on by default for CPU and off by default for GPU.
 """
 
+from . import OptionalReg
 from std.reflection import SourceLocation
 from std.sys.info import is_gpu
 from std.reflection import call_location

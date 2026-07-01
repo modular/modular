@@ -73,7 +73,6 @@ from std.sys.info import (
     _is_sm_100x_or_newer,
     is_32bit,
 )
-from std.sys.intrinsics import _type_is_eq
 
 from std.bit import bit_width, byte_swap, pop_count
 from std.builtin._format_float import _write_float
@@ -118,7 +117,7 @@ comptime Scalar = SIMD[
 """Represents a scalar dtype."""
 
 comptime Int = Scalar[DType.int]
-"""Represents a signed integer sutable for indexing."""
+"""Represents a signed integer suitable for indexing."""
 comptime Int8 = Scalar[DType.int8]
 """Represents an 8-bit signed scalar integer."""
 comptime UInt8 = Scalar[DType.uint8]
@@ -519,7 +518,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
 
     - Vector operations:
       - Horizontal reductions: `reduce_add()`, `reduce_mul()`, `reduce_min()`, `reduce_max()`
-      - Element-wise conditional selection: `select(condition, true_case, false_case)`
+      - Element-wise conditional selection: `select(true_case, false_case)`
       - Vector manipulation: `shuffle()`, `slice()`, `join()`, `split()`
       - Type conversion: `cast[target_dtype]()`
 
@@ -968,7 +967,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
         """
         return Scalar[Self.dtype](
             mlir_value=__mlir_op.`pop.simd.extractelement`(
-                self._mlir_value, idx._int_mlir_index()
+                self._mlir_value, idx.__mlir_index__()
             )
         )
 
@@ -981,7 +980,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
             val: The value to set.
         """
         self._mlir_value = __mlir_op.`pop.simd.insertelement`(
-            self._mlir_value, val._mlir_value, idx._int_mlir_index()
+            self._mlir_value, val._mlir_value, idx.__mlir_index__()
         )
 
     def __contains__(self, value: Scalar[Self.dtype]) -> Bool:
@@ -1959,14 +1958,6 @@ struct SIMD[dtype: DType, size: SIMDSize](
             __mlir_op.`pop.cast`[
                 _type=SIMD[DType.int, 1]._mlir_type, fast=__mlir_attr.unit
             ](rebind[SIMD[Self.dtype, SIMDSize(1)]](self)._mlir_value)
-        )
-
-    # NOTE: this is no longer needed.
-    @always_inline("builtin")
-    def _int_mlir_index(self: Int) -> __mlir_type.index:
-        comptime assert Self.dtype == DType.int and Self.size == SIMDSize(1)
-        return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.index](
-            self._mlir_value
         )
 
     @always_inline("nodebug")

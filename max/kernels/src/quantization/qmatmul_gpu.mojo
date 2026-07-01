@@ -62,7 +62,7 @@ from linalg.utils_gpu import MatmulConfig, block_swizzle
 from std.memory.unsafe import bitcast
 
 
-from std.utils.index import Index
+from std.utils.index import Index, StaticTuple
 from std.utils.numerics import get_accum_type
 
 
@@ -1613,8 +1613,12 @@ def matmul_gpu_qint4[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_tt: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a_tt: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    a_tt: TileTensor[
+        mut=False, a_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     var c = c_tt.to_layout_tensor()
@@ -2135,7 +2139,9 @@ def matmul_gpu_qint4_impl[
 def gpu_qint4_repack_Q4_0[
     target: StaticString,
 ](
-    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    b_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     b_packed_tt: TileTensor[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
@@ -2185,7 +2191,9 @@ def gpu_qint4_repack_GPTQ[
     group_size: Int,
     target: StaticString,
 ](
-    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    b_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     b_packed_tt: TileTensor[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],

@@ -67,6 +67,14 @@ class SamplingConfig(ConfigFileModel):
         ),
     )
 
+    structured_output_backend: str = Field(
+        default="llguidance",
+        description=(
+            "Grammar backend for constrained decoding. One of ``llguidance`` "
+            "(default) or ``xgrammar``."
+        ),
+    )
+
     enable_variable_logits: bool = Field(
         default=False,
         description=(
@@ -90,6 +98,16 @@ class SamplingConfig(ConfigFileModel):
         description=(
             "Whether to enable ``min_tokens``, which blocks the model from "
             "generating stopping tokens before the ``min_tokens`` count is reached."
+        ),
+    )
+
+    sample_on_host: bool = Field(
+        default=False,
+        description=(
+            "Run the token sampler on the host CPU instead of the model "
+            "device. The last-token logits are copied device-to-host and "
+            "sampling (top-k/argmax) runs on CPU. Default is to sample on "
+            "the model device."
         ),
     )
 

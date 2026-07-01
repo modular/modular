@@ -25,7 +25,6 @@ directly to hardware instructions and require understanding of the
 underlying GPU architecture.
 """
 
-from std.collections.string.string_slice import get_static_string
 from std.atomic import Ordering
 from std.ffi import external_call
 from std.gpu._utils import to_i32
@@ -55,9 +54,8 @@ from std.gpu import lane_id
 from std.math.uutils import ufloordiv, umod
 
 from std.memory.unsafe import bitcast
-from std.memory._poison import _check_not_poison
 
-from .memory.memory import CacheOperation, _int_to_str
+from .memory.memory import CacheOperation
 
 # ===-----------------------------------------------------------------------===#
 # ldg
@@ -680,13 +678,6 @@ def threadfence[scope: Scope = Scope.GPU]():
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_type_suffix[dtype: DType]() -> StaticString:
-    comptime str = get_static_string[
-        "u", _int_to_str[bit_width_of[dtype]()]()
-    ]()
-    return str
-
-
 def _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
     comptime assert is_nvidia_gpu(), (
         "the _get_nvtx_register_constraint function is currently restricted"
@@ -710,95 +701,6 @@ def _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
         return "d"
 
     return "<<unknown_register_constraint>>"
-
-
-def _get_nvtx_pointer_constraint() -> StaticString:
-    comptime assert is_nvidia_gpu(), (
-        "the _get_nvtx_pointer_constraint function is currently restricted"
-        " to only be defined on NVIDIA GPUs"
-    )
-    return _get_nvtx_register_constraint[DType.int]()
-
-
-@always_inline
-def store_volatile[
-    dtype: DType, //, memory: Bool = True
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], value: Scalar[dtype]):
-    """Performs a volatile store operation that cannot be optimized away.
-
-    This function guarantees that the store operation will be performed exactly as
-    specified, without being reordered or optimized away by the compiler.
-
-    Parameters:
-        dtype: The data type to store.
-        memory: Whether to include memory side effects in constraints (default: True).
-
-    Args:
-        ptr: Pointer to the memory location to store to.
-        value: Value to store.
-
-    Note:
-        - Only supported on NVIDIA GPUs.
-        - Maps directly to PTX st.volatile instruction.
-        - Prevents compiler optimization of the store operation.
-        - Useful for memory-mapped I/O or synchronization primitives.
-        - May have performance implications compared to regular stores.
-    """
-    comptime assert (
-        is_nvidia_gpu()
-    ), "store_volatile is not currently supported on AMD GPUs"
-    comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-    comptime constraints = _get_nvtx_register_constraint[
-        dtype
-    ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-    inlined_assembly[
-        "st.volatile.global." + _get_type_suffix[dtype]() + " [$1], $0;",
-        NoneType,
-        constraints=constraints,
-    ](value, ptr.address_space_cast[AddressSpace.GENERIC]())
-
-
-@always_inline
-def load_volatile[
-    dtype: DType, //, memory: Bool = True
-](ptr: UnsafePointer[mut=False, Scalar[dtype], ...]) -> Scalar[dtype]:
-    """Performs a volatile load operation that cannot be optimized away.
-
-    This function guarantees that the load operation will be performed exactly as
-    specified, without being reordered or optimized away by the compiler.
-
-    Parameters:
-        dtype: The data type to load.
-        memory: Whether to include memory side effects in constraints (default: True).
-
-    Args:
-        ptr: Pointer to the memory location to load from.
-
-    Returns:
-        The loaded value.
-
-    Note:
-        - Only supported on NVIDIA GPUs.
-        - Maps directly to PTX ld.volatile instruction.
-        - Prevents compiler optimization of the load operation.
-        - Useful for memory-mapped I/O or synchronization primitives.
-        - May have performance implications compared to regular loads.
-    """
-    comptime assert (
-        is_nvidia_gpu()
-    ), "load_volatile is not currently supported on AMD GPUs"
-    comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-    comptime constraints = "=" + _get_nvtx_register_constraint[
-        dtype
-    ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-    var result = inlined_assembly[
-        "ld.volatile.global." + _get_type_suffix[dtype]() + " $0, [$1];",
-        Scalar[dtype],
-        constraints=constraints,
-    ](ptr.address_space_cast[AddressSpace.GENERIC]())
-    comptime if dtype.is_floating_point():
-        _check_not_poison[dtype, 1](result)
-    return result
 
 
 struct AMDBufferResource(TrivialRegisterPassable):
@@ -1034,17 +936,14 @@ struct AMDBufferResource(TrivialRegisterPassable):
             var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
                 _type=__mlir_type.`!llvm.ptr<3>`
             ](shared_ptr)
-            __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
-                alias_scopes=__mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`,
-                _type=None,
-            ](
+            comptime async_copies_scope = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
+            _raw_ptr_buffer_load_lds[async_copies_scope, Int(aux)](
                 desc_ptr_llvm,
                 shared_ptr3,
                 to_i32(Int32(bytes)),
                 to_i32(vector_offset_bytes),
                 to_i32(scalar_offset_bytes),
                 to_i32(Int32(0)),
-                to_i32(aux),
             )
 
     @always_inline("nodebug")
@@ -1140,6 +1039,41 @@ def _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
     # CacheOperation.WORKGROUP -> 0x01 (SC=01, NT=0) - Workgroup/CU-level coherency
     # CacheOperation.GLOBAL_STREAMING -> 0x12 (SC=10, NT=1) - Global + streaming
     # CacheOperation.VOLATILE_STREAMING -> 0x13 (SC=11, NT=1) - Volatile + streaming
+
+
+@always_inline("nodebug")
+def _raw_ptr_buffer_load_lds[
+    scopes: __mlir_type.`!kgen.deferred`, aux: Int
+](
+    desc_ptr_llvm: __mlir_type.`!llvm.ptr<8>`,
+    shared_ptr3: __mlir_type.`!llvm.ptr<3>`,
+    size: __mlir_type.i32,
+    voffset: __mlir_type.i32,
+    soffset: __mlir_type.i32,
+    offset: __mlir_type.i32,
+):
+    # The cache-policy `aux` slot is an `I32Attr`, i.e. a plain signless
+    # builtin `i32` IntegerAttr literal (`N : i32`). It cannot be fed a value
+    # expression (`to_i32(...)`) nor an `int_literal_convert` /
+    # `cast_to_builtin` attribute — both produce non-builtin attrs the
+    # `non-atomic AMDGPU buffer cache policy` verifier rejects. Splicing the
+    # comptime-constant `aux` with a builtin type annotation
+    # (`__mlir_attr[..., `: i32`]`) folds to the same builtin `N : i32`
+    # IntegerAttr literal the verifier accepts. `scopes` (the `alias_scopes`
+    # attribute) is threaded through unchanged so its identity is preserved.
+    comptime assert aux in (
+        0x00,
+        0x02,
+        0x03,
+        0x10,
+        0x11,
+        0x12,
+    ), "unsupported AMD buffer cache-policy aux bitmask"
+    __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
+        alias_scopes=scopes,
+        aux=__mlir_attr[aux.__mlir_index__(), `: i32`],
+        _type=None,
+    ](desc_ptr_llvm, shared_ptr3, size, voffset, soffset, offset)
 
 
 def _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:

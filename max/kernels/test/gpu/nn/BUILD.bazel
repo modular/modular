@@ -3,6 +3,7 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 package(default_visibility = ["//max:consumers"])
 
 _EXTRA_CONSTRAINTS = {
+    "test_conv2d_im2col_apple.mojo": ["//:apple_gpu"],  # Apple M5 im2col conv2d — Metal only
     # Bounded masked DRAM->SRAM copy proof; the masked `cp.async` zero-fill
     # is NVIDIA-specific and verified on B200 only.
     "scout_tt_bounded_copy.mojo": ["//:nvidia_gpu"],
@@ -41,6 +42,10 @@ _EXTRA_CONSTRAINTS = {
     "test_conv_transposed_cudnn.mojo": ["//:nvidia_gpu"],
     "test_irfft.mojo": ["//:nvidia_gpu"],
     "test_flash_attention_amd.mojo": ["//:amd_gpu"],
+    # Apple M5 (cc==5) FA2-prefill: the kernel uses the 16x16 simdgroup MMA
+    # (`MmaOpApple`) which only exists on M5, so these run on Apple GPU only.
+    "test_apple_fa_prefill.mojo": ["//:apple_gpu"],
+    "test_apple_fa_softmax_unit.mojo": ["//:apple_gpu"],
     "test_mha_gemma4_global_decode_amd.mojo": ["//:amd_gpu"],
     "test_mha_sink_weights.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -124,6 +129,14 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
+    "test_rms_norm_fused_residual_add.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: KERN-2651 — Metal threadgroup memory limit (33032 > 32768)
+    "test_mha_chunked_causal_mask.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: KERN-3062 — flash attention numerically diverges on Metal
     "test_argmaxmin_gpu.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -160,10 +173,11 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2489
-    "test_topk_gpu_fi.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2673
+    # The FI ternary samplers now run the search on a single thread on Apple
+    # (no in-loop block collectives that desync warps on Metal).
+    # `probe_block_scan_metal` is an Apple-only regression probe asserting
+    # block.sum/prefix_sum are correct at the ghost-warp geometry.
+    "probe_block_scan_metal.mojo": ["//:apple_gpu"],
     "test_fused_qk_rope.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -227,6 +241,14 @@ _EXTRA_CONSTRAINTS = {
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    # rope_ragged with position_ids hits the same broken-on-Metal path as
+    # test_rope_ragged above (the GPU output is all-zeros -- needs
+    # investigation); the position_ids marshalling fix here is necessary but
+    # not sufficient on its own.
+    "test_rope_ragged_position_ids.mojo": select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     # These tests fail on Apple GPU - needs investigation
     "test_pool_gpu.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -241,10 +263,19 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    # Block-wide bitonic sort top-k (topk_bitonic.mojo) — same constraint as above.
+    "test_topk_bitonic.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_scatter_set_constant.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
+    "test_apply_packed_bitmask.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_tpool_patch_merger.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -272,6 +303,10 @@ _EXTRA_CONSTRAINTS = {
 }
 
 _EXTRA_DEPS = {}
+
+_GPU_MEMORY = {
+    "test_cudnn_conv.mojo": "7",
+}
 
 _FILECHECK_TESTS = [
     "test_mha_tile_scheduler.mojo",
@@ -323,7 +358,7 @@ _FILECHECK_TESTS = [
             ],
         }),
         exec_properties = {
-            "test.resources:gpu-memory": "3",
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "4"),
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
@@ -353,6 +388,13 @@ _FILECHECK_TESTS = [
             # //max:kv_cache dep and an Apple-GPU-only constraint; declared
             # explicitly below).
             "attention/test_naive_fa_decode_apple.mojo",
+            # Apple-only decode-attention SINK regression (same deps as above).
+            "attention/test_naive_fa_decode_apple_sink.mojo",
+            # Apple-only PAGED-KV prefill correctness gate (needs //max:kv_cache
+            # for the PagedKVCacheCollection operand; declared explicitly below).
+            # Exercises both prefill kernels (no-SMEM + SMEM-staged) via one
+            # `staged` harness flag.
+            "test_apple_fa_prefill_paged.mojo",
         ],
     )
 ]
@@ -362,6 +404,49 @@ _FILECHECK_TESTS = [
 mojo_test(
     name = "attention/test_naive_fa_decode_apple.mojo.test",
     srcs = ["attention/test_naive_fa_decode_apple.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:apple_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# Regression for the Apple decode attention-sink seed (split-0-only seeding of
+# the running softmax). Closed-form mass reference. Apple GPU only.
+mojo_test(
+    name = "attention/test_naive_fa_decode_apple_sink.mojo.test",
+    srcs = ["attention/test_naive_fa_decode_apple_sink.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:apple_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# Ensure the Apple M5 MMA prefill kernel (`fa_prefill_apple`) is correct on a
+# PAGED KV cache (`PagedKVCacheCollection`, page_size % 16 == 0) vs an
+# independent fp32 host attention reference -- the per-16-row-sub-tile page
+# resolution must interact correctly with page boundaries. Apple GPU only; needs
+# //max:kv_cache.
+mojo_test(
+    name = "test_apple_fa_prefill_paged.mojo.test",
+    srcs = ["test_apple_fa_prefill_paged.mojo"],
     tags = ["gpu"],
     target_compatible_with = [
         "//:has_gpu",
@@ -427,8 +512,24 @@ mojo_test(
 #   *_pair_cta:    B200 only (SM100-only feature)
 _MHA_CAUSAL_MASK_CONFIGS = [
     # (depth, pair_cta, extra_constraints)
-    ("64", False, []),
-    ("128", False, []),
+    # FIXME: KERN-3062 — flash attention numerically diverges on Metal; the
+    # depth-64 and depth-128 configs are the only ones that target Apple GPU.
+    (
+        "64",
+        False,
+        select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+    ),
+    (
+        "128",
+        False,
+        select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+    ),
     (
         "128",
         True,
@@ -503,7 +604,7 @@ _MHA_CAUSAL_MASK_CONFIGS = [
         False,
         select({
             "//:b200_gpu": [],
-            "//:amd_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-4126
+            "//:amd_gpu": [],
             "//conditions:default": ["@platforms//:incompatible"],
         }),
     ),
@@ -525,7 +626,7 @@ _MHA_CAUSAL_MASK_CONFIGS = [
             "ENABLE_MHA_PREFILL_PAIR_CTA=True",
         ] if pair_cta else []),
         exec_properties = {
-            "test.resources:gpu-memory": "3",
+            "test.resources:gpu-memory": "4",
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + constraints,
@@ -576,7 +677,11 @@ _MHA_CAUSAL_MASK_AMD_DTYPES = {
 ]
 
 # test_mla_decode_paged_variable.mojo split by page_size. Each page_size
-# gets its own target. MLA decode is B200-only (SM100).
+# gets its own target. The test runs the SM100 paged decode suite on B200
+# and the AMD MLA decode suite (S=1 paged decode + the FP8 MTP token fold
+# through the paged + ragged-layout path, including uniform multi-Q and M6
+# variable per-sequence query length, across single-partition and split-K)
+# on MI355 (gfx950); both page_size 128 and 256 are verified on AMD.
 #
 # page_size < 64 (the decode tile row count BK1=64) would exercise
 # multi-sub-tile TMA emission, but the decode TMA descriptor's `BN` is
@@ -599,12 +704,21 @@ _MLA_DECODE_PAGED_CONFIGS = [
             "-D",
             "page_size={}".format(page_size),
         ],
+        # The gfx950 backend crashes compiling the warp-local MLA-decode fold
+        # kernel with assertions enabled (machine scheduler emits illegal MIR
+        # -> "Found N machine code errors"); the no-assert / JIT build is fine.
+        # Mirrors test_flash_attention_amd.mojo (MSTDL-2240). NVIDIA keeps asserts.
+        enable_assertions = select({
+            "//:amd_gpu": False,
+            "//conditions:default": True,
+        }),
         exec_properties = {
-            "test.resources:gpu-memory": "5",
+            "test.resources:gpu-memory": "6",
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + select({
             "//:b200_gpu": [],
+            "//:mi355_gpu": [],
             "//conditions:default": ["@platforms//:incompatible"],
         }),
         deps = [
@@ -657,19 +771,19 @@ _MLA_PREFILL_PAGED_VARIANTS = [
         "test_mla_prefill_generic_paged.mojo",
         "test_mla_prefill_generic_paged",
         _MLA_PREFILL_PAGED_PAGE_SIZES,
-        "5",
+        "6",
     ),
     (
         "test_mla_prefill_blockscale_paged.mojo",
         "test_mla_prefill_blockscale_paged",
         _MLA_PREFILL_PAGED_PAGE_SIZES,
-        "5",
+        "6",
     ),
     (
         "test_mla_prefill_per_token_scale_paged.mojo",
         "test_mla_prefill_per_token_scale_paged",
         _MLA_PREFILL_PAGED_PAGE_SIZES,
-        "5",
+        "6",
     ),
     # Large-cache_length finiteness sweep: production page_size (256) only,
     # targeting the softmax-accumulator / scale-range / partition-count axis at

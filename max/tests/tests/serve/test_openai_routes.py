@@ -13,6 +13,7 @@
 
 
 import asyncio
+import base64
 import io
 import json
 import logging
@@ -23,10 +24,12 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import numpy as np
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
 from max.pipelines.context import (
@@ -41,6 +44,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineRuntimeConfig,
 )
+from max.pipelines.lib.tokenizer import open_image
 from max.pipelines.modeling.types import (
     PipelineTask,
     RequestID,
@@ -55,20 +59,28 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
 )
 from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
+from max.serve.router._image_resolution import (
+    _decode_data_uri_base64,
+    decode_and_validate_images,
+    resolve_image_from_url,
+)
 from max.serve.router.openai_routes import (
     CompletionStreamResponse,
     OpenAIChatResponseGenerator,
     OpenAICompletionResponseGenerator,
+    _coerce_positive_float,
+    _coerce_positive_int,
     _create_response_format,
     _process_chat_log_probabilities,
     _resolve_grammar_constraints,
-    _validate_decodable_images,
     get_tool_parser,
     openai_create_chat_completion,
 )
 from max.serve.schemas.openai import (
     ChatCompletionLogprobs,
     ChatCompletionMessageToolCall,
+    ChatCompletionResponseMessage,
+    ChatCompletionStreamResponseDelta,
     ChatCompletionTokenLogprob,
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
@@ -79,6 +91,7 @@ from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
 from PIL import Image
+from pydantic import AnyUrl, ValidationError
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -335,19 +348,139 @@ async def test_chat_completion_schema_validation_error_uses_openai_envelope(
         assert "wizard" in body["error"]["message"]
 
 
-def test_validate_decodable_images_rejects_bad_bytes() -> None:
+def test_decode_and_validate_images_rejects_bad_bytes() -> None:
     # Empty / non-image bytes must raise (the request handler maps this to a
     # 400), not reach the worker and crash it later with an unhandled
     # PIL.UnidentifiedImageError (HTTP 500).
     for bad in (b"", b"tiny", b"\x00\x01\x02\x03"):
         with pytest.raises(InputError):
-            _validate_decodable_images([bad])
+            decode_and_validate_images([bad])
 
 
-def test_validate_decodable_images_accepts_valid_image() -> None:
+def test_decode_and_validate_images_returns_decoded_images() -> None:
+    # The validator decodes each image once and returns the decoded PIL images
+    # so the tokenizer can reuse them (decode-once); it must not discard them.
     buf = io.BytesIO()
-    Image.new("RGB", (1, 1)).save(buf, format="PNG")
-    _validate_decodable_images([buf.getvalue()])  # must not raise
+    Image.new("RGB", (7, 11)).save(buf, format="PNG")
+    decoded = decode_and_validate_images([buf.getvalue()])
+    assert len(decoded) == 1
+    assert decoded[0].size == (7, 11)
+    # Must be fully decoded (load() already called), usable without the source.
+    assert decoded[0].convert("RGB").size == (7, 11)
+
+
+def test_decode_and_validate_images_rejects_truncated_image() -> None:
+    # A header-valid but truncated image passes the lazy ``Image.open`` header
+    # parse, but its pixel decode fails. Before the fix this slipped through
+    # validation and crashed the worker with an unhandled OSError (HTTP 500)
+    # in the tokenizer's decode; the validator must now force the decode and
+    # turn it into a clean 400 (InputError). (MXSERV-162, bug 2.)
+    buf = io.BytesIO()
+    Image.effect_noise((256, 256), 80).convert("RGB").save(
+        buf, format="JPEG", quality=90
+    )
+    full = buf.getvalue()
+    # Sanity-check the precondition: a header parse alone does not raise.
+    with Image.open(io.BytesIO(full[: int(len(full) * 0.88)])):
+        pass
+    with pytest.raises(InputError):
+        decode_and_validate_images([full[: int(len(full) * 0.88)]])
+
+
+def test_decode_and_validate_images_rejects_decompression_bomb(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    # An image whose pixel count blows past PIL's decompression-bomb guard must
+    # become a clean 400 (InputError), not an unhandled DecompressionBombError
+    # (which is not an OSError/ValueError, so it would otherwise escape as 500).
+    # (MXSERV-162.)
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 64)).save(buf, format="PNG")
+    data = buf.getvalue()
+    # Lower the limit *after* building the bytes so 64*64 px trips the guard
+    # (DecompressionBombError fires above 2x MAX_IMAGE_PIXELS).
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 16)
+    with pytest.raises(InputError):
+        decode_and_validate_images([data])
+
+
+def test_open_image_carry_path_matches_bytes_path() -> None:
+    # Decode-once invariant: a pre-decoded image (carry path,
+    # request.decoded_images) and the raw bytes (fallback path) must yield
+    # byte-identical pixels, so reusing the validator's decode in the tokenizer
+    # cannot change model inputs. (MXSERV-162 follow-up: decode-once.)
+    buf = io.BytesIO()
+    Image.effect_noise((48, 32), 64).convert("RGBA").save(buf, format="PNG")
+    data = buf.getvalue()
+
+    # The validator decodes once and hands the image to the tokenizer.
+    pre_decoded = decode_and_validate_images([data])[0]
+    # open_image passes an already-decoded image through untouched (no re-decode)
+    # and decodes raw bytes on the fallback path.
+    assert open_image(pre_decoded) is pre_decoded
+    carry = np.asarray(open_image(pre_decoded).convert("RGB"))
+    fallback = np.asarray(open_image(data).convert("RGB"))
+    assert np.array_equal(carry, fallback)
+
+
+def test_decode_data_uri_base64_padded_unpadded_and_urlsafe() -> None:
+    # Real clients and the OpenRouter relay send unpadded and/or url-safe
+    # base64; the decoder must accept all three and yield identical bytes.
+    # (MXSERV-162, bug 1.)
+    raw = bytes(range(256))  # contains bytes that map to +/ and -_
+    std = base64.b64encode(raw).decode()
+    assert _decode_data_uri_base64(f"data:image/png;base64,{std}") == raw
+    assert (
+        _decode_data_uri_base64(f"data:image/png;base64,{std.rstrip('=')}")
+        == raw
+    )
+    urlsafe = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    assert _decode_data_uri_base64(f"data:image/png;base64,{urlsafe}") == raw
+
+
+def test_decode_data_uri_base64_rejects_empty_payload() -> None:
+    with pytest.raises(ValueError, match="no base64 payload"):
+        _decode_data_uri_base64("data:image/png;base64,")
+
+
+def test_coerce_positive_int() -> None:
+    # Positive ints (incl. numeric strings) pass through; everything else,
+    # including bool and non-positive values, becomes None.
+    assert _coerce_positive_int(1008) == 1008
+    assert _coerce_positive_int("512") == 512
+    assert _coerce_positive_int(None) is None
+    assert _coerce_positive_int(0) is None
+    assert _coerce_positive_int(-4) is None
+    assert _coerce_positive_int(True) is None
+    assert _coerce_positive_int("not-a-number") is None
+
+
+def test_coerce_positive_float() -> None:
+    # Positive floats (incl. ints and numeric strings) pass through; bool,
+    # None, non-positive, and garbage become None.
+    assert _coerce_positive_float(1.0) == 1.0
+    assert _coerce_positive_float(2) == 2.0
+    assert _coerce_positive_float("0.5") == 0.5
+    assert _coerce_positive_float(None) is None
+    assert _coerce_positive_float(0) is None
+    assert _coerce_positive_float(-1.0) is None
+    assert _coerce_positive_float(True) is None
+    assert _coerce_positive_float("nope") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_image_from_url_data_uri_unpadded() -> None:
+    # End-to-end through resolve_image_from_url: an unpadded data URI used to
+    # raise binascii.Error (surfaced as a 400); it must now round-trip.
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), color="red").save(buf, format="PNG")
+    png = buf.getvalue()
+    b64 = base64.b64encode(png).decode().rstrip("=")
+    out = await resolve_image_from_url(
+        AnyUrl(f"data:image/png;base64,{b64}"),
+        settings=None,  # type: ignore[arg-type]
+    )
+    assert out == png
 
 
 def test_vllm_response_deserialization() -> None:
@@ -389,6 +522,40 @@ def test_create_chat_completion_request_with_target_endpoint() -> None:
     )
     assert parsed_request_default.target_endpoint is None
     assert parsed_request_default.model == "gpt-3.5-turbo"
+
+
+def test_create_chat_completion_request_with_cache_salt() -> None:
+    """Test that CreateChatCompletionRequest correctly parses cache_salt field
+    and enforces the 512-char length cap."""
+    request_with_salt = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello, world!"}],
+        "cache_salt": "tenant-abc",
+    }
+
+    parsed_request = CreateChatCompletionRequest.model_validate(
+        request_with_salt
+    )
+    assert parsed_request.cache_salt == "tenant-abc"
+
+    request_without_salt = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello, world!"}],
+    }
+
+    parsed_default = CreateChatCompletionRequest.model_validate(
+        request_without_salt
+    )
+    assert parsed_default.cache_salt is None
+
+    request_oversized = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello, world!"}],
+        "cache_salt": "x" * 600,
+    }
+
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(request_oversized)
 
 
 def test_create_chat_completion_request_with_chat_template_kwargs() -> None:
@@ -1006,6 +1173,8 @@ async def _run_stream(
     chunks: list[TokenGeneratorOutput],
     *,
     stream_options: ChatCompletionStreamOptionsParam | None = None,
+    fold_reasoning_into_content: bool = False,
+    emit_reasoning_content: bool = False,
 ) -> list[CreateChatCompletionStreamResponse]:
     """Run streaming generator and return parsed responses."""
     mock_pipeline = Mock()
@@ -1019,7 +1188,10 @@ async def _run_stream(
     mock_request = _make_mock_request()
 
     generator = OpenAIChatResponseGenerator(
-        mock_pipeline, stream_options=stream_options
+        mock_pipeline,
+        stream_options=stream_options,
+        fold_reasoning_into_content=fold_reasoning_into_content,
+        emit_reasoning_content=emit_reasoning_content,
     )
     return [
         CreateChatCompletionStreamResponse.model_validate_json(p)
@@ -1112,6 +1284,144 @@ async def test_openai_chat_stream_reasoning_in_delta(
     assert responses[0].choices[0].delta.content is None
     assert responses[1].choices[0].delta.content == "answer"
     assert responses[1].choices[0].delta.reasoning is None
+
+
+# ============================================================================
+# Tests for MiniMax ``reasoning_split=False`` (fold reasoning into content).
+#
+# Reference behavior captured from the official MiniMax-M3 endpoint
+# (api.minimax.io, model "MiniMax-M3"): with reasoning_split=False the response
+# ``content`` is ``<think>\n{thinking}\n</think>\n\n{answer}`` and no separate
+# reasoning field is returned. See the design doc for CENG-592.
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_fold_reasoning_into_content_non_streaming(
+    patch_openai_metrics: None,
+) -> None:
+    """Non-streaming fold wraps reasoning in <think> tags inside content."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="The answer is 408.",
+            reasoning_token_count=5,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="17 x 24 = 408",
+            token_count=4,
+            prompt_token_count=5,
+        ),
+    ]
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline, fold_reasoning_into_content=True
+    )
+    response = await generator.complete([_make_mock_request()])
+    message = response.choices[0].message
+    assert (
+        message.content
+        == "<think>\nThe answer is 408.\n</think>\n\n17 x 24 = 408"
+    )
+    assert message.reasoning is None
+
+
+@pytest.mark.asyncio
+async def test_fold_reasoning_disabled_keeps_reasoning_field(
+    patch_openai_metrics: None,
+) -> None:
+    """Default (split=True) behavior is unchanged: reasoning stays separate."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="The answer is 408.",
+            reasoning_token_count=5,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="17 x 24 = 408",
+            token_count=4,
+            prompt_token_count=5,
+        ),
+    ]
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline, fold_reasoning_into_content=False
+    )
+    response = await generator.complete([_make_mock_request()])
+    message = response.choices[0].message
+    assert message.content == "17 x 24 = 408"
+    assert message.reasoning == "The answer is 408."
+
+
+@pytest.mark.asyncio
+async def test_fold_reasoning_into_content_streaming(
+    patch_openai_metrics: None,
+) -> None:
+    """Streaming fold emits <think> open/close in the content deltas only.
+
+    Reconstructing the concatenated content must equal the official
+    ``<think>\\n{reasoning}\\n</think>\\n\\n{answer}`` format, and no delta
+    carries a separate reasoning field.
+    """
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="The user wants 17 x 24.",
+            reasoning_token_count=6,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens=" It is 408.",
+            reasoning_token_count=4,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="17 x 24 = 408",
+            token_count=4,
+            prompt_token_count=5,
+        ),
+    ]
+    responses = await _run_stream(chunks, fold_reasoning_into_content=True)
+    content = "".join(r.choices[0].delta.content or "" for r in responses)
+    assert (
+        content == "<think>\nThe user wants 17 x 24. It is 408.\n</think>\n\n"
+        "17 x 24 = 408"
+    )
+    assert all(r.choices[0].delta.reasoning is None for r in responses)
+    # The opening tag rides the first reasoning delta; the close + answer ride
+    # the first content delta.
+    assert responses[0].choices[0].delta.content == (
+        "<think>\nThe user wants 17 x 24."
+    )
+    assert responses[-1].choices[0].delta.content == (
+        "\n</think>\n\n17 x 24 = 408"
+    )
 
 
 @pytest.mark.asyncio
@@ -2033,3 +2343,145 @@ async def test_completion_extra_field_dropped_when_flag_set(
     assert response.status_code == 200
     body = response.json()
     assert body["choices"][0]["text"] == "echo this"
+
+
+def test_response_message_carries_reasoning_content() -> None:
+    msg = ChatCompletionResponseMessage(
+        role="assistant", reasoning_content="thinking"
+    )
+    assert msg.reasoning_content == "thinking"
+    # Unselected field stays None and is dropped from the wire.
+    assert '"reasoning":' not in msg.model_dump_json(exclude_none=True)
+
+
+def test_stream_delta_carries_reasoning_content() -> None:
+    delta = ChatCompletionStreamResponseDelta(reasoning_content="frag")
+    assert delta.reasoning_content == "frag"
+
+
+# ============================================================================
+# Tests for emit_reasoning_content flag (CENG-651).
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_non_stream_emits_reasoning_content_when_flag_on(
+    patch_openai_metrics: None,
+) -> None:
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=[
+            TokenGeneratorOutput(
+                status=GenerationStatus.ACTIVE,
+                decoded_reasoning_tokens="thinking",
+                reasoning_token_count=1,
+                decoded_tokens=None,
+                token_count=0,
+                prompt_token_count=5,
+            ),
+            TokenGeneratorOutput(
+                status=GenerationStatus.END_OF_SEQUENCE,
+                decoded_reasoning_tokens=None,
+                reasoning_token_count=0,
+                decoded_tokens="answer",
+                token_count=1,
+                prompt_token_count=5,
+            ),
+        ]
+    )
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline, emit_reasoning_content=True
+    )
+    response = await generator.complete([_make_mock_request()])
+
+    message = response.choices[0].message
+    assert message.reasoning_content == "thinking"
+    assert message.reasoning is None
+    assert message.content == "answer"
+
+
+@pytest.mark.asyncio
+async def test_stream_emits_reasoning_content_when_flag_on(
+    patch_openai_metrics: None,
+) -> None:
+    responses = await _run_stream(
+        _STREAM_REASONING_CHUNKS, emit_reasoning_content=True
+    )
+    assert responses[0].choices[0].delta.reasoning_content == "thinking"
+    assert responses[0].choices[0].delta.reasoning is None
+    assert responses[1].choices[0].delta.content == "answer"
+
+
+@pytest.mark.asyncio
+async def test_stream_emits_reasoning_by_default(
+    patch_openai_metrics: None,
+) -> None:
+    responses = await _run_stream(_STREAM_REASONING_CHUNKS)
+    assert responses[0].choices[0].delta.reasoning == "thinking"
+    assert responses[0].choices[0].delta.reasoning_content is None
+
+
+_REASONING_CONTENT_CHUNKS = [
+    TokenGeneratorOutput(
+        status=GenerationStatus.ACTIVE,
+        decoded_reasoning_tokens="thinking",
+        reasoning_token_count=1,
+        decoded_tokens=None,
+        token_count=0,
+        prompt_token_count=5,
+    ),
+    TokenGeneratorOutput(
+        status=GenerationStatus.END_OF_SEQUENCE,
+        decoded_reasoning_tokens=None,
+        reasoning_token_count=0,
+        decoded_tokens="answer",
+        token_count=1,
+        prompt_token_count=5,
+    ),
+]
+
+
+@pytest.mark.asyncio
+async def test_non_stream_reasoning_content_wire_serialization(
+    patch_openai_metrics: None,
+) -> None:
+    """Verify non-streaming wire serialization of reasoning_content vs reasoning.
+
+    The chat completion route is declared with ``response_model=None``, so FastAPI
+    serializes the returned Pydantic model via ``jsonable_encoder`` WITHOUT
+    ``exclude_none``. As a result, the unselected reasoning field appears in the
+    wire body as ``null`` (null-not-absent) rather than being omitted — this is
+    the documented, spec-accepted behavior. The streaming path serializes with
+    ``model_dump_json(exclude_none=True)`` and is covered by separate tests.
+
+    Flag ON:  reasoning_content == "thinking", reasoning is present but null.
+    Flag OFF: reasoning == "thinking", reasoning_content is present but null.
+    """
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+
+    # --- Flag ON: emit_reasoning_content=True ---
+    mock_pipeline.all_tokens = AsyncMock(return_value=_REASONING_CONTENT_CHUNKS)
+    generator_on = OpenAIChatResponseGenerator(
+        mock_pipeline, emit_reasoning_content=True
+    )
+    response_on = await generator_on.complete([_make_mock_request()])
+    body_on = jsonable_encoder(response_on)
+    message_on = body_on["choices"][0]["message"]
+    assert message_on["reasoning_content"] == "thinking"
+    # Non-streaming route uses response_model=None → no exclude_none → null on wire.
+    assert message_on["reasoning"] is None
+
+    # --- Flag OFF (default): emit_reasoning_content=False ---
+    mock_pipeline.all_tokens = AsyncMock(return_value=_REASONING_CONTENT_CHUNKS)
+    generator_off = OpenAIChatResponseGenerator(
+        mock_pipeline, emit_reasoning_content=False
+    )
+    response_off = await generator_off.complete([_make_mock_request()])
+    body_off = jsonable_encoder(response_off)
+    message_off = body_off["choices"][0]["message"]
+    assert message_off["reasoning"] == "thinking"
+    # The unselected field is null-not-absent on this path (same behavior as above).
+    assert message_off["reasoning_content"] is None

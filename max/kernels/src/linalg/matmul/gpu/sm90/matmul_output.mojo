@@ -19,6 +19,7 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.sync import named_barrier
 from layout import Coord, Idx, Layout, TensorLayout, TileTensor, row_major
 from layout.swizzle import make_ldmatrix_swizzle
+from layout.tensor_storage import TensorStorage
 from layout.tma_async import TMATensorTile
 
 from std.utils.index import IndexList
@@ -41,8 +42,8 @@ import std.itertools
 struct MatmulTileWriter[
     dtype: DType,
     tensor_layout: TensorLayout,
+    tensor_storage: TensorStorage,
     linear_idx_type: DType,
-    tensor_element_size: Int,
     smem_tile_layout: TensorLayout,
     //,
     /,
@@ -77,16 +78,19 @@ struct MatmulTileWriter[
         dtype=Self.dtype,
         LayoutType=Self.tensor_layout,
         origin=MutAnyOrigin,
+        Storage=Self.tensor_storage,
         address_space=AddressSpace.GENERIC,
         linear_idx_type=Self.linear_idx_type,
-        element_size=Self.tensor_element_size,
     ]
     comptime lambda_type = def[
         dtype: DType, width: SIMDSize, *, alignment: Int = 1
-    ](IndexList[2], mut SIMD[dtype, width]) capturing -> None
+    ](IndexList[2], mut SIMD[dtype, width]) -> None
 
     # Instance fields
+    @__allow_legacy_any_origin_fields
     var tensor: Self.CTensorType
+
+    @__allow_legacy_any_origin_fields
     var smem_tile: TileTensor[
         mut=True,
         dtype=Self.dtype,
@@ -145,9 +149,10 @@ struct MatmulTileWriter[
 
     @always_inline
     def _apply_epilogue[
-        epilogue_fn: Self.lambda_type
+        F: ImplicitlyCopyable & RegisterPassable & Self.lambda_type
     ](
         self,
+        epilogue: F,
         output_tile: TileTensor[mut=True, Self.dtype, ...],
         tile_row_offset: Int,
         tile_col_offset: Int,
@@ -156,7 +161,6 @@ struct MatmulTileWriter[
     ):
         """Apply epilogue operations (bias, activation) to shared memory data.
         """
-        comptime epilogue = epilogue_fn
         comptime smem_swizzle = make_ldmatrix_swizzle[Self.dtype, Self.WG_BN]()
         comptime thread_layout = row_major[
             Self.num_consumer_threads // (Self.WG_BN // Self.simd_size),
@@ -189,7 +193,10 @@ struct MatmulTileWriter[
 
             if row < max_row and col < max_col:
                 var shared_value = shared_fragment.load(Coord(Idx[i], Idx[0]))
-                epilogue(IndexList[2](Int(row), Int(col)), shared_value)
+                epilogue[
+                    dtype=type_of(shared_value).dtype,
+                    width=type_of(shared_value).size,
+                ](IndexList[2](Int(row), Int(col)), shared_value)
                 shared_fragment.store(Coord(Idx[i], Idx[0]), shared_value)
 
     @always_inline
@@ -359,9 +366,11 @@ struct MatmulTileWriter[
 
             var global_coords = rebind[IndexList[2]](tile_coords) + tile_origin
 
-            @parameter
-            def apply_epilogue[lambda_fn: Self.lambda_type]():
-                self._apply_epilogue[lambda_fn](
+            def apply_epilogue[
+                F: ImplicitlyCopyable & RegisterPassable & Self.lambda_type
+            ](epilogue_fn: F):
+                self._apply_epilogue(
+                    epilogue_fn,
                     workgroup_tile,
                     global_coords[0],
                     global_coords[1],
@@ -372,29 +381,23 @@ struct MatmulTileWriter[
             comptime if Self.elementwise_compute_lambda_fn:
                 comptime compute_fn = Self.elementwise_compute_lambda_fn.value()
 
-                @parameter
                 def _compute[
                     dtype: DType, width: SIMDSize, *, alignment: Int = 1
-                ](
-                    index: IndexList[2], mut val: SIMD[dtype, width]
-                ) capturing -> None:
+                ](index: IndexList[2], mut val: SIMD[dtype, width]) {}:
                     val = compute_fn[alignment=alignment](index, val)
 
-                apply_epilogue[_compute]()
+                apply_epilogue(_compute)
                 named_barrier[Int32(Self.num_consumer_threads)](10)
 
             comptime if Self.elementwise_lambda_fn:
                 comptime epilogue_fn = Self.elementwise_lambda_fn.value()
 
-                @parameter
                 def _epilogue[
                     dtype: DType, width: SIMDSize, *, alignment: Int = 1
-                ](
-                    index: IndexList[2], mut val: SIMD[dtype, width]
-                ) capturing -> None:
+                ](index: IndexList[2], mut val: SIMD[dtype, width]) {}:
                     _ = epilogue_fn[alignment=alignment](index, val)
 
-                apply_epilogue[_epilogue]()
+                apply_epilogue(_epilogue)
             else:
                 comptime if Self.use_tma_store and not is_partial_tile:
                     var tma_writer = TileWriterTMA(Pointer(to=tma_op))

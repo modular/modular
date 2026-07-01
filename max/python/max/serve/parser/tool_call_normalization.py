@@ -59,68 +59,128 @@ def normalize_tool_call_arguments(
     return normalized
 
 
-def normalize_message_tool_calls(message: dict[str, Any]) -> dict[str, Any]:
-    """Returns ``message`` with assistant ``tool_calls`` arguments coerced.
-
-    Non-assistant messages and assistant messages without ``tool_calls``
-    pass through unchanged. The input dict is not mutated.
-    """
-    if message.get("role") != "assistant":
-        return message
-    tool_calls = message.get("tool_calls")
-    if not isinstance(tool_calls, list) or not tool_calls:
-        return message
-    out = dict(message)
-    out["tool_calls"] = normalize_tool_call_arguments(tool_calls)
-    return out
-
-
-_JSON_SCHEMA_TYPES = frozenset(
-    {"object", "array", "string", "number", "integer", "boolean", "null"}
+# JSON Schema keywords that imply an object type when ``type`` is omitted.
+# Mirrors xgrammar's ``json_schema_converter`` inference, which is the reason
+# vLLM and SGLang (both on xgrammar) anchor such schemas to ``{`` and never
+# hit the runaway.
+_OBJECT_IMPLYING_KEYWORDS = frozenset(
+    {"properties", "required", "additionalProperties", "patternProperties"}
 )
 
+# Keys whose values are themselves subschemas (recurse into these).
+_SUBSCHEMA_KEYS = frozenset(
+    {"items", "additionalItems", "contains", "not", "if", "then", "else"}
+)
 
-def _validate_response_format_schema(
-    schema: dict[str, Any] | None,
-) -> None:
-    """Validates the root ``type`` of a ``response_format.json_schema.schema``.
+# Keys whose values map property/definition names to subschemas.
+_SUBSCHEMA_MAP_KEYS = frozenset(
+    {"properties", "patternProperties", "$defs", "definitions"}
+)
 
-    OpenAI's structured outputs require an object root, but JSON Schema (and
-    the grammar backend, llguidance) also accept a missing ``type`` ("any")
-    and a type *union* that includes ``object``
-    (``"type": ["object", "array", "string"]``); both compile to a
-    constraining grammar, so we accept them. A root pinned to a single
-    *non-object scalar* type (e.g. ``{"type": "string"}``) is still rejected:
-    callers expect a JSON object back, and this matches OpenAI's contract.
+# Keys whose values are lists of subschemas.
+_SUBSCHEMA_LIST_KEYS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
 
-    - ``None`` / empty dict are acceptable (no constraint).
-    - Missing ``type`` is acceptable (means "any").
-    - ``type`` may be a non-empty list of recognized types (a union).
-    - A single ``type`` must be ``object``; any other single scalar is rejected.
 
-    Raises:
-        ValueError: If the root ``type`` is a single non-object type, a list
-            containing an unrecognized type, or otherwise not a JSON Schema
-            type.
+def normalize_response_format_schema(
+    schema: dict[str, Any],
+) -> dict[str, Any]:
+    """Returns ``schema`` with object-shaped untyped (sub)schemas given a type.
+
+    A JSON Schema (sub)schema that omits ``type`` but carries an
+    object-implying keyword (``properties``, ``required``,
+    ``additionalProperties``, ``patternProperties``) is valid JSON Schema
+    ("accept any type") but compiles, against the llguidance grammar backend,
+    to a production that permits a bare, unbounded value -- including a JSON
+    string. A model that loops inside that string can never emit its closing
+    quote, so generation runs to ``max_length`` with ``finish_reason="length"``
+    (the runaway-output incident).
+
+    This pass mirrors xgrammar's type inference (the reason xgrammar-backed
+    engines never hit this): where ``type`` is absent but an object-implying
+    keyword is present, inject ``"type": "object"`` so the grammar anchors on
+    ``{`` and stays terminating. The pass recurses through nested subschemas
+    (property values, array items, ``$defs``, ``allOf``/``anyOf``/``oneOf``,
+    etc.) so nested object-shaped schemas are anchored too.
+
+    Deliberately left untouched:
+
+    - A genuinely empty ``{}`` (no object-implying keyword): this is "any
+      value" and is preserved for parity with xgrammar/SGLang and MAX's
+      ``json_object`` semantics.
+    - A ``type`` that is already present (a single type or a union list).
+
+    The input is not mutated; a normalized copy is returned only where a
+    change is needed.
+
+    Args:
+        schema: The ``response_format.json_schema.schema`` mapping (or any
+            nested subschema).
+
+    Returns:
+        The schema with object types inferred where needed; the same object
+        when no change applies.
     """
-    if schema is None or schema == {}:
-        return
-    root_type = schema.get("type")
-    if root_type is None:
-        return
-    if isinstance(root_type, list):
-        invalid = [t for t in root_type if t not in _JSON_SCHEMA_TYPES]
-        if not root_type or invalid:
-            raise ValueError(
-                "response_format.json_schema.schema: root 'type' list must "
-                f"contain only JSON Schema types (got {root_type!r})"
-            )
-        return
-    if root_type != "object":
-        raise ValueError(
-            "response_format.json_schema.schema: root 'type' must be "
-            f"'object' or a type union including it (got {root_type!r})"
-        )
+    return _normalize_subschema(schema)
+
+
+def _normalize_subschema(node: Any) -> Any:
+    """Recursively infer ``type: object`` for object-shaped untyped schemas."""
+    if not isinstance(node, dict):
+        return node
+
+    changed = False
+    out: dict[str, Any] = node
+
+    # Infer an object type where it is omitted but implied.
+    if "type" not in node and any(k in node for k in _OBJECT_IMPLYING_KEYWORDS):
+        out = dict(node)
+        out["type"] = "object"
+        changed = True
+
+    # Recurse into nested subschemas so inner object-shaped schemas are
+    # anchored too (parity with xgrammar's recursive conversion).
+    for key in _SUBSCHEMA_KEYS:
+        if key in out and isinstance(out[key], dict):
+            new_child = _normalize_subschema(out[key])
+            if new_child is not out[key]:
+                if not changed:
+                    out = dict(out)
+                    changed = True
+                out[key] = new_child
+
+    for key in _SUBSCHEMA_MAP_KEYS:
+        mapping = out.get(key)
+        if isinstance(mapping, dict):
+            new_mapping: dict[str, Any] | None = None
+            for name, child in mapping.items():
+                new_child = _normalize_subschema(child)
+                if new_child is not child:
+                    if new_mapping is None:
+                        new_mapping = dict(mapping)
+                    new_mapping[name] = new_child
+            if new_mapping is not None:
+                if not changed:
+                    out = dict(out)
+                    changed = True
+                out[key] = new_mapping
+
+    for key in _SUBSCHEMA_LIST_KEYS:
+        seq = out.get(key)
+        if isinstance(seq, list):
+            new_seq: list[Any] | None = None
+            for i, child in enumerate(seq):
+                new_child = _normalize_subschema(child)
+                if new_child is not child:
+                    if new_seq is None:
+                        new_seq = list(seq)
+                    new_seq[i] = new_child
+            if new_seq is not None:
+                if not changed:
+                    out = dict(out)
+                    changed = True
+                out[key] = new_seq
+
+    return out
 
 
 def _normalize_tools_parameters(

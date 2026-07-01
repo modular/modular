@@ -166,6 +166,25 @@ class Device:
         """
 
     @property
+    def model_name(self) -> str:
+        """
+        Returns the model name of the device.
+
+        Examples of possible values:
+
+        - ``NVIDIA H100 80GB HBM3`` for an H100.
+        - ``NVIDIA B200`` for a B200.
+        - ``AMD Instinct MI300X`` for an MI300X.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            device.model_name
+        """
+
+    @property
     def id(self) -> int:
         """
         Returns a zero-based device id.
@@ -723,6 +742,21 @@ class DeviceStream:
     def device(self) -> Device:
         """The device this stream is executing on."""
 
+    @property
+    def native_stream_handle(self) -> int:
+        """
+        The native stream handle as an integer, or ``0`` if there is none.
+
+        The handle is the CUDA ``CUstream`` / HIP ``hipStream_t``; ``0`` means
+        the stream has no native handle (e.g. a CPU device). Lets native code
+        outside MLRT order its own work against this stream -- for example,
+        record a CUDA event on it. The handle remains owned by this stream; do
+        not destroy it.
+
+        Returns:
+            int: The native stream handle, or ``0`` if there is none.
+        """
+
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
     def __eq__(self, arg: object, /) -> bool: ...
@@ -836,6 +870,33 @@ def get_virtual_device_target_arch() -> str:
 
     Returns:
         str: The target GPU architecture string, or empty string if not set.
+    """
+
+def set_virtual_cpu_target(cpu: str) -> None:
+    """
+    Sets the CPU target for host-independent kernel codegen.
+
+    When set before any CPU kernel compilation (e.g. before importing
+    ``max._interpreter_ops``), CPU kernels compile for this fixed target
+    instead of the build host's CPU, so the kernel cache can ship to and be
+    reused on a different host. Mirrors
+    :func:`set_virtual_device_target_arch` for GPUs.
+
+    Args:
+        cpu (str): An LLVM target-CPU name (e.g. "x86-64-v3",
+            "neoverse-n1"), or "generic" for the most-portable baseline of
+            the host arch family ("x86-64" on x86_64, the armv8-a baseline
+            on AArch64; other families raise an error). Empty string
+            restores host-CPU codegen. "native" is rejected because it
+            would re-leak the build host's CPU.
+    """
+
+def get_virtual_cpu_target() -> str:
+    """
+    Gets the current virtual CPU target.
+
+    Returns:
+        str: The CPU target string, or empty string if not set (host CPU).
     """
 
 class Buffer:
@@ -1280,6 +1341,21 @@ class DevicePinnedBuffer(Buffer):
         Raises:
             ValueError: If is a CPU device.
         """
+
+    def __getitem__(
+        self, idx: int | slice | Sequence[int | slice]
+    ) -> DevicePinnedBuffer:
+        """
+        Gets a buffer slice, preserving the device-pinned type.
+
+        Unlike :obj:`Buffer.__getitem__`, the returned slice is itself a
+        :obj:`DevicePinnedBuffer`, so reads such as ``to_numpy`` on the slice
+        keep the no-synchronization behavior of device-pinned memory.
+        """
+
+    def _view(
+        self, dtype: max._core.dtype.DType, shape: Sequence[int]
+    ) -> DevicePinnedBuffer: ...
 
 def _release_buffers_to_borrowed(buffers: Sequence[Buffer]) -> list[Buffer]:
     """Convert owning buffers into borrowed wrappers over the same storage."""

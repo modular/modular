@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.collections import OwnedKwargsDict
 from std.os import abort
 
 from std.python import Python, PythonObject

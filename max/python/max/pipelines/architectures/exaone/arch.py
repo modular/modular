@@ -18,6 +18,7 @@ from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters
+from ..llama3.batch_processor import Llama3BatchProcessor
 from ..llama3.model import Llama3Model
 from ..llama3.model_config import Llama3Config
 from .weight_adapters import convert_exaone_safetensor_state_dict
@@ -48,5 +49,8 @@ exaone_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Llama3Config,
+    batching=Llama3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

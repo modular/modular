@@ -38,7 +38,7 @@ from internal_utils import arg_parse
 from layout._fillers import random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from nn.attention.gpu.mha import flash_attention
-from nn.attention.mha_mask import CausalMask
+from nn.attention.mha_mask import CausalMask, SlidingWindowCausalMask
 
 from std.utils import IndexList
 
@@ -105,6 +105,7 @@ def execute_kv_cache_ragged_flash_attention[
     num_q_heads: Int,
     num_kv_heads: Int,
     page_size: Int,
+    local_window_size: Int = -1,
     cross_attention: Bool = False,
     sink: Bool = False,
 ](
@@ -124,6 +125,7 @@ def execute_kv_cache_ragged_flash_attention[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
         page_size,
+        ...,
     ]
 
     debug_assert(
@@ -389,60 +391,78 @@ def execute_kv_cache_ragged_flash_attention[
             @parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises:
-                # Sink/cross_attention dispatch: passing
-                # `sink_weights=…` to `flash_attention[sink=True]`
-                # selects the dispatcher's `comptime if sink:`
-                # branch. Passing
-                # `kv_input_row_offsets=…` selects the runtime
-                # `if kv_input_row_offsets:` branch.
-                comptime if sink and cross_attention:
-                    flash_attention[ragged=True, sink=True](
-                        output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
-                        q_device_tensor.to_layout_tensor(),
-                        k_cache_device,
-                        v_cache_device,
-                        CausalMask(),
-                        input_row_offsets_tensor.to_layout_tensor(),
-                        rsqrt(Float32(head_dim)),
-                        ctx,
-                        kv_input_row_offsets=kv_input_row_offsets_view.as_unsafe_any_origin(),
-                        sink_weights=sink_weights_view,
-                    )
-                elif sink:
-                    flash_attention[ragged=True, sink=True](
-                        output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
-                        q_device_tensor.to_layout_tensor(),
-                        k_cache_device,
-                        v_cache_device,
-                        CausalMask(),
-                        input_row_offsets_tensor.to_layout_tensor(),
-                        rsqrt(Float32(head_dim)),
-                        ctx,
-                        sink_weights=sink_weights_view,
-                    )
-                elif cross_attention:
+                comptime if local_window_size > 0:
+                    comptime assert (
+                        not sink
+                    ), "sliding window mask does not support sink"
+                    comptime assert (
+                        not cross_attention
+                    ), "sliding window mask does not support cross_attention"
                     flash_attention[ragged=True](
                         output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
                         q_device_tensor.to_layout_tensor(),
                         k_cache_device,
                         v_cache_device,
-                        CausalMask(),
+                        SlidingWindowCausalMask[local_window_size](),
                         input_row_offsets_tensor.to_layout_tensor(),
                         rsqrt(Float32(head_dim)),
                         ctx,
-                        kv_input_row_offsets=kv_input_row_offsets_view.as_unsafe_any_origin(),
                     )
                 else:
-                    flash_attention[ragged=True](
-                        output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
-                        q_device_tensor.to_layout_tensor(),
-                        k_cache_device,
-                        v_cache_device,
-                        CausalMask(),
-                        input_row_offsets_tensor.to_layout_tensor(),
-                        rsqrt(Float32(head_dim)),
-                        ctx,
-                    )
+                    # Sink/cross_attention dispatch: passing
+                    # `sink_weights=…` to `flash_attention[sink=True]`
+                    # selects the dispatcher's `comptime if sink:`
+                    # branch. Passing
+                    # `kv_input_row_offsets=…` selects the runtime
+                    # `if kv_input_row_offsets:` branch.
+                    comptime if sink and cross_attention:
+                        flash_attention[ragged=True, sink=True](
+                            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                            q_device_tensor.to_layout_tensor(),
+                            k_cache_device,
+                            v_cache_device,
+                            CausalMask(),
+                            input_row_offsets_tensor.to_layout_tensor(),
+                            rsqrt(Float32(head_dim)),
+                            ctx,
+                            kv_input_row_offsets=kv_input_row_offsets_view.as_unsafe_any_origin(),
+                            sink_weights=sink_weights_view,
+                        )
+                    elif sink:
+                        flash_attention[ragged=True, sink=True](
+                            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                            q_device_tensor.to_layout_tensor(),
+                            k_cache_device,
+                            v_cache_device,
+                            CausalMask(),
+                            input_row_offsets_tensor.to_layout_tensor(),
+                            rsqrt(Float32(head_dim)),
+                            ctx,
+                            sink_weights=sink_weights_view,
+                        )
+                    elif cross_attention:
+                        flash_attention[ragged=True](
+                            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                            q_device_tensor.to_layout_tensor(),
+                            k_cache_device,
+                            v_cache_device,
+                            CausalMask(),
+                            input_row_offsets_tensor.to_layout_tensor(),
+                            rsqrt(Float32(head_dim)),
+                            ctx,
+                            kv_input_row_offsets=kv_input_row_offsets_view.as_unsafe_any_origin(),
+                        )
+                    else:
+                        flash_attention[ragged=True](
+                            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                            q_device_tensor.to_layout_tensor(),
+                            k_cache_device,
+                            v_cache_device,
+                            CausalMask(),
+                            input_row_offsets_tensor.to_layout_tensor(),
+                            rsqrt(Float32(head_dim)),
+                            ctx,
+                        )
 
             b.iter_custom[kernel_launch](ctx)
 
@@ -477,16 +497,28 @@ def execute_kv_cache_ragged_flash_attention[
         # We don't want to run the benchmark, as this makes the profiling
         # take a very long time and bloats the prof full of extra runs that
         # we don't look at.
-        flash_attention[ragged=True](
-            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
-            q_device_tensor.to_layout_tensor(),
-            k_cache_device,
-            v_cache_device,
-            CausalMask(),
-            input_row_offsets_tensor.to_layout_tensor(),
-            rsqrt(Float32(head_dim)),
-            ctx,
-        )
+        comptime if local_window_size > 0:
+            flash_attention[ragged=True](
+                output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                q_device_tensor.to_layout_tensor(),
+                k_cache_device,
+                v_cache_device,
+                SlidingWindowCausalMask[local_window_size](),
+                input_row_offsets_tensor.to_layout_tensor(),
+                rsqrt(Float32(head_dim)),
+                ctx,
+            )
+        else:
+            flash_attention[ragged=True](
+                output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
+                q_device_tensor.to_layout_tensor(),
+                k_cache_device,
+                v_cache_device,
+                CausalMask(),
+                input_row_offsets_tensor.to_layout_tensor(),
+                rsqrt(Float32(head_dim)),
+                ctx,
+            )
 
     # Consume device buffers
     _ = input_row_offsets_dev_buffer^
@@ -512,6 +544,7 @@ def main() raises:
     comptime num_q_heads = get_defined_int["num_q_heads", 32]()
     comptime num_kv_heads = get_defined_int["num_kv_heads", 8]()
     comptime page_size = get_defined_int["page_size", 256]()
+    comptime local_window_size = get_defined_int["local_window_size", -1]()
     comptime cross_attention = get_defined_bool["cross_attention", False]()
     comptime sink = get_defined_bool["sink", False]()
 
@@ -534,6 +567,7 @@ def main() raises:
                 num_q_heads=num_q_heads,
                 num_kv_heads=num_kv_heads,
                 page_size=page_size,
+                local_window_size=local_window_size,
                 cross_attention=cross_attention,
                 sink=sink,
             ](

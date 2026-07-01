@@ -35,7 +35,6 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics._internal.aggregation import (
     ExplicitBucketHistogramAggregation,
 )
-from opentelemetry.sdk.metrics._internal.instrument import Histogram
 from opentelemetry.sdk.metrics.export import (
     MetricReader,
     PeriodicExportingMetricReader,
@@ -95,14 +94,9 @@ metrics_resource = Resource.create(
 )
 
 
-# Histogram bucket boundaries for latency-style metrics (in milliseconds).
-#
-# Design goals:
-# - Fine-grained resolution in the sub-10ms region to improve p50/p90 accuracy.
-# - Reasonable coverage for longer requests, up to tens of seconds.
-# - Keep the number of buckets modest to avoid excessive cardinality.
+# Latency metrics (milliseconds). Fine at sub-10ms, ~1.3-1.5x steps elsewhere
+# out to 30 min for slow ops (request time, model load, compile).
 HISTOGRAM_LATENCY_BUCKETS_MS: tuple[float, ...] = (
-    # Sub-10ms: detailed latency where we currently see coarse quantiles
     1.0,
     2.0,
     3.0,
@@ -135,8 +129,249 @@ HISTOGRAM_LATENCY_BUCKETS_MS: tuple[float, ...] = (
     15_000.0,
     20_000.0,
     30_000.0,
-    60_000.0,
+    45_000.0,  # 45s
+    60_000.0,  # 1m
+    90_000.0,  # 1m30s
+    120_000.0,  # 2m
+    180_000.0,  # 3m
+    240_000.0,  # 4m
+    300_000.0,  # 5m
+    420_000.0,  # 7m
+    600_000.0,  # 10m
+    900_000.0,  # 15m
+    1_200_000.0,  # 20m
+    1_800_000.0,  # 30m
 )
+
+# Percentages / utilization ratios (0-100). Finer resolution toward the high
+# end where saturation matters.
+HISTOGRAM_PERCENT_BUCKETS: tuple[float, ...] = (
+    0.0,
+    1.0,
+    2.5,
+    5.0,
+    7.5,
+    10.0,
+    15.0,
+    20.0,
+    25.0,
+    30.0,
+    40.0,
+    50.0,
+    60.0,
+    70.0,
+    75.0,
+    80.0,
+    85.0,
+    90.0,
+    92.5,
+    95.0,
+    97.5,
+    99.0,
+    100.0,
+)
+
+# Token counts per request/batch and other unbounded counts. ~1.25-1.5x steps
+# through 1k-128k so nearby token sizes (e.g. 8k/10k/12k) stay distinct;
+# coarser at the small occupancy end and the large-context tail.
+HISTOGRAM_COUNT_BUCKETS: tuple[float, ...] = (
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    6.0,
+    8.0,
+    12.0,
+    16.0,
+    24.0,
+    32.0,
+    48.0,
+    64.0,
+    96.0,
+    128.0,
+    192.0,
+    256.0,
+    384.0,
+    512.0,
+    768.0,
+    1_000.0,
+    1_500.0,
+    2_000.0,
+    3_000.0,
+    4_000.0,
+    6_000.0,
+    8_000.0,
+    10_000.0,
+    12_000.0,
+    16_000.0,
+    20_000.0,
+    24_000.0,
+    32_000.0,
+    48_000.0,
+    64_000.0,
+    96_000.0,
+    128_000.0,
+    192_000.0,
+    256_000.0,
+    384_000.0,
+    512_000.0,
+    768_000.0,
+    1_000_000.0,
+)
+
+# Batch size (number of requests in a batch). Fine-grained at low sizes where
+# small differences (e.g. 8 vs 12) matter, coarsening with size, stopping at
+# 512: by 1 to 8, by 2 to 16, by 4 to 32, by 8 to 128, by 16 to 256, by 32 to
+# 512.
+HISTOGRAM_BATCH_SIZE_BUCKETS: tuple[float, ...] = (
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    10.0,
+    12.0,
+    14.0,
+    16.0,
+    20.0,
+    24.0,
+    28.0,
+    32.0,
+    40.0,
+    48.0,
+    56.0,
+    64.0,
+    72.0,
+    80.0,
+    88.0,
+    96.0,
+    104.0,
+    112.0,
+    120.0,
+    128.0,
+    144.0,
+    160.0,
+    176.0,
+    192.0,
+    208.0,
+    224.0,
+    240.0,
+    256.0,
+    288.0,
+    320.0,
+    352.0,
+    384.0,
+    416.0,
+    448.0,
+    480.0,
+    512.0,
+)
+
+# Mean speculative-decode acceptance length per batch. Because it is an average
+# it takes fractional values, so use fine 0.25-wide buckets from 0 to 16 tokens
+# (boundaries 0.25, 0.50, ..., 16.0).
+HISTOGRAM_ACCEPTANCE_LENGTH_BUCKETS: tuple[float, ...] = tuple(
+    i * 0.25 for i in range(1, 65)
+)
+
+# Throughput in tokens/second. ~1.5x round-number ladder from slow single
+# request to large prefill batch.
+HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS: tuple[float, ...] = (
+    10.0,
+    25.0,
+    50.0,
+    100.0,
+    150.0,
+    250.0,
+    400.0,
+    600.0,
+    1_000.0,
+    1_500.0,
+    2_500.0,
+    4_000.0,
+    6_000.0,
+    10_000.0,
+    15_000.0,
+    25_000.0,
+    40_000.0,
+    60_000.0,
+    100_000.0,
+    150_000.0,
+    250_000.0,
+    500_000.0,
+    1_000_000.0,
+)
+
+# Transfer throughput in GiB/s (e.g. NIXL over fast fabric).
+HISTOGRAM_GIB_PER_S_BUCKETS: tuple[float, ...] = (
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    25.0,
+    50.0,
+    100.0,
+    200.0,
+    400.0,
+    800.0,
+)
+
+# Per-metric histogram bucket boundaries, matched by exact instrument name.
+#
+# Each Histogram instrument is matched to exactly one View by its exact name, so
+# there is no risk of an instrument matching multiple Views (which would emit
+# duplicate Prometheus series). Any histogram not listed here falls back to the
+# OTEL SDK default buckets, so keep this in sync with the Histogram instruments
+# in metrics.py SERVE_METRICS. A unit test
+# (test_all_histograms_have_explicit_buckets) enforces that.
+HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
+    # Latency / time (ms)
+    "maxserve.request_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.input_processing_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.output_processing_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.time_to_first_token": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.response_queue_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.model_load_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.itl": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.time_per_output_token": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.batch_execution_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.batch_creation_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.dkv.nixl_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.dkv.nixl_write_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.dkv.rpc_acquire_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.dkv.rpc_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    # Percentages
+    "maxserve.cache.hit_rate": HISTOGRAM_PERCENT_BUCKETS,
+    "maxserve.cache.used_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
+    "maxserve.cache.used_host_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
+    "maxserve.cache.used_disk_kv_pct": HISTOGRAM_PERCENT_BUCKETS,
+    "maxserve.spec_decode.acceptance_rate_per_position": HISTOGRAM_PERCENT_BUCKETS,
+    # Generic counts (tokens / occupancy)
+    "maxserve.input_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
+    "maxserve.output_tokens_per_request": HISTOGRAM_COUNT_BUCKETS,
+    "maxserve.batch_input_tokens": HISTOGRAM_COUNT_BUCKETS,
+    "maxserve.batch_context_tokens": HISTOGRAM_COUNT_BUCKETS,
+    "maxserve.batch_terminated_reqs": HISTOGRAM_COUNT_BUCKETS,
+    "maxserve.batch_pending_reqs": HISTOGRAM_COUNT_BUCKETS,
+    "maxserve.requests_awaiting_admission": HISTOGRAM_COUNT_BUCKETS,
+    "maxserve.responses_buffered": HISTOGRAM_COUNT_BUCKETS,
+    # Batch size
+    "maxserve.batch_size": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    # Throughput (tokens/s)
+    "maxserve.batch_prompt_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
+    "maxserve.batch_generation_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
+    # Transfer throughput (GiB/s)
+    "maxserve.dkv.nixl_read_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,
+    "maxserve.dkv.nixl_write_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,
+    # Acceptance length (tokens)
+    "maxserve.spec_decode.avg_acceptance_length": HISTOGRAM_ACCEPTANCE_LENGTH_BUCKETS,
+}
 
 
 def get_log_level(settings: Settings) -> int | str | None:
@@ -215,7 +450,7 @@ def configure_logging(
     # Set up log filtering
     components_to_log = [
         "root",
-        "max.entrypoints",
+        "max._entrypoints",
         "max.pipelines",
         "max.serve",
     ]
@@ -357,23 +592,20 @@ def configure_metrics(settings: Settings) -> None:
             )
         )
 
-    # Use a single histogram view for all Histogram instruments.
+    # One View per histogram, matched by its exact instrument name, so each
+    # metric gets bucket boundaries tuned to its actual range (latency in ms,
+    # percentages, token/occupancy counts, batch sizes, throughput, ...).
     #
-    # This deliberately trades per-metric bucket tuning for simplicity and
-    # safety:
-    # - Every histogram (existing and future) uses the same bucket boundaries.
-    # - Each instrument matches exactly one View, so we never get duplicate
-    #   Prometheus histograms for the same metric name due to overlapping Views.
-    #
-    # We reuse the generic latency buckets, which already cover sub-10ms
-    # through long-running (tens of seconds) requests.
+    # Matching by exact name guarantees every Histogram matches at most one
+    # View, so we never get duplicate Prometheus series from overlapping Views.
+    # Any histogram missing from the map falls back to the OTEL SDK default
+    # buckets; test_all_histograms_have_explicit_buckets guards against that.
     views: list[View] = [
         View(
-            instrument_type=Histogram,
-            aggregation=ExplicitBucketHistogramAggregation(
-                HISTOGRAM_LATENCY_BUCKETS_MS
-            ),
-        ),
+            instrument_name=name,
+            aggregation=ExplicitBucketHistogramAggregation(buckets),
+        )
+        for name, buckets in HISTOGRAM_BUCKETS_BY_METRIC.items()
     ]
 
     set_meter_provider(

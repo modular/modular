@@ -239,6 +239,11 @@ def fused_qk_rope[
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
+    # TODO: This elementwise body captures a KV cache view (`CacheType`),
+    # which fails codegen when stored into a unified closure ('pop.store'
+    # pointer element-type verification). Keep using the deprecated
+    # parameter-closure overload until cache captures in unified closures are
+    # supported.
     @always_inline
     @parameter
     @__copy_capture(k_cache, valid_lengths)
@@ -305,14 +310,12 @@ def fused_qk_rope[
     comptime kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
-    comptime if is_cpu[target]():
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context
-        )
-    else:
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context
-        )
+    elementwise[
+        func=rope_fn,
+        simd_width=kernel_simd_width,
+        target=target,
+        _trace_description="fused_qk_rope",
+    ](launch_shape, context)
 
 
 @always_inline
@@ -390,6 +393,11 @@ def fused_qk_rope_ragged[
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
+    # TODO: This elementwise body captures a KV cache view (`CacheType`),
+    # which fails codegen when stored into a unified closure ('pop.store'
+    # pointer element-type verification). Keep using the deprecated
+    # parameter-closure overload until cache captures in unified closures are
+    # supported.
     @always_inline
     @parameter
     @__copy_capture(k_cache, batch_size, input_row_offsets, position_ids)
@@ -519,11 +527,9 @@ def fused_qk_rope_ragged[
 
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
-    comptime if is_cpu[target]():
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context
-        )
-    else:
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context
-        )
+    elementwise[
+        func=rope_fn,
+        simd_width=kernel_simd_width,
+        target=target,
+        _trace_description="fused_qk_rope_ragged",
+    ](launch_shape, context)

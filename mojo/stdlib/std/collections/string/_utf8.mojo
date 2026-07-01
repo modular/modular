@@ -14,7 +14,7 @@
 """Implement UTF-8 utils."""
 
 from std.base64._b64encode import _sub_with_saturation
-from std.sys import simd_width_of
+from std.sys import simd_width_of, simd_byte_width
 from std.sys.intrinsics import likely
 
 from std.bit import count_leading_zeros
@@ -165,7 +165,7 @@ def _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
 
     ptr = span.unsafe_ptr()
     length = len(span)
-    comptime simd_size = sys.simd_byte_width()
+    comptime simd_size = simd_byte_width()
     var i: Int = 0
     var previous = SIMD[DType.uint8, simd_size]()
 

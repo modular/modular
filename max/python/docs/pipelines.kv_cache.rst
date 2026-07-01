@@ -69,4 +69,3 @@ Factory functions
 
    available_port
    load_kv_manager
-   load_multi_kv_managers

@@ -49,6 +49,9 @@ from . import (
     safetensors as safetensors,
 )
 from . import (
+    xgrammar as xgrammar,
+)
+from . import (
     xxhash as xxhash,
 )
 
@@ -176,6 +179,12 @@ class Operation:
         assume_verified: bool = False,
         skip_regions: bool = False,
     ) -> str: ...
+    @property
+    def bytecode(self) -> bytes: ...
+    @staticmethod
+    def from_bytecode(
+        data: bytes, context: Context
+    ) -> dialects.builtin.ModuleOp: ...
     def __repr__(self) -> str: ...
     @property
     def _CAPIPtr(self) -> object: ...

@@ -36,7 +36,7 @@ def execute_ragged_flash_attention[
     comptime num_paged_blocks = 32
     comptime page_size = 128
     comptime PagedCollectionType = PagedKVCacheCollection[
-        type, kv_params, page_size
+        type, kv_params, page_size, ...
     ]
     var num_layers = 1
     var layer_idx = 0

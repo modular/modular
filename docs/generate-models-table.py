@@ -56,6 +56,14 @@ OUTPUT_LABELS: dict[str, str] = {
     "PIXEL_GENERATION": "image",
 }
 
+# Per-architecture label overrides for cases where the task enum does not
+# capture the output type precisely enough (e.g. video vs. image generation
+# both use PIXEL_GENERATION at runtime).
+ARCH_LABEL_OVERRIDES: dict[str, list[str]] = {
+    "WanPipeline": ["text-to-video"],
+    "WanImageToVideoPipeline": ["image-to-video"],
+}
+
 
 def derive_modality_labels(
     task: str | None, input_modalities: Set[str]
@@ -96,42 +104,65 @@ def parse_init_imports() -> list[tuple[str, list[str]]]:
             isinstance(node, ast.FunctionDef)
             and node.name == "register_all_models"
         ):
-            func_body = node.body
+            func_node = node
             break
     else:
         raise RuntimeError(
             "Could not find register_all_models() in __init__.py"
         )
 
-    # Collect all `from .X import Y` statements
-    imports: list[tuple[str, list[str]]] = []
-    for stmt in func_body:
-        if isinstance(stmt, ast.ImportFrom) and stmt.module:
-            names = [alias.name for alias in stmt.names]
-            imports.append((stmt.module, names))
+    # Architectures are registered lazily via a `lazy_architectures` table of
+    # ``_LazyArch(name, module, symbol)`` entries. Group symbols by their
+    # module, stripping the leading ``.`` from the relative module path.
+    grouped: dict[str, list[str]] = {}
+    order: list[str] = []
+    for stmt in ast.walk(func_node):
+        if not (
+            isinstance(stmt, ast.Assign)
+            and any(
+                isinstance(t, ast.Name) and t.id == "lazy_architectures"
+                for t in stmt.targets
+            )
+            and isinstance(stmt.value, ast.List)
+        ):
+            continue
+        for elt in stmt.value.elts:
+            fields = _lazy_arch_fields(elt)
+            if fields is None:
+                continue
+            _, module, symbol = fields
+            module = module.lstrip(".")
+            if module not in grouped:
+                grouped[module] = []
+                order.append(module)
+            if symbol not in grouped[module]:
+                grouped[module].append(symbol)
 
-    # Also find which variable names appear in the `architectures = [...]` list
-    registered_names: set[str] = set()
-    for stmt in func_body:
-        if isinstance(stmt, ast.Assign):
-            for target in stmt.targets:
-                if (
-                    isinstance(target, ast.Name)
-                    and target.id == "architectures"
-                ):
-                    if isinstance(stmt.value, ast.List):
-                        for elt in stmt.value.elts:
-                            if isinstance(elt, ast.Name):
-                                registered_names.add(elt.id)
+    return [(module, grouped[module]) for module in order]
 
-    # Filter imports to only include variables that are in the architectures list
-    filtered: list[tuple[str, list[str]]] = []
-    for module, names in imports:
-        registered = [n for n in names if n in registered_names]
-        if registered:
-            filtered.append((module, registered))
 
-    return filtered
+def _lazy_arch_fields(elt: ast.expr) -> tuple[str, str, str] | None:
+    """Extract ``(name, module, symbol)`` from a ``_LazyArch(...)`` call node.
+
+    Returns ``None`` for nodes that are not a 3-field ``_LazyArch`` call with
+    string-constant fields. Supports both positional and keyword arguments.
+    """
+    if not isinstance(elt, ast.Call):
+        return None
+    values: dict[str, str] = {}
+    for field, arg in zip(("name", "module", "symbol"), elt.args, strict=False):
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            values[field] = arg.value
+    for kw in elt.keywords:
+        if (
+            kw.arg in ("name", "module", "symbol")
+            and isinstance(kw.value, ast.Constant)
+            and isinstance(kw.value.value, str)
+        ):
+            values[kw.arg] = kw.value.value
+    if {"name", "module", "symbol"} <= values.keys():
+        return values["name"], values["module"], values["symbol"]
+    return None
 
 
 def extract_keyword_value(
@@ -386,13 +417,19 @@ def format_table(archs: list[dict[str, Any]]) -> str:
             )
         examples_inner = ",<br/>\n".join(repo_links)
 
-        # Derive modality labels from all (task, input_modalities) pairs
-        all_labels: set[str] = set()
-        for task, input_mods in sorted(
-            arch["modality_input_pairs"],
-            key=lambda p: (p[0] or ""),
-        ):
-            all_labels.update(derive_modality_labels(task, input_mods))
+        # Derive modality labels from all (task, input_modalities) pairs,
+        # with a name-based override for architectures whose runtime task enum
+        # does not precisely reflect the output type (e.g. video pipelines that
+        # share PIXEL_GENERATION with image pipelines).
+        if display_name in ARCH_LABEL_OVERRIDES:
+            all_labels: set[str] = set(ARCH_LABEL_OVERRIDES[display_name])
+        else:
+            all_labels = set()
+            for task, input_mods in sorted(
+                arch["modality_input_pairs"],
+                key=lambda p: (p[0] or ""),
+            ):
+                all_labels.update(derive_modality_labels(task, input_mods))
         modality_cell = (
             ",<br/>".join(sorted(all_labels)) if all_labels else "Unknown"
         )

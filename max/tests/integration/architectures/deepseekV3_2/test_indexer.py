@@ -36,8 +36,8 @@ from max.nn import (
 )
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kv_cache import (
-    KVCacheParams,
     KVCacheQuantizationConfig,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 from max.nn.rotary_embedding import (
@@ -212,14 +212,13 @@ def run_max_indexer(
     )
 
     # Create KV cache params for FP8 indexer cache with scales
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float8_e4m3fn,
         n_kv_heads=1,
         head_dim=index_head_dim,
         num_layers=1,
         page_size=page_size,
         devices=[DeviceRef.GPU()],
-        is_mla=False,
         kvcache_quant_config=KVCacheQuantizationConfig(
             scale_dtype=DType.float32,
             quantization_granularity=128,
@@ -308,7 +307,7 @@ def run_max_indexer(
             x_type,
             qr_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         ),
     ) as graph:
         x_in = graph.inputs[0].tensor
@@ -319,8 +318,9 @@ def run_max_indexer(
             kv_blocks=graph.inputs[3].buffer,
             cache_lengths=graph.inputs[4].tensor,
             lookup_table=graph.inputs[5].tensor,
-            max_lengths=graph.inputs[6].tensor,
-            kv_scales=graph.inputs[7].buffer,
+            max_prompt_length=graph.inputs[6].tensor,
+            max_cache_length=graph.inputs[7].tensor,
+            kv_scales=graph.inputs[8].buffer,
         )
 
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
@@ -356,10 +356,10 @@ def run_max_indexer(
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len, dtype=np.int64))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch_contexts.append(context)
 
-    kv_inputs = kv_manager.runtime_inputs([batch_contexts]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch_contexts]).inputs[0]
 
     # Prepare input tensors - flatten batch dimension for ragged format
     x_flat = x.view(-1, dim)

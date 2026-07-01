@@ -124,7 +124,7 @@ This example demonstrates every category of operator implementation.
 
 In this walk-through, you'll work with unary operators, binary operators
 with same-type and mixed-type operands, reversed methods, in-place
-assignment, equality comparison, and subscript access.
+assignment, equality comparison, Boolean conversion, and subscript access.
 
 :::note
 The standard library includes
@@ -144,9 +144,10 @@ from std.math import sqrt
 
 @fieldwise_init
 struct Complex(
+    Boolable,
     Equatable,
-    Writable,
     TrivialRegisterPassable,
+    Writable,
 ):
     var re: Float64
     var im: Float64
@@ -156,6 +157,8 @@ struct Complex(
   without needing to write special lifecycle methods.
 - `Equatable` lets you compare two instances, and `Writable` produces
   output for `print()` statements.
+- `Boolable` lets you use a `Complex` value in a Boolean context, such as
+  an `if` condition.
 
 ### Convenience initializer
 
@@ -183,11 +186,23 @@ def write_to(self, mut writer: Some[Writer]):
     else:
         writer.write(" + ", self.im)
     writer.write("i)")
+```
 
-...
+You can also implement `write_repr_to()` to define the value's
+*representation*—the developer-facing form returned by `repr()`. This
+implementation produces a string that mirrors how you'd construct the value
+in code:
 
+```mojo
+# Struct method
+def write_repr_to(self, mut writer: Some[Writer]):
+    t"Complex(re = {self.re}, im = {self.im})".write_to(writer)
+```
+
+```mojo
 c = Complex(3.14, -2.72)
-print(c)  # (3.14 - 2.72i)
+print(c)        # (3.14 - 2.72i)
+print(repr(c))  # Complex(re = 3.14, im = -2.72)
 ```
 
 ## Add unary operator support
@@ -355,20 +370,18 @@ print(c)       # (0.84375 - 0.5625i)
 
 ## Support type equality checks
 
-Complex numbers have no natural ordering, so you should
-implement `Equatable` (not `Comparable`). This gives you
-`==` and `!=` without implying that one complex number is
-"less than" another:
+Complex numbers have no natural ordering, so `Complex` conforms to
+`Equatable` (not `Comparable`). This gives you `==` and `!=` without implying
+that one complex number is "less than" another.
 
-```mojo
-    def __eq__(self, other: Self) -> Bool:
-        return (self.re == other.re and
-                self.im == other.im)
-
-    # Conforming to Equatable provides this automatically
-    def __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-```
+You don't need to implement `__eq__()` or `__ne__()` yourself—implement them
+only when a type needs equality semantics that differ from a memberwise field
+comparison. `Equatable` supplies a default `__eq__()` that uses compile-time
+reflection to compare every field, and a default `__ne__()` that returns the
+inverse of `__eq__()`. A `Complex` is equal to another exactly when both fields
+match, so the reflection-based default is exactly the behavior you want. (Bear
+in mind that, because a floating-point `NaN` never equals itself, a `Complex`
+holding a `NaN` won't equal itself either.)
 
 ```mojo
 c1 = Complex(-1.2, 6.5)
@@ -376,6 +389,29 @@ c2 = Complex(-1.2, 6.5)
 c3 = Complex(3.14, -2.72)
 print(c1 == c2)  # True
 print(c1 != c3)  # True
+```
+
+## Support use in Boolean contexts
+
+Conforming to `Boolable` and implementing `__bool__()` lets you use a
+`Complex` value directly in a Boolean context, such as an `if` condition or a
+call to `Bool()`. Mojo treats a built-in numeric value as "true" when it's
+nonzero, so a natural definition treats a complex number as "true" when either
+component is nonzero:
+
+```mojo
+    def __bool__(self) -> Bool:
+        return self.re != 0.0 or self.im != 0.0
+```
+
+```mojo
+c1 = Complex(0.0, 0.0)
+c2 = Complex(-1.2, 6.5)
+print(Bool(c1))  # False
+print(Bool(c2))  # True
+
+if c2:
+    print("c2 is nonzero")  # c2 is nonzero
 ```
 
 ## Unlock subscript access
@@ -386,16 +422,19 @@ is index 0, and index 1 returns the imaginary component:
 
 ```mojo
     def __getitem__(self, idx: Int) raises -> Float64:
-        if idx == 0: return self.re
-        if idx == 1: return self.im
+        if idx == 0:
+            return self.re
+        if idx == 1:
+            return self.im
         raise "index out of bounds"
 
-    def __setitem__(
-        mut self, idx: Int, value: Float64
-    ) raises:
-        if idx == 0: self.re = value
-        elif idx == 1: self.im = value
-        else: raise "index out of bounds"
+    def __setitem__(mut self, idx: Int, value: Float64) raises:
+        if idx == 0:
+            self.re = value
+        elif idx == 1:
+            self.im = value
+        else:
+            raise "index out of bounds"
 
 ...
 

@@ -73,9 +73,10 @@ with randomly initialized weights before loading weights
 
 .. code-block:: python
 
-    from max.experimental.nn import Linear
     from max.driver import CPU
     from max.dtype import DType
+    from max.experimental import functional as F
+    from max.experimental.nn import Linear
     from max.graph import TensorType
 
     with F.lazy():
@@ -530,7 +531,7 @@ class Tensor(DLPackArray, HasTensorValue):
         z = Tensor(np.array([1, 2, 3], dtype=np.int16))
 
         # Use factory methods like ones, zeros, arange
-        zeros = Tensor.zeros((2, 3))
+        zeros = Tensor.zeros((2, 2))
 
         # Compute with Python operators or the functional API
         result = y + zeros
@@ -796,12 +797,31 @@ class Tensor(DLPackArray, HasTensorValue):
 
         .. code-block:: python
 
+            from max.driver import CPU
+            from max.dtype import DType
             from max.experimental import functional as F
+            from max.experimental.nn import Module
             from max.experimental.tensor import Tensor
+            from max.graph import DeviceRef, TensorType
 
-            batch = x.shape[0]
-            pred = Tensor.from_dim(batch) <= 2  # scalar bool tensor on CPU
-            (out,) = F.cond(pred, [out_type], then_fn, else_fn)
+            class ScaleByBatch(Module):
+                def forward(self, x: Tensor) -> Tensor:
+                    out_type = TensorType(x.dtype, x.shape, device=x.device)
+                    pred = Tensor.from_dim(x.shape[0]) <= 2  # scalar bool tensor on CPU
+                    then_fn, else_fn = lambda: x * 2.0, lambda: x * 4.0
+                    (out,) = F.cond(pred, [out_type], then_fn, else_fn)
+                    return out
+
+            model = ScaleByBatch().compile(
+                TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
+            )
+            result = model(Tensor.ones([1, 4], dtype=DType.float32, device=CPU()))
+
+        .. invisible-code-block: python
+
+            import numpy as np
+
+            assert np.allclose(result.to_numpy(), 2.0)  # batch 1 (<= 2) -> x * 2
 
         Args:
             dim: The dimension to materialize. Accepts anything
@@ -968,7 +988,9 @@ class Tensor(DLPackArray, HasTensorValue):
         instance._mapping = PlacementMapping(mesh, placements)
         return instance
 
-    def _as_constant_external(self, name: str) -> Tensor:
+    def _as_constant_external(
+        self, name: str, align: int | None = None
+    ) -> Tensor:
         """Creates graph external constant(s) matching ``self``'s layout.
 
         For unsharded tensors, creates a single ``constant_external`` and
@@ -977,10 +999,19 @@ class Tensor(DLPackArray, HasTensorValue):
         Tensor preserving ``self``'s mesh, placements, and global shape.
 
         Shard constants are named ``name._shard.0``, ``name._shard.1``, etc.
+
+        Args:
+            name: The name of the constant.
+            align: The alignment of the constant. If not provided,
+                the default alignment for the tensor's dtype will be used.
+
+        Returns:
+            A tensor on the requested placement initialized from the
+            external data.
         """
         if not self.is_distributed:
             stype = TensorType(self.dtype, self.shape, CPU())
-            return F.constant_external(name, stype).to(self.device)
+            return F.constant_external(name, stype, align=align).to(self.device)
         assert self._mapping is not None
         _mesh = self._mapping.mesh
         values = []
@@ -988,7 +1019,7 @@ class Tensor(DLPackArray, HasTensorValue):
         for i in range(_mesh.num_devices):
             local = local_shape_at(shape, i)
             stype = TensorType(self.dtype, local, CPU())
-            t = F.constant_external(f"{name}._shard.{i}", stype)
+            t = F.constant_external(f"{name}._shard.{i}", stype, align=align)
             t = t.to(_mesh.devices[i])
             values.append(t._graph_value)
         return current_realization_context().create_unrealized(
@@ -1355,11 +1386,11 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.graph import TensorType
+            from max.graph import DeviceRef, TensorType
             from max.dtype import DType
 
             # Create a reference tensor type with shape (2, 4)
-            ref_type = TensorType(DType.int32, (2, 4))
+            ref_type = TensorType(DType.int32, (2, 4), device=DeviceRef.CPU())
 
             # Create range tensor matching the reference type
             x = tensor.Tensor.range_like(ref_type)

@@ -368,6 +368,7 @@ def tile_layout_k_major[
     BM: Int,
     BK: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    page_dense: Bool = False,
 ]() -> Layout:
     """Creates a K-major layout for tensor core operations.
 
@@ -379,13 +380,46 @@ def tile_layout_k_major[
         BM: Size of the M dimension in the tile.
         BK: Size of the K dimension in the tile.
         swizzle_mode: Memory access pattern swizzling mode (default: SWIZZLE_NONE).
+        page_dense: When `True`, return the native chunk-inner (row-major atoms)
+            k-major layout instead of the default chunk-outer form. The two are
+            byte-distinct when `BK` spans more than one swizzle atom
+            (`num_chunks >= 2`); the chunk-inner form lays each page contiguously
+            so one TMA fills it (the SM100 row-major page-fold path, K-side
+            analog of the `tile_layout_mn_major` `page_dense` branch).
+            SWIZZLE_128B only.
 
     Returns:
         `Layout` - A K-major layout configured for the specified dimensions and swizzle mode.
     """
-    comptime atom = select_k_atom[dtype, swizzle_mode]()
-    comptime new_shape = _checked_tile_shape[dtype, swizzle_mode, BM, BK]()
-    return tile_to_shape(materialize[atom](), new_shape)
+    comptime if page_dense:
+        # Page-dense (chunk-inner, row-major atoms) k-major layout, proven by
+        # `test_qk_kmajor_mma_spike.mojo`. Each `gran`-wide swizzle atom is
+        # innermost (stride 1); atom-rows (the MN/`BM` axis) step by
+        # `num_chunks * _CM_NUM_ROWS * gran` (OUTER); the chunk atoms within an
+        # atom-row step by `_CM_NUM_ROWS * gran` (INNER). Each
+        # `_CM_NUM_ROWS × gran` atom stays dense, so SWIZZLE_128B applies per
+        # atom. Fed through `tile_to_descriptor` + `_create_mma_desc_pair` this
+        # yields SBO = num_chunks*_CM_NUM_ROWS*gran*size_of (=2048 B, the page
+        # stride, double the chunk-outer 1024) and LBO = 16 (unchanged).
+        comptime assert (
+            swizzle_mode == TensorMapSwizzle.SWIZZLE_128B
+        ), "page_dense k-major layout is only defined for SWIZZLE_128B"
+        comptime gran = swizzle_mode.bytes() // size_of[dtype]()
+        comptime num_chunks = BK // gran
+        return Layout(
+            [
+                [_CM_NUM_ROWS, BM // _CM_NUM_ROWS],
+                [gran, num_chunks],
+            ],
+            [
+                [gran, num_chunks * _CM_NUM_ROWS * gran],
+                [1, _CM_NUM_ROWS * gran],
+            ],
+        )
+    else:
+        comptime atom = select_k_atom[dtype, swizzle_mode]()
+        comptime new_shape = _checked_tile_shape[dtype, swizzle_mode, BM, BK]()
+        return tile_to_shape(materialize[atom](), new_shape)
 
 
 def tile_sf_layout_k_major[
@@ -459,6 +493,7 @@ def tile_layout_mn_major[
     mn_dim: Int,
     k_dim: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    page_dense: Bool = False,
 ]() -> Layout:
     """Creates an MN-major layout for tensor core operations.
 
@@ -470,6 +505,11 @@ def tile_layout_mn_major[
         mn_dim: Size of the MN dimension.
         k_dim: Size of the K dimension.
         swizzle_mode: Memory access pattern swizzling mode (default: SWIZZLE_NONE).
+        page_dense: When `True`, return the native chunk-inner (row-major atoms)
+            layout instead of the transpose-of-k-major (chunk-outer) form. The
+            two are byte-distinct when `k_dim` spans more than one swizzle atom;
+            the chunk-inner form lays each page contiguously so one TMA fills it
+            (the SM100 row-major page-fold path). SWIZZLE_128B only.
 
     Returns:
         `Layout` - An MN-major layout configured for the specified dimensions and swizzle mode.
@@ -478,7 +518,33 @@ def tile_layout_mn_major[
         This returns the "unit" layout; the actual shared memory layout can be a multiple of this unit.
         Currently only supports SWIZZLE_NONE and SWIZZLE_128B modes.
     """
-    return tile_layout_k_major[dtype, k_dim, mn_dim, swizzle_mode]().transpose()
+
+    comptime if page_dense:
+        # Native (pre-`#73811`) mn-major layout, recovered verbatim from
+        # `fe239ba77a3`. Chunk-inner (row-major atoms): each `row_len`-wide
+        # swizzle atom is innermost (stride 1); the mn axis steps by
+        # `_CM_NUM_ROWS * row_len`; the k axis steps by `row_len` within a core
+        # matrix and `_CM_NUM_ROWS * mn_dim` across core matrices. Each
+        # `_CM_NUM_ROWS × row_len` atom stays dense (NOT the
+        # swizzle-incompatible element-row-contiguous form).
+        comptime assert (
+            swizzle_mode == TensorMapSwizzle.SWIZZLE_128B
+        ), "page_dense mn-major layout is only defined for SWIZZLE_128B"
+        comptime row_len = swizzle_mode.bytes() // size_of[dtype]()
+        return Layout(
+            [
+                [row_len, mn_dim // row_len],
+                [_CM_NUM_ROWS, k_dim // _CM_NUM_ROWS],
+            ],
+            [
+                [1, _CM_NUM_ROWS * row_len],
+                [row_len, _CM_NUM_ROWS * mn_dim],
+            ],
+        )
+    else:
+        return tile_layout_k_major[
+            dtype, k_dim, mn_dim, swizzle_mode
+        ]().transpose()
 
 
 def wgmma_c_thread_layout[C: Layout]() -> Layout:

@@ -28,6 +28,7 @@ from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import llvm_intrinsic
 from std.bit import prev_power_of_two, pop_count
 from std.gpu.globals import WARP_SIZE
+from std.gpu.primitives.warp import broadcast
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace
 from std.gpu.compute.arch.mma_nvidia_sm100 import (
@@ -66,6 +67,7 @@ from nn.attention.mha_operand import (
     PagedRowIndices,
     kv_sub_tile_rows,
     kv_num_sub_tiles,
+    kv_tma_fold_chunks,
 )
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -269,6 +271,105 @@ struct STMatrixOffsets[
     @always_inline
     def __init__(out self):
         pass
+
+
+@always_inline
+def o_store_tma_blocks_per_op[
+    output_type: DType,
+    output_swizzle_mode: TensorMapSwizzle,
+    ov_depth: Int,
+    group: Int,
+    depth_splits: Int,
+]() -> Int:
+    """Box size (swizzle-granularity blocks per batched O-store TMA).
+
+    The O store splits the contiguous `ov_depth` into swizzle-granularity blocks
+    `K = output_swizzle_mode.bytes() // size_of[output_type]` and a single batched
+    TMA copies `ceil(n_blocks / depth_splits)` of them (vs `n_blocks` per-block
+    copies). `depth_splits` is the number of contiguous depth ranges the issuers
+    divide the store into:
+      - MHA (`depth_splits == 2`): the descriptor is shared between the 1Q combine
+        (2 warpgroups, 1 TMA each over its half) and the single-issuer scale_write
+        (2 pipelined TMAs over its two halves), so the box is the half-depth
+        `ceil(n_blocks / 2)`.
+      - depth512 (`depth_splits == 1`): single issuer, no combine, so the box is
+        the full depth `n_blocks` (one TMA).
+    The box size is independent of `group`: `RaggedTMA3DTile` folds the
+    `(middle_dim, rows)` selectors into one dim, so even fused GQA (`group > 1`)
+    fits the *blocks* dimension within the 5D TMA limit (rank-5 batched store) and
+    uses the same `ceil(n_blocks / depth_splits)` box.
+    Returns 0 (per-block path) only when `output_swizzle_mode != SWIZZLE_NONE`:
+    the blocked-smem / identity-layout invariant the batched box relies on holds
+    only for SWIZZLE_NONE (e.g. an FP8-QKV MLA variant with a SWIZZLE_128B bf16
+    output store stays per-block).
+    `group` is retained in the signature for call-site compatibility but no longer
+    gates the result. This is the single source of truth for `tma_blocks_per_op`
+    across the O-store descriptor type/creation sites.
+    """
+    comptime if output_swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+        return 0
+    comptime K = output_swizzle_mode.bytes() // size_of[output_type]()
+    comptime n_blocks = align_up(ov_depth, K) // K
+    return ceildiv(n_blocks, depth_splits)
+
+
+@always_inline
+def scale_pack_o_row[
+    n: Int, //, output_type: DType, w: Int, start: Int = 0
+](o_vals: InlineArray[Scalar[DType.float32], n], inv_row_sum: Float32) -> SIMD[
+    DType.uint32, w // 2
+]:
+    """Scale the `w` f32 O lanes `o_vals[start : start + w]` by `inv_row_sum`,
+    cast to the 2-byte `output_type`, and pack into `w // 2` u32 lanes (the
+    row-major 16 B SWIZZLE_NONE store register).
+
+    `o_vals` is a `tcgen05_ld` result; `start`/`w` window it so one wide TMEM
+    load can feed several stores (depth512 loads 16 lanes, stores two 8-lane
+    blocks). Compute stays in f32x2 (64-bit) chunks because LLVM scalarizes
+    wider SIMD here; only the packed u32 store register is built wide. Shared by
+    the SM100 O-store writeback helpers (`fa4_scale_write_output`,
+    `depth512_scale_write_output`).
+    """
+    comptime assert size_of[output_type]() == 2
+    var packed = SIMD[DType.uint32, w // 2]()
+    comptime for c in range(w // 2):
+        var pair = (
+            SIMD[DType.float32, 2](
+                o_vals[start + 2 * c], o_vals[start + 2 * c + 1]
+            )
+            * inv_row_sum
+        ).cast[output_type]()
+        packed[c] = bitcast[DType.uint32, 1](pair)
+    return packed
+
+
+@always_inline
+def combine_pack_o_row[
+    n: Int, //, output_type: DType
+](
+    own: InlineArray[Scalar[DType.float32], n],
+    peer: InlineArray[Scalar[DType.float32], n],
+    scale_own: Float32,
+    scale_peer: Float32,
+) -> SIMD[DType.uint32, n // 2]:
+    """LSE-combine `own * scale_own + peer * scale_peer` over `n` f32 O lanes,
+    cast to the 2-byte `output_type`, and pack into `n // 2` u32 lanes.
+
+    `own`/`peer` are `tcgen05_ld` results. f32x2 compute / wide-only store, as
+    in `scale_pack_o_row`; the fused `peer.fma(scale_peer, own * scale_own)`
+    form matches the per-element combine it replaces. Used by
+    `fa4_lse_combine_write`.
+    """
+    comptime assert size_of[output_type]() == 2
+    var packed = SIMD[DType.uint32, n // 2]()
+    comptime for c in range(n // 2):
+        var own_c = SIMD[DType.float32, 2](own[2 * c], own[2 * c + 1])
+        var peer_c = SIMD[DType.float32, 2](peer[2 * c], peer[2 * c + 1])
+        var comb = peer_c.fma(
+            SIMD[DType.float32, 2](scale_peer), own_c * scale_own
+        ).cast[output_type]()
+        packed[c] = bitcast[DType.uint32, 1](comb)
+    return packed
 
 
 @always_inline
@@ -674,6 +775,7 @@ struct SM100TensorAccumulator[
     transpose_b: Bool = True,
     cta_group: Int = 1,
     num_stages: Int = 1,
+    b_page_dense: Bool = False,
 ](TrivialRegisterPassable):
     # This performs C = A @ B
     # where A is BM x BK and B is BN x BK if k major, else BK x BN.
@@ -729,7 +831,7 @@ struct SM100TensorAccumulator[
 
     # With cta_group > 1, each CTA's SMEM holds MMA_M/cta_group rows (A)
     # and MMA_N/cta_group columns (B).  The K-offset arithmetic in
-    # `build_mma` (SS path) uses these layouts, so BMN must match per-CTA
+    # `_build_mma` (SS path) uses these layouts, so BMN must match per-CTA
     # dimensions to keep addresses within each CTA's SMEM tile.
     #
     # For k_major A the outer-K stride is BMN * swizzle_width; halving BMN
@@ -747,9 +849,17 @@ struct SM100TensorAccumulator[
         Self.MMA_N // Self.cta_group
     )
     comptime b_layout = tile_layout_k_major[
-        Self.operand_t, Self.b_bmn, Self.padded_BK, Self.swizzle_b
+        Self.operand_t,
+        Self.b_bmn,
+        Self.padded_BK,
+        Self.swizzle_b,
+        page_dense=Self.b_page_dense,
     ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.operand_t, Self.b_bmn, Self.padded_BK, Self.swizzle_b
+        Self.operand_t,
+        Self.b_bmn,
+        Self.padded_BK,
+        Self.swizzle_b,
+        page_dense=Self.b_page_dense,
     ]()
 
     comptime idesc = UMMAInsDescriptor[Self.mma_kind].create[
@@ -794,6 +904,7 @@ struct SM100TensorAccumulator[
             32,
             64,
         ), "ws path requires MMA_M in (32, 64)"
+
         comptime if Self.num_stages == 1:
             # Original single-stage behavior
             comptime if Self.a_tmem:
@@ -810,6 +921,7 @@ struct SM100TensorAccumulator[
                         operand_size=Self.operand_size,
                         tcgen05_mma_type=Self.tcgen05_mma_type,
                         mma_k=Self.MMA_K,
+                        b_page_dense=Self.b_page_dense,
                     ](Self.idesc, a_, b, c, c_scale, elect)
                 else:
                     bulk_mma[
@@ -838,6 +950,7 @@ struct SM100TensorAccumulator[
                         operand_size=Self.operand_size,
                         tcgen05_mma_type=Self.tcgen05_mma_type,
                         mma_k=Self.MMA_K,
+                        b_page_dense=Self.b_page_dense,
                     ](Self.idesc, a_, b, c, c_scale, elect)
                 else:
                     bulk_mma[
@@ -884,6 +997,7 @@ struct SM100TensorAccumulator[
                         operand_size=Self.operand_size,
                         tcgen05_mma_type=Self.tcgen05_mma_type,
                         mma_k=Self.MMA_K,
+                        b_page_dense=Self.b_page_dense,
                     ](
                         Self.idesc,
                         a_,
@@ -932,6 +1046,7 @@ struct SM100TensorAccumulator[
                         operand_size=Self.operand_size,
                         tcgen05_mma_type=Self.tcgen05_mma_type,
                         mma_k=Self.MMA_K,
+                        b_page_dense=Self.b_page_dense,
                     ](
                         Self.idesc,
                         a_,
@@ -1009,6 +1124,7 @@ struct SM100TensorAccumulator[
             32,
             64,
         ), "ws path requires MMA_M in (32, 64)"
+
         comptime if Self.a_tmem:
             var a_ = rebind[UInt32](a)
             comptime if Self.use_ws:
@@ -1024,6 +1140,7 @@ struct SM100TensorAccumulator[
                     tcgen05_mma_type=Self.tcgen05_mma_type,
                     mma_k=Self.MMA_K,
                     k_start=ks_start,
+                    b_page_dense=Self.b_page_dense,
                 ](
                     Self.idesc,
                     a_,
@@ -1070,6 +1187,7 @@ struct SM100TensorAccumulator[
                     tcgen05_mma_type=Self.tcgen05_mma_type,
                     mma_k=Self.MMA_K,
                     k_start=ks_start,
+                    b_page_dense=Self.b_page_dense,
                 ](
                     Self.idesc,
                     a_,
@@ -1099,7 +1217,7 @@ struct SM100TensorAccumulator[
                 )
 
 
-def build_mma[
+def _build_mma[
     *, a_tmem: Bool, ws: Bool, partial: Bool
 ](
     kind: String,
@@ -1267,7 +1385,7 @@ def bulk_mma[
 ):
     # Full-tile SS (both operands SMEM descriptors), non-ws contraction.
     comptime assert cta_group in (1, 2)
-    comptime mma_string = build_mma[a_tmem=False, ws=False, partial=False](
+    comptime mma_string = _build_mma[a_tmem=False, ws=False, partial=False](
         String(kind),
         layout_a,
         layout_b,
@@ -1278,7 +1396,7 @@ def bulk_mma[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi
     )
 
 
@@ -1301,10 +1419,10 @@ def bulk_mma[
     elect: Int32,
 ):
     # Full-tile TS (A in TMEM, B an SMEM descriptor), non-ws contraction.
-    # `build_mma` ignores `layout_a` for TS, so `layout_b` fills that slot.
+    # `_build_mma` ignores `layout_a` for TS, so `layout_b` fills that slot.
     comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
     comptime assert cta_group in (1, 2)
-    comptime mma_string = build_mma[a_tmem=True, ws=False, partial=False](
+    comptime mma_string = _build_mma[a_tmem=True, ws=False, partial=False](
         String(kind),
         layout_b,
         layout_b,
@@ -1315,7 +1433,7 @@ def bulk_mma[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a
     )
 
 
@@ -1349,7 +1467,7 @@ def bulk_mma_partial[
     # (stage-0) bases; the builder applies absolute per-block offsets.
     comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
     comptime assert cta_group in (1, 2)
-    comptime mma_string = build_mma[a_tmem=True, ws=False, partial=True](
+    comptime mma_string = _build_mma[a_tmem=True, ws=False, partial=True](
         String(kind),
         layout_b,
         layout_b,
@@ -1361,7 +1479,7 @@ def bulk_mma_partial[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a, valid_k_mmas
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a, valid_k_mmas
     )
 
 
@@ -1393,7 +1511,7 @@ def bulk_mma_ss_partial[
     # (stage-0) bases; the builder applies absolute per-block offsets.
     comptime assert num_k_mmas >= 1
     comptime assert cta_group in (1, 2)
-    comptime mma_string = build_mma[a_tmem=False, ws=False, partial=True](
+    comptime mma_string = _build_mma[a_tmem=False, ws=False, partial=True](
         String(kind),
         layout_a,
         layout_b,
@@ -1405,7 +1523,16 @@ def bulk_mma_ss_partial[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi, valid_k_mmas
+        broadcast(c_tmem),
+        0,
+        idesc,
+        c_scale,
+        b.lo,
+        b.hi,
+        elect,
+        a.lo,
+        a.hi,
+        valid_k_mmas,
     )
 
 
@@ -1432,6 +1559,7 @@ def bulk_mma_ws[
     operand_size: Int,
     tcgen05_mma_type: String,
     mma_k: Int = 16,
+    b_page_dense: Bool = False,
 ](
     idesc: UMMAInsDescriptor[kind],
     a: MMASmemDescriptorPair,
@@ -1441,18 +1569,21 @@ def bulk_mma_ws[
     elect: Int32,
 ):
     # Full-tile SS, warp-specialized. The tile layouts are computed from the
-    # dtype/tile params (`build_mma` takes `Layout` directly).
+    # dtype/tile params (`_build_mma` takes `Layout` directly). `b_page_dense`
+    # selects the row-major page-fold layout for the B operand (K / Q@K' is
+    # k-major; the advance crosses a depth chunk by `_CM_NUM_ROWS*gran` instead
+    # of `BN*gran`, derived from this layout).
     comptime layout_a = tile_layout_k_major[
         a_dtype, a_BMN, a_BK, a_swizzle
     ]() if a_is_k_major else tile_layout_mn_major[
         a_dtype, a_BMN, a_BK, a_swizzle
     ]()
     comptime layout_b = tile_layout_k_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
     ]() if b_is_k_major else tile_layout_mn_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
     ]()
-    comptime mma_string = build_mma[a_tmem=False, ws=True, partial=False](
+    comptime mma_string = _build_mma[a_tmem=False, ws=True, partial=False](
         String(kind),
         layout_a,
         layout_b,
@@ -1463,7 +1594,7 @@ def bulk_mma_ws[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi
     )
 
 
@@ -1483,6 +1614,7 @@ def bulk_mma_ws_ts[
     operand_size: Int,
     tcgen05_mma_type: String,
     mma_k: Int = 16,
+    b_page_dense: Bool = False,
 ](
     idesc: UMMAInsDescriptor[kind],
     a: UInt32,
@@ -1491,16 +1623,16 @@ def bulk_mma_ws_ts[
     c_scale: UInt32,
     elect: Int32,
 ):
-    # Full-tile TS, warp-specialized. `a` is a single TMEM base ($7); `build_mma`
+    # Full-tile TS, warp-specialized. `a` is a single TMEM base ($7); `_build_mma`
     # computes each k-tile's column offset in-PTX (`add.s32 %ra, $7, k*stride`),
     # so the old per-tile operand ladder is gone.
     comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
     comptime layout_b = tile_layout_k_major[
         b_dtype, b_BMN, b_BK, b_swizzle
     ]() if b_is_k_major else tile_layout_mn_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
     ]()
-    comptime mma_string = build_mma[a_tmem=True, ws=True, partial=False](
+    comptime mma_string = _build_mma[a_tmem=True, ws=True, partial=False](
         String(kind),
         layout_b,
         layout_b,
@@ -1511,7 +1643,7 @@ def bulk_mma_ws_ts[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a
     )
 
 
@@ -1537,6 +1669,7 @@ def bulk_mma_ws_partial[
     tcgen05_mma_type: String,
     mma_k: Int = 16,
     k_start: Int = 0,
+    b_page_dense: Bool = False,
 ](
     idesc: UMMAInsDescriptor[kind],
     a: MMASmemDescriptorPair,
@@ -1557,11 +1690,11 @@ def bulk_mma_ws_partial[
         a_dtype, a_BMN, a_BK, a_swizzle
     ]()
     comptime layout_b = tile_layout_k_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
     ]() if b_is_k_major else tile_layout_mn_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
     ]()
-    comptime mma_string = build_mma[a_tmem=False, ws=True, partial=True](
+    comptime mma_string = _build_mma[a_tmem=False, ws=True, partial=True](
         String(kind),
         layout_a,
         layout_b,
@@ -1573,7 +1706,16 @@ def bulk_mma_ws_partial[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a.lo, a.hi, valid_k_mmas
+        broadcast(c_tmem),
+        0,
+        idesc,
+        c_scale,
+        b.lo,
+        b.hi,
+        elect,
+        a.lo,
+        a.hi,
+        valid_k_mmas,
     )
 
 
@@ -1591,6 +1733,7 @@ def bulk_mma_ws_ts_partial[
     tcgen05_mma_type: String,
     mma_k: Int = 16,
     k_start: Int = 0,
+    b_page_dense: Bool = False,
 ](
     idesc: UMMAInsDescriptor[kind],
     a: UInt32,
@@ -1601,7 +1744,7 @@ def bulk_mma_ws_ts_partial[
     valid_k_mmas: UInt32,
 ):
     # P@V contraction for a partially-loaded last KV tile, TS warp-specialized.
-    # `a` is the un-offset (stage-0) TMEM base ($7); `build_mma` computes each
+    # `a` is the un-offset (stage-0) TMEM base ($7); `_build_mma` computes each
     # block's ABSOLUTE column offset (`a_stride * (k_start + k)`) in-PTX, so the
     # old per-tile operand ladder is gone. `valid_k_mmas` rides $8 (A uses only
     # $7) and gates each block via a `%pv` guard kept SEPARATE from `elect` (no
@@ -1610,9 +1753,9 @@ def bulk_mma_ws_ts_partial[
     comptime layout_b = tile_layout_k_major[
         b_dtype, b_BMN, b_BK, b_swizzle
     ]() if b_is_k_major else tile_layout_mn_major[
-        b_dtype, b_BMN, b_BK, b_swizzle
+        b_dtype, b_BMN, b_BK, b_swizzle, page_dense=b_page_dense
     ]()
-    comptime mma_string = build_mma[a_tmem=True, ws=True, partial=True](
+    comptime mma_string = _build_mma[a_tmem=True, ws=True, partial=True](
         String(kind),
         layout_b,
         layout_b,
@@ -1624,7 +1767,7 @@ def bulk_mma_ws_ts_partial[
     )
 
     inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
-        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a, valid_k_mmas
+        broadcast(c_tmem), 0, idesc, c_scale, b.lo, b.hi, elect, a, valid_k_mmas
     )
 
 
@@ -1988,6 +2131,7 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
     comptime num_stages: Int = Self.num_kv_stages * Self.num_qk_stages
 
     # mbars are ordered in {producer, consumer} pairs
+    @__allow_legacy_any_origin_fields
     var mbar: MBarType
     var state: PipelineState[Self.num_kv_stages]
 
@@ -2068,7 +2212,10 @@ struct TMADestination[dtype: DType, smem_elems: Int](TrivialRegisterPassable):
         address_space=AddressSpace.SHARED,
     ]
 
+    @__allow_legacy_any_origin_fields
     var mbar: MBarType
+
+    @__allow_legacy_any_origin_fields
     var smem: Self.SmemType
 
     @always_inline
@@ -2118,6 +2265,8 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     var pipeline: StagedPipeline[
         Self.config.num_kv_stages, Self.num_qk_stages_effective
     ]
+
+    @__allow_legacy_any_origin_fields
     var smem: Self.SMemType
 
     @always_inline
@@ -2273,6 +2422,12 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     comptime BMN: Int = Self.config.k_rows_per_cta() if Self.is_k else Self.config.v_cols_per_cta()
     comptime BK: Int = Self.config.BK0 if Self.is_k else Self.config.BK1
     comptime is_k_major: Bool = Self.is_k
+    # Page-dense (row-major) layout: K (Q@K', k-major) gated by k_row_major(),
+    # V (P@V, mn-major) by v_row_major(). `is_k_major=Self.is_k` (below) routes
+    # the flag to the matching `tile_layout_*` branch in `smem_descriptor`.
+    comptime page_dense: Bool = (
+        Self.config.k_row_major() if Self.is_k else Self.config.v_row_major()
+    )
 
     var pipeline: StagedPipeline[
         Self.config.num_kv_stages, Self.num_qk_stages_effective
@@ -2293,6 +2448,7 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
             BK=Self.BK,
             swizzle_mode=Self.config.swizzle_mode,
             is_k_major=Self.is_k_major,
+            page_dense=Self.page_dense,
         ](smem)
 
     @always_inline
@@ -2394,7 +2550,10 @@ struct RolePipeline[
 
     comptime num_stages: Int = Self.number_of_stages
 
+    @__allow_legacy_any_origin_fields
     var producer_mbar_base: MBarType
+
+    @__allow_legacy_any_origin_fields
     var consumer_mbar_base: MBarType
     var state: PipelineState[Self.num_stages]
 
@@ -2498,6 +2657,7 @@ struct MBarPipeline[number_of_stages: Int](TrivialRegisterPassable):
     comptime num_stages: Int = Self.number_of_stages
 
     # mbars are ordered in {producer, consumer} pairs
+    @__allow_legacy_any_origin_fields
     var mbar: MBarType
     var state: PipelineState[Self.num_stages]
 
@@ -2747,6 +2907,7 @@ struct FA4MiscMBars[
         **Q1Sync barriers only present when num_qo == 2
     """
 
+    @__allow_legacy_any_origin_fields
     var mbar_base: MBarType
 
     # ---- Count=128 section (first in smem) ----

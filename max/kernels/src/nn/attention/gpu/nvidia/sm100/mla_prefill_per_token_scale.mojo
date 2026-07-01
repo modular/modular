@@ -44,8 +44,9 @@ from layout.tile_layout import row_major as tt_row_major
 from layout.coord import Idx, Coord
 from layout.layout_tensor import LayoutTensor
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx, warp_id
+from std.gpu.primitives.warp import broadcast
 from std.gpu.memory import AddressSpace
-from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
 from std.gpu.compute.arch.tcgen05 import tcgen05_alloc
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -59,6 +60,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     expect_bytes_pred,
     kv_sub_tile_rows,
     kv_num_sub_tiles,
+    o_store_tma_blocks_per_op,
     PagedRowIndices,
     SharedMemPointer,
     StagedPipeline,
@@ -146,7 +148,10 @@ __extension SM100MLA:
         q_nope_tma_op: QTMATile[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
-            BM=Self.config.BM // 2,
+            # `BM // num_qo` = 128 in both modes (one of two Q halves in
+            # 2Q, the single full-BM Q tile in 1Q), so the TMA-op type
+            # folds across the 1Q/2Q configs.
+            BM=Self.config.q_tile_rows(),
             depth=Self.config.nope_depth,
             group=Self.config.group,
             decoding=False,
@@ -154,7 +159,7 @@ __extension SM100MLA:
         q_rope_tma_op: QTMATile[
             config.rope_gmem_dtype,
             Self.config.rope_gmem_swizzle_mode,
-            BM=Self.config.BM // 2,
+            BM=Self.config.q_tile_rows(),
             depth=Self.config.rope_depth,
             group=Self.config.group,
             decoding=False,
@@ -180,8 +185,12 @@ __extension SM100MLA:
         q_scale_tma_op: TMATensorTile[
             config.scale_dtype,
             2,
-            Index(1, Self.config.BM),
-            Index(1, Self.config.BM),
+            # Per-Q-tile box (128 in both modes): 2Q issues two TMAs
+            # (one per Q half, see the with_q / Q1 sites in
+            # `load_per_token_scale`); 1Q issues one. Keeps the TMA-op
+            # type folding across the 1Q/2Q configs.
+            Index(1, Self.config.q_tile_rows()),
+            Index(1, Self.config.q_tile_rows()),
         ],
         k_scale_tma_op: TMATensorTile[
             config.scale_dtype,
@@ -193,13 +202,22 @@ __extension SM100MLA:
             Self.output_dtype,
             Self.config.output_swizzle_mode,
             # `// fa4_config.num_qo` instead of `// 2`: matches the
-            # fa4_softmax / fa4_lse_combine_write signature so MLA's 2Q
-            # path type-checks under the unified 1Q/2Q signature.
-            # Numerically identical to `// 2` for num_qo=2 (the only
-            # mode MLA exercises today).
+            # fa4_softmax / fa4_lse_combine_write signature so both the
+            # 1Q and 2Q instantiations type-check under the unified
+            # signature (128 in both modes).
             BM=Self.config.fa4_config.BM // Self.config.fa4_config.num_qo,
             BN=Self.config.fa4_config.ov_depth,
+            middle_dim=Self.config.num_q_heads,
             group=config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
+            # Concrete value: a GPU-kernel entry (and the device impl it calls)
+            # must be a fully-bound function. Matches the created store.
+            tma_blocks_per_op=o_store_tma_blocks_per_op[
+                Self.output_dtype,
+                Self.config.output_swizzle_mode,
+                Self.config.fa4_config.ov_depth,
+                config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
+                depth_splits=2,
+            ](),
         ],
         kv_lut: Self.KVLUTType,
         k_rope_lut: Self.KRopeType,
@@ -215,6 +233,228 @@ __extension SM100MLA:
             Self.PartitionType,
         ],
     ):
+        # Thin entrypoint — see `mla_prefill_kernel_generic` for the full
+        # rationale. Compute `SeqInfo` once (blockIdx-derived, warp-uniform)
+        # and route per-tile work whose remaining valid rows fit a single 1Q
+        # tile to the cheaper 1Q body when this 2Q config admits a
+        # type-compatible 1Q variant AND the mask needs no runtime FULL_MASK
+        # slow path. `seq_info.prompt_offset` is a multiple of the 2Q `BM`
+        # (256) — also a valid 1Q tile boundary (128).
+        var seq_info: SeqInfo = get_seq_info[
+            Self.BM,
+            Self.num_q_heads,
+            Self.MaskType.get_type_name() == "CausalMask",
+        ](batch_size, pack.max_seq_len, pack.valid_length, pack.partition)
+
+        comptime cfg_1q = Self.config.switch_1q_config()
+        comptime check_mask = (
+            Self.MaskType.nonfull_sets[cfg_1q.BM, cfg_1q.BN]()[0]
+            == TileMaskStatus.UNKNOWN_MASK
+        )
+        comptime if Self.config.can_switch_to_1q() and not check_mask:
+            comptime Kernel1Q = SM100MLA[
+                Self.KVLUTType,
+                Self.KRopeType,
+                Self.output_dtype,
+                Self.MaskType,
+                Self.SchedulerType,
+                cfg_1q,
+                Self.ValidLengthType,
+                Self.SinkType,
+                Self.KVRowOffsetsType,
+                Self.MaxSeqLenType,
+                Self.PartitionType,
+                Self._ndbuffer_mha_operand,
+            ]
+            # All eight TMA-op types fold between the 2Q and 1Q configs (Q
+            # nope/rope and the q_scale box use `BM // num_qo` = 128 in both;
+            # K_nope/K_rope/V/k_scale and the ragged store are
+            # BM-independent), but the parser sees distinct parameter
+            # expressions, so `rebind`.
+            comptime QNope1Q = QTMATile[
+                Kernel1Q.KVLUTType.dtype,
+                Kernel1Q.config.qkv_swizzle_mode,
+                BM=Kernel1Q.config.q_tile_rows(),
+                depth=Kernel1Q.config.nope_depth,
+                group=Kernel1Q.config.group,
+                decoding=False,
+            ]
+            comptime QRope1Q = QTMATile[
+                Kernel1Q.config.rope_gmem_dtype,
+                Kernel1Q.config.rope_gmem_swizzle_mode,
+                BM=Kernel1Q.config.q_tile_rows(),
+                depth=Kernel1Q.config.rope_depth,
+                group=Kernel1Q.config.group,
+                decoding=False,
+            ]
+            comptime KNope1Q = KVTMATile[
+                Kernel1Q.KVLUTType.dtype,
+                Kernel1Q.config.qkv_swizzle_mode,
+                BN=kv_sub_tile_rows(Kernel1Q.config.BN, Kernel1Q.page_size),
+                BK=Kernel1Q.nope_depth,
+            ]
+            comptime KRope1Q = KVTMATile[
+                Kernel1Q.KRopeType.dtype,
+                Kernel1Q.config.rope_gmem_swizzle_mode,
+                BN=kv_sub_tile_rows(
+                    Kernel1Q.config.BN, Kernel1Q.KRopeType.page_size
+                ),
+                BK=Kernel1Q.rope_depth,
+            ]
+            comptime V1Q = KVTMATile[
+                Kernel1Q.KVLUTType.dtype,
+                Kernel1Q.config.qkv_swizzle_mode,
+                BN=kv_sub_tile_rows(Kernel1Q.config.BN, Kernel1Q.page_size),
+                BK=Kernel1Q.nope_depth,
+            ]
+            comptime QScale1Q = TMATensorTile[
+                Kernel1Q.config.scale_dtype,
+                2,
+                Index(1, Kernel1Q.config.q_tile_rows()),
+                Index(1, Kernel1Q.config.q_tile_rows()),
+            ]
+            comptime KScale1Q = TMATensorTile[
+                Kernel1Q.config.scale_dtype,
+                2,
+                Index(
+                    1, kv_sub_tile_rows(Kernel1Q.config.BN, Kernel1Q.page_size)
+                ),
+                Index(
+                    1, kv_sub_tile_rows(Kernel1Q.config.BN, Kernel1Q.page_size)
+                ),
+            ]
+            comptime O1Q = RaggedTMA3DTile[
+                Kernel1Q.output_dtype,
+                Kernel1Q.config.output_swizzle_mode,
+                BM=Kernel1Q.config.fa4_config.BM
+                // Kernel1Q.config.fa4_config.num_qo,
+                BN=Kernel1Q.config.fa4_config.ov_depth,
+                middle_dim=Kernel1Q.config.num_q_heads,
+                group=Kernel1Q.config.fa4_config.group if Kernel1Q.config.fa4_config.fuse_gqa else 1,
+                # Rebind target: must match the batched store the kernel built.
+                tma_blocks_per_op=o_store_tma_blocks_per_op[
+                    Kernel1Q.output_dtype,
+                    Kernel1Q.config.output_swizzle_mode,
+                    Kernel1Q.config.fa4_config.ov_depth,
+                    Kernel1Q.config.fa4_config.group if Kernel1Q.config.fa4_config.fuse_gqa else 1,
+                    depth_splits=2,
+                ](),
+            ]
+            if broadcast(seq_info.seq_len - seq_info.prompt_offset) <= UInt32(
+                Kernel1Q.BM
+            ):
+                Kernel1Q._kernel_impl_per_token_scale(
+                    rebind[QNope1Q](q_nope_tma_op),
+                    rebind[QRope1Q](q_rope_tma_op),
+                    rebind[KNope1Q](k_nope_tma_op),
+                    rebind[KRope1Q](k_rope_tma_op),
+                    rebind[V1Q](v_tma_op),
+                    rebind[QScale1Q](q_scale_tma_op),
+                    rebind[KScale1Q](k_scale_tma_op),
+                    rebind[O1Q](ragged_tma_store),
+                    kv_lut,
+                    k_rope_lut,
+                    scale,
+                    pack,
+                    seq_info,
+                )
+                return
+        Self._kernel_impl_per_token_scale(
+            q_nope_tma_op,
+            q_rope_tma_op,
+            k_nope_tma_op,
+            k_rope_tma_op,
+            v_tma_op,
+            q_scale_tma_op,
+            k_scale_tma_op,
+            ragged_tma_store,
+            kv_lut,
+            k_rope_lut,
+            scale,
+            pack,
+            seq_info,
+        )
+
+    @staticmethod
+    @always_inline
+    def _kernel_impl_per_token_scale(
+        q_nope_tma_op: QTMATile[
+            Self.KVLUTType.dtype,
+            Self.config.qkv_swizzle_mode,
+            BM=Self.config.q_tile_rows(),
+            depth=Self.config.nope_depth,
+            group=Self.config.group,
+            decoding=False,
+        ],
+        q_rope_tma_op: QTMATile[
+            config.rope_gmem_dtype,
+            Self.config.rope_gmem_swizzle_mode,
+            BM=Self.config.q_tile_rows(),
+            depth=Self.config.rope_depth,
+            group=Self.config.group,
+            decoding=False,
+        ],
+        k_nope_tma_op: KVTMATile[
+            Self.KVLUTType.dtype,
+            Self.config.qkv_swizzle_mode,
+            BN=kv_sub_tile_rows(Self.config.BN, Self.page_size),
+            BK=Self.nope_depth,
+        ],
+        k_rope_tma_op: KVTMATile[
+            Self.KRopeType.dtype,
+            Self.config.rope_gmem_swizzle_mode,
+            BN=kv_sub_tile_rows(Self.config.BN, Self.KRopeType.page_size),
+            BK=Self.rope_depth,
+        ],
+        v_tma_op: KVTMATile[
+            Self.KVLUTType.dtype,
+            Self.config.qkv_swizzle_mode,
+            BN=kv_sub_tile_rows(Self.config.BN, Self.page_size),
+            BK=Self.nope_depth,
+        ],
+        q_scale_tma_op: TMATensorTile[
+            config.scale_dtype,
+            2,
+            Index(1, Self.config.q_tile_rows()),
+            Index(1, Self.config.q_tile_rows()),
+        ],
+        k_scale_tma_op: TMATensorTile[
+            config.scale_dtype,
+            2,
+            Index(1, kv_sub_tile_rows(Self.config.BN, Self.page_size)),
+            Index(1, kv_sub_tile_rows(Self.config.BN, Self.page_size)),
+        ],
+        ragged_tma_store: RaggedTMA3DTile[
+            Self.output_dtype,
+            Self.config.output_swizzle_mode,
+            BM=Self.config.fa4_config.BM // Self.config.fa4_config.num_qo,
+            BN=Self.config.fa4_config.ov_depth,
+            middle_dim=Self.config.num_q_heads,
+            group=config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
+            # Concrete value: a GPU-kernel entry (and the device impl it calls)
+            # must be a fully-bound function. Matches the created store.
+            tma_blocks_per_op=o_store_tma_blocks_per_op[
+                Self.output_dtype,
+                Self.config.output_swizzle_mode,
+                Self.config.fa4_config.ov_depth,
+                config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
+                depth_splits=2,
+            ](),
+        ],
+        kv_lut: Self.KVLUTType,
+        k_rope_lut: Self.KRopeType,
+        scale: Float32,
+        pack: Pack[
+            Self.MaskType,
+            Self.SchedulerType,
+            Self.ValidLengthType,
+            Self.SinkType,
+            Self.KVRowOffsetsType,
+            Self.MaxSeqLenType,
+            Self.PartitionType,
+        ],
+        seq_info: SeqInfo,
+    ):
         comptime assert (
             Self.config.supported()
         ), Self.config.fa4_config.description()
@@ -222,10 +462,19 @@ __extension SM100MLA:
         comptime assert not Self.SchedulerType.may_advance
 
         mask = pack.mask
-        scheduler = pack.scheduler
-        valid_length = pack.valid_length
         max_seq_len = pack.max_seq_len
-        partition = pack.partition
+
+        # Matches the thin entrypoint's switch predicate; see the generic
+        # kernel for the rationale. A 1Q instantiation has
+        # `can_switch_to_1q() == False`, so it stays False.
+        comptime _cfg_1q = Self.config.switch_1q_config()
+        comptime _check_mask = (
+            Self.MaskType.nonfull_sets[_cfg_1q.BM, _cfg_1q.BN]()[0]
+            == TileMaskStatus.UNKNOWN_MASK
+        )
+        comptime output_nonempty = (
+            Self.config.can_switch_to_1q() and not _check_mask
+        )
 
         comptime SmemType = SM100AttentionSMem[Self.config.fa4_config]
         var attn_smem = SmemType()
@@ -290,12 +539,6 @@ __extension SM100MLA:
         if role == WarpRole.Softmax0 or role == WarpRole.Softmax1:
             warpgroup_reg_alloc[num_reg_softmax]()
 
-            var seq_info: SeqInfo = get_seq_info[
-                Self.BM,
-                Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-            ](batch_size, max_seq_len, valid_length, partition)
-
             if not seq_info.is_valid():
                 return
 
@@ -310,8 +553,10 @@ __extension SM100MLA:
                 NullPointer[Self.output_dtype],
                 False,
                 Self.MaxSeqLenType,
+                output_nonempty=output_nonempty,
             ](
                 attn_smem,
+                tmem_addr,
                 pos.score_row,
                 seq_info,
                 mask,
@@ -343,11 +588,6 @@ __extension SM100MLA:
         elif role == WarpRole.Correction:
             warpgroup_reg_dealloc[num_reg_correction]()
 
-            var seq_info: SeqInfo = get_seq_info[
-                Self.BM,
-                Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-            ](batch_size, max_seq_len, valid_length, partition)
             if not seq_info.is_valid():
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
@@ -358,6 +598,7 @@ __extension SM100MLA:
                 Self.page_size,
             ](
                 attn_smem,
+                tmem_addr,
                 seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
@@ -365,11 +606,6 @@ __extension SM100MLA:
             )
         elif role == WarpRole.Load:
             warpgroup_reg_dealloc[num_reg_other]()
-            var seq_info: SeqInfo = get_seq_info[
-                Self.BM,
-                Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-            ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
                 return
@@ -403,11 +639,6 @@ __extension SM100MLA:
 
         elif role == WarpRole.MMA:
             warpgroup_reg_dealloc[num_reg_other]()
-            var seq_info: SeqInfo = get_seq_info[
-                Self.BM,
-                Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-            ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
                 return
@@ -441,7 +672,7 @@ __extension SM100MLA:
         q_nope_tma_op: QTMATile[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
-            BM=Self.config.BM // 2,
+            BM=Self.config.q_tile_rows(),
             depth=Self.config.nope_depth,
             group=Self.config.group,
             decoding=False,
@@ -449,7 +680,7 @@ __extension SM100MLA:
         q_rope_tma_op: QTMATile[
             config.rope_gmem_dtype,
             Self.config.rope_gmem_swizzle_mode,
-            BM=Self.config.BM // 2,
+            BM=Self.config.q_tile_rows(),
             depth=Self.config.rope_depth,
             group=Self.config.group,
             decoding=False,
@@ -475,8 +706,8 @@ __extension SM100MLA:
         q_scale_tma_op: TMATensorTile[
             config.scale_dtype,
             2,
-            Index(1, Self.config.BM),
-            Index(1, Self.config.BM),
+            Index(1, Self.config.q_tile_rows()),
+            Index(1, Self.config.q_tile_rows()),
         ],
         k_scale_tma_op: TMATensorTile[
             config.scale_dtype,
@@ -496,9 +727,25 @@ __extension SM100MLA:
         """Load warp logic with per-token scale TMA loading.
 
         Structurally identical to Self.load() but adds q_scale and k_scale
-        TMA loading on K barriers. q_scale loaded once on K0, k_scale loaded
-        on every K barrier with staged buffer indexing.
+        TMA loading on K barriers. q_scale halves accompany their Q-half
+        TMAs (K0 barrier for Q0, Q1Sync for Q1; single issue in 1Q);
+        k_scale is loaded on every K barrier with staged buffer indexing.
         """
+        comptime num_qo = Self.config.num_qo()
+        # 1Q does not implement mid-range FULL_MASK tile skipping (the
+        # `check_mask` slow path that e.g. MaterializedMask requires):
+        # the load/mma/softmax warps would disagree on tile counts.
+        # Dispatch must route such masks to 2Q. Range-bounded
+        # early-skipping (e.g. sliding-window via `start_column` /
+        # `last_masked_set_end`) is supported.
+        comptime if num_qo == 1:
+            comptime assert not (
+                mask.nonfull_sets[Self.BM, Self.BN]()[0]
+                == TileMaskStatus.UNKNOWN_MASK
+            ), (
+                "1Q MLA prefill does not support masks requiring runtime"
+                " FULL_MASK checks"
+            )
         comptime KVPipeType = MLAKVLayouts[
             Self.KVLUTType.dtype,
             Self.KRopeType.dtype,
@@ -546,18 +793,24 @@ __extension SM100MLA:
         var k_rope_head_idx: UInt32 = seq_info.head_idx // UInt32(Self.group)
         var kv_head_idx: UInt32 = seq_info.head_idx
 
+        # Per-TMA-call element counts: one of two Q halves in 2Q, the
+        # single full-BM Q tile in 1Q — 128 rows in both modes.
         comptime q_nope_elements = (
-            Self.config.BM // 2
+            Self.config.q_tile_rows()
         ) * Self.config.nope_depth
         comptime q_rope_elements = (
-            Self.config.BM // 2
+            Self.config.q_tile_rows()
         ) * Self.config.rope_depth
         comptime q_nope_bytes = size_of[Self.qkv_dtype]() * q_nope_elements
         comptime q_rope_bytes = size_of[
             config.rope_gmem_dtype
         ]() * q_rope_elements
         comptime q_bytes = q_nope_bytes + q_rope_bytes
-        comptime q_scale_bytes = Self.config.BM * size_of[config.scale_dtype]()
+        # Per-TMA-issue q_scale bytes (one Q half in 2Q, the full BM=128
+        # tile in 1Q — same value either way).
+        comptime q_scale_bytes = (Self.config.q_tile_rows()) * size_of[
+            config.scale_dtype
+        ]()
         comptime k_scale_bytes = Self.config.BN * size_of[config.scale_dtype]()
 
         # Sub-tile paging: when page_size < BN, each BN-row load is split
@@ -689,7 +942,7 @@ __extension SM100MLA:
             rope_pages: type_of(rope_paged_rows),
             kv_row_base: UInt32,
             smem_base_ptr: SharedMemPointer[Scalar[Self.KRopeType.dtype]],
-            mbar: type_of(mbars.q1_wait_mbar()),
+            mbar: SharedMemPointer[SharedMemBarrier],
             rope_nvp: UInt32 = UInt32(num_rope_pages),
         ):
             """K_rope sub-tile TMA. `partial=True` early-returns at
@@ -744,7 +997,7 @@ __extension SM100MLA:
             k_pages: type_of(paged_rows),
             kv_row_base: UInt32,
             k_scale_smem_ptr: SharedMemPointer[Scalar[config.scale_dtype]],
-            mbar: type_of(mbars.q1_wait_mbar()),
+            mbar: SharedMemPointer[SharedMemBarrier],
             k_nvp: UInt32 = UInt32(num_kv_pages),
         ):
             """k_scale sub-tile TMA. `partial=True` early-returns at
@@ -792,7 +1045,7 @@ __extension SM100MLA:
             partial: Bool,
         ](
             paged: type_of(paged_rows),
-            mbar: type_of(mbars.q1_wait_mbar()),
+            mbar: SharedMemPointer[SharedMemBarrier],
             smem_ptr: SharedMemPointer[Scalar[Self.KVLUTType.dtype]],
             v_nvp: UInt32 = UInt32(num_kv_pages),
         ):
@@ -965,119 +1218,304 @@ __extension SM100MLA:
                     k_nvp,
                 )
 
-            # ---- Peeled: K0 + Q0 + q_scale + k_scale[0] ----
-            var k0_mbar = kv_pipeline.producer_mbar()
-            var k_nvp_0 = _k_num_valid_pages(kv_row)
-            var rope_nvp_0 = _rope_num_valid_pages(kv_row)
-            _produce_k_fused[partial=needs_partial, with_q=True](
-                paged_rows,
-                rope_paged_rows,
-                kv_row,
-                k0_mbar,
-                k_nvp_0,
-                rope_nvp_0,
-            )
-            rope_idx = (rope_idx + 1) % num_rope_bufs
-            k_scale_idx = (k_scale_idx + 1) % num_k_scale_bufs
-            kv_pipeline.state.step()
+            comptime if num_qo == 1:
+                # ---- 1Q fused-KV producer ----
+                # MMA consumes K_e, K_o, V_e, V_o per logical iter;
+                # produce in matching slot order (mirrors the generic
+                # MLA / load_warp.mojo 1Q fused producers). No FULL_MASK
+                # skipping here (see the `check_mask` assert at the top
+                # of `load_per_token_scale`). Q + q_scale ride the
+                # peeled K_e[0] barrier (with_q=True); there is no Q1.
 
-            # ---- Q1 (separate barrier) ----
-            q_gmem_row += UInt32(Self.config.BM // 2)
-            var q1_mbar = mbars.q1_wait_mbar()
-            expect_bytes_pred(q1_mbar, Int32(q_bytes), e)
-            # Q1 nope/rope — elect-predicated in-PTX via `_elect`.
-            q_nope_tma_op.async_copy_elect(
-                QNopeType(
-                    (
-                        q_smem.bitcast[Scalar[DType.uint8]]()
-                        + q_nope_bytes
-                        + q_rope_bytes
-                    ).bitcast[Scalar[Self.qkv_dtype]](),
-                    tt_row_major[q_nope_elems](),
-                ),
-                q1_mbar[0],
-                q_coord[
-                    depth=Self.config.nope_depth,
-                    decoding=False,
-                ](q_gmem_row, q_head_idx),
-                e,
-            )
-            q_rope_tma_op.async_copy_elect(
-                QRopeType(
-                    (
-                        q_smem.bitcast[Scalar[DType.uint8]]()
-                        + q_nope_bytes
-                        + q_rope_bytes
-                        + q_nope_bytes
-                    ).bitcast[Scalar[config.rope_gmem_dtype]](),
-                    tt_row_major[q_rope_elems](),
-                ),
-                q1_mbar[0],
-                q_coord[
-                    depth=Self.config.rope_depth,
-                    decoding=False,
-                ](q_gmem_row, q_head_idx),
-                e,
-            )
+                # Per-tile emit helpers bundling the KV producer-
+                # pipeline lifecycle (acquire / mbar / produce /
+                # rope+k_scale buffer cycle / step). The first peeled K
+                # slot passes `acquire=False` (initial producer
+                # phase = 1).
+                @parameter
+                @always_inline
+                def _emit_k_1q[
+                    partial: Bool,
+                    with_q: Bool = False,
+                    acquire: Bool = True,
+                ](
+                    paged: type_of(paged_rows),
+                    rope_paged: type_of(rope_paged_rows),
+                    kv_row_local: UInt32,
+                    k_nvp: UInt32,
+                    rope_nvp: UInt32,
+                ):
+                    comptime if acquire:
+                        kv_pipeline.producer_acquire()
+                    var mbar = kv_pipeline.producer_mbar()
+                    _produce_k_fused[partial=partial, with_q=with_q](
+                        paged,
+                        rope_paged,
+                        kv_row_local,
+                        mbar,
+                        k_nvp,
+                        rope_nvp,
+                    )
+                    rope_idx = (rope_idx + 1) % num_rope_bufs
+                    k_scale_idx = (k_scale_idx + 1) % num_k_scale_bufs
+                    kv_pipeline.state.step()
 
-            # ---- V0 (reuses paged_rows from K0) ----
-            kv_pipeline.producer_acquire()
-            var v0_mbar = kv_pipeline.producer_mbar()
-            _produce_v[partial=needs_partial](
-                paged_rows, v0_mbar, _fused_kv_buffer_ptr(), k_nvp_0
-            )
-            kv_pipeline.state.step()
+                @parameter
+                @always_inline
+                def _emit_v_1q[
+                    partial: Bool
+                ](paged: type_of(paged_rows), v_nvp: UInt32):
+                    kv_pipeline.producer_acquire()
+                    var mbar = kv_pipeline.producer_mbar()
+                    _produce_v[partial=partial](
+                        paged, mbar, _fused_kv_buffer_ptr(), v_nvp
+                    )
+                    kv_pipeline.state.step()
 
-            # ---- KV producer loop ----
-            # Main body always issues full tiles (partial=False). When
-            # needs_partial, peel off the last iteration so its
-            # populate/TMAs can be runtime-bounded.
-            var main_iters = iter_count
-            comptime if needs_partial:
-                if main_iters > 0:
-                    main_iters -= 1
-            while main_iters != 0:
-                main_iters -= 1
-                kv_row += UInt32(Self.config.BN)
+                # T is the total K-tile count (iter_count was peeled by
+                # 1 at the top of `load_per_token_scale`).
+                var T: UInt32 = iter_count + UInt32(1)
+                var k_nvp_0 = _k_num_valid_pages(kv_row)
+                var rope_nvp_0 = _rope_num_valid_pages(kv_row)
 
-                comptime if check_mask:
-                    if (
-                        Self.mask_status(
-                            mask, seq_info.prompt_idx, score_row, kv_row
-                        )
-                        == TileMaskStatus.FULL_MASK
-                    ):
-                        continue
-                paged_rows = kv_lut.populate[Self.config.BN, base_alignment](
-                    seq_info.prompt_idx, kv_row
-                )
-                rope_paged_rows = k_rope_lut.populate[
+                # T == 1 fast path: produce K_e[0] (with Q + q_scale) +
+                # V_e[0] only.
+                if T == UInt32(1):
+                    _emit_k_1q[
+                        partial=needs_partial, with_q=True, acquire=False
+                    ](paged_rows, rope_paged_rows, kv_row, k_nvp_0, rope_nvp_0)
+                    _emit_v_1q[partial=needs_partial](paged_rows, k_nvp_0)
+                    return
+
+                # ---- Peel (T >= 2): K_e[0], K_o[0], V_e[0], V_o[0] ----
+                var kv_row_o = kv_row + UInt32(Self.config.BN)
+                var k_nvp_o: UInt32 = UInt32(num_kv_pages)
+                var rope_nvp_o: UInt32 = UInt32(num_rope_pages)
+                comptime if needs_partial:
+                    k_nvp_o = _k_num_valid_pages(kv_row_o)
+                    rope_nvp_o = _rope_num_valid_pages(kv_row_o)
+                var paged_rows_o = kv_lut.populate[
                     Self.config.BN, base_alignment
-                ](seq_info.prompt_idx, kv_row)
+                ](seq_info.prompt_idx, kv_row_o)
+                var rope_paged_rows_o = k_rope_lut.populate[
+                    Self.config.BN, base_alignment
+                ](seq_info.prompt_idx, kv_row_o)
 
-                # Produce K_nope_n + K_rope_n + k_scale (full sub-tiles)
-                kv_pipeline.producer_acquire()
-                var kn_mbar = kv_pipeline.producer_mbar()
-                _produce_k_fused[partial=False](
-                    paged_rows, rope_paged_rows, kv_row, kn_mbar
+                # K_e[0] with Q + q_scale (initial slot; no acquire).
+                _emit_k_1q[partial=needs_partial, with_q=True, acquire=False](
+                    paged_rows, rope_paged_rows, kv_row, k_nvp_0, rope_nvp_0
+                )
+                # K_o[0]
+                _emit_k_1q[partial=needs_partial](
+                    paged_rows_o,
+                    rope_paged_rows_o,
+                    kv_row_o,
+                    k_nvp_o,
+                    rope_nvp_o,
+                )
+                # V_e[0] / V_o[0] (reuse rows)
+                _emit_v_1q[partial=needs_partial](paged_rows, k_nvp_0)
+                _emit_v_1q[partial=needs_partial](paged_rows_o, k_nvp_o)
+
+                # ---- Loop bookkeeping (see generic MLA 1Q producer) ----
+                var main_iters_1q: UInt32 = (T - UInt32(2)) >> UInt32(1)
+                var has_tail: Bool = (T & UInt32(1)) == UInt32(1)
+                var has_peeled_last_full: Bool = False
+                comptime if needs_partial:
+                    if not has_tail and main_iters_1q > UInt32(0):
+                        main_iters_1q -= UInt32(1)
+                        has_peeled_last_full = True
+
+                # ---- Main loop (full tiles) ----
+                while main_iters_1q != UInt32(0):
+                    main_iters_1q -= UInt32(1)
+                    kv_row += UInt32(2 * Self.config.BN)
+                    kv_row_o = kv_row + UInt32(Self.config.BN)
+
+                    # K_e[n] (full)
+                    paged_rows = kv_lut.populate[
+                        Self.config.BN, base_alignment
+                    ](seq_info.prompt_idx, kv_row)
+                    rope_paged_rows = k_rope_lut.populate[
+                        Self.config.BN, base_alignment
+                    ](seq_info.prompt_idx, kv_row)
+                    _emit_k_1q[partial=False](
+                        paged_rows,
+                        rope_paged_rows,
+                        kv_row,
+                        UInt32(num_kv_pages),
+                        UInt32(num_rope_pages),
+                    )
+                    # K_o[n] (full)
+                    paged_rows_o = kv_lut.populate[
+                        Self.config.BN, base_alignment
+                    ](seq_info.prompt_idx, kv_row_o)
+                    rope_paged_rows_o = k_rope_lut.populate[
+                        Self.config.BN, base_alignment
+                    ](seq_info.prompt_idx, kv_row_o)
+                    _emit_k_1q[partial=False](
+                        paged_rows_o,
+                        rope_paged_rows_o,
+                        kv_row_o,
+                        UInt32(num_kv_pages),
+                        UInt32(num_rope_pages),
+                    )
+                    # V_e[n] / V_o[n] (full, reuse rows)
+                    _emit_v_1q[partial=False](paged_rows, UInt32(num_kv_pages))
+                    _emit_v_1q[partial=False](
+                        paged_rows_o, UInt32(num_kv_pages)
+                    )
+
+                # ---- Tail K_e + V_e (T odd, any needs_partial) ----
+                if has_tail:
+                    kv_row += UInt32(2 * Self.config.BN)
+                    var k_nvp_t: UInt32 = UInt32(num_kv_pages)
+                    var rope_nvp_t: UInt32 = UInt32(num_rope_pages)
+                    comptime if needs_partial:
+                        k_nvp_t = _k_num_valid_pages(kv_row)
+                        rope_nvp_t = _rope_num_valid_pages(kv_row)
+                    paged_rows = kv_lut.populate[
+                        Self.config.BN, base_alignment
+                    ](seq_info.prompt_idx, kv_row)
+                    rope_paged_rows = k_rope_lut.populate[
+                        Self.config.BN, base_alignment
+                    ](seq_info.prompt_idx, kv_row)
+                    _emit_k_1q[partial=needs_partial](
+                        paged_rows, rope_paged_rows, kv_row, k_nvp_t, rope_nvp_t
+                    )
+                    _emit_v_1q[partial=needs_partial](paged_rows, k_nvp_t)
+
+                # ---- Peeled-last full pair (needs_partial, T even) ----
+                comptime if needs_partial:
+                    if has_peeled_last_full:
+                        kv_row += UInt32(2 * Self.config.BN)
+                        kv_row_o = kv_row + UInt32(Self.config.BN)
+                        var k_nvp_pe = _k_num_valid_pages(kv_row)
+                        var rope_nvp_pe = _rope_num_valid_pages(kv_row)
+                        var k_nvp_po = _k_num_valid_pages(kv_row_o)
+                        var rope_nvp_po = _rope_num_valid_pages(kv_row_o)
+                        # K_e (partial)
+                        paged_rows = kv_lut.populate[
+                            Self.config.BN, base_alignment
+                        ](seq_info.prompt_idx, kv_row)
+                        rope_paged_rows = k_rope_lut.populate[
+                            Self.config.BN, base_alignment
+                        ](seq_info.prompt_idx, kv_row)
+                        _emit_k_1q[partial=True](
+                            paged_rows,
+                            rope_paged_rows,
+                            kv_row,
+                            k_nvp_pe,
+                            rope_nvp_pe,
+                        )
+                        # K_o (partial)
+                        paged_rows_o = kv_lut.populate[
+                            Self.config.BN, base_alignment
+                        ](seq_info.prompt_idx, kv_row_o)
+                        rope_paged_rows_o = k_rope_lut.populate[
+                            Self.config.BN, base_alignment
+                        ](seq_info.prompt_idx, kv_row_o)
+                        _emit_k_1q[partial=True](
+                            paged_rows_o,
+                            rope_paged_rows_o,
+                            kv_row_o,
+                            k_nvp_po,
+                            rope_nvp_po,
+                        )
+                        # V_e / V_o (partial, reuse rows)
+                        _emit_v_1q[partial=True](paged_rows, k_nvp_pe)
+                        _emit_v_1q[partial=True](paged_rows_o, k_nvp_po)
+            else:
+                # ---- 2Q fused-KV producer (original) ----
+
+                # ---- Peeled: K0 + Q0 + q_scale + k_scale[0] ----
+                var k0_mbar = kv_pipeline.producer_mbar()
+                var k_nvp_0 = _k_num_valid_pages(kv_row)
+                var rope_nvp_0 = _rope_num_valid_pages(kv_row)
+                _produce_k_fused[partial=needs_partial, with_q=True](
+                    paged_rows,
+                    rope_paged_rows,
+                    kv_row,
+                    k0_mbar,
+                    k_nvp_0,
+                    rope_nvp_0,
                 )
                 rope_idx = (rope_idx + 1) % num_rope_bufs
                 k_scale_idx = (k_scale_idx + 1) % num_k_scale_bufs
                 kv_pipeline.state.step()
 
-                # Produce Vn (full)
+                # ---- Q1 + q_scale half 1 (separate barrier) ----
+                q_gmem_row += UInt32(Self.config.BM // 2)
+                var q1_mbar = mbars.q1_wait_mbar()
+                expect_bytes_pred(q1_mbar, Int32(q_bytes + q_scale_bytes), e)
+                # Q1 nope/rope — elect-predicated in-PTX via `_elect`.
+                q_nope_tma_op.async_copy_elect(
+                    QNopeType(
+                        (
+                            q_smem.bitcast[Scalar[DType.uint8]]()
+                            + q_nope_bytes
+                            + q_rope_bytes
+                        ).bitcast[Scalar[Self.qkv_dtype]](),
+                        tt_row_major[q_nope_elems](),
+                    ),
+                    q1_mbar[0],
+                    q_coord[
+                        depth=Self.config.nope_depth,
+                        decoding=False,
+                    ](q_gmem_row, q_head_idx),
+                    e,
+                )
+                q_rope_tma_op.async_copy_elect(
+                    QRopeType(
+                        (
+                            q_smem.bitcast[Scalar[DType.uint8]]()
+                            + q_nope_bytes
+                            + q_rope_bytes
+                            + q_nope_bytes
+                        ).bitcast[Scalar[config.rope_gmem_dtype]](),
+                        tt_row_major[q_rope_elems](),
+                    ),
+                    q1_mbar[0],
+                    q_coord[
+                        depth=Self.config.rope_depth,
+                        decoding=False,
+                    ](q_gmem_row, q_head_idx),
+                    e,
+                )
+                # Q1's q_scale half: rows [BM//2, BM) at smem offset
+                # BM//2 (q_gmem_row was advanced above). Visibility for
+                # softmax WG1 follows the q1_mbar -> MMA -> S1-commit
+                # chain, same as Q1 itself.
+                q_scale_tma_op.async_copy_elect(
+                    QScaleSmemType(
+                        q_scale_smem + (Self.config.BM // 2),
+                        tt_row_major[q_scale_elems_tma](),
+                    ),
+                    q1_mbar[0],
+                    (Int(q_gmem_row), 0),
+                    e,
+                )
+
+                # ---- V0 (reuses paged_rows from K0) ----
                 kv_pipeline.producer_acquire()
-                var vn_mbar = kv_pipeline.producer_mbar()
-                _produce_v[partial=False](
-                    paged_rows, vn_mbar, _fused_kv_buffer_ptr()
+                var v0_mbar = kv_pipeline.producer_mbar()
+                _produce_v[partial=needs_partial](
+                    paged_rows, v0_mbar, _fused_kv_buffer_ptr(), k_nvp_0
                 )
                 kv_pipeline.state.step()
 
-            # ---- Peeled last iteration (partial-page bound) ----
-            comptime if needs_partial:
-                if iter_count > 0:
+                # ---- KV producer loop ----
+                # Main body always issues full tiles (partial=False). When
+                # needs_partial, peel off the last iteration so its
+                # populate/TMAs can be runtime-bounded.
+                var main_iters = iter_count
+                comptime if needs_partial:
+                    if main_iters > 0:
+                        main_iters -= 1
+                while main_iters != 0:
+                    main_iters -= 1
                     kv_row += UInt32(Self.config.BN)
-                    var _skip_last = False
+
                     comptime if check_mask:
                         if (
                             Self.mask_status(
@@ -1085,41 +1523,82 @@ __extension SM100MLA:
                             )
                             == TileMaskStatus.FULL_MASK
                         ):
-                            _skip_last = True
-                    if not _skip_last:
-                        # Re-populate BOTH LUTs at the new kv_row.
-                        paged_rows = kv_lut.populate[
-                            Self.config.BN, base_alignment
-                        ](seq_info.prompt_idx, kv_row)
-                        rope_paged_rows = k_rope_lut.populate[
-                            Self.config.BN, base_alignment
-                        ](seq_info.prompt_idx, kv_row)
-                        var k_nvp_last = _k_num_valid_pages(kv_row)
-                        var rope_nvp_last = _rope_num_valid_pages(kv_row)
-                        # Kn (partial) + K_rope_n (partial) + k_scale_n
-                        kv_pipeline.producer_acquire()
-                        var kn_mbar_last = kv_pipeline.producer_mbar()
-                        _produce_k_fused[partial=needs_partial](
-                            paged_rows,
-                            rope_paged_rows,
-                            kv_row,
-                            kn_mbar_last,
-                            k_nvp_last,
-                            rope_nvp_last,
-                        )
-                        rope_idx = (rope_idx + 1) % num_rope_bufs
-                        k_scale_idx = (k_scale_idx + 1) % num_k_scale_bufs
-                        kv_pipeline.state.step()
-                        # Vn (partial)
-                        kv_pipeline.producer_acquire()
-                        var vn_mbar_last = kv_pipeline.producer_mbar()
-                        _produce_v[partial=needs_partial](
-                            paged_rows,
-                            vn_mbar_last,
-                            _fused_kv_buffer_ptr(),
-                            k_nvp_last,
-                        )
-                        kv_pipeline.state.step()
+                            continue
+                    paged_rows = kv_lut.populate[
+                        Self.config.BN, base_alignment
+                    ](seq_info.prompt_idx, kv_row)
+                    rope_paged_rows = k_rope_lut.populate[
+                        Self.config.BN, base_alignment
+                    ](seq_info.prompt_idx, kv_row)
+
+                    # Produce K_nope_n + K_rope_n + k_scale (full sub-tiles)
+                    kv_pipeline.producer_acquire()
+                    var kn_mbar = kv_pipeline.producer_mbar()
+                    _produce_k_fused[partial=False](
+                        paged_rows, rope_paged_rows, kv_row, kn_mbar
+                    )
+                    rope_idx = (rope_idx + 1) % num_rope_bufs
+                    k_scale_idx = (k_scale_idx + 1) % num_k_scale_bufs
+                    kv_pipeline.state.step()
+
+                    # Produce Vn (full)
+                    kv_pipeline.producer_acquire()
+                    var vn_mbar = kv_pipeline.producer_mbar()
+                    _produce_v[partial=False](
+                        paged_rows, vn_mbar, _fused_kv_buffer_ptr()
+                    )
+                    kv_pipeline.state.step()
+
+                # ---- Peeled last iteration (partial-page bound) ----
+                comptime if needs_partial:
+                    if iter_count > 0:
+                        kv_row += UInt32(Self.config.BN)
+                        var _skip_last = False
+                        comptime if check_mask:
+                            if (
+                                Self.mask_status(
+                                    mask,
+                                    seq_info.prompt_idx,
+                                    score_row,
+                                    kv_row,
+                                )
+                                == TileMaskStatus.FULL_MASK
+                            ):
+                                _skip_last = True
+                        if not _skip_last:
+                            # Re-populate BOTH LUTs at the new kv_row.
+                            paged_rows = kv_lut.populate[
+                                Self.config.BN, base_alignment
+                            ](seq_info.prompt_idx, kv_row)
+                            rope_paged_rows = k_rope_lut.populate[
+                                Self.config.BN, base_alignment
+                            ](seq_info.prompt_idx, kv_row)
+                            var k_nvp_last = _k_num_valid_pages(kv_row)
+                            var rope_nvp_last = _rope_num_valid_pages(kv_row)
+                            # Kn (partial) + K_rope_n (partial) + k_scale_n
+                            kv_pipeline.producer_acquire()
+                            var kn_mbar_last = kv_pipeline.producer_mbar()
+                            _produce_k_fused[partial=needs_partial](
+                                paged_rows,
+                                rope_paged_rows,
+                                kv_row,
+                                kn_mbar_last,
+                                k_nvp_last,
+                                rope_nvp_last,
+                            )
+                            rope_idx = (rope_idx + 1) % num_rope_bufs
+                            k_scale_idx = (k_scale_idx + 1) % num_k_scale_bufs
+                            kv_pipeline.state.step()
+                            # Vn (partial)
+                            kv_pipeline.producer_acquire()
+                            var vn_mbar_last = kv_pipeline.producer_mbar()
+                            _produce_v[partial=needs_partial](
+                                paged_rows,
+                                vn_mbar_last,
+                                _fused_kv_buffer_ptr(),
+                                k_nvp_last,
+                            )
+                            kv_pipeline.state.step()
 
         else:
             # ---- Split KV mode with per-token scale ----
@@ -1297,44 +1776,59 @@ __extension SM100MLA:
             k_scale_idx = (k_scale_idx + 1) % num_k_scale_bufs
             k_pipeline.state.step()
 
-            # ---- Q1 (separate barrier) ----
-            q_gmem_row += UInt32(Self.config.BM // 2)
-            var q1_mbar = mbars.q1_wait_mbar()
-            expect_bytes_pred(q1_mbar, Int32(q_bytes), e)
-            # Q1 nope/rope — elect-predicated in-PTX via `_elect`.
-            q_nope_tma_op.async_copy_elect(
-                QNopeType(
-                    (
-                        q_smem.bitcast[Scalar[DType.uint8]]()
-                        + q_nope_bytes
-                        + q_rope_bytes
-                    ).bitcast[Scalar[Self.qkv_dtype]](),
-                    tt_row_major[q_nope_elems](),
-                ),
-                q1_mbar[0],
-                q_coord[
-                    depth=Self.config.nope_depth,
-                    decoding=False,
-                ](q_gmem_row, q_head_idx),
-                e,
-            )
-            q_rope_tma_op.async_copy_elect(
-                QRopeType(
-                    (
-                        q_smem.bitcast[Scalar[DType.uint8]]()
-                        + q_nope_bytes
-                        + q_rope_bytes
-                        + q_nope_bytes
-                    ).bitcast[Scalar[config.rope_gmem_dtype]](),
-                    tt_row_major[q_rope_elems](),
-                ),
-                q1_mbar[0],
-                q_coord[
-                    depth=Self.config.rope_depth,
-                    decoding=False,
-                ](q_gmem_row, q_head_idx),
-                e,
-            )
+            # ---- Q1 + q_scale half 1 (separate barrier) ----
+            # Skipped in 1Q: the peeled K0 issue above (with_q=True)
+            # already loaded the full BM-row Q tile + q_scale on the K
+            # mbar.
+            comptime if num_qo == 2:
+                q_gmem_row += UInt32(Self.config.BM // 2)
+                var q1_mbar = mbars.q1_wait_mbar()
+                expect_bytes_pred(q1_mbar, Int32(q_bytes + q_scale_bytes), e)
+                # Q1 nope/rope — elect-predicated in-PTX via `_elect`.
+                q_nope_tma_op.async_copy_elect(
+                    QNopeType(
+                        (
+                            q_smem.bitcast[Scalar[DType.uint8]]()
+                            + q_nope_bytes
+                            + q_rope_bytes
+                        ).bitcast[Scalar[Self.qkv_dtype]](),
+                        tt_row_major[q_nope_elems](),
+                    ),
+                    q1_mbar[0],
+                    q_coord[
+                        depth=Self.config.nope_depth,
+                        decoding=False,
+                    ](q_gmem_row, q_head_idx),
+                    e,
+                )
+                q_rope_tma_op.async_copy_elect(
+                    QRopeType(
+                        (
+                            q_smem.bitcast[Scalar[DType.uint8]]()
+                            + q_nope_bytes
+                            + q_rope_bytes
+                            + q_nope_bytes
+                        ).bitcast[Scalar[config.rope_gmem_dtype]](),
+                        tt_row_major[q_rope_elems](),
+                    ),
+                    q1_mbar[0],
+                    q_coord[
+                        depth=Self.config.rope_depth,
+                        decoding=False,
+                    ](q_gmem_row, q_head_idx),
+                    e,
+                )
+                # Q1's q_scale half: rows [BM//2, BM) at smem offset
+                # BM//2 (q_gmem_row was advanced above).
+                q_scale_tma_op.async_copy_elect(
+                    QScaleSmemType(
+                        q_scale_smem + (Self.config.BM // 2),
+                        tt_row_major[q_scale_elems_tma](),
+                    ),
+                    q1_mbar[0],
+                    (Int(q_gmem_row), 0),
+                    e,
+                )
 
             # ---- V0 (reuses paged_rows from K0) ----
             var mbarv0 = pipeline_v.get_tile[qk_stage=0]()
@@ -1516,20 +2010,31 @@ def mla_sm100_prefill_per_token_scale[
 
     var num_rows_q = q_num_matrix_view_rows(q_nope)
 
+    # Batched O store: half-depth box (depth_splits=2, shared with the 1Q
+    # combine) for SWIZZLE_NONE group==1; 0 (per-block) otherwise.
+    comptime store_blocks_per_op = o_store_tma_blocks_per_op[
+        output_dtype,
+        fa4_config.output_swizzle_mode,
+        fa4_config.fa4_config.ov_depth,
+        1,
+        depth_splits=2,
+    ]()
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_dtype,
         fa4_config.output_swizzle_mode,
         BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_qo,
         BN=fa4_config.fa4_config.ov_depth,
+        middle_dim=fa4_config.num_q_heads,
+        tma_blocks_per_op=store_blocks_per_op,
     ]
 
     var ragged_tma_store = RaggedStoreType.create(
-        ctx, output.ptr, rows=num_rows_q, middle_dim=fa4_config.num_q_heads
+        ctx, output.ptr, rows=num_rows_q
     )
 
     q_nope_tma_op = q_tma[
         fa4_config.qkv_swizzle_mode,
-        BM=fa4_config.BM // 2,
+        BM=fa4_config.q_tile_rows(),
         depth=fa4_config.nope_depth,
         q_num_heads=fa4_config.num_q_heads,
         group=fa4_config.group,
@@ -1542,7 +2047,7 @@ def mla_sm100_prefill_per_token_scale[
 
     q_rope_tma_op = q_tma[
         fa4_config.rope_gmem_swizzle_mode,
-        BM=fa4_config.BM // 2,
+        BM=fa4_config.q_tile_rows(),
         depth=fa4_config.rope_depth,
         q_num_heads=fa4_config.num_q_heads,
         group=fa4_config.group,
@@ -1553,7 +2058,8 @@ def mla_sm100_prefill_per_token_scale[
         num_rows_q,
     )
 
-    q_scale_tma_op = q_scale_tma[BM=fa4_config.BM](ctx, q_scale)
+    # Per-Q-tile box (128 in both 1Q/2Q modes); 2Q issues two TMAs.
+    q_scale_tma_op = q_scale_tma[BM=fa4_config.q_tile_rows()](ctx, q_scale)
 
     k_nope_tma_op = k_nope.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
@@ -1578,11 +2084,6 @@ def mla_sm100_prefill_per_token_scale[
         depth=fa4_config.nope_depth,
     ](ctx)
 
-    comptime SchedulerType = TransientScheduler[
-        UInt32(fa4_config.BM),
-        UInt32(fa4_config.num_q_heads),
-        flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
-    ]
     comptime ValidLengthType = NonNullPointer[DType.uint32]
     comptime SinkType = NullPointer[output_dtype]
     comptime KVRowOffsetsType = NullPointer[DType.uint32]
@@ -1591,71 +2092,110 @@ def mla_sm100_prefill_per_token_scale[
         rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr)
     }
 
-    comptime SM100MLAType = SM100MLA[
-        KType,
-        KRopeType,
-        output_dtype,
-        MaskType,
-        SchedulerType,
-        fa4_config,
-        ValidLengthType,
-        SinkType,
-        KVRowOffsetsType,
-        MaxPromptLenType,
-        PartitionType,
-        _ndbuffer_mha_operand,
-    ]
+    # Launch the kernel built from `cfg` (the 2Q `fa4_config` or its 1Q
+    # variant). All TMA-op types fold to identical values for both
+    # configs (Q nope/rope TMAs, q_scale box, and ragged store use
+    # `BM // num_qo` = 128 in both modes; K/V/rope/k_scale TMA shapes
+    # are BM-independent), so they are passed through unchanged.
+    @parameter
+    @always_inline
+    def _launch[cfg: MLAConfig]() raises:
+        comptime assert cfg.supported(), cfg.fa4_config.description()
+        comptime SchedulerType = TransientScheduler[
+            UInt32(cfg.BM),
+            UInt32(cfg.num_q_heads),
+            flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
+        ]
 
-    comptime kernel = SM100MLAType.mla_prefill_kernel_per_token_scale
+        comptime SM100MLAType = SM100MLA[
+            KType,
+            KRopeType,
+            output_dtype,
+            MaskType,
+            SchedulerType,
+            cfg,
+            ValidLengthType,
+            SinkType,
+            KVRowOffsetsType,
+            MaxPromptLenType,
+            PartitionType,
+            _ndbuffer_mha_operand,
+        ]
 
-    comptime PackType = Pack[
-        MaskType,
-        SchedulerType,
-        ValidLengthType,
-        SinkType,
-        KVRowOffsetsType,
-        MaxPromptLenType,
-        PartitionType,
-    ]
+        comptime kernel = SM100MLAType.mla_prefill_kernel_per_token_scale
 
-    var pack: PackType = {
-        mask_functor,
-        SchedulerType(),
-        valid_len,
-        SinkType(),
-        KVRowOffsetsType(),
-        max_prompt_len,
-        PartitionType(),
-    }
+        comptime PackType = Pack[
+            MaskType,
+            SchedulerType,
+            ValidLengthType,
+            SinkType,
+            KVRowOffsetsType,
+            MaxPromptLenType,
+            PartitionType,
+        ]
 
-    var max_num_prompt_tiles: UInt32 = ceildiv(
-        max_prompt_len.as_uint32(), UInt32(fa4_config.BM)
+        var pack: PackType = {
+            mask_functor,
+            SchedulerType(),
+            valid_len,
+            SinkType(),
+            KVRowOffsetsType(),
+            max_prompt_len,
+            PartitionType(),
+        }
+
+        var max_num_prompt_tiles: UInt32 = ceildiv(
+            max_prompt_len.as_uint32(), UInt32(cfg.BM)
+        )
+        var num_blocks: UInt32 = (
+            max_num_prompt_tiles * PartitionType().num_partitions()
+        )
+
+        comptime num_threads = cfg.num_threads
+        # When the launched (2Q) kernel may dispatch to the 1Q body at
+        # runtime, it builds the 1Q `SM100AttentionSMem` over the same
+        # dynamic-smem region, so reserve the max of both footprints.
+        comptime smem_use = cfg.launch_smem_used()
+
+        ctx.enqueue_function[kernel](
+            q_nope_tma_op,
+            q_rope_tma_op,
+            k_nope_tma_op,
+            k_rope_tma_op,
+            v_tma_op,
+            q_scale_tma_op,
+            k_scale_tma_op,
+            ragged_tma_store,
+            k_nope,
+            k_rope,
+            scale,
+            UInt32(batch_size),
+            pack,
+            grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
+            block_dim=(num_threads, 1, 1),
+            shared_mem_bytes=smem_use,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(smem_use)
+            ),
+        )
+
+    # --- 1Q / 2Q dispatch (see the generic MLA dispatch for details) ---
+    comptime cfg_1q = fa4_config.with_num_qo(1)
+    comptime can_use_1q: Bool = (
+        cfg_1q.supported()
+        and cfg_1q.fa4_config.supported()
+        and mask_functor.nonfull_sets[cfg_1q.BM, cfg_1q.BN]()[0]
+        != TileMaskStatus.UNKNOWN_MASK
     )
-    var num_blocks: UInt32 = (
-        max_num_prompt_tiles * PartitionType().num_partitions()
-    )
-
-    comptime num_threads = fa4_config.num_threads
-    comptime smem_use = fa4_config.smem_used
-
-    ctx.enqueue_function[kernel](
-        q_nope_tma_op,
-        q_rope_tma_op,
-        k_nope_tma_op,
-        k_rope_tma_op,
-        v_tma_op,
-        q_scale_tma_op,
-        k_scale_tma_op,
-        ragged_tma_store,
-        k_nope,
-        k_rope,
-        scale,
-        UInt32(batch_size),
-        pack,
-        grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
-        block_dim=(num_threads, 1, 1),
-        shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
-    )
+    comptime if can_use_1q:
+        if fa4_config.prefer_1q(
+            max_prompt_len.as_uint32(),
+            UInt32(PartitionType().num_partitions()),
+            UInt32(batch_size),
+            ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+        ):
+            _launch[cfg_1q]()
+        else:
+            _launch[fa4_config]()
+    else:
+        _launch[fa4_config]()

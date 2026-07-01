@@ -27,7 +27,7 @@ struct HasBadField(Hashable):
     var field: NotHashable
 
 
-# CHECK: Could not derive Hashable for HasBadField - member field `field: NotHashable` does not implement Hashable
+# CHECK: constraint failed: Could not derive Hashable for HasBadField - member field `field: NotHashable` does not implement Hashable
 def main() raises:
     var a = HasBadField(NotHashable(1))
     _ = hash(a)

@@ -160,6 +160,11 @@ class EchoTokenGenerator(
         # Track the echo index for each request (0-based, counts how many tokens we've echoed)
         self._echo_indices: dict[RequestID, int] = {}
         self._kv_manager = DummyKVCache()
+        self._max_batch_size = 1
+
+    @property
+    def max_batch_size(self) -> int:
+        return self._max_batch_size
 
     @property
     def kv_manager(self) -> PagedKVCacheManager:
@@ -186,37 +191,34 @@ class EchoTokenGenerator(
             if request_id not in self._echo_indices:
                 self._echo_indices[request_id] = 0
 
-            for _ in range(inputs.num_steps):
-                echo_idx = self._echo_indices[request_id]
-                prompt_tokens = context.tokens.prompt
+            echo_idx = self._echo_indices[request_id]
+            prompt_tokens = context.tokens.prompt
 
-                # Check if we have more tokens to echo and haven't reached max length
-                if echo_idx >= len(prompt_tokens):
-                    responses[
-                        request_id
-                    ].final_status = GenerationStatus.END_OF_SEQUENCE
-                    if request_id in self._echo_indices:
-                        del self._echo_indices[request_id]
-                    break
-                elif len(context.tokens) >= context.max_length:
-                    responses[
-                        request_id
-                    ].final_status = GenerationStatus.MAXIMUM_LENGTH
-                    if request_id in self._echo_indices:
-                        del self._echo_indices[request_id]
-                    break
-                else:
-                    # Echo the next token in the original order
-                    next_token_id = int(prompt_tokens[echo_idx])
+            # Check if we have more tokens to echo and haven't reached max length
+            if echo_idx >= len(prompt_tokens):
+                responses[
+                    request_id
+                ].final_status = GenerationStatus.END_OF_SEQUENCE
+                if request_id in self._echo_indices:
+                    del self._echo_indices[request_id]
+            elif len(context.tokens) >= context.max_length:
+                responses[
+                    request_id
+                ].final_status = GenerationStatus.MAXIMUM_LENGTH
+                if request_id in self._echo_indices:
+                    del self._echo_indices[request_id]
+            else:
+                # Echo the next token in the original order
+                next_token_id = int(prompt_tokens[echo_idx])
 
-                    # Update the context with the new token
-                    context.update(next_token_id)
+                # Update the context with the new token
+                context.update(next_token_id)
 
-                    # Add to response
-                    responses[request_id].tokens.append(next_token_id)
+                # Add to response
+                responses[request_id].tokens.append(next_token_id)
 
-                    # Move to the next token
-                    self._echo_indices[request_id] += 1
+                # Move to the next token
+                self._echo_indices[request_id] += 1
 
         return responses
 

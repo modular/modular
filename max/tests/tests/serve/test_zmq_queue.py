@@ -27,8 +27,8 @@ from max.serve.pipelines.reset_prefix_cache import (
 )
 
 # Sourced through the module under test to avoid a direct pyzmq dep here.
-from max.serve.worker_interface import zmq_queue as _zmq_queue
-from max.serve.worker_interface.zmq_queue import (
+from max.serve.worker_interface import _zmq_queue
+from max.serve.worker_interface._zmq_queue import (
     _validate_zmq_address,
     generate_zmq_ipc_path,
 )

@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -16,19 +15,27 @@ modular_py_test(
             "test_reasoning.py",
         ],
     ),
+    ignore_extra_deps = [
+        # Imported via string at runtime
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+    ],
     imports = ["."],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max/_entrypoints",
         "//max/python/max/config",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/entrypoints",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/pipelines:logging_utils",
         "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
         "//max/python/max/pipelines/architectures/minimax_m2",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",

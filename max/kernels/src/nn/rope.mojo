@@ -151,10 +151,33 @@ def rope_ragged[
     comptime unroped_dim = head_size - rope_dim
     comptime has_nope = unroped_dim > 0
 
+    # Extract the position_ids raw pointer + row stride into primitive locals so
+    # they can be `@__copy_capture`'d into the device kernel closure. Capturing
+    # the `OptionalReg[TileTensor]` directly does not marshal its device pointer
+    # into the Metal kernel arg struct -- the closure then reads a null/stale
+    # pointer, so every token reads freqs row 0 and RoPE collapses to identity
+    # (producing incoherent FLUX latents -> noise). Mirrors the validated
+    # `rope_split_store` path. When position_ids is absent, capture a dummy
+    # pointer (never dereferenced; guarded by `has_position_ids`) reusing
+    # start_pos' (uint32) storage so the captured value has the same type in
+    # both branches.
+    var has_position_ids: Bool = Bool(position_ids)
+    comptime PtrType = type_of(position_ids.value().ptr.as_immutable())
+    var pos_ids_ptr: PtrType
+    var pos_ids_stride: Int
+    if has_position_ids:
+        pos_ids_ptr = rebind[PtrType](position_ids.value().ptr.as_immutable())
+        # Row stride from the layout, not `dim[1]()`: the kernel steps whole
+        # position_ids rows (`section_idx * pos_ids_stride`), so use the actual
+        # dim-0 stride rather than assuming a row-major-contiguous layout where
+        # it happens to equal `dim[1]`.
+        pos_ids_stride = Int(position_ids.value().layout.stride[0]().value())
+    else:
+        pos_ids_ptr = rebind[PtrType](start_pos.ptr.as_immutable())
+        pos_ids_stride = 0
+
     @always_inline
-    @parameter
-    @__copy_capture(x, input_row_offsets, start_pos, freqs_cis)
-    def rope_fn[width: Int, alignment: Int = 1](idx_arg: Coord):
+    def rope_fn[width: Int, alignment: Int = 1](idx_arg: Coord) {var}:
         comptime assert idx_arg.rank == 3, "Invalid rank passed to rope kernel"
         comptime assert freqs_cis.flat_rank >= 2
 
@@ -183,9 +206,7 @@ def rope_ragged[
             var post_seq_idx = start_pos[batch_idx] + UInt32(token_idx)
 
             var position_ids_idx = Int(post_seq_idx)
-            if position_ids:
-                comptime PIdTensor = type_of(position_ids.value())
-                comptime assert PIdTensor.flat_rank == 2
+            if has_position_ids:
                 comptime if mrope_section:
                     var section_idx = 0
 
@@ -195,12 +216,12 @@ def rope_ragged[
                             section_idx = i
                             break
                     position_ids_idx = Int(
-                        position_ids.value()[section_idx, global_token_idx]
+                        pos_ids_ptr[
+                            section_idx * pos_ids_stride + global_token_idx
+                        ]
                     )
                 else:
-                    position_ids_idx = Int(
-                        position_ids.value()[0, global_token_idx]
-                    )
+                    position_ids_idx = Int(pos_ids_ptr[global_token_idx])
 
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
@@ -250,13 +271,12 @@ def rope_ragged[
     )
 
     comptime if is_cpu[target]():
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            x.layout.shape_coord(), context
+        elementwise[simd_width=kernel_simd_width, target=target](
+            rope_fn, x.layout.shape_coord(), context
         )
     else:
         elementwise[
-            func=rope_fn,
             simd_width=kernel_simd_width,
             target=target,
             _trace_description="rope",
-        ](x.layout.shape_coord(), context)
+        ](rope_fn, x.layout.shape_coord(), context)

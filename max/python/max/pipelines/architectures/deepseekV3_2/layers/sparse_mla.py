@@ -71,6 +71,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         index_n_heads: int = 64,
         index_head_dim: int = 128,
         index_topk: int = 2048,
+        skip_topk: bool = False,
     ):
         super().__init__(
             rope=rope,
@@ -91,22 +92,36 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             graph_mode=graph_mode,
             norm_dtype=norm_dtype,
         )
-        self.indexer = Indexer(
-            dim=hidden_size,
-            index_n_heads=index_n_heads,
-            index_head_dim=index_head_dim,
-            qk_rope_head_dim=qk_rope_head_dim,
-            index_topk=index_topk,
-            q_lora_rank=q_lora_rank,
-            devices=self.devices,
-            quant_config=self.quant_config,
-            k_norm_dtype=norm_dtype,
-        )
+
+        self.index_n_heads = index_n_heads
+        self.index_head_dim = index_head_dim
+        self.index_topk = index_topk
+        self.skip_topk = skip_topk
+
+        # ``shared`` layers carry no indexer weights, and instead reuse the
+        # previous full layer's top-k selection.
+        self.indexer: Indexer | None
+        if skip_topk:
+            self.indexer = None
+        else:
+            self.indexer = Indexer(
+                dim=hidden_size,
+                index_n_heads=index_n_heads,
+                index_head_dim=index_head_dim,
+                qk_rope_head_dim=qk_rope_head_dim,
+                index_topk=index_topk,
+                q_lora_rank=q_lora_rank,
+                devices=self.devices,
+                quant_config=self.quant_config,
+                k_norm_dtype=norm_dtype,
+            )
 
     @LatentAttentionWithRopeFp8.sharding_strategy.setter  # type: ignore[attr-defined]
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
         """Extends the base setter so the indexer participates in sharding."""
         LatentAttentionWithRopeFp8.sharding_strategy.fset(self, strategy)  # type: ignore[attr-defined]
+        if self.indexer is None:
+            return
         if strategy.is_replicate or strategy.is_tensor_parallel:
             rep = ShardingStrategy.replicate(strategy.num_devices)
             for linear in (
@@ -218,7 +233,9 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
-    ) -> TensorValue:
+        prev_topk_indices: TensorValue | None = None,
+        reuse_prev_topk: bool = False,
+    ) -> tuple[TensorValue, TensorValue]:
         wqkv, wqkv_scale = self.wqkv
         qkv = quantized_matmul(
             x=x,
@@ -246,32 +263,44 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
 
         freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
-        topk_indices = self.indexer(
-            x,
-            q_a_normed,
-            freqs_cis,
-            input_row_offsets,
-            indexer_kv_collection,
-            layer_idx,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK
-            if self.graph_mode in ["prefill", "auto"]
-            else MHAMaskVariant.NULL_MASK,
-        )
-        topk_indices = ops.where(
-            (topk_indices != -1),
-            topk_indices,
-            ops.broadcast_to(
-                ops.constant(
-                    0, dtype=topk_indices.dtype, device=topk_indices.device
+        if self.indexer is not None and not reuse_prev_topk:
+            # ``full`` layer: run the lightning indexer and select top-k keys.
+            topk_indices = self.indexer(
+                x,
+                q_a_normed,
+                freqs_cis,
+                input_row_offsets,
+                indexer_kv_collection,
+                layer_idx,
+                # TODO(KERN-2997): Once the graph mode is no longer hardcoded to
+                # "decode", this should be conditionally set to NULL_MASK.
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            )
+            topk_indices = ops.where(
+                (topk_indices != -1),
+                topk_indices,
+                ops.broadcast_to(
+                    ops.constant(
+                        0, dtype=topk_indices.dtype, device=topk_indices.device
+                    ),
+                    topk_indices.shape,
                 ),
-                topk_indices.shape,
-            ),
-        )
+            )
+        else:
+            # ``shared`` layer: reuse the previous full layer's top-k selection
+            # (cross-layer index sharing). The indices are sequence positions,
+            # so they are valid for this layer's own MLA cache.
+            if prev_topk_indices is None:
+                raise ValueError(
+                    "Shared (skip_topk) sparse attention layers require top-k "
+                    "indices from a previous full indexer layer."
+                )
+            topk_indices = prev_topk_indices
 
         batch_dim = kv_collection.lookup_table.shape[0]
         sparse_topk_lengths = ops.broadcast_to(
             ops.constant(
-                self.indexer.index_topk,
+                self.index_topk,
                 dtype=DType.int32,
                 device=xq.device,
             ),
@@ -294,10 +323,10 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             sparse_indices=topk_indices,
             sparse_topk_lengths=sparse_topk_lengths,
             sparse_attn_sink=sparse_attn_sink,
-            sparse_indices_stride=self.indexer.index_topk,
+            sparse_indices_stride=self.index_topk,
         )
 
-        return self.o_proj(attn_out)
+        return self.o_proj(attn_out), topk_indices
 
     def shard(  # type: ignore[override]
         self, devices: Iterable[DeviceRef]
@@ -347,10 +376,13 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         if self.o_proj.weight_scale is not None:
             o_proj_weight_scale_shards = self.o_proj.weight_scale.shard(devices)
 
-        indexer_wq_b_shards = self.indexer.wq_b.shard(devices)
-        indexer_wk_shards = self.indexer.wk.shard(devices)
-        indexer_weights_proj_shards = self.indexer.weights_proj.shard(devices)
-        indexer_k_norm_shards = self.indexer.k_norm.shard(devices)
+        if self.indexer is not None:
+            indexer_wq_b_shards = self.indexer.wq_b.shard(devices)
+            indexer_wk_shards = self.indexer.wk.shard(devices)
+            indexer_weights_proj_shards = self.indexer.weights_proj.shard(
+                devices
+            )
+            indexer_k_norm_shards = self.indexer.k_norm.shard(devices)
 
         replicas: list[SparseLatentAttentionWithRopeFp8] = []
         for shard_idx, device in enumerate(devices):
@@ -372,9 +404,10 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 v_head_dim=self.v_head_dim,
                 buffer_size=self.BUFFER_TOK_SIZE,
                 norm_dtype=self.norm_dtype,
-                index_n_heads=self.indexer.n_heads,
-                index_head_dim=self.indexer.head_dim,
-                index_topk=self.indexer.index_topk,
+                index_n_heads=self.index_n_heads,
+                index_head_dim=self.index_head_dim,
+                index_topk=self.index_topk,
+                skip_topk=self.skip_topk,
             )
 
             replica.q_a_proj = q_a_proj_shards[shard_idx]
@@ -400,12 +433,14 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                     shard_idx
                 ]
 
-            replica.indexer.wq_b = indexer_wq_b_shards[shard_idx]
-            replica.indexer.wk = indexer_wk_shards[shard_idx]
-            replica.indexer.weights_proj = indexer_weights_proj_shards[
-                shard_idx
-            ]
-            replica.indexer.k_norm = indexer_k_norm_shards[shard_idx]
+            if self.indexer is not None:
+                assert replica.indexer is not None
+                replica.indexer.wq_b = indexer_wq_b_shards[shard_idx]
+                replica.indexer.wk = indexer_wk_shards[shard_idx]
+                replica.indexer.weights_proj = indexer_weights_proj_shards[
+                    shard_idx
+                ]
+                replica.indexer.k_norm = indexer_k_norm_shards[shard_idx]
 
             replicas.append(replica)
 
@@ -455,7 +490,9 @@ class DataParallelSparseLatentAttentionWithRopeFp8(
         freqs_cis: list[TensorValue],
         input_row_offsets: Sequence[TensorValue],
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
-    ) -> list[TensorValue]:
+        prev_topk_indices: Sequence[TensorValue] | None = None,
+        reuse_prev_topk: bool = False,
+    ) -> tuple[list[TensorValue], list[TensorValue]]:
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 
@@ -475,9 +512,22 @@ class DataParallelSparseLatentAttentionWithRopeFp8(
             )
 
         outs: list[TensorValue] = []
+        topk_indices: list[TensorValue] = []
         for i in range(n):
+            # An empty list means no previous full layer has produced a
+            # selection yet (the first layer); treat it as ``None``.
+            prev_topk_i = prev_topk_indices[i] if prev_topk_indices else None
             if xs[i].shape[0] == 0:
                 outs.append(xs[i])
+                # No tokens on this device: carry the (empty) top-k forward.
+                topk_indices.append(
+                    prev_topk_i
+                    if prev_topk_i is not None
+                    else ops.broadcast_to(
+                        ops.constant(0, dtype=DType.int32, device=xs[i].device),
+                        (xs[i].shape[0], self.index_topk),
+                    )
+                )
                 continue
 
             mla_prefill_metadata_i: MLAPrefillMetadata | None
@@ -493,18 +543,20 @@ class DataParallelSparseLatentAttentionWithRopeFp8(
                 )
                 mla_prefill_metadata_i = None
 
-            outs.append(
-                self.list_of_attentions[i](
-                    layer_idx=layer_idx,
-                    x=xs[i],
-                    kv_collection=kv_collections[i],
-                    indexer_kv_collection=indexer_kv_collections[i],
-                    freqs_cis=freqs_cis[i],
-                    input_row_offsets=input_row_offsets[i],
-                    mla_prefill_metadata=mla_prefill_metadata_i,
-                )
+            out_i, topk_i = self.list_of_attentions[i](
+                layer_idx=layer_idx,
+                x=xs[i],
+                kv_collection=kv_collections[i],
+                indexer_kv_collection=indexer_kv_collections[i],
+                freqs_cis=freqs_cis[i],
+                input_row_offsets=input_row_offsets[i],
+                mla_prefill_metadata=mla_prefill_metadata_i,
+                prev_topk_indices=prev_topk_i,
+                reuse_prev_topk=reuse_prev_topk,
             )
-        return outs
+            outs.append(out_i)
+            topk_indices.append(topk_i)
+        return outs, topk_indices
 
 
 class TensorParallelSparseLatentAttentionWithRopeFp8(
@@ -552,7 +604,9 @@ class TensorParallelSparseLatentAttentionWithRopeFp8(
         freqs_cis: list[TensorValue],
         input_row_offsets: Sequence[TensorValue],
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
-    ) -> list[TensorValue]:
+        prev_topk_indices: Sequence[TensorValue] | None = None,
+        reuse_prev_topk: bool = False,
+    ) -> tuple[list[TensorValue], list[TensorValue]]:
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 
@@ -572,6 +626,7 @@ class TensorParallelSparseLatentAttentionWithRopeFp8(
             )
 
         outs: list[TensorValue] = []
+        topk_indices: list[TensorValue] = []
         for i in range(n):
             mla_prefill_metadata_i: MLAPrefillMetadata | None
             if (
@@ -582,19 +637,28 @@ class TensorParallelSparseLatentAttentionWithRopeFp8(
             else:
                 mla_prefill_metadata_i = None
 
-            outs.append(
-                self.list_of_attentions[i](
-                    layer_idx=layer_idx,
-                    x=xs[i],
-                    kv_collection=kv_collections[i],
-                    indexer_kv_collection=indexer_kv_collections[i],
-                    freqs_cis=freqs_cis[i],
-                    input_row_offsets=input_row_offsets[i],
-                    mla_prefill_metadata=mla_prefill_metadata_i,
-                )
+            out_i, topk_i = self.list_of_attentions[i](
+                layer_idx=layer_idx,
+                x=xs[i],
+                kv_collection=kv_collections[i],
+                indexer_kv_collection=indexer_kv_collections[i],
+                freqs_cis=freqs_cis[i],
+                input_row_offsets=input_row_offsets[i],
+                mla_prefill_metadata=mla_prefill_metadata_i,
+                # An empty list means no previous full layer has produced a
+                # selection yet (the first layer); treat it as ``None``.
+                prev_topk_indices=(
+                    prev_topk_indices[i] if prev_topk_indices else None
+                ),
+                reuse_prev_topk=reuse_prev_topk,
             )
+            outs.append(out_i)
+            topk_indices.append(topk_i)
 
         if self.skip_allreduce:
-            return outs
+            return outs, topk_indices
 
-        return self.allreduce(inputs=outs, signal_buffers=signal_buffers)
+        return (
+            self.allreduce(inputs=outs, signal_buffers=signal_buffers),
+            topk_indices,
+        )

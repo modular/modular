@@ -178,6 +178,7 @@ target_accelerator_values = {
         "amdgpu:gfx942",
         "amdgpu:gfx950",
         "amdgpu:gfx1030",
+        "amdgpu:gfx1033",
         "amdgpu:gfx1100",
         "amdgpu:gfx1101",
         "amdgpu:gfx1102",

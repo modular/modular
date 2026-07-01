@@ -36,6 +36,7 @@ from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import MAXModelConfig, MemoryEstimator
+from max.pipelines.lib.memory_estimation import _MemoryPlan
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
@@ -196,8 +197,14 @@ def _pipeline_resolve_mocks(
             "max.pipelines.lib.config.config.load_devices",
             return_value=mock_devices,
         ),
+        patch(
+            "max.pipelines.lib.registry.load_devices",
+            return_value=mock_devices,
+        ),
         patch.object(
-            MemoryEstimator, "estimate_memory_footprint", return_value=0
+            MemoryEstimator,
+            "estimate_memory_footprint",
+            return_value=_MemoryPlan(max_batch_size=1, footprint=0),
         ),
         patch.object(
             MemoryEstimator,
@@ -223,6 +230,41 @@ def _model(config: PipelineConfig) -> MAXModelConfig:
     return config.model
 
 
+def _resolve_config(config: PipelineConfig) -> None:
+    """Look up the architecture from the registry, then call config.resolve(arch).
+
+    Convenience wrapper for tests that call resolve() directly rather than
+    going through PIPELINE_REGISTRY.retrieve_factory().  The arch lookup is
+    explicit here so _resolve_config(config) itself stays free of registry imports.
+    """
+    task = (
+        config.task
+        if config.task != PipelineTask.UNDEFINED
+        else PipelineTask.TEXT_GENERATION
+    )
+    arch = PIPELINE_REGISTRY.retrieve_architecture(
+        architecture_name=config.models.main_architecture_name,
+        prefer_module_v3=config.runtime.prefer_module_v3,
+        task=task,
+    )
+    if arch is None:
+        raise ValueError(
+            f"MAX-optimized architecture not available for"
+            f" '{config.models.main_architecture_name}'."
+            " Please file a request at https://modul.ar/request to add this"
+            " model architecture to MAX."
+        )
+    config.resolve(arch)
+    # Overlap-scheduler/DGC resolution now lives in the registry, after
+    # memory planning. Tests that call resolve() directly must replicate it.
+    from max.pipelines.lib.registry import _run_memory_planning
+
+    plan = _run_memory_planning(config, arch)
+    config._validate_and_resolve_overlap_scheduler(
+        arch=arch, max_batch_size=plan.max_batch_size
+    )
+
+
 def _make_pipeline_config(
     model_path: str,
     device_specs: list[DeviceSpec] | None = None,
@@ -232,7 +274,7 @@ def _make_pipeline_config(
     pipeline_task: Any = None,
     **model_kwargs: Any,
 ) -> PipelineConfig:
-    """Create a PipelineConfig with defer_resolve=True for testing."""
+    """Create a PipelineConfig for testing (resolve() is not auto-called)."""
     if device_specs is None:
         device_specs = [GPU_DEVICE_SPEC]
     return PipelineConfig(
@@ -249,7 +291,6 @@ def _make_pipeline_config(
         ),
         runtime=PipelineRuntimeConfig(
             max_batch_size=max_batch_size,
-            defer_resolve=True,
         ),
         task=pipeline_task or PipelineTask.UNDEFINED,
     )
@@ -273,7 +314,7 @@ class TestArchitectureEncodingResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).quantization_encoding == "bfloat16"
             assert any(
                 "model.safetensors" in str(p)
@@ -290,7 +331,7 @@ class TestArchitectureEncodingResolution:
                 tmpdir, device_specs=[CPU_DEVICE_SPEC]
             )
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).quantization_encoding == "q4_0"
             assert any(
                 "model-Q4_0.gguf" in str(p) for p in _model(config).weight_path
@@ -307,7 +348,7 @@ class TestArchitectureEncodingResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).quantization_encoding == "float8_e4m3fn"
 
     @prepare_registry
@@ -327,7 +368,7 @@ class TestArchitectureEncodingResolution:
                 tmpdir, device_specs=[GPU_DEVICE_SPEC]
             )
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             # The encoding should be resolved (either float32 or bfloat16)
             # and must be in the architecture's supported_encodings.
             model = _model(config)
@@ -348,7 +389,7 @@ class TestArchitectureEncodingResolution:
                 tmpdir, device_specs=[CPU_DEVICE_SPEC]
             )
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).quantization_encoding == "float32"
 
 
@@ -404,7 +445,7 @@ class TestDefaultEncodingFallback:
                 tmpdir, device_specs=[CPU_DEVICE_SPEC]
             )
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).quantization_encoding == "float32"
 
 
@@ -430,7 +471,7 @@ class TestEncodingValidation:
                 _pipeline_resolve_mocks(),
                 pytest.raises(ValueError, match="not supported by MAX engine"),
             ):
-                config.resolve()
+                _resolve_config(config)
 
     @prepare_registry
     def test_explicit_unsupported_encoding_rejected(self) -> None:
@@ -449,7 +490,7 @@ class TestEncodingValidation:
                 _pipeline_resolve_mocks(),
                 pytest.raises(ValueError, match="not supported by MAX engine"),
             ):
-                config.resolve()
+                _resolve_config(config)
 
 
 # ---------------------------------------------------------------------------
@@ -479,7 +520,7 @@ class TestArchitectureNotFound:
                     ValueError, match="MAX-optimized architecture not available"
                 ),
             ):
-                config.resolve()
+                _resolve_config(config)
 
     @prepare_registry
     def test_missing_config_json_raises(self) -> None:
@@ -490,7 +531,7 @@ class TestArchitectureNotFound:
             _write_fake_safetensors(os.path.join(tmpdir, "model.safetensors"))
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks(), pytest.raises(Exception):
-                config.resolve()
+                _resolve_config(config)
 
 
 # ---------------------------------------------------------------------------
@@ -524,7 +565,7 @@ class TestMultiGPUValidation:
                     match="Multiple GPU inference is currently not supported",
                 ),
             ):
-                config.resolve()
+                _resolve_config(config)
 
     @prepare_registry
     def test_multi_gpu_allowed_for_supported_arch(self) -> None:
@@ -542,7 +583,7 @@ class TestMultiGPUValidation:
             ]
             config = _make_pipeline_config(tmpdir, device_specs=two_gpus)
             with _pipeline_resolve_mocks(num_devices=2):
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).quantization_encoding == "bfloat16"
 
 
@@ -567,7 +608,7 @@ class TestRopeTypeResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).rope_type == "normal"
 
     @prepare_registry
@@ -584,7 +625,7 @@ class TestRopeTypeResolution:
             # Set rope_type="neox" which differs from DUMMY_GEMMA_ARCH's "normal"
             config = _make_pipeline_config(tmpdir, rope_type="neox")
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).rope_type == "neox"
 
 
@@ -609,7 +650,7 @@ class TestCacheDtypeResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             assert _model(config).kv_cache._cache_dtype == DType.bfloat16
 
 
@@ -635,7 +676,7 @@ class TestWeightPathDiscovery:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             paths = sorted(str(p) for p in _model(config).weight_path)
             assert paths == [
                 "model-00001-of-00002.safetensors",
@@ -654,7 +695,7 @@ class TestWeightPathDiscovery:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             paths = [str(p) for p in _model(config).weight_path]
             assert paths == ["model.safetensors"]
 
@@ -698,7 +739,7 @@ class TestRequiredArguments:
             # Set a value that conflicts with the required argument
             _model(config).kv_cache.enable_prefix_caching = True
             with _pipeline_resolve_mocks():
-                config.resolve()
+                _resolve_config(config)
             # Architecture should have overridden it
             assert _model(config).kv_cache.enable_prefix_caching is False
 
@@ -775,7 +816,7 @@ class TestDGCTaskDisambiguation:
                     return_value="cuda",
                 ),
             ):
-                config.resolve()
+                _resolve_config(config)
             assert config.runtime.device_graph_capture is False
 
     @prepare_registry
@@ -822,7 +863,13 @@ class TestDGCTaskDisambiguation:
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
             )
             config = _make_pipeline_config(tmpdir, max_batch_size=4)
-            # pipeline_task defaults to UNDEFINED, which falls back to text-gen arch
+            # Look up the text-gen arch explicitly; resolve() no longer falls back
+            # to the registry for overlap-scheduler/DGC decisions.
+            arch = PIPELINE_REGISTRY.retrieve_architecture(
+                architecture_name=shared_name,
+                prefer_module_v3=False,
+                task=PipelineTask.TEXT_GENERATION,
+            )
             with (
                 _pipeline_resolve_mocks(),
                 patch(
@@ -830,5 +877,11 @@ class TestDGCTaskDisambiguation:
                     return_value="cuda",
                 ),
             ):
-                config.resolve()
+                config.resolve(arch)
+                from max.pipelines.lib.registry import _run_memory_planning
+
+                plan = _run_memory_planning(config, arch)
+                config._validate_and_resolve_overlap_scheduler(
+                    arch=arch, max_batch_size=plan.max_batch_size
+                )
             assert config.runtime.device_graph_capture is True

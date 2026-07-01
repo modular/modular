@@ -563,8 +563,12 @@ def test_prefill[
         row_major(Coord(batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(k_ref_device.to_layout_tensor())
-    var v_ref_operand = LayoutTensorMHAOperand(v_ref_device.to_layout_tensor())
+    var k_ref_operand = LayoutTensorMHAOperand(
+        k_ref_device.as_immut().as_unsafe_any_origin()
+    )
+    var v_ref_operand = LayoutTensorMHAOperand(
+        v_ref_device.as_immut().as_unsafe_any_origin()
+    )
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](
@@ -723,6 +727,68 @@ def test_mla_prefill_qkv_fp8[
         cache_num_heads=1,
         batch_size=batch_size,
     ](120, 240, ctx)
+    # In-kernel 2Q->1Q switch: num_heads=128 keeps the dispatch at 2Q
+    # (BM=256), so the per-tile switch handles short tails. seq_len=300
+    # tiles as [0,256) (full) + [256,300) whose 44 remaining rows (<= 128)
+    # route to the 1Q body — exercising the per-token 1Q FUSED load/mma and
+    # the k_scale stride-2 path from a 2Q launch — and validating that the
+    # would-be empty 2Q second half (folded by `output_nonempty`) is
+    # exactly that tile. seq_len=428 tiles as [0,256) + [256,428) whose 172
+    # remaining rows (> 128) stay on the 2Q body with both output halves
+    # non-empty (WG1 covers 44 valid rows), the complementary case.
+    test_prefill[
+        qkv_type,
+        rope_type,
+        scale_type,
+        output_type,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](300, 300, ctx)
+    test_prefill[
+        qkv_type,
+        rope_type,
+        scale_type,
+        output_type,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](428, 428, ctx)
+    # Short query chunk over a long cache, 16 heads: routes to the 1Q
+    # (num_qo=1) kernel via the dispatch heuristic (prompt_len <= 128)
+    # while iterating many KV tiles. 800 keys -> odd T (1Q tail path);
+    # 768 keys -> even T (1Q main-loop only). Exercises the 1Q load /
+    # mma rewrite AND the 1Q k_scale stride-2 fix in fa4_softmax.
+    test_prefill[
+        qkv_type,
+        rope_type,
+        scale_type,
+        output_type,
+        depth=192,
+        num_heads=16,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](100, 800, ctx)
+    test_prefill[
+        qkv_type,
+        rope_type,
+        scale_type,
+        output_type,
+        depth=192,
+        num_heads=16,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](64, 768, ctx)
 
 
 def main() raises:

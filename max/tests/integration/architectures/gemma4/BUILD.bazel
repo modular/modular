@@ -6,10 +6,44 @@ load(
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
+
+filegroup(
+    name = "gemma4_e4b_config",
+    srcs = ["configs/gemma4_e4b/config.json"],
+)
+
+modular_py_test(
+    name = "test_config_init",
+    srcs = ["test_config_init.py"],
+    data = [":gemma4_e4b_config"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_batch_vision_inputs_cpu",
+    srcs = ["test_batch_vision_inputs.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/request",
+        requirement("numpy"),
+    ],
+)
 
 modular_py_test(
     name = "tests",
@@ -17,6 +51,8 @@ modular_py_test(
     srcs = glob(
         ["**/test_*.py"],
         exclude = [
+            "test_batch_vision_inputs.py",
+            "test_config_init.py",
             "test_image_processor.py",
             "test_reasoning.py",
             "test_tokenizer.py",

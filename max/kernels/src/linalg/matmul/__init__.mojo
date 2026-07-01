@@ -33,7 +33,7 @@ from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
 
-import .cpu
+from . import cpu
 from ..gemv import gemv
 from ..utils import (
     GemmShape,

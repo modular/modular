@@ -81,6 +81,7 @@ from layout.coord import crd2idx
 from layout._utils import make_amd_buffer_resource
 from layout.tile_layout import Layout, row_major, col_major
 from layout.swizzle import Swizzle
+from layout.tensor_storage import PointerStorage
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.itertools import product
 
@@ -238,7 +239,10 @@ struct TiledMmaLoader[
         imm_offset_bytes: Int = 0,
     ](
         src: TileTensor[
-            Self.in_type, _, address_space=AddressSpace.SHARED, ...
+            Self.in_type,
+            _,
+            address_space=AddressSpace.SHARED,
+            ...,
         ],
     ) -> InlineArray[SIMD[Self.in_type, simd_width], num_mmas]:
         """Full B operand load from a SMEM warp tile.
@@ -308,7 +312,10 @@ struct TiledMmaLoader[
     @always_inline
     def load_b_tr(
         tile: TileTensor[
-            Self.in_type, _, address_space=AddressSpace.SHARED, ...
+            Self.in_type,
+            _,
+            address_space=AddressSpace.SHARED,
+            ...,
         ],
     ) -> SIMD[Self.in_type, 8]:
         """Transposed B operand load for double-rate MFMA shapes.
@@ -562,7 +569,10 @@ struct TiledMmaLoader[
         imm_offset_bytes: Int = 0,
     ](
         src: TileTensor[
-            Self.in_type, _, address_space=AddressSpace.SHARED, ...
+            Self.in_type,
+            _,
+            address_space=AddressSpace.SHARED,
+            ...,
         ],
     ) -> SIMD[Self.in_type, simd_width_of[Self.in_type]()]:
         """Private helper for `load_b`: single MMA sub-tile load.
@@ -1604,7 +1614,11 @@ struct SubTileLoaderLDS[
     ](
         self,
         dst: TileTensor[
-            Self.dtype, _, _, address_space=AddressSpace.SHARED, ...
+            Self.dtype,
+            _,
+            _,
+            address_space=AddressSpace.SHARED,
+            ...,
         ],
         src: TileTensor[Self.dtype, ...],
         scalar_offset: Int = 0,
@@ -1692,8 +1706,6 @@ struct SubTileLoaderLDS[
         comptime assert dst_stride1 == 1
         comptime assert dst_stride0 == BN
 
-        comptime aux = 0
-
         # The comptime partition offset is folded into the `s_add`
         # immediate alongside the runtime piece in BOTH codegen modes;
         # only the source of the runtime piece differs (hoisted caller
@@ -1777,6 +1789,7 @@ struct SubTileLoaderLDS[
 
             __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
                 alias_scopes=_alias_scope_attr,
+                aux=__mlir_attr.`0 : i32`,  # default cache policy
                 _type=None,
             ](
                 desc_ptr_llvm,
@@ -1785,7 +1798,6 @@ struct SubTileLoaderLDS[
                 to_i32(Int32(vector_offset_bytes)),
                 to_i32(Int32(scalar_offset_bytes)),
                 to_i32(0),
-                to_i32(aux),
             )
 
 
@@ -1978,8 +1990,6 @@ struct SubTileLoaderLDS_st_8x32[
         # advance by `NUM_KV_HEADS * depth` per row, not just `depth`.
         comptime _v_row_stride = type_of(v_gmem_tile).static_stride[0]
 
-        comptime aux = 0
-
         comptime for i in range(_num_iters):
             var lane_byte_offset = (
                 thread_id * _bytes_per_thread + Int(i) * _bytes_per_iter
@@ -2159,6 +2169,7 @@ struct SubTileLoaderLDS_st_8x32[
 
             __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
                 alias_scopes=_alias_scope_attr,
+                aux=__mlir_attr.`0 : i32`,  # default cache policy
                 _type=None,
             ](
                 desc_ptr_llvm,
@@ -2167,7 +2178,6 @@ struct SubTileLoaderLDS_st_8x32[
                 to_i32(Int32(global_byte_in_tile)),
                 to_i32(Int32(tile_byte_offset)),
                 to_i32(0),
-                to_i32(aux),
             )
 
 

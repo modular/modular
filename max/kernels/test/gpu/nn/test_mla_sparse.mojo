@@ -48,7 +48,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from layout.tma_async import (
@@ -593,7 +592,7 @@ def run_test_sparse[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     # Compute and print num_partitions to verify split-K usage.
     comptime sm_count = ctx.default_device_info.sm_count
@@ -634,7 +633,7 @@ def run_test_sparse[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -1216,7 +1215,7 @@ def run_test_sparse_blockscale[
         ),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
-        LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[DType.float32, Layout.row_major[6]()](
             scales_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 scales_lt.runtime_layout.shape.value,
@@ -1287,7 +1286,7 @@ def run_test_sparse_blockscale[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     # Compute and print num_partitions to verify split-K usage.
     comptime sm_count_bs = ctx.default_device_info.sm_count
@@ -1329,7 +1328,7 @@ def run_test_sparse_blockscale[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -1775,7 +1774,7 @@ def run_test_sparse_variable_topk[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     # Compute and print num_partitions to verify split-K usage.
     comptime sm_count_vt = ctx.default_device_info.sm_count
@@ -1814,7 +1813,7 @@ def run_test_sparse_variable_topk[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -2282,7 +2281,7 @@ def run_test_sparse_attn_sink[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count = ctx.default_device_info.sm_count
     var dispatch_scalars = compute_mla_dispatch_scalars[
@@ -2319,7 +2318,7 @@ def run_test_sparse_attn_sink[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -2968,7 +2967,7 @@ def run_test_sparse_extra_kv[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count_ek = ctx.default_device_info.sm_count
     var dispatch_scalars_ek = compute_mla_dispatch_scalars[
@@ -3005,7 +3004,7 @@ def run_test_sparse_extra_kv[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -3438,21 +3437,21 @@ def run_test_sparse_topk_clamping[
     )
 
     var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -3498,7 +3497,7 @@ def run_test_sparse_topk_clamping[
         num_heads=num_heads,
         is_fp8_kv=True,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     # Compute and print num_partitions to verify split-K usage.
     comptime sm_count_tc = ctx.default_device_info.sm_count
@@ -3537,7 +3536,7 @@ def run_test_sparse_topk_clamping[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),

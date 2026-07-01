@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.math import ceildiv
 from std.sys import simd_width_of, size_of
 
 from nn.attention.mha_operand import MHAOperand
@@ -121,6 +122,7 @@ struct MLAConfig[
         group: Int,
         depth: Int,
         page_size: Int,
+        num_qo: Int = 2,
     ):
         # DSv3.2 absorbed-MLA dims: KV cache row width is
         # `kv_lora_rank (512) + qk_rope_head_dim (64) = 576`; the depth-64
@@ -144,7 +146,11 @@ struct MLAConfig[
         else:
             self.rope_gmem_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
 
-        self.output_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
+        # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
+        # QKV/RoPE buffers). The softmax warp loads O one-row-per-thread and
+        # writes it row-major, avoiding cross-thread shuffles and swizzling
+        # while staying bank-conflict-free.
+        self.output_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE
 
         self.fa4_config = {
             num_q_heads = num_q_heads,
@@ -154,6 +160,7 @@ struct MLAConfig[
             swizzle_mode = self.qkv_swizzle_mode,
             page_size = page_size,
             is_mla = True,
+            num_qo = num_qo,
         }
 
         self.MMA_M = self.fa4_config.MMA_M
@@ -182,7 +189,94 @@ struct MLAConfig[
 
     @always_inline
     def num_qo(self) -> Int:
-        return 2
+        return self.fa4_config.num_qo
+
+    @always_inline
+    def q_tile_rows(self) -> Int:
+        """Rows per Q TMA tile / per-half MMA — `BM // num_qo`.
+
+        128 in both modes: one of two BM=256 halves in 2Q, the single full
+        BM=128 tile in 1Q. The Q (and per-token q_scale) TMA boxes and the
+        ragged output store all fold to this value, which is why their op
+        types match across the 1Q/2Q configs.
+        """
+        return self.BM // self.fa4_config.num_qo
+
+    @always_inline
+    def with_num_qo(self, num_qo: Int) -> Self:
+        """Reconstruct this config with a different `num_qo` (single-CTA).
+
+        Mirrors `FA4Config.with_num_qo`, but simpler: MLA pins
+        `num_qk_stages == 1` (is_mla), so there is no staging knob to
+        match between the 1Q and 2Q variants.
+        """
+        return Self(
+            num_q_heads=self.num_q_heads,
+            group=self.group,
+            depth=self.qk_depth,
+            page_size=self.fa4_config.page_size,
+            num_qo=num_qo,
+        )
+
+    @always_inline
+    def switch_1q_config(self) -> Self:
+        """The 1Q variant used by the in-kernel per-sequence 1Q/2Q switch.
+
+        Identical to `with_num_qo(1)` (see `with_num_qo` for why MLA has
+        no staging-pinning concern, unlike `FA4Config.switch_1q_config`).
+        """
+        return self.with_num_qo(1)
+
+    @always_inline
+    def can_switch_to_1q(self) -> Bool:
+        """Whether a 2Q-launched kernel may dispatch to the 1Q body at
+        runtime.
+
+        True only when this is a 2Q config AND the 1Q variant is valid.
+        The TMA-op types fold between the two configs by construction:
+        the Q TMA / ragged-store `BM // num_qo` is 128 in both modes, and
+        the K_nope/K_rope/V TMA shapes are BM-independent (BN's formula
+        does not reference `num_qo`).
+        """
+        if self.fa4_config.num_qo != 2 or self.fa4_config.pair_cta:
+            return False
+        var cfg1 = self.switch_1q_config()
+        return cfg1.supported() and cfg1.fa4_config.supported()
+
+    @always_inline
+    def launch_smem_used(self) -> Int:
+        """Dynamic smem to reserve when launching this config's kernel.
+
+        When the launched kernel may dispatch to the 1Q body at runtime
+        (`can_switch_to_1q()`), it constructs the 1Q `SM100AttentionSMem`
+        over the same dynamic smem region, so the launch must reserve the
+        max of both footprints. Otherwise this is just `smem_used`.
+        """
+        if self.can_switch_to_1q():
+            return max(self.smem_used, self.switch_1q_config().smem_used)
+        return self.smem_used
+
+    @always_inline
+    def prefer_1q(
+        self,
+        max_prompt_len: UInt32,
+        num_partitions: UInt32,
+        batch_size: UInt32,
+        sm_count: Int,
+    ) -> Bool:
+        """Runtime 1Q-vs-2Q grid heuristic for a 2Q config (mirrors the MHA
+        heuristic in `dispatch.mojo`): prefer 1Q when (a) `max_prompt_len`
+        fits a single 1Q tile (`q_tile_rows()`), so 2Q's BM=256 would waste
+        >= 50% of Q rows, or (b) the unclamped 2Q grid only fills <= half
+        the SMs, so halving BM doubles the grid without oversubscribing.
+        """
+        var tiles_2q = ceildiv(max_prompt_len, UInt32(self.BM))
+        var raw_grid_2q = (
+            tiles_2q * num_partitions * UInt32(self.num_q_heads) * batch_size
+        )
+        return max_prompt_len <= UInt32(
+            self.q_tile_rows()
+        ) or raw_grid_2q <= UInt32(sm_count // 2)
 
     @always_inline
     def num_rope_buffers(self) -> Int:
@@ -359,7 +453,10 @@ struct TMAtoCvtPipeline[
     num_producer: Int,
     num_consumer: Int,
 ](TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var consumer_mbars: MBarType
+
+    @__allow_legacy_any_origin_fields
     var producer_mbars: MBarType
     var state: PipelineState[Self.num_kv_stages]
 
@@ -413,7 +510,10 @@ struct CvtToMMAPipeline[
     num_producer: Int,
     num_consumer: Int,
 ](TrivialRegisterPassable):
+    @__allow_legacy_any_origin_fields
     var producer_mbars: MBarType
+
+    @__allow_legacy_any_origin_fields
     var consumer_mbars: MBarType
     var state: PipelineState[Self.num_stages]
 
@@ -570,8 +670,9 @@ struct SM100MLA[
     comptime nope_depth = Self.config.nope_depth
     comptime cache_depth = Self.config.cache_depth
 
-    comptime num_m_mmas = 2
-    comptime MMA_M = Self.config.BM // Self.num_m_mmas
+    # 128 in both modes: 2Q has BM=256 split into two per-half MMAs;
+    # 1Q has BM=128 covered by a single full-BM MMA (mirrors kernel.mojo).
+    comptime MMA_M = Self.config.fa4_config.MMA_M
     comptime qkv_dt_size = size_of[Self.qkv_dtype]()
 
     comptime num_qk_stages = Self.config.num_qk_stages
@@ -687,8 +788,10 @@ struct SM100MLA[
     def descriptor_q(
         q_smem: SharedMemPointer[Scalar[Self.qkv_dtype]],
     ) -> MMASmemDescriptorPair:
+        # `BM // num_qo` = 128 in both modes: one of two Q halves in 2Q,
+        # the single full-BM Q tile in 1Q.
         return smem_descriptor[
-            BMN=Self.config.BM // 2,
+            BMN=Self.config.q_tile_rows(),
             BK=Self.config.nope_depth,
             swizzle_mode=Self.config.qkv_swizzle_mode,
             is_k_major=True,
@@ -700,7 +803,7 @@ struct SM100MLA[
         q_smem: SharedMemPointer[Scalar[Self.rope_mma_dtype]],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
-            BMN=Self.config.BM // 2,
+            BMN=Self.config.q_tile_rows(),
             BK=Self.config.rope_depth,
             swizzle_mode=Self.config.rope_mma_swizzle_mode,
             is_k_major=True,

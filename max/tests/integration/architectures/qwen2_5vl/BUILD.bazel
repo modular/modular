@@ -9,7 +9,6 @@ load(
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -54,30 +53,31 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
+    ignore_extra_deps = [
+        requirement("torchvision"),  # needed by qwenvl_utils
+    ],
     imports = ["."],
     tags = [
         "gpu",
         "manual",
-        "no-pydeps",  # TODO: Fix and re-enable
         "requires-network",
     ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/entrypoints",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures",
-        "//max/python/max/serve",
+        "//max/python/max/pipelines/architectures/qwen2_5vl",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         requirement("numpy"),
         requirement("pillow"),
         requirement("pytest-asyncio"),
         requirement("pytest-mock"),
-        requirement("requests"),
-        requirement("timm"),
         requirement("torch"),
-        requirement("torchvision"),
+        requirement("torchvision"),  # needed by qwenvl_utils
         requirement("transformers"),
         requirement("qwen-vl-utils"),
         requirement("opencv-python"),

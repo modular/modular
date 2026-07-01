@@ -94,6 +94,34 @@ def _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         ](a, b, c)
         d = rebind[type_of(d)](r[0].join(r[1]))
 
+    elif _has_type[
+        (DType.float16, DType.float16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 4, 4, 4)](
+        a.size, b.size, c.size, d.size
+    ):
+        var sa = a.split()
+        var sa1 = sa[0].split()
+        var sa2 = sa[1].split()
+        var sb = b.split()
+        var c0 = bitcast[DType.float32, 4](c)
+
+        var r = llvm_intrinsic[
+            "llvm.nvvm.mma.m16n8k16.row.col.f32.f32",
+            _RegisterPackType[Float32, Float32, Float32, Float32],
+        ](
+            sa1[0],
+            sa1[1],
+            sa2[0],
+            sa2[1],
+            sb[0],
+            sb[1],
+            c0[0],
+            c0[1],
+            c0[2],
+            c0[3],
+        )
+        d = rebind[type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
+
     # ===------------------------------------------------------------------===#
     # F32 = BF16 * BF16 + F32
     # ===------------------------------------------------------------------===#

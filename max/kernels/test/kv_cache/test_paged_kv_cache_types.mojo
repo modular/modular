@@ -91,7 +91,7 @@ def do_test[
         DType.float32,
         kv_params,
         page_size,
-        scale_dtype,
+        scale_dtype_=scale_dtype,
     ](
         LayoutTensor[blocks.dtype, Layout.row_major[6]()](
             blocks.ptr,
@@ -139,7 +139,15 @@ def test_paged_kv_cache_stride_is_unknown() raises:
     This is a regression test - previously Layout.row_major() computed stride[0]
     from just the 4D shape, which was incorrect for view tensors.
     """
-    comptime CacheType = PagedKVCache[DType.float32, kv_params, 16]
+    comptime CacheType = PagedKVCache[
+        DType.float32,
+        kv_params,
+        16,
+        MutUntrackedOrigin,
+        ImmutUntrackedOrigin,
+        ImmutUntrackedOrigin,
+        MutUntrackedOrigin,
+    ]
 
     # Verify stride[0] is UNKNOWN_VALUE
     comptime stride_0 = CacheType.blocks_layout.stride[0].value()
@@ -319,7 +327,15 @@ def test_paged_kv_cache_offset_correctness() raises:
 
 def test_paged_kv_cache_quantization() raises:
     comptime CacheType = PagedKVCache[
-        DType.float32, kv_params, 16, DType.float8_e4m3fn, 256
+        DType.float32,
+        kv_params,
+        16,
+        MutUntrackedOrigin,
+        ImmutUntrackedOrigin,
+        ImmutUntrackedOrigin,
+        MutUntrackedOrigin,
+        scale_dtype_=DType.float8_e4m3fn,
+        quantization_granularity_=256,
     ]
     assert_true(CacheType.quantization_enabled, "Quantization not enabled")
     assert_true(

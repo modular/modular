@@ -53,7 +53,7 @@ class TestPixelGenerationTokenizer:
         """Pipeline config for Flux model."""
         return PipelineConfig(
             models=ModelManifest.from_model_path(flux_model_path),
-            runtime=PipelineRuntimeConfig(defer_resolve=True),
+            runtime=PipelineRuntimeConfig(),
         )
 
     @pytest.fixture
@@ -66,7 +66,7 @@ class TestPixelGenerationTokenizer:
         """Pipeline config for Z-Image model."""
         return PipelineConfig(
             models=ModelManifest.from_model_path(zimage_model_path),
-            runtime=PipelineRuntimeConfig(defer_resolve=True),
+            runtime=PipelineRuntimeConfig(),
         )
 
     def test_initialization_basic(
@@ -101,7 +101,7 @@ class TestPixelGenerationTokenizer:
             models=ModelManifest(
                 {"main": MAXModelConfig(model_path=non_diffusion_model)}
             ),
-            runtime=PipelineRuntimeConfig(defer_resolve=True),
+            runtime=PipelineRuntimeConfig(),
         )
 
         with pytest.raises(

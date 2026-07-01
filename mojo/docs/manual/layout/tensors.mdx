@@ -312,7 +312,6 @@ comptime tile_layout = Layout.row_major(16, 16)
 var shared_tile = LayoutTensor[
     dtype,
     tile_layout,
-    MutAnyOrigin,
     address_space=AddressSpace.SHARED,
 ].stack_allocation()
 ```
@@ -445,7 +444,6 @@ comptime tile_layout = Layout.row_major(4, 4)
 var iter = LayoutTensorIter[
     DType.int16,
     tile_layout,
-    MutAnyOrigin
 ](storage.unsafe_ptr(), buf_size)
 
 for i in range(ceildiv(buf_size, comptime (tile_layout.size()))):
@@ -620,7 +618,6 @@ def copy_from_async_example():
         var shared_tile = LayoutTensor[
             dtype,
             tile_layout,
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ].stack_allocation()
 

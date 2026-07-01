@@ -49,11 +49,13 @@ Mojo supports both signed (`Int`) and unsigned (`UInt`) integer types. These
 include both fixed-size and general types:
 
 - If you need a fixed-size integer, Mojo provides explicit-width integer types
-  such as `Int8`, `Int16`, `UInt32`, and `UInt64`. These fixed-precision integer
-  types are aliases to the [`SIMD`](/docs/std/builtin/simd/SIMD/) type.
+  such as `Int8`, `Int16`, `UInt32`, and `UInt64`.
 
 - Use the general `Int` or `UInt` types when you don't require a specific bit
   width.
+
+These general and fixed-precision integer types are aliases to the
+[`SIMD`](/docs/std/builtin/simd/SIMD/) type.
 
 `Int` represents a signed integer that uses the system's native word size,
 typically 64 bits on 64-bit CPUs and 32 bits on 32-bit CPUs. Similarly, `UInt`
@@ -365,20 +367,21 @@ print(product)
 
 The `SIMD` module defines several
 [`comptime` values](/docs/manual/metaprogramming/comptime-evaluation/#comptime-values)
-that function as *type aliases*—shorthand names for different types of `SIMD`
-vectors. In particular, the `Scalar` type is just a `SIMD` vector with a single
-element. The numeric types listed in [Table 1](#table-1), like `Int8` and
-`Float32` are actually type aliases for different types of scalar values:
+that function as *type aliases*—shorthand names for different `SIMD` vector
+types. The `Scalar` type is a `SIMD` vector with a single element. The numeric
+types listed in [Table 1](#table-1), like `Int`, `Int8`, and `Float32`, are type
+aliases for scalar values:
 
 ```mojo
 comptime Scalar = SIMD[size=1]
+comptime Int = Scalar[DType.int]
 comptime Int8 = Scalar[DType.int8]
 comptime Float32 = Scalar[DType.float32]
 ```
 
-This may seem a little confusing at first, but it means that whether you're
-working with a single `Float32` value or a vector of float32 values,
-the math operations go through exactly the same code path.
+This means that whether you're working with a single `Float32` value or a
+vector of float32 values, the math operations go through exactly the same
+code path.
 
 #### The `DType` type
 
@@ -386,7 +389,7 @@ The `DType` struct describes the different data types that a `SIMD` vector can
 hold, and defines a number of utility functions for operating on those data
 types. The `DType` struct defines a set of
 [`comptime` members](/docs/manual/parameters/#comptime-members) that act as
-identifiers for the different data types, like `DType.int8` and `DType.float32`.
+identifiers for the different data types, like `DType.uint` and `DType.float32`.
 You use these `comptime` members when declaring a `SIMD` vector:
 
 ```mojo
@@ -720,9 +723,11 @@ have a non-zero length.
 
 ## Tuples
 
-Mojo's `Tuple` type represents an immutable tuple consisting of zero or more
-values, separated by commas. Tuples can consist of multiple types and you can
-index into tuples in multiple ways.
+Mojo's `Tuple` is a lightweight, fixed-size, heterogeneous collection with
+value semantics. A tuple contains zero or more comma-separated values,
+which may have different types. Although a tuple's structure (its size and
+element types) is fixed, individual elements can be mutated. Tuples support
+several forms of indexing:
 
 ```mojo
 # Tuples are immutable and can hold multiple types

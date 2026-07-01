@@ -30,10 +30,11 @@ from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.compute.mma import st_matrix
 from layout import (
+    ComptimeInt,
+    Coord,
     IntTuple,
     Layout,
     LayoutTensor,
-    LTToTTLayout,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
@@ -110,7 +111,10 @@ comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
 
 # TileTensor type alias for 1D row-major tensors with dynamic size, used for
 # kv_input_row_offsets and sink_weights dispatch params.
-comptime _1d_row_major_tt_layout = LTToTTLayout[Layout.row_major(UNKNOWN_VALUE)]
+comptime _1d_row_major_tt_layout = InternalLayout[
+    shape_types=Coord[Int64].element_types,
+    stride_types=Coord[ComptimeInt[1]].element_types,
+]
 comptime ImmutTileTensor1D[dtype: DType] = TileTensor[
     dtype,
     _1d_row_major_tt_layout,
@@ -142,6 +146,7 @@ struct NonNullPointer[
         Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
     ]
 
+    @__allow_legacy_any_origin_fields
     var ptr: Self.PtrType
 
     @always_inline

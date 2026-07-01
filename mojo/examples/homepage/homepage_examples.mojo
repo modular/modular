@@ -24,6 +24,7 @@ from std.reflection import reflect
 from std.sys import has_accelerator, simd_width_of
 
 from layout import TileTensor
+from layout.tensor_storage import PointerStorage
 from layout.tile_layout import Layout, row_major
 from extensibility import InputTensor, OutputTensor
 
@@ -41,10 +42,24 @@ comptime layout = row_major[size]()
 
 
 def vector_add(
-    a: TileTensor[float_dtype, type_of(layout), element_size=1, ...],
-    b: TileTensor[float_dtype, type_of(layout), element_size=1, ...],
+    a: TileTensor[
+        float_dtype,
+        type_of(layout),
+        Storage=PointerStorage[element_width=1],
+        ...,
+    ],
+    b: TileTensor[
+        float_dtype,
+        type_of(layout),
+        Storage=PointerStorage[element_width=1],
+        ...,
+    ],
     result: TileTensor[
-        mut=True, float_dtype, type_of(layout), element_size=1, ...
+        mut=True,
+        float_dtype,
+        type_of(layout),
+        Storage=PointerStorage[element_width=1],
+        ...,
     ],
 ):
     var i = global_idx.x
@@ -127,7 +142,7 @@ def run_python_interop_example() raises:
 # Metaprogramming example
 
 
-trait FauxEquatable(ImplicitlyDestructible):
+trait FauxEquatable(ImplicitlyDeletable):
     # Generic implementation using reflection: compare all fields
     def __eq__(self, other: Self) -> Bool:
         comptime r = reflect[Self]

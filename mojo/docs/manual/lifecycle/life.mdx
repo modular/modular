@@ -559,7 +559,7 @@ def __init__(out self, *, deinit move: Self):
 ```
 
 The move constructor takes its `move` argument using the `deinit`
-[passing convention](/docs/manual/values/ownership/#argument-passing-conventions),
+[argument convention](/docs/manual/values/ownership/#argument-conventions),
 which grants exclusive ownership of the value and marks it as destroyed at the
 end of the function. (For more information on the `deinit` convention, see
 [Field lifetimes during destruct and move](/docs/manual/lifecycle/death/#field-lifetimes-during-destruct-and-move)).
@@ -612,7 +612,7 @@ value from one variable to another when the original variable's lifetime ends
 A critical feature of move constructors is that it takes the incoming value as a
 `deinit` argument, meaning this method gets unique ownership of the value.
 Moreover, because this is a dunder method that Mojo calls only when performing a
-move (during ownership transfer), the `take` argument is guaranteed to be a
+move (during ownership transfer), the `move` argument is guaranteed to be a
 mutable reference to the original value, *not a copy* (unlike other methods that
 may declare an argument as `var`, but might receive the value as a copy if the
 method is called without the
@@ -624,7 +624,7 @@ lifetime actually ends at the point of transfer.
 
 To ensure your type can't be implicitly copied, you can make it "move-only" by
 making it `Movable` but not `Copyable`. A move-only type can be
-passed to other variables and passed into functions with any passing convention
+passed to other variables and passed into functions with any argument convention
 (like `mut` or `var`.) The only catch is that you must use the `^`
 transfer sigil to end the lifetime of a move-only type when assigning it to a
 new variable or when passing it as a `var` argument. The

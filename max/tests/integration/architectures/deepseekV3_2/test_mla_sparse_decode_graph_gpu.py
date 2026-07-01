@@ -37,8 +37,11 @@ from max.nn.attention.multi_latent_attention_fp8 import (
 )
 from max.nn.kernels import mla_decode_graph, mla_prefill_decode_graph
 from max.nn.kv_cache import (
+    KVCacheInputs,
     KVCacheParams,
     KVCacheQuantizationConfig,
+    MLAKVCacheParams,
+    MultiKVCacheInputs,
     MultiKVCacheParams,
     PagedCacheValues,
 )
@@ -157,14 +160,12 @@ def test_mla_decode_graph_sparse_smoke() -> None:
         scaling_params=scaling_params,
     )
 
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=DType.float8_e4m3fn,
-        n_kv_heads=1,
         head_dim=576,
         num_layers=1,
         page_size=page_size,
         devices=[DeviceRef.GPU()],
-        is_mla=True,
         num_q_heads=num_heads,
     )
 
@@ -332,14 +333,12 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
         scaling_params=scaling_params,
     )
 
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=DType.float8_e4m3fn,
-        n_kv_heads=1,
         head_dim=576,
         num_layers=1,
         page_size=page_size,
         devices=[DeviceRef.GPU()],
-        is_mla=True,
         num_q_heads=num_heads,
     )
 
@@ -536,35 +535,33 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
     )
 
     index_head_dim = 128
-    mla_kv_params = KVCacheParams(
+    mla_kv_params = MLAKVCacheParams(
         dtype=DType.float8_e4m3fn,
-        n_kv_heads=1,
         head_dim=kv_lora_rank + qk_rope_head_dim,
         num_layers=1,
         page_size=page_size,
         devices=[DeviceRef.GPU()],
-        is_mla=True,
         num_q_heads=num_heads,
         kvcache_quant_config=KVCacheQuantizationConfig(
             scale_dtype=DType.int8,
             quantization_granularity=32,
         ),
     )
-    indexer_kv_params = KVCacheParams(
+    indexer_kv_params = MLAKVCacheParams(
         dtype=DType.float8_e4m3fn,
-        n_kv_heads=1,
         head_dim=index_head_dim,
         num_layers=1,
         page_size=page_size,
         devices=[DeviceRef.GPU()],
-        is_mla=True,
         num_q_heads=num_heads,
         kvcache_quant_config=KVCacheQuantizationConfig(
             scale_dtype=DType.float32,
             quantization_granularity=32,
         ),
     )
-    multi_kv = MultiKVCacheParams.from_params(mla_kv_params, indexer_kv_params)
+    multi_kv = MultiKVCacheParams.from_params(
+        {"mla": mla_kv_params, "indexer": indexer_kv_params}
+    )
 
     sparse_attn = SparseLatentAttentionWithRopeFp8(
         rope=rope,
@@ -595,7 +592,7 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
     len_indexer_kv = len(
         indexer_kv_params.get_symbolic_inputs().inputs[0].flatten()
     )
-    kv_sym = list(multi_kv.get_symbolic_inputs().flatten())
+    kv_sym = list(multi_kv.flattened_kv_inputs())
     hidden_type = TensorType(
         DType.bfloat16,
         ["total_seq_len", hidden_size],
@@ -626,7 +623,7 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
             )
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
             freqs_cis = ops.cast(rope.freqs_cis, hidden.dtype).to(hidden.device)
-            out = sparse_attn(
+            out, _topk_indices = sparse_attn(
                 layer_idx,
                 hidden,
                 kv_mla,
@@ -658,10 +655,13 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
     kv_manager.claim(context.request_id, replica_idx=0)
     batch = [context]
 
-    kv_manager.alloc(context, replica_idx=0, num_steps=prefill_len)
-    kv_ri_pref = kv_manager.runtime_inputs([batch], num_steps=prefill_len)
-    assert kv_ri_pref.inputs[0].attention_dispatch_metadata is not None
-    assert kv_ri_pref.inputs[1].attention_dispatch_metadata is not None
+    kv_manager.alloc(context, replica_idx=0)
+    kv_ri_pref = kv_manager.runtime_inputs([batch])
+    assert isinstance(kv_ri_pref, MultiKVCacheInputs)
+    mla_pref = kv_ri_pref.children["mla"]
+    idx_pref = kv_ri_pref.children["indexer"]
+    assert isinstance(mla_pref, KVCacheInputs)
+    assert isinstance(idx_pref, KVCacheInputs)
 
     t_pref = (
         torch.randn((prefill_len, hidden_size), dtype=torch.float32) * 0.02
@@ -678,10 +678,13 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
         context.update(42)
     kv_manager.step([batch])
 
-    kv_manager.alloc(context, replica_idx=0, num_steps=1)
-    kv_ri_dec = kv_manager.runtime_inputs([batch], num_steps=1)
-    assert kv_ri_dec.inputs[0].attention_dispatch_metadata is not None
-    assert kv_ri_dec.inputs[1].attention_dispatch_metadata is not None
+    kv_manager.alloc(context, replica_idx=0)
+    kv_ri_dec = kv_manager.runtime_inputs([batch])
+    assert isinstance(kv_ri_dec, MultiKVCacheInputs)
+    mla_dec = kv_ri_dec.children["mla"]
+    idx_dec = kv_ri_dec.children["indexer"]
+    assert isinstance(mla_dec, KVCacheInputs)
+    assert isinstance(idx_dec, KVCacheInputs)
 
     t_dec = (torch.randn((1, hidden_size), dtype=torch.float32) * 0.02).to(
         torch.bfloat16

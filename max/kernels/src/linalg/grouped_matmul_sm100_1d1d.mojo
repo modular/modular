@@ -59,6 +59,7 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    LTToTTLayout,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
@@ -1089,18 +1090,14 @@ def consumer_main_loop[
     if elect_one_sync():
         for j in range(UInt32(k_group_size)):
             var offset = Int(stage * UInt32(k_group_size) + j)
-            var a_smem_tile = LayoutTensor[
-                a_type,
-                a_smem_layout,
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ](a_smem_base + offset * a_smem_tile_size)
-            var b_smem_tile = LayoutTensor[
-                b_type,
-                b_smem_layout,
-                address_space=AddressSpace.SHARED,
-                alignment=128,
-            ](b_smem_base + offset * b_smem_tile_size)
+            var a_smem_tile = TileTensor(
+                a_smem_base + offset * a_smem_tile_size,
+                LTToTTLayout[a_smem_layout](),
+            )
+            var b_smem_tile = TileTensor(
+                b_smem_base + offset * b_smem_tile_size,
+                LTToTTLayout[b_smem_layout](),
+            )
             var sfa_smem_tile = SMemTile[
                 sfa_dtype, internal_sf_k_major[sfa_d0, sfa_d1]
             ](
@@ -1133,8 +1130,8 @@ def consumer_main_loop[
                 sfb_tmem_adj = UInt32(0)
 
             mma_op.mma(
-                lt_to_tt(a_smem_tile),
-                lt_to_tt(b_smem_tile),
+                a_smem_tile,
+                b_smem_tile,
                 sfa_smem_tile,
                 sfb_smem_tile,
                 tmem_addr,
@@ -1405,12 +1402,12 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
-    a_device: LayoutTensor[a_type, a_layout, ...],
+    a_device: LayoutTensor[mut=False, a_type, a_layout, ...],
     group_offsets: LayoutTensor[DType.uint32, group_offsets_layout, ...],
     group_scale_offsets: LayoutTensor[
         DType.uint32, group_scale_offsets_layout, ...
     ],
-    b_device: LayoutTensor[b_type, b_layout, ...],
+    b_device: LayoutTensor[mut=False, b_type, b_layout, ...],
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ...],
     a_scales: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
     b_scales: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],

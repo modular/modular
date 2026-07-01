@@ -33,6 +33,7 @@ Two main traits abstract these writing mechanisms:
 from layout.tma_async import TMATensorTile
 from layout import (
     Coord,
+    Idx,
     IntTuple,
     Layout,
     MixedLayout,
@@ -43,6 +44,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
+from layout.tensor_storage import TensorStorage
 from layout.tile_io import copy_sram_to_dram
 from std.gpu.memory import fence_async_view_proxy
 from std.collections import OptionalReg
@@ -250,8 +252,8 @@ struct TileWriterThreadwise[
     dtype: DType,
     dst_layout: TensorLayout,
     dst_origin: MutOrigin,
+    dst_storage: TensorStorage,
     dst_linear_idx_type: DType,
-    dst_element_size: Int,
     //,
     thread_layout: MixedLayout,
     simd_size: Int,
@@ -265,9 +267,9 @@ struct TileWriterThreadwise[
         dtype=Self.dtype,
         LayoutType=Self.dst_layout,
         origin=Self.dst_origin,
+        Storage=Self.dst_storage,
         address_space=AddressSpace.GENERIC,
         linear_idx_type=Self.dst_linear_idx_type,
-        element_size=Self.dst_element_size,
     ]
     var dst: Self.DstType
     var thread_idx: Int
@@ -470,6 +472,7 @@ struct FragmentToSMemWriter[
         Self.tile_n_size, Self.WG_BN
     ]()
 
+    @__allow_legacy_any_origin_fields
     var c_tile: TileTensor[
         mut=True,
         dtype=Self.c_type,
@@ -669,8 +672,8 @@ struct RegisterToGMemWriter[
     c_type: DType,
     dst_layout: TensorLayout,
     dst_origin: MutOrigin,
+    dst_storage: TensorStorage,
     dst_linear_idx_type: DType,
-    dst_element_size: Int,
     //,
     wgmma_shape: IndexList[3],
     num_consumer: Int,
@@ -690,8 +693,8 @@ struct RegisterToGMemWriter[
         c_type: Output data type.
         dst_layout: Layout of the destination tensor.
         dst_origin: Origin type of the destination tensor.
+        dst_storage: Storage type of the destination tensor.
         dst_linear_idx_type: Linear index type for destination tensor.
-        dst_element_size: Number of scalar elements per destination element.
         wgmma_shape: Shape of the WGMMA operation [M, N, K].
         num_consumer: Number of consumer warp groups.
         N: Matrix N dimension.
@@ -717,9 +720,9 @@ struct RegisterToGMemWriter[
         dtype=Self.c_type,
         LayoutType=Self.dst_layout,
         origin=Self.dst_origin,
+        Storage=Self.dst_storage,
         address_space=AddressSpace.GENERIC,
         linear_idx_type=Self.dst_linear_idx_type,
-        element_size=Self.dst_element_size,
     ]
     var dst: Self.DstType
     var num_m_mmas: Int

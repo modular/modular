@@ -29,3 +29,21 @@ mojo_test(
         "@mojo//:std",
     ],
 )
+
+# Positive control for the NaN-poison allocator mode
+# (`MODULAR_DEBUG_DEVICE_ALLOCATOR=poison-all`): a kernel that reads an
+# uninitialized buffer. With poison ON it raises (dst is NaN); OFF it may
+# silently pass on pool garbage. Tagged `manual` -- never runs in the normal
+# suite.
+mojo_test(
+    name = "positive_control_poison_uninit.mojo.test",
+    srcs = ["positive_control_poison_uninit.mojo"],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "@mojo//:std",
+    ],
+)

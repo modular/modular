@@ -15,31 +15,27 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar
 
-import numpy as np
-from max.driver import Buffer, DevicePinnedBuffer, is_virtual_device_mode
+from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, ops
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.kv_cache import KVCacheInputs
-from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     ModelInputs,
     ModelOutputs,
 )
-from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.pipelines.weights.quant import parse_quant_config
-from max.support.algorithm import flatten2d
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Inputs, DeepseekV2Model
+from .batch_processor import DeepseekV3BatchProcessor
 from .deepseekV3 import DeepseekV3
 from .memory_planner import (
     _ep_max_rank_send_tokens_for_pipeline,
@@ -85,6 +81,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
 
     model_config_cls: ClassVar[type[Any]] = DeepseekV3Config
+    batch_processor_cls: ClassVar[type[DeepseekV3BatchProcessor]] = (
+        DeepseekV3BatchProcessor
+    )
 
     def _create_model_config(
         self, state_dict: dict[str, WeightData]
@@ -127,12 +126,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                     f" n_gpus_per_node * n_nodes. For a single-node deployment"
                     f" set ep_size={len(self.devices)}."
                 )
-            # TODO: Support TP attention for FP8 Deepseek-V3 models.
-            if quant_config is not None and not quant_config.is_nvfp4:
-                if ep_size > data_parallel_degree:
-                    raise ValueError(
-                        "TP attention is not supported for FP8 Deepseek-V3 models."
-                    )
 
             n_nodes = ep_size // len(self.devices)
 
@@ -226,27 +219,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     def load_model(self, session: InferenceSession) -> Model:
         """Load the model with the given weights."""
 
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        # `_host_input_row_offsets_prealloc` tensor needs to reserve space for
-        # `max_batch_size` of requests on each DP rank.
-        dp_size = self.pipeline_config.model.data_parallel_degree
-        max_batch_size *= dp_size
-
-        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        )
-        self._device_input_row_offsets_prealloc = (
-            self._host_input_row_offsets_prealloc.to(self.devices[0])
-        )
-
-        # create batch context lengths tensor for each device
-        self._batch_context_lengths_prealloc_cpu = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(len(self.devices))
-        ]
-
         with CompilationTimer("model") as timer:
             if self.adapter:
                 state_dict = self.adapter(
@@ -297,6 +269,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             nn_model.load_state_dict(
                 state_dict, weight_alignment=1, strict=True
             )
+
             self.state_dict = nn_model.state_dict()
 
             # Create the graph
@@ -321,13 +294,11 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 ]
 
                 # Unmarshal the KV cache arguments.
-                fetch_types = (
-                    self.kv_params.get_symbolic_inputs().inputs[0].flatten()
+                kv_inputs = self.kv_params.unflatten_kv_inputs(
+                    variadic_args_iter
                 )
-                len_of_kv_inputs = len(fetch_types) * len(self.devices)
-                kv_caches_per_dev = self._unflatten_kv_inputs(
-                    [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
-                )
+                assert isinstance(kv_inputs, KVCacheInputs)
+                kv_caches_per_dev = list(kv_inputs.inputs)
 
                 # Unmarshal the batch context lengths
                 batch_context_lengths = [
@@ -361,6 +332,13 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             timer.mark_build_complete()
             model = session.load(graph, weights_registry=self.state_dict)
+
+        if self._batch_processor is not None:
+            bind_ep = getattr(
+                self._batch_processor, "bind_ep_comm_initializer", None
+            )
+            if bind_ep is not None:
+                bind_ep(self.ep_comm_initializer)
 
         return model
 
@@ -413,146 +391,3 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[0],
             )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> DeepseekV3Inputs:
-        dp = self.pipeline_config.model.data_parallel_degree
-        if len(replica_batches) != dp:
-            raise ValueError(
-                "Number of replica batches must match data parallel degree"
-            )
-
-        # Allocate the model inputs on pinned memory for faster h2d
-        # transfer speeds. If model is on host, then fall back to normal
-        # pageable memory. We initialize these empty max tensors by exporting
-        # to numpy over dlpack and using numpy methods.
-        # TODO: move rest of inputs to pinned memory
-        device0 = self.devices[0]
-        pinned = not device0.is_host
-
-        # If we are not in decode only mode, we need to create a list of
-        # tensors containing the context length of each batch. Need by MLA
-        # prefill.
-        if self.pipeline_config.runtime.pipeline_role != "decode_only":
-
-            def align_length(length: int) -> int:
-                page_size = self.kv_cache_config.kv_cache_page_size
-                return (length + page_size - 1) // page_size * page_size
-
-            for i, batch in enumerate(replica_batches):
-                curr_length = sum(
-                    [align_length(ctx.tokens.current_position) for ctx in batch]
-                )
-                self._batch_context_lengths_prealloc_cpu[i][0] = curr_length
-
-            if dp != len(self.devices):
-                assert dp == 1
-                # Duplicate the batch context lengths for each device.
-                for dev_idx in range(1, len(self.devices)):
-                    self._batch_context_lengths_prealloc_cpu[dev_idx][0] = (
-                        self._batch_context_lengths_prealloc_cpu[0][0].item()
-                    )
-
-        context_batch = flatten2d(replica_batches)
-        # Create tokens
-        tokens: Buffer
-        pinned_input_row_offsets: Buffer
-        if len(context_batch) == 0:
-            if pinned:
-                tokens = DevicePinnedBuffer(
-                    shape=[0], dtype=DType.int64, device=device0
-                )
-            else:
-                tokens = Buffer(shape=[0], dtype=DType.int64, device=device0)
-            host_input_row_offsets = Buffer.zeros(shape=[1], dtype=DType.uint32)
-
-            if pinned:
-                pinned_input_row_offsets = DevicePinnedBuffer.zeros(
-                    shape=[1], dtype=DType.uint32, device=device0
-                )
-            else:
-                pinned_input_row_offsets = Buffer.zeros(
-                    shape=[1], dtype=DType.uint32, device=device0
-                )
-            device_input_row_offsets = pinned_input_row_offsets.to(device0)
-        else:
-            # Create a ragged token vector of length: sum(len(t) for t in tokens).
-            num_tokens = sum(ctx.tokens.active_length for ctx in context_batch)
-            tokens_host: Buffer
-            if pinned:
-                tokens_host = DevicePinnedBuffer(
-                    shape=(num_tokens,),
-                    dtype=DType.int64,
-                    device=device0,
-                )
-            else:
-                tokens_host = Buffer(
-                    shape=(num_tokens,),
-                    dtype=DType.int64,
-                    device=device0,
-                )
-            np.concatenate(
-                [ctx.tokens.active for ctx in context_batch],
-                out=tokens_host.to_numpy(),
-            )
-            tokens = tokens_host.to(device0)
-
-            # Create a ragged token vector of length: sum(len(t) for t in tokens).
-            # Get input_row_offsets: start and end position of each batch in the
-            # combined total_seq_len dimension.
-            input_row_offsets = np.cumsum(
-                [0] + [ctx.tokens.active_length for ctx in context_batch],
-                dtype=np.uint32,
-            )
-
-            # FIXME GEX-3121: There is a bug when using pinned buffer as graph cpu input:
-            # `Expected Device(type=cpu,id=0), but was on device Device(type=gpu,id=0)`
-            # Thus we set up both a non-pinned and a pinned cpu buffer as workaround.
-            host_input_row_offsets = Buffer(
-                shape=(len(context_batch) + 1,),
-                dtype=DType.uint32,
-            )
-            host_input_row_offsets.to_numpy()[:] = input_row_offsets[:]
-
-            if pinned:
-                pinned_input_row_offsets = DevicePinnedBuffer(
-                    shape=(len(context_batch) + 1,),
-                    dtype=DType.uint32,
-                    device=device0,
-                )
-            else:
-                pinned_input_row_offsets = Buffer(
-                    shape=(len(context_batch) + 1,),
-                    dtype=DType.uint32,
-                    device=device0,
-                )
-            pinned_input_row_offsets.to_numpy()[:] = input_row_offsets[:]
-            device_input_row_offsets = pinned_input_row_offsets.to(device0)
-
-        data_parallel_splits = Buffer.from_numpy(
-            compute_data_parallel_splits(replica_batches)
-        )
-
-        ep_inputs = (
-            ()
-            if self.ep_comm_initializer is None
-            else tuple(self.ep_comm_initializer.model_inputs())
-        )
-
-        return DeepseekV3Inputs(
-            tokens=tokens,
-            input_row_offsets=device_input_row_offsets,
-            host_input_row_offsets=host_input_row_offsets,
-            batch_context_lengths=self._batch_context_lengths_prealloc_cpu,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            data_parallel_splits=data_parallel_splits,
-            ep_inputs=ep_inputs,
-        )

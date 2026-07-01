@@ -31,6 +31,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import (
     KVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 
@@ -91,7 +92,7 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
     device = DeviceRef.CPU()
 
     # Create KV cache parameters
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,
@@ -130,8 +131,10 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
             TensorType(DType.uint32, shape=(2,), device=device),
             # lookup_table: [batch_size, max_pages]
             TensorType(DType.uint32, shape=(2, 8), device=device),
-            # is_cache_empty: scalar
-            TensorType(DType.uint32, shape=(), device=device),
+            # max_prompt_length: scalar
+            TensorType(DType.uint32, shape=(1,), device=device),
+            # max_cache_length: scalar
+            TensorType(DType.uint32, shape=(1,), device=device),
         ],
     ) as graph:
         (
@@ -146,14 +149,16 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
             blocks,
             cache_lengths,
             lookup_table,
-            is_cache_empty,
+            max_prompt_length,
+            max_cache_length,
         ) = graph.inputs
 
         kv_collection = PagedCacheValues(
             blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
-            is_cache_empty.tensor,
+            max_prompt_length.tensor,
+            max_cache_length.tensor,
         )
 
         tester = FusedQKVRaggedMatmulScaledFloat4(kv_params, kv_collection, 32)
@@ -425,23 +430,23 @@ def test_grouped_matmul_block_scaled_valid(
     [
         (
             {"hidden_dtype": DType.bfloat16},
-            TypeError,
-            "hidden_states and weight dtypes must be uint8",
+            ValueError,
+            "expected hidden_states and weight to have the same dtype",
         ),
         (
             {"a_scales_dtype": DType.float32},
-            TypeError,
-            "a_scales and b_scales dtypes must match",
+            ValueError,
+            "expected a_scales and b_scales to have the same dtype",
         ),
         (
             {"scales_dtype": DType.float32},
             TypeError,
-            "a_scales dtype must be float8_e4m3fn \\(NVFP4\\) or float8_e8m0fnu \\(MXFP4\\)",
+            "a_scales dtype must be float8_e4m3fn \\(NVFP4\\) or float8_e8m0fnu \\(MXFP4/MXFP8\\)",
         ),
         (
             {"a_scales_shape": (1, 8)},
             ValueError,
-            "expected a_scales of rank 5 and b_scales of rank 6",
+            "expected a_scales to have rank 5, was 2",
         ),
     ],
 )
@@ -451,4 +456,20 @@ def test_grouped_matmul_block_scaled_invalid(
     """Tests grouped_matmul_block_scaled rejects invalid inputs."""
     input_types = _get_fp4_input_types(DeviceRef.CPU(), **kwargs)
     with pytest.raises(error_type, match=error_match):
+        _call_fp4_matmul(input_types)
+
+
+def test_grouped_matmul_block_scaled_rejects_misplaced_scales() -> None:
+    """Tests grouped_matmul_block_scaled rejects scales on another device."""
+    input_types = _get_fp4_input_types(DeviceRef.CPU())
+    input_types[2] = TensorType(
+        DType.float8_e4m3fn,
+        shape=(1, 8, _SF_ATOM_M[0], _SF_ATOM_M[1], _SF_ATOM_K),
+        device=DeviceRef.GPU(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="expected hidden_states and a_scales to have the same device",
+    ):
         _call_fp4_matmul(input_types)

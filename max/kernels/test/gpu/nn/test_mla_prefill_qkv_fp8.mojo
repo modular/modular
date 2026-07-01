@@ -20,6 +20,7 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     TileTensor,
+    lt_to_tt,
     UNKNOWN_VALUE,
     row_major,
 )
@@ -369,8 +370,8 @@ def test_prefill[
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(k_ref_device)
-    var v_ref_operand = LayoutTensorMHAOperand(v_ref_device)
+    var k_ref_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
+    var v_ref_operand = LayoutTensorMHAOperand(lt_to_tt(v_ref_device))
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](

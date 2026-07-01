@@ -126,6 +126,28 @@ class Settings(BaseSettings):
         default=20 * 1024 * 1024,  # 20MiB
         alias="MAX_SERVE_MAX_LOCAL_IMAGE_BYTES",
     )
+    # Media (image/video) resolution configuration for http(s):// and data:
+    # URIs. ``max_bytes`` is a server-level cap applied on top of any
+    # per-model cap (the smaller of the two wins); 0 disables the
+    # server-level cap. ``media_kind`` is only the default label used in
+    # size-limit error messages when a resolver caller does not pass one.
+    max_bytes: int = Field(
+        description=(
+            "Server-level maximum size in bytes for media resolved from "
+            "http(s):// or data: URIs. Applied on top of any per-model cap "
+            "(the smaller wins). 0 disables the server-level cap."
+        ),
+        default=0,
+        alias="MAX_SERVE_MAX_BYTES",
+    )
+    media_kind: str = Field(
+        description=(
+            "Default media kind ('image' or 'video') used in size-limit error "
+            "messages when a resolver caller does not specify one."
+        ),
+        default="image",
+        alias="MAX_SERVE_MEDIA_KIND",
+    )
     generated_media_storage_mb: int = Field(
         description="Maximum amount of local disk space in MiB to use for generated image/video artifacts served via /content routes.",
         default=512,
@@ -187,11 +209,60 @@ class Settings(BaseSettings):
         description="Maximum time to wait for a heartbeat & remain healthy.  This should be longer than ITL",
         alias="MAX_SERVE_MW_HEALTH_FAIL",
     )
+    eplb_profile: bool = Field(
+        default=False,
+        description=(
+            "When True, enables expert-parallel load balancing (EPLB) MoE routing "
+            "histogram profiling in the model worker. The accumulator "
+            "is opt-in and unused unless this flag is set."
+        ),
+        alias="MAX_SERVE_EPLB_PROFILE",
+    )
+
+    gc_debug: bool = Field(
+        default=False,
+        description=(
+            "When True, attaches a CPython garbage-collection callback in the "
+            "model worker that times every GC pass and logs slow pauses. Used "
+            "to diagnose whether stop-the-world GC collections are the source "
+            "of per-scheduler-iteration latency spikes. Purely diagnostic; "
+            "does not change GC behavior."
+        ),
+        alias="MAX_SERVE_GC_DEBUG",
+    )
+    gc_debug_min_duration_ms: float = Field(
+        default=50.0,
+        description=(
+            "When gc_debug is enabled, GC pauses at or above this duration (in "
+            "milliseconds) are logged at WARNING; shorter pauses are logged at "
+            "DEBUG."
+        ),
+        alias="MAX_SERVE_GC_DEBUG_MIN_DURATION_MS",
+    )
+    gc_debug_top_objects: int = Field(
+        default=0,
+        description=(
+            "When gc_debug is enabled and this is greater than zero, log the N "
+            "most common live object types in the collected generation on each "
+            "GC pause. Walks the heap and is expensive; leave at 0 unless "
+            "actively investigating what is filling the heap."
+        ),
+        alias="MAX_SERVE_GC_DEBUG_TOP_OBJECTS",
+    )
 
     telemetry_worker_spawn_timeout: float | None = Field(
         default=None,
         description="Amount of time in seconds to wait for the telemetry worker to spawn and turn healthy",
         alias="MAX_SERVE_TELEMETRY_WORKER_SPAWN_TIMEOUT",
+    )
+
+    graceful_shutdown_timeout_s: int = Field(
+        default=5,
+        description=(
+            "Seconds to wait for in-flight requests to finish after SIGTERM "
+            "before cancelling them and exiting."
+        ),
+        alias="MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S",
     )
 
     metric_recording: MetricRecordingMethod = Field(
@@ -317,6 +388,13 @@ class Settings(BaseSettings):
         logger.info(
             f"    max_local_image_bytes  : {to_human_readable_bytes(self.max_local_image_bytes)}"
         )
+        max_bytes_str = (
+            to_human_readable_bytes(self.max_bytes)
+            if self.max_bytes
+            else "None"
+        )
+        logger.info(f"    max_bytes              : {max_bytes_str}")
+        logger.info(f"    media_kind             : {self.media_kind}")
         logger.info("")
 
         # Metrics and Telemetry Configuration

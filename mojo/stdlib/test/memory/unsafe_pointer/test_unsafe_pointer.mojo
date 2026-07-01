@@ -15,6 +15,7 @@ from std.compile import compile_info
 from std.ffi import external_call
 from std.memory import UnsafeMaybeUninit
 from std.sys import align_of, size_of
+import std.memory.alloc
 
 from test_utils import (
     ExplicitCopyOnly,
@@ -44,14 +45,6 @@ def _immutable_pointer(p: ImmutUnsafePointer[Int, ...]) raises:
     assert_equal(p[], 42)
 
 
-def _mutable_any_pointer(p: UnsafePointer[Int, MutAnyOrigin, ...]) raises:
-    assert_equal(p[], 42)
-
-
-def _immutable_any_pointer(p: UnsafePointer[Int, ImmutAnyOrigin, ...]) raises:
-    assert_equal(p[], 42)
-
-
 def _parameterized_pointer(p: UnsafePointer[Int, ...]) raises:
     assert_equal(p[], 42)
 
@@ -68,8 +61,6 @@ def test_mutable_conversions() raises:
     _named_origin[origin_of(x)](p)
     _mutable_pointer(p)
     _immutable_pointer(p)
-    _mutable_any_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
@@ -78,7 +69,6 @@ def test_immutable_conversions() raises:
     var p = UnsafePointer(to=x).as_immutable()
     _named_origin[mut=False, origin_of(x)](p)
     _immutable_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
@@ -87,8 +77,6 @@ def test_mutable_any_conversions() raises:
     var p = UnsafePointer(to=x).as_unsafe_any_origin()
     _mutable_pointer(p)
     _immutable_pointer(p)
-    _mutable_any_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
@@ -96,7 +84,6 @@ def test_immutable_any_conversions() raises:
     var x = 42
     var p = UnsafePointer(to=x).as_immutable().as_unsafe_any_origin()
     _immutable_pointer(p)
-    _immutable_any_pointer(p)
     _parameterized_pointer(p)
 
 
@@ -694,6 +681,43 @@ def test_optional_unsafe_pointer_llvm_lowering() raises:
             return
 
     raise Error("did not find _test_lower function")
+
+
+def test_alloc_free_single_zst() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = std.memory.alloc.Layout[ZST](count=1)
+    var ptr = alloc(layout).unsafe_leak()
+
+    assert_equal(0, len(ptr[0]))  # dereference the pointer
+
+    std.memory.alloc.dealloc(
+        std.memory.alloc.ThinAllocation(
+            unsafe_assume_ownership=ptr
+        ).unsafe_with_layout(layout)
+    )
+
+
+def test_alloc_free_many_zst() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = std.memory.alloc.Layout[ZST](count=Int.MAX)
+    var ptr = alloc(layout).unsafe_leak()
+
+    assert_equal(0, len(ptr[0]))  # dereference the pointer
+    assert_equal(0, len(ptr[Int.MAX]))
+
+    std.memory.alloc.dealloc(
+        std.memory.alloc.ThinAllocation(
+            unsafe_assume_ownership=ptr
+        ).unsafe_with_layout(layout)
+    )
 
 
 def main() raises:

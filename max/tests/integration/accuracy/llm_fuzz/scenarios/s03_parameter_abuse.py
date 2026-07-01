@@ -124,6 +124,14 @@ class ParameterAbuse(BaseScenario):
             "response_format_json": base(
                 {"response_format": {"type": "json_object"}, "max_tokens": 50}
             ),
+            # --- max_tokens vs max_completion_tokens ---
+            "max_completion_tokens_only": base({"max_completion_tokens": 10}),
+            "max_tokens_and_max_completion_tokens_same": base(
+                {"max_tokens": 10, "max_completion_tokens": 10}
+            ),
+            "max_tokens_and_max_completion_tokens_conflict": base(
+                {"max_tokens": 10, "max_completion_tokens": 20}
+            ),
             # --- conflicting parameters ---
             "stream_true_with_n_5": base(
                 {"stream": True, "n": 5, "max_tokens": 5}
@@ -162,6 +170,13 @@ class ParameterAbuse(BaseScenario):
             ),
         }
 
+        # Tests that require an exact status code to pass.
+        expected_status: dict[str, int] = {
+            "max_completion_tokens_only": 200,
+            "max_tokens_and_max_completion_tokens_same": 200,
+            "max_tokens_and_max_completion_tokens_conflict": 400,
+        }
+
         for test_name, payload in tests.items():
             try:
                 if isinstance(payload, str):
@@ -173,12 +188,20 @@ class ParameterAbuse(BaseScenario):
                         payload, timeout=config.timeout * 0.5
                     )
 
+                required = expected_status.get(test_name)
                 if resp.error == "TIMEOUT":
                     verdict = Verdict.FAIL
                     detail = "Server hung on parameter edge case"
                 elif resp.status == 0:
                     verdict = Verdict.FAIL
                     detail = f"Connection error: {resp.error}"
+                elif required is not None:
+                    if resp.status == required:
+                        verdict = Verdict.PASS
+                        detail = f"Got expected status {resp.status}"
+                    else:
+                        verdict = Verdict.FAIL
+                        detail = f"Expected {required}, got {resp.status}"
                 elif resp.status >= 500:
                     verdict = Verdict.FAIL
                     detail = (

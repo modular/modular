@@ -1458,7 +1458,7 @@ def test_conv_gpu_residual[
         IndexList[4](pad, pad, pad, pad),
         1,
         ctx,
-        source_dev.unsafe_ptr(),
+        source_dev.unsafe_ptr().as_unsafe_any_origin(),
         Float32(1.0),
     )
 
@@ -1583,7 +1583,7 @@ def test_conv_gpu_residual_diag_no_lambda[
         IndexList[4](pad, pad, pad, pad),
         1,
         ctx,
-        source_dev.unsafe_ptr(),
+        source_dev.unsafe_ptr().as_unsafe_any_origin(),
         Float32(1.0),
     )
 
@@ -1745,7 +1745,7 @@ def test_conv_gpu_residual_with_bias[
         IndexList[4](pad, pad, pad, pad),
         1,
         ctx,
-        source_dev.unsafe_ptr(),
+        source_dev.unsafe_ptr().as_unsafe_any_origin(),
         Float32(1.0),
     )
 

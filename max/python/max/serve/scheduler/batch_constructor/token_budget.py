@@ -62,11 +62,6 @@ class TokenBudget(ABC):
     * If ``allow_chunking`` is True, implementations **may** call
       ``context.chunk`` to reduce the effective token cost against
       the budget.
-    * :meth:`status_after_context` takes an optional ``num_steps`` argument
-      describing how many generation steps the scheduler intends to run for the
-      context. Budgets that care about future growth (for example, total-context
-      limits) should incorporate this into their effective cost; others may
-      ignore it and remain per-step.
     * :meth:`add_to_budget` is only called after a non-``BUDGET_EXHAUSTED``
       status and is responsible for incrementing :attr:`used` by the same
       effective token cost that was evaluated in :meth:`status_after_context`.
@@ -110,15 +105,13 @@ class TokenBudget(ABC):
         self,
         context: TextContext,
         request_type: RequestType,
-        num_steps: int = 1,
     ) -> BudgetStatus:
         """Compute this budget's status after hypothetically adding a context.
 
         Subclasses must implement this to evaluate the effective token cost of
-        ``context`` (optionally taking ``num_steps`` into account) against the
-        remaining capacity and return an appropriate :class:`BudgetStatus`.
-        Implementations may mutate ``context`` (for example, via chunking) but
-        must not update :attr:`used`.
+        ``context`` against the remaining capacity and return an appropriate
+        :class:`BudgetStatus`. Implementations may mutate ``context`` (for
+        example, via chunking) but must not update :attr:`used`.
         """
         pass
 
@@ -127,7 +120,6 @@ class TokenBudget(ABC):
         self,
         context: TextContext,
         request_type: RequestType,
-        num_steps: int = 1,
     ) -> None:
         """Apply a previously-evaluated context's token cost to this budget.
 
@@ -186,7 +178,6 @@ class TokenBudgetCollection:
         self,
         context: TextContext,
         request_type: RequestType,
-        num_steps: int = 1,
     ) -> BudgetStatus:
         """Evaluate all budgets against a context and return the first violation.
 
@@ -199,8 +190,6 @@ class TokenBudgetCollection:
         Args:
             context: The context being considered for inclusion in the batch.
             request_type: The type of request being evaluated.
-            num_steps: Planned number of generation steps for this context. This
-                is forwarded to each underlying :class:`TokenBudget`.
 
         Returns:
             The first non-available :class:`BudgetStatus` reported by any
@@ -208,9 +197,7 @@ class TokenBudgetCollection:
             all budgets accept the context.
         """
         for token_budget in self.token_budgets:
-            status = token_budget.status_after_context(
-                context, request_type, num_steps
-            )
+            status = token_budget.status_after_context(context, request_type)
             if status != BudgetStatus.BUDGET_AVAILABLE:
                 return status
         return BudgetStatus.BUDGET_AVAILABLE
@@ -219,18 +206,15 @@ class TokenBudgetCollection:
         self,
         context: TextContext,
         request_type: RequestType,
-        num_steps: int = 1,
     ) -> None:
         """Apply the token cost to all underlying budgets for an accepted context.
 
         Args:
             context: The context that was just admitted into the batch.
             request_type: The type of request being added to the budget.
-            num_steps: Planned number of generation steps that were considered
-                when :meth:`status_after_context` was called.
         """
         for token_budget in self.token_budgets:
-            token_budget.add_to_budget(context, request_type, num_steps)
+            token_budget.add_to_budget(context, request_type)
 
 
 class ActiveTokenBudget(TokenBudget):
@@ -255,17 +239,14 @@ class ActiveTokenBudget(TokenBudget):
         self,
         context: TextContext,
         request_type: RequestType,
-        num_steps: int = 1,
     ) -> BudgetStatus:
         """Evaluate whether the context's active tokens fit within the budget.
 
         This method examines ``context.tokens.active_length`` relative to the number of
-        tokens remaining in the budget. It is intentionally **per-step**: the
-        ``num_steps`` parameter is accepted for interface compatibility but is
-        not used when computing the effective cost of a context. If the active window would
-        exceed the remaining capacity and ``allow_chunking`` is enabled, it may
-        call ``context.tokens.chunk(tokens_remaining)`` to shrink the active
-        window so that it fits.
+        tokens remaining in the budget. If the active window would exceed the remaining
+        capacity and ``allow_chunking`` is enabled, it may call
+        ``context.tokens.chunk(tokens_remaining)`` to shrink the active window so that
+        it fits.
 
         **Important side effects**:
 
@@ -278,8 +259,6 @@ class ActiveTokenBudget(TokenBudget):
         Args:
             context: The :class:`TextContext` being considered.
             request_type: The type of request being evaluated.
-            num_steps: Planned number of generation steps. Currently ignored for
-                active-token budgets, which operate strictly on a per-step basis.
 
         Returns:
             A :class:`BudgetStatus` indicating if and how the context fits:
@@ -306,7 +285,6 @@ class ActiveTokenBudget(TokenBudget):
 
         # Already at or beyond capacity - no more contexts can be accepted.
         if tokens_remaining <= 0:
-            print(f"no tokens remaining in budget: {tokens_remaining}.")
             return BudgetStatus.BUDGET_EXHAUSTED
 
         # Fits without any modification.
@@ -331,7 +309,6 @@ class ActiveTokenBudget(TokenBudget):
         self,
         context: TextContext,
         request_type: RequestType,
-        num_steps: int = 1,
     ) -> None:
         """Record the token cost for an accepted context's active tokens.
 
@@ -343,8 +320,6 @@ class ActiveTokenBudget(TokenBudget):
             context: The context that was just admitted into the batch (possibly
                 after being chunked).
             request_type: The type of request being added to the budget.
-            num_steps: Planned number of generation steps. Currently ignored for
-                active-token budgets, which consume only the per-step active window.
         """
         if (
             self.active_request_type != RequestType.MIXED
@@ -409,31 +384,17 @@ class TotalContextTokenBudget(TokenBudget):
         self,
         context: TextContext,
         request_type: RequestType,
-        num_steps: int = 1,
     ) -> BudgetStatus:
         """Evaluate whether the context's total length fits within the budget.
 
         This method considers an effective cost based on
-        :attr:`len(TextContext.tokens)` and ``num_steps`` against
-        the remaining capacity. Concretely, it assumes that over ``num_steps``
-        generation steps the context will grow by ``num_steps - 1`` tokens,
-        yielding an effective cost of
-
-        ``len(context.tokens) + (num_steps - 1)``.
-
-        The effective cost is rounded up to the page size so per-request lengths
+        :attr:`len(TextContext.tokens)` against the remaining capacity. The
+        effective cost is rounded up to the page size so per-request lengths
         match the PagedKVCache alignment that some GPU kernels expect.
-
-        If the context would exceed the budget and ``allow_chunking`` is
-        enabled, it may call
-        ``context.tokens.chunk(tokens_remaining)`` to reduce the effective
-        cost, though in practice chunking is typically more relevant for
-        active-token budgets.
 
         Args:
             context: The :class:`TextContext` being considered.
             request_type: The type of request being evaluated.
-            num_steps: Planned number of generation steps for this context.
 
         Returns:
             A :class:`BudgetStatus` indicating if and how the context fits:
@@ -444,11 +405,6 @@ class TotalContextTokenBudget(TokenBudget):
               the remaining capacity.
             * :data:`BudgetStatus.BUDGET_EXHAUSTED` - context cannot be
               accommodated within the remaining capacity.
-
-        Raises:
-            ValueError: If chunking is enabled but ``context.chunk`` does
-                not succeed in reducing the effective cost to the remaining
-                capacity.
         """
 
         if request_type not in self.applicable_types:
@@ -461,9 +417,7 @@ class TotalContextTokenBudget(TokenBudget):
             return BudgetStatus.BUDGET_EXHAUSTED
 
         # Match PagedKVCache page alignment for GPU kernels.
-        total_length = self.align_up(
-            len(context.tokens) + (num_steps - 1), self.cost_alignment
-        )
+        total_length = self.align_up(len(context.tokens), self.cost_alignment)
 
         if total_length < tokens_remaining:
             return BudgetStatus.BUDGET_AVAILABLE
@@ -479,7 +433,6 @@ class TotalContextTokenBudget(TokenBudget):
         self,
         context: TextContext,
         request_type: RequestType,
-        num_steps: int = 1,
     ) -> None:
         """Record the token cost for an accepted context's total length.
 
@@ -488,15 +441,10 @@ class TotalContextTokenBudget(TokenBudget):
         same ``context``.
 
         **Side effect**:
-            Increments :attr:`used` by the same effective cost that was
-            evaluated in :meth:`status_after_context`, namely the page-aligned
-            ``len(context.tokens) + (num_steps - 1)``.
+            Increments :attr:`used` by the page-aligned ``len(context.tokens)``.
 
         Args:
             context: The context that was just admitted into the batch.
             request_type: The type of request being added to the budget.
-            num_steps: Planned number of generation steps for this context.
         """
-        self.used += self.align_up(
-            len(context.tokens) + (num_steps - 1), self.cost_alignment
-        )
+        self.used += self.align_up(len(context.tokens), self.cost_alignment)

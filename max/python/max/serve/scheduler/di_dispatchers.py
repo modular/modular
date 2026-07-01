@@ -23,7 +23,7 @@ from max.serve.scheduler.base import (
     PrefillRequest,
     PrefillResponse,
 )
-from max.serve.worker_interface.zmq_queue import (
+from max.serve.worker_interface._zmq_queue import (
     ZmqDealerSocket,
     ZmqRouterSocket,
 )

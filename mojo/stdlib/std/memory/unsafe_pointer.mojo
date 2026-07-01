@@ -220,7 +220,6 @@ def alloc[
     """
     comptime size_of_t = size_of[type]()
     comptime type_name = reflect[type].name()
-    comptime assert size_of_t > 0, "size must be greater than zero"
     debug_assert(
         count >= 0,
         "alloc[",
@@ -583,7 +582,16 @@ struct UnsafePointer[
             _type=type_of(self)._mlir_type
         ](other.address)
 
+    @deprecated(
+        "Implicitly converting an `UnsafePointer` to `MutUnsafeAnyOrigin` is"
+        " deprecated. `UnsafeAnyOrigin` is an unsafe escape hatch that silently"
+        " extends unrelated lifetimes and disables exclusivity checking, and it"
+        " is slated for removal, so it should never be applied implicitly."
+        " Prefer keeping a concrete origin; if you must discard it, make the"
+        " cast explicit with `as_unsafe_any_origin()`."
+    )
     @always_inline("builtin")
+    @doc_hidden
     @implicit
     def __init__[
         disambig: Int = 0  # FIXME: Work around name mangling conflict.
@@ -595,22 +603,23 @@ struct UnsafePointer[
             address_space=other.address_space,
         ],
     ):
-        """Implicitly casts a mutable pointer to `MutAnyOrigin`.
-
-        Args:
-            other: The mutable pointer to cast from.
-
-        Parameters:
-            disambig: Ignored. Works around name mangling conflict.
-        """
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type=type_of(self)._mlir_type
         ](other.address)
 
+    @deprecated(
+        "Implicitly converting an `UnsafePointer` to `ImmutUnsafeAnyOrigin` is"
+        " deprecated. `UnsafeAnyOrigin` is an unsafe escape hatch that silently"
+        " extends unrelated lifetimes and disables exclusivity checking, and it"
+        " is slated for removal, so it should never be applied implicitly."
+        " Prefer keeping a concrete origin; if you must discard it, make the"
+        " cast explicit with `as_unsafe_any_origin()`."
+    )
     @always_inline("builtin")
+    @doc_hidden
     @implicit
     def __init__[
-        disambig2: Int = 0  # FIXME: Work around name mangling conflict.
+        disambig2: Int = 0
     ](
         other: UnsafePointer[...],
         out self: UnsafePointer[
@@ -619,14 +628,6 @@ struct UnsafePointer[
             address_space=other.address_space,
         ],
     ):
-        """Implicitly casts a pointer to `ImmutAnyOrigin`.
-
-        Args:
-            other: The pointer to cast from.
-
-        Parameters:
-            disambig2: Ignored. Works around name mangling conflict.
-        """
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type=type_of(self)._mlir_type
         ](other.address)
@@ -732,7 +733,7 @@ struct UnsafePointer[
             An offset pointer.
         """
         return __mlir_op.`pop.offset`(
-            self.address, index(offset)._int_mlir_index()
+            self.address, index(offset).__mlir_index__()
         )
 
     @always_inline
@@ -1047,7 +1048,6 @@ struct UnsafePointer[
     def _is_convertible_to_device_type[T: AnyType]() -> Bool:
         comptime if Self.mut:
             return TypeList.of[
-                Trait=AnyType,
                 Self,
                 Self._OriginCastType[MutAnyOrigin],
                 Self._OriginCastType[MutUntrackedOrigin],
@@ -1061,7 +1061,6 @@ struct UnsafePointer[
             ]().contains[T]()
         else:
             return TypeList.of[
-                Trait=AnyType,
                 Self,
                 Self._OriginCastType[ImmutAnyOrigin],
                 Self._OriginCastType[ImmutUntrackedOrigin],
@@ -1266,7 +1265,7 @@ struct UnsafePointer[
             # intentionally don't unroll, otherwise the compiler vectorizes
             for i in range(width):
                 v[i] = __mlir_op.`pop.load`[
-                    alignment=alignment._int_mlir_index(),
+                    alignment=alignment.__mlir_index__(),
                     isVolatile=volatile.__mlir_i1__(),
                     isInvariant=invariant.__mlir_i1__(),
                     isNonTemporal=non_temporal.__mlir_i1__(),
@@ -1293,7 +1292,7 @@ struct UnsafePointer[
         var address = self.bitcast[SIMD[dtype, width]]().address
 
         var result = __mlir_op.`pop.load`[
-            alignment=alignment._int_mlir_index(),
+            alignment=alignment.__mlir_index__(),
             isVolatile=volatile.__mlir_i1__(),
             isInvariant=invariant.__mlir_i1__(),
             isNonTemporal=non_temporal.__mlir_i1__(),
@@ -1541,7 +1540,7 @@ struct UnsafePointer[
             ](val.cast[DType.uint8]())
         else:
             __mlir_op.`pop.store`[
-                alignment=alignment._int_mlir_index(),
+                alignment=alignment.__mlir_index__(),
                 isVolatile=volatile.__mlir_i1__(),
                 isNonTemporal=non_temporal.__mlir_i1__(),
             ](val, self.bitcast[SIMD[dtype, width]]().address)

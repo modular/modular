@@ -469,7 +469,7 @@ def _matmul_gpu[
     )
 
     comptime matmul_supported_format_amd = (
-        (a_type == DType.bfloat16 or a_type in amd_float8_dtypes)
+        a_type in amd_float8_dtypes.concat((DType.float32, DType.bfloat16))
         and b_type == a_type
         and c_type in amd_float8_dtypes.concat((DType.float32, DType.bfloat16))
         and not has_amd_rdna_gpu_accelerator()
@@ -570,7 +570,7 @@ def _matmul_gpu[
                 type_of(b).origin,
                 address_space=type_of(b).address_space,
                 linear_idx_type=type_of(b).linear_idx_type,
-                element_size=type_of(b).element_size,
+                Storage=type_of(b).Storage,
             ]
             enqueue_apple_matmul[
                 a_type,
@@ -1388,7 +1388,7 @@ def split_k_reduce[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, ...],
-    work_space: TileTensor,
+    work_space: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     comptime c_type = c.dtype
@@ -1398,9 +1398,7 @@ def split_k_reduce[
     var N = Int(c.dim[1]())
 
     @always_inline
-    @__copy_capture(c, work_space, num_partitions)
-    @parameter
-    def _reduce[simd_width: Int, alignment: Int = 1](c_coord: Coord):
+    def _reduce[simd_width: Int, alignment: Int = 1](c_coord: Coord) {var}:
         var idx = Coord(Idx[0], c_coord[0], c_coord[1])
         var vec = work_space.load[width=simd_width](idx)
         for k in range(1, num_partitions):
@@ -1421,7 +1419,7 @@ def split_k_reduce[
                 (c_coord[0], c_coord[1]), vec.cast[c_type]()
             )
 
-    elementwise[_reduce, simd_width, target="gpu"]((M, N), ctx)
+    elementwise[simd_width, target="gpu"](_reduce, (M, N), ctx)
 
 
 def multistage_gemm[

@@ -6,8 +6,6 @@ description: Generate images from text prompts or transform existing images usin
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import ListingCard from '@site/src/components/Listing/ListingCard';
-import ListingCards from '@site/src/components/Listing/ListingCards';
 import InstallModular from '../../_includes/install-modular.mdx';
 import InstallOpenAI from '../../_includes/install-openai.mdx';
 import Requirements from '@site/src/components/Requirements';
@@ -246,6 +244,8 @@ for details.
 Diffusion models work by iteratively refining a noisy image. More steps
 produce higher-quality results but take proportionally longer. You can
 experiment with `steps` when considering the tradeoffs of speed and quality.
+(Note that because FLUX.2-Klein models are trained for exactly 4
+steps, you must set `steps` to 4 for those models.)
 
 **Prompt adherence**: `guidance_scale` determines how literally the model
 interprets your prompt. Higher values (7-10) produce results that closely
@@ -557,14 +557,10 @@ Your output should look similar to the following:
 Now that you can generate images, explore other inference capabilities and
 deployment options.
 
-<ListingCards>
-  <ListingCard title="Image and video to text"
-    url="/max/inference/image-to-text"
-    description="Use the MAX chat completions endpoint with image or video input to generate descriptions and answer questions about visual content" />
-  <ListingCard title="Structured output"
-    url="/max/serve/structured-output"
-    description="Enable structured output with your GenAI deployments for predictable responses" />
-  <ListingCard title="Deploy MAX on GPU with self-hosted endpoints"
-    url="/max/deploy/local-to-cloud"
-    description="Learn how to deploy MAX pipelines to cloud" />
-</ListingCards>
+- [Image and video to text](/max/inference/image-to-text): Use the MAX chat
+  completions endpoint with image or video input to generate descriptions and
+  answer questions about visual content.
+- [Structured output](/max/serve/structured-output): Enable structured output
+  with your GenAI deployments for predictable responses.
+- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+  Learn how to deploy MAX pipelines to cloud.

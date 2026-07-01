@@ -312,7 +312,6 @@ struct LayoutTensor[
     def _is_convertible_to_device_type[T: AnyType]() -> Bool:
         comptime if Self.mut:
             return TypeList.of[
-                Trait=AnyType,
                 Self,
                 Self.OriginCastType[MutAnyOrigin],
                 Self.OriginCastType[MutUntrackedOrigin],
@@ -321,7 +320,6 @@ struct LayoutTensor[
             ]().contains[T]()
         else:
             return TypeList.of[
-                Trait=AnyType,
                 Self,
                 Self.OriginCastType[ImmutAnyOrigin],
                 Self.OriginCastType[ImmutUntrackedOrigin],
@@ -881,7 +879,7 @@ struct LayoutTensor[
     def __init__[
         __disambig: Int = 0
     ](
-        other: LayoutTensor[...],
+        other: LayoutTensor,
         out self: type_of(other).OriginCastType[ImmutAnyOrigin],
     ):
         self.ptr = other.ptr.as_unsafe_any_origin()

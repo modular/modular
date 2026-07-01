@@ -20,7 +20,7 @@ the operation, and input buffers, and returns output buffers.
 Handlers are registered using the @register_op_handler decorator.
 """
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from math import ceil, prod
 from typing import Any, Protocol, cast
 
@@ -240,45 +240,6 @@ def _handle_constant_scalar(
     if np_val.dtype == np.bool_:
         np_val = np_val.view(np.int8)
     return [Buffer.from_numpy(np_val)]
-
-
-# Module-level weights registry set by MOInterpreter during execution.
-_weights_registry: Mapping[str, Buffer] | None = None
-
-
-@register_op_handler(mo.ConstantExternalOp)
-def _handle_constant_external(
-    op: mo.ConstantExternalOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.constant.external by looking up the named weight.
-
-    External constants reference named weights whose backing data is provided
-    at runtime via the weights registry.  The interpreter stashes the registry
-    in the module-level ``_weights_registry`` for the duration of execution.
-
-    Args:
-        op: The constant external operation.
-        inputs: Input buffers (empty for constants).
-
-    Returns:
-        List containing the looked-up weight buffer.
-
-    Raises:
-        RuntimeError: If no weights registry is available or the name is
-            not found.
-    """
-    name = op.name
-    if _weights_registry is None:
-        raise RuntimeError(
-            "No weights registry provided to interpreter, cannot resolve "
-            f"external constant '{name}'"
-        )
-    if name not in _weights_registry:
-        raise RuntimeError(
-            f"Weight '{name}' not found in weights registry. "
-            f"Available: {list(_weights_registry.keys())}"
-        )
-    return [_weights_registry[name]]
 
 
 # Mutable load operations
@@ -786,12 +747,13 @@ for op_type in ops.BINARY_ELEMENTWISE_COMPARISON:
 def _handle_unary_elementwise(
     op: _core.Operation, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Dispatches an eager unary-elementwise op to its pre-compiled GC model.
+    """Dispatches an eager unary-elementwise op to its GC model.
 
-    Models are compiled once per (op, device, input dtype) at rank 1, so the
-    operand is flattened around the call and reshaped back (zero-copy views).
-    The output dtype is whatever the model produces — the same dtype for most
-    ops, ``bool`` for the ``IsNan``/``IsInf`` predicates.
+    Models are compiled once per (op, device, input dtype) at rank 1 (see
+    :func:`unary_elementwise_gc.unary_model`), so the operand is flattened
+    around the call and reshaped back (zero-copy views). The output dtype is
+    whatever the model produces — the same dtype for most ops, ``bool`` for the
+    ``IsNan``/``IsInf`` predicates.
 
     Args:
         op: The unary-elementwise operation being handled.
@@ -809,8 +771,14 @@ def _handle_unary_elementwise(
     return [out.view(out.dtype, x.shape)]
 
 
-for op_type in unary_elementwise_gc.UNARY_GC_OPS:
-    register_op_handler(op_type)(_handle_unary_elementwise)
+# Wrapped in a function so the UNARY_GC_OPS access is deferred past the import
+# cycle between this module and unary_elementwise_gc (via the package).
+def _register_unary_elementwise_handlers() -> None:
+    for op_type in unary_elementwise_gc.UNARY_GC_OPS:
+        register_op_handler(op_type)(_handle_unary_elementwise)
+
+
+_register_unary_elementwise_handlers()
 
 
 # Unary mixed-dtype operations (cast, is_nan, is_inf)
@@ -857,10 +825,10 @@ for op_type in ops.UNARY_MIXED:
 def _handle_matmul(
     op: mo.MatmulOp | mo.BatchMatmulOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Routes eager matmul and batch_matmul through the pre-compiled GC model.
+    """Routes eager matmul and batch_matmul through a GC model.
 
-    Looks up the import-time-compiled rank-3 batched-matmul
-    :class:`~max.engine.Model` for the realized input's device and dtype,
+    Looks up the rank-3 batched-matmul :class:`~max.engine.Model` for the
+    realized input's device and dtype (see :func:`matmul_gc.matmul_model`),
     view-shims the two operands to canonical rank 3, executes the model, and
     view-shims the output back to the result rank. All views are zero-copy.
 
@@ -3894,12 +3862,12 @@ def _handle_distributed_allgather(
     """Handle mo.distributed.allgather by copying each input to every device.
 
     Operands (flat): N input tensors, N signal buffers, 1 input chain.
-    Results: N*N output tensors, 1 output chain.
+    Results: N*G output tensors, 1 output chain, where G is the group size.
 
-    The MO-level allgather produces N*N raw outputs: for each device d
-    and each input i, ``results[d*N + i]`` is a copy of ``input[i]`` on
-    ``device[d]``.  The Graph API wraps these with separate ``ConcatOp``
-    calls to produce the final N gathered tensors.
+    The MO-level allgather produces raw outputs grouped by destination device:
+    for each device d and each source i in d's group, the raw result is a copy
+    of that source input on device d.  The Graph API wraps these with separate
+    ``ConcatOp`` calls to produce the final gathered tensors.
 
     The interpreter executes sequentially on the host, so signal buffers
     and chains are unused.
@@ -3909,7 +3877,7 @@ def _handle_distributed_allgather(
         inputs: Flat operand buffers from the interpreter dispatcher.
 
     Returns:
-        N*N output buffers followed by None for the chain.
+        N*G output buffers followed by None for the chain.
     """
     num_inputs = len(op.inputs)
     bufs: list[Buffer] = []
@@ -3919,9 +3887,13 @@ def _handle_distributed_allgather(
         bufs.append(b)
 
     results = list(op.results)
+    group_size = op.group_size
     output_buffers: list[Buffer | None] = []
     for idx, result in enumerate(results[:-1]):
-        input_idx = idx % num_inputs
+        device_idx = idx // group_size
+        local_input_idx = idx % group_size
+        group_start = (device_idx // group_size) * group_size
+        input_idx = group_start + local_input_idx
         result_type: mo.TensorType = result.type  # type: ignore[assignment]
         device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
         output_buffers.append(bufs[input_idx].to(device))
@@ -4147,19 +4119,7 @@ def _handle_distributed_reducescatter_sum(
         bufs.append(b)
 
     axis = op.axis
-
-    # Sum all inputs on the CPU via NumPy.
-    total = bufs[0].to(CPU()).to_numpy().copy()
-    for buf in bufs[1:]:
-        total += buf.to(CPU()).to_numpy()
-
-    # Split the summed result along the scatter axis using ragged binning
-    # (same formula as ops/reducescatter.py).
-    dim = total.shape[axis]
-    chunk_sizes = [
-        (dim + (num_inputs - i - 1)) // num_inputs for i in range(num_inputs)
-    ]
-    chunks = np.split(total, np.cumsum(chunk_sizes[:-1]), axis=axis)
+    group_size = op.group_size
 
     results = list(op.results)
     num_outputs = len(results) - 1  # exclude trailing chain
@@ -4169,10 +4129,30 @@ def _handle_distributed_reducescatter_sum(
     )
 
     output_buffers: list[Buffer | None] = []
-    for idx, result in enumerate(results[:-1]):
-        result_type: mo.TensorType = result.type  # type: ignore[assignment]
-        device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
-        output_buffers.append(Buffer.from_numpy(chunks[idx]).to(device))
+    for group_start in range(0, num_inputs, group_size):
+        group_bufs = bufs[group_start : group_start + group_size]
+
+        # Sum inputs in each group independently on the CPU via NumPy.
+        total = group_bufs[0].to(CPU()).to_numpy().copy()
+        for buf in group_bufs[1:]:
+            total += buf.to(CPU()).to_numpy()
+
+        # Split the summed result along the scatter axis using ragged binning
+        # (same formula as ops/reducescatter.py).
+        dim = total.shape[axis]
+        chunk_sizes = [
+            (dim + (group_size - i - 1)) // group_size
+            for i in range(group_size)
+        ]
+        chunks = np.split(total, np.cumsum(chunk_sizes[:-1]), axis=axis)
+
+        for local_idx, chunk in enumerate(chunks):
+            result = results[group_start + local_idx]
+            result_type: mo.TensorType = result.type  # type: ignore[assignment]
+            device = graph.DeviceRef.from_mlir(
+                result_type.device_ref
+            ).to_device()
+            output_buffers.append(Buffer.from_numpy(chunk).to(device))
 
     # Trailing None for the output chain.
     output_buffers.append(None)

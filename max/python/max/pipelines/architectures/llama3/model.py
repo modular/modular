@@ -19,17 +19,11 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 
 import numpy as np
-from max.driver import (
-    Buffer,
-    Device,
-    DevicePinnedBuffer,
-    is_virtual_device_mode,
-)
-from max.dtype import DType
+from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -42,13 +36,11 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.utils import (
-    compute_data_parallel_splits,
     parse_state_dict_from_weights,
 )
-from max.pipelines.lora import LoRAInputs
 from max.profiler import traced
-from max.support.algorithm import flatten2d
 
+from .batch_processor import Llama3BatchProcessor
 from .data_parallel_llama import create_graph as create_data_parallel_graph
 from .distributed_llama import DistributedLlama3
 from .llama3 import Llama3
@@ -126,6 +118,9 @@ class LlamaModelBase(
     """Base Llama pipeline model implementation."""
 
     model_config_cls: ClassVar[type[Any]] = Llama3Config
+    batch_processor_cls: ClassVar[type[Llama3BatchProcessor]] = (
+        Llama3BatchProcessor
+    )
 
     model: Model
     """Compiled and initialized model ready for inference."""
@@ -149,6 +144,7 @@ class LlamaModelBase(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         """
         Args:
@@ -164,11 +160,24 @@ class LlamaModelBase(
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
         self.model = self.load_model(session)
-        self._execution_input_buffers: dict[
-            tuple[int, int], tuple[Buffer, Buffer, Buffer, Buffer]
-        ] = {}
+
+    def prepare_initial_token_inputs(
+        self,
+        replica_batches: Sequence[Sequence[TextContext]],
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        return_n_logits: int = 1,
+    ) -> Llama3Inputs:
+        """Delegates to the batch processor and narrows to ``Llama3Inputs``."""
+        inputs = super().prepare_initial_token_inputs(
+            replica_batches,
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=return_n_logits,
+        )
+        assert isinstance(inputs, Llama3Inputs)
+        return inputs
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, Llama3Inputs)
@@ -188,186 +197,11 @@ class LlamaModelBase(
         else:
             model_outputs = self.model.execute(*model_inputs.buffers)
 
-        has_offsets = self.return_logits in (
-            ReturnLogits.VARIABLE,
-            ReturnLogits.ALL,
-        )
-        has_hidden_states = self.return_hidden_states != ReturnHiddenStates.NONE
-
-        assert isinstance(model_outputs[0], Buffer)
-        if has_offsets and has_hidden_states:
-            assert len(model_outputs) == 4
-            assert isinstance(model_outputs[1], Buffer)
-            assert isinstance(model_outputs[2], Buffer)
-            assert isinstance(model_outputs[3], Buffer)
-            return ModelOutputs(
-                logits=model_outputs[1],
-                next_token_logits=model_outputs[0],
-                logit_offsets=model_outputs[2],
-                hidden_states=model_outputs[3],
-            )
-        elif has_offsets:
-            assert len(model_outputs) == 3
-            assert isinstance(model_outputs[1], Buffer)
-            assert isinstance(model_outputs[2], Buffer)
-            return ModelOutputs(
-                logits=model_outputs[1],
-                next_token_logits=model_outputs[0],
-                logit_offsets=model_outputs[2],
-            )
-        elif has_hidden_states:
-            assert len(model_outputs) == 2
-            assert isinstance(model_outputs[1], Buffer)
-            return ModelOutputs(
-                logits=model_outputs[0],
-                next_token_logits=model_outputs[0],
-                hidden_states=model_outputs[1],
-            )
-        else:
-            assert len(model_outputs) == 1
-            return ModelOutputs(
-                logits=model_outputs[0],
-                next_token_logits=model_outputs[0],
-            )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> Llama3Inputs:
-        """Prepare the inputs for the first pass in multistep execution."""
-        dp = self.pipeline_config.model.data_parallel_degree
-        if len(replica_batches) != dp:
-            raise ValueError(
-                "Number of replica batches must match data parallel degree"
-            )
-
-        context_batch = flatten2d(replica_batches)
-
-        # Build the model inputs on host memory and copy to device.
-        device0 = self.devices[0]
-        pinned = not device0.is_host
-
-        batch_size = len(context_batch)
-        total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
-        buffer_key = (batch_size, total_seq_len)
-        buffers = self._execution_input_buffers.get(buffer_key)
-        if buffers is None:
-            host_tokens: Buffer
-            if pinned:
-                host_tokens = DevicePinnedBuffer(
-                    dtype=DType.int64,
-                    shape=(total_seq_len,),
-                    device=device0,
-                )
-            else:
-                host_tokens = Buffer(
-                    shape=(total_seq_len,),
-                    dtype=DType.int64,
-                    device=device0,
-                )
-
-            host_row_offsets: Buffer
-            if pinned:
-                host_row_offsets = DevicePinnedBuffer(
-                    dtype=DType.uint32,
-                    shape=(batch_size + 1,),
-                    device=device0,
-                )
-            else:
-                host_row_offsets = Buffer(
-                    shape=(batch_size + 1,),
-                    dtype=DType.uint32,
-                    device=device0,
-                )
-
-            device_tokens = host_tokens.to(device0)
-            device_row_offsets = host_row_offsets.to(device0)
-            buffers = (
-                host_tokens,
-                host_row_offsets,
-                device_tokens,
-                device_row_offsets,
-            )
-            self._execution_input_buffers[buffer_key] = buffers
-        (
-            host_tokens,
-            host_row_offsets,
-            device_tokens,
-            device_row_offsets,
-        ) = buffers
-
-        # Get input_row_offsets: start and end position of each batch in the
-        # combined total_seq_len dimension.
-        input_row_offsets_np = host_row_offsets.to_numpy()
-        np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-            out=input_row_offsets_np,
-        )
-
-        # return_n_logits_tensor does not need to be pinned since it is not
-        # copied to the device.
-        return_n_logits_tensor = Buffer.from_numpy(
-            np.array([return_n_logits], dtype=np.int64)
-        )
-
-        # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens_np = host_tokens.to_numpy()
-        if context_batch:
-            np.concatenate(
-                [ctx.tokens.active for ctx in context_batch],
-                out=tokens_np,
-            )
-        device_tokens.inplace_copy_from(host_tokens)
-        device_row_offsets.inplace_copy_from(host_row_offsets)
-
-        # Constructs splits for the data parallel execution.
-        if dp > 1:
-            data_parallel_splits = Buffer.from_numpy(
-                compute_data_parallel_splits(replica_batches)
-            )
-        else:
-            data_parallel_splits = None
-
-        inputs = Llama3Inputs(
-            tokens=device_tokens,
-            input_row_offsets=device_row_offsets,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits_tensor,
-            data_parallel_splits=data_parallel_splits,
-        )
-
-        if self._lora_manager:
-            # TODO: Move LoRA graph inputs to pinned memory
-            inputs.lora = LoRAInputs(
-                *self._lora_manager.get_lora_graph_inputs(
-                    context_batch, input_row_offsets_np, self.devices[0]
-                )
-            )
-
-        return inputs
+        assert self.batch_processor is not None
+        return self.batch_processor.process_outputs(model_outputs)
 
     @traced
     def load_model(self, session: InferenceSession) -> Model:
-        # Pre-allocate a buffer for input_row_offsets in multistep execution.
-        # We do this to avoid materializing and copying a buffer with each multistep step.
-        # Skip in virtual device mode (warm-cache/cross-compilation) since
-        # VirtualDeviceContext does not support memAlloc.
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
-        self._input_row_offsets_prealloc: Buffer | None = None
-        if not is_virtual_device_mode():
-            self._input_row_offsets_prealloc = Buffer.from_numpy(
-                np.arange(
-                    self.pipeline_config.runtime.max_batch_size + 1,
-                    dtype=np.uint32,
-                )
-            ).to(self.devices[0])
-
         with CompilationTimer("model") as timer:
             graph = self._build_graph(self.weights, self.adapter)
             timer.mark_build_complete()
@@ -501,6 +335,7 @@ class Llama3Model(LlamaModelBase):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -511,4 +346,5 @@ class Llama3Model(LlamaModelBase):
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )

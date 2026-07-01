@@ -40,7 +40,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma4.layers.attention import (
     Gemma4Attention as MaxGemma4Attention,
@@ -52,7 +52,7 @@ from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
-from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
+from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
 
 MAX_SEQ_LEN = 1152
 
@@ -73,7 +73,7 @@ class CompiledAttention(NamedTuple):
 
 
 def _get_position_embeddings(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     input_tensor: torch.Tensor,
     use_global_rope: bool,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -123,7 +123,7 @@ def _causal_attention_mask(seq_len: int) -> torch.Tensor:
 
 @torch.no_grad()
 def generate_torch_outputs(
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
     layer_idx: int,
@@ -157,7 +157,7 @@ def generate_torch_outputs(
 
 def build_max_attention(
     session: InferenceSession,
-    text_config: Gemma3TextConfig,
+    text_config: Gemma4TextConfig,
     attention_weights: dict[str, torch.Tensor],
     dtype: DType,
     device_ref: DeviceRef,
@@ -185,7 +185,7 @@ def build_max_attention(
     }
 
     cache_dtype_eff = cache_dtype if cache_dtype is not None else dtype
-    kv_params_local = KVCacheParams(
+    kv_params_local = MHAKVCacheParams(
         dtype=cache_dtype_eff,
         devices=[device_ref],
         n_kv_heads=text_config.num_key_value_heads,
@@ -196,7 +196,7 @@ def build_max_attention(
         page_size=256,
     )
 
-    kv_params_global = KVCacheParams(
+    kv_params_global = MHAKVCacheParams(
         dtype=cache_dtype_eff,
         devices=[device_ref],
         n_kv_heads=text_config.num_global_key_value_heads,
@@ -266,7 +266,7 @@ def build_max_attention(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
-    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
+    flattened_kv_types = kv_params.flattened_kv_inputs()
 
     # Build graph.
     with Graph(
@@ -278,9 +278,7 @@ def build_max_attention(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = (
-            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
-        )
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache)).inputs[0]
 
         graph.output(
             attention(
@@ -311,9 +309,8 @@ def execute_max_attention(
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     try:
-        kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
-        kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
-        assert kv_runtime_inputs.attention_dispatch_metadata is not None
+        kv_manager.alloc(batch[0], replica_idx=0)
+        kv_runtime_inputs = kv_manager.runtime_inputs([batch])
 
         # Under fp8 KV the kv_params.get_symbolic_inputs() expands with
         # `kv_scales` buffer inputs.  Mirror that on the runtime side by
@@ -323,14 +320,8 @@ def execute_max_attention(
             Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
                 device
             ),
-            kv_runtime_inputs.kv_blocks.to(device),
-            kv_runtime_inputs.cache_lengths.to(device),
-            kv_runtime_inputs.lookup_table.to(device),
-            kv_runtime_inputs.max_lengths,
+            *kv_runtime_inputs.flatten(),
         ]
-        if kv_runtime_inputs.kv_scales is not None:
-            execute_args.append(kv_runtime_inputs.kv_scales)
-        execute_args.append(kv_runtime_inputs.attention_dispatch_metadata)
         output = compiled.execute(*execute_args)[0]
     finally:
         kv_manager.release(batch[0].request_id, replica_idx=0)

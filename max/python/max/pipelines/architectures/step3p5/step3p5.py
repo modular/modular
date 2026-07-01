@@ -75,13 +75,15 @@ def _unpack_kv_collections(
     list[TensorValue],
     list[TensorValue],
     list[TensorValue],
+    list[TensorValue],
 ]:
     """Split ``PagedCacheValues`` into flat tensor lists for subgraph inputs."""
     return (
         [kv.kv_blocks for kv in kv_collections],
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
-        [kv.max_lengths for kv in kv_collections],
+        [kv.max_prompt_length for kv in kv_collections],
+        [kv.max_cache_length for kv in kv_collections],
         [
             kv.attention_dispatch_metadata
             for kv in kv_collections
@@ -374,7 +376,8 @@ class Step3p5TransformerBlock(Module):
         kv_blocks: list[BufferValue],
         kv_cache_lengths: list[TensorValue],
         kv_lookup_table: list[TensorValue],
-        kv_max_lengths: list[TensorValue],
+        kv_max_prompt_lengths: list[TensorValue],
+        kv_max_cache_lengths: list[TensorValue],
         dispatch_metadata_tensors: list[TensorValue],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
@@ -386,7 +389,8 @@ class Step3p5TransformerBlock(Module):
                 kv_blocks=kv_blocks[i],
                 cache_lengths=kv_cache_lengths[i],
                 lookup_table=kv_lookup_table[i],
-                max_lengths=kv_max_lengths[i],
+                max_prompt_length=kv_max_prompt_lengths[i],
+                max_cache_length=kv_max_cache_lengths[i],
                 attention_dispatch_metadata=(
                     dispatch_metadata_tensors[i]
                     if dispatch_metadata_tensors
@@ -839,7 +843,8 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
             kv_blocks,
             kv_cache_lengths,
             kv_lookup_table,
-            kv_max_lengths,
+            kv_max_prompt_lengths,
+            kv_max_cache_lengths,
             dispatch_metadata_tensors,
         ) = _unpack_kv_collections(kv_collections)
 
@@ -853,7 +858,8 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
                 kv_blocks,
                 kv_cache_lengths,
                 kv_lookup_table,
-                kv_max_lengths,
+                kv_max_prompt_lengths,
+                kv_max_cache_lengths,
                 dispatch_metadata_tensors,
                 per_layer_freqs[idx],
                 input_row_offsets_list,

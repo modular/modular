@@ -474,6 +474,8 @@ async def generate_image(args: argparse.Namespace) -> None:
             prefer_module_v3=args.prefer_module_v3,
         ),
     )
+    # Resolve the manifest (encodings + weight paths) before use.
+    config.models.resolve()
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         config.models.main_architecture_name,
         prefer_module_v3=config.runtime.prefer_module_v3,

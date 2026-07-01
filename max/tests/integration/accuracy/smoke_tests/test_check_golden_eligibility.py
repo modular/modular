@@ -18,11 +18,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner, Result
 from smoke_tests.check_golden_eligibility import (
-    IgnoredFailure,
     JobResult,
-    is_ignored,
+    RequiredModel,
+    is_required,
     iter_workflow_jobs,
-    load_ignore_list,
+    load_required_list,
     main,
     parse_model_job,
 )
@@ -116,65 +116,65 @@ def test_parse_prefix_with_trailing_slash() -> None:
     assert job is not None
 
 
-# ── is_ignored ────────────────────────────────────────────────────────────────
+# ── is_required ───────────────────────────────────────────────────────────────
 
 
 def _job(model: str, gpu: str, conclusion: str = "failure") -> JobResult:
     return JobResult(full_name="", gpu=gpu, model=model, conclusion=conclusion)
 
 
-def _entry(model: str, gpu: str | None = None) -> IgnoredFailure:
-    return IgnoredFailure(model=model, gpu=gpu, reason="test", ticket=None)
+def _entry(model: str, gpu: str | None = None) -> RequiredModel:
+    return RequiredModel(model=model, gpu=gpu, reason="test")
 
 
 def test_model_not_in_list() -> None:
-    assert not is_ignored(_job("org/model-A", "B200"), [_entry("org/model-B")])
+    assert not is_required(_job("org/model-A", "B200"), [_entry("org/model-B")])
 
 
 def test_no_gpu_entry_matches_b200() -> None:
-    assert is_ignored(_job("org/model", "B200"), [_entry("org/model")])
+    assert is_required(_job("org/model", "B200"), [_entry("org/model")])
 
 
 def test_no_gpu_entry_matches_mi355() -> None:
-    assert is_ignored(_job("org/model", "MI355"), [_entry("org/model")])
+    assert is_required(_job("org/model", "MI355"), [_entry("org/model")])
 
 
 def test_no_gpu_entry_does_not_match_8xb200() -> None:
-    assert not is_ignored(_job("org/model", "8xB200"), [_entry("org/model")])
+    assert not is_required(_job("org/model", "8xB200"), [_entry("org/model")])
 
 
 def test_no_gpu_entry_does_not_match_2xb200() -> None:
-    assert not is_ignored(_job("org/model", "2xB200"), [_entry("org/model")])
+    assert not is_required(_job("org/model", "2xB200"), [_entry("org/model")])
 
 
 def test_no_gpu_entry_does_not_match_4xmi355() -> None:
-    assert not is_ignored(_job("org/model", "4xMI355"), [_entry("org/model")])
+    assert not is_required(_job("org/model", "4xMI355"), [_entry("org/model")])
 
 
 def test_explicit_gpu_matches_exact() -> None:
-    assert is_ignored(
+    assert is_required(
         _job("org/model", "8xB200"), [_entry("org/model", "8xB200")]
     )
 
 
 def test_explicit_gpu_does_not_match_b200() -> None:
-    assert not is_ignored(
+    assert not is_required(
         _job("org/model", "B200"), [_entry("org/model", "8xB200")]
     )
 
 
 def test_model_name_is_case_insensitive() -> None:
-    assert is_ignored(_job("ORG/Model", "B200"), [_entry("org/model")])
+    assert is_required(_job("ORG/Model", "B200"), [_entry("org/model")])
 
 
 def test_gpu_is_case_insensitive() -> None:
-    assert is_ignored(
+    assert is_required(
         _job("org/model", "8xb200"), [_entry("org/model", "8xB200")]
     )
 
 
-def test_empty_ignore_list() -> None:
-    assert not is_ignored(_job("org/model", "B200"), [])
+def test_empty_required_list() -> None:
+    assert not is_required(_job("org/model", "B200"), [])
 
 
 def test_first_matching_entry_wins() -> None:
@@ -182,59 +182,56 @@ def test_first_matching_entry_wins() -> None:
         _entry("org/model", "8xB200"),  # wrong GPU for this job
         _entry("org/model"),  # matches B200
     ]
-    assert is_ignored(_job("org/model", "B200"), entries)
+    assert is_required(_job("org/model", "B200"), entries)
 
 
-# ── load_ignore_list ──────────────────────────────────────────────────────────
+# ── load_required_list ────────────────────────────────────────────────────────
 
 
 def test_load_valid_yaml(tmp_path: Path) -> None:
-    p = tmp_path / "ignore.yaml"
+    p = tmp_path / "required.yaml"
     p.write_text(
         textwrap.dedent("""\
-            ignored_failures:
+            required_for_golden:
               - model: org/model-a
-                reason: "known broken"
-                ticket: "PROJ-123"
+                reason: "production model"
               - model: org/model-b
                 gpu: 8xB200
-                reason: "multi-gpu issue"
+                reason: "large model"
         """)
     )
-    result = load_ignore_list(p)
+    result = load_required_list(p)
     assert len(result) == 2
     assert result[0].model == "org/model-a"
     assert result[0].gpu is None
-    assert result[0].ticket == "PROJ-123"
     assert result[1].model == "org/model-b"
     assert result[1].gpu == "8xB200"
-    assert result[1].ticket is None
 
 
 def test_load_empty_list(tmp_path: Path) -> None:
-    p = tmp_path / "ignore.yaml"
-    p.write_text("ignored_failures: []\n")
-    assert load_ignore_list(p) == []
+    p = tmp_path / "required.yaml"
+    p.write_text("required_for_golden: []\n")
+    assert load_required_list(p) == []
 
 
 def test_load_reason_defaults_when_absent(tmp_path: Path) -> None:
-    p = tmp_path / "ignore.yaml"
-    p.write_text("ignored_failures:\n  - model: org/model\n")
-    result = load_ignore_list(p)
+    p = tmp_path / "required.yaml"
+    p.write_text("required_for_golden:\n  - model: org/model\n")
+    result = load_required_list(p)
     assert result[0].reason == "(no reason given)"
 
 
 def test_load_missing_file_exits(tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as exc:
-        load_ignore_list(tmp_path / "nonexistent.yaml")
+        load_required_list(tmp_path / "nonexistent.yaml")
     assert exc.value.code == 1
 
 
 def test_load_malformed_yaml_exits(tmp_path: Path) -> None:
     p = tmp_path / "bad.yaml"
-    p.write_text("ignored_failures: [: bad\n")
+    p.write_text("required_for_golden: [: bad\n")
     with pytest.raises(SystemExit) as exc:
-        load_ignore_list(p)
+        load_required_list(p)
     assert exc.value.code == 1
 
 
@@ -297,13 +294,13 @@ def _raw(name: str, conclusion: str) -> dict[str, str]:
 
 def _invoke(
     raw_jobs: list[dict[str, str]],
-    ignore_yaml: str = "ignored_failures: []\n",
+    required_yaml: str = "required_for_golden: []\n",
     extra_args: list[str] | None = None,
 ) -> Result:
     runner = CliRunner()
     with runner.isolated_filesystem():
-        ignore_file = Path("ignore.yaml")
-        ignore_file.write_text(ignore_yaml)
+        required_file = Path("required.yaml")
+        required_file.write_text(required_yaml)
         with patch(
             "smoke_tests.check_golden_eligibility.iter_workflow_jobs",
             return_value=iter(raw_jobs),
@@ -317,8 +314,8 @@ def _invoke(
                     "org/repo",
                     "--job-prefix",
                     PREFIX,
-                    "--ignore-list",
-                    str(ignore_file),
+                    "--required-list",
+                    str(required_file),
                     "--token",
                     "fake-token",
                 ]
@@ -336,35 +333,47 @@ def test_main_all_passed() -> None:
     assert "[PASS]" in result.output
 
 
-def test_main_ignored_failure_is_golden() -> None:
-    jobs = [_raw(f"{PREFIX} B200 - microsoft/phi-4", "failure")]
-    ignore = textwrap.dedent("""\
-        ignored_failures:
-          - model: microsoft/phi-4
-            reason: "known broken"
+def test_main_failure_on_required_model_blocks() -> None:
+    """A failure on a required model blocks golden."""
+    jobs = [_raw(f"{PREFIX} B200 - org/required-model", "failure")]
+    required = textwrap.dedent("""\
+        required_for_golden:
+          - model: org/required-model
+            reason: "production model"
     """)
-    result = _invoke(jobs, ignore)
-    assert result.exit_code == 0
-    assert "~ ignored" in result.output
-    assert "[PASS]" in result.output
-
-
-def test_main_blocking_failure() -> None:
-    jobs = [_raw(f"{PREFIX} B200 - org/unknown-model", "failure")]
-    result = _invoke(jobs)
+    result = _invoke(jobs, required)
     assert result.exit_code == 1
     assert "BLOCKED" in result.output
 
 
-def test_main_timed_out_is_blocking() -> None:
-    jobs = [_raw(f"{PREFIX} B200 - org/slow-model", "timed_out")]
+def test_main_failure_on_non_required_model_does_not_block() -> None:
+    """A failure on a model NOT in the required list does not block golden."""
+    jobs = [_raw(f"{PREFIX} B200 - org/unknown-model", "failure")]
     result = _invoke(jobs)
+    assert result.exit_code == 0
+    assert "not required" in result.output
+    assert "[PASS]" in result.output
+
+
+def test_main_timed_out_on_required_is_blocking() -> None:
+    jobs = [_raw(f"{PREFIX} B200 - org/slow-model", "timed_out")]
+    required = textwrap.dedent("""\
+        required_for_golden:
+          - model: org/slow-model
+            reason: "required"
+    """)
+    result = _invoke(jobs, required)
     assert result.exit_code == 1
 
 
-def test_main_cancelled_is_blocking() -> None:
+def test_main_cancelled_on_required_is_blocking() -> None:
     jobs = [_raw(f"{PREFIX} B200 - org/model", "cancelled")]
-    result = _invoke(jobs)
+    required = textwrap.dedent("""\
+        required_for_golden:
+          - model: org/model
+            reason: "required"
+    """)
+    result = _invoke(jobs, required)
     assert result.exit_code == 1
 
 
@@ -377,8 +386,8 @@ def test_main_skipped_is_not_blocking() -> None:
 def test_main_no_token() -> None:
     runner = CliRunner()
     with runner.isolated_filesystem():
-        ignore_file = Path("ignore.yaml")
-        ignore_file.write_text("ignored_failures: []\n")
+        required_file = Path("required.yaml")
+        required_file.write_text("required_for_golden: []\n")
         result = runner.invoke(
             main,
             [
@@ -388,8 +397,8 @@ def test_main_no_token() -> None:
                 "org/repo",
                 "--job-prefix",
                 PREFIX,
-                "--ignore-list",
-                str(ignore_file),
+                "--required-list",
+                str(required_file),
                 "--token",
                 "",
             ],
@@ -403,42 +412,49 @@ def test_main_no_matching_jobs() -> None:
     assert result.exit_code == 1
 
 
-def test_main_multi_gpu_failure_not_suppressed_by_no_gpu_entry() -> None:
-    """8xB200 failure must NOT be suppressed by a gpu-less ignore entry."""
+def test_main_multi_gpu_failure_not_blocking_without_explicit_entry() -> None:
+    """8xB200 failure on a model with only a default (no-gpu) required entry
+    does NOT block — default matches B200/MI355 only."""
     jobs = [_raw(f"{PREFIX} 8xB200 - org/model", "failure")]
-    ignore = textwrap.dedent("""\
-        ignored_failures:
+    required = textwrap.dedent("""\
+        required_for_golden:
           - model: org/model
             reason: "single-card only"
     """)
-    result = _invoke(jobs, ignore)
-    assert result.exit_code == 1
+    result = _invoke(jobs, required)
+    assert result.exit_code == 0
+    assert "not required" in result.output
 
 
-def test_main_explicit_gpu_entry_suppresses_correct_runner() -> None:
-    """Explicit gpu entry suppresses failures on that GPU and not others."""
+def test_main_explicit_gpu_entry_blocks_correct_runner() -> None:
+    """Explicit gpu entry blocks failures on that GPU only."""
     jobs = [
         _raw(f"{PREFIX} 8xB200 - org/model", "failure"),
         _raw(f"{PREFIX} B200 - org/model", "success"),
     ]
-    ignore = textwrap.dedent("""\
-        ignored_failures:
+    required = textwrap.dedent("""\
+        required_for_golden:
           - model: org/model
             gpu: 8xB200
-            reason: "only broken on 8xB200"
+            reason: "required on 8xB200"
     """)
-    result = _invoke(jobs, ignore)
-    assert result.exit_code == 0
+    result = _invoke(jobs, required)
+    assert result.exit_code == 1
+    assert "BLOCKED" in result.output
 
 
-def test_main_ticket_shown_in_output() -> None:
-    jobs = [_raw(f"{PREFIX} B200 - org/model", "failure")]
-    ignore = textwrap.dedent("""\
-        ignored_failures:
-          - model: org/model
-            reason: "known issue"
-            ticket: "PROJ-999"
+def test_main_required_model_passes_non_required_fails() -> None:
+    """Required model passes, non-required model fails → golden eligible."""
+    jobs = [
+        _raw(f"{PREFIX} B200 - org/required-model", "success"),
+        _raw(f"{PREFIX} B200 - org/other-model", "failure"),
+    ]
+    required = textwrap.dedent("""\
+        required_for_golden:
+          - model: org/required-model
+            reason: "required"
     """)
-    result = _invoke(jobs, ignore)
+    result = _invoke(jobs, required)
     assert result.exit_code == 0
-    assert "PROJ-999" in result.output
+    assert "not required" in result.output
+    assert "[PASS]" in result.output

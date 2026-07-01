@@ -92,6 +92,7 @@ Reasoning
 
    ParsedReasoningDelta
    ReasoningParser
+   ReasoningPipelineTokenizer
    ReasoningSpan
 
 Tool parsing
@@ -157,3 +158,5 @@ Utilities
 
    msgpack_numpy_decoder
    msgpack_numpy_encoder
+   msgpack_numpy_oob_decoder
+   msgpack_numpy_oob_encoder

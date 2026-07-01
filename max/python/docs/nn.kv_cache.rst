@@ -22,9 +22,14 @@ Cache configuration
    KVCacheBuffer
    KVCacheParamInterface
    KVCacheParams
+   MHAKVCacheParams
+   MLAKVCacheParams
+   MSAKVCacheParams
    KVCacheQuantizationConfig
    KVConnectorType
+   KVCacheMemory
    MultiKVCacheParams
+   ReplicatedKVCacheMemory
 
 Cache inputs
 ------------
@@ -36,6 +41,7 @@ Cache inputs
 
    KVCacheInputs
    KVCacheInputsPerDevice
+   BatchCharacteristics
    PagedCacheValues
 
 Attention dispatch
@@ -46,7 +52,10 @@ Attention dispatch
    :toctree: generated
    :template: autosummary/class.rst
 
-   AttentionDispatchResolver
+   AttnKey
+   MHAAttnKey
+   MLAAttnKey
+   MSAAttnKey
 
 Metrics
 -------
@@ -66,7 +75,7 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
-   build_max_lengths_tensor
+   build_max_lengths_tensors
    compute_max_seq_len_fitting_in_cache
    compute_num_device_blocks
    compute_num_host_blocks

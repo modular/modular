@@ -270,7 +270,7 @@ struct Q4sym[
         input_rank: Int
     ](
         input_tt: TileTensor[
-            Self.float_dtype, address_space=AddressSpace.GENERIC, ...
+            mut=False, Self.float_dtype, address_space=AddressSpace.GENERIC, ...
         ],
         output_tt: TileTensor[
             mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
@@ -302,7 +302,6 @@ struct Q4sym[
 
         # Read and quantize `input_tensor`` to blocked format, dump the raw
         # struct/block into `output_tensor`
-        var size_of_block = size_of[Q4sym[Self.group_size, Self.float_dtype]]()
         assert (
             input_shape[input_tensor.rank - 1] % Self.group_size == 0
         ), "Only support fully divisible dimensions right now."
@@ -354,7 +353,7 @@ struct Q4sym[
         output_rank: Int
     ](
         input_tt: TileTensor[
-            DType.uint8, address_space=AddressSpace.GENERIC, ...
+            mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
         output_tt: TileTensor[
             mut=True,
@@ -468,7 +467,9 @@ def scale_min_k4(
 
 
 def q4_k_dequantize_impl(
-    input_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    input_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     output_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -554,7 +555,9 @@ struct block_Q6_K:
 def q6_k_dequantize_impl[
     output_rank: Int
 ](
-    input_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    input_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     output_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],

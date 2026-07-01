@@ -560,7 +560,7 @@ def _pack_matmul_b_shape_func_impl[
     c_type: DType,
     transpose_in_0: Bool,
 ](
-    b_input: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    b_input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     kernel_type_m: Int = 0,
 ) -> IndexList[2]:
     """Computes the padded shape required by `pack_b` directly from TileTensor
@@ -623,7 +623,7 @@ def pack_b[
     c_type: DType,
 ](
     dst: TileTensor[mut=True, b_type, address_space=AddressSpace.GENERIC, ...],
-    src: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     tile_n: Int,
     tile_k: Int,
 ):
@@ -820,7 +820,7 @@ def pack_matmul_b_shape_func[
     c_type: DType,
     transpose_in_0: Bool,
 ](
-    b_input: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    b_input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     kernel_type_m: Int = 0,
 ) -> IndexList[2]:
     """TileTensor primary implementation of `pack_matmul_b_shape_func`.

@@ -49,23 +49,43 @@ def _bucket_partitions(n: Int) -> Int:
     return 256
 
 
+def cuda_mha_decoding_max_num_partitions(
+    batch_size: Int,
+    heads_per_group: Int,
+    sm_count: Int,
+) -> Int:
+    # num_keys-independent partition target: fill one partition per idle SM,
+    # clamped to [1, 32]. The 32 ceiling is the MHA split-K reducer's
+    # single-warp WARP_SIZE limit; the lower bound of 1 guards the case where
+    # batch_size * heads_per_group > sm_count drives the SM term to 0
+    # (large-batch decode), which would otherwise return 0 partitions and
+    # divide by zero downstream in get_start_and_end_for_partitions. Not rounded
+    # to a power of two: the reducer handles any count in [1, 32], so an exact
+    # target avoids over-partitioning (e.g. 17 -> 32). The actual count
+    # (cuda_mha_decoding_num_partitions) only further mins this with
+    # num_keys // 512, so this is the upper bound for every num_keys -- used to
+    # launch a num_keys-independent (graph-stable) decode grid whose extra
+    # partitions early-return in the kernel.
+    return clamp(sm_count // (batch_size * heads_per_group), 1, 32)
+
+
 def cuda_mha_decoding_num_partitions(
     batch_size: Int,
     num_keys: Int,
     heads_per_group: Int,
     sm_count: Int,
 ) -> Int:
-    if num_keys > 512:
-        return min(
-            next_power_of_two(
-                min(
-                    sm_count // (batch_size * heads_per_group),
-                    num_keys // 512,
-                )
-            ),
-            32,
-        )
-    return 1
+    # The num_keys-independent upper bound, further limited so each partition
+    # spans at least 512 keys. Deriving from the max keeps the SM-fill target
+    # and the [1, 32] clamp in one place, so max >= actual holds by
+    # construction. The max(1, ...) floor preserves the >= 1 guard when
+    # num_keys < 512 (a 0 here divides by zero downstream).
+    return min(
+        cuda_mha_decoding_max_num_partitions(
+            batch_size, heads_per_group, sm_count
+        ),
+        max(1, num_keys // 512),
+    )
 
 
 def hip_mha_decoding_num_partitions(
@@ -197,11 +217,15 @@ def hip_mha_decoding_num_partitions(
         # Phase-0/1 sweeps).
         np_target = clamp(work_floor, one_wave, two_wave)
 
-    var num_partitions = min(np_target, pages, MAX_HIP_PARTITIONS)
+    # The MHA split-K reducer runs in a single warp and only handles up to
+    # WARP_SIZE partitions, so cap MHA at 64. MLA uses a partition-aware
+    # reducer and keeps the full 256.
+    var partition_cap = MAX_HIP_PARTITIONS if is_mla else 64
+    var num_partitions = min(np_target, pages, partition_cap)
 
     # Bucket to a fixed ladder (1, 2, ..., 64, 96, 128, 192, 256) so
     # HIP graph capture sees a small number of decode grid shapes.
-    return min(_bucket_partitions(num_partitions), MAX_HIP_PARTITIONS)
+    return min(_bucket_partitions(num_partitions), partition_cap)
 
 
 def mha_decoding_num_partitions(
@@ -211,22 +235,48 @@ def mha_decoding_num_partitions(
     ctx: DeviceContext,
     is_mla: Bool = False,
 ) raises -> Int:
-    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
-    if ctx.api() == "hip":
-        return hip_mha_decoding_num_partitions(
-            batch_size,
-            num_keys,
-            heads_per_group,
-            sm_count,
-            is_mla=is_mla,
-        )
-    if ctx.api() == "cuda":
+    var api = ctx.api()
+    if api == "hip" or api == "cuda":
+        # MULTIPROCESSOR_COUNT is only meaningful for the split-K heuristics,
+        # so query it lazily here rather than for every backend.
+        var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+        if api == "hip":
+            return hip_mha_decoding_num_partitions(
+                batch_size,
+                num_keys,
+                heads_per_group,
+                sm_count,
+                is_mla=is_mla,
+            )
         return cuda_mha_decoding_num_partitions(
             batch_size,
             num_keys,
             heads_per_group,
             sm_count,
         )
-    if ctx.api() == "metal":
-        return 1
-    raise Error("Expected a CUDA, HIP, or Metal device context.")
+    # CUDA and HIP have tuned split-K decode heuristics above. Every other
+    # backend (Metal, plus accelerators with no split-K decode path) runs the
+    # decode unsplit; a single partition is always valid — the decode kernel
+    # reads this count only to bound its split-K loop.
+    return 1
+
+
+def mha_decoding_max_num_partitions(
+    batch_size: Int,
+    num_keys: Int,
+    heads_per_group: Int,
+    ctx: DeviceContext,
+) raises -> Int:
+    # num_keys-independent upper bound on mha_decoding_num_partitions, used to
+    # launch a graph-stable decode grid. Only the CUDA decode path over-launches
+    # and early-returns the extra partitions; every other backend keeps
+    # max == actual so the (max >= actual) invariant holds and no over-launch
+    # path is taken.
+    if ctx.api() == "cuda":
+        var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+        return cuda_mha_decoding_max_num_partitions(
+            batch_size, heads_per_group, sm_count
+        )
+    return mha_decoding_num_partitions(
+        batch_size, num_keys, heads_per_group, ctx
+    )

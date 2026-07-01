@@ -90,6 +90,25 @@ def test_while_break_continue() raises:
 # --- For loops ---
 
 
+def test_for_conventions() raises:
+    var list: List[String] = ["a", "b", "c", "d"]
+
+    for var item in list:
+        item = item + "x"  # works. item is mutable copy of list element
+        # print(item) # prints "ax", then "bx", "cx", and "dx"
+        assert_true(item.endswith("x"))
+    assert_true(list == ["a", "b", "c", "d"])  # list is unchanged
+    # print(list) # unchanged
+
+    for ref item in list:
+        item = item + "x"
+        # mutability picked up in reference to list element
+        # print(item) # prints "ax", then "bx", "cx", and "dx"
+        assert_true(item.endswith("x"))
+    assert_true(list == ["ax", "bx", "cx", "dx"])  # list is changed
+    # print(list) # changed to ["ax", "bx", "cx", "dx"]
+
+
 def test_for_range() raises:
     var total = 0
     for i in range(10):
@@ -315,6 +334,7 @@ def main() raises:
     test_single_line_if()
     test_while_basic()
     test_while_break_continue()
+    test_for_conventions()
     test_for_range()
     test_for_destructuring()
     test_for_else_no_break()

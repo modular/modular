@@ -32,7 +32,6 @@ def main() raises:
 """
 
 from std.math import isclose
-from std.reflection.traits import AllWritable
 
 from std.reflection import call_location, SourceLocation
 from std.memory import memcmp
@@ -560,7 +559,5 @@ struct assert_raises:
             comptime assert conforms_to(
                 E, Writable
             ), "assert_raises(contains=...) requires a Writable error type"
-            return self.message_contains.value() in String.write(
-                trait_downcast[Writable](error)
-            )
+            return self.message_contains.value() in String.write(error)
         return True

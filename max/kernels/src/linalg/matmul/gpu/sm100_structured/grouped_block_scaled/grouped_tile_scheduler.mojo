@@ -355,6 +355,8 @@ struct GroupedTileScheduler[
 
     var num_groups: Int
     """Number of active groups."""
+
+    @__allow_legacy_any_origin_fields
     var problem_sizes: _ProblemSizesTile[Self.max_groups]
     """Problem sizes tensor (num_groups, 4) with [M, N, K, L] per group."""
 

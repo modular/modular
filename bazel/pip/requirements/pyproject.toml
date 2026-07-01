@@ -27,6 +27,7 @@ dependencies = [
   "flask",
   "fire ", # For mistral-evals.
   "gguf",
+  "grpcio",
   "hf-transfer",
   "httpx==0.27.2",
   "huggingface-hub[hf_xet]>=0.27.1",
@@ -43,7 +44,6 @@ dependencies = [
   "msgspec",
   "munch",
   "mypy",
-  "notebook",
   "numpy==2.2.6; python_version < '3.11'",
   "numpy>=2.3.0; python_version >= '3.11'",
   "nvitop",
@@ -160,16 +160,20 @@ dependencies = [
 # Common dependencies for amd/nvidia/cpu groups that conflict with vllm or sglang's deps
 common = [
   "llguidance==1.7.5",
-  # Pin <5.3.0: v5.3.0 has a tokenizer regression where LlamaTokenizer
-  # overwrites the ByteLevel decoder from tokenizer.json with Metaspace,
-  # breaking decode for Llama/DeepSeek models
-  # (huggingface/transformers#44462).
-  # Also avoids a PydanticUserError at >=5.5.0 where PretrainedConfig
-  # gained a `dtype: Union[str, "torch.dtype"]` field that pydantic tries
-  # to resolve before torch is imported (see SDLC-3497). MAX is not yet
-  # 5.5+ compatible; vllm/sglang groups resolve transformers from their
-  # own transitive requirements.
-  "transformers>=5.0.0,<5.3.0",
+  # Pinned to 5.12.x. We previously held at <5.3.0 to avoid two upstream
+  # issues:
+  #   - a v5.3.0 LlamaTokenizer regression that overwrote the ByteLevel
+  #     decoder from tokenizer.json with Metaspace, breaking decode for
+  #     Llama/DeepSeek (huggingface/transformers#44462, #45488), and
+  #   - a PydanticUserError at >=5.5.0 where PretrainedConfig gained a
+  #     `dtype: Union[str, "torch.dtype"]` field pydantic resolved before
+  #     torch was imported (SDLC-3497).
+  # Compatibility with 5.12 is validated on our side via logit verification
+  # and the serving smoke tests; per-model config shims handle the v5
+  # config-loading changes (see architectures/hf_config_shims.py).
+  # The vllm/sglang dependency groups resolve transformers independently
+  # from their own transitive requirements (see template.py).
+  "transformers>=5.12.0,<5.13.0",
 ]
 
 amd = [
@@ -181,6 +185,10 @@ amd = [
   "tilelang==0.1.8",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
+
+  # Needed at runtime by aiter's JIT compilation system (the aiter wheel
+  # itself is vendored as a prebuilt http_file, not from PyPI).
+  "pybind11==3.0.3; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
 ]
 
@@ -223,6 +231,7 @@ nvidia-vllm = [
   "torchaudio; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
   "torchvision; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
   "triton; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "transformers==5.8.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
 ]
 
 nvidia-sglang = [

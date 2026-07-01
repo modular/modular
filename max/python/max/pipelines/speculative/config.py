@@ -25,10 +25,21 @@ from max.config import ConfigFileModel
 from pydantic import Field, field_validator
 
 __all__ = [
+    "MAGIC_DRAFT_TOKEN_ID",
     "RejectionSamplingStrategy",
     "SpeculativeConfig",
     "SpeculativeMethod",
 ]
+
+MAGIC_DRAFT_TOKEN_ID = 42
+"""Sentinel draft-token id for prefill / dummy-draft graph-capture steps.
+
+A row of ``draft_tokens`` whose every position equals this value means "no
+real draft prediction to verify": the unified DFlash graphs detect it to zero
+out acceptance during prefill, and the overlap pipeline writes it when seeding
+draft slots before any real draft exists. Defined here so the graph side
+(``architectures``) and the runtime side (``lib``) agree on a single value.
+"""
 
 SpeculativeMethod = Literal["eagle", "mtp", "dflash"]
 """The supported methods for speculative decoding."""

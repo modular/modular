@@ -62,6 +62,7 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
+    Layout,
     RowMajorLayout,
     TensorLayout,
     TileTensor,
@@ -744,7 +745,8 @@ struct BlackwellMatmulSM100Kernel[
         comptime assert Self.c_type in (
             DType.bfloat16,
             DType.float8_e4m3fn,
-        ), "c_type must be bfloat16 or float8_e4m3fn"
+            DType.float32,
+        ), "c_type must be bfloat16, float8_e4m3fn, or float32"
         comptime assert Self.transpose_b, "Only support transposed B (K-major)"
         comptime assert Self.cta_group in (
             1,
@@ -863,16 +865,28 @@ struct BlackwellMatmulSM100Kernel[
         var accum = tmem_stage.tensor[Self.accum_type, Self.accum_layout]()
 
         if elect_one_sync():
+            # Build the A/B MMA SMEM descriptors once from the j=0 tile, then
+            # advance the descriptor base by the comptime per-k-group byte
+            # stride for j>0 — instead of rebuilding the full descriptor
+            # (runtime base-pointer mask + bitfield inserts) for every k-group
+            # tile. Consecutive k-group tiles are contiguous in the SMEM tile
+            # array (stride = tile elems * dtype size), and the SM100
+            # descriptor base address adds linearly, so the advanced descriptor
+            # is bit-identical to one freshly built from the j-th tile pointer.
+            comptime a_stride_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
+            comptime b_stride_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
+
+            var a_tile0, b_tile0 = tiles.payload().get_tile[
+                Self.config.k_group_size
+            ](tiles.stage(), 0)
+            var a_desc_base = mma_op.make_a_desc(a_tile0)
+            var b_desc_base = mma_op.make_b_desc(b_tile0)
+
             comptime for j in range(Self.config.k_group_size):
-                # Get tiles using payload accessor - tiles have swizzled layout
-                var a_tile, b_tile = tiles.payload().get_tile[
-                    Self.config.k_group_size
-                ](tiles.stage(), j)
                 var is_first_k = (iter_idx + UInt32(j)) == k_start
-                # Pass TileTensor directly to MMA - layout is encoded in type
-                mma_op.mma(
-                    a_tile,
-                    b_tile,
+                mma_op.mma_from_desc(
+                    a_desc_base + (a_stride_bytes * j),
+                    b_desc_base + (b_stride_bytes * j),
                     UInt32(accum.offset()),
                     init_c=is_first_k,
                 )
@@ -1243,8 +1257,9 @@ struct BlackwellMatmulSM100Kernel[
 
         comptime if Self.config.epilogue_is_1d:
             # 1D bias: warp-wide cp.async GMEM->SMEM with zero-fill
-            # for OOB elements. Each active lane copies 16B (8 bf16).
-            # When AB_swapped, bias is along the kernel's M dim (=original N).
+            # for OOB elements. Each active lane copies 8 elements (16B for
+            # bf16, 32B for fp32). When AB_swapped, bias is along the kernel's
+            # M dim (=original N).
             comptime bias_dim = Self._bias_tile_elems
             var bias_N = Int(mnk[1])
             var lane = Int(lane_id())
@@ -1252,6 +1267,11 @@ struct BlackwellMatmulSM100Kernel[
             comptime bytes_per_lane = elems_per_lane * size_of[
                 Scalar[Self.c_type]
             ]()
+            # cp.async copies at most 16B per instruction, so wide element types
+            # split the per-lane copy into 16B chunks (bf16: 1, fp32: 2).
+            comptime copy_bytes = min(bytes_per_lane, 16)
+            comptime num_copies = bytes_per_lane // copy_bytes
+            comptime elems_per_copy = elems_per_lane // num_copies
             var lane_start = lane * elems_per_lane
             for current in epi_load_iter:
                 epilogue_load_pipeline.wait_consumer()
@@ -1266,7 +1286,7 @@ struct BlackwellMatmulSM100Kernel[
 
                 if lane_start < bias_dim:
                     var src_bytes = Int32(
-                        bytes_per_lane
+                        copy_bytes
                     ) if lane_start + elems_per_lane <= valid_elems else Int32(
                         0
                     )
@@ -1274,10 +1294,15 @@ struct BlackwellMatmulSM100Kernel[
                         bias_1d_tile.ptr + gmem_offset + lane_start
                     ).address_space_cast[AddressSpace.GLOBAL]()
                     var dst_ptr = smem_tile.ptr + lane_start
-                    async_copy[
-                        bytes_per_lane,
-                        fill=Scalar[Self.c_type](0),
-                    ](src_ptr, dst_ptr, src_size=src_bytes)
+                    comptime for chunk in range(num_copies):
+                        async_copy[
+                            copy_bytes,
+                            fill=Scalar[Self.c_type](0),
+                        ](
+                            src_ptr + chunk * elems_per_copy,
+                            dst_ptr + chunk * elems_per_copy,
+                            src_size=src_bytes,
+                        )
                 var mbar = epilogue_load_pipeline.producer_mbar(stage)
                 if lane_start < bias_dim:
                     async_copy_arrive(mbar[0].unsafe_ptr())

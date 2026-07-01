@@ -1,0 +1,189 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# Inclusion list for nightly MAX Serve smoke test golden gating.
+#
+# Only models listed here must pass for the nightly container to be tagged
+# golden. All other models still run and their results are reported, but
+# failures do not block the golden tag.
+#
+# Fields
+#   model   HF model path (case-insensitive, required)
+#   gpu     Accelerator config that must pass: B200, MI355, 2xB200, 2xMI355,
+#           4xMI355, 8xB200, 8xB200_internal.
+#           If omitted, defaults to B200 and MI355 only.
+#           Multi-GPU variants (2x, 4x, 8x) must be listed explicitly.
+#   reason  Human-readable explanation (required)
+#
+# Scope: B200 only for now. Add MI355/multi-GPU entries when ready.
+#
+# Model names sourced from smoke_test_github_matrix.py @ main
+
+required_for_golden:
+
+  # ── Gemma 4 31B (bfloat16) ───────────────────────────────────────────────────
+  # Single-card variants run on B200 + MI355 (MULTI exclusion). Required on B200.
+  # tp2 variant runs only on 2xB200 + 2xMI355. Required on 2xB200.
+  - model: google/gemma-4-31B-it
+    gpu: B200
+    reason: "Gemma 4 31B gates golden on B200"
+
+  - model: google/gemma-4-31B-it__fp8kv
+    gpu: B200
+    reason: "Gemma 4 31B fp8kv gates golden on B200"
+
+  - model: google/gemma-4-31B-it__localkv
+    gpu: B200
+    reason: "Gemma 4 31B local-kv gates golden on B200"
+
+  - model: google/gemma-4-31B-it__mtp
+    gpu: B200
+    reason: "Gemma 4 31B MTP gates golden on B200"
+
+  - model: google/gemma-4-31B-it__tieredkv
+    gpu: B200
+    reason: "Gemma 4 31B tiered-kv gates golden on B200"
+
+  - model: google/gemma-4-31B-it__tp2
+    gpu: 2xB200
+    reason: "Gemma 4 31B tp2 gates golden on 2xB200"
+
+  # ── Gemma 4 26B A4B (bfloat16) ───────────────────────────────────────────────
+  # Custom MAX-only variants. Base HF model excludes max framework; variants run.
+  - model: google/gemma-4-26B-A4B-it__no_dgc
+    gpu: B200
+    reason: "Gemma 4 26B no-dgc gates golden on B200"
+
+  - model: google/gemma-4-26B-A4B-it__localkv
+    gpu: B200
+    reason: "Gemma 4 26B local-kv gates golden on B200"
+
+  - model: google/gemma-4-26B-A4B-it__tieredkv
+    gpu: B200
+    reason: "Gemma 4 26B tiered-kv gates golden on B200"
+
+  # ── Gemma 4 31B NVFP4 ────────────────────────────────────────────────────────
+  # MI355 excluded in matrix; these only run on B200.
+  - model: nvidia/Gemma-4-31B-IT-NVFP4
+    gpu: B200
+    reason: "Gemma 4 31B NVFP4 gates golden on B200"
+
+  - model: nvidia/Gemma-4-31B-IT-NVFP4__localkv
+    gpu: B200
+    reason: "Gemma 4 31B NVFP4 local-kv gates golden on B200"
+
+  - model: nvidia/Gemma-4-31B-IT-NVFP4__tieredkv
+    gpu: B200
+    reason: "Gemma 4 31B NVFP4 tiered-kv gates golden on B200"
+
+  # ── Gemma 4 26B A4B NVFP4 ────────────────────────────────────────────────────
+  # MI355 excluded in matrix; these only run on B200.
+  - model: nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc
+    gpu: B200
+    reason: "Gemma 4 26B A4B NVFP4 no-dgc gates golden on B200"
+
+  - model: nvidia/Gemma-4-26B-A4B-NVFP4__localkv
+    gpu: B200
+    reason: "Gemma 4 26B A4B NVFP4 local-kv gates golden on B200"
+
+  - model: nvidia/Gemma-4-26B-A4B-NVFP4__tieredkv
+    gpu: B200
+    reason: "Gemma 4 26B A4B NVFP4 tiered-kv gates golden on B200"
+
+  # ── Kimi K2.5 (8xB200 only in matrix) ───────────────────────────────────────
+  # NON_XL | {"4xMI355"} → only runs on 8xB200.
+  # Temporarily commented out due to CUDA graph instantiation failures (fused
+  # NVFP4 epilogue kernels are CUDA-graph-incompatible after device_graph_capture
+  # was auto-enabled for kimik2_5_arch). MXSERV-212.
+  # - model: nvidia/Kimi-K2.5-NVFP4
+  #   gpu: 8xB200
+  #   reason: "Kimi K2.5 NVFP4 gates golden on 8xB200"
+  #
+  # - model: nvidia/Kimi-K2.5-NVFP4__tpep
+  #   gpu: 8xB200
+  #   reason: "Kimi K2.5 NVFP4 tpep gates golden on 8xB200"
+
+  - model: nvidia/Kimi-K2.5-NVFP4__local_kvconnector_tpep_ar
+    gpu: 8xB200
+    reason: "Kimi K2.5 NVFP4 local-kv tpep-ar gates golden on 8xB200"
+
+  - model: nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar
+    gpu: 8xB200
+    reason: "Kimi K2.5 NVFP4 eagle tiered-kv tpep-ar gates golden on 8xB200"
+
+  - model: nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep_ar
+    gpu: 8xB200
+    reason: "Kimi K2.5 NVFP4 mha-eagle tiered-kv tpep-ar gates golden on 8xB200"
+
+  - model: nvidia/Kimi-K2.5-NVFP4__internal
+    gpu: 8xB200_internal
+    reason: "Kimi K2.5 NVFP4 internal variant gates golden on 8xB200_internal"
+
+  # ── Kimi K2.6 (8xB200 only in matrix) ───────────────────────────────────────
+  - model: nvidia/Kimi-K2.6-NVFP4__eagle_tpep
+    gpu: 8xB200
+    reason: "Kimi K2.6 NVFP4 eagle-tpep gates golden on 8xB200"
+
+  - model: nvidia/Kimi-K2.6-NVFP4__eagle_tiered_kvconnector_tpep_ar
+    gpu: 8xB200
+    reason: "Kimi K2.6 NVFP4 eagle tiered-kv tpep-ar gates golden on 8xB200"
+
+  # ── DeepSeek V3.1 (8xB200 only in matrix) ───────────────────────────────────
+  # NON_XL | {"4xMI355"} → only runs on 8xB200.
+  - model: deepseek-ai/DeepSeek-V3.1-Terminus
+    gpu: 8xB200
+    reason: "DeepSeek V3.1 Terminus gates golden on 8xB200"
+
+  - model: nvidia/DeepSeek-V3.1-NVFP4
+    gpu: 8xB200
+    reason: "DeepSeek V3.1 NVFP4 gates golden on 8xB200"
+
+  - model: nvidia/DeepSeek-V3.1-NVFP4__fp8kv
+    gpu: 8xB200
+    reason: "DeepSeek V3.1 NVFP4 fp8kv gates golden on 8xB200"
+
+  - model: nvidia/DeepSeek-V3.1-NVFP4__tpep
+    gpu: 8xB200
+    reason: "DeepSeek V3.1 NVFP4 tpep gates golden on 8xB200"
+
+  - model: nvidia/DeepSeek-V3.1-NVFP4__tpep_ar
+    gpu: 8xB200
+    reason: "DeepSeek V3.1 NVFP4 tpep-ar gates golden on 8xB200"
+
+  - model: nvidia/DeepSeek-V3.1-NVFP4__tptp
+    gpu: 8xB200
+    reason: "DeepSeek V3.1 NVFP4 tptp gates golden on 8xB200"
+
+  # Temporarily commented out: EPConfig raises for BF16 NextN draft weights when
+  # dtype is inherited from the NVFP4 target; fix in _create_draft_config is
+  # unreachable because it runs after the raising call. MXSERV-212.
+  # - model: nvidia/DeepSeek-V3.1-NVFP4__mtp
+  #   gpu: 8xB200
+  #   reason: "DeepSeek V3.1 NVFP4 mtp gates golden on 8xB200"
+  #
+  # - model: nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep
+  #   gpu: 8xB200
+  #   reason: "DeepSeek V3.1 NVFP4 mtp-tpep gates golden on 8xB200"
+
+  # ── MiniMax M2.7 (8xB200 only in matrix) ─────────────────────────────────────
+  # NON_XL | {"4xMI355", "sglang"} → only runs on 8xB200.
+  - model: MiniMaxAI/MiniMax-M2.7
+    gpu: 8xB200
+    reason: "MiniMax M2.7 gates golden on 8xB200"
+
+  - model: lukealonso/MiniMax-M2.7-NVFP4
+    gpu: 8xB200
+    reason: "MiniMax M2.7 NVFP4 gates golden on 8xB200"
+
+  # Note: DeepSeek V3.2 and MiniMax 3 are not in the smoke test matrix.
+  # They are covered by logit verification (see logit_verification_required_list.yaml).

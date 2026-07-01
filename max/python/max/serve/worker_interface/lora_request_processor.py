@@ -29,7 +29,7 @@ from max.pipelines.lora import (
 )
 from max.pipelines.request import RequestID
 
-from .zmq_queue import ZmqPullSocket, ZmqPushSocket
+from ._zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 if TYPE_CHECKING:
     from max.pipelines.lora import LoRAManager

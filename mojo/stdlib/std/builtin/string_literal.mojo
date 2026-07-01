@@ -19,6 +19,7 @@ from std.collections.string.format import _FormatUtils
 from std.collections.string.string_slice import (
     CodepointSliceIter,
     CodepointsIter,
+    GraphemeSliceIter,
     StaticString,
 )
 from std.os import PathLike
@@ -213,23 +214,33 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return String(self)
 
-    @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
-    def __iter__(self) -> CodepointSliceIter[StaticConstantOrigin]:
-        """Return an iterator over the string literal.
+    def __iter__(self) -> GraphemeSliceIter[StaticConstantOrigin]:
+        """Iterate over the grapheme clusters in the string literal.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen, such as a base letter together with
+        any combining marks. See `graphemes()` for the precise definition.
+
+        To iterate by Unicode codepoint or by byte instead, use
+        `codepoints()`/`codepoint_slices()` or `as_bytes()`.
 
         Returns:
-            An iterator over the string.
+            An iterator yielding each grapheme cluster as a `StringSlice`.
         """
-        return self.codepoint_slices()
+        return self.graphemes()
 
-    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
-    def __reversed__(self) -> CodepointSliceIter[StaticConstantOrigin, False]:
-        """Iterate backwards over the string, returning immutable references.
+    def __reversed__(self) -> GraphemeSliceIter[StaticConstantOrigin, False]:
+        """Iterate backwards over the grapheme clusters in the string literal.
+
+        See `graphemes()` for the definition of a grapheme cluster. Reverse
+        iteration is more expensive per element than forward iteration; see
+        `graphemes_reversed()` for details.
 
         Returns:
-            A reversed iterator over the string.
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
         """
-        return self.codepoint_slices_reversed()
+        return self.graphemes_reversed()
 
     def __getitem__[I: Indexer, //](self, idx: I) -> StaticString:
         """Gets the character at the specified position.
@@ -246,23 +257,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return StaticString(
             unsafe_from_utf8=Span(ptr=self.unsafe_ptr() + idx, length=1)
         )
-
-    # TODO(MSTDL-1327): Reduce pain when string literals can't be
-    # nonmaterializable by making them merge into StaticString.  They should
-    # eventually merge into String through nonmaterialization.
-    @always_inline("nodebug")
-    def __merge_with__[
-        other_type: type_of(StringLiteral[_]),
-    ](self) -> StaticString:
-        """Returns a StaticString after merging with another string literal.
-
-        Parameters:
-            other_type: The type of the string literal to merge with.
-
-        Returns:
-            A StaticString after merging with the specified `other_type`.
-        """
-        return self
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -727,6 +721,31 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             An iterator over successive `Codepoint` values.
         """
         return StringSlice(self).codepoints()
+
+    def graphemes(self) -> GraphemeSliceIter[StaticConstantOrigin]:
+        """Return an iterator over the grapheme clusters in this string.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen.
+
+        Returns:
+            An iterator yielding each grapheme cluster as a `StringSlice`.
+        """
+        return StringSlice(self).graphemes()
+
+    def graphemes_reversed(
+        self,
+    ) -> GraphemeSliceIter[StaticConstantOrigin, False]:
+        """Return an iterator over the grapheme clusters in this string,
+        yielding them in reverse order.
+
+        See `graphemes()` for the definition of a grapheme cluster.
+
+        Returns:
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
+        """
+        return StringSlice(self).graphemes_reversed()
 
     def format[*Ts: Writable](self, *args: *Ts) -> String:
         """Produce a formatted string using the current string as a template.

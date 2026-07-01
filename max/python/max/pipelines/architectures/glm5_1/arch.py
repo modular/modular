@@ -12,6 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
+from max.pipelines.architectures.deepseekV3.batch_processor import (
+    DeepseekV3BatchProcessor,
+)
 from max.pipelines.architectures.deepseekV3_2 import weight_adapters
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
@@ -37,6 +40,7 @@ glm5_1_arch = SupportedArchitecture(
     },
     multi_gpu_supported=True,
     pipeline_model=Glm5_1Model,
+    batching=DeepseekV3BatchProcessor,
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -47,4 +51,6 @@ glm5_1_arch = SupportedArchitecture(
     requires_max_batch_context_length=True,
     config=Glm5_1Config,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

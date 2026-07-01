@@ -30,7 +30,6 @@ from layout._fillers import random
 from std.memory import memcpy
 
 from nn.fused_qk_rope import fused_qk_rope_ragged
-from testdata.fused_qk_rope_goldens import freqs_cis_table_input
 from std.testing import assert_almost_equal
 
 from std.utils import Index, IndexList
@@ -278,14 +277,18 @@ def execute_fused_qk_rope_ragged(
                     * kv_params.head_size,
                 )
 
-    # Initialize freqs_cis_table with golden values
-    freqs_input_buffer = freqs_cis_table_input[dtype]()
+    # Fill the whole freqs_cis buffer: the kernel reads row
+    # `cache_len + token`, not just the first rows. Unwritten rows are zero
+    # under the default allocator but NaN under `poison-all`. (KERN-3088)
+    comptime freqs_layout = Layout.row_major(max_seq_len, kv_params.head_size)
+    var freqs_runtime_layout = RuntimeLayout[freqs_layout].row_major(
+        freqs_shape
+    )
     with freqs_device.map_to_host() as freqs_host:
-        memcpy(
-            dest=freqs_host.unsafe_ptr(),
-            src=freqs_input_buffer.unsafe_ptr(),
-            count=len(freqs_input_buffer),
+        var freqs_init_tensor = LayoutTensor[dtype, freqs_layout](
+            freqs_host, freqs_runtime_layout
         )
+        random(freqs_init_tensor)
 
     # Initialize KV blocks with random data using regular host memory
     # (not host-pinned memory via map_to_host) to avoid exhausting

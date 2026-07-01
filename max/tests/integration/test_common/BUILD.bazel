@@ -8,7 +8,6 @@ load(
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -157,6 +156,15 @@ modular_py_library(
     testonly = True,
     srcs = ["registry.py"],
     imports = [".."],
+    # Extends the package default with //max/internal so the kernel-model-map
+    # graph tooling can reuse this test fixture.
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//max/internal:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         requirement("pytest"),
         requirement("typing-extensions"),
@@ -170,6 +178,15 @@ modular_py_library(
     testonly = True,
     srcs = ["pipeline_model_dummy.py"],
     imports = [".."],
+    # Extends the package default with //max/internal so the kernel-model-map
+    # graph tooling can reuse this test fixture.
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//max/internal:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

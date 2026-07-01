@@ -139,10 +139,55 @@ from .nvidia.sm100.mla_prefill_per_token_scale import (
 # ===-----------------------------------------------------------------------===#
 
 
-# Max query tokens per sequence the decode branch handles. Only NVIDIA's
-# decode kernel takes more than one (MTP / speculative decode); AMD's is
-# token-generation only.
-comptime MLA_DECODE_MAX_SEQ_LEN = 8 if has_nvidia_gpu_accelerator() else 1
+# Max query tokens per sequence (S) the decode branch handles (MTP) —
+# the coarse graph-routing ceiling (`mla_graph.mojo` decode-vs-prefill
+# split). The precise per-call gate is `AMD_MLA_DECODE_FOLD_M_MAX` below. AMD
+# folds H*S query rows into the MMA M dimension up to M=128, with S independently
+# capped at this value. At num_heads=16 the two caps coincide (16*8==128); for
+# num_heads<16 the S<=8 cap binds first (e.g. H=8 reaches M=64 at S=8), so the
+# chokepoint enforces both. Under-routing is unsafe: it sends S>1 to the MLA
+# prefill kernel, which can't read the absorbed-latent decode KV cache (NaN +
+# OOB). FP8-only; BF16 S>1 is rejected at the chokepoint.
+comptime MLA_DECODE_MAX_SEQ_LEN = 8
+
+
+# AMD MLA decode S>1 (MTP) token-fold is wired only in the num_heads<=16 dispatch
+# arm of `flare_mla_decoding_dispatch`; the larger-head arms hardcode q_seq_len=1.
+# Both the host-side fold gate and the `mla_graph` decode-vs-prefill router key on
+# this, so an S>1 batch with num_heads>16 (e.g. DP-attention Kimi: 64 heads/rank)
+# routes to MLA prefill instead of the nonexistent large-head decode fold.
+comptime AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS = 16
+
+
+@always_inline
+def mla_decode_max_seq_len[dtype: DType, num_heads: Int]() -> Int:
+    """Max query tokens (S) the MLA *decode* branch can fold for this config.
+
+    On AMD the S>1 fold is FP8-only AND num_heads<=AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS
+    only (the larger-head dispatch arm is S=1-only), so a BF16 cache or num_heads>16
+    routes S>1 to MLA prefill; NVIDIA folds up to `MLA_DECODE_MAX_SEQ_LEN` for both.
+    Mirrors the host-side fold gate in `flare_mla_decoding_dispatch` so the router
+    never hands the gate an S>1 batch it would reject.
+    """
+    return 1 if (
+        has_amd_gpu_accelerator()
+        and (
+            not dtype.is_float8()
+            or num_heads > AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS
+        )
+    ) else MLA_DECODE_MAX_SEQ_LEN
+
+
+# Precise AMD MLA-decode token-fold cap: M = num_heads * S must be <= this for
+# the warp-local geometry (one 16-row MFMA M-tile per warp, BM = align16(M), up
+# to 8 warps). Enforced by a host-side `raise` (active in DEFAULT builds). At
+# BM=128 total LDS is ~89KB < the 160KB gfx950 limit (KV SMEM ~72KB is
+# BM-independent, Q is register-resident).
+#
+# Occupancy: BM <= 64 fits 1 block/CU at ~510 VGPR with no spill; BM >= 80 forces
+# >= 2 waves/SIMD, capping VGPR at 256 so the working set spills (~1KB).
+# Correctness-neutral. A register-resident-P path would relieve this.
+comptime AMD_MLA_DECODE_FOLD_M_MAX = 128
 
 
 # entrypoint for MLA decoding kernels
@@ -397,14 +442,11 @@ def flare_mla_decoding[
     # Runtime dimensions.
     var num_keys = Int(k.dim[1]())
 
-    var k_lt = k.to_layout_tensor()
+    # Re-view `k` as a row-major TileTensor directly (no throwaway
+    # LayoutTensor round-trip). `shape_coord()` preserves the static/runtime
+    # dim types, and the operand infers `buffer_layout` from this TileTensor.
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
-            k_lt.ptr,
-            RuntimeLayout[k_lt.layout].row_major(
-                k_lt.runtime_layout.shape.value.canonicalize()
-            ),
-        )
+        TileTensor(k.ptr, row_major(k.layout.shape_coord()))
     )
 
     var valid_length = TileTensor(
@@ -535,16 +577,48 @@ def flare_mla_decoding_dispatch[
         q.dtype.is_half_float() or q.dtype == DType.float8_e4m3fn
     ), "Only support half precision or float8_e4m3fn Q."
 
-    # AMD's decode kernel handles only one query token per sequence; assert it
-    # here at the dispatch chokepoint so every decode caller is covered.
+    # AMD MLA decode folds H*S query rows into the QK^T MMA M dimension up to
+    # M = num_heads * S <= 128 (legacy (1,4) for M <= 16, else warp-local
+    # (M/16, 1)). S=1 is always supported (large-H S=1 uses the multi-tile grid.y
+    # path, not the fold).
+    #
+    # The host-side `raise` below is the only gate (the dispatch fn is `raises`,
+    # so it fires in every build). A `debug_assert` backstop would be wrong: under
+    # `-D ASSERT=all` it aborts before the catchable `raise` and breaks the
+    # `assert_raises` unsupported-fold tests.
     comptime if has_amd_gpu_accelerator():
-        debug_assert(
-            max_prompt_len <= 1,
-            (
-                "AMD MLA decode kernel handles exactly one query token per"
-                " sequence; route multi-token sequences to the prefill kernel."
-            ),
-        )
+        # Hard launch-time rejection, and the single source of truth for the
+        # fold envelope. Supported: S == 1 (any), or S > 1 with FP8 Q, num_heads
+        # <= 16, S <= MLA_DECODE_MAX_SEQ_LEN, and num_heads*S <= 128. The other
+        # arms would silently downgrade S>1 to S=1 and drop tokens: the BF16 arm
+        # and the num_heads>16 arms both hardcode q_seq_len=1 (only the
+        # FP8/num_heads<=16 arm threads it). Routing S>1 to MLA prefill is also
+        # unsafe (it can't read the absorbed-latent decode KV cache → NaN + OOB),
+        # so raise loudly. The S<=MLA_DECODE_MAX_SEQ_LEN term matters for
+        # num_heads<16, where num_heads*S<=128 alone would admit S>8 (e.g. H=8,
+        # S=10 → M=80); without it such a call falls through to the dispatch
+        # ladder's backstop raise instead of failing here.
+        if max_prompt_len > 1 and (
+            not dtype.is_float8()
+            or num_heads > AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS
+            or max_prompt_len > MLA_DECODE_MAX_SEQ_LEN
+            or num_heads * max_prompt_len > AMD_MLA_DECODE_FOLD_M_MAX
+        ):
+            raise Error(
+                t"AMD MLA decode (MTP) supports S=1 (any num_heads), or S>1"
+                t" with FP8 Q, num_heads <= 16, S <= {MLA_DECODE_MAX_SEQ_LEN},"
+                t" and num_heads*S <= {AMD_MLA_DECODE_FOLD_M_MAX}."
+                t" Requested S={max_prompt_len} with num_heads={num_heads}"
+                t" (M = num_heads*S = {num_heads * max_prompt_len}) is not"
+                t" supported."
+            )
+
+        # Variable per-sequence query length is supported: the comptime
+        # `q_seq_len` (= `max_prompt_len`) is only the padding ceiling, while the
+        # runtime length `valid_length[b+1] - valid_length[b]` drives the SRD
+        # clamp, causal offset, split-K stat writer, and ragged reducer — so
+        # short sequences' pad rows are dropped. Uniform batches are
+        # byte-equivalent (seq_len == q_seq_len).
 
     # TileTensor always has static shapes for the last two dims.
 
@@ -687,7 +761,17 @@ def flare_mla_decoding_dispatch[
 
         @always_inline
         @parameter
-        def launch_with_BM[BM: Int]() raises:
+        def launch_with_BM[
+            BM: Int,
+            q_seq_len: Int = 1,
+            WM: Int = BM,
+            WN: Int = (16 if has_nvidia_gpu_accelerator() else 32),
+        ]() raises:
+            # `q_seq_len` (S) folds H*S query rows into the MMA M dimension.
+            # Default 1 = single-token decode. `WM`/`WN` default to the legacy
+            # (1,4) geometry (WM=BM, WN=32 AMD / 16 NVIDIA), so S=1 call sites are
+            # byte-identical; warp-local passes `WM=16, WN=128` (num_warps_m=
+            # BM//16, num_warps_n=1, one 16-row tile per warp).
             comptime BN = 64 if has_nvidia_gpu_accelerator() else 128
             # AMD-structured config picks 16x16x128 for MLA decode when
             # `num_heads <= 16` (Kimi-K2.5 TP=4) or `depth % 128 == 0`;
@@ -700,8 +784,6 @@ def flare_mla_decoding_dispatch[
             comptime BK = 128 if amd_fp8_16x16x128 else (
                 64 if (has_nvidia_gpu_accelerator() or amd_fp8) else 32
             )  # 8 mma_tile per row resolves bank conflict on nvidia
-            comptime WM = BM
-            comptime WN = 16 if has_nvidia_gpu_accelerator() else 32
             # num warps in M and N, multiplied by warp size.
             comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
@@ -724,7 +806,19 @@ def flare_mla_decoding_dispatch[
                 shared_mem_bytes if has_nvidia_gpu_accelerator() else 0
             )
 
-            comptime num_blocks_y = ceildiv(num_heads, BM)
+            # M-based, not num_heads-based: the fold makes M = num_heads *
+            # q_seq_len, so grid.y must cover all H*S rows. At S=1 this is
+            # `ceildiv(num_heads, BM)`, byte-identical (the S=1 large-H path keeps
+            # grid.y>1).
+            comptime _fold_m = num_heads * q_seq_len
+            comptime num_blocks_y = ceildiv(_fold_m, BM)
+            comptime assert BM % 16 == 0
+            # The S>1 fold packs all H*S rows into one block's M tile, so M must
+            # fit BM (= align16(M) for warp-local).
+            comptime assert (q_seq_len == 1) or (_fold_m <= BM), (
+                "S>1 requires M = num_heads*q_seq_len <= BM (the folded query"
+                " rows must fit the block M tile)."
+            )
 
             comptime depth_v = type_of(output).static_shape[output.rank - 1]
 
@@ -749,6 +843,7 @@ def flare_mla_decoding_dispatch[
                 _use_valid_length=_use_valid_length,
                 _is_cache_length_accurate=_is_cache_length_accurate,
                 decoding_warp_split_k=decoding_warp_split_k,
+                q_seq_len=q_seq_len,
             ]
 
             # Pick num_partitions for split-K. Only AMD has a tuned heuristic
@@ -770,6 +865,13 @@ def flare_mla_decoding_dispatch[
                 else:
                     num_partitions_value = 1
 
+            # Token fold (S>1): split-K is re-keyed by query row, so the
+            # intermediate + stat workspaces are sized by `_split_k_rows =
+            # num_heads * q_seq_len` (= M, heads-inner: row = token*H + head),
+            # `store_partition_info` writes one stat per row, and the reducer runs
+            # one CTA per row. At S=1 == num_heads, byte-identical.
+            comptime _split_k_rows = num_heads * q_seq_len
+
             var q_device = DeviceBuffer[q.dtype](
                 ctx, q.ptr, q.num_elements(), owning=False
             )
@@ -790,7 +892,7 @@ def flare_mla_decoding_dispatch[
                     batch_size,
                     num_partitions_value,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length.as_immut(),
                     mask_functor,
                     grid_dim=(1, num_blocks_y, batch_size),
                     block_dim=(num_threads, 1, 1),
@@ -808,9 +910,9 @@ def flare_mla_decoding_dispatch[
 
                 var output_intermediate_data = ctx.enqueue_create_buffer[
                     intermediate_dtype
-                ](num_heads * depth_v * batch_size * num_partitions_value)
+                ](_split_k_rows * depth_v * batch_size * num_partitions_value)
 
-                var data_len = num_heads * batch_size * num_partitions_value
+                var data_len = _split_k_rows * batch_size * num_partitions_value
                 var exp_sum_qk_max_data = ctx.enqueue_create_buffer[accum_type](
                     2 * data_len
                 )
@@ -837,7 +939,7 @@ def flare_mla_decoding_dispatch[
                     batch_size,
                     num_partitions_value,
                     max_cache_valid_length,
-                    valid_length,
+                    valid_length.as_immut(),
                     mask_functor,
                     grid_dim=(
                         num_partitions_value,
@@ -890,35 +992,48 @@ def flare_mla_decoding_dispatch[
                     # context). Picking per dispatch keeps O(MAX_PARTITIONS)
                     # per-CTA work proportional to the actual partition
                     # count bucket.
+                    # `ragged` + input_row_offsets let the reducer remap the
+                    # final store to the ragged `[total_q_tokens, H, depth]`
+                    # layout and skip short-sequence pad rows. Comptime-dead at
+                    # S=1 / non-ragged (byte-identical store).
                     comptime kernel_reduce_64 = mla_splitk_reduce[
                         intermediate_dtype,
                         output.dtype,
+                        type_of(valid_length).LayoutType,
                         depth=depth_v,
                         num_heads=num_heads,
                         D_TILES=D_TILES,
                         W_PARTS=W_PARTS_64,
                         MAX_PARTITIONS=64,
                         use_exp2=reduce_use_exp2,
+                        q_seq_len=q_seq_len,
+                        ragged=ragged,
                     ]
                     comptime kernel_reduce_128 = mla_splitk_reduce[
                         intermediate_dtype,
                         output.dtype,
+                        type_of(valid_length).LayoutType,
                         depth=depth_v,
                         num_heads=num_heads,
                         D_TILES=D_TILES,
                         W_PARTS=W_PARTS_128,
                         MAX_PARTITIONS=128,
                         use_exp2=reduce_use_exp2,
+                        q_seq_len=q_seq_len,
+                        ragged=ragged,
                     ]
                     comptime kernel_reduce_256 = mla_splitk_reduce[
                         intermediate_dtype,
                         output.dtype,
+                        type_of(valid_length).LayoutType,
                         depth=depth_v,
                         num_heads=num_heads,
                         D_TILES=D_TILES,
                         W_PARTS=W_PARTS_256,
                         MAX_PARTITIONS=256,
                         use_exp2=reduce_use_exp2,
+                        q_seq_len=q_seq_len,
+                        ragged=ragged,
                     ]
                     if num_partitions_value <= 64:
                         ctx.enqueue_function[kernel_reduce_64](
@@ -928,7 +1043,8 @@ def flare_mla_decoding_dispatch[
                             qk_max_device,
                             batch_size,
                             num_partitions_value,
-                            grid_dim=(D_TILES, num_heads, batch_size),
+                            valid_length.as_immut(),
+                            grid_dim=(D_TILES, _split_k_rows, batch_size),
                             block_dim=(W_PARTS_64 * WARP_SIZE, 1, 1),
                         )
                     elif num_partitions_value <= 128:
@@ -939,7 +1055,8 @@ def flare_mla_decoding_dispatch[
                             qk_max_device,
                             batch_size,
                             num_partitions_value,
-                            grid_dim=(D_TILES, num_heads, batch_size),
+                            valid_length.as_immut(),
+                            grid_dim=(D_TILES, _split_k_rows, batch_size),
                             block_dim=(W_PARTS_128 * WARP_SIZE, 1, 1),
                         )
                     else:
@@ -950,7 +1067,8 @@ def flare_mla_decoding_dispatch[
                             qk_max_device,
                             batch_size,
                             num_partitions_value,
-                            grid_dim=(D_TILES, num_heads, batch_size),
+                            valid_length.as_immut(),
+                            grid_dim=(D_TILES, _split_k_rows, batch_size),
                             block_dim=(W_PARTS_256 * WARP_SIZE, 1, 1),
                         )
                 else:
@@ -1003,7 +1121,39 @@ def flare_mla_decoding_dispatch[
             # mma_shape[0]=16 gives num_m_mmas=2 and the second m_mma is
             # wasted for any num_heads <= 16.
             comptime if num_heads <= 16:
-                launch_with_BM[16]()
+                # 16x16x128 MFMA. The runtime `max_prompt_len` (S) selects the
+                # comptime `q_seq_len`, folding M = num_heads*S rows into the MMA
+                # M dimension: legacy (1,4) for M <= 16, else warp-local (M/16, 1)
+                # (BM=align16(M), WM=16, WN=128 — one 16-row tile per warp).
+                # `get_mma_shape()` is 16x16x128 for any BM here, so WM=16 gives
+                # num_m_mmas=1.
+                #
+                # The chokepoint `raise` already rejected M > 128, so each
+                # supported S maps to its own kernel/q_seq_len — never downgraded.
+                # `_s_max` is capped by both limits so no dead S kernel is built;
+                # the trailing `raise` is a backstop if the chokepoint weakens.
+                comptime _s_max = min(
+                    AMD_MLA_DECODE_FOLD_M_MAX // num_heads,
+                    MLA_DECODE_MAX_SEQ_LEN,
+                )
+                comptime for s in range(1, _s_max + 1):
+                    if max_prompt_len == s:
+                        comptime _m = num_heads * s
+                        comptime if _m <= 16:
+                            # legacy (1,4) — WM/WN default to BM/32.
+                            launch_with_BM[16, s]()
+                        else:
+                            # warp-local (M/16, 1): one 16-row MFMA M-tile per
+                            # warp over align16(M) rows (W = BM//16 warps),
+                            # full N=128 KV, warp-local softmax.
+                            comptime _bm = ceildiv(_m, 16) * 16
+                            launch_with_BM[_bm, s, WM=16, WN=128]()
+                        return
+                raise Error(
+                    "AMD MLA decode (MTP): num_heads*S must be <= 128 (the"
+                    " 8-tile fold cap) and S <= MLA_DECODE_MAX_SEQ_LEN; larger"
+                    " folds must not be downgraded."
+                )
             elif num_heads > 32:
                 # MI355X L2 = 256 MB; threshold ≈ 0.4 × L2 = 100 MB leaves
                 # headroom for Q + V + working state in L2.
@@ -1047,12 +1197,23 @@ def flare_mla_decoding_dispatch[
 def mla_splitk_reduce[
     intermediate_type: DType,
     output_type: DType,
+    ValidLT: TensorLayout,
     depth: Int,
     num_heads: Int,
     D_TILES: Int,
     W_PARTS: Int,
     MAX_PARTITIONS: Int,
     use_exp2: Bool = False,
+    # Token fold (S>1): split-K is keyed by query row, so num_rows =
+    # num_heads * q_seq_len (heads-inner: row = token*H + head) and each reduce
+    # CTA owns one row. At S=1 == num_heads, byte-identical.
+    q_seq_len: Int = 1,
+    # Variable per-sequence query length: when True the final store is remapped
+    # through `valid_length` to the ragged `[total_q_tokens, H, depth]` layout
+    # (the padded intermediate/stat reads stay keyed by (batch_idx, row_idx)).
+    # False (and S=1) keeps the padded-dense `[B, num_rows, depth]` store
+    # byte-identically.
+    ragged: Bool = False,
 ](
     intermediate_ptr: UnsafePointer[Scalar[intermediate_type], ImmutAnyOrigin],
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -1064,6 +1225,10 @@ def mla_splitk_reduce[
     ],
     batch_size: Int,
     num_partitions: Int,
+    # input_row_offsets `[batch_size + 1]`. Read only on the `ragged and
+    # q_seq_len > 1` path (remap the final store, skip short-sequence pad rows);
+    # a zero-length placeholder otherwise.
+    valid_length_tt: TileTensor[DType.uint32, ValidLT, ImmutAnyOrigin],
 ):
     comptime assert depth > 0, "depth must be positive"
     comptime assert (
@@ -1088,6 +1253,8 @@ def mla_splitk_reduce[
     )
 
     comptime accum_type = get_accum_type[output_type]()
+    # Folded query-row count (M = num_heads * q_seq_len). At S=1 == num_heads.
+    comptime num_rows = num_heads * q_seq_len
     comptime depth_per_cta = depth // D_TILES
     comptime elems_per_lane = depth_per_cta // WARP_SIZE
     comptime parts_per_warp = MAX_PARTITIONS // W_PARTS
@@ -1097,11 +1264,11 @@ def mla_splitk_reduce[
 
     var qk_max_tt = TileTensor(
         qk_max_ptr,
-        row_major((num_partitions, batch_size, Idx[num_heads])),
+        row_major((num_partitions, batch_size, Idx[num_rows])),
     )
     var exp_sum_tt = TileTensor(
         exp_sum_ptr,
-        row_major((num_partitions, batch_size, Idx[num_heads])),
+        row_major((num_partitions, batch_size, Idx[num_rows])),
     )
     var intermediate_tt = TileTensor(
         intermediate_ptr,
@@ -1109,14 +1276,19 @@ def mla_splitk_reduce[
             (
                 num_partitions,
                 batch_size,
-                Idx[num_heads],
+                Idx[num_rows],
                 Idx[depth],
             )
         ),
     )
+    # Final output as a flat [rows, depth] tensor. Padded-dense keys the row by
+    # `batch_idx * num_rows + row_idx` (same linear address as the old
+    # `[B, num_rows, depth]`); ragged re-keys by `start_of_seq*H + row_idx`. The
+    # leading dim only sizes the layout — the store address is the row index — so
+    # `batch_size * num_rows` bounds both (ragged rows are <= that).
     var output_tt = TileTensor(
         output_ptr,
-        row_major((batch_size, Idx[num_heads], Idx[depth])),
+        row_major((batch_size * num_rows, Idx[depth])),
     )
 
     var scales_tt = tt_stack_allocation[
@@ -1127,12 +1299,32 @@ def mla_splitk_reduce[
     ](row_major[W_PARTS, depth_per_cta]())
 
     var d_tile_idx = block_idx.x
-    var head_idx = block_idx.y
+    # block_idx.y indexes a folded query row (token*H + head) in [0, num_rows);
+    # == head when q_seq_len == 1.
+    var row_idx = block_idx.y
     var batch_idx = block_idx.z
     var warp_idx = warp_id()
     var lane_idx = lane_id()
     var depth_in_tile = lane_idx * elems_per_lane
     var depth_global = d_tile_idx * depth_per_cta + depth_in_tile
+
+    # Absolute output row for the final store (padded-dense; the
+    # intermediate/stat reads below stay keyed by (batch_idx, row_idx)).
+    var out_row = batch_idx * num_rows + row_idx
+
+    # Variable per-sequence query length: on the ragged S>1 path remap the store
+    # to `[total_q_tokens, H, depth]`. `valid_length` is the input_row_offsets,
+    # so `seq_len_rt = valid_length[b+1] - valid_length[b]`; skip pad rows
+    # (row_idx >= H*seq_len_rt, never written by the decode kernel) and send live
+    # rows to `start_of_seq*H + row_idx`. Comptime-dead at S=1 / non-ragged
+    # (byte-identical `out_row`).
+    comptime if ragged and q_seq_len > 1:
+        var valid_length = valid_length_tt.to_layout_tensor()
+        var start_of_seq = Int(valid_length[batch_idx])
+        var seq_len_rt = Int(valid_length[batch_idx + 1]) - start_of_seq
+        if Int(row_idx) >= num_heads * seq_len_rt:
+            return
+        out_row = start_of_seq * num_heads + Int(row_idx)
 
     # Step 1: warp 0 computes per-partition scales. Each lane owns
     # `parts_per_lane` partitions strided by WARP_SIZE; `parts_per_lane`
@@ -1151,7 +1343,7 @@ def mla_splitk_reduce[
         comptime for k in range(parts_per_lane):
             var partition_idx = Int(lane_idx) + k * WARP_SIZE
             var pi_safe = min(partition_idx, np_last)
-            var v_raw = qk_max_tt[pi_safe, batch_idx, head_idx]
+            var v_raw = qk_max_tt[pi_safe, batch_idx, row_idx]
             var v = (
                 v_raw if partition_idx
                 < num_partitions else min_or_neg_inf[accum_type]()
@@ -1173,7 +1365,7 @@ def mla_splitk_reduce[
         comptime for k in range(parts_per_lane):
             var partition_idx = Int(lane_idx) + k * WARP_SIZE
             var pi_safe = min(partition_idx, np_last)
-            var r = exp_sum_tt[pi_safe, batch_idx, head_idx] * exp_fn(
+            var r = exp_sum_tt[pi_safe, batch_idx, row_idx] * exp_fn(
                 lse_lane[k] - qk_max_global
             )
             rescaled_lane[k] = r
@@ -1229,7 +1421,7 @@ def mla_splitk_reduce[
                 Coord(
                     p_safe,
                     batch_idx,
-                    head_idx,
+                    row_idx,
                     depth_global,
                 )
             ).cast[accum_type]()
@@ -1240,10 +1432,10 @@ def mla_splitk_reduce[
             ).select(xs[k], type_of(xs[k])(0))
             acc += safe * type_of(safe)(scale_k)
 
-    # Step 3: cross-warp reduction and output store.
+    # Step 3: cross-warp reduction and output store (`out_row` set above).
     comptime if W_PARTS == 1:
         output_tt.store(
-            Coord(batch_idx, head_idx, depth_global),
+            Coord(out_row, depth_global),
             acc.cast[output_type](),
         )
     else:
@@ -1257,7 +1449,7 @@ def mla_splitk_reduce[
                     Coord(Idx[w], depth_in_tile)
                 )
             output_tt.store(
-                Coord(batch_idx, head_idx, depth_global),
+                Coord(out_row, depth_global),
                 final_acc.cast[output_type](),
             )
 
@@ -1289,6 +1481,10 @@ def mla_decoding[
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
     decoding_warp_split_k: Bool = False,
+    # MTP (multi-token prediction): number of query tokens (S) folded into the
+    # MMA M dimension on AMD. Default 1 = single-token decode. NVIDIA ignores
+    # it (its fold path is selected separately).
+    q_seq_len: Int = 1,
 ](
     q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
@@ -1302,7 +1498,7 @@ def mla_decoding[
     valid_length_tt: TileTensor[
         DType.uint32,
         ValidLT,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],  # valid length per batch
     mask: mask_t,
 ):
@@ -1311,12 +1507,17 @@ def mla_decoding[
 
     # split-k offsets
     var partition_idx = block_idx.x
+    # Output is [B, S, H, depth_v]. Split-K re-keys the intermediate workspaces
+    # by query row, so both the intermediate output and the softmax stats stride
+    # by M = q_seq_len * num_heads (heads-inner: row = token*H + head). At S=1
+    # every q_seq_len factor is 1, byte-identical to the num_heads-keyed offsets.
     var output_batch_offset: Int = (
-        depth_v * num_heads * batch_idx
-        + depth_v * num_heads * batch_size * partition_idx
+        q_seq_len * depth_v * num_heads * batch_idx
+        + q_seq_len * depth_v * num_heads * batch_size * partition_idx
     )
     var qk_max_offset = (
-        num_heads * batch_idx + num_heads * batch_size * partition_idx
+        q_seq_len * num_heads * batch_idx
+        + q_seq_len * num_heads * batch_size * partition_idx
     )
     var exp_sum_offset = qk_max_offset
 
@@ -1338,13 +1539,28 @@ def mla_decoding[
         end_of_seq = Int(valid_length[batch_idx + 1])
         seq_len = end_of_seq - start_of_seq
         q_batch_offset = start_of_seq * depth * num_heads
+
+        # Variable per-sequence query length: at num_partitions == 1 `output_ptr`
+        # is the final ragged output, so the per-batch base is the ragged row
+        # start `start_of_seq * H * depth_v`, not the comptime-uniform
+        # `q_seq_len * H * depth_v * batch_idx`. (The kernel still reads M =
+        # q_seq_len*H rows; the mask + SRD clamp drop short-sequence pad rows.)
+        # At num_partitions > 1 the output is the padded intermediate workspace —
+        # keep the dense offset; the reducer does the ragged remap. Comptime-dead
+        # at S=1.
+        comptime if q_seq_len > 1:
+            if num_partitions == 1:
+                output_batch_offset = start_of_seq * depth_v * num_heads
     elif _use_valid_length:
         # treat valid_lengths as valid lengths
-        q_batch_offset = depth * num_heads * batch_idx
+        # Q is [B, S, H, depth] → batch stride = q_seq_len * H * depth.
+        q_batch_offset = q_seq_len * depth * num_heads * batch_idx
         seq_len = Int(valid_length[batch_idx])
     else:
-        seq_len = 1
-        q_batch_offset = depth * num_heads * batch_idx
+        # No valid-length path (standalone S>1 tests): dense Q is [B, S, H,
+        # depth], seq_len is the comptime fold S. Bit-identical at S=1.
+        seq_len = q_seq_len
+        q_batch_offset = q_seq_len * depth * num_heads * batch_idx
 
     var num_keys = k.cache_length(batch_idx)
 
@@ -1398,6 +1614,8 @@ def mla_decoding[
             mla_mode=True,
             # K==V in MLA — load once, let PV reuse K's SMEM.
             mla_kv_alias=True,
+            # MTP token fold: M = num_heads * q_seq_len query rows.
+            q_seq_len=q_seq_len,
         ](
             output_ptr + output_batch_offset,
             q_ptr + q_batch_offset,
@@ -2312,17 +2530,11 @@ def flare_mla_prefill[
 
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
-        var k_rope_lt = k_rope.to_layout_tensor()
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope_lt.dtype, k_rope_lt.layout, k_rope_lt.origin](
-                k_rope_lt.ptr,
-                RuntimeLayout[k_rope_lt.layout].row_major(
-                    k_rope_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
+            TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord()))
         )
 
         comptime output_type = output.dtype
@@ -2438,27 +2650,14 @@ def flare_mla_prefill[
 
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
-        var k_rope_lt = k_rope.to_layout_tensor()
-        var k_rope_scales_lt = k_rope_scales.to_layout_tensor()
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope_lt.dtype, k_rope_lt.layout, k_rope_lt.origin](
-                k_rope_lt.ptr,
-                RuntimeLayout[k_rope_lt.layout].row_major(
-                    k_rope_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            LayoutTensor[
-                k_rope_scales_lt.dtype,
-                k_rope_scales_lt.layout,
-                k_rope_scales_lt.origin,
-            ](
-                k_rope_scales_lt.ptr,
-                RuntimeLayout[k_rope_scales_lt.layout].row_major(
-                    k_rope_scales_lt.runtime_layout.shape.value.canonicalize()
-                ),
+            TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord())),
+            TileTensor(
+                k_rope_scales.ptr,
+                row_major(k_rope_scales.layout.shape_coord()),
             ),
         )
 
@@ -2578,7 +2777,6 @@ def flare_mla_prefill[
             " num_keys, 1]"
         )
 
-        var k_rope_lt = k_rope.to_layout_tensor()
         var q_rope_lt = q_rope.to_layout_tensor()
         var q_scale_lt = q_scale.to_layout_tensor()
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
@@ -2590,12 +2788,7 @@ def flare_mla_prefill[
 
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope_lt.dtype, k_rope_lt.layout, k_rope_lt.origin](
-                k_rope_lt.ptr,
-                RuntimeLayout[k_rope_lt.layout].row_major(
-                    k_rope_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
+            TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord()))
         )
 
         var batch_size: Int = Int(valid_length.dim[0]()) - 1
@@ -2921,7 +3114,7 @@ def flare_mla_prefill_dispatch[
             scale,
             batch_size,
             max_prompt_len,
-            valid_length,
+            valid_length.as_immut(),
             cache_offsets,
             mask_functor,
             grid_dim=grid_dim,
@@ -2967,7 +3160,7 @@ def mla_prefill[
     valid_length_tt: TileTensor[
         DType.uint32,
         valid_layout,
-        MutAnyOrigin,
+        ImmutAnyOrigin,
     ],
     cache_offsets: OptionalReg[
         LayoutTensor[
@@ -3857,7 +4050,7 @@ def mla_prefill_plan[
     buffer_row_offsets: TileTensor[mut=True, DType.uint32, ...],
     cache_offsets: TileTensor[mut=True, DType.uint32, ...],
     buffer_lengths: TileTensor[mut=True, DType.int32, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
     k_cache: cache_t,
     buffer_token_size: UInt32,
     ctx: DeviceContext,

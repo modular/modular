@@ -4,8 +4,6 @@ sidebar_label: Custom weights
 description: Serve a fine-tuned model checkpoint with MAX when the base architecture is already supported, with no architecture code required.
 ---
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
-
 This page covers serving a fine-tune built on an architecture MAX already
 supports. To bring up a new architecture, see the
 [model bring-up workflow](/max/develop/model-bringup-workflow).
@@ -139,10 +137,10 @@ adapters while the server is running, see
 
 ## Next steps
 
-export const docs = [
-  '../../develop/serve-custom-model-architectures.mdx',
-  '../../serve/lora-adapters.mdx',
-  '../../graph/quantize.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Serve your custom model](/max/develop/serve-custom-model-architectures):
+  Learn how to serve a model with a custom architecture with max serve and send
+  inference requests to it.
+- [Using LoRA adapters](/max/serve/lora-adapters): Use LoRA adapters with MAX
+  to serve task-specific, fine-tuned variants of LLMs.
+- [Quantization](/max/graph/quantize): An introduction to the MAX Graph
+  quantization API.

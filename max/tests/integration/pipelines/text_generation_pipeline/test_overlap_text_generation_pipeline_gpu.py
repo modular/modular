@@ -34,8 +34,8 @@ from max.graph import (
     TensorType,
     ops,
 )
-from max.nn import KVCacheInputs, kernels
-from max.nn.kv_cache import KVCacheParams
+from max.nn import kernels
+from max.nn.kv_cache import KVCacheInputsInterface, KVCacheParams
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.context.context import FUTURE_TOKEN
 from max.pipelines.lib import (
@@ -47,6 +47,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
     SupportedEncoding,
 )
+from max.pipelines.lib.memory_estimation import _MemoryPlan
 from max.pipelines.lib.pipeline_variants import overlap_text_generation
 from max.pipelines.modeling.types import (
     RequestID,
@@ -289,7 +290,7 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         del kv_cache_inputs, return_n_logits  # Unused args
@@ -405,7 +406,10 @@ def create_overlap_pipeline(
         pipeline_model=cast(type[PipelineModel[Any]], FakePipelineModel),
         eos_token_id=9999,
         weight_adapters=MagicMock(),
-        tokenizer=MagicMock(),
+        tokenizer=MagicMock(spec=[]),
+        memory_plan=_MemoryPlan(
+            max_batch_size=runtime.max_batch_size or 1, footprint=0
+        ),
         disable_overlap=disable_overlap,
     )
     return pipeline
@@ -468,7 +472,7 @@ def test_overlap_execution(
 
     num_trials = 3
     for _trial in range(num_trials):
-        _ = pipeline.execute(TextGenerationInputs(batches=[[]], num_steps=1))
+        _ = pipeline.execute(TextGenerationInputs(batches=[[]]))
 
         req_a = create_context(isl=17, osl=1, offset=100)
         req_b = create_context(isl=42, osl=4, offset=200)
@@ -500,7 +504,7 @@ def test_overlap_execution(
 
             span_start = time.time()
             inputs = TextGenerationInputs(
-                batches=[list(active_requests.values())], num_steps=1
+                batches=[list(active_requests.values())]
             )
             outputs = pipeline.execute(inputs)
             span_end = time.time()
@@ -572,7 +576,7 @@ def test_overlap_execution_with_preemption(
     def create_inputs(
         context: TextContext,
     ) -> TextGenerationInputs[TextContext]:
-        return TextGenerationInputs(batches=[[context]], num_steps=1)
+        return TextGenerationInputs(batches=[[context]])
 
     out = pipeline.execute(create_inputs(context))
     assert req_id not in out
@@ -610,7 +614,7 @@ def test_disable_overlap_returns_outputs_immediately(
     def create_inputs(
         contexts: list[TextContext],
     ) -> TextGenerationInputs[TextContext]:
-        return TextGenerationInputs(batches=[contexts], num_steps=1)
+        return TextGenerationInputs(batches=[contexts])
 
     # --- Single request, multiple generation steps ---
     req_a = create_context(isl=17, osl=3, offset=100)

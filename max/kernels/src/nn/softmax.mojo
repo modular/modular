@@ -46,12 +46,12 @@ from std.gpu.host.info import is_cpu, is_gpu
 from std.gpu.primitives import block
 from layout._utils import idx2crd
 from layout import (
+    ComptimeInt,
     Coord,
     CoordLike,
     Idx,
     Layout,
     LayoutTensor,
-    LTToTTLayout,
     RowMajorLayout,
     TensorLayout,
     TileTensor,
@@ -60,6 +60,7 @@ from layout import (
     row_major,
     stack_allocation as tt_stack_allocation,
 )
+from layout.tile_layout import Layout as InternalLayout
 from layout.tensor_core import get_fragment_size
 from std.memory import stack_allocation
 from std.runtime.asyncrt import parallelism_level
@@ -176,7 +177,7 @@ def _add_f32x2(
 def _softmax_2_pass_step1[
     simd_width: Int,
     dtype: DType,
-](input: TileTensor[dtype, ...]) -> StaticTuple[Scalar[dtype], 2]:
+](input: TileTensor[mut=False, dtype, ...]) -> StaticTuple[Scalar[dtype], 2]:
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime assert input.rank == 1
     # STEP 1: find the runningMax and runningSum in each batch.
@@ -228,7 +229,7 @@ def _softmax_2_pass_step2[
     dtype: DType,
 ](
     output: TileTensor[mut=True, dtype, ...],
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     running_max: Scalar[dtype],
     running_sum: Scalar[dtype],
 ):
@@ -263,7 +264,10 @@ def _softmax_2_pass_step2[
 def softmax_2_pass[
     simd_width: Int,
     dtype: DType,
-](output: TileTensor[mut=True, dtype, ...], input: TileTensor[dtype, ...],):
+](
+    output: TileTensor[mut=True, dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
+):
     """Performs an unbatched softmax on an input tensor using the two-pass
     online algorithm.
 
@@ -605,7 +609,7 @@ def logsoftmax[
     rank: Int,
     target: StaticString = "cpu",
 ](
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
     context: Optional[DeviceContext] = None,
@@ -699,7 +703,7 @@ def softmax[
     simd_width: Int,
     rank: Int,
 ](
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
 ) raises:
@@ -859,7 +863,10 @@ def softmax_kernel[
 
 # TileTensor layout type for 1D row-major tensors with dynamic size,
 # used for sink_weights parameters.
-comptime _SinkWeightsTTLayout = LTToTTLayout[Layout.row_major(UNKNOWN_VALUE)]
+comptime _SinkWeightsTTLayout = InternalLayout[
+    shape_types=Coord[Int64].element_types,
+    stride_types=Coord[ComptimeInt[1]].element_types,
+]
 
 
 @__name(t"softmax_warp_{dtype}_{WARP_ROWS}_fused_{has_prologue_fusion}")
@@ -1047,7 +1054,7 @@ def _softmax_gpu[
                 unswitch[dispatch](
                     simd_width > 1
                     and shape_il[axis] % simd_width == 0
-                    and shape_il[axis] >= 4 * BLOCK_SIZE * simd_width
+                    and shape_il[axis] >= BLOCK_SIZE * simd_width
                 )
 
         unswitch[dispatch_warp_or_block](shape_il[axis] <= WARP_SIZE)
@@ -1279,7 +1286,7 @@ def softmax_with_temperature[
     TempLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
     temperature: Scalar[temp_dtype] = Float32(1.0),
     temperature_arr: Optional[
@@ -1371,7 +1378,7 @@ def _online_softmax_kernel[
     layout: Layout,
     fragment_transpose: Bool = False,
 ](
-    input: LayoutTensor[dtype, layout, MutAnyOrigin],
+    input: LayoutTensor[dtype, layout, ImmutAnyOrigin],
     output: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
     """This is only for online softmax validation, NOT a general kernel."""

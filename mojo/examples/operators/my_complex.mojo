@@ -14,6 +14,7 @@
 from std.math import sqrt
 
 
+@fieldwise_init
 struct Complex(
     Boolable,
     Equatable,
@@ -36,14 +37,9 @@ struct Complex(
     # Initializers
     # ===-------------------------------------------------------------------===#
 
-    @implicit
-    def __init__(out self, re: Float64, im: Float64 = 0.0):
+    def __init__(out self, re: Float64):
         self.re = re
-        self.im = im
-
-    @implicit
-    def __init__(out self, re: IntLiteral):
-        self = Self(Float64(re))
+        self.im = 0.0
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -61,35 +57,17 @@ struct Complex(
         t"Complex(re = {self.re}, im = {self.im})".write_to(writer)
 
     def __bool__(self) -> Bool:
-        return self != 0
-
-    # ===-------------------------------------------------------------------===#
-    # Indexing
-    # ===-------------------------------------------------------------------===#
-
-    def __getitem_param__[idx: Int](ref self) -> ref[self] Float64:
-        comptime assert idx in (0, 1), "idx must be 0 or 1"
-
-        comptime if idx == 0:
-            var p = UnsafePointer(to=self.re).unsafe_origin_cast[
-                origin_of(self)
-            ]()
-            return p[]
-        else:
-            var p = UnsafePointer(to=self.im).unsafe_origin_cast[
-                origin_of(self)
-            ]()
-            return p[]
+        return self.re != 0.0 or self.im != 0.0
 
     # ===-------------------------------------------------------------------===#
     # Unary arithmetic operator dunders
     # ===-------------------------------------------------------------------===#
 
-    def __neg__(self) -> Self:
-        return Self(-self.re, -self.im)
-
     def __pos__(self) -> Self:
         return self
+
+    def __neg__(self) -> Self:
+        return Self(-self.re, -self.im)
 
     # ===-------------------------------------------------------------------===#
     # Binary arithmetic operator dunders
@@ -98,20 +76,34 @@ struct Complex(
     def __add__(self, rhs: Self) -> Self:
         return Self(self.re + rhs.re, self.im + rhs.im)
 
+    def __add__(self, rhs: Float64) -> Self:
+        return Self(self.re + rhs, self.im)
+
     def __radd__(self, lhs: Float64) -> Self:
-        return self + lhs
+        return Self(self.re + lhs, self.im)
 
     def __iadd__(mut self, rhs: Self):
-        self = self + rhs
+        self.re += rhs.re
+        self.im += rhs.im
+
+    def __iadd__(mut self, rhs: Float64):
+        self.re += rhs
 
     def __sub__(self, rhs: Self) -> Self:
         return Self(self.re - rhs.re, self.im - rhs.im)
 
+    def __sub__(self, rhs: Float64) -> Self:
+        return Self(self.re - rhs, self.im)
+
     def __rsub__(self, lhs: Float64) -> Self:
-        return Self(lhs) - self
+        return Self(lhs - self.re, -self.im)
 
     def __isub__(mut self, rhs: Self):
-        self = self - rhs
+        self.re -= rhs.re
+        self.im -= rhs.im
+
+    def __isub__(mut self, rhs: Float64):
+        self.re -= rhs
 
     def __mul__(self, rhs: Self) -> Self:
         return Self(
@@ -119,11 +111,21 @@ struct Complex(
             self.re * rhs.im + self.im * rhs.re,
         )
 
+    def __mul__(self, rhs: Float64) -> Self:
+        return Self(self.re * rhs, self.im * rhs)
+
     def __rmul__(self, lhs: Float64) -> Self:
-        return self * lhs
+        return Self(lhs * self.re, lhs * self.im)
 
     def __imul__(mut self, rhs: Self):
-        self = self * rhs
+        var new_re = self.re * rhs.re - self.im * rhs.im
+        var new_im = self.re * rhs.im + self.im * rhs.re
+        self.re = new_re
+        self.im = new_im
+
+    def __imul__(mut self, rhs: Float64):
+        self.re *= rhs
+        self.im *= rhs
 
     def __truediv__(self, rhs: Self) -> Self:
         denom = rhs.squared_norm()
@@ -132,21 +134,45 @@ struct Complex(
             (self.im * rhs.re - self.re * rhs.im) / denom,
         )
 
+    def __truediv__(self, rhs: Float64) -> Self:
+        return Self(self.re / rhs, self.im / rhs)
+
     def __rtruediv__(self, lhs: Float64) -> Self:
-        return Self(lhs) / self
+        denom = self.squared_norm()
+        return Self(
+            (lhs * self.re) / denom,
+            (-lhs * self.im) / denom,
+        )
 
     def __itruediv__(mut self, rhs: Self):
-        self = self / rhs
+        var denom = rhs.squared_norm()
+        var new_re = (self.re * rhs.re + self.im * rhs.im) / denom
+        var new_im = (self.im * rhs.re - self.re * rhs.im) / denom
+        self.re = new_re
+        self.im = new_im
+
+    def __itruediv__(mut self, rhs: Float64):
+        self.re /= rhs
+        self.im /= rhs
 
     # ===-------------------------------------------------------------------===#
-    # Equality comparison operator dunders
+    # Indexing
     # ===-------------------------------------------------------------------===#
 
-    def __eq__(self, other: Self) -> Bool:
-        return self.re == other.re and self.im == other.im
+    def __getitem__(self, idx: Int) raises -> Float64:
+        if idx == 0:
+            return self.re
+        if idx == 1:
+            return self.im
+        raise "index out of bounds"
 
-    def __ne__(self, other: Self) -> Bool:
-        return not self == other
+    def __setitem__(mut self, idx: Int, value: Float64) raises:
+        if idx == 0:
+            self.re = value
+        elif idx == 1:
+            self.im = value
+        else:
+            raise "index out of bounds"
 
     # ===-------------------------------------------------------------------===#
     # Methods

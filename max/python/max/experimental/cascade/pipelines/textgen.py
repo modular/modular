@@ -41,3 +41,4 @@ class TextGenInterface(ABC):
         prompt: str | ChatMessages,
     ) -> AsyncIterator[str]:
         """Generate a streaming text response to a text prompt."""
+        ...

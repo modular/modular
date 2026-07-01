@@ -12,12 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.memory import destroy_n
-from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
+from std.memory.alloc import (
+    alloc,
+    dealloc,
+    DeletableAllocation,
+    ThinAllocation,
+    Layout,
+)
 from std.sys import align_of, size_of
 
 from test_utils import ObservableDel, check_write_to
 from std.testing import (
     assert_equal,
+    assert_not_equal,
     assert_false,
     assert_true,
     TestSuite,
@@ -158,6 +165,50 @@ def test_thin_allocation_unsafe_with_layout_and_unsafe_ptr() raises:
     assert_equal(value, 7)
 
 
+def test_deletable_allocation_into_allocation_round_trip() raises:
+    var layout = Layout[Int](count=3)
+    var allocation = alloc(layout)
+    var alloc_addr = Int(allocation.unsafe_ptr())
+
+    # Allocation -> DeletableAllocation -> Allocation (address stays stable).
+    var deletable = allocation^.into_deletable()
+    var deletable_addr = Int(deletable.unsafe_ptr())
+
+    var recovered = deletable^.into_allocation()
+    var recovered_addr = Int(recovered.unsafe_ptr())
+
+    # `into_allocation` hands back an `@explicit_destroy` handle: dealloc it
+    # before the (raising) asserts so it can't be abandoned on a throw.
+    dealloc(recovered^)
+
+    assert_equal(deletable_addr, alloc_addr)
+    assert_equal(recovered_addr, alloc_addr)
+
+
+def test_deletable_allocation_layout_matches() raises:
+    var deletable = DeletableAllocation(alloc(Layout[Int32](count=7)))
+    assert_equal(deletable.layout().count(), 7)
+    assert_equal(deletable.layout().alignment(), align_of[Int32]())
+
+
+def test_deletable_allocation_auto_deallocs_at_last_use() raises:
+    var total = 0
+    for i in range(3):
+        var deletable = alloc(Layout[Int](count=1)).into_deletable()
+        deletable.unsafe_ptr().init_pointee_move(i)
+        total += deletable.unsafe_ptr()[]
+    assert_equal(total, 0 + 1 + 2)
+
+
+def test_deletable_allocation_del_does_not_run_pointee_destructors() raises:
+    var deleted = False
+    var obs = ObservableDel(UnsafePointer(to=deleted).as_unsafe_any_origin())
+    var deletable = alloc(Layout[type_of(obs)](count=1)).into_deletable()
+    deletable.unsafe_ptr().init_pointee_move(obs^)
+    _ = deletable^
+    assert_false(deleted)
+
+
 def test_dealloc_does_not_run_pointee_destructors() raises:
     var deleted = False
     var obs = ObservableDel(UnsafePointer(to=deleted).as_unsafe_any_origin())
@@ -176,6 +227,84 @@ def test_destroy_n_runs_pointee_destructors_before_dealloc() raises:
     var ran = deleted
     dealloc(a^)
     assert_true(ran)
+
+
+def test_alloc_free_single_zst() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = Layout[ZST](count=1)
+    var ptr = alloc(layout).unsafe_leak()
+
+    assert_equal(
+        ptr.bitcast[Int]().as_unsafe_any_origin(),
+        ptr[].unsafe_ptr().as_unsafe_any_origin(),
+    )
+
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
+    )
+
+
+def test_single_zst_lifecycle() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = Layout[ZST](count=1)
+    var alloc = alloc(layout)
+    var ptr = alloc^.unsafe_leak()
+
+    ptr.init_pointee_move(ZST(fill=0))
+    assert_equal(0, len(ptr[]))
+    ptr.destroy_pointee()
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
+    )
+
+
+def test_alloc_free_many_zst() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = Layout[ZST](
+        count=Int.MAX
+    )  # It's a ZST, it doesn't take memory
+    var ptr = alloc(layout).unsafe_leak()
+
+    assert_equal(ptr.bitcast[Int](), ptr[].unsafe_ptr())
+
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
+    )
+
+
+def test_many_zst_lifecycle() raises:
+    comptime ZST = InlineArray[Int, 0]
+    comptime assert (
+        size_of[ZST]() == 0
+    ), "Please find a ZST to use for this test."
+
+    var layout = Layout[ZST](count=Int.MAX)
+    var ptr = alloc(layout).unsafe_leak()
+
+    ptr.bitcast[InlineArray[ZST, Int.MAX]]().init_pointee_move(
+        {fill = ZST(fill=0)}
+    )
+
+    assert_equal(0, len(ptr[]))
+    assert_equal(0, len(ptr[Int.MAX]))
+
+    ptr.bitcast[InlineArray[ZST, Int.MAX]]().destroy_pointee()
+
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
+    )
 
 
 def main() raises:

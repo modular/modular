@@ -177,8 +177,8 @@ class TokenGenerationScheduler(Scheduler):
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
-            speculative_decoding_metrics=self.pipeline.spec_decode_metrics()
-            if hasattr(self.pipeline, "spec_decode_metrics")
+            batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
+            if hasattr(self.pipeline, "batch_spec_decode_metrics")
             else None,
             batch_execution_time_is_previous=is_overlap_active,
         )
@@ -240,7 +240,7 @@ def load_text_generation_scheduler(
 ) -> TokenGenerationScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config
+        pipeline_config, pipeline.max_batch_size
     )
 
     # Build DP batch padder when DP > 1 with device graph capture.

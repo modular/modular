@@ -123,7 +123,14 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
     @traced
     def lookup(self, image_hash: int) -> VisionEncoderCacheEntry | None:
-        """Look up a cached entry by image hash, refreshing LRU order."""
+        """Look up a cached entry by image hash, refreshing LRU order.
+
+        A falsy hash (``0``, the sentinel for an image/video with no
+        content hash) is treated as a miss, so callers don't need to guard
+        the call themselves.
+        """
+        if not image_hash:
+            return None
         entry = self._cache.get(image_hash)
         if entry is not None:
             self._cache.move_to_end(image_hash)
@@ -273,10 +280,19 @@ class VisionEncoderCache(Generic[VLMContextType]):
         for count, img_hash, req_id in zip(
             per_image_token_counts, image_hashes, request_ids, strict=True
         ):
-            per_device = [
-                dev_tensor[offset : offset + count, :]
-                for dev_tensor in vision_outputs
-            ]
+            # Allocate owned copies rather than views so the cache entry does
+            # not pin the (variable-size) vision-encoder output buffer.  This
+            # prevents GPU allocator fragmentation caused by mismatched holes
+            # left behind when the output buffer is freed.
+            per_device = []
+            for dev_tensor in vision_outputs:
+                slot = Buffer.zeros(
+                    shape=[count, int(dev_tensor.shape[1])],
+                    dtype=dev_tensor.dtype,
+                    device=dev_tensor.device,
+                )
+                slot.inplace_copy_from(dev_tensor[offset : offset + count, :])
+                per_device.append(slot)
             offset += count
             if img_hash is not None:
                 self.insert(img_hash, per_device, count)

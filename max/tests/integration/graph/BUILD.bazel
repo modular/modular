@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -19,6 +18,7 @@ _AMD_ONLY_TESTS = [
 # CPU-only tests that don't require GPU
 _CPU_ONLY_TESTS = [
     "test_bf16_cpu_error.py",
+    "test_devices_infos_mapping.py",
     "test_int_indexing.py",
     "test_is_inf.py",
     "test_is_nan.py",
@@ -278,6 +278,7 @@ modular_py_test(
     srcs = [
         "conftest.py",
         "test_bf16_cpu_error.py",
+        "test_devices_infos_mapping.py",
         "test_int_indexing.py",
         "test_is_inf.py",
         "test_is_nan.py",

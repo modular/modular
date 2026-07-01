@@ -64,10 +64,6 @@ def execute_decode_compare[
     comptime depth = kv_params.head_size
     comptime num_blocks = 32
 
-    comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
-    ]
-
     var batch_size = len(cache_lengths)
     debug_assert(
         batch_size < num_blocks,
@@ -172,8 +168,15 @@ def execute_decode_compare[
     var kv_block_tensor = kv_block.device_tensor()
     var lookup_table_tensor = lookup_table.device_tensor()
 
-    var kv_collection_device = CollectionType(
-        kv_block_tensor,
+    var kv_collection_device = ContinuousBatchingKVCacheCollection[
+        dtype,
+        kv_params,
+    ](
+        # `mha_gpu_naive`/`naive_fa_decode_apple` read both the `k` and `v` cache
+        # views, which are disjoint kv_idx halves of one `blocks` buffer sharing its
+        # origin, so the nested-origin exclusivity check rejects passing both.
+        # Declare kv_block_tensor origin as UnsafeAnyOrigin` to opt out of exclusivity checking.
+        kv_block_tensor.as_unsafe_any_origin(),
         cache_lengths_device,
         lookup_table_tensor,
         UInt32(max_prompt_len),
@@ -262,6 +265,10 @@ def execute_decode_compare[
 comptime kv_params_single = KVCacheStaticParams(num_heads=1, head_size=64)
 comptime kv_params_mha = KVCacheStaticParams(num_heads=8, head_size=64)
 comptime kv_params_gqa = KVCacheStaticParams(num_heads=2, head_size=64)
+# d128/d256 exercise EPL=4/8; 256 is the Qwen3.5 full-attention dim.
+comptime kv_params_gqa_d128 = KVCacheStaticParams(num_heads=2, head_size=128)
+comptime kv_params_mha_d256 = KVCacheStaticParams(num_heads=8, head_size=256)
+comptime kv_params_gqa_d256 = KVCacheStaticParams(num_heads=2, head_size=256)
 
 
 def run_all(ctx: DeviceContext) raises:
@@ -304,6 +311,24 @@ def run_all(ctx: DeviceContext) raises:
         cache_lengths_mult32, max_seq, 1, 0, ctx, kernel_max_cache_size=128
     )
     print("  PASS  max-abs-err:", e4)
+
+    print("=== GQA head_dim=128 [num_q=8, num_kv=2, group=4] ===")
+    var e5 = execute_decode_compare[8, kv_params_gqa_d128](
+        cache_lengths, max_seq, 1, 0, ctx
+    )
+    print("  PASS  max-abs-err:", e5)
+
+    print("=== MHA head_dim=256 [num_q=8, num_kv=8, group=1] ===")
+    var e6 = execute_decode_compare[8, kv_params_mha_d256](
+        cache_lengths, max_seq, 1, 0, ctx
+    )
+    print("  PASS  max-abs-err:", e6)
+
+    print("=== GQA head_dim=256 (Qwen3.5) [num_q=8, num_kv=2, group=4] ===")
+    var e7 = execute_decode_compare[8, kv_params_gqa_d256](
+        cache_lengths, max_seq, 1, 0, ctx
+    )
+    print("  PASS  max-abs-err:", e7)
 
 
 def main() raises:

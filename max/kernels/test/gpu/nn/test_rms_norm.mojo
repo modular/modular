@@ -41,7 +41,12 @@ def compute_rms[
 
 
 def run_rms_norm_gpu[
-    rank: Int, //, dtype: DType, *, static_cols: Int = -1
+    rank: Int,
+    //,
+    dtype: DType,
+    *,
+    static_cols: Int = -1,
+    multiply_before_cast: Bool = True,
 ](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_rms_norm_gpu")
 
@@ -73,10 +78,8 @@ def run_rms_norm_gpu[
     @always_inline
     @__copy_capture(data_buf)
     @parameter
-    def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width](idx)
 
     @always_inline
@@ -84,13 +87,18 @@ def run_rms_norm_gpu[
     @parameter
     def identity_output_fn[
         width: SIMDSize, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = data_buf.layout(Coord(coords))
+    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+        var idx = data_buf.layout(coords)
         data_buf.raw_store[width=width, alignment=alignment](idx, val)
 
-    rms_norm_gpu[input_fn, identity_output_fn, multiply_before_cast=True](
-        shape, gamma, epsilon, weight_offset, ctx
-    )
+    # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203);
+    # `rank` is now an explicit parameter (no longer inferred from `shape`).
+    rms_norm_gpu[
+        rank,
+        input_fn,
+        identity_output_fn,
+        multiply_before_cast=multiply_before_cast,
+    ](Coord(shape), gamma, epsilon, weight_offset, ctx)
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
@@ -124,10 +132,82 @@ def main() raises:
         run_rms_norm_gpu[DType.bfloat16](ctx, Index(3000, 32, 128), rtol=2e-2)
         run_rms_norm_gpu[DType.bfloat16](ctx, Index(2999, 31, 128), rtol=2e-2)
 
+        # Rank-3 `[B, S, H]` cases (added with the `IndexList`->`Coord` boundary
+        # migration). These drive a non-trivial multi-axis
+        # `_get_start_indices_of_nth_subvolume` per-row translation over the
+        # outer `[B, S]` dims, exercising the divmod path the migration targets.
+        # f32 cols=256 enters the single-pass warp-per-row regime; the wider
+        # f32/bf16 cols cover the warp-tiling path.
+        run_rms_norm_gpu[DType.float32](ctx, Index(8, 3072, 256))
+        run_rms_norm_gpu[DType.float32](ctx, Index(4, 1024, 2048))
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(4, 1024, 4096), rtol=2e-2)
+
+        run_rms_norm_gpu[DType.float32](ctx, Index(32768, 1536))
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(32768, 1536), rtol=2e-2)
+        run_rms_norm_gpu[DType.float32](ctx, Index(4095, 1536))
+        run_rms_norm_gpu[DType.float32](ctx, Index(64, 256))
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(64, 256), rtol=2e-2)
+        run_rms_norm_gpu[DType.float32](ctx, Index(32768, 2048))
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(32768, 4096), rtol=2e-2)
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(8, 2048), rtol=2e-2)
+        run_rms_norm_gpu[DType.float32](ctx, Index(8, 8193))
+
         # Test static shape dispatch.
         run_rms_norm_gpu[DType.bfloat16, static_cols=4096](
             ctx, Index(2, 4096), rtol=2e-2
         )
         run_rms_norm_gpu[DType.bfloat16, static_cols=16384](
             ctx, Index(2, 16384), rtol=2e-2
+        )
+
+        # High-row-count, register-resident widths: exercises the CDNA4
+        # wide-SIMD warp-tiling path (gated on row count). cols are multiples
+        # of 16 in the (128, 8192] warp-tiling range.
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(1, 4096, 4096), rtol=2e-2)
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(1, 8192, 2880), rtol=2e-2)
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(1, 8192, 5120), rtol=2e-2)
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(1, 8192, 8192), rtol=2e-2)
+
+        # Single-pass warp-per-row path: narrow exact-fit rows of 1..4 SIMD
+        # vectors per lane (cols == chunks * WARP_SIZE * simd_width) with enough
+        # rows to enter the warp-per-row region. f32 sp_stride=128 so cols
+        # 128/256/384/512 => chunks 1..4; bf16 sp_stride=256 so cols
+        # 256/512/768/1024 => chunks 1..4. The rank-4 case is a
+        # production-representative normalized shape [4096,6,1,256] (rows=24576).
+        # Cover both `multiply_before_cast` values.
+        run_rms_norm_gpu[DType.float32](ctx, Index(24576, 128))
+        run_rms_norm_gpu[DType.float32](ctx, Index(24576, 256))
+        run_rms_norm_gpu[DType.float32](ctx, Index(24576, 384))
+        run_rms_norm_gpu[DType.float32](ctx, Index(24576, 512))
+        run_rms_norm_gpu[DType.float32](ctx, Index(4096, 6, 1, 256))
+        run_rms_norm_gpu[DType.float32, multiply_before_cast=False](
+            ctx, Index(24576, 512)
+        )
+        # bf16 narrow exact-fit rows now also use single-pass (previously
+        # f32-only); chunks 1..4 across both `multiply_before_cast` values.
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(24576, 256), rtol=2e-2)
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(24576, 512), rtol=2e-2)
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(24576, 768), rtol=2e-2)
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(24576, 1024), rtol=2e-2)
+        run_rms_norm_gpu[DType.bfloat16, multiply_before_cast=False](
+            ctx, Index(24576, 768), rtol=2e-2
+        )
+
+        # Cover the `multiply_before_cast=False` path (used by e.g. Llama)
+        # across the multi-chunk warp-tiling dispatch: exact-fit and ragged,
+        # narrow (simd) and wide (simd*2) branches.
+        run_rms_norm_gpu[DType.float32, multiply_before_cast=False](
+            ctx, Index(2, 8192)
+        )
+        run_rms_norm_gpu[DType.float32, multiply_before_cast=False](
+            ctx, Index(7, 557)
+        )
+        run_rms_norm_gpu[DType.bfloat16, multiply_before_cast=False](
+            ctx, Index(4, 4096), rtol=2e-2
+        )
+        run_rms_norm_gpu[DType.bfloat16, multiply_before_cast=False](
+            ctx, Index(4, 8192), rtol=2e-2
+        )
+        run_rms_norm_gpu[DType.bfloat16, multiply_before_cast=False](
+            ctx, Index(4, 5120), rtol=2e-2
         )

@@ -1,8 +1,8 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+load("//max/python/max/pipelines/architectures:all_arches.bzl", "ALL_ARCHITECTURES")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -95,11 +95,25 @@ modular_py_binary(
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
-    ignore_extra_deps = [
+    ignore_extra_deps = ALL_ARCHITECTURES + [
         # accelerate isn't imported here directly, but transformers v5
         # requires it at from_pretrained time in the child process this
         # binary spawns (see deps comment below).
         requirement("accelerate"),
+    ],
+    # Expose this package as an import root so out-of-package entrypoints
+    # (e.g. //max_private/minimax_m3:verify_minimax_m3) can `from
+    # verify_pipelines import main`.
+    imports = ["."],
+    # Target-level visibility (the package default cannot list //max_private).
+    # Mirrors the package default plus //max_private so private archs can host
+    # their own logit-verification entrypoints that reuse this driver.
+    visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//max_private:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
     ],
     deps = [
         ":verify",
@@ -120,7 +134,7 @@ modular_py_binary(
         requirement("accelerate"),
         requirement("numpy"),
         requirement("pillow"),
-    ],
+    ] + ALL_ARCHITECTURES,
 )
 
 modular_py_test(
@@ -224,7 +238,7 @@ modular_py_binary(
     name = "check_logit_verification_eligibility",
     testonly = True,
     srcs = ["check_logit_verification_eligibility.py"],
-    data = ["logit_verification_ignore_list.yaml"],
+    data = ["logit_verification_required_list.yaml"],
     imports = ["."],
     deps = [
         requirement("click"),
@@ -356,7 +370,7 @@ modular_py_binary(
         ":lm-eval",
         ":longbench-v2-eval",
         ":mistral-eval",
-        "//max/python/max/entrypoints:pipelines",  # The transitive mojo deps from this target must be available
+        "//max/python/max/_entrypoints:pipelines",  # The transitive mojo deps from this target must be available
         "//max/tests/integration/accuracy/eval_tasks/human_eval",
         "@mistral-evals//:evaluate",
         "@rules_python//python/runfiles",
@@ -442,6 +456,11 @@ modular_py_binary(
         ["llm_fuzz/**/*.py"],
         exclude = ["llm_fuzz/.venv/**"],
     ),
+    data = glob(["llm_fuzz/data/**"]),
+    ignore_unresolved_imports = [
+        "referencing",  # Provided transitively by jsonschema
+        "referencing.jsonschema",
+    ],
     imports = ["llm_fuzz"],
     main = "llm_fuzz/fuzz.py",
     visibility = ["//max_private:__subpackages__"],
@@ -472,7 +491,7 @@ modular_py_binary(
     srcs = ["pipelines_llm_fuzz_main.py"],
     data = [
         ":llm-fuzz",
-        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/_entrypoints:pipelines",
     ],
     env = {
         # required by models that use Expert Parallelism.
@@ -486,9 +505,9 @@ modular_py_binary(
     name = "pipelines_mteb",
     testonly = True,
     srcs = ["pipelines_mteb.py"],
-    data = ["//max/python/max/entrypoints:pipelines"],
+    data = ["//max/python/max/_entrypoints:pipelines"],
     deps = [
-        "//max/python/max/entrypoints",
+        "//max/python/max/_entrypoints",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/modeling",
         requirement("click"),

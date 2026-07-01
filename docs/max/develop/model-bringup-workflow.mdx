@@ -1,6 +1,5 @@
 ---
 title: Model bring-up workflow
-sidebar_label: Model bring-up workflow
 description: Understand MAX's model architecture system and how to implement a custom architecture by mapping config fields, translating weight names, connecting to the KV cache, and extending the compute graph.
 ---
 
@@ -10,31 +9,31 @@ You can automate this entire model bring-up process using AI coding agents. See
 details.
 :::
 
-MAX organizes model support through **architectures**: Python module directories
-that define the compute graph, map configuration, and load weights. An
-architecture connects your Hugging Face checkpoint to the
-[MAX pipeline](/max/develop/pipelines) and gives you hardware-optimized
-kernels, production batching, KV cache management, and multi-GPU distribution,
-with no serving layer to write yourself.
+_Model bring-up_ is the process of adapting a pretrained model from Hugging
+Face or PyTorch to run in MAX.
 
-MAX ships with implementations for the most common transformer families: dense
-transformers, mixture-of-experts variants, and sliding-window attention models.
-Most publicly released checkpoints are structurally close enough to one of
-those that adopting an existing architecture requires only weight renaming or a
-few config field overrides. Some models require new layers that differ
-minimally from an existing one, such as a different activation function or an
-added normalization; start those from a copy of the closest layer in `max.nn`
-rather than writing from scratch. When your model's compute graph differs
-structurally from any of the available implementations, you write a new one.
+To bring a model to MAX, you must implement a _model architecture_. A model
+architecture is a Python package that defines the model's compute graph, maps
+its configuration, and loads its weights. Once implemented, you can [serve the
+model](/max/develop/serve-custom-model-architectures/) with hardware-optimized
+kernels, production batching, KV cache management, and multi-GPU distribution.
 
-This guide starts with the directory structure every custom architecture shares,
-then covers the two decisions that shape your implementation: which reference
-architecture to start from, and how far your model's compute graph departs from
-it.
+This guide shows how to write a custom architecture by choosing a reference
+implementation, adapting its configuration and weights, and extending the
+compute graph where your model differs.
+
+:::note
+
+MAX [supports models](/max/models/) across various modalities. This guide
+focuses on transformer-based text generation models, as they share common,
+established implementation patterns in MAX.
+
+:::
 
 ## Architecture directory structure
 
-A custom architecture lives in a directory:
+The majority of text-generation model architectures follow this standard
+directory layout:
 
 ```text
 {your_model}/
@@ -68,9 +67,8 @@ Each file serves a distinct role:
 - `weight_adapters.py`: translates Hugging Face checkpoint weight names to MAX
   weight slot names.
 
-Pass the parent directory and package name to `--custom-architectures` when you
-run `max generate` or `max serve`. MAX imports the package at startup, reads its
-`ARCHITECTURES` list, and registers each entry before the model loads.
+The following sections go into detail about how each component works and
+whether they require customization.
 
 ## Choose a reference architecture
 
@@ -228,10 +226,10 @@ For architectures that load FP8 or FP4 checkpoints, use
 [`QuantFormat`](/max/api/python/generated/max.nn.QuantFormat) and
 [`QuantConfig`](/max/api/python/generated/max.nn.QuantConfig) from `max.nn`.
 `QuantFormat` identifies the checkpoint's quantization scheme (such as
-`COMPRESSED_TENSORS_FP8` or `NVFP4`) and `QuantConfig` carries the per-layer
-scaling settings: which layers are quantized, the granularity and dtype of
-weight and activation scales, and the block sizes that the hardware-accelerated
-kernels require.
+`COMPRESSED_TENSORS_FP8`, `NVFP4`, or `MXFP8`) and `QuantConfig` carries the
+per-layer scaling settings: which layers are quantized, the granularity and
+dtype of weight and activation scales, and the block sizes that the
+hardware-accelerated kernels require.
 
 ## Connect to the KV cache
 
@@ -278,12 +276,12 @@ def construct_kv_params(
     )
 ```
 
-Store the result as a [`KVCacheParams`][kv-cache-params] in a `kv_params`
-field on your config class and return it from `get_kv_params()`. Then pass it
-to each [`AttentionWithRope`][attn-with-rope] layer at construction time:
-
-[kv-cache-params]: /max/api/python/generated/max.nn.kv_cache.KVCacheParams/
-[attn-with-rope]: /max/api/python/generated/max.nn.AttentionWithRope/
+Store the result as a
+[`KVCacheParams`](/max/api/python/generated/max.nn.kv_cache.KVCacheParams/) in a
+`kv_params` field on your config class and return it from `get_kv_params()`.
+Then pass it to each
+[`AttentionWithRope`](/max/api/python/generated/max.nn.AttentionWithRope/) layer
+at construction time:
 
 ```python title="model.py"
 self.attn = AttentionWithRope(
@@ -292,13 +290,20 @@ self.attn = AttentionWithRope(
 )
 ```
 
+Most architectures return a flat `KVCacheParams`. Architectures with multiple or
+hybrid KV caches (for example, separate sliding-window and full-attention
+caches) return a
+[`MultiKVCacheParams`](/max/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
+tree instead, which the cache manager consumes through the shared
+[`KVCacheParamInterface`](/max/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
+
 With `kv_params` correctly configured, MAX dispatches fused attention kernels
 (RoPE application, KV store, and flash attention) and manages paged memory
-allocation. See [Serve custom model
-architectures](/max/develop/serve-custom-model-architectures) for a complete
-implementation with [`KVCacheConfig`][kv-cache-config] wired end-to-end.
-
-[kv-cache-config]: /max/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/
+allocation. See
+[Serve custom model architectures](/max/develop/serve-custom-model-architectures)
+for a complete implementation with
+[`KVCacheConfig`](/max/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/)
+wired end-to-end.
 
 {/* TODO(docs): Link to attention-kv-cache page once it exists. Covers
 AttentionWithRope call signature, input_row_offsets, and KV cache failure modes
@@ -468,11 +473,8 @@ doesn't provide and can't be composed from what's already there, see
 [Custom ops](/max/develop/custom-ops) for the interface, registration, and
 worked examples.
 
-{/*
-TODO(docs): Add a logit verification guide. The workflow is: run the same prompt
-through your MAX model and the Hugging Face reference and compare the top-5 logit
-rankings to verify numerical correctness. Link to that guide here once it exists.
-
-Reviewer note: please review this page without the logit verification content.
-That section will be addressed in a follow-up doc.
-*/}
+Once your architecture loads and generates text, verify its forward pass
+numerically against a PyTorch reference. See
+[Logit comparison](/max/develop/logit-comparison) for the full workflow, or use
+the [`debug-model`](/max/develop/model-bringup-skills/#debug-output-divergences)
+skill to run that per-layer comparison with an AI coding agent.

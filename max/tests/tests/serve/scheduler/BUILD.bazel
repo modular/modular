@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -44,18 +43,35 @@ _MACOS_INCOMPATIBLE_TESTS = [
         ["*.py"],
         exclude = [
             "common.py",
+            "conftest.py",
             "test_di.py",
             "*_gpu.py",
         ],
     )
 ]
 
-# CPU test that needs UCX Transfer Engine requires x86_64 linux machines (eg: m7i)
+# CPU test that needs UCX Transfer Engine requires an NVIDIA GPU (for libcuda)
+# TODO(GEX-3817): upstream NIXL only ships a CUDA-flavor libplugin_UCX.so;
+# CPU-only machines (e.g. m7i) lack libcuda so the plugin cannot load.
+# Gate to NVIDIA until ucx_cpu plugin variant is shipped.
 modular_py_test(
     name = "test_di",
-    srcs = ["test_di.py"],
+    srcs = [
+        "conftest.py",
+        "test_di.py",
+    ],
+    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
+    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
+    data = [
+        "@nixl_upstream//:libplugin_LIBFABRIC.so",
+        "@nixl_upstream//:libplugin_UCX.so",
+    ],
+    gpu_constraints = ["//:nvidia_gpu"],
+    imports = ["."],
     tags = [
         "external-exclusive",  # Times out if run with too many other tests
+        "gpu",
+        "manual",  # TODO(GEX-3817): b200 CI machines have IB misconfiguration causing UCX timeout
     ],
     target_compatible_with = [
         "@platforms//cpu:x86_64",

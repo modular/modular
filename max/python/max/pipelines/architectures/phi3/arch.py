@@ -21,6 +21,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters
+from ..llama3.batch_processor import Llama3BatchProcessor
 from ..llama3.model_config import Llama3Config
 from .model import Phi3Model
 
@@ -43,5 +44,8 @@ phi3_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Llama3Config,
+    batching=Llama3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

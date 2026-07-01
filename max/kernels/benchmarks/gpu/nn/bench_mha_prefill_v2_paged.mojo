@@ -204,8 +204,8 @@ def run_mha_prefill_v2_paged[
 
     # LayoutTensor views over the device buffers (consumed by PagedKVCacheCollection).
     comptime kv_block_layout = Layout.row_major[6]()
-    var kv_block_tensor = LayoutTensor[qkv_type, kv_block_layout, MutAnyOrigin](
-        kv_block_dev.unsafe_ptr(),
+    var kv_block_tensor = LayoutTensor[qkv_type, kv_block_layout](
+        kv_block_dev,
         RuntimeLayout[kv_block_layout].row_major(
             IndexList[6](
                 num_pages, 2, num_layers, page_size, kv_num_heads, depth
@@ -215,29 +215,36 @@ def run_mha_prefill_v2_paged[
 
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_tensor = LayoutTensor[
-        DType.uint32, cache_lengths_layout, ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        cache_lengths_layout,
     ](
-        cache_lengths_dev.unsafe_ptr(),
+        cache_lengths_dev,
         RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
     )
 
     comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_tensor = LayoutTensor[
-        DType.uint32, paged_lut_layout, ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        paged_lut_layout,
     ](
-        paged_lut_dev.unsafe_ptr(),
+        paged_lut_dev,
         RuntimeLayout[paged_lut_layout].row_major(
             IndexList[2](batch_size, paged_lut_cols)
         ),
     )
 
-    comptime CollectionType = PagedKVCacheCollection[
+    var kv_collection = PagedKVCacheCollection[
         qkv_type,
         KVCacheStaticParams(num_heads=kv_num_heads, head_size=depth),
         page_size,
-    ]
-    var kv_collection = CollectionType(
-        kv_block_tensor,
+    ](
+        # `mha_prefill_v2` reads both the `k` and `v` cache views, which are disjoint
+        # kv_idx halves of one `blocks` buffer sharing its origin, so the
+        # nested-origin exclusivity check rejects passing both. Declare the
+        # kv_block_tensor origins as UnsafeAnyOrigin to opt out of exclusivity checking.
+        kv_block_tensor.as_unsafe_any_origin(),
         cache_lengths_tensor,
         paged_lut_tensor,
         max_seq_length,
@@ -267,10 +274,10 @@ def run_mha_prefill_v2_paged[
             @parameter
             @always_inline
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                var q_ptr: UnsafePointer[
-                    Scalar[qkv_type], ImmutAnyOrigin
-                ] = cb_q.offset_ptr(iteration).bitcast[Scalar[qkv_type]]()
-                var q_tt = TileTensor(
+                var q_ptr = cb_q.offset_ptr(iteration).bitcast[
+                    Scalar[qkv_type]
+                ]()
+                var q_tt = TileTensor[mut=False](
                     q_ptr,
                     row_major(
                         Coord(

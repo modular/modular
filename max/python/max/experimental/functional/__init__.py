@@ -73,6 +73,7 @@ from .creation_ops import (
     zeros,
     zeros_like,
 )
+from .print import print
 from .spmd_ops import (
     abs,
     acos,
@@ -291,6 +292,7 @@ __all__ = [
     "per_shard_dispatch",
     "permute",
     "pow",
+    "print",
     "prod",
     "qmatmul",
     "range",

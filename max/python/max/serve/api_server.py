@@ -16,8 +16,6 @@
 from __future__ import annotations
 
 import logging
-import os
-import signal
 import socket
 import tempfile
 from collections.abc import AsyncGenerator, Callable
@@ -39,6 +37,10 @@ from max.pipelines.modeling.types import (
 )
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.media import GeneratedMediaStore
+from max.serve.pipelines.eplb_stats_rpc import (
+    EplbStatsFrontend,
+    EplbStatsResetFrontend,
+)
 from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
@@ -56,9 +58,9 @@ from max.serve.router import (
 from max.serve.schemas.openai import Error, ErrorResponse
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
+from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from uvicorn import Config
 
 ROUTES = {
@@ -204,7 +206,6 @@ async def lifespan(
         # OpenResponses API uses GeneralPipelineHandler
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
-        app.state.zmq_endpoint_base = zmq_endpoint_base
 
         # Also store as handler for OpenResponses API route compatibility
         # For pixel generation, this is the same as pipeline
@@ -304,30 +305,17 @@ def fastapi_app(
 
     @asynccontextmanager
     async def lifespan_wrap(app: FastAPI) -> AsyncGenerator[None, None]:
-        try:
-            async with lifespan(
-                app, settings, serving_settings, zmq_endpoint_base
-            ):
-                yield
-        except BaseException as e:
-            # Worker already logs the detailed traceback, so we use
-            # error (not exception) here to avoid duplicating it.
-            logger.error("Worker exception, shutting down: %s", e)
-            # Caught by uvicorn to shutdown the server
-            os.kill(os.getpid(), signal.SIGINT)
-            # After first SIGINT uvicorn waits for pending requests to complete
-            # In our case, they would hang forever due to waiting on worker queues
-            # Uvicorn listens for a second SIGINT to cancel this waiting phase and
-            # close all remaining connections with "Internal Server Error" status
-            os.kill(os.getpid(), signal.SIGINT)
-            # Ideally we'd just rethrow here, which is caught by
-            # starlette Router.lifespan() and converted into ASGI
-            # lifespan.shutdown.failed event. However uvicorn only
-            # listens for this event if it's already initiated the
-            # shutdown sequence.
-            # See https://github.com/Kludex/uvicorn/discussions/2298
+        # Binds the extra arguments so this matches the FastAPI lifespan
+        # signature. Used by ASGI test clients (e.g. starlette TestClient).
+        # The production entrypoint instead enters `lifespan` directly around
+        # `uvicorn` running with `lifespan="off"` (see
+        # `serve_api_server_and_model_worker`), so a worker crash tears down
+        # the server via task cancellation rather than fragile signal handling.
+        async with lifespan(app, settings, serving_settings, zmq_endpoint_base):
+            yield
 
     app = FastAPI(title="MAX Serve", lifespan=lifespan_wrap)
+    app.state.zmq_endpoint_base = zmq_endpoint_base
 
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file
@@ -352,7 +340,14 @@ def fastapi_app(
 
     async def reset_prefix_cache() -> Response:
         """Reset the prefix cache."""
-        if not serving_settings.pipeline_config.model.kv_cache.enable_prefix_caching:
+        try:
+            model_config = serving_settings.pipeline_config.model
+        except ValueError:
+            return Response(
+                status_code=400,
+                content="No main model configured (diffusion pipeline). Ignoring request",
+            )
+        if not model_config.kv_cache.enable_prefix_caching:
             return Response(
                 status_code=400,
                 content="Prefix caching is not enabled. Ignoring request",
@@ -365,6 +360,42 @@ def fastapi_app(
         "/reset_prefix_cache", reset_prefix_cache, methods=["POST"]
     )
 
+    eplb_stats_frontend = EplbStatsFrontend(zmq_endpoint_base)
+
+    async def eplb_stats() -> Response:
+        """Get the EPLB stats snapshot."""
+        if not settings.eplb_profile:
+            return Response(
+                status_code=404,
+                content="EPLB stats profiling is not enabled.",
+            )
+        try:
+            snap = await eplb_stats_frontend.fetch_snapshot()
+        except TimeoutError:
+            return Response(
+                status_code=504,
+                content="EPLB stats fetch timed out.",
+            )
+        return JSONResponse(snap.to_dict())
+
+    app.add_api_route("/max_internal/eplb_stats", eplb_stats, methods=["GET"])
+
+    # reset eplb stat endpoint
+    eplb_stats_reset_frontend = EplbStatsResetFrontend(zmq_endpoint_base)
+
+    async def eplb_stats_reset() -> Response:
+        """Reset the EP stats accumulator on the worker."""
+        if not settings.eplb_profile:
+            return Response(
+                status_code=404,
+                content="EP stats profiling is not enabled.",
+            )
+        eplb_stats_reset_frontend.enqueue_reset()
+        return Response(status_code=200, content="Success")
+
+    app.add_api_route(
+        "/max_internal/eplb_stats_reset", eplb_stats_reset, methods=["POST"]
+    )
     for api_type in settings.api_types:
         app.include_router(ROUTES[api_type].router)
 
@@ -386,7 +417,12 @@ def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
         loop="uvloop",
         host=server_settings.host,
         port=server_settings.port,
-        timeout_graceful_shutdown=5,
+        timeout_graceful_shutdown=server_settings.graceful_shutdown_timeout_s,
+        # The serving lifespan (model worker, pipeline, telemetry) is entered
+        # explicitly by the entrypoint around `server.serve()` so that a worker
+        # crash cancels the serving task directly. Keep uvicorn out of the
+        # lifespan business to avoid the previous double-SIGINT shutdown hack.
+        lifespan="off",
     )
 
     for route in app.routes:

@@ -383,6 +383,22 @@ def test_context_encoding(ctx: DeviceContext) raises:
             num_heads=3,
         ](119, 200, ctx)
 
+        # Zero seq_len / num_keys: the FLUX.2 VAE mid-block attention
+        # runs on a flattened spatial dim, which is zero when the
+        # encoder is invoked on a ``(0, 0, 3)`` placeholder image for
+        # the text-to-image path.  The kernel must early-return rather
+        # than launching with zero grid dims.
+        test[
+            DType.bfloat16,
+            depth=128,
+            num_heads=1,
+        ](0, 0, ctx)
+        test[
+            DType.bfloat16,
+            depth=128,
+            num_heads=3,
+        ](0, 0, ctx)
+
 
 def test_decoding[
     batch_size: Int,
@@ -590,6 +606,19 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             var got1 = out_host[0, s, 1, d].cast[DType.float32]()
             assert_almost_equal(got0, want0, atol=2e-2, rtol=2e-2)
             assert_almost_equal(got1, want1, atol=2e-2, rtol=2e-2)
+
+    # Keep every device buffer alive until the kernel and the readback have both
+    # completed. `sinks_device` wraps `sinks_dev.unsafe_ptr()` (a raw pointer,
+    # no ownership), so without this keepalive `sinks_dev` can be freed before
+    # the async attention kernel reads it; the allocator then reuses that memory
+    # and the kernel reads a garbage sink weight (intermittently 0 -> output
+    # num_keys/(num_keys+1), or a large value -> output ~0). Mirrors the
+    # `_ = sink_d^` keepalive in `test_apple_fa_prefill.mojo`.
+    _ = q_dev^
+    _ = k_dev^
+    _ = v_dev^
+    _ = out_dev^
+    _ = sinks_dev^
 
 
 def main() raises:

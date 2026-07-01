@@ -24,6 +24,7 @@ family.
    pipelines.architectures.deepseekV3_2
    pipelines.architectures.deepseekV3_nextn
    pipelines.architectures.dflash_llama3
+   pipelines.architectures.diffusion_gemma
    pipelines.architectures.eagle3_deepseekV3
    pipelines.architectures.eagle_llama3
    pipelines.architectures.exaone
@@ -37,15 +38,19 @@ family.
    pipelines.architectures.granite
    pipelines.architectures.hy_v3
    pipelines.architectures.idefics3
+   pipelines.architectures.ideogram4
    pipelines.architectures.internvl
    pipelines.architectures.kimik2_5
+   pipelines.architectures.laguna
    pipelines.architectures.lfm2
    pipelines.architectures.llama3
+   pipelines.architectures.llama4
    pipelines.architectures.mamba
    pipelines.architectures.minimax_m2
    pipelines.architectures.mistral
    pipelines.architectures.mistral3
    pipelines.architectures.mpnet
+   pipelines.architectures.nemotron_h
    pipelines.architectures.olmo
    pipelines.architectures.olmo2
    pipelines.architectures.olmo3
@@ -65,6 +70,7 @@ family.
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
    pipelines.architectures.unified_mtp_gemma4
+   pipelines.architectures.unified_mtp_glm5_2
    pipelines.architectures.wan
 
 Text generation
@@ -78,6 +84,7 @@ Text generation
    ~max.pipelines.architectures.deepseekV3_2
    ~max.pipelines.architectures.deepseekV3_nextn
    ~max.pipelines.architectures.dflash_llama3
+   ~max.pipelines.architectures.diffusion_gemma
    ~max.pipelines.architectures.eagle3_deepseekV3
    ~max.pipelines.architectures.eagle_llama3
    ~max.pipelines.architectures.exaone
@@ -92,12 +99,15 @@ Text generation
    ~max.pipelines.architectures.idefics3
    ~max.pipelines.architectures.internvl
    ~max.pipelines.architectures.kimik2_5
+   ~max.pipelines.architectures.laguna
    ~max.pipelines.architectures.lfm2
    ~max.pipelines.architectures.llama3
+   ~max.pipelines.architectures.llama4
    ~max.pipelines.architectures.mamba
    ~max.pipelines.architectures.minimax_m2
    ~max.pipelines.architectures.mistral
    ~max.pipelines.architectures.mistral3
+   ~max.pipelines.architectures.nemotron_h
    ~max.pipelines.architectures.olmo
    ~max.pipelines.architectures.olmo2
    ~max.pipelines.architectures.olmo3
@@ -114,6 +124,7 @@ Text generation
    ~max.pipelines.architectures.unified_eagle_llama3
    ~max.pipelines.architectures.unified_mtp_deepseekV3
    ~max.pipelines.architectures.unified_mtp_gemma4
+   ~max.pipelines.architectures.unified_mtp_glm5_2
 
 Embeddings
 ----------
@@ -132,6 +143,7 @@ Image generation
    :nosignatures:
 
    ~max.pipelines.architectures.flux2
+   ~max.pipelines.architectures.ideogram4
    ~max.pipelines.architectures.qwen_image
    ~max.pipelines.architectures.qwen_image_edit
    ~max.pipelines.architectures.wan

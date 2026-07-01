@@ -52,8 +52,14 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
     fused_bias_residual_matmul_dispatch_sm100,
 )
+from linalg.matmul.gpu.sm100_structured.fused_swiglu import (
+    matmul_swiglu_dispatch_sm100_bf16,
+)
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
-from linalg.grouped_matmul import grouped_matmul
+from linalg.grouped_matmul import (
+    grouped_matmul,
+    grouped_matmul_rowwise_dynamic_scaled_fp8,
+)
 from linalg.lora import shrink_qkv_permute_3mn_sm100
 from linalg.matmul import matmul
 from linalg.matmul.gpu import _matmul_gpu
@@ -388,21 +394,18 @@ struct Struct_grouped_matmul_ragged:
         b: InputTensor[dtype=b_type, rank=3, ...],
         expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
         expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
-        max_num_tokens_per_expert: UInt32,
-        num_active_experts: UInt32,
+        expert_usage_stats: InputTensor[dtype=DType.uint32, rank=1, ...],
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "grouped matmul only support GPUs"
-        cuda_ctx = context
         grouped_matmul(
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             expert_start_indices.to_tile_tensor[DType.int64](),
             expert_ids.to_tile_tensor[DType.int64](),
-            Int(max_num_tokens_per_expert),
-            Int(num_active_experts),
-            cuda_ctx,
+            expert_usage_stats.to_tile_tensor[DType.int64](),
+            context,
         )
 
 
@@ -469,7 +472,6 @@ struct Struct_grouped_matmul_block_scaled:
         ](), "grouped block-scaled matmul only supports GPUs"
         if num_active_experts == 0:
             return
-        var cuda_ctx = context
         grouped_matmul_block_scaled_dispatch[transpose_b=True, target=target](
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
@@ -482,7 +484,7 @@ struct Struct_grouped_matmul_block_scaled:
             expert_scales.to_tile_tensor[DType.int64](),
             Int(num_active_experts),
             Int(estimated_total_m),
-            cuda_ctx,
+            context,
         )
 
 
@@ -618,13 +620,66 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
             "grouped dynamic scaled matmul only support GPUs with native"
             " FP8 support"
         )
-        cuda_ctx = context
         grouped_matmul_dynamic_scaled_fp8[
             input_scale_granularity,
             weight_scale_granularity,
             m_scale_granularity,
             n_scale_granularity,
             k_scale_granularity,
+            transpose_b=True,
+            target=target,
+        ](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            Int(max_num_tokens_per_expert),
+            Int(num_active_experts),
+            context,
+        )
+
+
+@compiler.register("mo.grouped.matmul.rowwise.dynamic.scaled.fp8")
+struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
+    """MOGG wrapper for grouped (ragged MoE) rowwise/per-token scaled FP8 matmul.
+
+    Serves rowwise (per-output-channel) weight scales + per-token (colwise)
+    dynamic activation scales - the compressed-tensors FP8 layout used by
+    e.g. ``RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic``. Targets
+    NVIDIA SM100 (B200) with a correctness-first naive grouped kernel.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        a_scales_type: DType,
+        b_scales_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        a_scales: InputTensor[dtype=a_scales_type, rank=2, ...],
+        b_scales: InputTensor[dtype=b_scales_type, rank=3, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "grouped rowwise dynamic scaled matmul only supports GPUs with"
+            " native FP8 support"
+        )
+        cuda_ctx = context
+        grouped_matmul_rowwise_dynamic_scaled_fp8[
             transpose_b=True,
             target=target,
         ](
@@ -774,7 +829,6 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
 
         if a.dim_size(1) == 0:
             return
-        cuda_ctx = context
         batched_matmul_dynamic_scaled_fp8[
             input_scale_granularity,
             weight_scale_granularity,
@@ -789,7 +843,7 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
             b.to_tile_tensor[DType.int64](),
             a_scales.to_tile_tensor[DType.int64](),
             b_scales.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
         )
 
 
@@ -803,10 +857,11 @@ struct Struct_matmul_dynamic_block_scaled:
         b_type: DType,
         scales_type: DType,
         //,
+        has_epilogue_fusion: Bool,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
+        c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
         b: InputTensor[dtype=b_type, rank=2, ...],
         a_scales: InputTensor[dtype=scales_type, rank=5, ...],
@@ -819,10 +874,51 @@ struct Struct_matmul_dynamic_block_scaled:
             " block scaled support"
         )
 
-        cuda_ctx = context
+        # The SM100 block-scaled matmul applies the epilogue on the f32
+        # accumulator (`_dtype` may be f32), whereas the fusion lambdas operate
+        # on the logical output dtype `c.dtype`. Use `cast` rather than `rebind`
+        # so the conversion is correct on both the structured Mojo path (f32
+        # accumulator) and the vendor path (`_dtype == c.dtype`).
+        @parameter
+        @always_inline
+        def epilogue_fn[
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
+            c._lambda_store[width=_width, element_alignment=alignment](
+                coords,
+                val.cast[c.dtype](),
+            )
+
+        @parameter
+        @always_inline
+        def output_compute_fn[
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
+            _dtype, _width
+        ]:
+            return c._fused_compute_output_lambda[element_alignment=alignment](
+                coords, val.cast[c.dtype]()
+            ).cast[_dtype]()
+
+        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+
+        comptime elementwise_lambda = Optional[
+            matmul_elementwise_epilogue_type
+        ](
+            epilogue_fn
+        ) if has_epilogue_fusion and not has_compute_lambda else None
+
+        comptime compute_lambda = Optional[
+            matmul_elementwise_compute_lambda_type
+        ](
+            output_compute_fn
+        ) if has_epilogue_fusion and has_compute_lambda else None
+
         block_scaled_matmul[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=True,
+            elementwise_lambda_fn=elementwise_lambda,
+            elementwise_compute_lambda_fn=compute_lambda,
             target=target,
         ](
             c.to_tile_tensor[DType.int64](),
@@ -831,7 +927,7 @@ struct Struct_matmul_dynamic_block_scaled:
             a_scales.to_tile_tensor[DType.int64](),
             b_scales.to_tile_tensor[DType.int64](),
             tensor_sf,
-            cuda_ctx,
+            context,
         )
 
 
@@ -903,13 +999,12 @@ struct Struct_matmul_mxfp4_dequant_fp8:
             b_scales_type == DType.float8_e8m0fnu
         ), "MXFP4 matmul scales must be float8_e8m0fnu"
 
-        cuda_ctx = context
         mxfp4_matmul_sm90(
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             b_scales.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
         )
 
 
@@ -1157,21 +1252,19 @@ struct Struct_lora_sgmv_ragged:
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "SGMV only supported on GPUs"
-        cuda_ctx = context
-        var a_tensor = a.to_tile_tensor[DType.int64]()
 
         if a.dim_size[0]() == 0:
             return
 
         grouped_matmul(
             c.to_tile_tensor[DType.int64](),
-            a_tensor,
+            a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             input_row_offsets.to_tile_tensor[DType.int64](),
             lora_ids.to_tile_tensor[DType.int64](),
             Int(max_seq_length),
             lora_ids.dim_size[0](),
-            cuda_ctx,
+            context,
         )
 
 
@@ -1195,19 +1288,82 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "SGMV only supported on GPUs"
-        cuda_ctx = context
-        var a_tensor = a.to_tile_tensor[DType.int64]()
 
         if a.dim_size[0]() == 0:
             return
 
         shrink_qkv_permute_3mn_sm100(
             c.to_tile_tensor[DType.int64](),
-            a_tensor,
+            a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             input_row_offsets.to_tile_tensor[DType.int64](),
             lora_ids.to_tile_tensor[DType.int64](),
             Int(max_seq_length),
             lora_ids.dim_size[0](),
-            cuda_ctx,
+            context,
+        )
+
+
+@compiler.register("mo.matmul_swiglu", type="gpu")
+struct MatmulSwiGLU:
+    """Fused GEMM+SwiGLU on SM100 for BF16 inputs.
+
+    Computes ``output[m, h] = silu(x @ W_gate[h, :]) * (x @ W_up[h, :])``
+    in a single SM100 kernel. The weight ``b`` must be pre-permuted on its N
+    axis so that gate/up column pairs are adjacent (sigma permutation:
+    ``sigma(2i)=i, sigma(2i+1)=H+i`` where ``H=N/2``).
+
+    Output shape is ``[M, H]`` where ``H = N/2``, saving the slice+silu+mul
+    elementwise kernel entirely.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        matmul_swiglu_dispatch_sm100_bf16(
+            output.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+
+@compiler.register("mo.matmul_swiglu_bias", type="gpu")
+struct MatmulSwiGLUBias:
+    """Fused GEMM+SwiGLU+bias on SM100 for BF16 inputs.
+
+    Like ``mo.matmul_swiglu`` but adds a 1D bias vector before the activation.
+    The bias must be sigma-permuted to match the weight layout: even element
+    ``bias[2h]`` is added to the gate column and odd element ``bias[2h+1]`` to
+    the up column before ``silu(gate) * up`` is computed.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        bias: InputTensor[dtype=DType.bfloat16, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        matmul_swiglu_dispatch_sm100_bf16[has_bias=True](
+            output.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            ctx,
+            OptionalReg(
+                UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin](
+                    unsafe_from_address=Int(bias.unsafe_ptr())
+                )
+            ),
         )

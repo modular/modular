@@ -46,6 +46,7 @@ from max.graph import (
     ops,
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
+from numpy.typing import NDArray
 
 from .ep_config import (
     NUM_GROUPS,
@@ -124,6 +125,17 @@ class EPBatchManager:
     and the value is a TensorValue with shape [max_recv_tokens, 2]. Maps expert
     outputs back to their source positions."""
 
+    _eplb_log2phy_per_device: dict[int, BufferValue] = {}
+    """Per-device log2phy buffer. Shape: [num_moe_layer, num_experts_per_layer, max_replicas].
+    Populated by fetch_buffers when config.eplb_enabled is True."""
+
+    _eplb_logcnt_per_device: dict[int, BufferValue] = {}
+    """Per-device logcnt buffer. Shape: [num_moe_layer, num_experts_per_layer]"""
+
+    _eplb_phy2log: NDArray[np.int64] | None = None
+    """Per-layer logical->physical map from EPLB. Shape [num_layers, num_phy].
+    Set once at startup before MoE.shard()."""
+
     _dispatch_dim: dict[int, Dim | None] = {}
     """Dictionary of device ID to dimension for the dispatch input tensor.
     Used to determine the shape of the combined output tensor.
@@ -136,6 +148,9 @@ class EPBatchManager:
             config: EP configuration.
         """
         self.config = config
+
+        if getattr(config, "eplb_phy2log_plan", None) is not None:
+            self._eplb_phy2log = config.eplb_phy2log_plan
 
     def _common_grouped_matmul_metadata(self) -> TensorValue:
         """Common grouped matmul metadata for all devices. Shape: (2,). Contains
@@ -232,9 +247,37 @@ class EPBatchManager:
             list[TensorType | BufferType]: List of input types for atomic
                                           counters and device pointers.
         """
-        return (
+        types: list[TensorType | BufferType] = (
             self._atomic_counters_input_types() + self._dev_ptrs_input_types()
         )
+
+        if self.config.eplb_enabled:
+            types += self._eplb_input_types()
+        return types
+
+    def _eplb_input_types(self) -> list[TensorType | BufferType]:
+        """Per-device log2phy + logcnt buffer types."""
+        num_moe_layers = self.config.num_moe_layers
+        num_experts_per_layer = self.config.num_logical_experts
+        max_replicas = self.config.max_replicas
+        n_gpus = self.config.n_gpus_per_node
+        log2phy: list[TensorType | BufferType] = [
+            BufferType(
+                DType.int32,
+                [num_moe_layers, num_experts_per_layer, max_replicas],
+                device=DeviceRef.GPU(i),
+            )
+            for i in range(n_gpus)
+        ]
+        logcnt: list[TensorType | BufferType] = [
+            BufferType(
+                DType.int32,
+                [num_moe_layers, num_experts_per_layer],
+                device=DeviceRef.GPU(i),
+            )
+            for i in range(n_gpus)
+        ]
+        return log2phy + logcnt
 
     def fetch_buffers(self, _input_vals: Iterable[Value[Any]]) -> None:
         """Extract and organize communication buffers from graph input values.
@@ -275,7 +318,21 @@ class EPBatchManager:
         self._recv_count_ptrs = [
             val.tensor for val in input_vals[start_idx:end_idx]
         ]
+
         start_idx = end_idx
+
+        # Next 2*NUM_GROUPS are EPLB log2phy + logcnt buffers
+        if self.config.eplb_enabled:
+            n_gpus = self.config.n_gpus_per_node
+            end_idx = start_idx + n_gpus
+            self._eplb_log2phy_per_device = {
+                i: input_vals[start_idx + i].buffer for i in range(n_gpus)
+            }
+            start_idx = end_idx
+            self._eplb_logcnt_per_device = {
+                i: input_vals[start_idx + i].buffer for i in range(n_gpus)
+            }
+            start_idx += n_gpus
 
     def ep_dispatch_async(
         self,

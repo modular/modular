@@ -1581,6 +1581,7 @@ class DistributedAllgatherOp(max._core.Operation):
         inputs: Sequence[max._core.Value[max._core.Type]],
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
+        group_size: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -1588,6 +1589,12 @@ class DistributedAllgatherOp(max._core.Operation):
     def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def group_size(self) -> int: ...
+    @group_size.setter
+    def group_size(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
 
 class DistributedAllreduceSumOp(max._core.Operation):
     """
@@ -5487,7 +5494,15 @@ class ParallelOp(max._core.Operation):
 
     The yield may return one or more values.  Each yield operand produces one
     `!mo.bundle` result whose elements are derived from the yield type with
-    per-launch devices taken from the first input bundle.
+    per-launch devices taken from the `launchDevices` attribute.
+
+    The `launchDevices` attribute is the source of truth for the per-launch
+    device list.  In the printed form it appears as a `devices(...)` clause.
+    When the list matches the elements of `inputs[0]` the clause may be
+    omitted, and the parser/printer recover it from the bundle.  When
+    `inputs` is empty the clause is required because there is nothing to
+    derive from.  The verifier requires every input and result bundle to
+    agree with `launchDevices` element-by-element.
 
     An optional `buffers(...)` clause declares per-launch signal buffers for
     collective operations (e.g. allreduce).  The number of buffers must equal
@@ -5497,12 +5512,18 @@ class ParallelOp(max._core.Operation):
     enclosing scope.
 
     `buffers(...)` and `chain(...)` must be both present or both absent.  When
-    present, `chain(...)` provides a sequencing dependency and the trailing
-    `!mo.chain` result represents completion of all parallel launches.
+    present, the chain is threaded *explicitly through the body* rather than
+    captured: the body block gains a trailing `!mo.chain` block argument that
+    carries the in-chain, the body's side-effecting (buffer-argument) ops
+    consume and thread that chain, and `mo.yield` produces the resulting
+    chain as its last operand.  That yielded chain becomes the op's trailing
+    `!mo.chain` result (completion of all launches). A chainless parallel has
+    neither the chain block argument nor a yielded chain.
 
     Example with one bundle input (no buffers, no chain):
     ```mlir
     %dt = mo.tensor.bundle(%a, %b) : (...) -> (...)
+    // devices(...) elided; auto-derived from %dt.
     %res = mo.parallel (%arg) in (%dt : !mo.bundle<[...]>)
         -> (!mo.bundle<[...]>) {
       %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
@@ -5510,17 +5531,29 @@ class ParallelOp(max._core.Operation):
     }
     ```
 
-    Example with buffers and chain (bundled allreduce):
+    Example with buffers and chain (bundled allreduce). The in-chain enters
+    through the trailing block arg `%bch`; the collective consumes it and the
+    body yields the resulting out-chain:
     ```mlir
     %dt = mo.tensor.bundle(%a, %b) : (...) -> (...)
-    %res, %ch = mo.parallel (%arg) in (%dt : !mo.bundle<[...]>)
+    %res, %ch = mo.parallel (%arg, %bch) in (%dt : !mo.bundle<[...]>)
         buffers(%s0 : !mo.buffer<[1], ui8, gpu:0>,
                 %s1 : !mo.buffer<[1], ui8, gpu:1>)
         chain(%ch_in)
         -> (!mo.bundle<[...]>) {
       %p0, %p1 = mo.bundled.expand(%arg) : ...
-      %out, %ch1 = mo.bundled.allreduce.sum(%p0, %p1, %s0, %s1, %ch_in) : ...
-      mo.yield %out : !mo.tensor<[3], f32, gpu:0>
+      %out, %ch1 = mo.bundled.allreduce.sum(%p0, %p1, %s0, %s1, %bch) : ...
+      mo.yield %out, %ch1 : !mo.tensor<[3], f32, gpu:0>, !mo.chain
+    }
+    ```
+
+    Example with no bundle inputs (clause required, body captures a value
+    from the enclosing scope):
+    ```mlir
+    %res = mo.parallel () in () devices(gpu:0-1)
+        -> (!mo.bundle<[...]>) {
+      %1 = mo.relu(%a) : !mo.tensor<[3], f32, gpu:0>
+      mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
     }
     ```
     """
@@ -5534,6 +5567,7 @@ class ParallelOp(max._core.Operation):
         inputs: Sequence[max._core.Value[max._core.Type]],
         buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
+        launch_devices: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -5553,12 +5587,29 @@ class ParallelOp(max._core.Operation):
         in_chain: max._core.Value,
         result_types: Sequence[max._core.Type],
     ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        buffers: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value,
+        result_types: Sequence[max._core.Type],
+        launch_devices: Sequence[max._core.dialects.m.DeviceRefAttr],
+    ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def launch_devices(self) -> max._core.dialects.builtin.ArrayAttr: ...
+    @launch_devices.setter
+    def launch_devices(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
 
 class PowOp(max._core.Operation):
     """
@@ -6174,6 +6225,7 @@ class DistributedReducescatterSumOp(max._core.Operation):
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
         axis: max._core.dialects.builtin.IntegerAttr,
+        group_size: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -6185,6 +6237,12 @@ class DistributedReducescatterSumOp(max._core.Operation):
     def axis(self) -> int: ...
     @axis.setter
     def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
+    @property
+    def group_size(self) -> int: ...
+    @group_size.setter
+    def group_size(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
 
 class ReluOp(max._core.Operation):
     """

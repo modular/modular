@@ -755,6 +755,12 @@ async def chat_judge_session_driver(
                 )
             break
 
+        if next_delay_ms := message.delay_until_next_message:
+            sleep_s = next_delay_ms / 1000
+            if exceeds_deadline(sleep_s, benchmark_should_end_time):
+                return session_outputs
+            await asyncio.sleep(sleep_s)
+
     return session_outputs
 
 

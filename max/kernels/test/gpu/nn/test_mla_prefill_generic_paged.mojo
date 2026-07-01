@@ -437,8 +437,12 @@ def run_test_paged_prefill[
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(k_ref_device.to_layout_tensor())
-    var v_ref_operand = LayoutTensorMHAOperand(v_ref_device.to_layout_tensor())
+    var k_ref_operand = LayoutTensorMHAOperand(
+        k_ref_device.as_immut().as_unsafe_any_origin()
+    )
+    var v_ref_operand = LayoutTensorMHAOperand(
+        v_ref_device.as_immut().as_unsafe_any_origin()
+    )
 
     mha_gpu_naive[_is_cache_length_accurate=True](
         q_device_rank4.to_layout_tensor(),
@@ -573,3 +577,36 @@ def main() raises:
                     page_size=PAGE_SIZE,
                     batch_size=2,
                 ](num_keys, num_keys, ctx)
+
+            # 1Q multi-tile coverage: 657 keys / 16 heads / batch 1 keeps
+            # the unclamped 2Q grid at 3 * 16 = 48 blocks <= SMs/2, so
+            # the dispatch heuristic picks the 1Q (num_qo=1) kernel.
+            # 657 = 5 * 128 + 17 exercises the 1Q producer main loop,
+            # tail, and partial last page in one shot. (The short shapes
+            # in `num_keys_to_test()` also route to 1Q on B200, but only
+            # cover T <= 2.)
+            seed(0)
+            run_test_paged_prefill[
+                qkv_type=DType.bfloat16,
+                k_rope_type=DType.bfloat16,
+                output_type=DType.bfloat16,
+                depth=192,
+                num_heads=16,
+                kv_depth=128,
+                page_size=PAGE_SIZE,
+                batch_size=1,
+            ](657, 657, ctx)
+            # 2Q coverage retention: 1088 keys -> 5 BM=256 tiles, so the
+            # unclamped 2Q grid is 5 * 16 = 80 blocks > SMs/2 and the
+            # dispatch keeps the 2Q kernel (with a partial 2Q last tile).
+            seed(0)
+            run_test_paged_prefill[
+                qkv_type=DType.bfloat16,
+                k_rope_type=DType.bfloat16,
+                output_type=DType.bfloat16,
+                depth=192,
+                num_heads=16,
+                kv_depth=128,
+                page_size=PAGE_SIZE,
+                batch_size=1,
+            ](1088, 1088, ctx)

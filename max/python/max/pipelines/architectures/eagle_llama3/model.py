@@ -49,6 +49,7 @@ class EagleLlama3Model(LlamaModelBase):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.LAST,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -59,6 +60,7 @@ class EagleLlama3Model(LlamaModelBase):
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:

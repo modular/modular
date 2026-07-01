@@ -27,7 +27,7 @@ from max.nn import (
     ScaleOrigin,
 )
 from max.nn.attention.attention_with_rope import AttentionWithRope
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, PagedCacheValues
 from max.nn.quant_config import WeightScaleSpec
 from max.nn.rotary_embedding import RotaryEmbedding
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -83,7 +83,7 @@ def _create_kv_manager(
     gpu_session: InferenceSession,
 ) -> tuple[PagedKVCacheManager, KVCacheParams]:
     """Create and configure the KV cache manager."""
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         page_size=128,
         n_kv_heads=num_kv_heads,
@@ -220,7 +220,8 @@ def _build_and_execute_attention_graph(
             blocks,
             cache_lengths,
             lookup_table,
-            max_lengths,
+            max_prompt_length,
+            max_cache_length,
             attention_dispatch_metadata,
         ) = graph.inputs
 
@@ -228,7 +229,8 @@ def _build_and_execute_attention_graph(
             blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
-            max_lengths.tensor,
+            max_prompt_length.tensor,
+            max_cache_length.tensor,
             attention_dispatch_metadata=attention_dispatch_metadata.tensor,
         )
         output = attention(
@@ -256,9 +258,9 @@ def _build_and_execute_attention_graph(
 
     for context in batch:
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     result = model.execute(

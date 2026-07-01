@@ -3,7 +3,19 @@ load("//bazel:api.bzl", "mojo_test")
 package(default_visibility = ["//max:consumers"])
 
 _GPU_MEMORY = {
-    "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo": "8",
+    "test_batch_kv_cache_flash_attention.mojo": "6",
+    "test_batch_kv_cache_flash_attention_causal_mask.mojo": "6",
+    "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo": "9",
+    "test_kv_cache_2m_iadd.mojo": "6",
+    "test_kv_cache_matmul.mojo": "6",
+    "test_kv_cache_radd.mojo": "5.5",
+    "test_kv_cache_ragged_matmul.mojo": "7",
+    "test_kv_cache_ragged_matmul_scale.mojo": "6",
+    "test_kv_cache_store_ragged.mojo": "6",
+    "test_mha_decoding_vs_naive.mojo": "6",
+    "test_mha_mixed_ce_tg.mojo": "6",
+    "test_paged_sparse_kv_index_remap.mojo": "5.5",
+    "test_sliced_add.mojo": "5.5",
 }
 
 _APPLE_GPU_INCOMPATIBLE = select({
@@ -17,12 +29,38 @@ _EXTRA_CONSTRAINTS = {
     "test_kv_cache_ragged_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_batch_kv_cache_flash_attention_causal_mask.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_kv_cache_ragged_matmul_scale.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2318
+    "test_fused_qkv_index_matmul_scale_mxfp8.mojo": select({
+        # MXFP8 block-scaled matmul (block_scaled_matmul_with_epilogue) asserts
+        # on SM100; dual-cache fused QKV+index is M3-on-B200 only.
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_kv_cache_radd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_2m_iadd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_mha_gemma4_sink_repro.mojo": ["//:amd_gpu"],  # gfx950 AGPR-Copy-MFMA regression check
     "test_mha_prefill_v2_ragged_gate.mojo": ["//:mi355_gpu"],  # the kernel is tuned for gfx950 (MI355X)
+    "test_pv_mnmajor_mma_spike.mojo": select({
+        # SM100 P@V mn-major chunk-inner MMA recovery spike; B200-only
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_qk_kmajor_mma_spike.mojo": select({
+        # SM100 Q@K' k-major page-dense MMA recovery spike; B200-only
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_qk_kmajor_consumer_spike.mojo": select({
+        # SM100 Q@K' page-dense K through SM100TensorAccumulator; B200-only
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_kv_rowmajor_fold_spike.mojo": select({
+        # SM100 rank-5 chunk-inner page-fold producer-geometry spike; B200-only
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # test_mha_gemma4_shapes.mojo is split into per-(page_size, mask_kind) targets below; the AMD-only crash repro is one of them.
 }
 
@@ -73,6 +111,7 @@ _EXTRA_CONSTRAINTS = {
             "test_mha_gemma4_shapes.mojo",  # Split by (page_size, mask_kind) below
             "test_paged_lut_load_boundary.mojo",  # Split by page_size below (B200 LUT-load OOB regression)
             "test_mha_paged_kv_oob_canary.mojo",  # Split by page_size below (B200 NaN canary)
+            "test_paged_kv_null_block_sentinel.mojo",  # Explicit B200-only target below (SERVOPT-1456 kernel regression)
         ],
     )
 ]
@@ -94,6 +133,11 @@ _EXTRA_CONSTRAINTS = {
 # prefill optimization for 64 < depth <= 128 (see
 # max/kernels/src/nn/attention/gpu/mha.mojo). B200 only. Only
 # head_size=128 is meaningful; other head sizes bypass the code path.
+_PAGED_FA_GPU_MEMORY = {
+    ("128", "512"): "7",
+    ("256", "512"): "7",
+}
+
 _PAGED_FA_CONFIGS = [
     # (page_size, head_size, pair_cta, extra_constraints)
     ("256", "64", False, _APPLE_GPU_INCOMPATIBLE),
@@ -176,7 +220,7 @@ _PAGED_FA_CONFIGS = [
         "256",
         False,
         select({
-            "//:b200_gpu": [],
+            "//:b200_gpu": ["@platforms//:incompatible"],  # KERN-2890
             "//conditions:default": ["@platforms//:incompatible"],
         }),
     ),
@@ -185,7 +229,7 @@ _PAGED_FA_CONFIGS = [
         "512",
         False,
         select({
-            "//:b200_gpu": [],
+            "//:b200_gpu": ["@platforms//:incompatible"],  # KERN-2890
             "//conditions:default": ["@platforms//:incompatible"],
         }),
     ),
@@ -212,7 +256,7 @@ _PAGED_FA_CONFIGS = [
         "256",
         False,
         select({
-            "//:b200_gpu": [],
+            "//:b200_gpu": ["@platforms//:incompatible"],  # KERN-2890
             "//conditions:default": ["@platforms//:incompatible"],
         }),
     ),
@@ -264,12 +308,46 @@ _PAGED_FA_CONFIGS = [
     ),
 ]
 
+# Row-major (page-dense) K/V is now the constructor default for the multi-page
+# paging regime (0 < page_size < BN); it is no longer a compile-time define.
+# The base paged targets below therefore exercise the row-major path directly
+# for the engaging configs (single-CTA, head_size=128, ps16/ps64 < BN=128),
+# validated against the in-kernel naive reference; ps128/ps256 (>= BN) and the
+# pair-CTA targets cover the chunk-outer path. The former `-D row_major_*` A/B
+# variants were dropped along with the defines.
+
+# All paged-FA test variants share one source
+# (test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo), so they
+# are emitted from a SINGLE mojo_test() call site below -- otherwise that source
+# is referenced from multiple rule locations and trips
+# bazel/internal/find_duplicate_srcs.py (each list comprehension counts as a
+# distinct location). Each entry is fully pre-composed:
+# (name_suffix, page_size, head_size, extra_copts, enable_assertions, constraints).
+_PAGED_FA_ALL_CONFIGS = [
+    # Base (page_size, head_size, pair_cta) targets.
+    (
+        "_pair_cta" if pair_cta else "",
+        page_size,
+        head_size,
+        [
+            "-D",
+            "ENABLE_MHA_PREFILL_PAIR_CTA=True",
+        ] if pair_cta else [],
+        select({
+            "//:b200_gpu": True,
+            "//conditions:default": False,  # KERN-2339
+        }),
+        constraints,
+    )
+    for page_size, head_size, pair_cta, constraints in _PAGED_FA_CONFIGS
+]
+
 [
     mojo_test(
         name = "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged_ps{}_hs{}{}.mojo.test".format(
             page_size,
             head_size,
-            "_pair_cta" if pair_cta else "",
+            name_suffix,
         ),
         size = "large",
         srcs = [
@@ -281,16 +359,13 @@ _PAGED_FA_CONFIGS = [
             "page_size={}".format(page_size),
             "-D",
             "head_size={}".format(head_size),
-        ] + ([
-            "-D",
-            "ENABLE_MHA_PREFILL_PAIR_CTA=True",
-        ] if pair_cta else []),
-        enable_assertions = select({
-            "//:b200_gpu": True,
-            "//conditions:default": False,  # KERN-2339
-        }),
+        ] + extra_copts,
+        enable_assertions = enable_assertions,
         exec_properties = {
-            "test.resources:gpu-memory": "5",
+            "test.resources:gpu-memory": _PAGED_FA_GPU_MEMORY.get(
+                (page_size, head_size),
+                "6",
+            ),
         },
         main = "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",
         tags = ["gpu"],
@@ -304,7 +379,7 @@ _PAGED_FA_CONFIGS = [
             "@mojo//:std",
         ],
     )
-    for page_size, head_size, pair_cta, constraints in _PAGED_FA_CONFIGS
+    for name_suffix, page_size, head_size, extra_copts, enable_assertions, constraints in _PAGED_FA_ALL_CONFIGS
 ]
 
 # TODO(KERN-2734): Remove "manual" tag once the FA4 TMA barrier deadlock is fixed.
@@ -356,6 +431,11 @@ _PAGED_FA_CONFIGS = [
 # reproduces KERN-2861 (CUDA_ERROR_ILLEGAL_ADDRESS / NaN at page_size=128
 # on Gemma-4 production shapes). Sliding-window=1024 matches Gemma-4's
 # `sliding_window` per testdata config.
+_GEMMA4_SHAPES_GPU_MEMORY = {
+    "amd_repro": "5",
+    "ps256_causal": "7",
+}
+
 _GEMMA4_SHAPES_B200_ONLY = select({
     "//:b200_gpu": [],
     "//conditions:default": ["@platforms//:incompatible"],
@@ -394,7 +474,7 @@ _GEMMA4_SHAPES_CONFIGS = [
         ],
         enable_assertions = enable_assertions,
         exec_properties = {
-            "test.resources:gpu-memory": "5",
+            "test.resources:gpu-memory": _GEMMA4_SHAPES_GPU_MEMORY.get(suffix, "6"),
         },
         main = "test_mha_gemma4_shapes.mojo",
         tags = ["gpu"],
@@ -415,6 +495,10 @@ _GEMMA4_SHAPES_CONFIGS = [
 # Direct unit test for `PagedKVCache.populate` / `_simd_load_lut`. Sweeps
 # page_size via `-D page_size=N`; BN x base_alignment x base_kv_row are
 # inlined comptime sweeps inside the test. B200-only (sm100 SIMD path).
+_PAGED_LUT_GPU_MEMORY = {
+    128: "3",
+}
+
 [
     mojo_test(
         name = "test_paged_lut_load_boundary_ps{}.mojo.test".format(page_size),
@@ -429,7 +513,7 @@ _GEMMA4_SHAPES_CONFIGS = [
         ],
         enable_assertions = True,
         exec_properties = {
-            "test.resources:gpu-memory": "2",
+            "test.resources:gpu-memory": _PAGED_LUT_GPU_MEMORY.get(page_size, "2.5"),
         },
         main = "test_paged_lut_load_boundary.mojo",
         tags = ["gpu"],
@@ -449,9 +533,46 @@ _GEMMA4_SHAPES_CONFIGS = [
     for page_size in (16, 32, 64, 128, 256)
 ]
 
+# test_paged_kv_null_block_sentinel.mojo
+# Regression test for CUDA_ERROR_ILLEGAL_ADDRESS (SERVOPT-1456).
+# Verifies that `populate` with LUT tail-padding filled with `total_num_pages`
+# (the null-block index) returns in-bounds row indices on the N+1 allocation.
+# Complements the Python-layer test in test_kv_cache_manager.py.
+mojo_test(
+    name = "test_paged_kv_null_block_sentinel.mojo.test",
+    size = "small",
+    srcs = [
+        "kv_cache_test_utils.mojo",
+        "test_paged_kv_null_block_sentinel.mojo",
+    ],
+    enable_assertions = True,
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    main = "test_paged_kv_null_block_sentinel.mojo",
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "@mojo//:std",
+    ],
+)
+
 # test_mha_paged_kv_oob_canary.mojo
 # Stress test: gemma4 production shapes with KV padding pre-filled with
 # +inf. Sweeps page_size and mask_kind. B200-only.
+_OOB_CANARY_GPU_MEMORY = {
+    "128": "7",
+    "256": "7",
+}
+
 _OOB_CANARY_CONFIGS = [
     # (page_size, mask_kind, mask_label)
     ("64", "0", "causal"),
@@ -481,7 +602,7 @@ _OOB_CANARY_CONFIGS = [
         ],
         enable_assertions = True,
         exec_properties = {
-            "test.resources:gpu-memory": "5",
+            "test.resources:gpu-memory": _OOB_CANARY_GPU_MEMORY.get(page_size, "6"),
         },
         main = "test_mha_paged_kv_oob_canary.mojo",
         tags = ["gpu"],

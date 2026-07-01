@@ -30,11 +30,8 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
-from max.pipelines.context import (
-    TextContext,
-    TokenBuffer,
-)
+from max.nn.kv_cache import MHAKVCacheParams
+from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import RequestID
 from typing_extensions import TypeVar
@@ -110,7 +107,7 @@ class RaggedAttentionHarness(
         device: Accelerator,
     ) -> None:
         super().__init__(static_params, session, device)
-        self._kv_params = KVCacheParams(
+        self._kv_params = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=static_params.n_kv_heads,
             head_dim=static_params.head_dim,
@@ -157,8 +154,7 @@ class RaggedAttentionHarness(
 
         kv_runtime = self._kv_manager.runtime_inputs(
             cast(list[list[TextContext]], [batch])
-        ).inputs[0]
-        assert kv_runtime.attention_dispatch_metadata is not None
+        )
 
         total_tokens = dynamic_params.batch_size * dynamic_params.seq_len
         torch_input = torch.randn(
@@ -178,11 +174,7 @@ class RaggedAttentionHarness(
         execute_args: list[Buffer] = [
             input_tensor,
             row_offsets,
-            kv_runtime.kv_blocks.to(device),
-            kv_runtime.cache_lengths.to(device),
-            kv_runtime.lookup_table.to(device),
-            kv_runtime.max_lengths,
-            kv_runtime.attention_dispatch_metadata,
+            *kv_runtime.flatten(),
         ]
 
         return execute_args, batch

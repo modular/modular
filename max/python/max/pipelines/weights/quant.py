@@ -116,6 +116,23 @@ def _quantized_layers_and_embedding_dtype(
     return mlp_quantized_layers, attn_quantized_layers, embedding_output_dtype
 
 
+def _normalize_modelopt_ignore_pattern(pattern: str) -> str:
+    """Normalize modelopt ``ignore`` globs to canonical module paths.
+
+    VL checkpoints often list ``model.language_model.layers.*`` while the
+    weight adapter strips those wrappers to ``layers.*``.
+    """
+    normalized = pattern.removeprefix("model.language_model.").removeprefix(
+        "language_model."
+    )
+    if normalized.startswith("model.layers."):
+        normalized = normalized.removeprefix("model.")
+    # NVFP4 checkpoints map ``block_sparse_moe.*`` to ``mlp.*`` (including
+    # ``shared_experts`` after #89385 fused shared-expert MoE).
+    normalized = normalized.replace("block_sparse_moe", "mlp")
+    return normalized
+
+
 def _modelopt_ignore_patterns(
     hf_quant_config: Mapping[str, Any] | Any,
 ) -> list[str]:
@@ -123,7 +140,7 @@ def _modelopt_ignore_patterns(
     ignore = hf_quant_config.get("ignore", [])
     if not isinstance(ignore, Sequence) or isinstance(ignore, str):
         return []
-    return [str(entry) for entry in ignore]
+    return [_normalize_modelopt_ignore_pattern(str(entry)) for entry in ignore]
 
 
 def _modelopt_layer_subtree_ignored(
@@ -138,15 +155,23 @@ def _modelopt_layer_subtree_ignored(
     Matches modelopt-style globs such as ``model.layers.3.self_attn*`` from
     https://huggingface.co/lukealonso/GLM-5.1-NVFP4/blob/main/config.json.
     """
-    prefix_path = f"{modules_prefix}layers.{layer_idx}.{subtree}"
-    wildcard_path = f"{prefix_path}*"
+    layered = f"layers.{layer_idx}.{subtree}"
+    prefix_path = f"{modules_prefix}{layered}"
+    candidate_paths = (
+        (prefix_path, f"{prefix_path}*"),
+        (layered, f"{layered}*"),
+    )
     for pattern in ignore_patterns:
-        if pattern in (prefix_path, wildcard_path):
-            return True
-        if fnmatch.fnmatch(prefix_path, pattern) or fnmatch.fnmatch(
-            wildcard_path, pattern
-        ):
-            return True
+        for module_path, wildcard_path in candidate_paths:
+            if pattern in (module_path, wildcard_path):
+                return True
+            if fnmatch.fnmatch(module_path, pattern):
+                return True
+            # Only glob patterns (containing ``*``) ignore an entire subtree.
+            # Exact paths such as ``layers.0.mlp.gate_up_proj`` skip one module
+            # but leave the rest of the MLP quantized (e.g. ``down_proj``).
+            if "*" in pattern and fnmatch.fnmatch(wildcard_path, pattern):
+                return True
     return False
 
 
@@ -183,10 +208,14 @@ def _modelopt_shared_experts_quantized_dtype(
     modules_prefix: str = "model.",
 ) -> DType | None:
     """Return quant dtype if MoE shared experts are quantized (not in ``ignore``)."""
-    probe = f"{modules_prefix}layers.0.mlp.shared_experts.gate_proj.weight"
-    for pattern in ignore_patterns:
-        if fnmatch.fnmatch(probe, pattern):
-            return DType.bfloat16
+    probe_paths = (
+        f"{modules_prefix}layers.0.mlp.shared_experts.gate_up_proj.weight",
+        f"{modules_prefix}layers.0.mlp.shared_experts.gate_proj.weight",
+    )
+    for probe in probe_paths:
+        for pattern in ignore_patterns:
+            if fnmatch.fnmatch(probe, pattern):
+                return DType.bfloat16
     return None
 
 
@@ -571,6 +600,59 @@ def _parse_blockscaled_fp8_config(
     )
 
 
+def _parse_mxfp8_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+    dtype: DType,
+) -> QuantConfig:
+    """Parse QuantConfig for MXFP8 (quant_method="mxfp8", weight_block_size=[1,32]).
+
+    MXFP8 stores float8_e4m3fn weights with per-row E8M0 block scales
+    (one scale per 32 weight columns).  The weight adapter converts E8M0 bytes
+    to float32 before loading, so we declare DType.float32 for weight scales
+    here.  Activation scales are computed dynamically at runtime.
+    """
+    text_config = getattr(huggingface_config, "text_config", huggingface_config)
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    if hf_quant_config is None:
+        hf_quant_config = getattr(text_config, "quantization_config", {})
+
+    ignored_layers: list[str] = list(hf_quant_config.get("ignored_layers", []))
+    ignored_modules: set[str] = set(ignored_layers)
+
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        dtype=DType.float8_e8m0fnu,
+        block_size=(1, 32),
+    )
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.DYNAMIC,
+        dtype=DType.float8_e8m0fnu,
+        block_size=(1, 32),
+    )
+
+    mlp_quantized_layers, attn_quantized_layers, embedding_output_dtype = (
+        _quantized_layers_and_embedding_dtype(
+            huggingface_config,
+            ignored_modules,
+            state_dict,
+        )
+    )
+
+    bias_dtype = _bias_dtype(state_dict)
+
+    return QuantConfig(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        mlp_quantized_layers=mlp_quantized_layers,
+        attn_quantized_layers=attn_quantized_layers,
+        embedding_output_dtype=embedding_output_dtype,
+        bias_dtype=bias_dtype,
+        format=QuantFormat.MXFP8,
+    )
+
+
 def _parse_fp8_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
@@ -616,6 +698,12 @@ def _parse_fp8_config(
             return _parse_tensorwise_fp8_config(
                 huggingface_config, state_dict, dtype
             )
+    elif quant_method == "mxfp8":
+        return _parse_mxfp8_config(huggingface_config, state_dict, dtype)
+    elif quant_method == "modelopt":
+        quant_algo = hf_quant_config.get("quant_algo")
+        if quant_algo == "MIXED_PRECISION":
+            return _parse_mxfp8_config(huggingface_config, state_dict, dtype)
 
     raise ValueError(
         "FP8 dtype specified, but an unsupported or incompatible 'quantization_config' "
@@ -919,6 +1007,7 @@ def parse_quant_config(
             "gptq",
             "modelopt",
             "mxfp4",
+            "mxfp8",
             "quark",
         ):
             raise ValueError(

@@ -18,6 +18,7 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import MI355X
+from std.gpu.memory import CacheOperation
 
 from layout import Coord, Idx, TensorLayout, TileTensor
 from layout.tile_layout import row_major
@@ -26,6 +27,29 @@ from std.utils import StaticTuple
 
 from .mxfp4_matmul_amd import MXFP4MatmulAMD as _MXFP4MatmulAMD
 from .mxfp4_matmul_amd_preb import MXFP4MatmulAMD_PreB as _MXFP4MatmulAMD_PreB
+
+
+@always_inline
+def _waves_per_eu_attr[waves_per_eu: Int]() -> __mlir_type.`!kgen.string`:
+    # `amdgpu-waves-per-eu` "1,MAX" cap (avoids EU over-subscription); 0 => "1,8"
+    # (CDNA4 max waves/SIMD) = non-binding default. Literal per branch: the LLVM
+    # passthrough attr needs a StringLiteral, not a computed string.
+    comptime if waves_per_eu == 1:
+        return "1,1".value
+    elif waves_per_eu == 2:
+        return "1,2".value
+    elif waves_per_eu == 3:
+        return "1,3".value
+    elif waves_per_eu == 4:
+        return "1,4".value
+    elif waves_per_eu == 5:
+        return "1,5".value
+    elif waves_per_eu == 6:
+        return "1,6".value
+    elif waves_per_eu == 7:
+        return "1,7".value
+    else:
+        return "1,8".value
 
 
 struct PreShuffledBGroupedGEMM[
@@ -72,13 +96,16 @@ struct PreShuffledBGroupedGEMM[
                     BN=BN,
                     BK_ELEMS=BK_ELEMS,
                     WN=WN,
-                    B_PREFETCH=True,
+                    b_prefetch=True,
                 ].num_threads
             )
         )
     )
     @__name(
         t"mxfp4_preb_pers_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}"
+    )
+    @__llvm_metadata(
+        `llvm.amdgpu-waves-per-eu`=_waves_per_eu_attr[waves_per_eu]()
     )
     def persistent_kernel[
         BM: Int,
@@ -95,6 +122,12 @@ struct PreShuffledBGroupedGEMM[
         ExpertIdsLayout: TensorLayout,
         N: Int,
         K_BYTES: Int,
+        b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+        dram_to_lds: Bool = False,
+        cluster_drain_sched: Bool = False,
+        mfma_cluster: Int = 4,
+        deep_prime: Bool = False,
+        waves_per_eu: Int = 0,
     ](
         c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
         a_tensor: TileTensor[DType.uint8, LayoutA, ImmutAnyOrigin],
@@ -118,7 +151,12 @@ struct PreShuffledBGroupedGEMM[
             BN=BN,
             BK_ELEMS=BK_ELEMS,
             WN=WN,
-            B_PREFETCH=True,
+            b_prefetch=True,
+            b_cache_policy=b_cache_policy,
+            dram_to_lds=dram_to_lds,
+            cluster_drain_sched=cluster_drain_sched,
+            mfma_cluster=mfma_cluster,
+            deep_prime=deep_prime,
         ]
         # K_SCALES (= K / 32) derived from A-data packed_K (= K / 2). The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
@@ -176,11 +214,13 @@ struct PreShuffledBGroupedGEMM[
             var a_start_row = a_offsets[expert_slot]
             # Preshuffled A-scales: fixed-stride slots. Expert e's chunk
             # starts at `e * max_padded_M` rows in `sfa_tensor`; each slot
-            # is `max_padded_M * K_SCALES` bytes, with trailing rows past
-            # `num_tokens[e]` zero-filled by the preshuffle kernel. The
-            # V# bound uses the per-expert padded M (align_up(num_tokens,
-            # 32)) so OOB scale reads past real data are clamped by both
-            # the V# and the zero-fill tail.
+            # is `max_padded_M * K_SCALES` bytes. The V# bound uses the
+            # per-expert padded M (align_up(num_tokens, 32)) so scale reads
+            # never cross past this expert's real-plus-pad-to-32 rows.
+            # Producers (standalone preshuffle OR the fused ep_wait/fused_silu
+            # stores) write only real-token scales; the pad-row matmul outputs
+            # are discarded after the gather, so the slot tail is not
+            # zero-filled.
             var sfa_start_row = UInt32(expert_slot * max_padded_M)
             var sfa_padded_M = align_up(Int(M), 32)
 
@@ -194,6 +234,11 @@ struct PreShuffledBGroupedGEMM[
                 K_SCALES
             )
 
+            # C's V# bound is the real `M` (not `align_up(M, 32)`): the matmul
+            # stores only real-token rows, so the pad rows past `M` are never
+            # written. That is what makes the uninitialized pad scale cells in
+            # `sfa` (whose V# DOES extend to `sfa_padded_M`) safe — the C rows
+            # they would feed are OOB-clamped and discarded.
             var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
             var a_tile = TileTensor(
                 a_ptr, row_major(Coord(Int(M), Idx[K_BYTES]))
@@ -255,12 +300,15 @@ struct PreShuffledBGroupedGEMM[
                     BN=BN,
                     BK_ELEMS=BK_ELEMS,
                     WN=WN,
-                    B_PREFETCH=True,
+                    b_prefetch=True,
                 ].num_threads
             )
         )
     )
     @__name(t"mxfp4_preb_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}")
+    @__llvm_metadata(
+        `llvm.amdgpu-waves-per-eu`=_waves_per_eu_attr[waves_per_eu]()
+    )
     def kernel[
         BM: Int,
         BN: Int,
@@ -276,6 +324,12 @@ struct PreShuffledBGroupedGEMM[
         ExpertIdsLayout: TensorLayout,
         N: Int,
         K_BYTES: Int,
+        b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+        dram_to_lds: Bool = False,
+        cluster_drain_sched: Bool = False,
+        mfma_cluster: Int = 4,
+        deep_prime: Bool = False,
+        waves_per_eu: Int = 0,
     ](
         c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
         a_tensor: TileTensor[DType.uint8, LayoutA, ImmutAnyOrigin],
@@ -299,7 +353,12 @@ struct PreShuffledBGroupedGEMM[
             BN=BN,
             BK_ELEMS=BK_ELEMS,
             WN=WN,
-            B_PREFETCH=True,
+            b_prefetch=True,
+            b_cache_policy=b_cache_policy,
+            dram_to_lds=dram_to_lds,
+            cluster_drain_sched=cluster_drain_sched,
+            mfma_cluster=mfma_cluster,
+            deep_prime=deep_prime,
         ]
         # K_SCALES (= K / 32) derived from A-data packed_K (= K / 2). The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
@@ -369,6 +428,12 @@ struct PreShuffledBGroupedGEMM[
         BK_ELEMS: Int,
         WN: Int,
         persistent: Bool,
+        b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+        dram_to_lds: Bool = False,
+        cluster_drain_sched: Bool = False,
+        mfma_cluster: Int = 4,
+        deep_prime: Bool = False,
+        waves_per_eu: Int = 0,
     ](
         c: TileTensor[mut=True, ...],
         a: TileTensor[DType.uint8, ...],
@@ -390,7 +455,12 @@ struct PreShuffledBGroupedGEMM[
             BN=BN,
             BK_ELEMS=BK_ELEMS,
             WN=WN,
-            B_PREFETCH=True,
+            b_prefetch=True,
+            b_cache_policy=b_cache_policy,
+            dram_to_lds=dram_to_lds,
+            cluster_drain_sched=cluster_drain_sched,
+            mfma_cluster=mfma_cluster,
+            deep_prime=deep_prime,
         ]
 
         comptime N = c.static_shape[1]
@@ -448,6 +518,12 @@ struct PreShuffledBGroupedGEMM[
                 type_of(expert_ids_i).LayoutType,
                 N,
                 K_BYTES,
+                b_cache_policy,
+                dram_to_lds,
+                cluster_drain_sched,
+                mfma_cluster,
+                deep_prime,
+                waves_per_eu,
             ]
             ctx.enqueue_function[kernel](
                 c,
@@ -478,6 +554,12 @@ struct PreShuffledBGroupedGEMM[
                 type_of(expert_ids_i).LayoutType,
                 N,
                 K_BYTES,
+                b_cache_policy,
+                dram_to_lds,
+                cluster_drain_sched,
+                mfma_cluster,
+                deep_prime,
+                waves_per_eu,
             ]
             ctx.enqueue_function[kernel](
                 c,
@@ -507,6 +589,7 @@ struct PreShuffledBGroupedGEMM[
         )
     )
 )
+@__name(t"mxfp4_grouped_{out_dtype}_BM{BM}_BN{BN}_WM{WM}_WN{WN}_BK{BK_ELEMS}")
 def mxfp4_grouped_matmul_amd_kernel[
     BM: Int,
     BN: Int,
@@ -799,10 +882,6 @@ def mxfp4_grouped_matmul_amd_preb(
         ctx.default_device_info == MI355X
     ), "preb path currently only supports MI355X"
 
-    comptime PreBGroupedGemmType = PreShuffledBGroupedGEMM[
-        cu_count=ctx.default_device_info.sm_count, wg_per_cu=2
-    ]
-
     # Preshuffled-scales requires num_k_mmas % 2 == 0, which
     # forces BK_ELEMS >= 256 (i.e. packed_K >= 256 and packed_K % 256 == 0).
     comptime assert packed_K >= 256 and packed_K % 256 == 0, (
@@ -811,10 +890,29 @@ def mxfp4_grouped_matmul_amd_preb(
         " (mxfp4_grouped_matmul_amd) instead."
     )
 
-    var use_direct = estimated_total_m >= m_threshold  # persistency flag
-    if use_direct:
-        PreBGroupedGemmType.launch[
-            BM=64, BN=128, BK_ELEMS=512, WN=64, persistent=False
+    # One launch per band; only the comptime config differs, so capture the
+    # runtime args once and let each band be a single line.
+    @parameter
+    def run_kernel[
+        BM: Int,
+        BN: Int,
+        BK: Int,
+        WN: Int,
+        persistent: Bool,
+        b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
+        deep_prime: Bool = False,
+        wg_per_cu: Int = 2,
+    ]() raises:
+        PreShuffledBGroupedGEMM[
+            cu_count=ctx.default_device_info.sm_count, wg_per_cu=wg_per_cu
+        ].launch[
+            BM=BM,
+            BN=BN,
+            BK_ELEMS=BK,
+            WN=WN,
+            persistent=persistent,
+            b_cache_policy=b_cache_policy,
+            deep_prime=deep_prime,
         ](
             c,
             a,
@@ -827,136 +925,45 @@ def mxfp4_grouped_matmul_amd_preb(
             num_active_experts,
             ctx,
         )
-    else:
-        # KIMI up projection
-        comptime if N == 4096 and packed_K == (7168 // 2):
-            if estimated_total_m == 1:
-                PreBGroupedGemmType.launch[
-                    BM=16, BN=64, BK_ELEMS=512, WN=16, persistent=True
-                ](
-                    c,
-                    a,
-                    b_pre,
-                    a_scales,
-                    b_scales,
-                    a_offsets,
-                    expert_ids,
-                    max_num_tokens_per_expert,
-                    num_active_experts,
-                    ctx,
-                )
-                return
-            elif 2 <= estimated_total_m <= 4:
-                PreBGroupedGemmType.launch[
-                    BM=16, BN=128, BK_ELEMS=512, WN=32, persistent=True
-                ](
-                    c,
-                    a,
-                    b_pre,
-                    a_scales,
-                    b_scales,
-                    a_offsets,
-                    expert_ids,
-                    max_num_tokens_per_expert,
-                    num_active_experts,
-                    ctx,
-                )
-                return
 
-            elif 17 <= estimated_total_m <= 400:
-                PreBGroupedGemmType.launch[
-                    BM=32, BN=128, BK_ELEMS=512, WN=32, persistent=True
-                ](
-                    c,
-                    a,
-                    b_pre,
-                    a_scales,
-                    b_scales,
-                    a_offsets,
-                    expert_ids,
-                    max_num_tokens_per_expert,
-                    num_active_experts,
-                    ctx,
-                )
-                return
+    # Per-(shape, M-band) tuned picks: persistent decode -> direct prefill at
+    # etm >= m_threshold; STREAMING on the BN128 mid/upper decode bands.
+    comptime STREAM = CacheOperation.STREAMING
+    var etm = estimated_total_m
 
-        comptime if N == 7168 and packed_K == (2048 // 2):
-            if estimated_total_m == 1:
-                # ~8 experts * ceildiv(7168, 128)=56 = 448 blocks
-                PreBGroupedGemmType.launch[
-                    BM=16, BN=128, BK_ELEMS=512, WN=32, persistent=True
-                ](
-                    c,
-                    a,
-                    b_pre,
-                    a_scales,
-                    b_scales,
-                    a_offsets,
-                    expert_ids,
-                    max_num_tokens_per_expert,
-                    num_active_experts,
-                    ctx,
-                )
-                return
-            elif 2 <= estimated_total_m <= 16:
-                PreBGroupedGemmType.launch[
-                    BM=16, BN=256, BK_ELEMS=256, WN=64, persistent=True
-                ](
-                    c,
-                    a,
-                    b_pre,
-                    a_scales,
-                    b_scales,
-                    a_offsets,
-                    expert_ids,
-                    max_num_tokens_per_expert,
-                    num_active_experts,
-                    ctx,
-                )
-                return
-            elif 17 <= estimated_total_m <= 400:
-                PreBGroupedGemmType.launch[
-                    BM=32, BN=256, BK_ELEMS=512, WN=64, persistent=True
-                ](
-                    c,
-                    a,
-                    b_pre,
-                    a_scales,
-                    b_scales,
-                    a_offsets,
-                    expert_ids,
-                    max_num_tokens_per_expert,
-                    num_active_experts,
-                    ctx,
-                )
-                return
-            elif 401 <= estimated_total_m <= 1200:
-                PreBGroupedGemmType.launch[
-                    BM=64, BN=256, BK_ELEMS=512, WN=64, persistent=True
-                ](
-                    c,
-                    a,
-                    b_pre,
-                    a_scales,
-                    b_scales,
-                    a_offsets,
-                    expert_ids,
-                    max_num_tokens_per_expert,
-                    num_active_experts,
-                    ctx,
-                )
-                return
-        PreBGroupedGemmType.launch[
-            BM=64, BN=128, BK_ELEMS=512, WN=64, persistent=True
-        ](
-            c,
-            a,
-            b_pre,
-            a_scales,
-            b_scales,
-            a_offsets,
-            expert_ids,
-            max_num_tokens_per_expert,
-            num_active_experts,
-            ctx,
-        )
+    comptime if N == 4096 and packed_K == (7168 // 2):  # gate+up
+        if etm == 1:
+            return run_kernel[16, 64, 512, 16, True, wg_per_cu=1]()
+        elif etm <= 20:
+            return run_kernel[16, 64, 512, 16, True]()
+        elif etm <= 1023:
+            return run_kernel[16, 128, 512, 32, True, STREAM]()
+        elif etm <= 2047:
+            return run_kernel[32, 128, 512, 32, True, STREAM]()
+        elif etm <= 4095:
+            return run_kernel[64, 128, 512, 64, True, STREAM]()
+        else:
+            return run_kernel[64, 128, 512, 64, False]()
+
+    comptime if N == 7168 and packed_K == (2048 // 2):  # down
+        if etm == 1:
+            return run_kernel[16, 64, 512, 16, True, wg_per_cu=1]()
+        elif etm <= 3:
+            return run_kernel[16, 64, 512, 16, True]()
+        elif etm <= 1023:
+            return run_kernel[16, 128, 512, 32, True, STREAM]()
+        elif etm <= 2047:
+            return run_kernel[32, 128, 512, 32, True]()
+        elif etm <= 3072:
+            return run_kernel[64, 128, 512, 64, True]()
+        elif etm <= 6144:
+            return run_kernel[128, 128, 512, 64, True]()
+        elif etm <= 9216:
+            return run_kernel[64, 128, 512, 64, True, deep_prime=True]()
+        else:
+            return run_kernel[64, 128, 512, 64, False, deep_prime=True]()
+
+    # Other shapes: persistent below the threshold, direct at/above it.
+    if etm >= m_threshold:
+        return run_kernel[64, 128, 512, 64, False]()
+    return run_kernel[64, 128, 512, 64, True]()

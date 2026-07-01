@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections.string.string_slice import get_static_string
-from std.math import align_down, ceildiv
+from std.math import align_down, ceildiv, iota
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target
 
@@ -112,7 +112,7 @@ struct Axis(Indexer, Intable, TrivialRegisterPassable):
         Returns:
             The corresponding __mlir_type.index value.
         """
-        return self.axis._int_mlir_index()
+        return self.axis.__mlir_index__()
 
 
 @always_inline
@@ -126,8 +126,8 @@ def gather_reduce[
     ) thin -> SIMD[dtype, width],
 ](
     output: TileTensor[mut=True, dtype, ...],
-    input: TileTensor[dtype, ...],
-    indices: TileTensor[DType.int32, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, DType.int32, ...],
     reduce_init: Scalar[dtype],
     ctx: Optional[DeviceContext] = None,
 ):
@@ -297,8 +297,8 @@ def gather[
     target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, dtype, ...],
-    input: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     *,
     context: DeviceContext,
 ) raises:
@@ -697,9 +697,15 @@ def scatter_nd_generator[
     *,
     _trace_description: StaticString = "scatter_nd",
 ](
-    data: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    indices: TileTensor[indices_type, address_space=AddressSpace.GENERIC, ...],
-    updates: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    data: TileTensor[
+        mut=False, output_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    indices: TileTensor[
+        mut=False, indices_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    updates: TileTensor[
+        mut=False, output_type, address_space=AddressSpace.GENERIC, ...
+    ],
     output: TileTensor[
         mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1062,9 +1068,15 @@ def scatter_nd[
     //,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    indices: TileTensor[indices_type, address_space=AddressSpace.GENERIC, ...],
-    updates: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    data: TileTensor[
+        mut=False, output_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    indices: TileTensor[
+        mut=False, indices_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    updates: TileTensor[
+        mut=False, output_type, address_space=AddressSpace.GENERIC, ...
+    ],
     output: TileTensor[
         mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1079,9 +1091,9 @@ def scatter_nd_shape[
     input_type: DType,
     indices_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    updates: TileTensor[input_type, ...],
-    indices: TileTensor[indices_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    updates: TileTensor[mut=False, input_type, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
 ) raises -> IndexList[input.rank]:
     """
     Compute the output shape of a `scatter_nd` operation, and assert the
@@ -1147,8 +1159,8 @@ def gather_shape[
     input_type: DType,
     indices_type: DType,
 ](
-    input_buf: TileTensor[input_type, ...],
-    indices_buf: TileTensor[indices_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    indices_buf: TileTensor[mut=False, indices_type, ...],
     axis: Int,
 ) raises -> IndexList[output_rank]:
     """
@@ -1247,9 +1259,9 @@ def scatter_elements[
 
     var input_ax_dim = input.dim_size(axis)
 
-    @__copy_capture(axis, input_ax_dim)
-    @parameter
-    def update_func[simd_width: Int, alignment: Int = 1](indices_coords: Coord):
+    def update_func[
+        simd_width: Int, alignment: Int = 1
+    ](indices_coords: Coord) {var}:
         var idx_on_axis = indices.to_tile_tensor()[indices_coords]
         var output_coords = coord_to_index_list(indices_coords)
         output_coords[axis] = Int(
@@ -1261,7 +1273,7 @@ def scatter_elements[
         ](curr, updates.to_tile_tensor()[indices_coords])
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[update_func, 1](indices.shape_coord(), ctx)
+    elementwise[1](update_func, indices.shape_coord(), ctx)
 
 
 @always_inline
@@ -1269,9 +1281,9 @@ def scatter_elements_shape[
     input_type: DType,
     indices_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    updates: TileTensor[input_type, ...],
-    indices: TileTensor[indices_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    updates: TileTensor[mut=False, input_type, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     axis: Int,
 ) raises -> IndexList[input.rank]:
     """
@@ -1325,8 +1337,8 @@ def gather_elements[
     input_type: DType,
     indices_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    indices: TileTensor[indices_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     _axis: Int,
     output: TileTensor[mut=True, input_type, ...],
     ctx: DeviceContext,
@@ -1356,9 +1368,9 @@ def gather_elements[
 
     var input_ax_dim = Int(input.dim(axis))
 
-    @__copy_capture(input_ax_dim, axis)
-    @parameter
-    def gather_func[simd_width: Int, alignment: Int = 1](output_coords: Coord):
+    def gather_func[
+        simd_width: Int, alignment: Int = 1
+    ](output_coords: Coord) {var}:
         comptime assert indices.flat_rank >= output_coords.flat_rank
         comptime assert output.flat_rank >= output_coords.flat_rank
         var idx_on_axis = indices.load[width=1](output_coords)
@@ -1371,7 +1383,7 @@ def gather_elements[
         output.store(output_coords, input.load[width=1](input_coords))
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[gather_func, 1](output.layout.shape_coord(), ctx)
+    elementwise[1](gather_func, output.layout.shape_coord(), ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1386,8 +1398,8 @@ def gather_nd_shape[
     indices_type: DType,
     batch_dims: Int,
 ](
-    input_buf: TileTensor[input_type, ...],
-    indices_buf: TileTensor[indices_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    indices_buf: TileTensor[mut=False, indices_type, ...],
 ) raises -> IndexList[output_rank]:
     """
     Compute the output shape of a `gather` operation, and assert the inputs are
@@ -1448,11 +1460,12 @@ def gather_nd_shape[
 def gather_nd[
     dtype: DType,
     indices_type: DType,
+    //,
     batch_dims: Int,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
+    data: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,
 ) raises:
@@ -1476,31 +1489,6 @@ def gather_nd[
         ctx: The device context as prepared by the graph compiler.
 
     """
-
-    comptime if is_cpu[target]():
-        return _gather_nd_impl[
-            batch_dims,
-            target=target,
-        ](data, indices, output)
-    else:
-        return _gather_nd_impl[
-            batch_dims,
-            target=target,
-        ](data, indices, output, ctx)
-
-
-def _gather_nd_impl[
-    dtype: DType,
-    indices_type: DType,
-    //,
-    batch_dims: Int,
-    target: StaticString = "cpu",
-](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
-    output: TileTensor[mut=True, dtype, ...],
-    ctx: Optional[DeviceContext] = None,
-) raises:
     comptime assert (
         data.rank >= 1 and indices.rank >= 1
     ), "Constraint: data_rank >= 1 and indices_rank >= 1"
@@ -1512,10 +1500,9 @@ def _gather_nd_impl[
 
     # This is modeled as an elementwise function mapping an index in the
     # output to an index in the input
-    @parameter
     def gather_nd_elementwise_fn[
         simd_width: Int, alignment: Int = 1
-    ](output_idx_arg: Coord):
+    ](output_idx_arg: Coord) {var}:
         var output_idx = coord_to_index_list(output_idx_arg)
         var data_idx = IndexList[data.rank]()
         var indices_idx = IndexList[indices.rank]()
@@ -1580,35 +1567,18 @@ def _gather_nd_impl[
         and (slice_last_dim % target_simd_width) == 0
     )
 
-    comptime if is_cpu[target]():
-        var cpu_ctx = DeviceContext(api="cpu")
-        if use_simd:
-            elementwise[
-                gather_nd_elementwise_fn,
-                target_simd_width,
-                target=target,
-            ](output.layout.shape_coord(), cpu_ctx)
-        else:
-            elementwise[
-                gather_nd_elementwise_fn,
-                1,
-                target=target,
-            ](output.layout.shape_coord(), cpu_ctx)
+    if use_simd:
+        elementwise[
+            target_simd_width,
+            target=target,
+            _trace_description="gather_nd",
+        ](gather_nd_elementwise_fn, output.layout.shape_coord(), ctx)
     else:
-        assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
-        var cuda_ctx = ctx.value()
-        if use_simd:
-            elementwise[
-                gather_nd_elementwise_fn,
-                target_simd_width,
-                target=target,
-            ](output.layout.shape_coord(), cuda_ctx)
-        else:
-            elementwise[
-                gather_nd_elementwise_fn,
-                1,
-                target=target,
-            ](output.layout.shape_coord(), cuda_ctx)
+        elementwise[
+            1,
+            target=target,
+            _trace_description="gather_nd",
+        ](gather_nd_elementwise_fn, output.layout.shape_coord(), ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1623,7 +1593,7 @@ def scatter_set_constant[
     target: StaticString,
 ](
     data: TileTensor[mut=True, data_type, ...],
-    indices: TileTensor[index_type, ...],
+    indices: TileTensor[mut=False, index_type, ...],
     fill_value: Scalar[data_type],
     ctx: DeviceContext,
 ) raises:
@@ -1668,16 +1638,86 @@ def scatter_set_constant[
         raise Error("scatter_set: indices must have shape [total_seq_len, 2]")
 
     @always_inline
-    @parameter
-    def scatter_set_constant_fn[width: Int, alignment: Int = 1](idx: Coord):
+    def scatter_set_constant_fn[
+        width: Int, alignment: Int = 1
+    ](idx: Coord) {var}:
         comptime assert idx.rank == 1, "scatter_set_constant_fn: rank must be 1"
 
         data[Int(indices[idx[0], 0]), Int(indices[idx[0], 1])] = fill_value
 
     var dispatch_shape = Coord(Int(indices.dim[0]()))
     elementwise[
-        func=scatter_set_constant_fn,
         simd_width=1,
         target=target,
         _trace_description="scatter_set_constant",
-    ](dispatch_shape, ctx)
+    ](scatter_set_constant_fn, dispatch_shape, ctx)
+
+
+def apply_packed_bitmask[
+    dtype: DType,
+    //,
+    target: StaticString,
+](
+    output: TileTensor[mut=True, dtype, ...],
+    logits: TileTensor[dtype, ...],
+    packed: TileTensor[DType.int32, ...],
+    fill_value: Scalar[dtype],
+    ctx: DeviceContext,
+) raises:
+    """Apply a packed-int32 grammar bitmask to logits in a single fused pass.
+
+    Unpacks a packed bitmask (1 bit per token, 32 tokens per `int32` word) and
+    masks `logits` with it without ever materializing a bool tensor: for each
+    `(b, v)`, the token is kept when bit `v % 32` of word `packed[b, v // 32]`
+    is set, otherwise `output[b, v]` is set to `fill_value` (the masked-out
+    sentinel, e.g. a large negative number). This replaces a CPU unpack +
+    `ops.where` in constrained decoding.
+
+    Args:
+        output: Masked logits, shape `[batch, vocab]`.
+        logits: Input logits, shape `[batch, vocab]`.
+        packed: Packed `int32` bitmask, shape `[batch, ceil(vocab / 32)]`. A set
+            bit means the token is grammar-valid. Extra trailing bits beyond
+            `vocab` (32-bit alignment padding from llguidance) are never read.
+        fill_value: Value written for masked-out (grammar-invalid) tokens.
+        ctx: The device context.
+    """
+    comptime assert output.flat_rank == 2, "apply_packed_bitmask: output rank 2"
+    comptime assert logits.flat_rank == 2, "apply_packed_bitmask: logits rank 2"
+    comptime assert packed.flat_rank == 2, "apply_packed_bitmask: packed rank 2"
+
+    @always_inline
+    def apply_packed_bitmask_fn[
+        width: Int, alignment: Int = 1
+    ](idx: Coord) {var}:
+        comptime assert idx.rank == 2, "apply_packed_bitmask_fn: rank must be 2"
+        # A `width`-wide block can straddle a 32-bit word boundary (elementwise
+        # may emit an unaligned tail block), but spans at most two consecutive
+        # words for `width <= 32`, so resolve each lane's word individually.
+        comptime assert (
+            width <= 32
+        ), "apply_packed_bitmask: simd_width must be <= 32"
+        var b = Int(idx[0].value())
+        var v = Int(idx[1].value())
+        var tok = Int32(v) + iota[DType.int32, width]()
+        var base = v >> 5
+        var w0 = SIMD[DType.int32, width](packed[b, base][0])
+        # Second word only feeds the spilled lanes; clamp the index so the
+        # no-spill case never loads out of bounds.
+        var last_word = Int(packed.dim[1]()) - 1
+        var w1 = SIMD[DType.int32, width](
+            packed[b, min(base + 1, last_word)][0]
+        )
+        var word = (tok >> 5).ne(Int32(base)).select(w1, w0)
+        var keep = ((word >> (tok & 31)) & 1).ne(0)
+        var values = logits.load[width=width]((b, v))
+        var filled = SIMD[dtype, width](fill_value)
+        output.store((b, v), keep.select(values, filled))
+
+    comptime simd_width = simd_width_of[dtype]()
+    var dispatch_shape = Coord(Int(output.dim[0]()), Int(output.dim[1]()))
+    elementwise[
+        simd_width=simd_width,
+        target=target,
+        _trace_description="apply_packed_bitmask",
+    ](apply_packed_bitmask_fn, dispatch_shape, ctx)

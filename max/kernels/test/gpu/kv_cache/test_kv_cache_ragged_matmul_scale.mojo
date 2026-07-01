@@ -170,7 +170,7 @@ def execute_matmul_k_cache_ragged_scale[
     comptime num_paged_blocks = 32
     comptime page_size = 512
     comptime CollectionType = PagedKVCacheCollection[
-        dtype, kv_params, page_size
+        dtype, kv_params, page_size, ...
     ]
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     comptime kv_block_layout = Layout.row_major[6]()

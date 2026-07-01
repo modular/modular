@@ -51,14 +51,13 @@ def _constrained_conforms_to[
 
 
 @always_inline("nodebug")
-def _constrained_field_conforms_to[
-    cond: Bool,
+def _field_conforms_to_error[
     *,
     Parent: AnyType,
     FieldIndex: Int,
     ParentConformsTo: StaticString,
     FieldConformsTo: StaticString = ParentConformsTo,
-]():
+]() -> StaticString:
     """Asserts that a struct field conforms to a trait at compile time.
 
     This helper is used in default trait implementations that use reflection
@@ -66,7 +65,6 @@ def _constrained_field_conforms_to[
     when a field doesn't conform to the required trait.
 
     Parameters:
-        cond: The conformance condition (e.g., `conforms_to(FieldType, Trait)`).
         Parent: The struct type being checked.
         FieldIndex: The index of the field in the struct.
         ParentConformsTo: The trait the parent is trying to conform to.
@@ -87,7 +85,7 @@ def _constrained_field_conforms_to[
     # can't handle non-struct types.
     comptime if reflect[FieldType].is_struct():
         comptime field_type_name = _unqualified_type_name[FieldType]()
-        comptime assert cond, StaticString(
+        return StaticString(
             _get_kgen_string[
                 "Could not derive ",
                 ParentConformsTo,
@@ -102,7 +100,7 @@ def _constrained_field_conforms_to[
             ]()
         )
     else:
-        comptime assert cond, StaticString(
+        return StaticString(
             _get_kgen_string[
                 "Could not derive ",
                 ParentConformsTo,

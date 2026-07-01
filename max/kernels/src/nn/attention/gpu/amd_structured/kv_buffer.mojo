@@ -320,6 +320,7 @@ struct KVBuffer[
         address_space=AddressSpace.SHARED,
     ]
 
+    @__allow_legacy_any_origin_fields
     var smem_tile: Self.SmemParentType
 
     var kv_cache_iter: KVCacheIterator[
@@ -423,20 +424,46 @@ struct KVBuffer[
             comptime num_col_groups = Self.smem_depth // Self.bk_smem
             comptime total_tiles = num_row_groups * num_col_groups
             comptime tiles_per_warp = ceildiv(total_tiles, num_warps)
+            # Coverage: every tile must be reachable by some (warp, t) pair.
+            comptime assert tiles_per_warp * num_warps >= total_tiles
 
-            comptime for t in range(tiles_per_warp):
-                comptime tile_idx = Int(t) * num_warps
-                var warp_tile = UInt32(tile_idx) + self.warp_id
-                var warp_row, warp_col = divmod(
-                    warp_tile, UInt32(num_col_groups)
-                )
-                var smem_warp = self.smem_block_tile[Self.warp_tile_rows](
-                    Int(warp_row), _stage_block_base + Int(warp_col)
-                )
-                var gmem_warp_tile = gmem_tile.tile[
-                    Self.warp_tile_rows, Self.bk_smem
-                ](Int(warp_row), Int(warp_col))
-                loader.load(smem_warp, gmem_warp_tile)
+            # Bounds guard only needed when `num_warps` doesn't divide
+            # `total_tiles` (e.g. W in {5,7,8} at depth=576/BN=128 → 36 tiles):
+            # the last warp's final tile would index past `total_tiles` and
+            # over-read. When it divides exactly (e.g. W=4) the unguarded loop
+            # below is exact — byte-identical at S=1.
+            comptime _needs_dma_guard = (total_tiles % num_warps) != 0
+            comptime if _needs_dma_guard:
+                comptime for t in range(tiles_per_warp):
+                    comptime tile_idx = Int(t) * num_warps
+                    var warp_tile = UInt32(tile_idx) + self.warp_id
+                    # Mirrors the guarded streaming twin
+                    # (`if warp_tile < total_dma_tiles` below).
+                    if warp_tile < UInt32(total_tiles):
+                        var warp_row, warp_col = divmod(
+                            warp_tile, UInt32(num_col_groups)
+                        )
+                        var smem_warp = self.smem_block_tile[
+                            Self.warp_tile_rows
+                        ](Int(warp_row), _stage_block_base + Int(warp_col))
+                        var gmem_warp_tile = gmem_tile.tile[
+                            Self.warp_tile_rows, Self.bk_smem
+                        ](Int(warp_row), Int(warp_col))
+                        loader.load(smem_warp, gmem_warp_tile)
+            else:
+                comptime for t in range(tiles_per_warp):
+                    comptime tile_idx = Int(t) * num_warps
+                    var warp_tile = UInt32(tile_idx) + self.warp_id
+                    var warp_row, warp_col = divmod(
+                        warp_tile, UInt32(num_col_groups)
+                    )
+                    var smem_warp = self.smem_block_tile[Self.warp_tile_rows](
+                        Int(warp_row), _stage_block_base + Int(warp_col)
+                    )
+                    var gmem_warp_tile = gmem_tile.tile[
+                        Self.warp_tile_rows, Self.bk_smem
+                    ](Int(warp_row), Int(warp_col))
+                    loader.load(smem_warp, gmem_warp_tile)
 
         # K-tail padding is handled register-side in `zero_partial_tile_pad`
         # (as the reference does — see that method for the rationale). The
@@ -806,6 +833,8 @@ struct DecodeStreamingKVBuffer[
     ]
 
     var kv_mma_op: Self.KVMmaOpType
+
+    @__allow_legacy_any_origin_fields
     var smem_ptr: UnsafePointer[
         Scalar[Self.kv_t.dtype],
         MutAnyOrigin,
@@ -1241,6 +1270,8 @@ struct DecodeKVBuffer[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
+
+    @__allow_legacy_any_origin_fields
     var smem_tile: Self.SmemTile
 
     # DRAM tile and loader.
@@ -1253,6 +1284,8 @@ struct DecodeKVBuffer[
         row_major[Self._thread_rows, Self._thread_cols](),
         Self.num_threads,
     ]
+
+    @__allow_legacy_any_origin_fields
     var gmem_tile: Self.GmemTileType
     var reg_loader: Self.RegLoaderType
     var tile_idx: Int

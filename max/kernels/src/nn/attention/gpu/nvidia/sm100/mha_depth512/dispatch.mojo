@@ -22,6 +22,7 @@ from std.collections import OptionalReg
 from std.math import ceildiv
 from std.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
 from layout.tma_async import RaggedTMA3DTile
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
 from nn.attention.gpu.nvidia.common import (
     ImmutTileTensor1D,
@@ -40,7 +41,11 @@ from nn.attention.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
-from nn.attention.gpu.nvidia.sm100.attention_utils import kv_sub_tile_rows
+from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    kv_sub_tile_rows,
+    kv_tma_fold_chunks,
+    o_store_tma_blocks_per_op,
+)
 from .config import Depth512SM100Config
 from .kernel import SM100MHADepth512
 
@@ -93,6 +98,9 @@ def mha_sm100_depth512_dispatch[
     )
     comptime assert d512_config.supported(), d512_config.description()
     comptime swizzle_mode = d512_config.swizzle_mode
+    # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
+    # Q/K/V/S/P buffers governed by `swizzle_mode`).
+    comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE
     comptime fuse_gqa = d512_config.fuse_gqa
     comptime PairBM_eff = d512_config.BM_eff() * 2
     comptime num_threads = d512_config.num_threads  # 384
@@ -103,19 +111,28 @@ def mha_sm100_depth512_dispatch[
 
     # ---- TMA tile descriptors ------------------------------------------------
 
-    # Output store: BM per CTA, full ov_depth.
+    # Output store: BM per CTA, full ov_depth. Single issuer, no combine
+    # (depth_splits=1) -> one batched rank-5 TMA over the full depth (group==1).
+    comptime store_blocks_per_op = o_store_tma_blocks_per_op[
+        output_type,
+        output_swizzle_mode,
+        d512_config.ov_depth,
+        d512_config.group if fuse_gqa else 1,
+        depth_splits=1,
+    ]()
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_type,
-        swizzle_mode,
+        output_swizzle_mode,
         BM=d512_config.BM,
         BN=d512_config.ov_depth,
+        middle_dim=d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads,
         group=d512_config.group if fuse_gqa else 1,
+        tma_blocks_per_op=store_blocks_per_op,
     ]
     var ragged_tma_store = RaggedStoreType.create(
         ctx,
         output.unsafe_ptr(),
         rows=num_rows_q,
-        middle_dim=d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads,
     )
 
     # Q: BM per CTA (not halved like 2Q).
@@ -132,20 +149,51 @@ def mha_sm100_depth512_dispatch[
 
     # K: each CTA loads BN//2 rows, BK0 depth per stage.
     comptime k_sub_BN = kv_sub_tile_rows(d512_config.BN // 2, KVType.page_size)
+    # Depth-chunk TMA fold (SM100 K-only): fold the BK0 = num_chunks*gran depth
+    # chunks into one rank-4 TMA when byte-equivalent. `kv_tma_fold_chunks` is the
+    # single source of truth shared with the `tma_copy_k` issue site; here
+    # box_rows == k_sub_BN and smem_BN == BN//2, so the fold is allowed exactly
+    # when k_sub_BN == BN//2 (i.e. page_size >= BN//2 -> pages_per_iter == 1).
+    comptime k_fold_chunks = kv_tma_fold_chunks[
+        KVType.dtype,
+        d512_config.swizzle_mode,
+        BK=d512_config.BK0,
+        head_size=d512_config.qk_depth,
+        box_rows=k_sub_BN,
+        smem_BN=d512_config.BN // 2,
+        page_size=KVType.page_size,
+    ]()
     k_tma_op = k.create_tma_tile[
         d512_config.swizzle_mode,
         BN=k_sub_BN,
         depth=d512_config.qk_depth,
         BK=d512_config.BK0,
+        fold_chunks=k_fold_chunks,
     ](ctx)
 
     # V: BK1 rows x v_cols_per_cta columns (heavily sub-tiled for SMEM).
+    # Depth-chunk TMA fold (SM100): fold the v_cols_per_cta = num_chunks*gran
+    # depth columns into one rank-4 TMA when byte-equivalent. Shares
+    # `kv_tma_fold_chunks` with the `tma_copy_v` issue site (single source of
+    # truth); here box_rows == v_sub_BN and smem_BN == BK1 (V's per-sub-tile
+    # tile_rows), so the fold is allowed exactly when v_sub_BN == BK1 (i.e.
+    # page_size >= BK1 -> pages_per_iter == 1).
     comptime v_sub_BN = kv_sub_tile_rows(d512_config.BK1, KVType.page_size)
+    comptime v_fold_chunks = kv_tma_fold_chunks[
+        KVType.dtype,
+        d512_config.swizzle_mode,
+        BK=d512_config.v_cols_per_cta,
+        head_size=d512_config.ov_depth,
+        box_rows=v_sub_BN,
+        smem_BN=d512_config.BK1,
+        page_size=KVType.page_size,
+    ]()
     v_tma_op = v.create_tma_tile[
         d512_config.swizzle_mode,
         BN=v_sub_BN,
         depth=d512_config.ov_depth,
         BK=d512_config.v_cols_per_cta,
+        fold_chunks=v_fold_chunks,
     ](ctx)
 
     # ---- Scheduler -----------------------------------------------------------

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import has_amd_gpu_accelerator, size_of
+from std.math import ceildiv
 from std.ffi import _get_global_or_null, external_call
 
 import _rocblas
@@ -78,6 +79,12 @@ from _rocblas.hipblaslt import (
     hipblasLtMatmulLayoutAttribute_t,
     hipblasOperation_t,
     hipDataType_t,
+)
+from _rocblas.rocblas import (
+    rocblas_set_stream,
+    rocblas_gemm_ex,
+    rocblas_create_handle,
+    rocblas_destroy_handle,
 )
 from std.gpu.host import DeviceContext
 from std.gpu.host._amdgpu_hip import HIP
@@ -187,6 +194,8 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         Self._rocblas_type,
         Self._hipblaslt_type,
     ]
+
+    @__allow_legacy_any_origin_fields
     var _handle: Self.type
 
     def __init__(out self) raises:
@@ -197,7 +206,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         elif Self.resolved_backend is Backend.ROCBLAS:
             var handle = Self._rocblas_type()
             _rocblas.check_error(
-                _rocblas.rocblas.rocblas_create_handle(UnsafePointer(to=handle))
+                rocblas_create_handle(UnsafePointer(to=handle))
             )
             self._handle = handle
         elif Self.resolved_backend is Backend.HIPBLASLT:
@@ -222,9 +231,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
             self._handle = Self._cublas_type()
             return
         elif Self.resolved_backend is Backend.ROCBLAS:
-            _rocblas.check_error(
-                _rocblas.rocblas.rocblas_destroy_handle(self._get_rocblas())
-            )
+            _rocblas.check_error(rocblas_destroy_handle(self._get_rocblas()))
             self._handle = Self._rocblas_type()
             return
         elif Self.resolved_backend is Backend.HIPBLASLT:
@@ -324,9 +331,7 @@ def _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
 
     elif handle.resolved_backend is Backend.ROCBLAS:
         _rocblas.check_error(
-            _rocblas.rocblas.rocblas_set_stream(
-                handle._get_rocblas(), HIP(ctx.stream())
-            )
+            rocblas_set_stream(handle._get_rocblas(), HIP(ctx.stream()))
         )
 
 
@@ -864,7 +869,7 @@ def _rocblas_matmul[
     var N = Int(c.dim[1]())
     var K = Int(a.dim[1]()) if not transpose_a else Int(a.dim[0]())
 
-    var compute_type = _rocblas.types.DataType(DType.float32)
+    var compute_type = _rocblas.DataType(DType.float32)
 
     # Cublas is by default column-major but we like to have the output in row-major
     # to compare with our results. To do this without an explicit transpose, we
@@ -878,14 +883,14 @@ def _rocblas_matmul[
     # transformation. To be rigorous though, we should set `c_is_row_major = True`
     # for accuracy validations and uses default column-major in benchmark.
 
-    def _convert_to_rocblas_transpose(tr: Bool) -> _rocblas.types.Operation:
+    def _convert_to_rocblas_transpose(tr: Bool) -> _rocblas.Operation:
         if tr:
-            return _rocblas.types.Operation.TRANSPOSE
-        return _rocblas.types.Operation.NONE
+            return _rocblas.Operation.TRANSPOSE
+        return _rocblas.Operation.NONE
 
     if c_row_major:
         return _rocblas.check_error(
-            _rocblas.rocblas.rocblas_gemm_ex(
+            rocblas_gemm_ex(
                 handle,
                 _convert_to_rocblas_transpose(transpose_b),
                 _convert_to_rocblas_transpose(transpose_a),
@@ -894,27 +899,27 @@ def _rocblas_matmul[
                 Int32(K),
                 UnsafePointer(to=alpha).bitcast[NoneType](),
                 _ffi_void_ptr(b.ptr),
-                _rocblas.types.DataType(b_type),
+                _rocblas.DataType(b_type),
                 Int32(K) if transpose_b else Int32(N),
                 _ffi_void_ptr(a.ptr),
-                _rocblas.types.DataType(a_type),
+                _rocblas.DataType(a_type),
                 Int32(K),
                 UnsafePointer(to=beta).bitcast[NoneType](),
                 _ffi_void_ptr(c.ptr),
-                _rocblas.types.DataType(c_type),
+                _rocblas.DataType(c_type),
                 Int32(N),
                 _ffi_void_ptr(c.ptr),
-                _rocblas.types.DataType(c_type),
+                _rocblas.DataType(c_type),
                 Int32(N),
                 compute_type,
-                _rocblas.rocblas.types.Algorithm.STANDARD,
+                _rocblas.Algorithm.STANDARD,
                 0,
                 0,
             )
         )
     # Default column-major.
     _rocblas.check_error(
-        _rocblas.rocblas.rocblas_gemm_ex(
+        rocblas_gemm_ex(
             handle,
             _convert_to_rocblas_transpose(transpose_a),
             _convert_to_rocblas_transpose(transpose_b),
@@ -923,20 +928,20 @@ def _rocblas_matmul[
             Int32(K),
             UnsafePointer(to=alpha).bitcast[NoneType](),
             _ffi_void_ptr(a.ptr),
-            _rocblas.types.DataType(a_type),
+            _rocblas.DataType(a_type),
             Int32(M),
             _ffi_void_ptr(b.ptr),
-            _rocblas.types.DataType(b_type),
+            _rocblas.DataType(b_type),
             Int32(N) if transpose_b else Int32(K),
             UnsafePointer(to=beta).bitcast[NoneType](),
             _ffi_void_ptr(c.ptr),
-            _rocblas.types.DataType(c_type),
+            _rocblas.DataType(c_type),
             Int32(M),
             _ffi_void_ptr(c.ptr),
-            _rocblas.types.DataType(c_type),
+            _rocblas.DataType(c_type),
             Int32(M),
             compute_type,
-            _rocblas.rocblas.types.Algorithm.STANDARD,
+            _rocblas.Algorithm.STANDARD,
             0,
             0,
         )
@@ -1331,7 +1336,7 @@ def _cublasLt_matmul[
                 .as_unsafe_any_origin(),
                 _ffi_void_ptr(b.ptr),
                 _adesc,  # _adesc
-                _ffi_void_ptr(a.ptr),  # _b
+                _ffi_void_ptr(a.ptr).as_immutable(),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta)
                 .bitcast[NoneType]()
@@ -1363,7 +1368,7 @@ def _cublasLt_matmul[
                 .as_unsafe_any_origin(),  # alpha
                 _ffi_void_ptr(a.ptr),  # _a
                 _adesc,  # _adesc
-                _ffi_void_ptr(b.ptr),  # _b
+                _ffi_void_ptr(b.ptr).as_immutable(),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta)
                 .bitcast[NoneType]()

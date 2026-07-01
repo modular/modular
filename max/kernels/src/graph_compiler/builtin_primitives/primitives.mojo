@@ -13,10 +13,11 @@
 
 from std.logger import Logger
 from std.math import fma
-from std.ffi import external_call, c_size_t
+from std.ffi import external_call, c_size_t, _CPointer
 from std.sys import size_of, align_of
 
 import std.algorithm
+import std.algorithm.functional
 
 from extensibility import StaticTensorSpec
 from extensibility import (
@@ -69,39 +70,6 @@ comptime logger = Logger()
 # ===-----------------------------------------------------------------------===#
 
 
-# TODO: This struct should be deleted. Mojo and C++ should always communicate
-# with pointers. If the Mojo wants to do something with this object, we should
-# just create a C++ function for it. For the time being, this is safe because of
-# the `constrained` and `static_assert` we added to ensure the type has the
-# right byte size.
-struct StateContext(TrivialRegisterPassable):
-    """Defines a StateContext structure which holds a ptr to context and has accessors that go to external calls
-    This is currently meant as a mojo-side container for GML::StateContext."""
-
-    var num_slots: Int
-    var ctx_ptr: OpaquePointer[MutAnyOrigin]
-
-    @always_inline
-    def __init__(
-        out self, num_slots: Int, ctx_ptr: OpaquePointer[MutAnyOrigin]
-    ):
-        self.num_slots = num_slots
-        self.ctx_ptr = ctx_ptr
-
-        comptime assert size_of[StateContext]() == 16, (
-            "Expecting StateContext to be 16 bytes wide, to match the C++"
-            " equivalent"
-        )
-
-    @always_inline
-    def __getitem__(self, index: Int) -> OpaquePointer[MutAnyOrigin]:
-        assert 0 <= index < self.num_slots, "index must be within bounds"
-        return external_call[
-            "MGP_RT_GetContextPayloadPtr",
-            OpaquePointer[MutAnyOrigin],
-        ](index, self.ctx_ptr)
-
-
 def pack_string_res(
     str_ptr: UnsafePointer[mut=False, Byte, _], str_len: Int
 ) raises -> String:
@@ -134,17 +102,6 @@ def create_i1_async(
     async_ptr: OpaquePointer[MutAnyOrigin],
 ):
     external_call["MGP_RT_CreateAsync_bool", NoneType](value, async_ptr)
-
-
-@no_inline
-def create_buffer_ref_async(
-    buffer: MutByteBuffer,
-    async_ptr: OpaquePointer[MutAnyOrigin],
-    call_ctx: DeviceContext,
-):
-    external_call["MGP_RT_CreateAsyncDeviceBufferRef", NoneType](
-        buffer.unsafe_ptr(), buffer.size(), async_ptr, call_ctx._handle
-    )
 
 
 struct OwnedByteBuffer(Movable):
@@ -234,6 +191,18 @@ def create_tensor_spec_async[
 @export
 def empty_destructor(ptr: UnsafePointer[UInt8, MutUntrackedOrigin]) abi("Mojo"):
     pass
+
+
+@no_inline
+def unpack_state_ctx(
+    async_ptr: OpaquePointer[MutAnyOrigin],
+) -> StateContext:
+    var ptr = external_call[
+        "MGP_RT_UnpackStateContext",
+        StateContextRef,
+    ](async_ptr)
+
+    return StateContext(ptr)
 
 
 @no_inline
@@ -684,7 +653,10 @@ def mgp_buffer_device_to_device[
     dst_dev_ctx: DeviceContext,
 ) raises:
     comptime if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
-        dst_dev_ctx.enqueue_copy[DType.int8](
+        # The graph emits explicit mgp.device_wait ops around this copy to
+        # synchronize the source and destination streams, so the driver must
+        # not insert its own cross-stream synchronization here.
+        dst_dev_ctx.enqueue_copy_no_cross_stream_sync[DType.int8](
             dst_buf.to_device_buffer(dst_dev_ctx),
             src_buf.to_device_buffer(src_dev_ctx),
         )
@@ -725,17 +697,14 @@ def mgp_buffer_host_to_device[
 
 @register_internal("mgp.int.cache")
 @no_inline
-def mgp_int_cache[bIntSlot: UInt64](ctx: StateContextRef, value: Int):
-    external_call["MGP_RT_SetCachedInt", NoneType](Int(bIntSlot), ctx, value)
+def mgp_int_cache[bIntSlot: UInt64](ctx: StateContext, value: Int):
+    ctx.cache_int(Int(bIntSlot), value)
 
 
 @register_internal("mgp.int.get_cached")
 @no_inline
-def mgp_int_get_cached(ctx: StateContextRef, buffer_slot: Int) -> Int:
-    return external_call["MGP_RT_GetCachedInt", Int](
-        buffer_slot,
-        ctx,
-    )
+def mgp_int_get_cached(ctx: StateContext, buffer_slot: Int) -> Int:
+    return ctx.get_cached_int(buffer_slot)
 
 
 @register_internal("mgp.buffer.get_size")
@@ -796,6 +765,19 @@ def mgp_device_context_destroy(dev_ctx: DeviceContext) abi("Mojo"):
 @no_inline
 def mgp_sync(ctx: StateContext, dev_ctx: DeviceContext) raises:
     dev_ctx.synchronize()
+
+
+@register_internal("mgp.device_wait")
+@no_inline
+def mgp_device_wait(
+    ctx: StateContext,
+    waiting_dev_ctx: DeviceContext,
+    signaling_dev_ctx: DeviceContext,
+) raises:
+    # Enqueue a one-directional cross-stream dependency: the waiting context's
+    # stream waits for the work already enqueued on the signaling context's
+    # stream. Non-blocking on the host (unlike mgp.sync).
+    waiting_dev_ctx.enqueue_wait_for(signaling_dev_ctx)
 
 
 @register_internal("mgp.debug.print")
@@ -987,9 +969,114 @@ comptime AnyAsyncValueRefPtr = OpaquePointer[MutAnyOrigin]
 # reference to it. Therefore, it is modeled here as an OpaquePointer.
 comptime TensorBufferRefPtr = OpaquePointer[MutAnyOrigin]
 
-# StateContext is a C++ struct. Primitives should always manipulate a reference
-# to it. Therefore, it is modeled here as an OpaquePointer.
-comptime StateContextRef = OpaquePointer[MutAnyOrigin]
+
+# Opaque stand-in for the C++ `M::MLRT::StateContext` type. Mojo never sees the
+# layout of the C++ struct; this only gives the C pointer a distinct pointee
+# type, mirroring how `DeviceContext` uses `_DeviceContextCpp`.
+struct _StateContextCpp:
+    pass
+
+
+# Typed C pointer to the C++ state context. The default `UntrackedOrigin` marks
+# the pointee as living outside the Mojo program (its lifetime is managed by the
+# C++ runtime), mirroring `_DeviceContextPtr`.
+comptime _StateContextPtr[
+    mut: Bool,
+    //,
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
+] = _CPointer[_StateContextCpp, origin]
+
+# `StateContextRef` is the pointer representation passed across the FFI boundary;
+# Mojo never dereferences it directly.
+comptime StateContextRef = _StateContextPtr[mut=True]
+
+
+struct StateContext(ImplicitlyCopyable, RegisterPassable):
+    """A Mojo handle to the C++ `M::MLRT::StateContext`.
+
+    Wraps a C pointer to the C++ state context, mirroring how `DeviceContext`
+    wraps a `_DeviceContextPtr`. Mojo never dereferences the pointer directly;
+    all state-context operations are performed through external calls into the
+    runtime.
+    """
+
+    var _handle: StateContextRef
+
+    @always_inline
+    def __init__(out self, handle: StateContextRef):
+        """Builds the handle from the underlying C pointer.
+
+        Args:
+            handle: The C pointer to the C++ state context.
+        """
+        self._handle = handle
+
+    @always_inline
+    def cache_int(self, slot: Int, value: Int):
+        """Caches an integer value in the state slot at the given index.
+
+        Args:
+            slot: The index of the state slot to write.
+            value: The integer value to cache.
+        """
+        external_call["MGP_RT_SetCachedInt", NoneType](
+            slot, self._handle, value
+        )
+
+    @always_inline
+    def get_cached_int(self, slot: Int) -> Int:
+        """Returns the integer value cached in the state slot at the given index.
+
+        Args:
+            slot: The index of the state slot to read.
+
+        Returns:
+            The cached integer value.
+        """
+        return external_call["MGP_RT_GetCachedInt", Int](slot, self._handle)
+
+    @always_inline
+    def get_cached_buffer(
+        self, slot: Int
+    ) -> Tuple[MutByteBuffer, TensorBufferRefPtr]:
+        """Returns a reference to the buffer cached in the given state slot.
+
+        Args:
+            slot: The index of the state slot to read.
+
+        Returns:
+            A tuple of the buffer view and the underlying tensor-buffer-ref
+            handle.
+        """
+        var buffer_size: UInt64 = 0
+        var buffer_data = Optional[OpaquePointer[MutAnyOrigin]]()
+
+        var buffer_ref = external_call[
+            "TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr
+        ](
+            slot,
+            self._handle,
+            UnsafePointer(to=buffer_size),
+            UnsafePointer(to=buffer_data),
+        )
+
+        var buffer = MutByteBuffer(
+            buffer_data.unsafe_value().bitcast[Int8](),
+            Index(buffer_size),
+        )
+
+        return {buffer, buffer_ref}
+
+    @always_inline
+    def remove_cached_buffer(self, slot: Int):
+        """Removes the buffer cached in the state slot at the given index.
+
+        Args:
+            slot: The index of the state slot to clear.
+        """
+        external_call["TMP_MGP_RT_RemoveCachedBuffer", NoneType](
+            slot, self._handle
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1066,18 +1153,6 @@ struct MoggAsyncPackHelper:
         Calls create_tensor_spec_async to handle the packing.
         """
         create_tensor_spec_async(data, async_ptr)
-
-    def __init__(
-        out self,
-        data: MutByteBuffer,
-        device_ctx_ptr: DeviceContext,
-        async_ptr: AnyAsyncValueRefPtr,
-    ):
-        """
-        Packs a MutByteBuffer into the asynchronous context.
-        Calls create_buffer_ref_async to handle the packing.
-        """
-        create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
 
     def __init__(
         out self,
@@ -1344,37 +1419,19 @@ def reshape_contiguous_buffer[
 @register_internal("mgp.buffer.get_cached")
 @no_inline
 def mgp_buffer_get_cached(
-    ctx: StateContextRef,
+    ctx: StateContext,
     buffer_slot: Int,
 ) -> Tuple[MutByteBuffer, TensorBufferRefPtr]:
     """
     Get a reference to the cached tensor.
     """
-    var buffer_size: UInt64 = 0
-    var buffer_data = Optional[OpaquePointer[MutAnyOrigin]]()
-
-    var buffer_ref = external_call[
-        "TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr
-    ](
-        buffer_slot,
-        ctx,
-        UnsafePointer(to=buffer_size),
-        UnsafePointer(to=buffer_data),
-    )
-
-    var buffer = MutByteBuffer(
-        buffer_data.unsafe_value().bitcast[Int8](),
-        Index(buffer_size),
-    )
-    var res = Tuple[MutByteBuffer, TensorBufferRefPtr](buffer, buffer_ref)
-
-    return res
+    return ctx.get_cached_buffer(buffer_slot)
 
 
 @register_internal("mgp.buffer.remove_cached")
 @no_inline
-def mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: Int):
-    external_call["TMP_MGP_RT_RemoveCachedBuffer", NoneType](buffer_slot, ctx)
+def mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: Int):
+    ctx.remove_cached_buffer(buffer_slot)
 
 
 @register_internal("mgp.assert")
@@ -1542,22 +1599,20 @@ def foreach[
         ctx: The call context (forward this from the custom operation).
     """
 
-    @parameter
     @always_inline
     def elementwise_fn_wrapper[
         width: Int,
         alignment: Int = 1,
-    ](index: Coord) capturing:
+    ](index: Coord) {var}:
         var idx = coord_to_index_list(index)
         var val = func[width, alignment](rebind[IndexList[tensor.rank]](idx))
         tensor._fused_store[element_alignment=alignment](index, val)
 
     std.algorithm.functional.elementwise[
-        elementwise_fn_wrapper,
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](tensor.shape_coord(), ctx)
+    ](elementwise_fn_wrapper, tensor.shape_coord(), ctx)
 
 
 @register_internal("mogg.elemwise_for_each")
@@ -1755,18 +1810,16 @@ def foreach_out_func[
         ctx: The call context (forward this from the custom operation).
     """
 
-    @parameter
     @always_inline
-    def out_func_shim[_width: Int, _alignment: Int = 1](index: Coord) capturing:
+    def out_func_shim[_width: Int, _alignment: Int = 1](index: Coord) {var}:
         idx = rebind[IndexList[rank]](coord_to_index_list(index))
         out_func[_width](idx)
 
     std.algorithm.functional.elementwise[
-        out_func_shim,
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](tensor.shape_coord(), ctx)
+    ](out_func_shim, tensor.shape_coord(), ctx)
 
 
 # TensorCopy intrinsic used by view kernels.

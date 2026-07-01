@@ -45,8 +45,6 @@ from .stack_allocation import stack_allocation
 from .owned_pointer import OwnedPointer
 from .pointer import (
     AddressSpace,
-    _GPUAddressSpace,
-    GPUAddressSpace,
     ImmutPointer,
     MutPointer,
     Pointer,

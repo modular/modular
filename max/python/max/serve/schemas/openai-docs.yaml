@@ -497,7 +497,7 @@ paths:
                       "content": "Who won the world series in 2020?"
                     },
                 ],
-                max_tokens=100
+                max_completion_tokens=100
             )
 
             print(completion.choices[0].message.content)
@@ -513,7 +513,7 @@ paths:
                     "content": "Who won the world series in 2020?"
                   }
                 ],
-                "max_tokens": 100
+                "max_completion_tokens": 100
               }'
       requestBody:
         required: true
@@ -529,7 +529,7 @@ paths:
                   messages:
                     - role: "user"
                       content: "Who won the world series in 2020?"
-                  max_tokens: 100
+                  max_completion_tokens: 100
               streaming:
                 summary: Streaming chat completion
                 value:
@@ -540,7 +540,7 @@ paths:
                     - role: "user"
                       content: "Write a short poem about AI."
                   stream: true
-                  max_tokens: 100
+                  max_completion_tokens: 100
               withTools:
                 summary: Chat completion with tools
                 value:
@@ -562,7 +562,7 @@ paths:
                               type: "string"
                           required: ["location"]
                   tool_choice: "auto"
-                  max_tokens: 100
+                  max_completion_tokens: 100
               jsonResponse:
                 summary: Chat completion with JSON response format
                 value:
@@ -574,7 +574,7 @@ paths:
                       content: "Generate a JSON object with name, age, and occupation fields"
                   response_format:
                     type: "json_object"
-                  max_tokens: 100
+                  max_completion_tokens: 100
               withImage:
                 summary: Chat completion with image
                 value:
@@ -595,7 +595,7 @@ paths:
                           }
                         }
                       ]
-                  max_tokens: 300
+                  max_completion_tokens: 300
       responses:
         '200':
           description: OK
@@ -743,7 +743,10 @@ paths:
                           tokens: null
                           top_logprobs: []
                     system_fingerprint: null
-                    usage: null
+                    usage:
+                      prompt_tokens: 5
+                      completion_tokens: 36
+                      total_tokens: 41
                 withLogprobs:
                   summary: Completion response with logprobs
                   value:
@@ -1075,8 +1078,29 @@ components:
         max_tokens:
           type: integer
           minimum: 1
+          deprecated: true
           description: |
             The maximum number of tokens to generate in the chat completion.
+        max_completion_tokens:
+          type: integer
+          minimum: 1
+          description: |
+            The maximum number of tokens to generate in the chat completion.
+            Preferred alias for `max_tokens`. If both are supplied,
+            `max_completion_tokens` takes precedence (no error is raised).
+        thinking:
+          type: object
+          required:
+            - type
+          description: |
+            Controls model reasoning, translated to the chat template's thinking
+            flags. The effect is model-dependent: only models whose chat
+            template reads these flags honor it.
+          properties:
+            type:
+              type: string
+              enum: [enabled, disabled, adaptive]
+              description: The reasoning mode.
         logprobs:
           type: boolean
           description: |
@@ -1131,9 +1155,12 @@ components:
       properties:
         role:
           type: string
-          enum: [system, user, assistant, developer, function]
+          enum: [system, user, assistant, developer, function, tool, root]
           description: |
-            The role of the message author.
+            The role of the message author. Use `tool` for a message that
+            carries the result of a tool call (paired with `tool_call_id`).
+            `root` is a model-gated vendor role accepted only when the model's
+            tokenizer enables it.
         content:
           oneOf:
             - type: string
@@ -1141,7 +1168,7 @@ components:
                 The content of the message as a string.
             - type: array
               description: |
-                The content of the message as an array of content parts. For user messages, content parts can be of type text or image_url.
+                The content of the message as an array of content parts. For user messages, content parts can be of type text, image_url, or video_url.
               items:
                 oneOf:
                   - type: object
@@ -1174,6 +1201,17 @@ components:
                             type: string
                             description: |
                               Either a URL of the image or a base64 encoded image with the data-uri scheme.
+                          detail:
+                            type: string
+                            description: |
+                              Optional quality tier. Mutually exclusive with
+                              max_long_side_pixel.
+                          max_long_side_pixel:
+                            type: integer
+                            minimum: 1
+                            description: |
+                              Optional sizing hint. Downscale the image so its
+                              longest side is at most this many pixels.
                   - type: object
                     required:
                       - type
@@ -1192,10 +1230,62 @@ components:
                             type: string
                             description: |
                               Either a URL of the video or the base64 encoded video data.
+                          fps:
+                            type: number
+                            exclusiveMinimum: 0
+                            description: |
+                              Optional sampling hint. Frames per second to
+                              sample the video at.
+                          max_frames:
+                            type: integer
+                            minimum: 1
+                            description: |
+                              Optional sampling hint. Maximum number of frames
+                              to sample from the video.
+                          detail:
+                            type: string
+                            description: |
+                              Optional quality tier. Mutually exclusive with
+                              max_long_side_pixel.
+                          max_long_side_pixel:
+                            type: integer
+                            minimum: 1
+                            description: |
+                              Optional sizing hint. Downscale the video so its
+                              longest side is at most this many pixels.
         name:
           type: string
           description: |
             The name of the author of this message.
+        tool_call_id:
+          type: string
+          description: |
+            For a `tool` role message, the ID of the tool call this message
+            responds to. Must match an `id` from a prior assistant message's
+            `tool_calls`; a missing, mismatched, or incomplete set of tool
+            replies is rejected with a 400 error.
+        tool_calls:
+          type: array
+          description: |
+            Tool calls generated by the model on an `assistant` message. Echo
+            them back unchanged in the follow-up request, each paired with a
+            `tool` role message whose `tool_call_id` matches the call's `id`.
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+                enum: [function]
+              function:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  arguments:
+                    type: string
+                    description: JSON-encoded string of the call arguments.
 
     ChatCompletionTool:
       type: object
@@ -1215,7 +1305,12 @@ components:
       properties:
         name:
           type: string
-          description: The name of the function to be called
+          maxLength: 64
+          description: |
+            The name of the function to be called. Must be at most 64
+            characters. The default character set is `[a-zA-Z0-9_-]`; some model
+            parsers widen it to allow dotted or namespaced names (for example,
+            `my-tool.v2`).
         description:
           type: string
           description: A description of what the function does
@@ -1617,6 +1712,16 @@ components:
         total_tokens:
           type: integer
           description: Total number of tokens used in the request (prompt + completion)
+        completion_tokens_details:
+          type: object
+          description: |
+            Breakdown of the generated completion tokens.
+          properties:
+            reasoning_tokens:
+              type: integer
+              description: |
+                Tokens generated as model reasoning (chain of thought).
+                Populated for reasoning models; otherwise 0.
 
     ErrorResponse:
       type: object

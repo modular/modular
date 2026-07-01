@@ -28,6 +28,10 @@ from internal_utils import arg_parse
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
 from nn.topk import _top_k_cpu, _topk_gpu, _topk_topp_sampling_fi, topk_gpu
+from nn.topk_bitonic import (
+    PERSISTENT_TOPK_MAX_N,
+    persistent_topk_block,
+)
 from std.testing import assert_almost_equal, assert_equal
 
 from std.utils import IndexList
@@ -559,12 +563,12 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
 
 
 def main() raises:
-    var N = arg_parse("N", -1)
-    var K = arg_parse("K", -1)
+    var N = arg_parse("N", 1024)
+    var K = arg_parse("K", 50)
     var block_size = arg_parse("block_size", 256)
-    var batch_size = arg_parse("batch_size", -1)
+    var batch_size = arg_parse("batch_size", 8)
     var num_blocks_per_input = arg_parse("num_blocks_per_input", 0)
-    var fill_fn_name = arg_parse("fill_fn_name", "fill_random")
+    var fill_fn_name = arg_parse("fill_fn_name", "fill_iota")
 
     comptime dtype = get_defined_dtype["dtype", DType.float32]()
     comptime rank = get_defined_int["rank", 2]()
@@ -574,6 +578,7 @@ def main() raises:
     comptime use_fi = get_defined_bool["USE_FI_TOPK_KERNEL", False]()
 
     var m = Bench()
+    m.config.show_progress = False
     with DeviceContext() as ctx:
         var test_case = TestCase[_sampling=sampling, _largest=largest](
             N=N,
@@ -591,3 +596,174 @@ def main() raises:
             )
 
     m.dump_report()
+
+    bench_dispatch_all()
+
+
+from std.benchmark import BenchConfig
+from nn.topk import fused_token_sampling_gpu
+
+
+def bench_dispatch[
+    dtype: DType, max_k: Int
+](mut b: Bench, ctx: DeviceContext, batch_size: Int, N: Int) raises:
+    var buf0 = ctx.enqueue_create_buffer[dtype](batch_size * N)
+    var buf1 = ctx.enqueue_create_buffer[dtype](batch_size * N)
+    var buf2 = ctx.enqueue_create_buffer[dtype](batch_size * N)
+    var buf3 = ctx.enqueue_create_buffer[dtype](batch_size * N)
+    buf0.enqueue_fill(Scalar[dtype](0.01))
+    buf1.enqueue_fill(Scalar[dtype](0.02))
+    buf2.enqueue_fill(Scalar[dtype](0.03))
+    buf3.enqueue_fill(Scalar[dtype](0.04))
+
+    comptime out_k = 1 if max_k == -1 else max_k
+    var out_buf = ctx.enqueue_create_buffer[DType.int32](batch_size * out_k)
+    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    seed_buf.enqueue_fill(UInt64(42))
+    ctx.synchronize()
+
+    var out_tt = TileTensor(out_buf, row_major(batch_size, out_k))
+    var seed_tt = TileTensor(seed_buf, row_major(batch_size))
+    var seed_imm = seed_tt.as_unsafe_any_origin().as_immut()
+
+    comptime regime = "gumbel" if max_k == -1 else (
+        "topk_lt32" if max_k < 32 else "topk_ge32"
+    )
+    var label = (
+        String(regime)
+        + "_b"
+        + String(batch_size)
+        + "_v"
+        + String(N)
+        + "_k"
+        + String(max_k)
+    )
+    var iter0 = 0
+
+    @parameter
+    @always_inline
+    def do_bench(mut bb: Bencher) raises:
+        @always_inline
+        def launch(
+            dctx: DeviceContext,
+        ) raises {
+            read buf0,
+            read buf1,
+            read buf2,
+            read buf3,
+            read out_tt,
+            read seed_imm,
+            read batch_size,
+            read N,
+            mut iter0,
+        }:
+            var r = iter0 % 4
+            var in_imm = (
+                TileTensor(
+                    buf0 if r
+                    == 0 else (buf1 if r == 1 else (buf2 if r == 2 else buf3)),
+                    row_major(batch_size, N),
+                )
+                .as_unsafe_any_origin()
+                .as_immut()
+            )
+            fused_token_sampling_gpu(
+                dctx,
+                max_k,
+                Float32(1.0),
+                in_imm,
+                out_tt,
+                seed=seed_imm,
+            )
+            iter0 += 1
+
+        bb.iter_custom(launch, ctx)
+
+    b.bench_function[do_bench](BenchId(label))
+
+    _ = buf0^
+    _ = buf1^
+    _ = buf2^
+    _ = buf3^
+    _ = out_buf^
+    _ = seed_buf^
+
+
+def bench_dispatch_all() raises:
+    comptime dtype = DType.float32
+    var batch_sizes = [1, 8, 32, 128]
+    var vocab_sizes = [32000, 128000]
+
+    with DeviceContext() as ctx:
+        var b = Bench()
+        b.config.max_iters = 1000
+        b.config.show_progress = False
+        for bs in batch_sizes:
+            for v in vocab_sizes:
+                bench_dispatch[dtype, -1](b, ctx, bs, v)
+                bench_dispatch[dtype, 20](b, ctx, bs, v)
+                bench_dispatch[dtype, 50](b, ctx, bs, v)
+
+        # Bitonic sort top-k (MLA indexer shape: k = N = 2048).
+        bench_bitonic_topk(b, ctx)
+
+        print()
+        b.dump_report()
+
+
+def bench_bitonic_topk(mut b: Bench, ctx: DeviceContext) raises:
+    """Benchmark persistent_topk_block at the MLA indexer shape (N=K=2048).
+
+    Uses the Bench harness so results appear in the same table as the
+    existing topk_gpu entries for easy side-by-side comparison.
+    """
+    comptime dtype = DType.float32
+    var batch_size = 1
+    var N = PERSISTENT_TOPK_MAX_N  # 2048
+    var K = N
+
+    var scores_buf = ctx.enqueue_create_buffer[dtype](batch_size * N)
+    var idxs_buf = ctx.enqueue_create_buffer[DType.int32](batch_size * K)
+    # Fill scores with a non-trivial pattern so the sort is exercised.
+    var scores_tt = TileTensor(scores_buf, row_major(batch_size, N))
+    scores_buf.enqueue_fill(Scalar[dtype](0.5))
+    ctx.synchronize()
+
+    @parameter
+    @always_inline
+    @__copy_capture(scores_tt, idxs_buf)
+    def bench_fn(mut bb: Bencher):
+        @parameter
+        @always_inline
+        def launch(dctx: DeviceContext) raises:
+            persistent_topk_block(
+                dctx,
+                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                    scores_tt.ptr
+                ),
+                rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+                    idxs_buf.unsafe_ptr()
+                ),
+                N,
+                K,
+                batch_size,
+            )
+
+        bb.iter_custom[launch](ctx)
+
+    b.bench_function[bench_fn](
+        BenchId(
+            String(
+                "topk_gpu_bitonic",
+                "/N=",
+                N,
+                "/K=",
+                K,
+                "/batch_size=",
+                batch_size,
+            )
+        )
+    )
+
+    _ = scores_buf
+    _ = idxs_buf

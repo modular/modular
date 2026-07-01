@@ -144,15 +144,24 @@ def run_mha_prefill_v2[
             @parameter
             @always_inline
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                var q_ptr: UnsafePointer[
-                    Scalar[DType.bfloat16], ImmutAnyOrigin
-                ] = cb_q.offset_ptr(iteration).bitcast[Scalar[DType.bfloat16]]()
-                var k_ptr: UnsafePointer[
-                    Scalar[DType.bfloat16], ImmutAnyOrigin
-                ] = cb_k.offset_ptr(iteration).bitcast[Scalar[DType.bfloat16]]()
-                var v_ptr: UnsafePointer[
-                    Scalar[DType.bfloat16], ImmutAnyOrigin
-                ] = cb_v.offset_ptr(iteration).bitcast[Scalar[DType.bfloat16]]()
+                var q_ptr = (
+                    cb_q.offset_ptr(iteration)
+                    .bitcast[Scalar[DType.bfloat16]]()
+                    .as_immutable()
+                    .as_unsafe_any_origin()
+                )
+                var k_ptr = (
+                    cb_k.offset_ptr(iteration)
+                    .bitcast[Scalar[DType.bfloat16]]()
+                    .as_immutable()
+                    .as_unsafe_any_origin()
+                )
+                var v_ptr = (
+                    cb_v.offset_ptr(iteration)
+                    .bitcast[Scalar[DType.bfloat16]]()
+                    .as_immutable()
+                    .as_unsafe_any_origin()
+                )
                 var q_tt = TileTensor(
                     q_ptr,
                     row_major(
@@ -197,32 +206,23 @@ def run_mha_prefill_v2[
                         )
                     ),
                 )
-                var k_lt = k_tt.to_layout_tensor()
                 var k_op = LayoutTensorMHAOperand(
-                    LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
-                        k_lt.ptr,
-                        RuntimeLayout[k_lt.layout].row_major(
-                            k_lt.runtime_layout.shape.value.canonicalize()
-                        ),
-                    )
+                    k_tt.as_immut().as_unsafe_any_origin()
                 )
-                var v_lt = v_tt.to_layout_tensor()
                 var v_op = LayoutTensorMHAOperand(
-                    LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
-                        v_lt.ptr,
-                        RuntimeLayout[v_lt.layout].row_major(
-                            v_lt.runtime_layout.shape.value.canonicalize()
-                        ),
-                    )
+                    v_tt.as_immut().as_unsafe_any_origin()
                 )
                 comptime if sink:
                     # Launcher infers `sink_weights_ptr`'s dtype from
                     # `q.dtype` (literal BF16 here), so the cast must
                     # land on `Scalar[DType.bfloat16]` — generic
                     # `Scalar[qkv_type]` won't unify even when equal.
-                    var sw_ptr: UnsafePointer[
-                        Scalar[DType.bfloat16], ImmutAnyOrigin
-                    ] = sw_buf.unsafe_ptr().bitcast[Scalar[DType.bfloat16]]()
+                    var sw_ptr = (
+                        sw_buf.unsafe_ptr()
+                        .bitcast[Scalar[DType.bfloat16]]()
+                        .as_unsafe_any_origin()
+                        .as_immutable()
+                    )
                     mha_prefill_v2[
                         _config,
                         sink=True,

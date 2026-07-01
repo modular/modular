@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Generic
 import numpy as np
 import numpy.typing as npt
 from max.driver import (
+    CPU,
     Buffer,
     Device,
     DevicePinnedBuffer,
@@ -87,6 +88,7 @@ from ..interfaces import (
     PipelineModelWithKVCache,
 )
 from ..interfaces.generate import GenerateMixin
+from ..memory_estimation import _MemoryPlan
 from ..utils import CompilationTimer
 
 logger = logging.getLogger("max.pipelines")
@@ -141,6 +143,7 @@ class TextGenerationPipeline(
             npt.NDArray[np.integer[Any]],
             TextGenerationRequest,
         ],
+        memory_plan: _MemoryPlan,
     ) -> None:
         """Initialize a text generation pipeline instance.
 
@@ -154,6 +157,8 @@ class TextGenerationPipeline(
                 one or to seed the EOS set.
             weight_adapters: Mapping from weights format to adapter implementation.
             tokenizer: Tokenizer implementation used to build contexts and decode.
+            memory_plan: Memory plan from the registry containing max_batch_size
+                and other resolved memory parameters.
 
         Raises:
             ValueError: If ``quantization_encoding`` is not configured in
@@ -161,6 +166,8 @@ class TextGenerationPipeline(
                 requested without a valid tokenizer delegate.
         """
         self._pipeline_config = pipeline_config
+        self._max_batch_size = memory_plan.max_batch_size
+        max_batch_size = memory_plan.max_batch_size
         model_config: MAXModelConfig = pipeline_config.model
         huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
@@ -189,6 +196,7 @@ class TextGenerationPipeline(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
             pipeline_config.runtime.tool_parser,
+            pipeline_config.sampling.structured_output_backend,
         )
         self.vocab_size = self._structured_output.vocab_size
 
@@ -220,17 +228,27 @@ class TextGenerationPipeline(
             return_logits=ReturnLogits.ALL
             if self._pipeline_config.model.enable_echo
             else ReturnLogits.LAST_TOKEN,
+            max_batch_size=max_batch_size,
         )
 
         available_cache_memory = model_config.kv_cache._available_cache_memory
         kv_params = self._pipeline_model.kv_params
         self._kv_manager = load_kv_manager(
             params=kv_params,
-            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_batch_size=max_batch_size,
             max_seq_len=self._pipeline_model.max_seq_len,
             session=session,
             available_cache_memory=available_cache_memory,
         )
+
+        # Device the sampler runs on. ``sample_on_host`` routes sampling to the
+        # host CPU.
+        self._sampler_device: Device = (
+            CPU()
+            if pipeline_config.sampling.sample_on_host
+            else self._devices[0]
+        )
+        sampler_device_ref = DeviceRef.from_device(self._sampler_device)
 
         # Load sampler. The bitmask-aware sampler is loaded when constrained
         # decoding could fire (see ``needs_bitmask_constraints``).
@@ -241,12 +259,12 @@ class TextGenerationPipeline(
             if pipeline_config.needs_bitmask_constraints:
                 with_bitmask_graph = token_sampler(
                     pipeline_config.sampling,
-                    device=DeviceRef.from_device(self._devices[0]),
+                    device=sampler_device_ref,
                     needs_bitmask_input=True,
                 )
             without_bitmask_graph = token_sampler(
                 pipeline_config.sampling,
-                device=DeviceRef.from_device(self._devices[0]),
+                device=sampler_device_ref,
                 needs_bitmask_input=False,
             )
             sampler_timer.mark_build_complete()
@@ -262,22 +280,25 @@ class TextGenerationPipeline(
         self._pinned_new_tokens: Buffer | None = None
         if (
             pipeline_config.needs_bitmask_constraints
-            and not self._devices[0].is_host
+            and not self._sampler_device.is_host
             and not is_virtual_device_mode()
         ):
-            max_batch_size = pipeline_config.runtime.max_batch_size
-            assert max_batch_size is not None, "max_batch_size must be set"
             self._pinned_new_tokens = DevicePinnedBuffer(
                 shape=(max_batch_size,),
                 dtype=DType.int64,
-                device=self._devices[0],
+                device=self._sampler_device,
             )
 
         self._identity_logit_offsets = (
             FusedSamplingProcessor.allocate_identity_logit_offsets(
-                pipeline_config, self._devices[0]
+                pipeline_config, self._sampler_device, max_batch_size
             )
         )
+
+    @property
+    def max_batch_size(self) -> int:
+        """Maximum number of requests that can be processed in a single batch."""
+        return self._max_batch_size
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -346,7 +367,6 @@ class TextGenerationPipeline(
     def prepare_batch(
         self,
         batches: list[list[TextGenerationContextType]],
-        num_steps: int,
     ) -> tuple[
         Any,
         npt.NDArray[np.int32] | None,
@@ -360,7 +380,6 @@ class TextGenerationPipeline(
 
         Args:
             batches: Per-replica list of contexts.
-            num_steps: Number of decode steps reserved in the KV cache.
 
         Returns:
             A tuple of:
@@ -386,9 +405,7 @@ class TextGenerationPipeline(
                 self.update_for_structured_output(context, bitmask, i)
 
         # Retrieve the KV Cache Inputs.
-        kv_cache_inputs = self._kv_manager.runtime_inputs(
-            replica_batches, num_steps
-        )
+        kv_cache_inputs = self._kv_manager.runtime_inputs(replica_batches)
 
         # Log batch details
         if self.batch_info_output_fname is not None:
@@ -460,18 +477,8 @@ class TextGenerationPipeline(
         Executes the graph for a single decode step, samples the next token,
         then decodes and returns the generated tokens.
         """
-        if inputs.num_steps > 1:
-            raise ValueError(
-                f"num_steps > 1 is not supported by the text generation pipeline, "
-                f"got {inputs.num_steps}."
-            )
-
-        device0 = self._devices[0]
-        pinned = not device0.is_host
         # Prepare the batch.
-        model_inputs, bitmask, flat_batch = self.prepare_batch(
-            inputs.batches, inputs.num_steps
-        )
+        model_inputs, bitmask, flat_batch = self.prepare_batch(inputs.batches)
 
         batch_processors: list[BatchLogitsProcessor] = []
         if len(flat_batch) > 0:
@@ -491,8 +498,7 @@ class TextGenerationPipeline(
                     sampler=sampler,
                     pipeline_config=self._pipeline_config,
                     context_batch=flat_batch,
-                    num_steps=1,
-                    device=device0,
+                    device=self._sampler_device,
                     pinned_new_tokens=self._pinned_new_tokens,
                     identity_logit_offsets=self._identity_logit_offsets,
                     bitmask=bitmask,
@@ -564,24 +570,27 @@ class TextGenerationPipeline(
         if len(flat_batch) == 0:
             return {}
 
-        # Do the copy to host for each token generated.
+        # Do the copy to host for each token generated. The sampler output
+        # lives on the sampler device (the model device, or the host CPU when
+        # ``sample_on_host`` is set), so stage the D2H copy from there.
+        sampler_device = self._sampler_device
         with Tracer("d2h_generated_tokens"):
             generated_tokens_device = sampling_processor.generated_tokens
             # Allocate a pinned tensor on the host for faster async d2h transfer
-            # speeds. If the model is on host, then fall back to normal pageable
-            # memory.
+            # speeds. If the sampler is on host, then fall back to normal
+            # pageable memory.
             # Note that we do not want to use `DevicePinnedBuffer` here.
             generated_tokens_host = Buffer(
                 shape=generated_tokens_device.shape,
                 dtype=generated_tokens_device.dtype,
-                device=device0,
-                pinned=pinned,
+                device=sampler_device,
+                pinned=not sampler_device.is_host,
             )
             generated_tokens_host.inplace_copy_from(generated_tokens_device)
             # We assume that the call to `.to_numpy()` will insert a device
             # synchronize to guarantee that the async d2h transfer is done.
             # However, if this API changes we will have to add an explicit
-            # device0.synchronize() here.
+            # sampler_device.synchronize() here.
             generated_tokens_np = generated_tokens_host.to_numpy()
 
         res = update_context_and_prepare_responses(

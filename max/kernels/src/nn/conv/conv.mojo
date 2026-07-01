@@ -114,7 +114,12 @@ from linalg.utils import partition_work
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.sys import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
+from std.sys import (
+    has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
+    has_apple_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+)
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -1103,11 +1108,11 @@ struct ConvDirectNHWC[
         prefetch_offset: Int,
     ](
         self,
-        input_base_offsets: TileTensor[DType.int32, ...],
+        input_base_offsets: TileTensor[mut=False, DType.int32, ...],
         input_offset: Int,
         c_tile_size: Int,
-        input: UnsafePointer[Scalar[Self.input_type], ...],
-        filter: UnsafePointer[Scalar[Self.filter_type], ...],
+        input: UnsafePointer[mut=False, Scalar[Self.input_type], ...],
+        filter: UnsafePointer[mut=False, Scalar[Self.filter_type], ...],
         mut acc: _Accumulator[
             Self.output_type,
             micro_kernel_height,
@@ -2020,10 +2025,10 @@ def accumulate_wo_tile_1d[
     c_tile_size: Int,
     S: Int,
     mut acc: _Accumulator,
-    input: UnsafePointer[Scalar[input_dt], ...],
+    input: UnsafePointer[mut=False, Scalar[input_dt], ...],
     input_stride: Int,
     input_stride_to_nbr: Int,
-    filter: UnsafePointer[Scalar[filter_dt], ...],
+    filter: UnsafePointer[mut=False, Scalar[filter_dt], ...],
     filter_stride: Int,
     filter_stride_to_nbr: Int,
     partial_load_filter_size: Int,
@@ -2209,10 +2214,10 @@ def accumulate_wo_tile_2d[
     c_tile_size: Int,
     RS: IndexList[2],
     mut acc: _Accumulator,
-    input: UnsafePointer[Scalar[input_dt], ...],
+    input: UnsafePointer[mut=False, Scalar[input_dt], ...],
     input_stride: Int,
     input_stride_to_nbr: IndexList[2],
-    filter: UnsafePointer[Scalar[filter_dt], ...],
+    filter: UnsafePointer[mut=False, Scalar[filter_dt], ...],
     filter_stride: Int,
     filter_stride_to_nbr: IndexList[2],
     partial_load_filter_size: Int,
@@ -2266,8 +2271,8 @@ def conv2d_update_wo_tile[
     elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     output: UnsafePointer[mut=True, Scalar[output_dt], ...],
-    input: UnsafePointer[Scalar[input_dt], ...],
-    filter: UnsafePointer[Scalar[filter_dt], ...],
+    input: UnsafePointer[mut=False, Scalar[input_dt], ...],
+    filter: UnsafePointer[mut=False, Scalar[filter_dt], ...],
     first_c_tile: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -2389,10 +2394,10 @@ def accumulate_wo_tile_3d[
     c_tile_size: Int,
     QRS: IndexList[3],
     mut acc: _Accumulator,
-    input: UnsafePointer[Scalar[input_dt], ...],
+    input: UnsafePointer[mut=False, Scalar[input_dt], ...],
     input_stride: Int,
     input_stride_to_nbr: IndexList[3],
-    filter: UnsafePointer[Scalar[filter_dt], ...],
+    filter: UnsafePointer[mut=False, Scalar[filter_dt], ...],
     filter_stride: Int,
     filter_stride_to_nbr: IndexList[3],
     partial_load_filter_size: Int,
@@ -2993,18 +2998,20 @@ def conv_shape[
     dilations_type: DType,
     paddings_type: DType,
 ](
-    input_buf: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
+    input_buf: TileTensor[
+        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
     filter_buf: TileTensor[
-        filter_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
     ],
     strides_buf: TileTensor[
-        strides_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, strides_type, address_space=AddressSpace.GENERIC, ...
     ],
     dilations_buf: TileTensor[
-        dilations_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, dilations_type, address_space=AddressSpace.GENERIC, ...
     ],
     paddings_buf: TileTensor[
-        paddings_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, paddings_type, address_space=AddressSpace.GENERIC, ...
     ],
     num_groups_scalar: Scalar,
 ) raises -> IndexList[input_buf.flat_rank]:
@@ -3085,6 +3092,16 @@ def conv_shape[
         var input_spatial_dim = input_lt.dim(i)
         var filter_spatial_dim = filter_lt.dim(i - 1)
 
+        # Zero input spatial -> zero output spatial.  Strided convs over a
+        # zero-spatial input would otherwise compute a negative
+        # ``output_spatial_dim`` (e.g. ``1 + (0 + 0 - 3) // 2 = -1`` for a
+        # 3x3 stride=2 pad=0 downsample) and trip the positivity check
+        # below; short-circuit here so the encoder can run unconditionally
+        # on an empty placeholder image.
+        if input_spatial_dim == 0:
+            output_shape[i] = 0
+            continue
+
         var output_spatial_dim = get_sliding_window_out_dim(
             input_spatial_dim,
             filter_spatial_dim,
@@ -3118,8 +3135,12 @@ def conv_nhwc_direct[
     has_epilogue_fusion: Bool,
     elementwise_lambda: elementwise_simd_epilogue_type,
 ](
-    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
-    filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    filter: TileTensor[
+        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
+    ],
     output: TileTensor[
         mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
@@ -3347,12 +3368,21 @@ def check_cudnn_error(stat: cudnnStatus_t) raises:
 
 
 struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
+    @__allow_legacy_any_origin_fields
     var ptr_handle: UnsafePointer[cudnnContext, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_conv_desc: UnsafePointer[
         cudnnConvolutionStruct, AnyOrigin[mut=True]
     ]
+
+    @__allow_legacy_any_origin_fields
     var ptr_output_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
 
     def __init__(out self) raises:
@@ -3467,12 +3497,21 @@ def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
 
 
 struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
+    @__allow_legacy_any_origin_fields
     var ptr_handle: UnsafePointer[cudnnContext, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct, AnyOrigin[mut=True]]
+
+    @__allow_legacy_any_origin_fields
     var ptr_conv_desc: UnsafePointer[
         cudnnConvolutionStruct, AnyOrigin[mut=True]
     ]
+
+    @__allow_legacy_any_origin_fields
     var ptr_output_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
 
     # Workspace size cache (actual buffer is allocated per-call via ctx)
@@ -3567,8 +3606,8 @@ def _conv_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride_list: IndexList[2],
     dilation_list: IndexList[2],
@@ -3788,8 +3827,8 @@ def conv_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
@@ -3918,8 +3957,8 @@ def _conv_miopen[
     //,
     filter_is_fcrs: Bool = False,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride_list: IndexList[conv_rank],
     dilation_list: IndexList[conv_rank],
@@ -3951,12 +3990,10 @@ def _conv_miopen[
         var R_dim = Int(filter.dim[2]())
         var S_dim = Int(filter.dim[3]())
 
-        @parameter
-        @__copy_capture(filter_frsc_ptr, F_dim, C_dim, R_dim, S_dim)
         @always_inline
         def transpose_fcrs_to_frsc[
             _width: Int, alignment: Int = 1
-        ](coords: Coord):
+        ](coords: Coord) {var}:
             var f = Int(coords[0].value())
             var r = Int(coords[1].value())
             var s = Int(coords[2].value())
@@ -3967,8 +4004,8 @@ def _conv_miopen[
             )
             filter_frsc_ptr.store(out_idx, val)
 
-        elementwise[transpose_fcrs_to_frsc, 1, target="gpu"](
-            (F_dim, R_dim, S_dim, C_dim), ctx
+        elementwise[1, target="gpu"](
+            transpose_fcrs_to_frsc, (F_dim, R_dim, S_dim, C_dim), ctx
         )
         filter_shape[0] = UInt64(F_dim)
         filter_shape[1] = UInt64(C_dim)
@@ -3982,12 +4019,10 @@ def _conv_miopen[
         var C_dim = Int(filter.dim[2]())
         var F_dim = Int(filter.dim[3]())
 
-        @parameter
-        @__copy_capture(filter_frsc_ptr, R_dim, S_dim, C_dim, F_dim)
         @always_inline
         def transpose_rscf_to_frsc[
             _width: Int, alignment: Int = 1
-        ](coords: Coord):
+        ](coords: Coord) {var}:
             var f = Int(coords[0].value())
             var r = Int(coords[1].value())
             var s = Int(coords[2].value())
@@ -3998,8 +4033,8 @@ def _conv_miopen[
             )
             filter_frsc_ptr.store(out_idx, val)
 
-        elementwise[transpose_rscf_to_frsc, 1, target="gpu"](
-            (F_dim, R_dim, S_dim, C_dim), ctx
+        elementwise[1, target="gpu"](
+            transpose_rscf_to_frsc, (F_dim, R_dim, S_dim, C_dim), ctx
         )
 
         filter_shape[0] = UInt64(F_dim)
@@ -4017,12 +4052,10 @@ def _conv_miopen[
         var C_dim = Int(filter.dim[3]())
         var F_dim = Int(filter.dim[4]())
 
-        @parameter
-        @__copy_capture(filter_frsc_ptr, Q_dim, R_dim, S_dim, C_dim, F_dim)
         @always_inline
         def transpose_qrscf_to_fqrsc[
             _width: Int, alignment: Int = 1
-        ](coords: Coord):
+        ](coords: Coord) {var}:
             var f = Int(coords[0].value())
             var q = Int(coords[1].value())
             var r = Int(coords[2].value())
@@ -4038,8 +4071,8 @@ def _conv_miopen[
             )
             filter_frsc_ptr.store(out_idx, val)
 
-        elementwise[transpose_qrscf_to_fqrsc, 1, target="gpu"](
-            (F_dim, Q_dim, R_dim, S_dim, C_dim), ctx
+        elementwise[1, target="gpu"](
+            transpose_qrscf_to_fqrsc, (F_dim, Q_dim, R_dim, S_dim, C_dim), ctx
         )
 
         filter_shape[0] = UInt64(F_dim)
@@ -4050,7 +4083,7 @@ def _conv_miopen[
 
     @always_inline
     def image_shape_from_tensor(
-        tensor: TileTensor[...],
+        tensor: TileTensor,
     ) -> InlineArray[UInt64, tensor_rank]:
         # Convert to channels first format.
         var shape = InlineArray[UInt64, tensor_rank](fill=0)
@@ -4260,8 +4293,8 @@ def _conv_miopen[
     maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
     filter_is_fcrs: Bool = False,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride: IndexList[conv_rank],
     dilation: IndexList[conv_rank],
@@ -4290,20 +4323,20 @@ def _conv_miopen[
             ctx,
         )
 
-        @parameter
-        @__copy_capture(output_tmp)
         @always_inline
-        def miopen_epilogue[_width: Int, alignment: Int = 1](coords: Coord):
+        def miopen_epilogue[
+            _width: Int, alignment: Int = 1
+        ](coords: Coord) {var}:
             epilogue(
                 coord_to_index_list(coords),
                 output_tmp.load[width=_width](coords),
             )
 
         elementwise[
-            miopen_epilogue,
             simd_width_of[output_type, target=get_gpu_target()](),
             target="gpu",
         ](
+            miopen_epilogue,
             output.layout.shape_coord(),
             ctx,
         )
@@ -4329,8 +4362,8 @@ def conv_miopen[
     //,
     filter_is_fcrs: Bool = False,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride: IndexList[conv_rank],
     dilation: IndexList[conv_rank],
@@ -4379,6 +4412,15 @@ def conv_gpu[
     comptime output_layout = output_lt.layout
 
     comptime assert conv_rank == input_lt.rank - 2
+
+    # Zero-sized output (e.g. a ``(B, 0, 0, C)`` input flowing through a
+    # diffusion VAE encoder for the text-to-image placeholder): nothing
+    # to compute.  The output buffer is pre-allocated zero-element by
+    # the caller -- an early return produces the correct empty output
+    # and skips downstream dispatch paths that would otherwise build
+    # zero-extent TMA descriptors or launch zero-grid kernels.
+    if output_lt.size() == 0:
+        return
 
     var has_asymmetric_padding = False
     var pad_before = IndexList[conv_rank](0)
@@ -4613,6 +4655,55 @@ def conv_gpu[
                 dispatch_im2col_matmul_conv2d,
             )
 
+            if dispatch_im2col_matmul_conv2d[
+                filter_is_fcrs,
+                maybe_epilogue_func,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[2]](stride),
+                rebind[IndexList[2]](dilation),
+                rebind[IndexList[2]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
+                return
+
+        # Apple M5 (compute_capability == 5): fused online-im2col conv2d.
+        # `dispatch_fused_im2col_conv2d_apple` runs `AppleM5MatMul.run_conv`
+        # (the structured simdgroup-tiled GEMM, 16x16x16 hardware MMA) with the
+        # A operand gathered directly from the NHWC input per MMA-fragment -- the
+        # `[M, K]` im2col matrix is never materialised to global memory. This
+        # eliminates the materialised path's DRAM round-trip, so conv wins across
+        # both compute- and memory-bound regimes (no memory-bound naive guard
+        # needed). The dispatcher self-gates (bf16, groups=1, dilation=1,
+        # kernel > 1x1, K >= 16, N >= 16, compute_capability == 5); on decline
+        # (incl. non-M5) it falls through to the materialised matmul below.
+        # Hardware-agnostic path -- no SM100 TMA / swizzle machinery involved.
+        comptime if has_apple_gpu_accelerator():
+            from nn.conv.gpu.im2col_matmul_2d import (
+                dispatch_fused_im2col_conv2d_apple,
+                dispatch_im2col_matmul_conv2d,
+            )
+
+            if dispatch_fused_im2col_conv2d_apple[
+                filter_is_fcrs,
+                maybe_epilogue_func,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[2]](stride),
+                rebind[IndexList[2]](dilation),
+                rebind[IndexList[2]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
+                return
+
+            # M3/M4 fallback: materialised im2col + `_matmul_gpu` (the Apple
+            # FMA / 8x8 GEMM, no M5-only fragment MMA). Handles FCRS filters.
             if dispatch_im2col_matmul_conv2d[
                 filter_is_fcrs,
                 maybe_epilogue_func,
@@ -4911,6 +5002,16 @@ def conv_gpu[
 
         # Fallback paths for non-SM100, unsupported dtypes, or constraints
         comptime if filter_is_fcrs:
+            # The FCRS-filter fallback runs only on cuDNN (NVIDIA). On any
+            # other GPU, guard here rather than silently entering cuDNN and
+            # failing later with a confusing driver-level error. See MOCO-4172.
+            comptime if not has_nvidia_gpu_accelerator():
+                raise Error(
+                    "conv2d: no GPU kernel for this convolution on this"
+                    " device; the FCRS-filter fallback path is implemented"
+                    " only via cuDNN (NVIDIA)."
+                )
+
             # Construct row-major TileTensors for cuDNN (shared by both
             # epilogue and non-epilogue paths).
             var _in_s = input_lt.runtime_layout.shape.value.canonicalize()
@@ -4977,20 +5078,20 @@ def conv_gpu[
                     ctx,
                 )
 
-                @parameter
-                @__copy_capture(output_tmp_lt)
                 @always_inline
                 def epilogue_wrapper[
                     _width: Int, alignment: Int = 1
-                ](coords: Coord):
+                ](coords: Coord) {var}:
                     comptime align = align_of[SIMD[output_type, _width]]()
                     var idx = rebind[IndexList[4]](coord_to_index_list(coords))
                     vec = output_tmp_lt.load[width=_width](idx)
                     epilogue(idx, vec)
 
-                elementwise[
-                    epilogue_wrapper, simd_width_of[output_type](), target="gpu"
-                ](Coord(output_lt.runtime_layout.shape.value), ctx)
+                elementwise[simd_width_of[output_type](), target="gpu"](
+                    epilogue_wrapper,
+                    Coord(output_lt.runtime_layout.shape.value),
+                    ctx,
+                )
 
                 _ = output_tmp_data^
 
@@ -5364,8 +5465,8 @@ def _conv3d_cudnn_depth_tiled[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride: IndexList[3],
     dilation: IndexList[3],
@@ -5632,8 +5733,8 @@ def _conv3d_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride: IndexList[3],
     dilation: IndexList[3],
@@ -6049,8 +6150,8 @@ def conv3d_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
+    input: TileTensor[mut=False, input_type, ...],
+    filter: TileTensor[mut=False, filter_type, ...],
     output: TileTensor[output_type, ...],
     stride: IndexList[3],
     dilation: IndexList[3],

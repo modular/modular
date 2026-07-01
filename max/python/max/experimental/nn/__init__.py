@@ -22,7 +22,6 @@ Example:
 
 .. code-block:: python
 
-    from max.driver import Accelerator
     from max.dtype import DType
     from max.experimental.tensor import Tensor
     from max.experimental.nn import Module, module_dataclass
@@ -37,17 +36,32 @@ Example:
             return x @ self.weight.T + self.bias
 
     model = MyLayer(weight=Tensor.zeros([10, 5]), bias=Tensor.zeros([10]))
-    model.to(Accelerator())                       # weights to GPU
     y = model(Tensor.ones([3, 5]))                # eager forward
 
     input_type = TensorType(DType.float32, ["batch", 5], device=model.device)
     compiled = model.compile(input_type)          # AOT-compiled model
+    result = compiled(Tensor.ones([3, 5]))        # run the compiled model
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert tuple(int(d) for d in y.shape) == (3, 10)
+    assert tuple(int(d) for d in result.shape) == (3, 10)
+    assert np.allclose(y.to_numpy(), result.to_numpy())
+    assert np.allclose(result.to_numpy(), np.zeros((3, 10)))
 """
 
 from .conv import Conv2d
 from .embedding import Embedding
 from .linear import Linear
-from .module import CompiledModel, Module, PinnedDeviceTensor, module_dataclass
+from .module import (
+    CompiledModel,
+    Module,
+    PinnedDeviceTensor,
+    module_dataclass,
+    subgraphable,
+)
 from .norm import GemmaRMSNorm, GroupNorm, LayerNorm, RMSNorm
 from .rope import RotaryEmbedding, TransposedRotaryEmbedding
 from .sequential import ModuleList, Sequential
@@ -68,4 +82,5 @@ __all__ = [
     "Sequential",
     "TransposedRotaryEmbedding",
     "module_dataclass",
+    "subgraphable",
 ]

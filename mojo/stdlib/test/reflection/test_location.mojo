@@ -236,7 +236,7 @@ def source_loc_with_debug() -> SourceLocation:
     var col: __mlir_type.index
     var file_name: __mlir_type.`!kgen.string`
     line, col, file_name = __mlir_op.`kgen.source_loc`[
-        inlineCount=Int(0)._int_mlir_index(),
+        inlineCount=Int(0).__mlir_index__(),
         _type=Tuple[
             __mlir_type.index,
             __mlir_type.index,

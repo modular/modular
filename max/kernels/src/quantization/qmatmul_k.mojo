@@ -29,6 +29,7 @@ from linalg.utils import partition_work
 from std.memory import (
     alloc,
     bitcast,
+    memcpy,
     stack_allocation,
 )
 
@@ -260,7 +261,7 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 
 def _quantize_a_Q8_K[
     group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
-](a: LayoutTensor[dtype, ...]) -> UnsafePointer[
+](a: LayoutTensor[mut=False, dtype, ...]) -> UnsafePointer[
     _block_Q8_K_packed[group_size], MutUntrackedOrigin
 ]:
     comptime assert a.rank == 2
@@ -550,7 +551,7 @@ def _pack_block_Q6_K[
 
 def matmul_Q4_K_pack_b(
     b_tt: TileTensor[
-        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     b_packed_tt: TileTensor[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
@@ -584,7 +585,7 @@ def matmul_Q4_K_pack_b(
 
 def matmul_Q6_K_pack_b(
     b_tt: TileTensor[
-        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     b_packed_tt: TileTensor[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
@@ -1435,8 +1436,12 @@ def _matmul_Qb_K[
     interleave_group_sums: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
-    b: LayoutTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    a: LayoutTensor[
+        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
+    b: LayoutTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     c: LayoutTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1521,8 +1526,12 @@ def _matmul_Qb_K[
 def matmul_Q4_K[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
-    a_tt: TileTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
-    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    a_tt: TileTensor[
+        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     c_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1547,8 +1556,12 @@ def matmul_Q4_K[
 def matmul_Q6_K[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
-    a_tt: TileTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
-    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    a_tt: TileTensor[
+        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_tt: TileTensor[
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     c_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],

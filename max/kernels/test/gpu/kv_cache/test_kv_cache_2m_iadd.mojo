@@ -54,6 +54,10 @@ def _create_kv_collection_from_host[
     dtype,
     KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
     page_size,
+    kv_block_paged_host.origin,
+    cache_lengths_host.origin,
+    paged_lut_host.origin,
+    MutUntrackedOrigin,
 ]:
     return PagedKVCacheCollection[
         dtype,

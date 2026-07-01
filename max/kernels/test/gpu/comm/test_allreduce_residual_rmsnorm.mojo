@@ -23,7 +23,7 @@ from comm.allreduce_residual_rmsnorm import (
     allreduce_residual_rmsnorm,
     allreduce_rmsnorm,
 )
-from comm.sync import enable_p2p
+from comm.sync import enable_p2p, init_signal_buffer
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import (
     Coord,
@@ -236,7 +236,7 @@ def test_fused_allreduce_rmsnorm_fp8[
                 size_of[Signal]() + temp_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
         rank_sigs[i] = (
             signal_buffers[i]
             .unsafe_ptr()
@@ -329,7 +329,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     # --- Fused kernel path ---
     # Reset signal buffers for the fused kernel run.
     for i in range(ngpus):
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -442,7 +442,7 @@ def test_fused_allreduce_rmsnorm_noquant[
                 size_of[Signal]() + temp_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
         rank_sigs[i] = (
             signal_buffers[i]
             .unsafe_ptr()
@@ -496,7 +496,7 @@ def test_fused_allreduce_rmsnorm_noquant[
 
     # --- Fused kernel path (out_dtype == in_dtype → no quantization) ---
     for i in range(ngpus):
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -600,7 +600,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
                 size_of[Signal]() + temp_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
         rank_sigs[i] = (
             signal_buffers[i]
             .unsafe_ptr()
@@ -703,7 +703,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     # --- Fused kernel path ---
     # Reset signal buffers for the fused kernel run.
     for i in range(ngpus):
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -869,7 +869,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
                 size_of[Signal]() + temp_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
         rank_sigs[i] = (
             signal_buffers[i]
             .unsafe_ptr()
@@ -935,7 +935,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
 
     # --- Fused kernel path (out_dtype == in_dtype → no quantization) ---
     for i in range(ngpus):
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -1166,6 +1166,15 @@ def main() raises:
         ](list_of_ctx)
         test_fused_allreduce_residual_rmsnorm_noquant[
             num_gpus, DType.bfloat16, 8, 8192
+        ](list_of_ctx)
+        # Column-aware-threshold band: on B200 8-GPU the wide-column
+        # (cols >= 6144) residual crossover is ~100 KB per-rank, so this
+        # shape (rows=48, cols=8192 -> ceildiv(48,8)*8192*2 = 96 KB) now
+        # routes to the 1-stage kernel where a flat 80 KB threshold would
+        # have used 2-stage. Locks in correctness of the 1-stage path at the
+        # newly-selected band.
+        test_fused_allreduce_residual_rmsnorm_noquant[
+            num_gpus, DType.bfloat16, 48, 8192
         ](list_of_ctx)
         # 2-stage path (large per-rank payloads), including the persistent
         # row loop.

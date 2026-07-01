@@ -32,6 +32,7 @@ from std.builtin.variadics import _MLIR
 # ===----------------------------------------------------------------------=== #
 
 
+@stable(since="1.0")
 trait AnyType:
     """The most basic trait that all Mojo types extend by default.
 
@@ -130,6 +131,7 @@ trait AnyType:
     pass
 
 
+@deprecated(use=ImplicitlyDeletable)
 comptime ImplicitlyDestructible = ImplicitlyDeletable
 """Deprecated: A trait for types that require lifetime management through destructors.
 
@@ -137,6 +139,7 @@ This trait has been renamed to `ImplicitlyDeletable`. This alias will be removed
 in a future version of Mojo."""
 
 
+@stable(since="1.0")
 trait ImplicitlyDeletable:
     """A trait for types that require lifetime management through destructors.
 
@@ -162,7 +165,7 @@ trait ImplicitlyDeletable:
     ```mojo
     from std.memory.alloc import alloc, dealloc, Layout, Allocation
 
-    struct ResourceOwner(ImplicitlyDestructible):
+    struct ResourceOwner(ImplicitlyDeletable):
         var allocation: Allocation[Int]
 
         def __init__(out self, size: Int):
@@ -181,6 +184,7 @@ trait ImplicitlyDeletable:
     - Use composition to automatically handle nested resource cleanup
     """
 
+    @stable(since="1.0")
     def __del__(deinit self, /):
         """Destroys the instance and cleans up any owned resources.
 

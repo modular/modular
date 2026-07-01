@@ -96,9 +96,8 @@ struct ArgMax:
             # Has no static shape info
 
             # TODO(KERN-1045): Add support for taking advantage of static_shapes
-            var cuda_ctx = ctx
             argmax_gpu(
-                cuda_ctx,
+                ctx,
                 input.to_tile_tensor[DType.int64](),
                 output.to_tile_tensor[DType.int64](),
             )
@@ -131,9 +130,8 @@ struct ArgMin:
                 raise Error("axis other than -1 not supported on GPU")
 
             # TODO(KERN-1045): Add support for taking advantage of static_shapes
-            var cuda_ctx = ctx
             argmin_gpu(
-                cuda_ctx,
+                ctx,
                 input.to_tile_tensor[DType.int64](),
                 output.to_tile_tensor[DType.int64](),
             )
@@ -144,7 +142,7 @@ struct ArgNonZero:
     @staticmethod
     def execute(
         output_buffer: OutputTensor[rank=2, ...],
-        input_buffer: InputTensor[...],
+        input_buffer: InputTensor,
     ) raises:
         arg_nonzero.arg_nonzero(
             input_buffer.to_tile_tensor[DType.int64](),
@@ -166,7 +164,7 @@ struct Mean:
         target: StaticString,
         axis: Int,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -387,7 +385,7 @@ struct ReduceAdd:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -438,7 +436,7 @@ struct ReduceMul:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -489,7 +487,7 @@ struct ReduceMax:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -540,7 +538,7 @@ struct ReduceMin:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[...],
+        output: FusedOutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -670,13 +668,18 @@ struct ReduceRMSNorm:
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
+        # `IndexList` -> `Coord` boundary migration (mirror of softmax,
+        # `Softmax.execute` above). The input fusion lambda takes a `Coord`
+        # (the `_lambda_load` Coord overload erases to `IndexList` internally)
+        # and the shape is passed via `input.shape_coord()`, which preserves
+        # statically-known dims in the `Coord` type instead of erasing them to
+        # an all-runtime `IndexList` as `input.shape()` would. `output_fn`
+        # keeps its n-D `IndexList` form to match `rms_norm`'s `output_0_fn`.
         @parameter
         @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=width](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @parameter
@@ -697,7 +700,7 @@ struct ReduceRMSNorm:
             target=target,
             multiply_before_cast=multiply_before_cast,
         ](
-            input.shape(),
+            input.shape_coord(),
             gamma.to_tile_tensor[DType.int64](),
             epsilon,
             weight_offset,
@@ -730,12 +733,13 @@ struct ReduceRMSNormRoPE:
     @staticmethod
     def execute[
         dtype: DType,
+        output_dtype: DType,
         cos_sin_dtype: DType,
         rank: Int,
         target: StaticString,
         multiply_before_cast: Bool = True,
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        output: FusedOutputTensor[dtype=output_dtype, rank=rank, ...],
         input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         weight: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Scalar[dtype=dtype],
@@ -778,7 +782,7 @@ struct ReduceRMSNormRoPE:
         @always_inline
         def output_fn[
             width: Int, alignment: Int
-        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[output_dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
@@ -988,7 +992,7 @@ struct ReduceMinAndMax:
 @compiler.register_shape_function("mo.reduce.reduce_min_and_max")
 def reduce_reduce_min_and_max_shape[
     axis: Int,
-](input: InputTensor[...]) -> IndexList[input.rank]:
+](input: InputTensor) -> IndexList[input.rank]:
     var new_shape = input.shape()
     new_shape[_unsafe_normalize_neg_index(axis, input.rank)] = 2
 
@@ -1127,7 +1131,7 @@ struct BottomK:
 
 @compiler.register_shape_function("mo.bottom_k")
 def bottom_k_shape(
-    input: InputTensor[...],
+    input: InputTensor,
     k: Scalar,
     axis: Scalar,
     sorted: Scalar[DType.bool],
@@ -1171,7 +1175,7 @@ struct TopK:
 
 @compiler.register_shape_function("mo.top_k")
 def top_k_shape(
-    input: InputTensor[...],
+    input: InputTensor,
     k: Scalar,
     axis: Scalar,
     sorted: Scalar[DType.bool],
@@ -1193,7 +1197,7 @@ struct Softmax:
         axis: Int,
         has_prologue_fusion: Bool,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -1230,7 +1234,7 @@ struct LogSoftmax:
         axis: Int,
         has_prologue_fusion: Bool,
     ](
-        output: OutputTensor[...],
+        output: OutputTensor,
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -1291,7 +1295,6 @@ struct ArgSort[*, ascending: Bool]:
         comptime if target == "cpu":
             argsort[ascending=Self.ascending](indices_tensor, input_tensor)
         else:
-            var cuda_ctx = ctx
             argsort[ascending=Self.ascending, target=target](
-                indices_tensor, input_tensor, cuda_ctx
+                indices_tensor, input_tensor, ctx
             )

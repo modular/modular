@@ -18,9 +18,7 @@ These are Mojo built-ins, so you don't need to import them.
 from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, TypeNames
-from std.sys.intrinsics import _type_is_eq_parse_time
 from std.builtin.globals import global_constant
-from std.reflection.traits import AllWritable
 
 
 struct _MLIR:
@@ -68,7 +66,6 @@ struct TypeList[
 
     ```mojo
     from std.builtin.variadics import TypeList
-    from std.sys.intrinsics import _type_is_eq
     from std.testing import assert_equal
 
     # Create a type list
@@ -83,7 +80,7 @@ struct TypeList[
         comptime assert not tl.contains[Bool]()
 
         # Index into the list
-        comptime assert _type_is_eq[tl[0], Int]()
+        comptime assert tl[0] == Int
     ```
     """
 
@@ -186,7 +183,7 @@ struct TypeList[
         Trait=Trait,
         __mlir_attr[
             `#kgen.param_list.tabulate<`,
-            count._int_mlir_index(),
+            count.__mlir_index__(),
             `,`,
             Self._IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
             `> : `,
@@ -412,6 +409,23 @@ struct TypeList[
         this_element: Self.Trait,
     ] = last_value and predicate[this_element]
 
+    comptime _ConformsToPredicate[
+        T: type_of(AnyType), Type: Self.Trait
+    ]: Bool = conforms_to(Type, T)
+
+    @always_inline("builtin")
+    @staticmethod
+    def all_conforms_to[_trait: type_of(AnyType)]() -> Bool:
+        """Returns true if all types in this list conform to `Trait`.
+
+        Parameters:
+            _trait: The trait to check for conformance to.
+
+        Returns:
+            True if all types in this list conform to `Trait`, False otherwise.
+        """
+        return Self.all_satisfies[Self._ConformsToPredicate[_trait, _]]()
+
     @always_inline("builtin")
     @staticmethod
     def all_satisfies[
@@ -433,13 +447,13 @@ struct TypeList[
         ]
 
     comptime _ContainsTypePredicate[
-        search: Self.Trait,
+        search: AnyType,
         element: Self.Trait,
-    ] = _type_is_eq_parse_time[element, search]()
+    ] = element == search
 
     @always_inline("builtin")
     @staticmethod
-    def contains[type: Self.Trait]() -> Bool:
+    def contains[type: AnyType]() -> Bool:
         """Checks if a type is contained in this type list.
 
         Parameters:
@@ -846,7 +860,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         type=type,
         __mlir_attr[
             `#kgen.param_list.tabulate<`,
-            count._int_mlir_index(),
+            count.__mlir_index__(),
             `,`,
             Self._IndexToIntTabulateWrap[Mapper, ...],
             `> : `,
@@ -993,11 +1007,17 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             Self._AllSatisfiesReducer[predicate, ...],
         ]
 
-    # FIXME(MOCO-3855): Add decl-where `where conforms_to(Self.type, Equatable)`
+    # TODO(MOCO-3531): Remove downcasts here.
     comptime _ContainsValuePredicate[
         search_value: Self.type,
         element_value: Self.type,
-    ] = trait_downcast[Equatable](search_value) == trait_downcast[Equatable](
+    ] where conforms_to(Self.type, Equatable) = rebind[
+        downcast[Self.type, Equatable]
+    ](
+        search_value
+    ) == rebind[
+        downcast[Self.type, Equatable]
+    ](
         element_value
     )
 
@@ -1060,15 +1080,16 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             ParentConformsTo="Writable",
             ElementConformsTo="Writable",
         ]()
+        comptime assert conforms_to(Self.type, Writable)
         writer.write_string("(")
         for i in range(len(self)):
             if i > 0:
                 writer.write_string(", ")
 
             comptime if is_repr:
-                trait_downcast[Writable](self[i]).write_repr_to(writer)
+                self[i].write_repr_to(writer)
             else:
-                trait_downcast[Writable](self[i]).write_to(writer)
+                self[i].write_to(writer)
         writer.write_string(")")
 
     @no_inline
@@ -1235,7 +1256,7 @@ struct VariadicList[
         var elt_ptr = UnsafePointer[_, UntrackedOrigin[mut=False]](
             __mlir_op.`pop.array.gep`(
                 array_up.address,
-                Int(0)._int_mlir_index(),
+                Int(0).__mlir_index__(),
             )
         ).bitcast[Self._EltPointerType]()
         self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size))
@@ -1257,15 +1278,11 @@ struct VariadicList[
                 Element=Self.element_type,
                 ParentConformsTo="ImplicitlyDeletable",
             ]()
-            comptime TDestructible = downcast[
-                Self.element_type, ImplicitlyDeletable
-            ]
+            comptime assert conforms_to(Self.element_type, ImplicitlyDeletable)
 
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
-                UnsafePointer(to=self[i]).mut_cast[True]().bitcast[
-                    TDestructible
-                ]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[True]().destroy_pointee()
 
     def consume_elements(
         deinit self,
@@ -1344,15 +1361,16 @@ struct VariadicList[
             ParentConformsTo="Writable",
             ElementConformsTo="Writable",
         ]()
+        comptime assert conforms_to(Self.element_type, Writable)
         writer.write_string("(")
         for i in range(len(self)):
             if i > 0:
                 writer.write_string(", ")
 
             comptime if is_repr:
-                trait_downcast[Writable](self[i]).write_repr_to(writer)
+                self[i].write_repr_to(writer)
             else:
-                trait_downcast[Writable](self[i]).write_to(writer)
+                self[i].write_to(writer)
         writer.write_string(")")
 
     @no_inline
@@ -1528,11 +1546,10 @@ struct VariadicPack[
                     Element=element_type,
                     ParentConformsTo="ImplicitlyDeletable",
                 ]()
+                comptime assert conforms_to(element_type, ImplicitlyDeletable)
 
                 # Safety: We own the elements in this pack.
-                UnsafePointer(
-                    to=trait_downcast[ImplicitlyDeletable](self[i])
-                ).mut_cast[True]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[True]().destroy_pointee()
 
     def consume_elements[
         elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
@@ -1597,7 +1614,7 @@ struct VariadicPack[
             mutability of the pack argument convention.
         """
         litref_elt = __mlir_op.`lit.ref.pack.extract`[
-            index=index._int_mlir_index()
+            index=index.__mlir_index__()
         ](self._value)
         return __get_litref_as_mvalue(litref_elt)
 
@@ -1674,7 +1691,7 @@ struct VariadicPack[
         start: StringSlice[O1] = StaticString(""),
         end: StringSlice[O2] = StaticString(""),
         sep: StringSlice[O3] = StaticString(", "),
-    ) where AllWritable[*Self.element_types]:
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Writes a sequence of writable values from a pack to a writer with
         delimiters.
 
@@ -1697,20 +1714,23 @@ struct VariadicPack[
         writer.write_string(start)
 
         comptime for i in range(self.__len__()):
+            comptime assert conforms_to(
+                Self.element_types[i], Writable
+            ), "variadic pack element type is not Writable"
             comptime if i != 0:
                 writer.write_string(sep)
 
             comptime if is_repr:
-                trait_downcast[Writable](self[i]).write_repr_to(writer)
+                self[i].write_repr_to(writer)
             else:
-                trait_downcast[Writable](self[i]).write_to(writer)
+                self[i].write_to(writer)
         writer.write_string(end)
 
     @no_inline
     def write_to(
         self,
         mut writer: Some[Writer],
-    ) where AllWritable[*Self.element_types]:
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Writes the elements of this pack to a writer.
 
         Args:
@@ -1726,7 +1746,7 @@ struct VariadicPack[
     def write_repr_to(
         self,
         mut writer: Some[Writer],
-    ) where AllWritable[*Self.element_types]:
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Writes the repr of the elements of this pack to a writer.
 
         Args:

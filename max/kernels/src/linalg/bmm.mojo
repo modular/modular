@@ -22,7 +22,6 @@ from std.sys.info import (
     is_nvidia_gpu,
     simd_width_of,
 )
-from std.sys.intrinsics import _type_is_eq
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.algorithm import elementwise, sync_parallelize
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
@@ -41,7 +40,6 @@ from layout import (
     RuntimeLayout,
     TensorLayout,
     TileTensor,
-    LTToTTLayout,
     lt_to_tt,
     coord_to_index_list,
     row_major,
@@ -157,7 +155,6 @@ def _reshape_tile_tensor_with_batch_to_3d(
         origin=tensor.origin,
         address_space=tensor.address_space,
         linear_idx_type=tensor.linear_idx_type,
-        element_size=tensor.element_size,
     ],
 ):
     """
@@ -203,7 +200,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
                 comptime for batch_idx in range(rank - 3):
                     shape_val *= Int(tensor.layout.shape[batch_idx]().value())
 
-            comptime if _type_is_eq[ShapeType, Int]():
+            comptime if ShapeType == Int:
                 shape_ptr.init_pointee_copy(rebind[ShapeType](shape_val))
             else:
                 shape_ptr.init_pointee_copy(
@@ -232,8 +229,12 @@ def _batched_matmul_cpu[
     c_tile: TileTensor[
         mut=True, c_type, address_space=AddressSpace.GENERIC, ...
     ],
-    a_tile: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    b_tile: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    a_tile: TileTensor[
+        mut=False, a_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_tile: TileTensor[
+        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
@@ -623,8 +624,8 @@ def _batched_matmul_gpu[
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: TileTensor[mut=True, c_type, ...],
-    a_buf: TileTensor[a_type, ...],
-    b_buf: TileTensor[b_type, ...],
+    a_buf: TileTensor[mut=False, a_type, ...],
+    b_buf: TileTensor[mut=False, b_type, ...],
     ctx: DeviceContext,
 ) raises:
     comptime rank = c_buf.rank
@@ -741,11 +742,9 @@ def _batched_matmul_gpu[
                 # SM100+ supports 32B load/store to global memory.
                 comptime simd_size = 32 // size_of[c_type]()
 
-                @parameter
-                @__copy_capture(c_tensor_reshaped)
                 def epilogue_wrapper[
                     simd_width: Int, alignment: Int = 1
-                ](idx: Coord):
+                ](idx: Coord) {var}:
                     var c_val = c_tensor_reshaped.load[
                         width=simd_width,
                         alignment=alignment * size_of[c_type](),
@@ -754,8 +753,8 @@ def _batched_matmul_gpu[
                         coord_to_index_list(idx), c_val
                     )
 
-                elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                    Coord(batch_size, m, n), ctx
+                elementwise[simd_size, target="gpu"](
+                    epilogue_wrapper, Coord(batch_size, m, n), ctx
                 )
 
             return
@@ -883,8 +882,8 @@ def batched_matmul[
     target: StaticString = "cpu",
 ](
     c_buf: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a_buf: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b_buf: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     *,
     context: Optional[DeviceContext] = None,
 ) raises:
@@ -966,7 +965,9 @@ def batched_matmul[
 @always_inline
 def batched_matmul_shape[
     rank: Int
-](a_buff: TileTensor, b_buff: TileTensor,) raises -> IndexList[rank]:
+](
+    a_buff: TileTensor[mut=False, ...], b_buff: TileTensor[mut=False, ...]
+) raises -> IndexList[rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the
     inputs are compatible.
@@ -1025,9 +1026,9 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     c_type: DType,
     a_scales_type: DType,
     b_scales_type: DType,
-    a_layout: Layout,
+    a_layout: TensorLayout,
     c_layout: Layout,
-    a_scales_layout: Layout,
+    a_scales_layout: TensorLayout,
     b_scales_layout: Layout,
     a_tile_rank: Int,
     a_tile_shape: IndexList[a_tile_rank],
@@ -1111,9 +1112,9 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         c_type,
         a_scales_type,
         b_scales_type,
-        LTToTTLayout[a_layout],
+        a_layout,
         type_of(c_tt).LayoutType,
-        LTToTTLayout[a_scales_layout],
+        a_scales_layout,
         type_of(b_scales_tt).LayoutType,
         type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
@@ -1290,9 +1291,9 @@ def bmm_sm100_blockwise_scaled_fp8[
         c_type,
         a_scales_type,
         b_scales_type,
-        type_of(a).layout,
+        type_of(a_).LayoutType,
         type_of(c).layout,
-        type_of(a_scales).layout,
+        type_of(a_scales_).LayoutType,
         type_of(b_scales).layout,
         type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,

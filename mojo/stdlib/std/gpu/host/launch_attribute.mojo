@@ -29,6 +29,7 @@ These structures enable optimizing GPU kernel performance by controlling executi
 at a granular level, similar to CUDA's native launch attribute system.
 """
 
+from . import Dim
 from std.sys import size_of
 
 from std.utils import StaticTuple

@@ -52,7 +52,7 @@ from std.sys.info import (
 from std.sys.intrinsics import _RegisterPackType
 
 from std.builtin.dtype import _uint_type_of_width
-from std.memory.pointer import AddressSpace, GPUAddressSpace
+from std.memory.pointer import AddressSpace
 from std.memory.unsafe import bitcast
 
 from std.utils import IndexList, StaticTuple
@@ -877,7 +877,7 @@ def external_memory[
         __mlir_op.`pop.extern_ptr_symbol`[
             _type=PtrTy._mlir_type,
             name=_get_kgen_string[name](),
-            alignment=alignment._int_mlir_index(),
+            alignment=alignment.__mlir_index__(),
         ]()
     )
     return extern_ptr_symbol.bitcast[dtype]()

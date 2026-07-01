@@ -14,6 +14,7 @@
 from ...tile_scheduler import RasterOrder
 from linalg.gemv import GEMVAlgorithm
 from internal_utils import TuningConfig
+from std.utils.index import Index, IndexList
 
 
 struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
@@ -340,17 +341,18 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
         ),
         TuningConfigSM100(
             M=32,
-            M_end=128 + 64,
+            M_end=32 + 1,
             N=1536,
             K=1536,
-            mma_shape=Index(256, 32, 16),
-            cta_group=2,
+            mma_shape=Index(64, 8, 16),
+            cta_group=1,
             cluster_shape=Index(4, 2, 1),
             block_swizzle_size=0,
             swapAB=True,
             rasterize_order=RasterOrder(0),
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
+            k_group_size=4,
         ),
         TuningConfigSM100(
             M=2048,
@@ -609,6 +611,15 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             rasterize_order=RasterOrder(1),
         ),
     ]
+
+
+# ===----------------------------------------------------------------------=== #
+# FP32 Shapes
+# ===----------------------------------------------------------------------=== #
+
+
+def _get_tuning_list_sm100_fp32() -> List[TuningConfigSM100]:
+    return List[TuningConfigSM100]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2084,6 +2095,15 @@ def _get_tuning_list_sm100_batched_fp8() -> List[TuningConfigSM100]:
     ]
 
     return materialize[config_list]()
+
+
+# ===----------------------------------------------------------------------=== #
+# Batched FP32 Shapes
+# ===----------------------------------------------------------------------=== #
+
+
+def _get_tuning_list_sm100_batched_fp32() -> List[TuningConfigSM100]:
+    return List[TuningConfigSM100]()
 
 
 # ===----------------------------------------------------------------------=== #

@@ -53,6 +53,27 @@ if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
 
 
+def open_image(image: bytes | Image.Image) -> Image.Image:
+    """Decode raw image ``bytes`` into a ``PIL.Image``, or pass one through.
+
+    Vision tokenizers receive each image either as raw ``bytes`` (offline and
+    test callers) or as a ``PIL.Image`` that the API server already decoded and
+    validated once at admission (see
+    :attr:`~max.pipelines.modeling.types.TextGenerationRequest.decoded_images`).
+    Routing both through this helper lets a tokenizer reuse the pre-decoded
+    image instead of decoding the same bytes a second time.
+
+    Args:
+        image: Raw encoded image bytes, or an already-decoded ``PIL.Image``.
+
+    Returns:
+        The decoded ``PIL.Image``.
+    """
+    if isinstance(image, Image.Image):
+        return image
+    return Image.open(io.BytesIO(image))
+
+
 async def convert_token_to_id(
     tokenizer: PipelineTokenizer[Any, Any, Any],
     token: str,
@@ -640,6 +661,7 @@ class TextTokenizer(
             dkv_hint_instance_name=(
                 parsed_hint.instance_name if parsed_hint else ""
             ),
+            cache_salt=request.cache_salt,
         )
 
         return context
@@ -832,9 +854,13 @@ class TextAndVisionTokenizer(
         return encoded_prompt
 
     async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
     ) -> str:
         """Transforms a provided encoded token array back into readable text."""
+        # Log-probability responses decode one token id (a plain int) at a
+        # time; match the text tokenizer's handling.
+        if isinstance(encoded, int):
+            encoded = np.array(encoded)
         try:
             return self.delegate.decode(encoded.tolist(), **kwargs)
         except OverflowError as e:
@@ -869,11 +895,12 @@ class TextAndVisionTokenizer(
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
 
-        # Load images.
+        # open_image reuses the API server's decode-once result, or decodes
+        # raw bytes on the offline/test fallback path.
         images = (
             [
-                _convert_image_mode(Image.open(io.BytesIO(image_data)), "RGB")
-                for image_data in request.images
+                _convert_image_mode(open_image(image), "RGB")
+                for image in request.images_for_processing()
             ]
             if request.images
             else None
@@ -981,6 +1008,8 @@ class TextAndVisionTokenizer(
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             json_schema=json_schema,
             grammar=grammar,
             grammar_state=grammar_state,

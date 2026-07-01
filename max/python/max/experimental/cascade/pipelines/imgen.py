@@ -38,7 +38,7 @@ class ImageGenInterface(ABC):
     async def generate_image(self, req: ImageGenRequest, prompt: str) -> bytes:
         """Generate a serialized image from a text prompt."""
 
-    def generate_image_streaming(
+    async def generate_image_streaming(
         self, req: ImageGenRequest, prompt: str
     ) -> AsyncIterator[bytes]:
         """Stream serialized images for a text prompt.
@@ -47,8 +47,4 @@ class ImageGenInterface(ABC):
         The default implementation defers to :py:meth:`generate_image` and
         yields the final image as a single frame.
         """
-
-        async def _single() -> AsyncIterator[bytes]:
-            yield await self.generate_image(req, prompt)
-
-        return _single()
+        yield await self.generate_image(req, prompt)

@@ -26,7 +26,7 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -41,12 +41,11 @@ from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 
+from .batch_processor import Gemma4BatchProcessor
 from .batch_vision_inputs import (
     ImageInputs,
     VideoInputs,
     VisionRawInputs,
-    build_image_inputs,
-    build_video_inputs,
     create_empty_embeddings,
     create_empty_indices,
     merge_per_device_buffers,
@@ -135,12 +134,16 @@ class Gemma3_MultiModalModel(
     """
 
     model_config_cls: ClassVar[type[Any]] = Gemma4ForConditionalGenerationConfig
+    batch_processor_cls: ClassVar[type[Gemma4BatchProcessor]] = (
+        Gemma4BatchProcessor
+    )
 
     language_model: Model
     """The compiled and initialized MAX Engine model ready for inference."""
 
-    vision_model: Model
-    """The compiled and initialized MAX Engine vision model ready for inference."""
+    vision_model: Model | None
+    """The compiled vision model, or None for text-only ("gemma4_unified")
+    checkpoints whose vision embedder is not implemented yet."""
     # The vision and text towers are in the same weights file, but are in
     # separate models, so load_state_dict will naturally be loading subsets in
     # each case.
@@ -155,7 +158,9 @@ class Gemma3_MultiModalModel(
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
+        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
@@ -165,6 +170,8 @@ class Gemma3_MultiModalModel(
             adapter,
             return_logits,
         )
+
+        self._scatter_buffers: dict[int, tuple[Buffer, list[Buffer]]] = {}
 
         # signal_buffers are provided by AlwaysSignalBuffersMixin as a cached_property
         # to avoid GPU memory allocation during compile-only mode (cross-compilation).
@@ -180,6 +187,13 @@ class Gemma3_MultiModalModel(
 
         assert isinstance(self.kv_params, MultiKVCacheParams)
 
+        if self._batch_processor is not None:
+            assert isinstance(self._batch_processor, Gemma4BatchProcessor)
+            self._batch_processor.bind_model_state(
+                config=self.config,
+                ve_cache=self._ve_cache,
+            )
+
     @property
     def model(self) -> Model:
         """Expose language model for graph capture/replay.
@@ -193,15 +207,15 @@ class Gemma3_MultiModalModel(
         """Release vision encoder cache for a completed request."""
         self._ve_cache.release_request(request_id)
 
-    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
+    def load_model(
+        self, session: InferenceSession
+    ) -> tuple[Model | None, Model]:
         """Loads the compiled Gemma3 MultiModal models into the MAX Engine session.
 
         Returns:
             A tuple of (vision_model, language_model).
         """
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
+        assert self._max_batch_size, "Expected max_batch_size to be set"
 
         # Get processed state dict for language and vision models
         weights_dict = dict(self.weights.items())
@@ -220,37 +234,21 @@ class Gemma3_MultiModalModel(
             state_dict=raw_state_dict,
             return_logits=self.return_logits,
         )
+
         self.config = model_config
-
-        input_row_offsets_prealloc_host = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
-                dtype=np.uint32,
-            )
-        )
-        self._input_row_offsets_prealloc = [
-            input_row_offsets_prealloc_host.to(dev) for dev in self.devices
-        ]
-
-        # Cache for pinned host + device buffer pairs, keyed by
-        # (batch_size, total_seq_len), to avoid per-call h2d allocations
-        # in prepare_initial_token_inputs.
-        self._execution_input_buffers: dict[
-            tuple[int, int],
-            tuple[Buffer, Buffer, list[Buffer], Buffer, Buffer],
-        ] = {}
-
-        # Cache for scatter-index buffers (pinned host + device), keyed by
-        # length, to avoid per-call h2d allocations for image/video scatter.
-        self._scatter_buffers: dict[int, tuple[Buffer, list[Buffer]]] = {}
 
         # Build and compile vision + language model together.
         with CompilationTimer("vision + language model") as timer:
             module = Module()
 
-            vision_graph, vision_model_state_dict = self._build_vision_graph(
-                model_config, vision_weights_dict, module=module
-            )
+            vision_graph = None
+            vision_model_state_dict: dict[str, DLPackArray] = {}
+            if model_config.vision_config is not None:
+                vision_graph, vision_model_state_dict = (
+                    self._build_vision_graph(
+                        model_config, vision_weights_dict, module=module
+                    )
+                )
 
             language_graph, language_model_state_dict = (
                 self._build_language_graph(
@@ -264,7 +262,9 @@ class Gemma3_MultiModalModel(
                 **language_model_state_dict,
             }
             models = session.load_all(module, weights_registry=combined_weights)
-            vision_model = models[vision_graph.name]
+            vision_model = (
+                models[vision_graph.name] if vision_graph is not None else None
+            )
             language_model = models[language_graph.name]
 
         return vision_model, language_model
@@ -289,7 +289,8 @@ class Gemma3_MultiModalModel(
 
         image_embeddings_types = [
             TensorType(
-                DType.bfloat16,
+                # Match the vision tower's output dtype.
+                config.unquantized_dtype,
                 shape=[
                     "num_image_tokens",
                     config.text_config.hidden_size,
@@ -323,7 +324,7 @@ class Gemma3_MultiModalModel(
             *image_embeddings_types,
             *image_token_indices_types,
             *signals.input_types(),
-            *self.kv_params.get_symbolic_inputs().flatten(),
+            *self.kv_params.flattened_kv_inputs(),
         )
 
     def _build_language_graph(
@@ -371,11 +372,9 @@ class Gemma3_MultiModalModel(
             ]
             variadic_args = variadic_args[len(self.devices) :]
 
-            # Extract KV cache inputs
-            kv_cache = self._unflatten_kv_inputs(variadic_args)
+            # Extract KV cache inputs from the unified {sliding, global} tree.
             kv_cache_local, kv_cache_global = (
-                kv_cache[: len(kv_cache) // 2],
-                kv_cache[len(kv_cache) // 2 :],
+                self.kv_params.unflatten_basic_kv_tree(iter(variadic_args))
             )
 
             outputs = language_model(
@@ -428,7 +427,9 @@ class Gemma3_MultiModalModel(
             cu_seqlens_list = [inp.tensor for inp in all_inputs[:n_devices]]
             all_inputs = all_inputs[n_devices:]
 
-            pool_weights_list = [inp.tensor for inp in all_inputs[:n_devices]]
+            pool_gather_index_list = [
+                inp.tensor for inp in all_inputs[:n_devices]
+            ]
             all_inputs = all_inputs[n_devices:]
 
             max_seq_len = all_inputs[0].tensor
@@ -437,7 +438,7 @@ class Gemma3_MultiModalModel(
                 patches_flat_list,
                 pixel_position_ids_list,
                 cu_seqlens_list,
-                pool_weights_list,
+                pool_gather_index_list,
                 max_seq_len,
             )
             vision_graph.output(*outputs)
@@ -445,11 +446,16 @@ class Gemma3_MultiModalModel(
         return vision_graph, vision_model.state_dict()
 
     def _run_vision_encoder(self, raw: VisionRawInputs) -> list[Buffer]:
+        if self.vision_model is None:
+            raise ValueError(
+                "This checkpoint is served text-only (no vision encoder"
+                " is loaded); image and video inputs are not supported."
+            )
         return self.vision_model(
             *raw.patches_flat,
             *raw.pixel_position_ids,
             *raw.cu_seqlens,
-            *raw.pool_weights,
+            *raw.pool_gather_index,
             raw.max_seq_len,
         )
 
@@ -499,15 +505,31 @@ class Gemma3_MultiModalModel(
         video_embeddings: list[Buffer]
         video_scatter: list[Buffer]
         vid = model_inputs.video
-        if vid is not None:
+        if vid is not None and vid.cached_embeddings is not None:
+            # Cache hit: embeddings pre-assembled in build_video_inputs.
+            video_embeddings = vid.cached_embeddings
+        elif vid is not None and vid.raw is not None:
+            # Cache miss: encode, then store so future requests hit the cache.
             video_embeddings = self._run_vision_encoder(vid.raw)
+            if vid.cache_hashes:
+                assert vid.cache_per_video_token_counts is not None
+                assert vid.cache_req_ids is not None
+                self._ve_cache._cache_and_split(
+                    vision_outputs=video_embeddings,
+                    per_image_token_counts=vid.cache_per_video_token_counts,
+                    image_hashes=vid.cache_hashes,
+                    request_ids=vid.cache_req_ids,
+                )
+        else:
+            video_embeddings = self._empty_embeddings()
+
+        if vid is not None:
             if vid.token_indices is not None:
                 video_scatter = vid.token_indices
             else:
                 assert vid.token_indices_np is not None
                 video_scatter = self._scatter_to_devices(vid.token_indices_np)
         else:
-            video_embeddings = self._empty_embeddings()
             video_scatter = self._empty_indices()
 
         # --- merge image + video ---
@@ -546,145 +568,12 @@ class Gemma3_MultiModalModel(
                 next_token_logits=model_outputs[0],
             )
 
-    @traced
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[Gemma4Context]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> ModelInputs:
-        """Prepare inputs for the first execution pass."""
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-        context_batch = replica_batches[0]
-
-        dev = self.devices[0]
-        pinned = not dev.is_host
-        assert kv_cache_inputs is not None
-
-        batch_size = len(context_batch)
-        total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
-        buffer_key = (batch_size, total_seq_len)
-        buffers = self._execution_input_buffers.get(buffer_key)
-        host_tokens: Buffer
-        host_row_offsets: Buffer
-        if buffers is None:
-            if pinned:
-                host_tokens = DevicePinnedBuffer(
-                    dtype=DType.int64, shape=(total_seq_len,), device=dev
-                )
-                host_row_offsets = DevicePinnedBuffer(
-                    dtype=DType.uint32,
-                    shape=(batch_size + 1,),
-                    device=dev,
-                )
-            else:
-                host_tokens = Buffer(
-                    shape=(total_seq_len,), dtype=DType.int64, device=dev
-                )
-                host_row_offsets = Buffer(
-                    shape=(batch_size + 1,), dtype=DType.uint32, device=dev
-                )
-            device_tokens = host_tokens.to(dev)
-            device_row_offsets = [
-                host_row_offsets.to(device) for device in self.devices
-            ]
-            return_n_logits_buf = Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            )
-            buffers = (
-                host_tokens,
-                host_row_offsets,
-                device_row_offsets,
-                device_tokens,
-                return_n_logits_buf,
-            )
-            self._execution_input_buffers[buffer_key] = buffers
-
-        (
-            host_tokens,
-            host_row_offsets,
-            device_row_offsets,
-            device_tokens,
-            return_n_logits_buf,
-        ) = buffers
-
-        # Fill host buffers in-place, then copy to device.
-        row_offsets_np = host_row_offsets.to_numpy()
-        np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-            out=row_offsets_np,
-        )
-
-        tokens_np = host_tokens.to_numpy()
-        if context_batch:
-            np.concatenate(
-                [ctx.tokens.active for ctx in context_batch],
-                out=tokens_np,
-            )
-
-        device_tokens.inplace_copy_from(host_tokens)
-        for d_offsets in device_row_offsets:
-            d_offsets.inplace_copy_from(host_row_offsets)
-
-        k = self.config.vision_config.pooling_kernel_size
-
-        needs_images = (
-            any(
-                getattr(ctx, "needs_vision_encoding", False)
-                for ctx in context_batch
-            )
-            if context_batch
-            else False
-        )
-        if needs_images:
-            uncached = self._ve_cache.get_uncached_contexts(context_batch)
-            image_inputs = build_image_inputs(
-                context_batch=context_batch,
-                uncached=uncached,
-                devices=self.devices,
-                pooling_kernel_size=k,
-                ve_cache=self._ve_cache,
-                empty_embeddings=self._empty_embeddings(),
-            )
-        else:
-            image_inputs = None
-
-        needs_video = (
-            any(
-                getattr(ctx, "needs_video_encoding", False)
-                for ctx in context_batch
-            )
-            if context_batch
-            else False
-        )
-        if needs_video:
-            video_inputs = build_video_inputs(
-                context_batch=context_batch,
-                devices=self.devices,
-                pooling_kernel_size=k,
-            )
-        else:
-            video_inputs = None
-
-        return Gemma3MultiModalModelInputs(
-            tokens=device_tokens,
-            input_row_offsets=device_row_offsets,
-            return_n_logits=return_n_logits_buf,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=kv_cache_inputs,
-            images=image_inputs,
-            video=video_inputs,
-            combined_embeds=self._empty_embeddings(),
-            combined_indices=self._empty_indices(),
-        )
-
     def _empty_embeddings(self) -> list[Buffer]:
         if not hasattr(self, "_cached_empty_embeddings"):
             self._cached_empty_embeddings = create_empty_embeddings(
                 self.devices,
                 self.huggingface_config.text_config.hidden_size,
+                self.config.unquantized_dtype,
             )
         return self._cached_empty_embeddings
 

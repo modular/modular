@@ -157,24 +157,29 @@ from .grouped_1d1d_tile_scheduler import (
 from ..structured_kernels.output_writer import TileWriter
 
 
-comptime SWIGLU_MAX_TRACED_TILES = 8
+comptime SWIGLU_MAX_TRACED_TILES = 64
 """Maximum number of consecutive output tiles whose per-tile pipeline
 events are recorded per CTA. Tiles past this count are not traced
 (the per-warp counters increment but the gated record-sites become
-no-ops). 8 is enough for the largest CTA (Kimi K2.5 prefill ~3-4
-tiles per CTA at 128 tokens/expert) while staying inside the buffer."""
+no-ops). 64 covers a large-prefill cta_group=2 cluster (~47 output
+tiles on the leader CTA) with headroom; the trace buffer lives in
+global memory, so raising this only grows the debug-only GmemTrace
+allocation, not SMEM."""
 
-comptime GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK = 128
+comptime GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK = 16 * SWIGLU_MAX_TRACED_TILES
 """Number of `UInt64` timestamp slots reserved per CTA.
 
 Schema is per-tile pipeline events plus per-tile epi sub-phase events for
 the first epi `loop_stage` only (sub-phases of stages 1..N-1 are not
 recorded; stage 0 is representative since stages have uniform cost).
 
-  9 base events × 8 tiles = 72 slots
-  5 sub-phase events × 8 tiles = 40 slots
-  2 MMA-acquire events × 8 tiles = 16 slots
-  total = 128
+  9 base events × N tiles          (offset 9*i)
+  5 sub-phase events × N tiles     (offset 9*N + 5*i)
+  2 MMA-acquire events × N tiles   (offset 14*N + i and 15*N + i)
+  total = 16*N, N = SWIGLU_MAX_TRACED_TILES (the per-field offsets
+  below are shown for the N=8 layout; the actual bases are the derived
+  constants _GROUPED_TRACE_SUBPHASE_BASE / _MMA_OUTPUT_ACQ_BASE /
+  _MMA_INPUT_ACQ_BASE just below this docstring)
 
 Slot encoding for output tile i (i in [0, SWIGLU_MAX_TRACED_TILES)):
 
@@ -253,6 +258,16 @@ Sub-phase durations for stage 0 of tile i:
 Inter-tile overlap is still directly visible:
   T_LOAD_START[i+1] < T_MMA_END[i]    → Load[i+1] real-work overlaps
                                          with MMA[i] real-work."""
+
+
+comptime _GROUPED_TRACE_SUBPHASE_BASE = 9 * SWIGLU_MAX_TRACED_TILES
+"""Base trace slot for the per-tile stage-0 sub-phase events (5/tile);
+follows the 9*N base events."""
+comptime _GROUPED_TRACE_MMA_OUTPUT_ACQ_BASE = 14 * SWIGLU_MAX_TRACED_TILES
+"""Base trace slot for the per-tile T_MMA_OUTPUT_ACQ events (1/tile);
+follows the 9*N base + 5*N sub-phase events."""
+comptime _GROUPED_TRACE_MMA_INPUT_ACQ_BASE = 15 * SWIGLU_MAX_TRACED_TILES
+"""Base trace slot for the per-tile T_MMA_INPUT_ACQ events (1/tile)."""
 
 
 # =============================================================================
@@ -437,8 +452,13 @@ struct RealSwiGLUOutput[
 
     comptime device_type: AnyType = Self
 
+    @__allow_legacy_any_origin_fields
     var c_packed_ptr: UnsafePointer[UInt8, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var c_swiglu_scales_ptr: UnsafePointer[Scalar[Self._sf_dtype], MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var c_input_scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin]
     # Runtime alpha and L for the clamped activation. Always stored;
     # the 8 bytes keep the struct layout uniform across activations.
@@ -1003,7 +1023,11 @@ struct Grouped1D1DMatmulKernel[
         if elect_one_warp and elect_one_thread:
             a_tma_op.prefetch_descriptor()
             b_tma_op.prefetch_descriptor()
-            c_tma_op.prefetch_descriptor()
+            # On the fused path the C TMA op is an empty placeholder (results
+            # are written through `swiglu_out`), so there is no valid
+            # descriptor to prefetch.
+            comptime if not Self.fuse_swiglu:
+                c_tma_op.prefetch_descriptor()
             sfa_tma_op.prefetch_descriptor()
             sfb_tma_op.prefetch_descriptor()
 
@@ -1655,7 +1679,7 @@ struct Grouped1D1DMatmulKernel[
                                     trace_buf.store(
                                         Int(block_idx.x)
                                         * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
-                                        + 112
+                                        + _GROUPED_TRACE_MMA_OUTPUT_ACQ_BASE
                                         + tile_idx_mma,
                                         UInt64(global_perf_counter_ns()),
                                     )
@@ -1691,7 +1715,7 @@ struct Grouped1D1DMatmulKernel[
                                                 trace_buf.store(
                                                     Int(block_idx.x)
                                                     * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
-                                                    + 120
+                                                    + _GROUPED_TRACE_MMA_INPUT_ACQ_BASE
                                                     + tile_idx_mma,
                                                     UInt64(
                                                         global_perf_counter_ns()
@@ -2349,6 +2373,18 @@ struct Grouped1D1DMatmulKernel[
                 1
             ] * SF_ATOM_K * size_of[Self.sfb_dtype]()
 
+            # Staging values for ALL the k-atoms' stores, scoped past
+            # the single store_wait below: tcgen05_st is asynchronous,
+            # so its source registers must stay live until the wait —
+            # a loop-scoped staging buffer would let the compiler reuse
+            # the register while the store is still in flight. Same
+            # batched-stores-then-one-wait shape as
+            # TmemFragments.store() + wait_store().
+            var _sfb_st_vals = InlineArray[
+                InlineArray[Scalar[DType.uint32], 1],
+                Self.config.num_sf_k_tiles,
+            ](uninitialized=True)
+
             comptime for sf_idx in range(Self.config.num_sf_k_tiles):
                 var sfb_scales = SIMD[Self.sfb_dtype, SF_ATOM_K]()
                 if lane_id() < Self.MMA_N:
@@ -2380,12 +2416,13 @@ struct Grouped1D1DMatmulKernel[
                         alignment=align_of[SIMD[Self.sfb_dtype, SF_ATOM_K]](),
                     ](scales_offset)
 
+                # Reconverge the divergent load above before the
+                # warp-collective store.
                 syncwarp()
 
-                var _sfb_st = InlineArray[Scalar[DType.uint32], 1](
-                    uninitialized=True
-                )
-                _sfb_st[0] = bitcast[DType.uint32, 1](sfb_scales)[0]
+                _sfb_st_vals[sf_idx][0] = bitcast[DType.uint32, 1](sfb_scales)[
+                    0
+                ]
                 tcgen05_st[
                     datapaths=32,
                     bits=32,
@@ -2393,10 +2430,23 @@ struct Grouped1D1DMatmulKernel[
                     pack=False,
                 ](
                     sfb_tmem_offset + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
-                    _sfb_st,
+                    _sfb_st_vals[sf_idx],
                 )
-                tcgen05_store_wait()
-                tcgen05_fence_before()
+                # No per-store wait: the stores write disjoint TMEM
+                # columns (stride SF_MN_GROUP_SIZE//32, so repeat=N
+                # cannot fuse them) and the only consumer-visible
+                # ordering point is the caller's mbarrier arrive after
+                # this function returns.
+
+            # One wait + fence for the whole batch, ordering every
+            # store above before the caller's arrive on the SFB-load
+            # mbarrier (which the MMA warp waits on before reading the
+            # scales from TMEM).
+            tcgen05_store_wait()
+            tcgen05_fence_before()
+            # Pin the staging registers' liveness past the wait (the
+            # in-flight stores read them).
+            _ = _sfb_st_vals
 
     @staticmethod
     @always_inline
@@ -3333,7 +3383,7 @@ struct Grouped1D1DMatmulKernel[
                         trace_buf.store(
                             Int(block_idx.x)
                             * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
-                            + 72
+                            + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 0,
                             UInt64(global_perf_counter_ns()),
@@ -3402,7 +3452,7 @@ struct Grouped1D1DMatmulKernel[
                         trace_buf.store(
                             Int(block_idx.x)
                             * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
-                            + 72
+                            + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 1,
                             UInt64(global_perf_counter_ns()),
@@ -3420,7 +3470,7 @@ struct Grouped1D1DMatmulKernel[
                         trace_buf.store(
                             Int(block_idx.x)
                             * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
-                            + 72
+                            + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 2,
                             UInt64(global_perf_counter_ns()),
@@ -3584,7 +3634,7 @@ struct Grouped1D1DMatmulKernel[
                         trace_buf.store(
                             Int(block_idx.x)
                             * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
-                            + 72
+                            + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 3,
                             UInt64(global_perf_counter_ns()),
@@ -3602,7 +3652,7 @@ struct Grouped1D1DMatmulKernel[
                         trace_buf.store(
                             Int(block_idx.x)
                             * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
-                            + 72
+                            + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 4,
                             UInt64(global_perf_counter_ns()),

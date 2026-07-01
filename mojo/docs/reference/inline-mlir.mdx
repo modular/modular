@@ -265,7 +265,7 @@ circle area using integer arithmetic:
 ```mojo
 def circle_area_approx(radius: Int) -> Int:
     """Approximate area using integer math: pi ≈ 3."""
-    var r = radius._int_mlir_index()
+    var r = radius.__mlir_index__()
     var r_squared = __mlir_op.`index.mul`(r, r)
     var pi: __mlir_type.index = __mlir_attr.`3 : index`
     var area = __mlir_op.`index.mul`(pi, r_squared)
@@ -372,9 +372,9 @@ Here's a runnable example that combines comparisons with
 ```mojo
 def clamp(val: Int, low: Int, high: Int) -> Int:
     """Clamp val to [low, high] using MLIR comparisons and select."""
-    var v = val._int_mlir_index()
-    var lo = low._int_mlir_index()
-    var hi = high._int_mlir_index()
+    var v = val.__mlir_index__()
+    var lo = low.__mlir_index__()
+    var hi = high.__mlir_index__()
 
     # If val < low, use low.
     # index.cmp returns i1, but pop.select needs a !kgen.scalar<bool>.
@@ -581,10 +581,10 @@ def sum_to(end: Int) -> Int:
     var i: __mlir_type.index = __mlir_attr.`0 : index`
     var one: __mlir_type.index = __mlir_attr.`1 : index`
 
-    # end._int_mlir_index() unwraps Mojo Int to raw __mlir_type.index
+    # end.__mlir_index__() unwraps Mojo Int to raw __mlir_type.index
     while Bool(__mlir_op.`index.cmp`[
         pred=__mlir_attr.`#index<cmp_predicate slt>`
-    ](i, end._int_mlir_index())):
+    ](i, end.__mlir_index__())):
         acc = __mlir_op.`index.add`(acc, i)
         i = __mlir_op.`index.add`(i, one)
 
@@ -629,7 +629,7 @@ name. Each `__mlir_region` defines a single block.
 ### Region arguments
 
 Region arguments look like function arguments, but they don't support Mojo
-passing conventions like `ref`, `var`, or `mut`. The operation provides
+argument conventions like `ref`, `var`, or `mut`. The operation provides
 the argument values directly as raw MLIR values:
 
 ```mojo

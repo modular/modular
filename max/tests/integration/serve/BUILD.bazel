@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -60,6 +59,12 @@ modular_py_test(
     env = {
         "PIPELINES_TESTDATA": "max/tests/integration/architectures/llama3/testdata",
     },
+    ignore_extra_deps = [
+        # Imported via string lookup
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+        "//max/python/max/pipelines/architectures/mpnet",
+    ],
     tags = [
         "no-sandbox",
         "requires-network",
@@ -74,6 +79,9 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+        "//max/python/max/pipelines/architectures/mpnet",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -188,7 +196,7 @@ modular_py_test(
         "test_warm_cache_target.py",
     ],
     data = [
-        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/_entrypoints:pipelines",
     ],
     tags = [
         "AITLIB-293",
@@ -203,7 +211,7 @@ modular_py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        "//max/python/max/entrypoints",
+        "//max/python/max/_entrypoints",
     ],
 )
 
@@ -212,6 +220,10 @@ modular_py_test(
     size = "large",
     srcs = [
         "test_max_serve_e2e.py",
+    ],
+    ignore_extra_deps = [
+        # Imported at runtime via string lookup
+        "//max/python/max/pipelines/architectures/llama3",
     ],
     tags = [
         "requires-network",
@@ -222,9 +234,10 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/_entrypoints",
         "//max/python/max/driver",
-        "//max/python/max/entrypoints",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/serve:config",
         requirement("httpx"),

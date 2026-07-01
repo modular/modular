@@ -173,7 +173,9 @@ class UnifiedDflashLlama3Config(ArchConfigWithKVCache):
     def get_kv_params(self) -> KVCacheParamInterface:
         target_kv_params = self.target.get_kv_params()
         draft_kv_params = self.draft.get_kv_params()
-        return MultiKVCacheParams.from_params(target_kv_params, draft_kv_params)
+        return MultiKVCacheParams.from_params(
+            {"target": target_kv_params, "draft": draft_kv_params}
+        )
 
     @classmethod
     def initialize(

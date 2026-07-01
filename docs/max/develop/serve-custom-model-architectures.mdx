@@ -118,7 +118,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \
     "messages": [
       {"role": "user", "content": "Hello! Can you help me with a simple task?"}
     ],
-    "max_tokens": 100
+    "max_completion_tokens": 100
   }'
 ```
 
@@ -138,7 +138,7 @@ response = client.chat.completions.create(
     messages=[
         {"role": "user", "content": "Hello! Can you help me with a simple task?"}
     ],
-    max_tokens=100,
+    max_completion_tokens=100,
 )
 
 print(response.choices[0].message.content)

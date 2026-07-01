@@ -31,9 +31,10 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
 from max.graph import DeviceRef
-from max.nn.kv_cache import BatchCharacteristics, MHAAttnKey
+from max.nn.kv_cache import AttnKeyInterface, BatchCharacteristics, MHAAttnKey
+from max.nn.kv_cache.utils import MultiAttnKey
 from max.pipelines.lib import ModelInputs, ModelOutputs
-from max.pipelines.lib.graph_capture import GraphKey, ServeGraphCaptureRunner
+from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
 from max.pipelines.lib.interfaces import UnifiedEagleOutputs
 from test_common.mocks.pipeline_config import (
     DummyPipelineConfig,
@@ -144,6 +145,35 @@ def _bc(batch_size: int, q: int, cache_length: int) -> BatchCharacteristics:
     )
 
 
+def _gk(
+    *,
+    num_partitions: int,
+    q_max_seq_len: int,
+    batch_size: int = 1,
+    spec: bool = False,
+) -> MultiAttnKey:
+    """Builds the capture key the way ``ServeGraphCaptureRunner`` does.
+
+    The runner folds the resolved verify-width dispatch metadata and, under
+    speculative decoding, the draft-width metadata into a ``MultiAttnKey``
+    keyed by ``"verify"``/``"draft"``.
+    """
+    children: dict[str, AttnKeyInterface] = {
+        "verify": MHAAttnKey(
+            batch_size=batch_size,
+            max_prompt_length=q_max_seq_len,
+            num_partitions=num_partitions,
+        )
+    }
+    if spec:
+        children["draft"] = MHAAttnKey(
+            batch_size=batch_size,
+            max_prompt_length=1,
+            num_partitions=num_partitions,
+        )
+    return MultiAttnKey.from_dict(children)
+
+
 @pytest.fixture
 @mock_huggingface_config
 def capture_model() -> CapturePipelineModel:
@@ -176,7 +206,7 @@ def test_replay_copies_inputs_and_replays(
     inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
     runner = _make_runner(capture_model.model)
 
-    key: GraphKey = (1, 1, 1, 0)
+    key = _gk(num_partitions=1, q_max_seq_len=1)
     bc = _bc(1, 1, 1)
     runner._records[bc] = key
     trace_inputs = inputs.buffers
@@ -206,7 +236,7 @@ def test_replay_debug_verify_uses_verify_inputs(
     debug_inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
     runner = _make_runner(capture_model.model)
 
-    key: GraphKey = (1, 1, 1, 0)
+    key = _gk(num_partitions=1, q_max_seq_len=1)
     bc = _bc(1, 1, 1)
     runner._records[bc] = key
     runner.graph_entries[key] = (
@@ -237,7 +267,7 @@ def test_replay_returns_eagle_outputs(
         next_draft_tokens=buf,
     )
     inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
-    key: GraphKey = (1, 2, 5, 5)
+    key = _gk(num_partitions=5, q_max_seq_len=2, spec=True)
     bc = _bc(1, 2, 5)
     runner._records[bc] = key
     runner.graph_entries[key] = (inputs.buffers, eagle_outputs)
@@ -255,7 +285,10 @@ def test_replay_returns_eagle_outputs(
 def test_align_buckets_cache_length_up_and_looks_up_key() -> None:
     runner = _make_runner(DummyModel(Buffer.zeros((4,), dtype=DType.float32)))
     runner._recorded_cache_lengths = [1, 10]
-    runner._records = {_bc(1, 1, 1): (1, 1, 1, 0), _bc(1, 1, 10): (1, 1, 10, 0)}
+    runner._records = {
+        _bc(1, 1, 1): _gk(num_partitions=1, q_max_seq_len=1),
+        _bc(1, 1, 10): _gk(num_partitions=10, q_max_seq_len=1),
+    }
 
     # Runtime cache length 5 buckets up to recorded 10.
     aligned = runner.align(_bc(1, 1, 5))
@@ -269,7 +302,7 @@ def test_align_buckets_cache_length_up_and_looks_up_key() -> None:
 def test_align_above_max_recorded_raises() -> None:
     runner = _make_runner(DummyModel(Buffer.zeros((4,), dtype=DType.float32)))
     runner._recorded_cache_lengths = [1, 10]
-    runner._records = {_bc(1, 1, 10): (1, 1, 10, 0)}
+    runner._records = {_bc(1, 1, 10): _gk(num_partitions=10, q_max_seq_len=1)}
 
     # A cache length beyond the largest captured length has no valid graph.
     with pytest.raises(RuntimeError, match=r"exceeds the largest captured"):
@@ -282,7 +315,7 @@ def test_align_q_mismatch_raises() -> None:
         num_speculative_tokens=0,
     )
     runner._recorded_cache_lengths = [10]
-    runner._records = {_bc(1, 1, 10): (1, 1, 10, 0)}
+    runner._records = {_bc(1, 1, 10): _gk(num_partitions=10, q_max_seq_len=1)}
 
     with pytest.raises(RuntimeError, match=r"q_max_seq_len=2 != 1"):
         runner.align(_bc(1, 2, 5))
@@ -327,14 +360,22 @@ def test_warmup_records_and_captures(
     runner.warmup_pre_ready()
 
     expected_q = 1 + num_spec
+    spec = num_spec > 0
     assert runner._recorded_cache_lengths == [1, 10]
-    # Both probed lengths recorded for batch_size=1.
-    assert runner._records[_bc(1, expected_q, 1)][2] == 1
-    assert runner._records[_bc(1, expected_q, 10)][2] == 10
-    assert len(runner.graph_entries) == 2
-    for key, (_inputs, outputs) in runner.graph_entries.items():
+    # Both probed lengths recorded for batch_size=1, each yielding a distinct
+    # key whose verify width is ``expected_q``.
+    expected_keys = {
+        _bc(1, expected_q, 1): _gk(
+            num_partitions=1, q_max_seq_len=expected_q, spec=spec
+        ),
+        _bc(1, expected_q, 10): _gk(
+            num_partitions=10, q_max_seq_len=expected_q, spec=spec
+        ),
+    }
+    assert runner._records == expected_keys
+    assert set(runner.graph_entries) == set(expected_keys.values())
+    for _key, (_inputs, outputs) in runner.graph_entries.items():
         assert isinstance(outputs, expected_type)
-        assert key[1] == expected_q
 
 
 def test_warmup_dedups_shared_keys() -> None:
@@ -365,4 +406,7 @@ def test_warmup_dedups_shared_keys() -> None:
     assert runner._recorded_cache_lengths == [1, 5, 10]
     assert len(runner.graph_entries) == 1
     assert {bc.max_cache_valid_length for bc in runner._records} == {1, 5, 10}
-    assert all(key == (1, 1, 3, 0) for key in runner._records.values())
+    assert all(
+        key == _gk(num_partitions=3, q_max_seq_len=1)
+        for key in runner._records.values()
+    )

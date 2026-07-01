@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "laguna",
+    size = "small",
+    srcs = glob(["*.py"]),
+    imports = ["."],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/laguna",
+        requirement("numpy"),
+    ],
+)

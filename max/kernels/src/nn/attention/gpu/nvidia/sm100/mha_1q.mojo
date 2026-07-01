@@ -1000,6 +1000,7 @@ struct SM100TensorAccumulatorSS[
         Self.num_softmax_threads,
     ]
 
+    @__allow_legacy_any_origin_fields
     var mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
@@ -1239,6 +1240,7 @@ struct SM100TensorAccumulatorTS[
         transpose_b=Self.transpose_b,
     ]()
 
+    @__allow_legacy_any_origin_fields
     var mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
@@ -1897,7 +1899,10 @@ def _mha_sm100_enqueue[
         partition,
     }
 
-    var block_x: UInt32 = partition.num_partitions()
+    # Launch the num_keys-independent upper bound so the grid shape is stable
+    # across num_keys (one CUDA graph per batch size). CTAs with partition
+    # index >= partition.num_partitions() early-return in the kernel.
+    var block_x: UInt32 = partition.max_num_partitions()
 
     comptime max_tmem_cols = 512
     comptime BN = config.block_n()
@@ -2365,10 +2370,13 @@ def _mha_sm100[
     comptime num_softmax_regs = 224
 
     # constructing calls barrier() if static
+    # Use the launched (max) partition count so block_idx decodes into
+    # [0, max_num_partitions()); CTAs with index >= num_partitions() are
+    # over-launched and early-return below.
     var tile_summary = MHATileSummary[ValidLengthType](
         batch_size,
         ceildiv(max_seq_len.as_uint32(), UInt32(BM))
-        * partition.num_partitions(),
+        * partition.max_num_partitions(),
         valid_length,
         max_seq_len.as_uint32(),
     )
@@ -2443,6 +2451,19 @@ def _mha_sm100[
     comptime if MHA_PDL_LEVEL > PDLLevel.OFF:
         wait_on_dependent_grids()
         launch_dependent_grids()
+
+    # The grid is launched with `max_num_partitions()` CTAs per (head, batch) so
+    # its shape is independent of num_keys (one CUDA graph per batch size). The
+    # tail CTAs with index >= `num_partitions()` carry no keys: exit now — after
+    # honoring the PDL contract above, and before any TMEM allocation or
+    # exp_sum/qk_max/output write (so buffers need only `num_partitions()` slots).
+    # `prompt_offset` is decoded from block_idx, hence uniform across the CTA, so
+    # the whole CTA returns together and no warp is left waiting on a later
+    # `named_barrier`. Partitions below this bound that are empty due to BN
+    # alignment still take the writeback path below so the reducer sees them.
+    comptime if PartitionType.do_partition:
+        if position.prompt_offset >= partition.num_partitions():
+            return
 
     # For intra-warp overlap, we initiate ummas as
     # Q @ K_0, Q @ K_1, P_0 @ V_0, Q @ K_2, P_1 @ V_1, ...

@@ -21,6 +21,8 @@ bazel+mypy complain about this import not being available even though it is part
 Explicitly importing //max/python/max/serve/schemas in the test's BUILD file hasn't worked either.
 """
 
+from typing import Any
+
 import pytest
 from max.serve.schemas.openai import CreateChatCompletionRequest
 from pydantic import AnyUrl, ValidationError
@@ -49,18 +51,24 @@ async def test_openai_extract_image_from_requests() -> None:
     )
 
     settings = Settings()
-    messages, images, _videos = await openai_parse_chat_completion_request(
-        request, False, settings
-    )
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 2
     assert len(images) == 0
     assert isinstance(messages[0].content, str)
     assert isinstance(messages[1].content, list)
     assert hasattr(messages[1].content[0], "text")
 
-    messages, images, _videos = await openai_parse_chat_completion_request(
-        request, True, settings
-    )
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(request, True, settings)
     assert len(messages) == 2
     assert len(images) == 0
     assert isinstance(messages[0].content, list)
@@ -80,7 +88,12 @@ async def test_openai_extract_image_from_requests() -> None:
     request = CreateChatCompletionRequest.model_validate(
         {"model": "test", "messages": [user_message_image_with_url]}
     )
-    messages, images, _videos = await openai_parse_chat_completion_request(
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         request,
         False,
         settings,
@@ -93,7 +106,12 @@ async def test_openai_extract_image_from_requests() -> None:
     assert "image_url" in messages[0].content[1]
     assert images[0] == AnyUrl(request_images["boardwark_url"])
 
-    messages, images = await openai_parse_chat_completion_request(
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         request,
         True,
         settings,
@@ -118,7 +136,12 @@ async def test_openai_extract_image_from_requests() -> None:
             },
         ],
     }
-    messages, images = await openai_parse_chat_completion_request(
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         CreateChatCompletionRequest(
             model="test", messages=[system_message, user_message_image_two_urls]
         ),
@@ -147,17 +170,23 @@ async def test_openai_extract_image_from_requests() -> None:
     request = CreateChatCompletionRequest(
         model="test", messages=[user_message_mixed_url_b64]
     )
-    messages, images = await openai_parse_chat_completion_request(
-        request, False, settings
-    )
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 1
     assert len(images) == 2
     assert images[0] == AnyUrl(request_images["smily_b64"])
     assert images[1] == AnyUrl(request_images["mountain_url"])
 
-    messages, images = await openai_parse_chat_completion_request(
-        request, True, settings
-    )
+    (
+        messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(request, True, settings)
     assert len(messages) == 1
     assert len(images) == 2
     assert isinstance(messages[0].content, list)
@@ -178,9 +207,12 @@ async def test_openai_user_message_with_null_content() -> None:
         {"model": "test", "messages": [user_message_null_content]}
     )
     settings = Settings()
-    messages, _images, _videos = await openai_parse_chat_completion_request(
-        request, False, settings
-    )
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 1
     assert messages[0].role == "user"
     assert messages[0].content == ""
@@ -192,9 +224,12 @@ async def test_openai_user_message_with_null_content() -> None:
     request = CreateChatCompletionRequest.model_validate(
         {"model": "test", "messages": [user_message_no_content]}
     )
-    messages, _images, _videos = await openai_parse_chat_completion_request(
-        request, False, settings
-    )
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 1
     assert messages[0].role == "user"
     assert messages[0].content == ""
@@ -220,7 +255,12 @@ async def test_openai_parse_normalizes_developer_role_to_system() -> None:
     request = CreateChatCompletionRequest.model_validate(request_data)
     settings = Settings()
 
-    messages, _images, _videos = await openai_parse_chat_completion_request(
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
 
@@ -303,7 +343,12 @@ async def test_openai_parse_forwards_tool_call_metadata() -> None:
     request = CreateChatCompletionRequest.model_validate(request_data)
     settings = Settings()
 
-    messages, _images, _videos = await openai_parse_chat_completion_request(
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
 
@@ -348,7 +393,12 @@ async def test_openai_parse_drops_empty_tool_calls() -> None:
     request = CreateChatCompletionRequest.model_validate(request_data)
     settings = Settings()
 
-    messages, _images, _videos = await openai_parse_chat_completion_request(
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
 
@@ -442,7 +492,12 @@ async def test_openai_parse_coerces_empty_tool_call_arguments() -> None:
     request = CreateChatCompletionRequest.model_validate(request_data)
     settings = Settings()
 
-    messages, _images, _videos = await openai_parse_chat_completion_request(
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
 
@@ -683,3 +738,540 @@ def test_openai_user_message_content_nullable_schema() -> None:
     assert request.messages[1].get("content") is None
     assert request.messages[2]["content"] == "How can I help you?"
     assert request.messages[3]["content"] == "Hello!"
+
+
+def test_openai_image_url_accepts_non_string_sizing_hints() -> None:
+    """image_url/video_url objects accept and preserve non-string vendor hints."""
+    request_data = {
+        "model": "test",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What is in this image?"},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/png;base64,iVBORw0KGgo=",
+                            "detail": "auto",
+                            "max_long_side_pixel": 504,
+                        },
+                    },
+                    {
+                        "type": "video_url",
+                        "video_url": {
+                            "url": "data:video/mp4;base64,AAAA",
+                            "fps": 2.0,
+                            "max_long_side_pixel": 1008,
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data)
+    content = request.messages[0]["content"]
+    assert isinstance(content, list)
+    image_url = content[1]["image_url"]
+    # The int hint round-trips as an int and all keys are preserved.
+    assert image_url["max_long_side_pixel"] == 504
+    assert isinstance(image_url["max_long_side_pixel"], int)
+    assert image_url["url"].startswith("data:image/png")
+    assert image_url["detail"] == "auto"
+    video_url = content[2]["video_url"]
+    assert video_url["fps"] == 2.0
+    assert video_url["max_long_side_pixel"] == 1008
+
+
+async def test_openai_wrap_content_carries_detail_hint() -> None:
+    """``detail`` is carried onto wrapped image/video content parts."""
+    smily_b64 = (
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+        "AAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    )
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "describe"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": smily_b64, "detail": "high"},
+                        },
+                        {
+                            "type": "video_url",
+                            "video_url": {
+                                "url": "data:video/mp4;base64,AAAA",
+                                "detail": "low",
+                            },
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+    settings = Settings()
+    parsed = await openai_parse_chat_completion_request(request, True, settings)
+    content = parsed.messages[0].content
+    assert isinstance(content, list)
+    assert content[1].type == "image"
+    assert content[1].detail == "high"
+    assert content[2].type == "video"
+    assert content[2].detail == "low"
+
+
+async def test_openai_root_role_accepted_and_passed_through() -> None:
+    """The MiniMax ``root`` role validates and passes through unchanged as the first message."""
+    request_data = {
+        "model": "test",
+        "messages": [
+            {"role": "root", "content": "You are MiniMax."},
+            {"role": "system", "content": "You are a generic assistant."},
+            {"role": "user", "content": "Who are you?"},
+        ],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data)
+    assert request.messages[0]["role"] == "root"
+
+    settings = Settings()
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(request, False, settings)
+    # ``root`` survives normalization unchanged and stays first.
+    assert messages[0].role == "root"
+    assert messages[0].content == "You are MiniMax."
+    assert messages[1].role == "system"
+
+
+def test_thinking_translates_to_standard_reasoning_flags() -> None:
+    """The vendor ``thinking`` control is translated to standard reasoning flags.
+
+    ``enabled``/``disabled`` set ``enable_thinking``/``thinking`` on
+    ``chat_template_kwargs``; ``adaptive`` leaves them unset (templates default
+    to adaptive when no flag is given). The vendor field is not retained.
+    """
+
+    def _kwargs(mode: str) -> dict[str, Any] | None:
+        request = CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "hi"}],
+                "thinking": {"type": mode},
+            }
+        )
+        # The vendor field is consumed, not stored.
+        assert not hasattr(request, "thinking")
+        return request.chat_template_kwargs
+
+    assert _kwargs("enabled") == {"enable_thinking": True, "thinking": True}
+    assert _kwargs("disabled") == {"enable_thinking": False, "thinking": False}
+    # adaptive == unset: no reasoning flags injected.
+    assert _kwargs("adaptive") is None
+
+    # Omitted -> no flags.
+    request = CreateChatCompletionRequest.model_validate(
+        {"model": "test", "messages": [{"role": "user", "content": "hi"}]}
+    )
+    assert request.chat_template_kwargs is None
+
+    # Unknown thinking type is rejected.
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "hi"}],
+                "thinking": {"type": "sometimes"},
+            }
+        )
+
+    # A malformed thinking object (extra keys) is rejected.
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [{"role": "user", "content": "hi"}],
+                "thinking": {"type": "enabled", "budget": 100},
+            }
+        )
+
+
+def test_thinking_does_not_override_explicit_chat_template_kwargs() -> None:
+    """Client-set ``chat_template_kwargs`` win over the ``thinking`` translation."""
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "thinking": {"type": "enabled"},
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+    )
+    # Explicit kwarg is preserved; ``thinking`` only fills what is unset.
+    assert request.chat_template_kwargs == {
+        "enable_thinking": False,
+        "thinking": True,
+    }
+
+
+# ---------------------------------------------------------------------------
+# MiniMax v1/chat/completions format-correctness conformance.
+# ---------------------------------------------------------------------------
+
+
+def test_openai_accepts_both_max_tokens_and_max_completion_tokens() -> None:
+    """Both token-limit fields are accepted; max_completion_tokens wins (verifier 06_03/06_04)."""
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "Write a paragraph"}],
+            "max_tokens": 50,
+            "max_completion_tokens": 100,
+        }
+    )
+    # max_completion_tokens wins; max_tokens is reconciled to match it.
+    assert request.max_completion_tokens == 100
+    assert request.max_tokens == 100
+
+    # Equal values are left untouched.
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 64,
+            "max_completion_tokens": 64,
+        }
+    )
+    assert request.max_tokens == 64
+    assert request.max_completion_tokens == 64
+
+
+def test_openai_tool_function_name_charset_is_per_model() -> None:
+    """Tool-name charset defaults to OpenAI's set and widens per model (verifier 16_11)."""
+    import re
+
+    from max.pipelines.context.exceptions import InputError
+    from max.serve.router.openai_routes import (
+        _convert_chat_completion_tools_to_token_generator_tools,
+        _validate_tool_function_name,
+    )
+
+    minimax_re = re.compile(r"^[a-zA-Z0-9_.-]+$")
+
+    # Undotted names pass under the default (OpenAI) charset.
+    for name in ("plain_name", "my-tool"):
+        _validate_tool_function_name(name)
+
+    # The default charset rejects the dot (model-specific relaxation only).
+    for dotted in ("my-tool.v2", "weather.get_current"):
+        with pytest.raises(InputError):
+            _validate_tool_function_name(dotted)
+        # ...but a model that opts in (e.g. MiniMax M3) accepts it.
+        _validate_tool_function_name(dotted, minimax_re)
+
+    tools = _convert_chat_completion_tools_to_token_generator_tools(
+        [
+            {
+                "type": "function",
+                "function": {
+                    "name": "my-tool.v2",
+                    "description": "Tool with special chars in name",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"x": {"type": "string"}},
+                    },
+                },
+            }
+        ],
+        minimax_re,
+    )
+    assert tools is not None
+    assert tools[0]["function"]["name"] == "my-tool.v2"
+
+    # Names with disallowed characters are still rejected under any charset.
+    for bad in ("has space", "comma,name", ""):
+        with pytest.raises(InputError):
+            _validate_tool_function_name(bad, minimax_re)
+
+
+async def test_openai_rejects_invalid_json_tool_call_arguments() -> None:
+    """Assistant ``tool_calls.arguments`` that isn't valid JSON -> 400 (verifier 16_12)."""
+    from max.pipelines.context.exceptions import InputError
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {"role": "user", "content": "Weather?"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": "{invalid json}",
+                            },
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "c1", "content": "sunny"},
+            ],
+        }
+    )
+    with pytest.raises(InputError):
+        await openai_parse_chat_completion_request(
+            request, wrap_content=True, settings=Settings()
+        )
+
+
+async def test_openai_rejects_tool_call_id_mismatch() -> None:
+    """A ``tool`` reply whose ``tool_call_id`` matches no tool_call -> 400 (verifier 16_08)."""
+    from max.pipelines.context.exceptions import InputError
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {"role": "user", "content": "What's the weather?"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"location":"Beijing"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_999_wrong",
+                    "content": "sunny",
+                },
+            ],
+        }
+    )
+    with pytest.raises(InputError):
+        await openai_parse_chat_completion_request(
+            request, wrap_content=False, settings=Settings()
+        )
+
+
+async def test_openai_rejects_partial_tool_call_reply() -> None:
+    """Answering only some of an assistant's tool_calls -> 400 (verifier 16_09)."""
+    from max.pipelines.context.exceptions import InputError
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {"role": "user", "content": "Weather in Beijing and Shanghai?"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"location":"Beijing"}',
+                            },
+                        },
+                        {
+                            "id": "call_2",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"location":"Shanghai"}',
+                            },
+                        },
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "call_1", "content": "sunny"},
+            ],
+        }
+    )
+    with pytest.raises(InputError):
+        await openai_parse_chat_completion_request(
+            request, wrap_content=False, settings=Settings()
+        )
+
+
+async def test_openai_accepts_complete_tool_call_replies() -> None:
+    """A fully-answered multi-call tool exchange is accepted (guards 16_08/16_09 over-rejection)."""
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {"role": "user", "content": "Weather in Beijing and Shanghai?"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"location":"Beijing"}',
+                            },
+                        },
+                        {
+                            "id": "call_2",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"location":"Shanghai"}',
+                            },
+                        },
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "call_2", "content": "rainy"},
+                {"role": "tool", "tool_call_id": "call_1", "content": "sunny"},
+                {"role": "user", "content": "thanks"},
+            ],
+        }
+    )
+    (
+        messages,
+        _images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
+        request, wrap_content=False, settings=Settings()
+    )
+    assert len(messages) == 5
+
+
+async def test_openai_rejects_oversized_image() -> None:
+    """An image whose resolved bytes exceed 10MB -> 400 (verifier 11_04)."""
+    import base64 as _base64
+
+    from max.pipelines.context.exceptions import InputError
+
+    oversized = _base64.b64encode(b"\x00" * (10 * 1024 * 1024 + 1)).decode()
+    data_url = f"data:image/png;base64,{oversized}"
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                        {"type": "text", "text": "What?"},
+                    ],
+                }
+            ],
+        }
+    )
+    with pytest.raises(InputError):
+        await openai_parse_chat_completion_request(
+            request,
+            wrap_content=True,
+            settings=Settings(),
+            max_image_bytes=10 * 1024 * 1024,
+        )
+
+
+# A 1x1 PNG: tiny and decodable, so a batch passes the per-image decode check.
+_TINY_PNG_DATA_URL = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+    "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+def _request_with_n_images(n: int) -> CreateChatCompletionRequest:
+    content = [
+        {"type": "image_url", "image_url": {"url": _TINY_PNG_DATA_URL}}
+        for _ in range(n)
+    ]
+    return CreateChatCompletionRequest.model_validate(
+        {"model": "test", "messages": [{"role": "user", "content": content}]}
+    )
+
+
+async def test_openai_rejects_too_many_images() -> None:
+    """More than 200 images on a single request -> 400 (spec 3b.i)."""
+    from max.pipelines.context.exceptions import InputError
+
+    request = _request_with_n_images(201)
+    with pytest.raises(InputError):
+        await openai_parse_chat_completion_request(
+            request,
+            wrap_content=True,
+            settings=Settings(),
+            max_images_per_request=200,
+        )
+
+
+async def test_openai_accepts_image_count_at_limit() -> None:
+    """Exactly 200 images is accepted (the cap is exclusive, no off-by-one)."""
+    request = _request_with_n_images(200)
+    (
+        _messages,
+        images,
+        _videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
+        request,
+        wrap_content=True,
+        settings=Settings(),
+        max_images_per_request=200,
+    )
+    assert len(images) == 200
+
+
+async def test_openai_accepts_64mb_request_body() -> None:
+    """A request body of at least 64MB parses without error (spec 3d)."""
+    # ~64MiB of text content, well past the 64M floor once JSON-encoded.
+    big_text = "a" * (64 * 1024 * 1024)
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": big_text}],
+        }
+    )
+    (
+        messages,
+        images,
+        videos,
+        _decoded,
+    ) = await openai_parse_chat_completion_request(
+        request, wrap_content=True, settings=Settings()
+    )
+    assert len(messages) == 1
+    assert not images
+    assert not videos
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({}, True),  # defaults to True
+        ({"reasoning_split": True}, True),
+        ({"reasoning_split": False}, False),  # False is accepted and preserved
+    ],
+)
+def test_reasoning_split(payload: dict[str, Any], expected: bool) -> None:
+    """``reasoning_split`` defaults to True; both True and False are accepted."""
+    body = {
+        "model": "test",
+        "messages": [{"role": "user", "content": "hi"}],
+        **payload,
+    }
+    request = CreateChatCompletionRequest.model_validate(body)
+    assert request.reasoning_split is expected

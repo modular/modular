@@ -276,13 +276,18 @@ def test_key_error() raises:
 
 def _test_iter_bounds[
     I: Iterator, //
-](var dict_iter: I, dict_len: Int,) raises:
+](
+    var dict_iter: I,
+    dict_len: Int,
+) raises where conforms_to(
+    I.Element, ImplicitlyDeletable
+):
     var iter = dict_iter^
     for i in range(dict_len):
         var lower, upper = iter.bounds()
         assert_equal(dict_len - i, lower)
         assert_equal(dict_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -385,6 +390,32 @@ def test_iter_take_items() raises:
     for i in range(3):
         with assert_raises(contains="KeyError"):
             _ = dict[i]
+
+
+def test_iter_take_items_owned() raises:
+    # Test that dict `take_items()` works with non-Copyable values
+    var dict = Dict[MoveOnly[Int], String]()
+    dict[MoveOnly(0)] = "a"
+    dict[MoveOnly(1)] = "b"
+    dict[MoveOnly(2)] = "c"
+
+    var values = String()
+    var keys = 0
+
+    for entry in dict.take_items():
+        keys += entry.key.data
+        values += entry.value
+
+    assert_equal(values, "abc")
+    assert_equal(keys, 3)
+    assert_equal(len(dict), 0)
+    with assert_raises():
+        var it = dict.take_items()
+        _ = it.__next__()  # raises StopIteration
+
+    for i in range(3):
+        with assert_raises(contains="KeyError"):
+            _ = dict[MoveOnly(i)]
 
 
 def test_iter_take_items_empty() raises:
@@ -593,7 +624,7 @@ def test_mojo_issue_1729() raises:
         assert_equal(i, d[DummyKey(key)])
 
 
-def _test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]) raises:
+def _test_taking_owned_kwargs_dict(**kwargs: Int) raises:
     assert_equal(len(kwargs), 2)
 
     assert_true("fruit" in kwargs)
@@ -639,7 +670,7 @@ def test_owned_kwargs_dict() raises:
     var owned_kwargs = OwnedKwargsDict[Int]()
     owned_kwargs._insert("fruit", 8)
     owned_kwargs._insert("dessert", 9)
-    _test_taking_owned_kwargs_dict(owned_kwargs^)
+    _test_taking_owned_kwargs_dict(**owned_kwargs^)
 
 
 def test_find_get() raises:
@@ -1274,6 +1305,11 @@ def test_dict_conditional_conformances() raises:
     assert_true(conforms_to(Dict[Int, Int], Hashable))
     assert_false(conforms_to(Dict[Int, NonWritable], Writable))
 
+    # Owned iteration should work for any combination of non-Copyable K/V types
+    assert_true(conforms_to(Dict[MoveOnly[Int], Int], IterableOwned))
+    assert_true(conforms_to(Dict[Int, MoveOnly[Int]], IterableOwned))
+    assert_true(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], IterableOwned))
+
     # Move-only key drops every copy-requiring conformance: each conditional
     # clause on `Dict` includes `conforms_to(K, Copyable)`.
     assert_false(conforms_to(Dict[MoveOnly[Int], Int], Copyable))
@@ -1297,14 +1333,15 @@ def test_dict_conditional_conformances() raises:
 
 
 def test_dict_iter_owned() raises:
-    var d = Dict[String, Int]()
-    d["a"] = 1
-    d["b"] = 2
-    d["c"] = 3
+    # Test that owned iteration works, for non-Copyable types
+    var d = Dict[MoveOnly[String], Int]()
+    d[MoveOnly("a")] = 1
+    d[MoveOnly("b")] = 2
+    d[MoveOnly("c")] = 3
 
-    var keys = List[String]()
-    for key in d^:
-        keys.append(key)
+    var keys = List[MoveOnly[String]]()
+    for var key in d^:
+        keys.append(key^)
 
     assert_equal(len(keys), 3)
     assert_equal(keys[0], "a")

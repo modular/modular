@@ -1396,7 +1396,19 @@ struct SlidingWindowNonCausalMask[window_size: Int](
     def mask_strategies[
         BM: Int, BN: Int
     ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
-        return {MaskStrategy.BITMASK, MaskStrategy.NO_MASK}
+        # The second set has NO_MASK *status* (no window-edge masking above
+        # the band), but it still contains the final partial KV tile when
+        # `num_cols % BN != 0`. Unlike causal masks — whose `mask()` hides
+        # columns `>= num_keys` as future — nothing else bounds those
+        # columns: with `MaskStrategy.NO_MASK` the comptime-set softmax
+        # paths (sm100 FA4 and depth512) skip the `col < num_keys` clip and
+        # attend to uninitialized slots in the tail of the last KV page.
+        # (The runtime-status fallback paths use `OUT_OF_BOUNDS` for
+        # NO_MASK-status tiles and never had this bug.) Use BITMASK for
+        # both sets: `mask_bits()` folds the window lower bound and the
+        # `num_keys` OOB clip into one visibility mask and computes
+        # all-ones for interior tiles at a few scalar ops per 32 columns.
+        return {MaskStrategy.BITMASK, MaskStrategy.BITMASK}
 
     @always_inline
     def mask_bits(
@@ -1681,6 +1693,8 @@ struct MaterializedMask[
     comptime check_mask_during_decoding: Bool = True
 
     var mask_tensor: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_]
+
+    @__allow_legacy_any_origin_fields
     var start_pos: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin

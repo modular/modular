@@ -19,11 +19,18 @@ from collections.abc import Sequence
 from unittest.mock import MagicMock
 
 import pytest
-from max.driver import Device
+from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.sharding import DeviceMesh, PlacementMapping, Replicated
+from max.experimental.nn.common_layers.mesh_axis import TP
+from max.experimental.sharding import (
+    DeviceMesh,
+    Partial,
+    PlacementMapping,
+    Replicated,
+    Sharded,
+)
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import (
     BufferType,
@@ -33,10 +40,11 @@ from max.graph import (
     SymbolicDim,
     TensorValue,
 )
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_mla import (
     QuantizedLatentAttentionWithRope,
+    tensor_parallel_latent_attention_with_rope,
 )
 from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
     FP8BlockTensor,
@@ -58,13 +66,11 @@ _PAGE_SIZE = 128
 
 
 def _make_kv_params(devices: Sequence[Device]) -> KVCacheParams:
-    return KVCacheParams(
+    return MLAKVCacheParams(
         dtype=DType.float32,
-        n_kv_heads=1,
         head_dim=_CACHE_HEAD_DIM,
         num_layers=_NUM_LAYERS,
         devices=[DeviceRef.from_device(device) for device in devices],
-        is_mla=True,
         num_q_heads=_N_HEADS,
         page_size=_PAGE_SIZE,
     )
@@ -338,11 +344,13 @@ def test_mla_bf16_forward(
             dtype=DType.bfloat16,
         )
         input_row_offsets = Tensor.zeros([batch_size + 1], dtype=DType.uint32)
+        layer_idx = F.constant(0, DType.uint32, device=CPU())
         kv_collection = _build_kv_collection(
             kv_params, batch_size, n_pages, [device]
         )
+        layer_idx = F.constant(0, DType.uint32, device=CPU())
 
-        out = layer(x, kv_collection, freqs_cis, input_row_offsets)
+        out = layer(x, kv_collection, freqs_cis, layer_idx, input_row_offsets)
 
     assert list(out.shape) == [total_seq_len, _HIDDEN_SIZE]
     assert out.dtype == x.dtype
@@ -376,11 +384,87 @@ def test_mla_fp8_forward(
             [total_seq_len, _QK_ROPE_HEAD_DIM], device=device
         )
         input_row_offsets = Tensor.zeros([batch_size + 1], dtype=DType.uint32)
+        layer_idx = F.constant(0, DType.uint32, device=CPU())
         kv_collection = _build_kv_collection(
             kv_params, batch_size, n_pages, [device]
         )
 
-        out = layer(x, kv_collection, freqs_cis, input_row_offsets)
+        out = layer(x, kv_collection, freqs_cis, layer_idx, input_row_offsets)
 
     assert list(out.shape) == [total_seq_len, _HIDDEN_SIZE]
     assert out.dtype == DType.bfloat16
+
+
+# --------------------------------------------------------------------------- #
+# Tensor parallelism
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("q_lora_rank", [None, _Q_LORA_RANK])
+def test_mla_fp8_tensor_parallel(
+    mock_accelerator: MagicMock,
+    fp8_quant_config: QuantConfig,
+    q_lora_rank: int | None,
+) -> None:
+    """FP8 MLA tensor parallelism co-shards each weight's data and scales.
+
+    The rowwise projections (``q_b_proj`` / ``kv_b_proj`` / ``q_proj``) shard
+    the packed data and block-scale grid on axis 0; ``o_proj`` is columnwise
+    (axis 1). The block-scaled FP8 kernels propagate those placements so the
+    head-parallel attention output reduces to a partial sum at ``o_proj``.
+    """
+    batch_size = 1
+    total_seq_len = 4
+    n_pages = 4
+
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        kv_params = _make_kv_params(devices)
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated_mapping = PlacementMapping(mesh, (Replicated(),))
+
+        layer = tensor_parallel_latent_attention_with_rope(
+            _make_layer(
+                kv_params,
+                q_lora_rank=q_lora_rank,
+                quant_config=fp8_quant_config,
+            )
+        ).to(mesh)
+
+        # Rowwise weights co-shard data and scales on axis 0.
+        assert isinstance(layer.kv_b_proj, FP8BlockTensor)
+        assert layer.kv_b_proj.data.mapping.to_placements() == (Sharded(0),)
+        assert layer.kv_b_proj.scale_inv.mapping.to_placements() == (
+            Sharded(0),
+        )
+        # o_proj is columnwise: data and scales shard the contraction (axis 1).
+        assert isinstance(layer.o_proj.weight, FP8BlockTensor)
+        assert layer.o_proj.weight.data.mapping.to_placements() == (Sharded(1),)
+        assert layer.o_proj.weight.scale_inv.mapping.to_placements() == (
+            Sharded(1),
+        )
+
+        x = Tensor.zeros(
+            [total_seq_len, _HIDDEN_SIZE],
+            dtype=DType.bfloat16,
+            device=replicated_mapping,
+        )
+        freqs_cis = Tensor.zeros(
+            [total_seq_len, _QK_ROPE_HEAD_DIM], device=replicated_mapping
+        )
+        input_row_offsets = Tensor.zeros(
+            [batch_size + 1], dtype=DType.uint32, device=replicated_mapping
+        )
+        layer_idx = F.constant(0, DType.uint32, device=CPU())
+        kv_collection = _build_kv_collection(
+            kv_params, batch_size, n_pages, devices
+        )
+
+        out = layer(x, kv_collection, freqs_cis, layer_idx, input_row_offsets)
+
+    assert list(out.shape) == [total_seq_len, _HIDDEN_SIZE]
+    assert out.dtype == DType.bfloat16
+    assert out.mapping.mesh == mesh
+    # o_proj is row-parallel, so the attention output is a partial sum; the
+    # all-reduce that resolves it lives in the transformer block.
+    assert out.mapping.to_placements() == (Partial(),)

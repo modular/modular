@@ -37,10 +37,12 @@ class KimiK2_5ReasoningParser(ReasoningParser):
     https://huggingface.co/moonshotai/Kimi-K2.5), a single assistant turn
     can interleave multiple ``<think>...</think>`` blocks with
     ``<|tool_calls_section_begin|>...<|tool_calls_section_end|>`` blocks.
-    Only ``</think>`` ends a reasoning span; tool-call sections are
-    neither reasoning nor content and are consumed by the tool parser
-    (when the client opted in via ``tools=[...]``) or stripped from
-    user-visible output otherwise.
+
+    A reasoning span ends on ``</think>`` or ``<|tool_calls_section_begin|>``;
+    the model may open the tool-call section directly from inside the
+    prefilled ``<think>`` block without a closing ``</think>``. The section
+    marker is left as content rather than consumed as a delimiter, so the
+    tool parser (which only sees content) receives the whole section.
 
     Reasoning may begin implicitly, without an explicit ``<think>``
     token, when the chat template prefilled the assistant turn already
@@ -59,9 +61,10 @@ class KimiK2_5ReasoningParser(ReasoningParser):
     ) -> None:
         self.think_start_token_id = think_start_token_id
         self.think_end_token_id = think_end_token_id
-        # Retained only to disambiguate the "implicit pre-fill" path in
-        # :meth:`will_reason_after_prompt`. ``stream()`` never treats it as
-        # an end-of-reasoning delimiter.
+        # ``<|tool_calls_section_begin|>`` implicitly ends reasoning when the
+        # model skips the closing ``</think>``. Kimi tool calls always open
+        # with this section marker (the inner ``<|tool_call_begin|>`` only
+        # ever appears inside a section), so it is the single tool terminator.
         self.tool_section_start_token_id = tool_section_start_token_id
 
     def stream(
@@ -77,6 +80,16 @@ class KimiK2_5ReasoningParser(ReasoningParser):
         chunk after reasoning ended in a prior chunk) aren't misclassified
         as reasoning.
         """
+        # Reasoning ends on ``</think>`` or, when the model skips it, on the
+        # tool-call section opener. Whether the end delimiter is consumed
+        # (``</think>``) or kept as content (the section marker, which the
+        # tool parser needs) is decided after the loop.
+        end_token_ids = (
+            (self.think_end_token_id, self.tool_section_start_token_id)
+            if self.tool_section_start_token_id is not None
+            else (self.think_end_token_id,)
+        )
+
         start_token_idx: int | None = None
         end_token_idx: int | None = None
         for i, token_id in enumerate(delta_token_ids):
@@ -86,12 +99,11 @@ class KimiK2_5ReasoningParser(ReasoningParser):
             ):
                 # Take the earliest start token
                 start_token_idx = i
-            elif token_id == self.think_end_token_id:
-                # Only consume an end token if we have an active reasoning
-                # span — either pre-seeded via ``is_currently_reasoning`` or
-                # opened by a ``<think>`` earlier in this chunk. A stray
-                # ``</think>`` from prior content should not pull content
-                # tokens into the reasoning region.
+            elif token_id in end_token_ids:
+                # Only end on an active span — either pre-seeded via
+                # ``is_currently_reasoning`` or opened by a ``<think>``
+                # earlier in this chunk — so a stray marker from prior
+                # content doesn't pull content into the reasoning region.
                 if is_currently_reasoning or start_token_idx is not None:
                     end_token_idx = i
                     break
@@ -118,9 +130,15 @@ class KimiK2_5ReasoningParser(ReasoningParser):
         if end_token_idx is None:
             end_reasoning = len(delta_token_ids)
             end_reasoning_with_delimiters = len(delta_token_ids)
-        else:
+        elif delta_token_ids[end_token_idx] == self.think_end_token_id:
+            # ``</think>`` is consumed as a delimiter (dropped from output).
             end_reasoning = end_token_idx
             end_reasoning_with_delimiters = end_token_idx + 1
+        else:
+            # A tool-call marker is not consumed — it stays in the content
+            # region so the downstream tool parser sees the whole section.
+            end_reasoning = end_token_idx
+            end_reasoning_with_delimiters = end_token_idx
 
         span = ReasoningSpan(
             reasoning_with_delimiters=(
@@ -148,19 +166,18 @@ class KimiK2_5ReasoningParser(ReasoningParser):
         Scan right-to-left and return based on the first delimiter seen:
 
         * ``<think>`` → reasoning is currently open → ``True``.
-        * ``</think>`` (or ``<|tool_calls_section_begin|>``) → reasoning
-          is currently closed → ``False``.
+        * ``</think>`` (or ``<|tool_calls_section_begin|>``) → reasoning is
+          currently closed → ``False``.
         * No delimiters at all → reasoning is not in use → ``False``.
-        """
-        end_token_ids: tuple[int, ...]
-        if self.tool_section_start_token_id is not None:
-            end_token_ids = (
-                self.think_end_token_id,
-                self.tool_section_start_token_id,
-            )
-        else:
-            end_token_ids = (self.think_end_token_id,)
 
+        Uses the same end-of-reasoning delimiters as :meth:`stream` so both
+        agree on where reasoning ends.
+        """
+        end_token_ids = (
+            (self.think_end_token_id, self.tool_section_start_token_id)
+            if self.tool_section_start_token_id is not None
+            else (self.think_end_token_id,)
+        )
         for token_id in reversed(prompt_token_ids):
             if token_id == self.think_start_token_id:
                 return True

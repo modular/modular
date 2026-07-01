@@ -189,8 +189,6 @@ class TokenGeneratorPipeline(
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
 
-            METRICS.input_tokens(context.tokens.prompt_length)
-
             # Create buffered detokenizers for proper UTF-8 handling.
             # These handle multi-byte UTF-8 sequences that span multiple tokens,
             # such as emojis like 😊 which require 4 bytes and may be split

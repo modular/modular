@@ -305,8 +305,16 @@ def execute_1q_sink_test[
         RuntimeLayout[sink_layout].row_major(IndexList[1](num_q_heads)),
     )
 
-    var kv_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        kv_block_paged_lt,
+    var kv_collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+    ](
+        # `flash_attention`/`mha_gpu_naive` read both the `k` and `v` cache views,
+        # which are disjoint kv_idx halves of one `blocks` buffer sharing its origin,
+        # so the nested-origin exclusivity check rejects passing both. Declare the
+        # kv_block_paged_lt origin as UnsafeAnyOrigin to opt the out of exclusivity checking.
+        kv_block_paged_lt.as_unsafe_any_origin(),
         cache_lengths_lt,
         paged_lut_lt,
         UInt32(max_prompt_length),

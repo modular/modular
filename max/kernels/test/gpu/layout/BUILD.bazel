@@ -50,6 +50,9 @@ _EXTRA_CONSTRAINTS = {
     # Works on any NVIDIA GPU (H100+), incompatible with AMD
     "test_grouped_tensormap_update.mojo": ["//:nvidia_gpu"],
 } | {
+    # Experimental SWIZZLE_NONE uint32 TMA store, validated on B200.
+    "test_tma_swizzle_none_uint32_store.mojo": ["//:b200_gpu"],
+} | {
     "test_layout_tensor_copy_amd.mojo": ["//:amd_gpu"],
     "test_layout_tensor_copy_nvidia.mojo": ["//:nvidia_gpu"],
     # compile_info emits PTX assembly, which is NVIDIA-specific
@@ -61,6 +64,7 @@ _EXTRA_CONSTRAINTS = {
     "test_tensor_core_amd2.mojo": ["//:amd_gpu"],
     "test_apple_mma_fragment.mojo": ["//:apple_gpu"],  # MSTDL-2592
     "test_tensor_core_apple.mojo": ["//:apple_gpu"],
+    "test_apple_mma_8x8.mojo": ["//:apple_gpu"],
     "test_tensor_core_nvidia.mojo": ["//:nvidia_gpu"],
     "test_tiled_matmul_gpu.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_vendor_blas_matmul.mojo": select({
@@ -85,6 +89,7 @@ _FILECHECK_TESTS = [
     "test_layout_tensor_copy_nvidia.mojo",
     "test_tensor_core_amd.mojo",
     "test_tensor_core_apple.mojo",
+    "test_apple_mma_8x8.mojo",
     "test_tensor_core_mi300x.mojo",
     "test_tensor_core_mi355x.mojo",
     "test_tensor_core_amd2.mojo",
@@ -106,7 +111,7 @@ _FILECHECK_TESTS = [
             "matmul_kernels.mojo",
         ],
         exec_properties = {
-            "test.resources:gpu-memory": "1.5",
+            "test.resources:gpu-memory": "2",
         },
         main = src,
         tags = ["gpu"],

@@ -13,7 +13,6 @@
 """Tests for `std.utils.coord` (`Coord`, `idx2crd`, `crd2idx`, etc.)."""
 
 from std.sys import size_of
-from std.sys.intrinsics import _type_is_eq
 from std.testing import TestSuite, assert_equal, assert_true
 from std.utils.coord import (
     ComptimeInt,
@@ -131,9 +130,9 @@ def test_idx2crd_static_shape_1() raises:
     assert_equal(c3[1].value(), 3)
 
     # First dim should be ComptimeInt[0] (static shape 1).
-    assert_true(_type_is_eq[type_of(c0[0]), ComptimeInt[0]]())
+    assert_true(type_of(c0[0]) == ComptimeInt[0])
     # Second dim should be Scalar.
-    assert_true(_type_is_eq[type_of(c0[1]), Int64]())
+    assert_true(type_of(c0[1]) == Int64)
 
 
 def test_idx2crd_all_static_1() raises:
@@ -145,8 +144,8 @@ def test_idx2crd_all_static_1() raises:
     assert_equal(c0[0].value(), 0)
     assert_equal(c0[1].value(), 0)
 
-    assert_true(_type_is_eq[type_of(c0[0]), ComptimeInt[0]]())
-    assert_true(_type_is_eq[type_of(c0[1]), ComptimeInt[0]]())
+    assert_true(type_of(c0[0]) == ComptimeInt[0])
+    assert_true(type_of(c0[1]) == ComptimeInt[0])
 
 
 def test_idx2crd_mixed_static_dynamic() raises:
@@ -159,9 +158,9 @@ def test_idx2crd_mixed_static_dynamic() raises:
     assert_equal(c5[1].value(), 0)
     assert_equal(c5[2].value(), 1)
 
-    assert_true(_type_is_eq[type_of(c5[0]), Int64]())
-    assert_true(_type_is_eq[type_of(c5[1]), ComptimeInt[0]]())
-    assert_true(_type_is_eq[type_of(c5[2]), Int64]())
+    assert_true(type_of(c5[0]) == Int64)
+    assert_true(type_of(c5[1]) == ComptimeInt[0])
+    assert_true(type_of(c5[2]) == Int64)
 
 
 def test_idx2crd_no_static_1() raises:
@@ -170,90 +169,70 @@ def test_idx2crd_no_static_1() raises:
     var stride = Coord(Idx[4], Idx[1])
 
     var _c = idx2crd(0, shape, stride)
-    assert_true(_type_is_eq[type_of(_c[0]), Int64]())
-    assert_true(_type_is_eq[type_of(_c[1]), Int64]())
+    assert_true(type_of(_c[0]) == Int64)
+    assert_true(type_of(_c[1]) == Int64)
 
 
 def test_idx2crd_result_types_runtime_idx() raises:
     """No shape-1 dims with runtime idx: all Scalar."""
-    comptime shape = TypeList.of[
-        Trait=CoordLike, ComptimeInt[3], ComptimeInt[4]
-    ]()
-    comptime stride = TypeList.of[
-        Trait=CoordLike, ComptimeInt[4], ComptimeInt[1]
-    ]()
+    comptime shape = TypeList.of[ComptimeInt[3], ComptimeInt[4]]()
+    comptime stride = TypeList.of[ComptimeInt[4], ComptimeInt[1]]()
     comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
-    assert_true(_type_is_eq[types[0], Int64]())
-    assert_true(_type_is_eq[types[1], Int64]())
+    assert_true(types[0] == Int64)
+    assert_true(types[1] == Int64)
 
 
 def test_idx2crd_result_types_shape_1() raises:
     """Shape dim of 1 produces ComptimeInt[0], others Scalar."""
-    comptime shape = TypeList.of[
-        Trait=CoordLike, ComptimeInt[1], ComptimeInt[4]
-    ]()
-    comptime stride = TypeList.of[
-        Trait=CoordLike, ComptimeInt[4], ComptimeInt[1]
-    ]()
+    comptime shape = TypeList.of[ComptimeInt[1], ComptimeInt[4]]()
+    comptime stride = TypeList.of[ComptimeInt[4], ComptimeInt[1]]()
     comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
-    assert_true(_type_is_eq[types[0], ComptimeInt[0]]())
-    assert_true(_type_is_eq[types[1], Int64]())
+    assert_true(types[0] == ComptimeInt[0])
+    assert_true(types[1] == Int64)
 
 
 def test_idx2crd_result_types_all_shape_1() raises:
     """All shape dims are 1: all ComptimeInt[0]."""
-    comptime shape = TypeList.of[
-        Trait=CoordLike, ComptimeInt[1], ComptimeInt[1]
-    ]()
-    comptime stride = TypeList.of[
-        Trait=CoordLike, ComptimeInt[1], ComptimeInt[1]
-    ]()
+    comptime shape = TypeList.of[ComptimeInt[1], ComptimeInt[1]]()
+    comptime stride = TypeList.of[ComptimeInt[1], ComptimeInt[1]]()
     comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
-    assert_true(_type_is_eq[types[0], ComptimeInt[0]]())
-    assert_true(_type_is_eq[types[1], ComptimeInt[0]]())
+    assert_true(types[0] == ComptimeInt[0])
+    assert_true(types[1] == ComptimeInt[0])
 
 
 def test_idx2crd_result_types_runtime_shape() raises:
     """Scalar shape dims always produce Scalar result."""
-    comptime shape = TypeList.of[
-        Trait=CoordLike, Scalar[DType.int], Scalar[DType.int]
-    ]()
-    comptime stride = TypeList.of[
-        Trait=CoordLike, Scalar[DType.int], Scalar[DType.int]
-    ]()
+    comptime shape = TypeList.of[Scalar[DType.int], Scalar[DType.int]]()
+    comptime stride = TypeList.of[Scalar[DType.int], Scalar[DType.int]]()
     comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
-    assert_true(_type_is_eq[types[0], Int64]())
-    assert_true(_type_is_eq[types[1], Int64]())
+    assert_true(types[0] == Int64)
+    assert_true(types[1] == Int64)
 
 
 def test_idx2crd_result_types_all_static() raises:
     """All three static (idx=5, shape=(3,4), stride=(4,1)): compile-time results.
     """
-    comptime shape = TypeList.of[
-        Trait=CoordLike, ComptimeInt[3], ComptimeInt[4]
-    ]()
-    comptime stride = TypeList.of[
-        Trait=CoordLike, ComptimeInt[4], ComptimeInt[1]
-    ]()
+    comptime shape = TypeList.of[ComptimeInt[3], ComptimeInt[4]]()
+    comptime stride = TypeList.of[ComptimeInt[4], ComptimeInt[1]]()
     comptime types = _Idx2CrdResultTypes[
         DType.int64, ComptimeInt[5], stride, shape
     ]
     # (5 // 4) % 3 = 1
-    assert_true(_type_is_eq[types[0], ComptimeInt[1]]())
+    assert_true(types[0] == ComptimeInt[1])
     # (5 // 1) % 4 = 1
-    assert_true(_type_is_eq[types[1], ComptimeInt[1]]())
+    assert_true(types[1] == ComptimeInt[1])
 
 
 def test_idx2crd_single_dim() raises:
     """Test idx2crd with a single (non-tuple) shape."""
     var c = idx2crd(7, Idx[10], Idx[1])
     assert_equal(c[0].value(), 7)
-    assert_true(_type_is_eq[type_of(c[0]), Int64]())
+    assert_true(type_of(c[0]) == Int64)
 
     # Single dim with shape 1 should produce ComptimeInt[0].
     var c1 = idx2crd(0, Idx[1], Idx[1])
     assert_equal(c1[0].value(), 0)
-    assert_true(_type_is_eq[type_of(c1[0]), ComptimeInt[0]]())
+    assert_true(type_of(c1[0]) == ComptimeInt[0])
 
 
 def test_idx2crd_col_major() raises:
@@ -301,15 +280,15 @@ def test_idx2crd_comptime_idx() raises:
     # (5 // 1) % 4 = 1
     assert_equal(c5[1].value(), 1)
     # Both dimensions should be ComptimeInt.
-    assert_true(_type_is_eq[type_of(c5[0]), ComptimeInt[1]]())
-    assert_true(_type_is_eq[type_of(c5[1]), ComptimeInt[1]]())
+    assert_true(type_of(c5[0]) == ComptimeInt[1])
+    assert_true(type_of(c5[1]) == ComptimeInt[1])
 
     # Compile-time idx=0 should yield ComptimeInt[0] for both dims.
     var c0 = idx2crd(Idx[0], shape, stride)
     assert_equal(c0[0].value(), 0)
     assert_equal(c0[1].value(), 0)
-    assert_true(_type_is_eq[type_of(c0[0]), ComptimeInt[0]]())
-    assert_true(_type_is_eq[type_of(c0[1]), ComptimeInt[0]]())
+    assert_true(type_of(c0[0]) == ComptimeInt[0])
+    assert_true(type_of(c0[1]) == ComptimeInt[0])
 
 
 def test_idx2crd_mixed_static_dynamic_idx() raises:
@@ -323,9 +302,9 @@ def test_idx2crd_mixed_static_dynamic_idx() raises:
     var c5 = idx2crd(Idx[5], shape, stride)
     assert_equal(c5[0].value(), 1)
     assert_equal(c5[1].value(), 1)
-    assert_true(_type_is_eq[type_of(c5[0]), Int64]())
+    assert_true(type_of(c5[0]) == Int64)
     # (5 // 1) % 4 = 1
-    assert_true(_type_is_eq[type_of(c5[1]), ComptimeInt[1]]())
+    assert_true(type_of(c5[1]) == ComptimeInt[1])
 
 
 def test_idx2crd_nested_depth2() raises:
@@ -561,10 +540,10 @@ def test_cast_preserves_static_dims() raises:
     assert_equal(casted[1].value(), 7)
     assert_equal(casted[2].value(), 3)
     assert_equal(casted[3].value(), 11)
-    assert_true(_type_is_eq[type_of(casted[0]), ComptimeInt[5]]())
-    assert_true(_type_is_eq[type_of(casted[1]), UInt32]())
-    assert_true(_type_is_eq[type_of(casted[2]), ComptimeInt[3]]())
-    assert_true(_type_is_eq[type_of(casted[3]), UInt32]())
+    assert_true(type_of(casted[0]) == ComptimeInt[5])
+    assert_true(type_of(casted[1]) == UInt32)
+    assert_true(type_of(casted[2]) == ComptimeInt[3])
+    assert_true(type_of(casted[3]) == UInt32)
 
 
 def main() raises:

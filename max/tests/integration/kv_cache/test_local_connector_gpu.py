@@ -17,8 +17,16 @@ import pytest
 from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, KVConnectorType
+from max.nn.kv_cache import KVCacheBuffer, KVConnectorType, MHAKVCacheParams
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
+from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
+
+
+# Test-fixture helper for the bytes-only connector boundary: tests pre-date
+# Option A and used int hashes directly; ``_hs`` wraps a variadic sequence of
+# ints into the canonical 8-byte signed-BE encoding.
+def _hs(*ns: int) -> list[bytes]:
+    return [to_block_hash_bytes(n) for n in ns]
 
 
 def create_local_connector(
@@ -38,7 +46,7 @@ def create_local_connector(
         pytest.skip("No GPU available")
 
     device = Accelerator()
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         num_layers=num_layers,
         n_kv_heads=n_kv_heads,
@@ -63,7 +71,7 @@ def create_local_connector(
     )
 
     return LocalConnector(
-        kv_memory=kv_buffer.to_memory(),
+        replica_kv_memory=[kv_buffer.to_memory()],
         total_num_host_blocks=num_host_blocks,
     )
 
@@ -91,7 +99,7 @@ def test_offload_transfers_blocks_to_host() -> None:
     """Verify offload() transfers blocks to host cache."""
     connector = create_local_connector()
 
-    connector.offload([0, 1], [100, 200])
+    connector.offload([0, 1], _hs(100, 200))
 
     assert connector.num_used_host_blocks == 2
 
@@ -100,8 +108,8 @@ def test_duplicate_hash_not_saved_twice() -> None:
     """Verify blocks with same hash are deduplicated."""
     connector = create_local_connector()
 
-    connector.offload([0], [100])
-    connector.offload([1], [100])
+    connector.offload([0], _hs(100))
+    connector.offload([1], _hs(100))
 
     assert connector.num_used_host_blocks == 1
 
@@ -110,7 +118,7 @@ def test_load_returns_zero_for_empty_cache() -> None:
     """Verify load returns 0 when cache is empty."""
     connector = create_local_connector(page_size=16)
 
-    loaded = connector.load([0, 1, 2], [100, 200, 300])
+    loaded = connector.load([0, 1, 2], _hs(100, 200, 300))
 
     assert loaded == 0
 
@@ -119,9 +127,9 @@ def test_load_finds_cached_blocks() -> None:
     """Verify load returns correct number of loaded blocks."""
     connector = create_local_connector(page_size=16)
 
-    connector.offload([0, 1, 2], [100, 200, 300])
+    connector.offload([0, 1, 2], _hs(100, 200, 300))
 
-    loaded = connector.load([3, 4, 5], [100, 200, 300])
+    loaded = connector.load([3, 4, 5], _hs(100, 200, 300))
 
     assert loaded == 3
 
@@ -130,10 +138,10 @@ def test_load_stops_at_first_miss() -> None:
     """Verify load returns contiguous prefix only."""
     connector = create_local_connector(page_size=16)
 
-    connector.offload([0], [100])
-    connector.offload([2], [300])
+    connector.offload([0], _hs(100))
+    connector.offload([2], _hs(300))
 
-    loaded = connector.load([3, 4], [100, 200])
+    loaded = connector.load([3, 4], _hs(100, 200))
 
     assert loaded == 1
 
@@ -142,10 +150,10 @@ def test_load_full_round_trip() -> None:
     """Verify full prefix cache hit: save -> load round-trip."""
     connector = create_local_connector(page_size=16)
 
-    connector.offload([0, 1, 2], [100, 200, 300])
+    connector.offload([0, 1, 2], _hs(100, 200, 300))
     assert connector.num_used_host_blocks == 3
 
-    loaded = connector.load([10, 11, 12], [100, 200, 300])
+    loaded = connector.load([10, 11, 12], _hs(100, 200, 300))
     assert loaded == 3
 
     assert connector.num_used_host_blocks == 3
@@ -155,9 +163,9 @@ def test_load_partial_hit() -> None:
     """Verify partial prefix cache hit returns only matching prefix."""
     connector = create_local_connector(page_size=16)
 
-    connector.offload([0, 1], [100, 200])
+    connector.offload([0, 1], _hs(100, 200))
 
-    loaded = connector.load([10, 11, 12], [100, 200, 300])
+    loaded = connector.load([10, 11, 12], _hs(100, 200, 300))
     assert loaded == 2
 
 
@@ -165,9 +173,9 @@ def test_load_miss_at_start() -> None:
     """Verify cache miss at start of sequence returns nothing."""
     connector = create_local_connector(page_size=16)
 
-    connector.offload([1, 2], [200, 300])
+    connector.offload([1, 2], _hs(200, 300))
 
-    loaded = connector.load([10, 11, 12], [100, 200, 300])
+    loaded = connector.load([10, 11, 12], _hs(100, 200, 300))
     assert loaded == 0
 
 
@@ -175,7 +183,7 @@ def test_reset_prefix_cache_clears_host_cache() -> None:
     """Verify reset_prefix_cache clears all cached blocks."""
     connector = create_local_connector()
 
-    connector.offload([0, 1, 2], [100, 200, 300])
+    connector.offload([0, 1, 2], _hs(100, 200, 300))
     assert connector.num_used_host_blocks == 3
 
     connector.reset_prefix_cache()
@@ -187,7 +195,7 @@ def test_shutdown_completes_cleanly() -> None:
     """Verify shutdown waits for transfers and completes cleanly."""
     connector = create_local_connector()
 
-    connector.offload([0, 1], [100, 200])
+    connector.offload([0, 1], _hs(100, 200))
 
     connector.shutdown()
 
@@ -196,12 +204,12 @@ def test_repeated_load_does_not_leak() -> None:
     """Verify N rounds of load don't accumulate leaked blocks."""
     connector = create_local_connector(num_host_blocks=32)
 
-    connector.offload([0], [100])
+    connector.offload([0], _hs(100))
 
     free_baseline = connector._host_block_pool.free_block_queue.num_free_blocks
 
     for _i in range(5):
-        loaded = connector.load([10], [100])
+        loaded = connector.load([10], _hs(100))
         assert loaded == 1
 
     free_after_cycles = (

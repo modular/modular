@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -10,7 +9,10 @@ package(default_visibility = [
 modular_py_test(
     name = "tests",
     size = "large",
-    srcs = glob(["*.py"]),
+    srcs = glob(
+        ["*.py"],
+        exclude = ["test_distributed_ops_import_guard.py"],
+    ),
     exec_properties = {
         "test.resources:gpu-memory": "5",
     },
@@ -23,5 +25,16 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("numpy"),
+    ],
+)
+
+# Import-safety test for the kernel-unavailable path; runs without a GPU.
+modular_py_test(
+    name = "import_guard_test",
+    srcs = ["test_distributed_ops_import_guard.py"],
+    deps = [
+        "//max/python/max/_distributed_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
     ],
 )

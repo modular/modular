@@ -43,19 +43,25 @@ def layer_norm(
     .. code-block:: python
 
         from max.dtype import DType
-        from max.graph import DeviceRef, Graph, TensorType, ops
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
 
-        with Graph(
-            "ln",
-            input_types=[
-                TensorType(DType.float32, ("batch", "seq", 128), DeviceRef.GPU()),
-                TensorType(DType.float32, (128,), DeviceRef.GPU()),
-                TensorType(DType.float32, (128,), DeviceRef.GPU()),
-            ],
-        ) as g:
-            x, gamma, beta = g.inputs
-            y = ops.layer_norm(x.tensor, gamma.tensor, beta.tensor, epsilon=1e-5)
-            g.output(y)
+        device = DeviceRef.CPU()
+        with Graph("layer_norm_example") as graph:
+            x = ops.constant([[1.0, 3.0]], DType.float32, device=device)
+            gamma = ops.constant([1.0, 1.0], DType.float32, device=device)
+            beta = ops.constant([0.0, 0.0], DType.float32, device=device)
+            graph.output(ops.layer_norm(x, gamma, beta, epsilon=1e-5))
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+        # Each row is normalized to zero mean and unit variance.
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(result.to_numpy(), [[-1.0, 1.0]], atol=1e-3)
 
     Args:
         input: The tensor to normalize. Reduction runs over the last axis.
@@ -81,7 +87,8 @@ def layer_norm(
         # Check that gamma size matches the last dimension of input
         if gamma_tensor.shape[0] != input.shape[-1]:
             raise ValueError(
-                f"Gamma size {gamma_tensor.shape[0]} does not match dimension of reduction {input.shape[-1]}."
+                f"Gamma size {gamma_tensor.shape[0]} does not match dimension"
+                f" of reduction {input.shape[-1]}."
             )
 
     if isinstance(beta, TensorValue) and isinstance(input.shape[-1], StaticDim):
@@ -90,7 +97,8 @@ def layer_norm(
         # Check that beta size matches the last dimension of input
         if beta_tensor.shape[0] != input.shape[-1]:
             raise ValueError(
-                f"Beta size {beta_tensor.shape[0]} does not match dimension of reduction {input.shape[-1]}."
+                f"Beta size {beta_tensor.shape[0]} does not match dimension of"
+                f" reduction {input.shape[-1]}."
             )
 
     # Check that epsilon is positive

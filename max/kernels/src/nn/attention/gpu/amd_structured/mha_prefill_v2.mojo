@@ -144,7 +144,6 @@ from nn.attention.mha_mask import (
     NullMask,
 )
 from nn.attention.mha_operand import MHAOperand
-from std.sys.intrinsics import _type_is_eq
 
 from .buffers import _cast_f32_to_fp8_raw
 from .mha_mask import MaskApplier
@@ -1308,6 +1307,9 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             Int32(Self.NUM_THREADS)
         )
     )
+    @__name(
+        t"mha_prefill_v2_amd_{q_dtype}_{output_dtype}_BM{Self.BM}_KV{Self.KV_BLOCK}_D{Self.DEPTH}"
+    )
     @staticmethod
     def run[
         k_t: MHAOperand,
@@ -1513,12 +1515,12 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         # mask site to detect a fully-masked tile and zero `att_block`.
         # `NullMask` keeps the full iteration count and `status` always
         # returns `NO_MASK`, so per-tile mask work is comptime-elided.
-        comptime if _type_is_eq[mask_t, CausalMask]():
+        comptime if mask_t == CausalMask:
             max_num_tiles_local = (
                 max_num_tiles_calc if max_num_tiles_calc
                 < num_tiles else num_tiles
             )
-        elif _type_is_eq[mask_t, NullMask]():
+        elif mask_t == NullMask:
             # #87603: the software pipeline processes K tiles in even
             # pairs (main loop advances `j` by 2; epilogue drains 4). An
             # ODD tile count double-processes tile `N-3` across the
@@ -1840,7 +1842,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             )
             var v_reg_c1 = reg_alloc[Self.config.dtype](Self._MmaOp.V_LAYOUT)
             Self._load_v_reg(v_reg_c1, v_smem[0])
-            comptime if not _type_is_eq[mask_t, CausalMask]():
+            comptime if mask_t != CausalMask:
                 mask.apply(
                     att_block_1,
                     tile_idx,
@@ -2209,6 +2211,9 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.NUM_THREADS)
         )
+    )
+    @__name(
+        t"mha_prefill_v2_ragged_amd_{qkv_dtype}_{output_dtype}_BM{Self.BM}_KV{Self.KV_BLOCK}_D{Self.DEPTH}"
     )
     @staticmethod
     def ragged_kernel[

@@ -19,7 +19,6 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
     mma_arrive_multicast,
 )
-from std.gpu.primitives.warp import broadcast
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
@@ -45,6 +44,7 @@ def fa4_mma[
     page_size: Int,
 ](
     smem: SM100AttentionSMem[config],
+    tmem_addr: UInt32,
     seq_id: UInt32,
     score_row: UInt32,
     num_keys: UInt32,
@@ -79,6 +79,7 @@ def fa4_mma[
         cta_group=cta_group,
         num_stages=num_qk_stages,
         mma_kind=mma_kind,
+        b_page_dense=config.k_row_major(),
     ]
     comptime UMMA1Type = SM100TensorAccumulator[
         config.qkv_dtype,
@@ -92,6 +93,7 @@ def fa4_mma[
         cta_group=cta_group,
         num_stages=num_pv_stages,
         mma_kind=mma_kind,
+        b_page_dense=config.v_row_major(),
     ]
 
     # Runtime-k partial-page gate. Only the last KV tile can be partially
@@ -101,7 +103,8 @@ def fa4_mma[
     # boundary is MMA_K-aligned and the cut is exact.
     comptime PARTIAL_K = page_size > 0 and page_size < BN
 
-    var tmem_addr: UInt32 = broadcast(smem.tmem_addr_ptr()[])
+    # `tmem_addr` passed in by register (read once post-barrier in the kernel
+    # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var q_smem = smem.q_smem()
 
     s0_tmem = tmem_addr + UInt32(config.TMEM_S0)
@@ -198,6 +201,23 @@ def fa4_mma[
                 valid_k_mmas=valid_k_mmas,
             )
 
+    # Sliding-window / any non-zero `start_column` mask: the load and
+    # softmax warps work the contraction in the `[start_column, num_keys)`
+    # frame -- the producer iterates V tiles from `kv_row = start_column`
+    # (load_warp.mojo) and softmax mirrors it (softmax_warp.mojo:1191). The
+    # partial-K `valid_k_mmas` (`vkm`) below must use the SAME frame: the
+    # last loaded tile sits at `start_column + (total_iters - 1) * BN`, so
+    # the count of loaded MMA_K-blocks is measured against
+    # `num_keys - start_column`, NOT `num_keys`. Omitting `start_column`
+    # over-counts `vkm` by `start_column // MMA_K`, so P@V runs blocks over
+    # V pages the producer never loaded (`0 * stale-NaN = NaN`). For causal
+    # `start_column == 0`, so `v_eff_keys == num_keys` and every `vkm` site
+    # below is bit-identical to before.
+    var v_start_col: UInt32 = mask.start_column[BM_mask, BN, page_size](
+        seq_id, score_row
+    )
+    var v_eff_keys: UInt32 = num_keys - v_start_col
+
     comptime if config.use_fused_kv:
         # ---- Fused KV mode ----
         # In fused mode, K_nope and V alternate in a single StagedPipeline.
@@ -214,6 +234,7 @@ def fa4_mma[
             BK=config.BK0,
             swizzle_mode=config.swizzle_mode,
             is_k_major=True,
+            page_dense=config.k_row_major(),
         ](kv_smem)
         # V descriptor: mn_major for P@V
         kv_desc_v = smem_descriptor[
@@ -221,6 +242,7 @@ def fa4_mma[
             BK=config.BN,
             swizzle_mode=config.swizzle_mode,
             is_k_major=False,
+            page_dense=config.v_row_major(),
         ](kv_smem)
 
         comptime KVPipeType = StagedPipeline[config.num_kv_stages, 1]
@@ -278,7 +300,7 @@ def fa4_mma[
                 v0 = kv_desc_v + slot1_offset
                 comptime if PARTIAL_K:
                     var vkm = ceildiv(
-                        min(num_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
+                        min(v_eff_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
                     )
                     _pv_partial(s0_tmem, v0, o0_tmem, consumer_s0, 0, 0, vkm)
                 else:
@@ -311,9 +333,9 @@ def fa4_mma[
         comptime if PARTIAL_K and num_qo == 2:
             # 2Q peeled o0 contracts tile 0, which is the last (and only)
             # tile only when total_iters == 1; vkm self-clamps to full
-            # (num_keys >= BN) otherwise.
+            # (v_eff_keys >= BN) otherwise.
             var vkm = ceildiv(
-                min(num_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
+                min(v_eff_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
             )
             _pv_partial(s0_tmem, v0, o0_tmem, consumer_s0, 0, 0, vkm)
         else:
@@ -399,7 +421,7 @@ def fa4_mma[
                 # (the final main-loop iteration); otherwise full.
                 var vkm = ceildiv(
                     min(
-                        num_keys
+                        v_eff_keys
                         - (total_iters_runtime - UInt32(1)) * UInt32(BN),
                         UInt32(BN),
                     ),
@@ -420,7 +442,7 @@ def fa4_mma[
         comptime if PARTIAL_K:
             var vkm = ceildiv(
                 min(
-                    num_keys - (total_iters_runtime - UInt32(1)) * UInt32(BN),
+                    v_eff_keys - (total_iters_runtime - UInt32(1)) * UInt32(BN),
                     UInt32(BN),
                 ),
                 UInt32(UMMA1Type.MMA_K),
@@ -493,7 +515,7 @@ def fa4_mma[
                 pipeline_v.wait_v()
                 comptime if PARTIAL_K:
                     var vkm = ceildiv(
-                        min(num_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
+                        min(v_eff_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
                     )
                     _pv_partial(
                         s0_tmem, vlatest_t1, o0_tmem, consumer_s0, 0, 0, vkm
@@ -543,7 +565,7 @@ def fa4_mma[
             # 2Q peeled o0 contracts tile 0; last (and only) tile only when
             # total_iters == 1 -- vkm self-clamps to full otherwise.
             var vkm = ceildiv(
-                min(num_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
+                min(v_eff_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
             )
             _pv_partial(s0_tmem, vlatest, o0_tmem, consumer_s0, 0, 0, vkm)
         else:
@@ -661,7 +683,7 @@ def fa4_mma[
                 # 2Q: Vn is the last tile exactly when iter_count == 0.
                 var vkm = ceildiv(
                     min(
-                        num_keys
+                        v_eff_keys
                         - (total_iters_runtime - UInt32(1)) * UInt32(BN),
                         UInt32(BN),
                     ),
@@ -690,7 +712,7 @@ def fa4_mma[
         comptime if PARTIAL_K:
             var vkm = ceildiv(
                 min(
-                    num_keys - (total_iters_runtime - UInt32(1)) * UInt32(BN),
+                    v_eff_keys - (total_iters_runtime - UInt32(1)) * UInt32(BN),
                     UInt32(BN),
                 ),
                 UInt32(UMMA1Type.MMA_K),

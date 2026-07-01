@@ -114,8 +114,16 @@ def load_huggingface_config(repo: HuggingFaceRepo) -> PretrainedConfig:
     if repo.subfolder is not None:
         kwargs["subfolder"] = repo.subfolder
 
+    # When the repo was resolved from the offline HF cache, `config_repo_id` is
+    # the original hub id rather than the local snapshot directory (which
+    # transformers 5.12's trust_remote_code loader cannot handle). Force a
+    # local-only lookup so it never hits the network.
+    config_repo_id = repo.config_repo_id
+    if config_repo_id != repo.repo_id:
+        kwargs["local_files_only"] = True
+
     try:
-        result = AutoConfig.from_pretrained(repo.repo_id, **kwargs)
+        result = AutoConfig.from_pretrained(config_repo_id, **kwargs)
     except Exception:
         # Fallback for non-transformers models (e.g. diffusers components):
         # load the raw config.json and wrap it in a PretrainedConfig so

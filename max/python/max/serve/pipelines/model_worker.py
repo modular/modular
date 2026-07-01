@@ -34,6 +34,7 @@ from max.experimental.nn._compilation_timer import collect_compilation_stats
 from max.pipelines.context import BaseContextType
 from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
 from max.pipelines.lib import PipelineConfig, PipelineModel
+from max.pipelines.lib.eplb_stats import EplbStatsAccumulator
 from max.pipelines.modeling.types import (
     Pipeline,
     PipelineInputsType,
@@ -41,14 +42,19 @@ from max.pipelines.modeling.types import (
     PipelinesFactory,
 )
 from max.profiler import Tracer, traced
+from max.serve._exceptions import detect_and_wrap_ooms
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.exceptions import detect_and_wrap_oom
+from max.serve.pipelines.eplb_stats_rpc import (
+    EplbStatsBackend,
+    EplbStatsResetBackend,
+)
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
 from max.serve.telemetry.common import configure_logging, configure_metrics
+from max.serve.telemetry.gc_debug import install_gc_debugger
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 from max.serve.worker_interface import (
@@ -67,6 +73,8 @@ GiB = 1024 * 1024 * 1024
 
 @runtime_checkable
 class SupportsGraphCaptureWarmup(Protocol):
+    max_batch_size: int
+
     def warmup_graph_capture(self) -> None: ...
 
 
@@ -91,6 +99,42 @@ def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
         return
     pinned = DevicePinnedBuffer(shape=(bytes,), dtype=DType.int8, device=device)
     del pinned
+
+
+def _get_eplb_stats_accumulator(
+    pipeline: Pipeline[Any, Any],
+    enabled: bool,
+) -> EplbStatsAccumulator | None:
+    """Retrieve the pipeline's pre-built EplbStatsAccumulator if profiling is on.
+
+    Args:
+        pipeline: The model pipeline running in this worker process.
+        enabled: pipeline_config.runtime.eplb_profile i.e. whether the user has opted in to EPLB profiling for this run.
+
+    Returns:
+        The accumulator constructed by the pipeline's load_model, or
+        None if profiling is disabled or the pipeline does not expose one.
+    """
+    if not enabled:
+        return None
+
+    pipeline_model = get_pipeline_model(pipeline)
+    accumulator = getattr(pipeline_model, "_eplb_stats_accumulator", None)
+    if accumulator is None:
+        logger.warning(
+            "MAX_SERVE_EPLB_PROFILE is enabled but pipeline %s does not "
+            "expose an EplbStatsAccumulator; routing histograms unavailable.",
+            type(pipeline_model).__name__ if pipeline_model else "None",
+        )
+        return None
+
+    logger.info(
+        "EPLB stats profiling enabled: %d MoE layers x %d logical experts (top-%d).",
+        accumulator.metadata.num_moe_layers,
+        accumulator.metadata.num_logical_experts,
+        accumulator.metadata.num_experts_per_token,
+    )
+    return accumulator
 
 
 def get_reset_prefix_cache_backend(
@@ -192,6 +236,16 @@ class ModelWorker:
         configure_logging(settings)
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
+
+        # Optionally instrument CPython garbage-collection pauses. Stop-the-
+        # world GC collections hold the GIL and can stall the scheduler thread,
+        # surfacing as large batch_execution_time_ms spikes (MXSERV-152).
+        install_gc_debugger(
+            enabled=settings.gc_debug,
+            min_duration_ms=settings.gc_debug_min_duration_ms,
+            top_objects=settings.gc_debug_top_objects,
+        )
+
         run_start_s = time.monotonic()
         spawn_duration_s = (
             time.time() - spawn_start_wall_ts
@@ -211,6 +265,9 @@ class ModelWorker:
             )
 
             ModelWorker._configure_metrics(settings, metric_client)
+
+            # improves diagnostic messages for gpu out-of-memory errors
+            exit_stack.enter_context(detect_and_wrap_ooms())
 
             # Prime the pinned memory cache in the model worker process.
             # The first DevicePinnedBuffer allocation per GPU triggers
@@ -279,11 +336,6 @@ class ModelWorker:
                             "device_graph_capture is enabled but the pipeline "
                             "does not support graph-capture warmup."
                         )
-                    max_batch_size = pipeline_config.runtime.max_batch_size
-                    if max_batch_size is None:
-                        raise ValueError(
-                            "device_graph_capture requires max_batch_size to be set."
-                        )
                     warmup_start_s = time.monotonic()
                     pipeline.warmup_graph_capture()
                     warmup_duration_s = time.monotonic() - warmup_start_s
@@ -292,7 +344,7 @@ class ModelWorker:
                         "(model=%s, max_batch_size=%d).",
                         warmup_duration_s,
                         pipeline_config.models.main_architecture_name,
-                        max_batch_size,
+                        pipeline.max_batch_size,
                     )
 
             total_in_run_s = time.monotonic() - run_start_s
@@ -353,7 +405,31 @@ class ModelWorker:
                 get_reset_prefix_cache_backend(pipeline, zmq_endpoint_base)
             )
 
-            # Maybe retrieve LoRA manager and construct the ZMQ request processor.
+            # Get the EPLB stats accumulator (None unless profiling is
+            # enabled and the pipeline supports it).
+            eplb_stats_accumulator = _get_eplb_stats_accumulator(
+                pipeline, settings.eplb_profile
+            )
+
+            eplb_stats_backend = (
+                EplbStatsBackend(
+                    zmq_endpoint_base,
+                    eplb_stats_accumulator,
+                )
+                if eplb_stats_accumulator is not None
+                else None
+            )
+
+            eplb_stats_reset_backend = (
+                EplbStatsResetBackend(
+                    zmq_endpoint_base,
+                    eplb_stats_accumulator,
+                )
+                if eplb_stats_accumulator is not None
+                else None
+            )
+
+            # Maybe retrieve LoRA manager.
             lora_request_processor = None
             pipeline_model = get_pipeline_model(pipeline)
             if pipeline_config.lora:
@@ -381,6 +457,14 @@ class ModelWorker:
                 ):
                     assert kv_cache is not None
                     kv_cache.reset_prefix_cache()
+
+                # Serve any pending EP stats requests.
+                if eplb_stats_backend is not None:
+                    eplb_stats_backend.serve_pending_requests()
+
+                if eplb_stats_reset_backend is not None:
+                    eplb_stats_reset_backend.serve_pending_requests()
+
                 # This method must terminate in a reasonable amount of time
                 # so that the ProcessMonitor heartbeat is periodically run.
                 progress = scheduler.run_iteration()
@@ -438,10 +522,6 @@ class ModelWorker:
             )
         except KeyboardInterrupt:
             pass  # suppress noisy stack traces for user abort
-        except Exception as e:
-            logger.exception("Model worker crashed")
-            detect_and_wrap_oom(e)
-            raise
 
 
 @asynccontextmanager

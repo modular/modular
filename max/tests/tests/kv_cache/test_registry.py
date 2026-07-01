@@ -20,9 +20,8 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 from max.pipelines.kv_cache import load_kv_manager
-from max.pipelines.kv_cache.registry import load_multi_kv_managers
 
 
 def create_kv_params(
@@ -33,7 +32,7 @@ def create_kv_params(
     dtype: DType = DType.bfloat16,
 ) -> KVCacheParams:
     """Helper to create KVCacheParams with common defaults."""
-    return KVCacheParams(
+    return MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -127,7 +126,7 @@ class TestLoadKvManager:
     ) -> None:
         """load_kv_manager should reject page sizes that aren't multiples of 128."""
         # Create params with invalid page size (not multiple of 128)
-        params = KVCacheParams(
+        params = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=8,
             head_dim=128,
@@ -170,98 +169,6 @@ class TestLoadKvManagers:
         )
 
         assert result == mock_manager
-
-    @patch("max.pipelines.kv_cache.registry.PagedKVCacheManager")
-    def test_load_kv_managers_multi_params(
-        self, mock_paged_manager_cls: MagicMock
-    ) -> None:
-        """load_kv_managers should return multiple managers for MultiKVCacheParams."""
-        mock_manager1 = MagicMock(name="manager1")
-        mock_manager2 = MagicMock(name="manager2")
-        mock_paged_manager_cls.side_effect = [mock_manager1, mock_manager2]
-
-        params1 = create_kv_params(num_layers=16)
-        params2 = create_kv_params(num_layers=16)
-        multi_params = MultiKVCacheParams.from_params(params1, params2)
-        mock_session = MagicMock()
-
-        result = load_multi_kv_managers(
-            params=multi_params,
-            max_batch_size=16,
-            max_seq_len=2048,
-            session=mock_session,
-            available_cache_memory=1024 * 1024 * 1024,
-        )
-
-        assert isinstance(result, list)
-        assert len(result) == 2
-        assert result[0] == mock_manager1
-        assert result[1] == mock_manager2
-
-    @patch("max.pipelines.kv_cache.registry.PagedKVCacheManager")
-    def test_load_kv_managers_shares_total_pages(
-        self, mock_paged_manager_cls: MagicMock
-    ) -> None:
-        """All managers from MultiKVCacheParams should get the same total_num_pages."""
-        params1 = create_kv_params(num_layers=16)
-        params2 = create_kv_params(num_layers=16)
-        multi_params = MultiKVCacheParams.from_params(params1, params2)
-        mock_session = MagicMock()
-
-        load_multi_kv_managers(
-            params=multi_params,
-            max_batch_size=16,
-            max_seq_len=2048,
-            session=mock_session,
-            available_cache_memory=1024 * 1024 * 1024,
-        )
-
-        # Both calls should have the same total_num_pages
-        calls = mock_paged_manager_cls.call_args_list
-        assert len(calls) == 2
-        total_pages_1 = calls[0].kwargs["total_num_pages"]
-        total_pages_2 = calls[1].kwargs["total_num_pages"]
-        assert total_pages_1 == total_pages_2
-
-    def test_load_kv_managers_rejects_zero_batch_size(self) -> None:
-        """load_kv_managers should raise ValueError for batch_size <= 0."""
-        params = create_kv_params()
-        mock_session = MagicMock()
-
-        with pytest.raises(
-            ValueError, match="max_batch_size must be greater than 0"
-        ):
-            load_kv_manager(
-                params=params,
-                max_batch_size=0,
-                max_seq_len=2048,
-                session=mock_session,
-                available_cache_memory=1024 * 1024 * 1024,
-            )
-
-    @patch("max.pipelines.kv_cache.registry.PagedKVCacheManager")
-    def test_load_kv_managers_nested_multi_params(
-        self, mock_paged_manager_cls: MagicMock
-    ) -> None:
-        """load_kv_managers should handle nested MultiKVCacheParams (if supported)."""
-        mock_managers = [MagicMock(name=f"manager{i}") for i in range(3)]
-        mock_paged_manager_cls.side_effect = mock_managers
-
-        params1 = create_kv_params(num_layers=16)
-        params2 = create_kv_params(num_layers=16)
-        params3 = create_kv_params(num_layers=16)
-        multi_params = MultiKVCacheParams.from_params(params1, params2, params3)
-        mock_session = MagicMock()
-
-        result = load_multi_kv_managers(
-            params=multi_params,
-            max_batch_size=16,
-            max_seq_len=2048,
-            session=mock_session,
-            available_cache_memory=1024 * 1024 * 1024,
-        )
-
-        assert len(result) == 3
 
 
 class TestLoadKvManagerVirtualDevice:

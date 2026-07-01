@@ -42,14 +42,14 @@ from max.serve.scheduler.base import (
     PrefillResponse,
 )
 from max.serve.scheduler.interface import Scheduler
-from max.serve.worker_interface.zmq_queue import ClientIdentity
+from max.serve.worker_interface._zmq_queue import ClientIdentity
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .di_dispatchers import PrefillDispatcherServer
-from .utils import SchedulerLogger, reshape_flat_kv_blocks_to_grid
+from .utils import SchedulerLogger
 
 logger = logging.getLogger("max.serve")
 
@@ -94,26 +94,6 @@ class PrefillScheduler(Scheduler):
             name=f"prefill_agent_{uuid.uuid4()}",
             kv_cache=kv_cache,
         )
-
-        # Register draft KV cache blocks for speculative decoding so that
-        # target and draft KV are bundled into a single NIXL transfer.
-        # Pass total_num_pages + 1 to match the null-block allocation in
-        # KVCacheParams.allocate_buffers (which allocates total_num_pages + 1
-        # pages so that index 0 can serve as a sentinel null block).  Without
-        # the +1, bytes_per_page = (N+1)*elts // N, which rounds differently
-        # on engines with different pool sizes, causing a NIXL length-mismatch
-        # at createXferReq time.  With +1, bytes_per_page = elts exactly.
-        draft_kv_blocks = getattr(pipeline, "draft_kv_blocks", None)
-        if isinstance(draft_kv_blocks, list):
-            self.transfer_engine.register_tensor_group(
-                name="draft",
-                tensors=reshape_flat_kv_blocks_to_grid(
-                    draft_kv_blocks,
-                    dp=scheduler_config.data_parallel_degree,
-                    group_name="draft",
-                ),
-                total_num_pages=kv_cache.get_num_pages(replica_idx=0) + 1,
-            )
 
         self.outstanding_cancelled_requests: set[RequestID] = set()
 
@@ -455,7 +435,7 @@ def load_prefill_scheduler(
 
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config
+        pipeline_config, pipeline.max_batch_size
     )
 
     return PrefillScheduler(

@@ -28,6 +28,7 @@ from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUmodule, CUstream
 
 from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
+from .shmem_api import SHMEMScope
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -149,16 +150,17 @@ comptime NVSHMEM_TEAM_INDEX_MAX: nvshmem_team_id_t = nvshmem_team_id_t.MAX
 
 
 # Structs
-struct NVSHMEMXInitAttr:
+struct NVSHMEMXInitAttr[origin: MutOrigin]:
     var version: c_int
-    var mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]
+
+    var mpi_comm: UnsafePointer[MPIComm, Self.origin]
     var args: NVSHMEMXInitArgs
 
-    def __init__(out self, mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]):
+    def __init__(out self, mpi_comm: UnsafePointer[MPIComm, Self.origin]):
         comptime assert (
             size_of[Self]() == 144
         ), "NVSHMEMXInitAttr must be 144 bytes"
-        self.version = c_int((1 << 16) + size_of[NVSHMEMXInitAttr]())
+        self.version = c_int((1 << 16) + size_of[Self]())
         self.mpi_comm = mpi_comm
         self.args = NVSHMEMXInitArgs()
 
@@ -179,7 +181,8 @@ struct NVSHMEMXInitArgs:
 
 struct NVSHMEMXUniqueIDArgs:
     var version: c_int
-    var id: Optional[UnsafePointer[NVSHMEMXUniqueID, MutAnyOrigin]]
+
+    var id: Optional[UnsafePointer[NVSHMEMXUniqueID, MutUntrackedOrigin]]
     var myrank: c_int
     var nranks: c_int
 
@@ -310,9 +313,7 @@ def nvshmemx_init() raises:
     ctx.set_as_current()
 
     # Initialize NVSHMEM with MPI
-    var attr = NVSHMEMXInitAttr(
-        UnsafePointer(to=mpi_comm).as_unsafe_any_origin()
-    )
+    var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
     # For single process per GPU, fallback to one device per process per node.
     attr.args.uid_args.myrank = 0
     attr.args.uid_args.nranks = 1
@@ -336,9 +337,7 @@ def nvshmemx_init_thread(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
 
     # Initialize NVSHMEM with MPI
     var mpi_comm = get_mpi_comm_world()
-    var attr = NVSHMEMXInitAttr(
-        UnsafePointer(to=mpi_comm).as_unsafe_any_origin()
-    )
+    var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
     attr.args.uid_args.myrank = Int32(ctx.id())
     attr.args.uid_args.nranks = c_int(nranks)
 
@@ -354,15 +353,15 @@ def nvshmemx_init_thread(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
         raise Error("failed to initialize NVSHMEM with status:", status)
 
 
-def nvshmemx_hostlib_init_attr(
+def nvshmemx_hostlib_init_attr[
+    origin: MutOrigin, //
+](
     flags: UInt32,
-    attr: UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin],
+    attr: UnsafePointer[NVSHMEMXInitAttr[origin], MutAnyOrigin],
 ) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_hostlib_init_attr",
-        def(
-            UInt32, UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin]
-        ) thin -> c_int,
+        def(UInt32, type_of(attr)) thin -> c_int,
     ]()(flags, attr)
 
 

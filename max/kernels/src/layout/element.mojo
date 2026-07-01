@@ -30,8 +30,8 @@ from std.sys import align_of
 
 from layout.layout import coalesce, is_contiguous_dim
 
-from . import Layout, RuntimeLayout
-from .int_tuple import UNKNOWN_VALUE, _get_index_type
+from . import Layout, RuntimeLayout, RuntimeTuple
+from .int_tuple import IntTuple, UNKNOWN_VALUE, _get_index_type
 
 
 @always_inline

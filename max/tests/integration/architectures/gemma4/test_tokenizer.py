@@ -698,3 +698,84 @@ async def test_no_response_format_no_grammar(
 
     assert context.json_schema is None
     assert context.grammar is None
+
+
+def test_apply_chat_template_prefills_reasoning_open_when_thinking(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """With thinking enabled, the generation prompt is forced open with
+    ``<|channel>thought`` so the model reasons on *every* assistant turn --
+    including the turn after a ``tool`` result. Without it Gemma skips
+    thinking post-tool and OpenRouter's reasoning-enabled-tool-call-step-5
+    test fails, auto-disabling tools."""
+    delegate = _make_mock_delegate()
+    # Pretend the base template rendered a generation prompt that does NOT
+    # open a reasoning block.
+    delegate.apply_chat_template.return_value = "PROMPT<|model>"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    msgs = [TextGenerationRequestMessage(role="user", content="hi")]
+
+    # enable_thinking=True -> reasoning channel forced open at the tail.
+    out = tokenizer.apply_chat_template(msgs, enable_thinking=True)
+    assert out.endswith("<|channel>thought\n")
+
+    # The tokenizer keys off ``enable_thinking`` only (matching the chat
+    # template). OpenRouter's ``reasoning`` toggle is mapped to
+    # ``enable_thinking`` upstream (#89137), so the bare ``thinking`` alias
+    # alone does not force the channel open here.
+    out_thinking_alias = tokenizer.apply_chat_template(msgs, thinking=True)
+    assert "<|channel>thought" not in out_thinking_alias
+
+    # Disabled -> no prefill.
+    out_off = tokenizer.apply_chat_template(msgs, enable_thinking=False)
+    assert "<|channel>thought" not in out_off
+
+
+def test_apply_chat_template_reopens_turn_after_tool_response(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """After a tool result the chat template leaves the model mid-turn, so the
+    prompt ends with ``<tool_response|>``. The prefill must re-open a fresh
+    model turn before the channel, matching the user-turn structure that
+    actually reasons."""
+    delegate = _make_mock_delegate()
+    # Real post-tool render: turn left open, ends with the tool-response close.
+    delegate.apply_chat_template.return_value = (
+        "<|turn>model\n<|tool_call>call:f{}<tool_call|>"
+        "<|tool_response>response:f{value:42}<tool_response|>"
+    )
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    msgs = [TextGenerationRequestMessage(role="user", content="hi")]
+
+    out = tokenizer.apply_chat_template(msgs, enable_thinking=True)
+
+    # A fresh model turn is opened between the tool response and the channel,
+    # mirroring the user-turn structure (`<|turn>model\n<|channel>thought\n`).
+    assert out.endswith(
+        "<tool_response|><turn|>\n<|turn>model\n<|channel>thought\n"
+    )
+    # The bare-channel-after-tool-response shape (which doesn't reason) is gone.
+    assert not out.endswith("<tool_response|><|channel>thought\n")
+
+
+def test_apply_chat_template_no_double_prefill(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """If the base template already opened the reasoning channel, don't
+    append a second opener."""
+    delegate = _make_mock_delegate()
+    delegate.apply_chat_template.return_value = "PROMPT<|channel>thought\n"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    msgs = [TextGenerationRequestMessage(role="user", content="hi")]
+
+    out = tokenizer.apply_chat_template(msgs, enable_thinking=True)
+    assert out.count("<|channel>thought") == 1

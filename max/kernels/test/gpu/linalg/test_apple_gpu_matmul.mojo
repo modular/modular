@@ -16,14 +16,16 @@ Covers two paths:
 
 - The 8x8 `simdgroup_matrix` GEMM (`gemm_kernel_apple_8x8`), the M1-M4 dispatch
   path in `_matmul_gpu`. These tests run on any Apple GPU.
-- The M5 hardware-MMA simdgroup-tiled kernel (`apple_matmul_kernel` /
-  `enqueue_apple_matmul`), which requires `compute_capability() == 5`.
+- The M5 hardware-MMA simdgroup-tiled kernel (`AppleM5MatMul.run` /
+  `enqueue_apple_matmul`), which requires `compute_capability() == 5`. This
+  includes the split-K path (`enqueue_apple_matmul_split_k` and the
+  `force_split_k` flag), folded in here from the former `test_apple_split_k`.
 """
 
 from std.collections import Optional
 from std.random import random_si64
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from std.sys.info import _accelerator_arch
 from std.utils import IndexList
 
@@ -32,11 +34,42 @@ from layout.tile_layout import row_major
 
 from linalg.matmul.gpu.apple import gemm_kernel_apple_8x8
 from linalg.matmul.gpu.apple.matmul_kernel import (
-    apple_matmul_kernel,
+    AppleM5MatMul,
     enqueue_apple_matmul,
-    morton_decode_2d,
-    morton_decode_2d_rect,
+    enqueue_apple_matmul_split_k,
 )
+
+
+# Morton decode is a static method of the struct; bind a canonical
+# instantiation (the helpers are parameter-independent) for the unit tests.
+comptime _MM = AppleM5MatMul[DType.float16]
+
+
+def _launch[
+    a_type: DType, transpose_b: Bool, c_type: DType = DType.float32
+](
+    ctx: DeviceContext,
+    d_dev: DeviceBuffer[c_type],
+    a_dev: DeviceBuffer[a_type],
+    b_dev: DeviceBuffer[a_type],
+    M: Int,
+    N: Int,
+    K: Int,
+) raises:
+    """Wrap device buffers as TileTensors and launch via the standalone
+    `enqueue_apple_matmul` (the host entry to `AppleM5MatMul.run`)."""
+    var b_rows = N if transpose_b else K
+    var b_cols = K if transpose_b else N
+    var c_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var b_tt = TileTensor(
+        b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
+    ).as_immut()
+    enqueue_apple_matmul[
+        in_type=a_type, c_type=c_type, transpose_b=transpose_b
+    ](c_tt, a_tt, b_tt, ctx)
+
+
 from linalg.utils import elementwise_epilogue_type
 
 
@@ -218,7 +251,7 @@ def _run_8x8_bias_case[
     @always_inline
     @__copy_capture(d_ptr, bias_ptr, row_stride)
     def bias_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
         var bias = (bias_ptr + coords[1]).load[width=w]()
@@ -341,7 +374,7 @@ def test_morton_decode_2d() raises:
     ]
 
     for i in range(16):
-        var got = morton_decode_2d(UInt32(i))
+        var got = _MM.morton_decode_2d(UInt32(i))
         if got[0] != exp_m[i] or got[1] != exp_n[i]:
             print(
                 "FAIL: flat",
@@ -377,7 +410,7 @@ def test_morton_decode_2d_rect() raises:
     # [0, 2) x [0, 16).
     var seen_2x16 = InlineArray[Bool, 32](fill=False)
     for i in range(32):
-        var got = morton_decode_2d_rect(UInt32(i), UInt32(1), UInt32(4))
+        var got = _MM.morton_decode_2d_rect(UInt32(i), UInt32(1), UInt32(4))
         var m = Int(got[0])
         var n = Int(got[1])
         if m < 0 or m >= 2 or n < 0 or n >= 16:
@@ -410,7 +443,7 @@ def test_morton_decode_2d_rect() raises:
     # (m, n) in [0, 16) x [0, 2).
     var seen_16x2 = InlineArray[Bool, 32](fill=False)
     for i in range(32):
-        var got = morton_decode_2d_rect(UInt32(i), UInt32(4), UInt32(1))
+        var got = _MM.morton_decode_2d_rect(UInt32(i), UInt32(4), UInt32(1))
         var m = Int(got[0])
         var n = Int(got[1])
         if m < 0 or m >= 16 or n < 0 or n >= 2:
@@ -441,8 +474,10 @@ def test_morton_decode_2d_rect() raises:
 
     # 4x4 square: must agree with morton_decode_2d on every flat.
     for i in range(16):
-        var got_rect = morton_decode_2d_rect(UInt32(i), UInt32(2), UInt32(2))
-        var got_sq = morton_decode_2d(UInt32(i))
+        var got_rect = _MM.morton_decode_2d_rect(
+            UInt32(i), UInt32(2), UInt32(2)
+        )
+        var got_sq = _MM.morton_decode_2d(UInt32(i))
         if got_rect[0] != got_sq[0] or got_rect[1] != got_sq[1]:
             print(
                 "FAIL: 4x4 flat=",
@@ -462,7 +497,7 @@ def test_morton_decode_2d_rect() raises:
     # 1x16 degenerate (log2_m=0): rect should produce (0, i) for
     # i in [0, 16).
     for i in range(16):
-        var got = morton_decode_2d_rect(UInt32(i), UInt32(0), UInt32(4))
+        var got = _MM.morton_decode_2d_rect(UInt32(i), UInt32(0), UInt32(4))
         if Int(got[0]) != 0 or Int(got[1]) != i:
             print(
                 "FAIL: 1x16 flat=",
@@ -480,7 +515,7 @@ def test_morton_decode_2d_rect() raises:
     # 16x1 degenerate (log2_n=0): rect should produce (i, 0) for
     # i in [0, 16). Symmetric counterpart of the 1x16 case above.
     for i in range(16):
-        var got = morton_decode_2d_rect(UInt32(i), UInt32(4), UInt32(0))
+        var got = _MM.morton_decode_2d_rect(UInt32(i), UInt32(4), UInt32(0))
         if Int(got[0]) != i or Int(got[1]) != 0:
             print(
                 "FAIL: 16x1 flat=",
@@ -524,21 +559,14 @@ def test_kernel_single_tile_nn_fp16(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    comptime kernel = apple_matmul_kernel[
-        in_type=DType.float16,
-        transpose_b=False,
-    ]
-    ctx.enqueue_function[kernel](
-        d_dev.unsafe_ptr(),
-        a_dev.unsafe_ptr(),
-        b_dev.unsafe_ptr(),
+    _launch[DType.float16, False](
+        ctx,
+        d_dev,
+        a_dev,
+        b_dev,
         M,
         N,
         K,
-        UInt32(0),
-        UInt32(0),
-        grid_dim=(1),
-        block_dim=(128),
     )
 
     var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
@@ -590,21 +618,14 @@ def test_kernel_single_tile_k128_nn_fp16(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    comptime kernel = apple_matmul_kernel[
-        in_type=DType.float16,
-        transpose_b=False,
-    ]
-    ctx.enqueue_function[kernel](
-        d_dev.unsafe_ptr(),
-        a_dev.unsafe_ptr(),
-        b_dev.unsafe_ptr(),
+    _launch[DType.float16, False](
+        ctx,
+        d_dev,
+        a_dev,
+        b_dev,
         M,
         N,
         K,
-        UInt32(0),
-        UInt32(0),
-        grid_dim=(1),
-        block_dim=(128),
     )
 
     var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
@@ -630,39 +651,6 @@ def test_kernel_single_tile_k128_nn_fp16(ctx: DeviceContext) raises:
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
     print("PASS")
-
-
-def _ceil_pow2(x: Int) -> Int:
-    """Smallest power of 2 >= x, for x >= 1."""
-    var r = 1
-    while r < x:
-        r *= 2
-    return r
-
-
-def _grid_for(
-    m: Int, n: Int, bm: Int = 64, bn: Int = 64
-) -> Tuple[Int, UInt32, UInt32]:
-    """Compute (grid_dim, log2_grid_m, log2_grid_n) for apple_matmul_kernel.
-
-    Returns side_m * side_n (per-axis next-pow2) and the log2 of each.
-    Matches the semantics of enqueue_apple_matmul.
-    """
-    var grid_m = (m + bm - 1) // bm
-    var grid_n = (n + bn - 1) // bn
-
-    var side_m = 1
-    var log2_m: UInt32 = 0
-    while side_m < grid_m:
-        side_m *= 2
-        log2_m += 1
-    var side_n = 1
-    var log2_n: UInt32 = 0
-    while side_n < grid_n:
-        side_n *= 2
-        log2_n += 1
-
-    return (side_m * side_n, log2_m, log2_n)
 
 
 def test_kernel_64x64x17_nn_fp16(ctx: DeviceContext) raises:
@@ -694,22 +682,14 @@ def test_kernel_64x64x17_nn_fp16(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    comptime kernel = apple_matmul_kernel[
-        in_type=DType.float16,
-        transpose_b=False,
-    ]
-    var grid_dim, log2_grid_m, log2_grid_n = _grid_for(M, N)
-    ctx.enqueue_function[kernel](
-        d_dev.unsafe_ptr(),
-        a_dev.unsafe_ptr(),
-        b_dev.unsafe_ptr(),
+    _launch[DType.float16, False](
+        ctx,
+        d_dev,
+        a_dev,
+        b_dev,
         M,
         N,
         K,
-        log2_grid_m,
-        log2_grid_n,
-        grid_dim=(grid_dim),
-        block_dim=(128),
     )
 
     var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
@@ -761,22 +741,14 @@ def test_kernel_256x256x16_nn_fp16(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    comptime kernel = apple_matmul_kernel[
-        in_type=DType.float16,
-        transpose_b=False,
-    ]
-    var grid_dim, log2_grid_m, log2_grid_n = _grid_for(M, N)
-    ctx.enqueue_function[kernel](
-        d_dev.unsafe_ptr(),
-        a_dev.unsafe_ptr(),
-        b_dev.unsafe_ptr(),
+    _launch[DType.float16, False](
+        ctx,
+        d_dev,
+        a_dev,
+        b_dev,
         M,
         N,
         K,
-        log2_grid_m,
-        log2_grid_n,
-        grid_dim=(grid_dim),
-        block_dim=(128),
     )
 
     var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
@@ -823,6 +795,89 @@ def _host_matmul_nt[
     return acc
 
 
+def _run_split_k_case[
+    in_type: DType, c_type: DType, transpose_b: Bool
+](
+    ctx: DeviceContext,
+    M: Int,
+    N: Int,
+    K: Int,
+    name: String,
+    *,
+    splits: Int = 0,
+    force_split_k: Bool = False,
+) raises:
+    """One split-K matmul launch, checked against an fp32 host reference.
+
+    Folds in the former standalone `test_apple_split_k.mojo`. `splits > 0`
+    launches `enqueue_apple_matmul_split_k` with that explicit split count;
+    otherwise launches `enqueue_apple_matmul` with `force_split_k` (the single
+    unified entry forcing the split-K route, even on shapes that would not
+    auto-route). Flat 1.0 abs tolerance (inputs in [-2, 2]).
+    """
+    if splits > 0:
+        print("==", name, M, "x", N, "x", K, "split=", splits)
+    else:
+        print("==", name, M, "x", N, "x", K, "force_split_k")
+    var b_rows = N if transpose_b else K
+    var b_cols = K if transpose_b else N
+
+    var a_host = ctx.enqueue_create_host_buffer[in_type](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[in_type](b_rows * b_cols)
+    for i in range(M * K):
+        a_host[i] = random_si64(Int64(-2), Int64(2)).cast[in_type]()
+    for i in range(b_rows * b_cols):
+        b_host[i] = random_si64(Int64(-2), Int64(2)).cast[in_type]()
+
+    var a_dev = ctx.enqueue_create_buffer[in_type](M * K)
+    var b_dev = ctx.enqueue_create_buffer[in_type](b_rows * b_cols)
+    var d_dev = ctx.enqueue_create_buffer[c_type](M * N)
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(b_dev, b_host)
+
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K)).as_immut()
+    var b_tt = TileTensor(
+        b_dev.unsafe_ptr(), row_major(b_rows, b_cols)
+    ).as_immut()
+    var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
+
+    if splits > 0:
+        enqueue_apple_matmul_split_k[
+            in_type=in_type, c_type=c_type, transpose_b=transpose_b
+        ](d_tt, a_tt, b_tt, ctx, splits)
+    else:
+        enqueue_apple_matmul[
+            in_type=in_type, c_type=c_type, transpose_b=transpose_b
+        ](d_tt, a_tt, b_tt, ctx, force_split_k)
+
+    var d_host = ctx.enqueue_create_host_buffer[c_type](M * N)
+    ctx.enqueue_copy(d_host, d_dev)
+    ctx.synchronize()
+
+    # DRIV-199 workaround: keep device buffers alive past `synchronize`, else
+    # ASAP destruction frees them mid-kernel and the suite flakes.
+    _ = a_dev^
+    _ = b_dev^
+    _ = d_dev^
+
+    var pass_ = True
+    for i in range(M):
+        for j in range(N):
+            var exp = _host_matmul_nt[in_type, in_type](
+                a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
+            ) if transpose_b else _host_matmul_nn[in_type, in_type](
+                a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
+            )
+            var got = Float32(d_host[i * N + j])
+            if abs(got - exp) > Float32(1.0):
+                if pass_:
+                    print("FAIL:", i, j, "got", got, "exp", exp)
+                pass_ = False
+    if not pass_:
+        raise Error("FAILED (see FAIL lines above)")
+    print("PASS")
+
+
 def test_kernel_128x128x32_nt_fp16(ctx: DeviceContext) raises:
     """D[128,128] = A[128,32] @ B[128,32]^T, NT, fp16->fp32."""
     print("== test_kernel_128x128x32_nt_fp16")
@@ -848,22 +903,14 @@ def test_kernel_128x128x32_nt_fp16(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    comptime kernel = apple_matmul_kernel[
-        in_type=DType.float16,
-        transpose_b=True,
-    ]
-    var grid_dim, log2_grid_m, log2_grid_n = _grid_for(M, N)
-    ctx.enqueue_function[kernel](
-        d_dev.unsafe_ptr(),
-        a_dev.unsafe_ptr(),
-        b_dev.unsafe_ptr(),
+    _launch[DType.float16, True](
+        ctx,
+        d_dev,
+        a_dev,
+        b_dev,
         M,
         N,
         K,
-        log2_grid_m,
-        log2_grid_n,
-        grid_dim=(grid_dim),
-        block_dim=(128),
     )
 
     var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
@@ -920,22 +967,14 @@ def test_kernel_ragged_100x200x33_nn_fp16(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    comptime kernel = apple_matmul_kernel[
-        in_type=DType.float16,
-        transpose_b=False,
-    ]
-    var grid_dim, log2_grid_m, log2_grid_n = _grid_for(M, N)
-    ctx.enqueue_function[kernel](
-        d_dev.unsafe_ptr(),
-        a_dev.unsafe_ptr(),
-        b_dev.unsafe_ptr(),
+    _launch[DType.float16, False](
+        ctx,
+        d_dev,
+        a_dev,
+        b_dev,
         M,
         N,
         K,
-        log2_grid_m,
-        log2_grid_n,
-        grid_dim=(grid_dim),
-        block_dim=(128),
     )
 
     var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
@@ -998,22 +1037,14 @@ def test_kernel_ragged_100x200x32_nn_fp16(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    comptime kernel = apple_matmul_kernel[
-        in_type=DType.float16,
-        transpose_b=False,
-    ]
-    var grid_dim, log2_grid_m, log2_grid_n = _grid_for(M, N)
-    ctx.enqueue_function[kernel](
-        d_dev.unsafe_ptr(),
-        a_dev.unsafe_ptr(),
-        b_dev.unsafe_ptr(),
+    _launch[DType.float16, False](
+        ctx,
+        d_dev,
+        a_dev,
+        b_dev,
         M,
         N,
         K,
-        log2_grid_m,
-        log2_grid_n,
-        grid_dim=(grid_dim),
-        block_dim=(128),
     )
 
     var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
@@ -1077,22 +1108,14 @@ def test_kernel_ragged_100x200x32_nt_fp16(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    comptime kernel = apple_matmul_kernel[
-        in_type=DType.float16,
-        transpose_b=True,
-    ]
-    var grid_dim, log2_grid_m, log2_grid_n = _grid_for(M, N)
-    ctx.enqueue_function[kernel](
-        d_dev.unsafe_ptr(),
-        a_dev.unsafe_ptr(),
-        b_dev.unsafe_ptr(),
+    _launch[DType.float16, True](
+        ctx,
+        d_dev,
+        a_dev,
+        b_dev,
         M,
         N,
         K,
-        log2_grid_m,
-        log2_grid_n,
-        grid_dim=(grid_dim),
-        block_dim=(128),
     )
 
     var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
@@ -1155,22 +1178,14 @@ def test_kernel_M20_N80_K16_nn_fp16(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    comptime kernel = apple_matmul_kernel[
-        in_type=DType.float16,
-        transpose_b=False,
-    ]
-    var grid_dim, log2_grid_m, log2_grid_n = _grid_for(M, N)
-    ctx.enqueue_function[kernel](
-        d_dev.unsafe_ptr(),
-        a_dev.unsafe_ptr(),
-        b_dev.unsafe_ptr(),
+    _launch[DType.float16, False](
+        ctx,
+        d_dev,
+        a_dev,
+        b_dev,
         M,
         N,
         K,
-        log2_grid_m,
-        log2_grid_n,
-        grid_dim=(grid_dim),
-        block_dim=(128),
     )
 
     var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
@@ -1222,22 +1237,14 @@ def test_kernel_128x128x32_nn_bf16(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    comptime kernel = apple_matmul_kernel[
-        in_type=DType.bfloat16,
-        transpose_b=False,
-    ]
-    var grid_dim, log2_grid_m, log2_grid_n = _grid_for(M, N)
-    ctx.enqueue_function[kernel](
-        d_dev.unsafe_ptr(),
-        a_dev.unsafe_ptr(),
-        b_dev.unsafe_ptr(),
+    _launch[DType.bfloat16, False](
+        ctx,
+        d_dev,
+        a_dev,
+        b_dev,
         M,
         N,
         K,
-        log2_grid_m,
-        log2_grid_n,
-        grid_dim=(grid_dim),
-        block_dim=(128),
     )
 
     var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
@@ -1289,22 +1296,14 @@ def test_kernel_128x128x32_nn_fp32(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    comptime kernel = apple_matmul_kernel[
-        in_type=DType.float32,
-        transpose_b=False,
-    ]
-    var grid_dim, log2_grid_m, log2_grid_n = _grid_for(M, N)
-    ctx.enqueue_function[kernel](
-        d_dev.unsafe_ptr(),
-        a_dev.unsafe_ptr(),
-        b_dev.unsafe_ptr(),
+    _launch[DType.float32, False](
+        ctx,
+        d_dev,
+        a_dev,
+        b_dev,
         M,
         N,
         K,
-        log2_grid_m,
-        log2_grid_n,
-        grid_dim=(grid_dim),
-        block_dim=(128),
     )
 
     var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
@@ -1553,7 +1552,7 @@ def _run_bias_epilogue_test[
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -1780,7 +1779,7 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
     @always_inline
     @__copy_capture(d_ptr)
     def relu_compose_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var relu_val = max(v_fp16, SIMD[DType.float16, w](0))
@@ -1865,7 +1864,7 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_relu_compose_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -1956,7 +1955,7 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -2107,7 +2106,7 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var b = (bias_ptr + coords[1]).load[width=w]()
         var v_c = rebind[SIMD[DType.float16, w]](val)
@@ -2220,7 +2219,7 @@ def main() raises:
         ctx, 128, 128, 64, "8x8 f32 bias nt"
     )
 
-    # M5 hardware-MMA path (`apple_matmul_kernel`): requires Apple M5.
+    # M5 hardware-MMA path (`AppleM5MatMul` / `enqueue_apple_matmul`): Apple M5.
     if ctx.compute_capability() != 5:
         print(
             "SKIP: M5 hardware-MMA matmul tests require Apple M5"
@@ -2264,3 +2263,40 @@ def main() raises:
     test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(ctx)
     test_kernel_64x130x64_nn_fp16_fp16_oddn(ctx)
     test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(ctx)
+
+    # Split-K path (folded in from the former test_apple_split_k.mojo).
+    # Explicit split counts via enqueue_apple_matmul_split_k:
+    _run_split_k_case[DType.float16, DType.float32, False](
+        ctx, 64, 64, 4096, "splitk nn k4096", splits=4
+    )
+    _run_split_k_case[DType.float16, DType.float32, False](
+        ctx, 64, 64, 4096, "splitk nn s8", splits=8
+    )
+    # K not BK-aligned (last split carries a tail).
+    _run_split_k_case[DType.float16, DType.float32, False](
+        ctx, 64, 64, 4097, "splitk nn k4097 tail", splits=4
+    )
+    # split hint > num_strips: must cap (no empty splits / OOB).
+    _run_split_k_case[DType.float16, DType.float32, False](
+        ctx, 64, 64, 64, "splitk nn s16cap", splits=16
+    )
+    # Ragged M/N + multi-tile.
+    _run_split_k_case[DType.float16, DType.float32, False](
+        ctx, 100, 200, 2048, "splitk nn ragged", splits=4
+    )
+    # NT.
+    _run_split_k_case[DType.float16, DType.float32, True](
+        ctx, 96, 96, 3072, "splitk nt k3072", splits=4
+    )
+    # bf16 in, fp16 out (exercises the reduce cast).
+    _run_split_k_case[DType.bfloat16, DType.float16, False](
+        ctx, 64, 128, 2048, "splitk bf16->fp16 reduce", splits=4
+    )
+    # force_split_k=True via enqueue_apple_matmul on balanced shapes that would
+    # NOT auto-route: the forced split-K result must still match the reference.
+    _run_split_k_case[DType.float16, DType.float32, False](
+        ctx, 128, 128, 256, "force nn", force_split_k=True
+    )
+    _run_split_k_case[DType.float16, DType.bfloat16, True](
+        ctx, 96, 160, 2048, "force nt large-k", force_split_k=True
+    )

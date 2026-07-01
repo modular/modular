@@ -37,17 +37,15 @@ custom operation, as a string. This name is used to load the custom op into your
 graph.
 
 Output from the `execute()` method is usually returned using one or more
-destination-passing style (DPS) output tensors. Destination-passing style (DPS)
-means that the calling function passes in pre-allocated storage space for the
-output value(s). This allows for more efficient memory management. For example,
-the graph compiler can optimize memory use by allocating output tensors on the
-stack, instead of requiring custom ops to allocate heap storage for return
-values.
+destination-passing style (DPS) output tensors. DPS means that the calling
+function passes in pre-allocated storage space for the output value(s).
+This allows for more efficient memory management. For example, the graph
+compiler can optimize memory use by allocating output tensors on the stack,
+instead of requiring custom ops to allocate heap storage for return values.
 
-Destination passing style requires the graph compiler to determine the
-dimensions of the output tensor(s) before executing the operation. It uses the
-operation's `shape()` function to determine the dimensions if they can't be
-determined statically.
+DPS requires the graph compiler to determine the dimensions of the output
+tensor(s) before executing the operation. It uses the operation's `shape()`
+function to determine the dimensions if they can't be determined statically.
 
 The following sections describe the `execute()` and `shape()` functions.
 

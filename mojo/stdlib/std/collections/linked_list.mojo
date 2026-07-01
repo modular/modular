@@ -168,7 +168,7 @@ struct _LinkedListIter[
 
 
 @fieldwise_init
-struct _LinkedListIterOwned[T: Copyable & ImplicitlyDeletable](
+struct _LinkedListIterOwned[T: Movable & ImplicitlyDeletable](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for LinkedList.
@@ -263,7 +263,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
     """
 
     comptime IteratorOwnedType: Iterator = _LinkedListIterOwned[
-        downcast[Self.ElementType, Copyable & ImplicitlyDeletable]
+        Self.ElementType
     ]
     """The owned iterator type for this linked list."""
 
@@ -855,17 +855,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             - O(1) for iterator construction.
             - O(n) in len(self) for a complete iteration of the list.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
-            Self.ElementType, Copyable
-        ), "LinkedList iteration requires the element to be `Copyable`."
-        return {
-            rebind_var[
-                LinkedList[
-                    downcast[Self.ElementType, Copyable & ImplicitlyDeletable]
-                ]
-            ](self^)
-        }
+        return Self.IteratorOwnedType(self^)
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.

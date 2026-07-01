@@ -15,6 +15,7 @@ from std.math import ceildiv
 from std.sys import simd_width_of
 from std.sys.info import _current_target
 
+from nn.reshape import reshape
 from std.algorithm import elementwise, sync_parallelize
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
@@ -31,8 +32,8 @@ def index_tensor_shape[
     indices_type: DType,
     batch_dims: Int,
 ](
-    input_buf: TileTensor[input_type, ...],
-    indices_buf: TileTensor[indices_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    indices_buf: TileTensor[mut=False, indices_type, ...],
 ) raises -> IndexList[output_rank]:
     """
     Compute the output shape of a `index_tensor` operation, and assert the
@@ -143,8 +144,8 @@ def index_tensor[
     batch_dims: Int,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
+    data: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,
 ) raises:
@@ -190,8 +191,8 @@ def _index_tensor_1d[
     batch_dims: Int,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
+    data: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ctx: Optional[DeviceContext] = None,
 ):
@@ -223,7 +224,7 @@ def _index_tensor_1d[
         reshaped_data_tuple[counter] = data_shape[i]
         counter += 1
 
-    var reshaped_data = reshape.reshape[reshaped_data_rank](
+    var reshaped_data = reshape[reshaped_data_rank](
         data.make_dynamic[DType.int64](),
         reshaped_data_tuple,
     )
@@ -271,8 +272,8 @@ def _index_tensor_impl[
     batch_dims: Int,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
+    data: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
@@ -282,10 +283,9 @@ def _index_tensor_impl[
 
     # This is modeled as an elementwise function mapping an index in the
     # output to an index in the input
-    @parameter
     def index_tensor_elementwise_fn[
         simd_width: Int, alignment: Int = 1
-    ](output_idx_arg: Coord) capturing -> None:
+    ](output_idx_arg: Coord) {var}:
         var output_idx = IndexList[output.rank]()
         comptime for i in range(output.rank):
             output_idx[i] = Int(output_idx_arg[i].value())
@@ -346,31 +346,35 @@ def _index_tensor_impl[
         var cpu_ctx = DeviceContext(api="cpu")
         if use_simd:
             elementwise[
-                index_tensor_elementwise_fn,
                 target_simd_width,
                 target=target,
-            ](output.layout.shape_coord(), cpu_ctx)
+            ](index_tensor_elementwise_fn, output.layout.shape_coord(), cpu_ctx)
         else:
             elementwise[
-                index_tensor_elementwise_fn,
                 1,
                 target=target,
-            ](output.layout.shape_coord(), cpu_ctx)
+            ](index_tensor_elementwise_fn, output.layout.shape_coord(), cpu_ctx)
     else:
         assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
         if use_simd:
             elementwise[
-                index_tensor_elementwise_fn,
                 target_simd_width,
                 target=target,
-            ](output.layout.shape_coord(), cuda_ctx)
+            ](
+                index_tensor_elementwise_fn,
+                output.layout.shape_coord(),
+                cuda_ctx,
+            )
         else:
             elementwise[
-                index_tensor_elementwise_fn,
                 1,
                 target=target,
-            ](output.layout.shape_coord(), cuda_ctx)
+            ](
+                index_tensor_elementwise_fn,
+                output.layout.shape_coord(),
+                cuda_ctx,
+            )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -485,12 +489,11 @@ def advanced_indexing_getitem[
         out_tensor.rank == input_rank + index_rank - num_index_tensors
     )
 
-    @parameter
     @always_inline
     def elementwise_fn_wrapper[
         width: Int,
         alignment: Int = 1,
-    ](output_index: Coord) capturing:
+    ](output_index: Coord) {var}:
         input_index = IndexList[input_rank]()
 
         # Find the associated output index from input index
@@ -534,18 +537,16 @@ def advanced_indexing_getitem[
     )
     if use_simd:
         elementwise[
-            elementwise_fn_wrapper,
             target_simd_width,
             target=target,
             _trace_description=trace_description,
-        ](out_tensor.layout.shape_coord(), ctx)
+        ](elementwise_fn_wrapper, out_tensor.layout.shape_coord(), ctx)
     else:
         elementwise[
-            elementwise_fn_wrapper,
             1,
             target=target,
             _trace_description=trace_description,
-        ](out_tensor.layout.shape_coord(), ctx)
+        ](elementwise_fn_wrapper, out_tensor.layout.shape_coord(), ctx)
 
 
 @always_inline
@@ -702,11 +703,10 @@ def advanced_indexing_setitem_inplace[
         else:
             iteration_shape[i] = index_tensor_shape[i - start_axis]
 
-    @parameter
     @always_inline
     def elementwise_fn_wrapper[
         width: Int, alignment: Int = 1
-    ](iteration_indices: Coord) capturing:
+    ](iteration_indices: Coord) {var}:
         var index_tensor_indices = IndexList[index_rank]()
 
         # Find the index into the indexing tensors from the common index
@@ -760,15 +760,13 @@ def advanced_indexing_setitem_inplace[
     )
     if use_simd:
         elementwise[
-            elementwise_fn_wrapper,
             target_simd_width,
             target=target,
             _trace_description=trace_description,
-        ](Coord(iteration_shape), ctx)
+        ](elementwise_fn_wrapper, Coord(iteration_shape), ctx)
     else:
         elementwise[
-            elementwise_fn_wrapper,
             1,
             target=target,
             _trace_description=trace_description,
-        ](Coord(iteration_shape), ctx)
+        ](elementwise_fn_wrapper, Coord(iteration_shape), ctx)

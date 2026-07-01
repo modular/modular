@@ -36,27 +36,27 @@ def group_norm(
     transform. Useful when the batch axis is small enough that batch
     normalization is unstable.
 
-    For example:
+    ``group_norm`` executes only on CUDA/HIP GPU targets, so this example
+    builds the graph but does not run it:
 
     .. code-block:: python
 
         from max.dtype import DType
-        from max.graph import DeviceRef, Graph, TensorType, ops
+        from max.graph import DeviceRef, Graph, ops
 
-        with Graph(
-            "gn",
-            input_types=[
-                TensorType(DType.float32, ("batch", 128, 32, 32), DeviceRef.GPU()),
-                TensorType(DType.float32, (128,), DeviceRef.GPU()),
-                TensorType(DType.float32, (128,), DeviceRef.GPU()),
-            ],
-        ) as g:
-            x, gamma, beta = g.inputs
-            y = ops.group_norm(
-                x.tensor, gamma.tensor, beta.tensor,
-                num_groups=32, epsilon=1e-5,
+        device = DeviceRef.CPU()
+        with Graph("group_norm_example") as graph:
+            # Shape (batch=1, channels=4, spatial=1, 1); 2 groups of 2 channels.
+            x = ops.constant(
+                [[[[1.0]], [[3.0]], [[1.0]], [[3.0]]]],
+                DType.float32,
+                device=device,
             )
-            g.output(y)
+            gamma = ops.constant([1.0, 1.0, 1.0, 1.0], DType.float32, device=device)
+            beta = ops.constant([0.0, 0.0, 0.0, 0.0], DType.float32, device=device)
+            graph.output(
+                ops.group_norm(x, gamma, beta, num_groups=2, epsilon=1e-5)
+            )
 
     Args:
         input: The tensor to normalize, of shape
@@ -82,7 +82,7 @@ def group_norm(
 
     if len(input.shape) < 2:
         raise ValueError(
-            f"Expected input tensor with >=2 dimensions, got shape"
+            "Expected input tensor with >=2 dimensions, got shape"
             f" {input.shape}"
         )
 

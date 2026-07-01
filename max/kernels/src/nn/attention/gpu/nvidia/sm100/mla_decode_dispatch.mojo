@@ -19,9 +19,12 @@ from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
+    ComptimeInt,
     Coord,
+    Idx,
     Layout,
     LayoutTensor,
+    RowMajorLayout,
     TileTensor,
     row_major,
 )
@@ -517,7 +520,7 @@ def compute_mla_dispatch_scalars[
     Returns ``(batch_size, q_max_seq_len, num_partitions)``.
     These three values are baked into the size-3 GPU buffer.
     ``effective_split_len`` is computed directly inside the MoGG ops from
-    ``max_lengths`` (``max_cache_valid_length + q_max_seq_len`` when
+    ``max_cache_length`` (``max_cache_valid_length + q_max_seq_len`` when
     ``_is_cache_length_accurate=False``, else ``max_cache_valid_length``),
     and no longer needs to be returned here.
     """
@@ -693,6 +696,16 @@ struct MLADispatchScalarArgs[
             rebind[UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]](
                 self.gpu_buf.unsafe_ptr()
             ),
+        )
+
+    def gpu_tile_tensor(
+        self,
+    ) -> TileTensor[DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin]:
+        return TileTensor(
+            rebind[UnsafePointer[Scalar[DType.int64], MutAnyOrigin]](
+                self.gpu_buf.unsafe_ptr()
+            ),
+            row_major((Idx[3],)),
         )
 
 

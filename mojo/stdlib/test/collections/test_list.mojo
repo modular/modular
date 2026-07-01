@@ -37,7 +37,6 @@ from std.testing.prop import PropTest
 # TODO(MOCO-522): Figure out desired behavior for importing files with only
 # extensions in them.
 from std.testing.prop.strategy import SIMD, List
-from std.sys.intrinsics import _type_is_eq
 
 
 def test_mojo_issue_698() raises:
@@ -764,6 +763,18 @@ def test_list_iter_owned_destroys_elements_if_partially_consumed() raises:
     assert_equal(dels, 2)
 
 
+def test_list_iter_owned_move_only() raises:
+    # Consuming iteration only requires `Movable & ImplicitlyDeletable`, not
+    # `Copyable`: each element is moved out of the list, not copied.
+    var list = [MoveOnly[Int](0), MoveOnly[Int](1), MoveOnly[Int](2)]
+
+    var total = 0
+    for elem in list^:
+        total += elem.data
+
+    assert_equal(total, 3)
+
+
 def test_list_iter_owned_bounds() raises:
     var iter = iter([1, 2, 3])
     for i in range(3, 0, -1):
@@ -771,14 +782,18 @@ def test_list_iter_owned_bounds() raises:
         _ = iter.__next__()
 
 
-def _test_list_iter_bounds[I: Iterator](var list_iter: I, list_len: Int) raises:
+def _test_list_iter_bounds[
+    I: Iterator
+](var list_iter: I, list_len: Int) raises where conforms_to(
+    I.Element, ImplicitlyDeletable
+):
     var iter = list_iter^
 
     for i in range(list_len):
         var lower, upper = iter.bounds()
         assert_equal(list_len - i, lower)
         assert_equal(list_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -1013,6 +1028,16 @@ def test_list_conditional_conformances() raises:
     assert_true(conforms_to(List[Int], Writable))
     assert_false(conforms_to(List[NonEquatable], Writable))
 
+    # Owned iteration requires `Movable & ImplicitlyDeletable` elements, but
+    # not `Copyable`: a consuming iterator moves elements out rather than
+    # copying them.
+    assert_true(conforms_to(List[Int], IterableOwned))
+    # `MoveOnly[Int]` is movable and implicitly deletable but not copyable.
+    assert_true(conforms_to(List[MoveOnly[Int]], IterableOwned))
+    # `ExplicitDestroy` is not implicitly deletable, so the consuming iterator
+    # cannot destroy any unconsumed elements.
+    assert_false(conforms_to(List[ExplicitDestroy], IterableOwned))
+
 
 def test_list_init_span() raises:
     var l = [String("a"), "bb", "cc", "def"]
@@ -1162,7 +1187,7 @@ def test_list_comprehension() raises:
 def test_list_can_infer_iterable_element_type() raises:
     var string = "Mojo🔥"
     var l = List(string.codepoints())
-    assert_true(_type_is_eq[type_of(l), List[Codepoint]]())
+    assert_true(type_of(l) == List[Codepoint])
     assert_equal(
         l,
         [

@@ -2,10 +2,14 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
+
+# Exported so offline tests in other packages can read the lock file as data
+# without depending on the :hf_repo_lock library (whose imports = ["."] would
+# create ambiguous module paths under mypy).
+exports_files(["hf-repo-lock.tsv"])
 
 modular_py_library(
     name = "hf_repo_lock",

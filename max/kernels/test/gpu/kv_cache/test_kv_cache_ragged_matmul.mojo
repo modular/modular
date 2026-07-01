@@ -107,12 +107,6 @@ def _initialize_ragged_inputs[
     # Initialize padded hidden state.
     var padded_size = batch_size * max_seq_length_batch * hidden_size
     var hidden_state_padded_host_ptr = alloc[Scalar[dtype]](padded_size)
-    var hidden_state_padded_host = LayoutTensor[dtype, hidden_state_layout](
-        hidden_state_padded_host_ptr,
-        RuntimeLayout[hidden_state_layout].row_major(
-            IndexList[2](batch_size * max_seq_length_batch, hidden_size)
-        ),
-    )
 
     # Copy over the ragged values to the padded tensor.
     # Don't worry about padded values, we won't read them.
@@ -175,7 +169,7 @@ def execute_matmul_kv_cache_ragged[
     comptime num_blocks = 32
 
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
+        dtype, kv_params, ...
     ]
 
     assert len(prompt_lens) == len(cache_sizes), (
@@ -438,7 +432,7 @@ def execute_matmul_k_cache_ragged[
     comptime num_paged_blocks = 32
     comptime page_size = 512
     comptime CollectionType = PagedKVCacheCollection[
-        dtype, kv_params, page_size
+        dtype, kv_params, page_size, ...
     ]
     var batch_size = len(prompt_lens)
     assert len(prompt_lens) == len(
@@ -733,6 +727,13 @@ def generic_assert_output_equals[
     test_output_host_ptr.free()
 
 
+# HACK: `k_cache` and `v_cache` are the key/value halves (kv_idx 0 vs 1) of the
+# same `blocks` buffer, so they share the collection's mutable origins. They are
+# only ever stored to at disjoint offsets, but the exclusivity checker cannot
+# prove that and rejects passing both as separately-writable arguments. Disable
+# the nested-origin exclusivity check as a stopgap; the proper fix is to give the
+# k/v views provably-disjoint origins instead of sharing the collection's.
+@__unsafe_disable_nested_origin_exclusivity
 def generic_execute_fused_qkv_cache_ragged[
     cache_t: KVCacheT,
     //,
@@ -903,7 +904,7 @@ def execute_paged_fused_qkv_matmul[
     comptime num_paged_blocks = 32
     comptime page_size = 512
     comptime CollectionType = PagedKVCacheCollection[
-        dtype, kv_params, page_size
+        dtype, kv_params, page_size, ...
     ]
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     comptime kv_block_layout = Layout.row_major[6]()
@@ -1017,7 +1018,7 @@ def execute_cont_batch_fused_qkv_matmul[
 ) raises:
     comptime num_blocks = 32
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
+        dtype, kv_params, ...
     ]
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     comptime kv_block_layout = Layout.row_major[6]()

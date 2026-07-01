@@ -15,14 +15,16 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
 from .kernels import (
+    _fused_qkv_index_ragged_matmul_scaled_mxfp8,
     _fused_qkv_ragged_matmul_scaled_float4,
     _fused_qkv_ragged_matmul_scaled_float8,
+    _fused_qkv_ragged_matmul_scaled_mxfp8,
+    _grouped_matmul_rowwise_dynamic_scaled_fp8,
     block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
     dynamic_block_scaled_matmul,
     dynamic_block_scaled_matmul_mxfp4,
     dynamic_scaled_matmul,
-    fused_qkv_ragged_matmul,
     grouped_dynamic_scaled_fp8_matmul,
     grouped_matmul_ragged,
     matmul_static_scaled_float8,
@@ -146,32 +148,6 @@ def _matmul_float4_mxfp4(
         out_type=DType.bfloat16,
     )
     return res
-
-
-def _dequantize_mxfp8_weight(
-    weight: TensorValue,
-    weight_scale: TensorValue,
-) -> TensorValue:
-    """Dequantize an MXFP8 weight to bf16.
-
-    ``weight`` is ``float8_e4m3fn`` ``[N, K]`` and ``weight_scale`` is
-    ``float8_e8m0fnu`` ``[N, K // 32]`` (one power-of-two scale per 32-element
-    K block). Returns ``weight * scale`` in bf16, with each scale broadcast
-    across its 32-element block.
-    """
-    SF_VECTOR_SIZE = 32
-    n_dim = weight.shape[0]
-    k_dim = weight.shape[1]
-    k_blocks = k_dim // SF_VECTOR_SIZE
-    # E8M0 -> f32 yields the exact power-of-two value; E4M3 -> f32 is exact.
-    w = weight.cast(DType.float32)
-    scale = weight_scale.cast(DType.float32)
-    scale = ops.broadcast_to(
-        ops.reshape(scale, [n_dim, k_blocks, 1]),
-        [n_dim, k_blocks, SF_VECTOR_SIZE],
-    )
-    scale = ops.reshape(scale, [n_dim, k_dim])
-    return (w * scale).cast(DType.bfloat16)
 
 
 def _matmul_float8_mxfp8(
@@ -451,23 +427,29 @@ def quantized_fused_qkv_matmul(
     """
     match quant_config.format:
         case QuantFormat.MXFP8:
-            # No fused block-scaled MXFP8 QKV+KV-write kernel exists yet, so
-            # dequantize the (constant) QKV weight to bf16 and use the
-            # unquantized fused QKV ragged matmul. The dense MLP still uses the
-            # MXFP8 block-scaled tensor-core path. bf16 weights are strictly
-            # more accurate than the FP8 source, so accuracy does not regress.
-            wqkv_bf16 = _dequantize_mxfp8_weight(
-                wqkv, weight_scale.to(x.device)
+            if bias is not None:
+                raise NotImplementedError(
+                    "bias is not supported by the fused MXFP8 QKV kernel"
+                )
+            x_fp8, x_scales = quantize_dynamic_block_scaled(
+                x,
+                sf_vector_size=32,
+                scales_type=DType.float8_e8m0fnu,
+                out_type=DType.float8_e4m3fn,
             )
-            return fused_qkv_ragged_matmul(
+            weight_scale = block_scales_interleave(
+                weight_scale.to(x.device), sf_vector_size=32
+            )
+            return _fused_qkv_ragged_matmul_scaled_mxfp8(
                 kv_params,
-                input=x,
+                input=x_fp8,
                 input_row_offsets=input_row_offsets,
-                wqkv=wqkv_bf16,
+                wqkv=wqkv,
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
                 n_heads=n_heads,
-                bias=bias,
+                input_scale=x_scales.to(x.device),
+                weight_scale=weight_scale,
                 _output_dim=_output_dim,
             )
         case QuantFormat.NVFP4:
@@ -571,6 +553,83 @@ def quantized_fused_qkv_matmul(
             )
 
 
+def quantized_fused_qkv_index_matmul(
+    kv_params: KVCacheParams,
+    index_kv_params: KVCacheParams,
+    x: TensorValue,
+    wqkv: TensorValue,
+    kv_collection: PagedCacheValues,
+    index_kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    input_row_offsets: TensorValue,
+    n_heads: int,
+    num_index_heads: int,
+    idx_head_dim: int,
+    quant_config: QuantConfig,
+    weight_scale: TensorValue,
+) -> TensorValue:
+    """Fuses MiniMax-M3's QKV and index-QK projections into one MXFP8 matmul.
+
+    All five projections (``Q``, ``K``, ``V``, ``IndexQ``, ``IndexK``) read the
+    same hidden state ``x``. This quantizes ``x`` once and runs a single
+    block-scaled GEMM over the concatenated weights ``[Wq | Wk | Wv | Wiq |
+    Wik]``, scattering ``K`` / ``V`` into ``kv_collection`` and ``IndexK`` into
+    ``index_kv_collection`` while returning the combined ``Q`` / ``IndexQ``
+    output for the caller to split.
+
+    Only the MXFP8 dynamic-activation-quant format is supported; callers must
+    gate on it (other formats keep the separate QKV + IndexQK matmuls).
+
+    Args:
+        kv_params: KVCacheParams for the MAIN (K, V) cache.
+        index_kv_params: KVCacheParams for the INDEX (IndexK) cache.
+        x: The input tensor of shape ``[total_seq_len, hidden_dim]``.
+        wqkv: The concatenated ``[Wq | Wk | Wv | Wiq | Wik]`` weight tensor.
+        kv_collection: The MAIN paged KV cache.
+        index_kv_collection: The INDEX paged KV cache.
+        layer_idx: The current layer index.
+        input_row_offsets: Batch boundary offsets.
+        n_heads: Number of main attention heads.
+        num_index_heads: Number of index Q heads.
+        idx_head_dim: Index head dimension (also the IndexK width).
+        quant_config: The quantization configuration; must be MXFP8.
+        weight_scale: The concatenated E8M0 weight scale tensor (pre-interleave).
+
+    Returns:
+        The combined ``[total_seq_len, q_dim + iq_dim]`` bf16 tensor
+        (``Q`` followed by ``IndexQ``).
+    """
+    if quant_config.format != QuantFormat.MXFP8:
+        raise ValueError(
+            "quantized_fused_qkv_index_matmul only supports MXFP8, got"
+            f" {quant_config.format}"
+        )
+    x_fp8, x_scales = quantize_dynamic_block_scaled(
+        x,
+        sf_vector_size=32,
+        scales_type=DType.float8_e8m0fnu,
+        out_type=DType.float8_e4m3fn,
+    )
+    weight_scale = block_scales_interleave(
+        weight_scale.to(x.device), sf_vector_size=32
+    )
+    return _fused_qkv_index_ragged_matmul_scaled_mxfp8(
+        kv_params=kv_params,
+        index_kv_params=index_kv_params,
+        input=x_fp8,
+        input_row_offsets=input_row_offsets,
+        wqkv=wqkv,
+        kv_collection=kv_collection,
+        index_kv_collection=index_kv_collection,
+        layer_idx=layer_idx,
+        n_heads=n_heads,
+        num_index_heads=num_index_heads,
+        idx_head_dim=idx_head_dim,
+        input_scale=x_scales.to(x.device),
+        weight_scale=weight_scale,
+    )
+
+
 def quantized_grouped_matmul(
     x: TensorValue,
     weight: TensorValue,
@@ -593,14 +652,14 @@ def quantized_grouped_matmul(
         weight_scale: The weight scale tensor in storage layout.
         expert_start_indices: Starting index of each expert's token group.
         expert_ids: Expert identifier for each token group.
-        usage_stats: Per-expert usage statistics (will be moved to CPU).
+        usage_stats: Per-expert usage statistics. The MXFP4 path passes it
+            straight to ``grouped_matmul_ragged``, currently the FP8 path
+            copies it to CPU.
         quant_config: The quantization configuration.
 
     Returns:
         The grouped matmul output tensor in bf16.
     """
-    cpu_usage_stats = usage_stats.to(DeviceRef.CPU())
-
     match quant_config.format:
         case QuantFormat.MXFP4:
             dequanted = mxfp4_dequant(
@@ -611,17 +670,54 @@ def quantized_grouped_matmul(
                 dequanted,
                 expert_start_indices,
                 expert_ids,
-                cpu_usage_stats,
+                usage_stats,
             )
         case (
             QuantFormat.COMPRESSED_TENSORS_FP8
             | QuantFormat.FBGEMM_FP8
             | QuantFormat.BLOCKSCALED_FP8
         ):
+            # Weight is stored [E, in, out] = [E, K, N]; transpose to the
+            # [E, N, K] orientation both grouped FP8 kernels expect (K
+            # innermost, transpose_b=True).
+            weight_t = weight.transpose(1, 2)
+
+            if (
+                quant_config.weight_scale.is_rowwise
+                and quant_config.input_scale.block_size is None
+            ):
+                # Rowwise (per-output-channel) weight scale + per-token dynamic
+                # activation scale -- the compressed-tensors FP8-dynamic layout
+                # (e.g. RedHatAI Llama-4-Scout FP8-dynamic). No block_size.
+                #
+                # Orientation:
+                #   * weight_scale arrives [E, N, 1] (per output channel) from
+                #     StackedMLP._init_weights, which is exactly what the kernel
+                #     wants as b_scales -- so it is NOT transposed (unlike the
+                #     block path, whose 2D-per-expert scale needs transposing).
+                #   * per-token activation quant returns [1, total_tokens]; the
+                #     kernel wants a_scales [total_tokens, 1], so transpose it.
+                x_fp8, x_scales = quantize_dynamic_scaled_float8(
+                    x,
+                    quant_config.input_scale,
+                    quant_config.weight_scale,
+                    out_type=weight.dtype,
+                    scales_type=DType.float32,
+                )
+
+                return _grouped_matmul_rowwise_dynamic_scaled_fp8(
+                    x_fp8,
+                    weight_t,
+                    x_scales.transpose(0, 1),
+                    weight_scale,
+                    expert_start_indices,
+                    expert_ids,
+                    usage_stats.to(DeviceRef.CPU()),
+                )
+
             assert quant_config.input_scale.block_size is not None
             input_block_size = quant_config.input_scale.block_size[1]
 
-            weight_t = weight.transpose(1, 2)
             scale_t = weight_scale.transpose(1, 2)
 
             x_fp8, x_scales = quantize_dynamic_scaled_float8(
@@ -640,7 +736,7 @@ def quantized_grouped_matmul(
                 scale_t,
                 expert_start_indices,
                 expert_ids,
-                cpu_usage_stats,
+                usage_stats.to(DeviceRef.CPU()),
                 quant_config.input_scale,
                 quant_config.weight_scale,
             )

@@ -15,6 +15,7 @@ from std.math import iota
 
 from std.gpu import global_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
+from std.reflection import reflect
 from std.testing import assert_equal
 
 
@@ -30,6 +31,22 @@ def vec_func(
     if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid] + Float32(supplement)
+
+
+def test_declared_arg_types(ctx: DeviceContext) raises:
+    var compiled = ctx.compile_function[vec_func]()
+    comptime arg_types = type_of(compiled).declared_arg_types
+
+    # The list is always present and reports the kernel's arity.
+    assert_equal(arg_types.size, 5)
+
+    # Indexing yields the declared argument types in order.
+    comptime assert arg_types[0] == UnsafePointer[Float32, ImmutAnyOrigin]
+    comptime assert arg_types[2] == UnsafePointer[Float32, MutAnyOrigin]
+    comptime assert arg_types[3] == Int
+    comptime assert arg_types[4] == Int
+
+    assert_equal(reflect[arg_types[0]].base_name(), "UnsafePointer")
 
 
 def test_is_compatible(ctx: DeviceContext) raises:
@@ -334,6 +351,7 @@ def main() raises:
         # Execute our test with the context
         test_is_compatible(ctx)
         test_basic(ctx)
+        test_declared_arg_types(ctx)
         test_move(ctx)
         test_id(ctx)
         test_print(ctx)

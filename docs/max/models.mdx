@@ -87,6 +87,16 @@ You can also see the
       <td className='gpus'>Yes</td>
     </tr>
     <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/diffusion_gemma"><code>DiffusionGemmaForBlockDiffusion</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/nvidia/diffusiongemma-26B-A4B-it-NVFP4">nvidia/diffusiongemma-26B-A4B-it-NVFP4</a>,<br/>
+        <a href="https://huggingface.co/google/diffusiongemma-26B-A4B-it">google/diffusiongemma-26B-A4B-it</a>
+      </td>
+      <td className='modality'>text-to-text</td>
+      <td className='encodings'>bfloat16, float4_e2m1fnx2</td>
+      <td className='gpus'>No</td>
+    </tr>
+    <tr>
       <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/exaone"><code>ExaoneForCausalLM</code></a></td>
       <td className='models'>
         <a href="https://huggingface.co/LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct">LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct</a>,<br/>
@@ -161,7 +171,7 @@ You can also see the
         <a href="https://huggingface.co/nvidia/Gemma-4-31B-IT-NVFP4">nvidia/Gemma-4-31B-IT-NVFP4</a>
       </td>
       <td className='modality'>image-to-text,<br/>text-to-text,<br/>video-to-text</td>
-      <td className='encodings'>bfloat16, float4_e2m1fnx2</td>
+      <td className='encodings'>bfloat16, float16, float4_e2m1fnx2</td>
       <td className='gpus'>Yes</td>
     </tr>
     <tr>
@@ -215,6 +225,15 @@ You can also see the
       <td className='gpus'>No</td>
     </tr>
     <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/ideogram4"><code>Ideogram4Pipeline</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/ideogram-ai/ideogram-4-fp8">ideogram-ai/ideogram-4-fp8</a>
+      </td>
+      <td className='modality'>text-to-image</td>
+      <td className='encodings'>bfloat16</td>
+      <td className='gpus'>No</td>
+    </tr>
+    <tr>
       <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/internvl"><code>InternVLChatModel</code></a></td>
       <td className='models'>
         <a href="https://huggingface.co/OpenGVLab/InternVL3-8B-Instruct">OpenGVLab/InternVL3-8B-Instruct</a>
@@ -243,6 +262,15 @@ You can also see the
       <td className='gpus'>Yes</td>
     </tr>
     <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/laguna"><code>LagunaForCausalLM</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/poolside/Laguna-M.1-NVFP4">poolside/Laguna-M.1-NVFP4</a>
+      </td>
+      <td className='modality'>text-to-text</td>
+      <td className='encodings'>bfloat16, float4_e2m1fnx2</td>
+      <td className='gpus'>No</td>
+    </tr>
+    <tr>
       <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/lfm2"><code>Lfm2ForCausalLM</code></a></td>
       <td className='models'>
         <a href="https://huggingface.co/LiquidAI/LFM2.5-350M">LiquidAI/LFM2.5-350M</a>,<br/>
@@ -250,6 +278,24 @@ You can also see the
       </td>
       <td className='modality'>text-to-text</td>
       <td className='encodings'>bfloat16, float32</td>
+      <td className='gpus'>No</td>
+    </tr>
+    <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/llama4"><code>Llama4ForCausalLM</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/unsloth/Llama-4-Scout-17B-16E-Instruct">unsloth/Llama-4-Scout-17B-16E-Instruct</a>
+      </td>
+      <td className='modality'>text-to-text</td>
+      <td className='encodings'>bfloat16, float8_e4m3fn</td>
+      <td className='gpus'>No</td>
+    </tr>
+    <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/llama4"><code>Llama4ForConditionalGeneration</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/unsloth/Llama-4-Scout-17B-16E-Instruct">unsloth/Llama-4-Scout-17B-16E-Instruct</a>
+      </td>
+      <td className='modality'>text-to-text</td>
+      <td className='encodings'>bfloat16, float8_e4m3fn</td>
       <td className='gpus'>No</td>
     </tr>
     <tr>
@@ -322,6 +368,15 @@ You can also see the
       </td>
       <td className='modality'>text-to-embeddings</td>
       <td className='encodings'>bfloat16, float32</td>
+      <td className='gpus'>No</td>
+    </tr>
+    <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/nemotron_h"><code>NemotronHForCausalLM</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8">nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8</a>
+      </td>
+      <td className='modality'>text-to-text</td>
+      <td className='encodings'>bfloat16, float8_e4m3fn</td>
       <td className='gpus'>No</td>
     </tr>
     <tr>
@@ -511,12 +566,21 @@ You can also see the
       <td className='gpus'>Yes</td>
     </tr>
     <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/unified_mtp_glm5_2"><code>UnifiedMTPGlmMoeDsaForCausalLM</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/zai-org/GLM-5.2-FP8">zai-org/GLM-5.2-FP8</a>
+      </td>
+      <td className='modality'>text-to-text</td>
+      <td className='encodings'>float8_e4m3fn</td>
+      <td className='gpus'>Yes</td>
+    </tr>
+    <tr>
       <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/wan"><code>WanImageToVideoPipeline</code></a></td>
       <td className='models'>
         <a href="https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B-Diffusers">Wan-AI/Wan2.2-I2V-A14B-Diffusers</a>,<br/>
         <a href="https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P-Diffusers">Wan-AI/Wan2.1-I2V-14B-720P-Diffusers</a>
       </td>
-      <td className='modality'>text-to-image</td>
+      <td className='modality'>image-to-video</td>
       <td className='encodings'>bfloat16, float32, float8_e4m3fn</td>
       <td className='gpus'>No</td>
     </tr>
@@ -528,7 +592,7 @@ You can also see the
         <a href="https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers">Wan-AI/Wan2.2-TI2V-5B-Diffusers</a>,<br/>
         <a href="https://huggingface.co/yetter-ai/Wan2.2-TI2V-5B-Turbo-Diffusers">yetter-ai/Wan2.2-TI2V-5B-Turbo-Diffusers</a>
       </td>
-      <td className='modality'>text-to-image</td>
+      <td className='modality'>text-to-video</td>
       <td className='encodings'>bfloat16, float32, float8_e4m3fn</td>
       <td className='gpus'>No</td>
     </tr>

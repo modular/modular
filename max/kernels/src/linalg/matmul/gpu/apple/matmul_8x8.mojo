@@ -12,13 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """8x8 `simdgroup_matrix` GEMM kernel for Apple Silicon GPUs (M1-M4)."""
 
-from std.sys import llvm_intrinsic
-
 from std.gpu import (
     block_idx,
     lane_id,
     warp_id,
 )
+from std.gpu.compute.arch.mma_apple import _mma_apple_8x8
 from layout import TensorLayout, TileTensor
 from std.utils import Index
 from std.utils.numerics import get_accum_type
@@ -27,7 +26,7 @@ from ....utils import elementwise_epilogue_type
 
 
 # ===----------------------------------------------------------------------=== #
-# M1-M4: 8x8 simdgroup_matrix MMA (uses Kolya's #87917 intrinsic)
+# M1-M4: 8x8 simdgroup_matrix MMA (uses stdlib `_mma_apple_8x8`)
 # ===----------------------------------------------------------------------=== #
 
 comptime MMA8_DIM = 8
@@ -42,21 +41,6 @@ def _frag8_layout(lane: Int) -> Tuple[Int, Int]:
         ((lane & 6) >> 1) + ((lane & 16) >> 2),
         ((lane & 1) << 1) + ((lane & 8) >> 1),
     )
-
-
-@always_inline
-def _mma8x8[
-    a_type: DType, b_type: DType
-](
-    a: SIMD[a_type, FRAG8],
-    b: SIMD[b_type, FRAG8],
-    c: SIMD[DType.float32, FRAG8],
-) -> SIMD[DType.float32, FRAG8]:
-    """One 8x8x8 simdgroup-matrix multiply-accumulate: D = A @ B + C."""
-    return llvm_intrinsic[
-        "llvm.air.simdgroup_matrix_8x8_multiply_accumulate",
-        SIMD[DType.float32, FRAG8],
-    ](a, b, c)
 
 
 @always_inline
@@ -158,8 +142,9 @@ def _simdgroup8x8_matmul_kernel[
                     bfrag[ni] = bf
         comptime for mi in range(NT_M):
             comptime for ni in range(NT_N):
-                accum[mi * NT_N + ni] = _mma8x8[a_type, b_type](
-                    afrag[mi], bfrag[ni], accum[mi * NT_N + ni]
+                var c_frag = accum[mi * NT_N + ni]
+                _mma_apple_8x8(
+                    accum[mi * NT_N + ni], afrag[mi], bfrag[ni], c_frag
                 )
 
     comptime for mi in range(NT_M):

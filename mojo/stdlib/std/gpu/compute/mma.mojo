@@ -162,11 +162,11 @@ def _dtype_to_nvvm_wgmma_type[
 def _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
     return __mlir_deferred_attr[
         `#nvvm.shape<m =`,
-        +m._int_mlir_index(),
+        +m.__mlir_index__(),
         `, n =`,
-        +n._int_mlir_index(),
+        +n.__mlir_index__(),
         `, k =`,
-        +k._int_mlir_index(),
+        +k.__mlir_index__(),
         `>`,
     ]
 
@@ -397,7 +397,11 @@ def st_matrix[
         must execute this instruction to avoid deadlock.
     """
 
-    comptime assert dtype in (DType.bfloat16, DType.float32), ""
+    comptime assert dtype in (
+        DType.bfloat16,
+        DType.float16,
+        DType.float32,
+    ), ""
 
     comptime num_matrices = simd_width
 

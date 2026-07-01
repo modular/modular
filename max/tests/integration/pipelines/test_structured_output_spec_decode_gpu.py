@@ -21,6 +21,7 @@ take significant time to compile. They are marked for the HF workflow.
 
 import asyncio
 import json
+import time
 
 import hf_repo_lock
 import numpy as np
@@ -152,9 +153,9 @@ def test_eagle_structured_output_json_schema_gpu(
 
     for _ in range(max_iterations):
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-            batches=[[context]], num_steps=1
+            batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         response = pipeline.execute(inputs)
 
         if request_id in response:
@@ -165,7 +166,7 @@ def test_eagle_structured_output_json_schema_gpu(
 
     # Flush any remaining outputs
     empty_inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-        batches=[[]], num_steps=1
+        batches=[[]]
     )
     response = pipeline.execute(empty_inputs)
     if request_id in response:
@@ -320,10 +321,10 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
         # Allocate KV cache for all contexts in the batch.
         # Even done contexts need consistent allocation for spec decode.
         for ctx in contexts:
-            kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=0)
 
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-            batches=[contexts], num_steps=1
+            batches=[contexts]
         )
         response = pipeline.execute(inputs)
 
@@ -341,7 +342,7 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
 
     # Flush remaining outputs
     empty_inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-        batches=[[]], num_steps=1
+        batches=[[]]
     )
     response = pipeline.execute(empty_inputs)
     if structured_request_id in response:
@@ -367,3 +368,175 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
     assert len(freeform_response.strip()) > 0, (
         "Free-form request should produce non-empty output"
     )
+
+
+@pytest.mark.timeout(600)  # 10 minutes for model download + compile
+def test_eagle_structured_output_no_first_decode_stall_gpu(
+    pipeline_registry: PipelineRegistry,
+) -> None:
+    """Regression test for MXSERV-189: first constrained decode must not stall.
+
+    Without the warmup fix, the first async bitmask kickoff callback is
+    stream-ordered behind the captured graph's same-stream wait_host_value at
+    the prefill->decode boundary, producing a self-deadlock that idles the GPU
+    ~7-9 seconds per server lifetime. This test detects that stall by measuring
+    the wall time of each execute() call and asserting that no single call
+    exceeds a conservative multiple (30x) of the median steady-state decode
+    time across iterations 3..N.
+
+    The multiplier is generous: the observed stall is ~7-9s vs ~0.06-0.18s
+    per iteration (50-150x), while legitimate variance from graph-capture
+    jitter or KV eviction is at most 2-3x. 30x reliably separates the two.
+    """
+    target_revision = hf_repo_lock.revision_for_hf_repo(
+        "meta-llama/Llama-3.2-3B-Instruct"
+    )
+    assert target_revision is not None
+
+    draft_revision = hf_repo_lock.revision_for_hf_repo(
+        "atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16"
+    )
+    assert draft_revision is not None
+
+    pipeline_config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="meta-llama/Llama-3.2-3B-Instruct",
+                    quantization_encoding="bfloat16",
+                    device_specs=[DeviceSpec.accelerator()],
+                    huggingface_model_revision=target_revision,
+                    max_length=2048,
+                ),
+                "draft": MAXModelConfig(
+                    model_path="atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16",
+                    quantization_encoding="bfloat16",
+                    device_specs=[DeviceSpec.accelerator()],
+                    huggingface_model_revision=draft_revision,
+                ),
+            }
+        ),
+        speculative=SpeculativeConfig(
+            speculative_method="eagle",
+            num_speculative_tokens=2,
+        ),
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            enable_overlap_scheduler=True,
+        ),
+    )
+
+    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+        pipeline_config
+    )
+    assert isinstance(tokenizer, TextTokenizer)
+
+    prompt = """Extract the person's name and age from: 'Maria Garcia is 42 years old.'"""
+
+    request_id = RequestID("eagle_stall_regression")
+    request = TextGenerationRequest(
+        model_name=pipeline_config.model.model_path,
+        request_id=request_id,
+        messages=[TextGenerationRequestMessage(role="user", content=prompt)],
+        sampling_params=SamplingParams(max_new_tokens=60, top_k=1),
+        response_format=TextGenerationResponseFormat(
+            type="json_schema",
+            grammar=None,
+            json_schema={
+                "title": "Person",
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
+                },
+                "required": ["name", "age"],
+            },
+            grammar_enforced=True,
+            tools_forced=False,
+        ),
+    )
+
+    context: TextContext = asyncio.run(tokenizer.new_context(request))
+    assert context.json_schema is not None
+
+    pipeline = pipeline_factory()
+    assert isinstance(pipeline, OverlapTextGenerationPipeline)
+
+    kv_manager = pipeline.kv_manager
+    kv_manager.claim(context.request_id, replica_idx=0)
+
+    # Collect per-call wall times. The overlap pipeline is pipelined:
+    #   call 0: prefill (drives model forward, no output yet)
+    #   call 1: first decode step (returns prefill output, drives 1st decode)
+    #   call 2+: steady-state decode
+    # The MXSERV-189 stall hits at call 1 (first decode): the bitmask kickoff
+    # callback enqueued by call 1 is stream-ordered behind the same-stream
+    # wait_host_value in the captured decode graph, deadlocking until an
+    # external poke frees it (~7-9s).
+    call_times: list[float] = []
+    tokens: list[int] = []
+    max_iterations = 60
+
+    for _ in range(max_iterations):
+        inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+            batches=[[context]]
+        )
+        kv_manager.alloc(context, replica_idx=0)
+
+        t0 = time.monotonic()
+        response = pipeline.execute(inputs)
+        call_times.append(time.monotonic() - t0)
+
+        if request_id in response:
+            for token in response[request_id].tokens:
+                tokens.append(token)
+            if response[request_id].is_done:
+                break
+
+    # Flush remaining outputs
+    empty_inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+        batches=[[]]
+    )
+    response = pipeline.execute(empty_inputs)
+    if request_id in response:
+        for token in response[request_id].tokens:
+            tokens.append(token)
+
+    # Need at least 4 timed calls: prefill (0), first decode (1), and two
+    # steady-state iterations (2, 3) to compute a meaningful median.
+    assert len(call_times) >= 4, (
+        f"Expected at least 4 execute() calls, got {len(call_times)}"
+    )
+
+    # Median of calls 3..N as the steady-state reference (skip prefill and the
+    # first two decode iterations to let the pipeline reach steady throughput).
+    steady_times = call_times[3:]
+    median_steady = float(np.median(steady_times))
+
+    # The first decode call (index 1) is where the MXSERV-189 stall manifests.
+    # With the fix it should be within 30x of steady-state; without the fix it
+    # is 50-150x slower.
+    first_decode_time = call_times[1]
+    threshold = 30.0 * median_steady
+
+    assert first_decode_time < threshold, (
+        f"First decode execute() took {first_decode_time:.3f}s, "
+        f"which is {first_decode_time / median_steady:.1f}x the median "
+        f"steady-state time ({median_steady:.4f}s). "
+        f"Expected < 30x ({threshold:.3f}s). "
+        "This suggests the MXSERV-189 bitmask kickoff stall has regressed."
+    )
+
+    # Verify the output is still valid JSON (functional correctness).
+    response_content = asyncio.run(
+        tokenizer.decode(np.array(tokens), skip_special_tokens=True)
+    )
+    # raw_decode extracts the first JSON object and ignores trailing text;
+    # the Llama 3 chat template can append a non-special "assistant" role token
+    # after the closing brace that would cause json.loads to raise.
+    result, _ = json.JSONDecoder().raw_decode(response_content)
+    assert "name" in result, f"Missing 'name' in response: {response_content}"
+    assert "age" in result, f"Missing 'age' in response: {response_content}"
+    assert isinstance(result["name"], str)
+    assert isinstance(result["age"], int)

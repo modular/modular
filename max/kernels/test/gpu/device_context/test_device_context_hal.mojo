@@ -16,7 +16,7 @@ from std.collections import List
 from std.gpu import global_idx, thread_idx
 from std.gpu.memory import external_memory
 from std.gpu.sync import barrier
-from std.gpu.host._device_context_hal import (
+from _device_context_hal import (
     DeviceBuffer,
     DeviceContext,
     DeviceEvent,

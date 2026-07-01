@@ -27,7 +27,6 @@ from std.collections._asan_annotations import (
 )
 from std.os import abort
 from std.sys import size_of
-from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 from std.memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
@@ -97,7 +96,7 @@ struct _ListIter[
 
 
 @fieldwise_init
-struct _ListIterOwned[T: Copyable & ImplicitlyDeletable](
+struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for List.
@@ -151,7 +150,7 @@ struct List[T: Movable](
     Hashable where conforms_to(T, Hashable),
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
-    IterableOwned,
+    IterableOwned where conforms_to(T, ImplicitlyDeletable),
     Movable,
     Sized,
     Writable where conforms_to(T, Writable),
@@ -240,11 +239,12 @@ struct List[T: Movable](
       ```
 
     - **Out of bounds access**: Accessing elements with invalid indices will
-      cause undefined behavior:
+      abort:
 
       ```mojo
       var my_list = [1, 2, 3]
-      # print(my_list[5])  # Undefined behavior (out of bounds)
+      print(my_list[5])  # Aborts with an Assert Error: index 5 is
+                         # out of bounds, valid range is 0 to 2
       ```
 
       For safe access, you should manually check bounds or use methods that
@@ -344,7 +344,7 @@ struct List[T: Movable](
     """
 
     comptime IteratorOwnedType: Iterator = _ListIterOwned[
-        downcast[Self.T, Copyable & ImplicitlyDeletable]
+        downcast[Self.T, ImplicitlyDeletable]
     ]
     """The owned iterator type for this list."""
 
@@ -500,11 +500,7 @@ struct List[T: Movable](
     def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroy all elements in the list and free its memory."""
         destroy_n(
-            rebind[
-                UnsafePointer[
-                    downcast[Self.T, ImplicitlyDeletable], MutUntrackedOrigin
-                ]
-            ](self._data),
+            self._data,
             count=len(self),
         )
         self^._unsafe_assume_destroyed_and_deallocate()
@@ -660,20 +656,16 @@ struct List[T: Movable](
         """
         self.extend(other^)
 
-    def __iter__(var self) -> Self.IteratorOwnedType:
+    def __iter__(
+        var self,
+    ) -> Self.IteratorOwnedType where conforms_to(Self.T, ImplicitlyDeletable):
         """Consume `self`, returning an owned iterator over its elements.
 
         Returns:
             An iterator of owned elements.
         """
-        comptime assert conforms_to(Self.T, Copyable & ImplicitlyDeletable), (
-            "Owned List iteration requires the element to be `Copyable &"
-            " ImplicitlyDeletable`."
-        )
         return {
-            rebind_var[List[downcast[Self.T, Copyable & ImplicitlyDeletable]]](
-                self^
-            ),
+            rebind_var[List[downcast[Self.T, ImplicitlyDeletable]]](self^),
             0,
         }
 
@@ -938,15 +930,9 @@ struct List[T: Movable](
         var i = self._len
         self._len = new_num_elts
 
-        comptime UnsafePointerType = UnsafePointer[
-            downcast[Self.T, Copyable], _
-        ]
         uninit_copy_n[overlapping=False](
-            dest=rebind[UnsafePointerType[origin_of(self)]](self.unsafe_ptr())
-            + i,
-            src=rebind[UnsafePointerType[elements.origin]](
-                elements.unsafe_ptr()
-            ),
+            dest=self.unsafe_ptr() + i,
+            src=elements.unsafe_ptr(),
             count=elements_len,
         )
 
@@ -1112,9 +1098,7 @@ struct List[T: Movable](
         self.reserve(new_size)
         self._annotate_increase(new_size - self._len)
         for i in range(self._len, new_size):
-            rebind[
-                UnsafePointer[downcast[Self.T, Copyable], MutUntrackedOrigin]
-            ](self._data + i).init_pointee_copy(value)
+            (self._data + i).init_pointee_copy(value)
         self._len = new_size
 
     def resize(
@@ -1175,10 +1159,7 @@ struct List[T: Movable](
                 " size is smaller than the current size."
             )
 
-        # TODO(MOCO-3679): Use `destroy_n(self._data + new_size, ...)`
-        # directly once where clause bounds propagate to callee inference.
-        var data = self._data.bitcast[downcast[Self.T, ImplicitlyDeletable]]()
-        destroy_n(data + new_size, count=len(self) - new_size)
+        destroy_n(self._data + new_size, count=len(self) - new_size)
 
         var old_size: Int = self._len
         self._len = new_size
@@ -1278,10 +1259,7 @@ struct List[T: Movable](
         print(len(list))  # 0
         ```
         """
-        # TODO(MOCO-3679): Use `destroy_n(self._data, ...)` directly once
-        # where clause bounds propagate to callee inference.
-        var data = self._data.bitcast[downcast[Self.T, ImplicitlyDeletable]]()
-        destroy_n(data, count=self._len)
+        destroy_n(self._data, count=self._len)
         var old_size: Int = self._len
         self._len = 0
         self._annotate_shrink(old_size)
@@ -1427,11 +1405,7 @@ struct List[T: Movable](
             the list. Instead, do `my_list.unsafe_set(len(my_list) - 1, value)`.
         """
         check_bounds[cpu_default=False](idx, len(self))
-        # TODO(MOCO-3679): Use `(self._data + idx).destroy_pointee()`
-        # directly once where clause bounds propagate to callee inference.
-        (self._data + idx).bitcast[
-            downcast[Self.T, ImplicitlyDeletable]
-        ]().destroy_pointee()
+        (self._data + idx).destroy_pointee()
         (self._data + idx).init_pointee_move(value^)
 
     def count(self, value: Self.T) -> Int where conforms_to(Self.T, Equatable):

@@ -36,6 +36,8 @@ from max._core import graph as _graph
 from max._core.dialects import builtin, kgen
 from max._core.dialects import kgen as _kgen
 from max._core.dialects import mo as _mo
+from max._core.dialects.m import DeviceInfoAttr as _DeviceInfoAttr
+from max._core.driver import CPU, Accelerator, Device, accelerator_count
 from max._core.engine import InferenceSession as _InferenceSession
 from max._mlir_context import (
     default_mlir_context,
@@ -66,6 +68,7 @@ from .weight import Weight
 _SOURCE_TRACEBACKS_ENABLED = _InferenceSession.debug.source_tracebacks
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 _KERNEL_LIBRARY_PATHS_ATTR_NAME = "_kernel_library_paths"
+_DEVICE_INFO_MAPPING_ATTR_NAME = "mo.device_info_mapping"
 
 T = TypeVar("T")
 
@@ -276,6 +279,39 @@ class KernelLibrary:
             self._analysis.verify_custom_op(custom_op)
 
 
+_default_custom_extensions: tuple[Path, ...] = ()
+
+
+def default_custom_extensions() -> tuple[Path, ...]:
+    """Returns the custom-extension paths implicitly loaded by every new graph.
+
+    A backend whose ops need a kernel-overlay library  registers it here so ops
+    resolve to the overlays even on graph paths that don't thread
+    ``custom_extensions`` explicitly — notably the experimental
+    eager-realization ``Graph("main")``. Empty by default, so there is no
+    effect unless a backend registers a library.
+    """
+    return _default_custom_extensions
+
+
+@contextlib.contextmanager
+def default_custom_extensions_scope(*paths: Path) -> Generator[None]:
+    """Adds *paths* to :func:`default_custom_extensions` for the block's duration.
+
+    Paths already registered are not duplicated. The previous defaults are
+    restored on exit.
+    """
+    global _default_custom_extensions
+    previous = _default_custom_extensions
+    merged = list(previous)
+    merged.extend(path for path in paths if path not in merged)
+    _default_custom_extensions = tuple(merged)
+    try:
+        yield
+    finally:
+        _default_custom_extensions = previous
+
+
 class DevicePlacementPolicy(Enum):
     """Controls behavior when an op implicitly transfers a tensor to CPU.
 
@@ -448,6 +484,26 @@ class Module:
             if isinstance(op, _mo.GraphOp) and not op.is_subgraph:
                 names.append(op.sym_name)
         return names
+
+    def _to_mlir_str(self, *, source_locations: bool = False) -> str:
+        """Serializes this module to MLIR assembly text.
+
+        Internal helper used by graph-dump tooling.
+
+        Args:
+            source_locations: When ``True``, annotates each op with the Python
+                call stack it was built from. This requires source-traceback
+                capture to have been enabled during graph construction (see
+                :attr:`max.graph.Graph.debug`); without it the ops carry no
+                Python frames and the annotations are empty. The wrapped module
+                is left unchanged either way.
+
+        Returns:
+            The module's MLIR assembly text.
+        """
+        if source_locations:
+            return _graph.to_mlir_with_source_locations(self.mlir_module)
+        return self.mlir_module.asm()
 
 
 class GraphDebugConfig:
@@ -636,6 +692,7 @@ class Graph:
             self._mlir_op = mlir.Operation._CAPICreate(op._CAPIPtr)
             self._current_block = self._mlir_op.regions[0].blocks[0]
             self._graph_body = self._current_block
+            self._populate_device_info_mapping()
 
         self._weights = {}
         self._has_chain_input = False
@@ -662,8 +719,17 @@ class Graph:
                 )
 
         # Initialize the kernel library and load custom extensions paths.
+        # Process-global defaults are appended after any explicit extensions so
+        # graphs built without `custom_extensions` still reach a backend's
+        # kernel overlays (see `default_custom_extensions`).
         self._kernel_library = kernel_library or KernelLibrary()
-        self._import_kernels(custom_extensions)
+        extensions = list(custom_extensions)
+        extensions.extend(
+            path
+            for path in default_custom_extensions()
+            if path not in extensions
+        )
+        self._import_kernels(extensions)
 
         self._subgraphs = {}
 
@@ -1053,6 +1119,32 @@ class Graph:
             ]
 
         return results, staged_op
+
+    def _populate_device_info_mapping(self) -> None:
+        """Attaches mo.device_info_mapping to the module if not already present."""
+        module = self._mlir_op.block.owner
+        if _DEVICE_INFO_MAPPING_ATTR_NAME in module.attributes:
+            return
+        devices: list[Device] = [CPU()]
+        if accelerator_count() > 0:
+            devices.append(Accelerator())
+        entries = {}
+        for dev in devices:
+            try:
+                arch = dev.architecture_name
+            except Exception:
+                arch = "unknown"
+            try:
+                model = dev.model_name
+            except Exception:
+                model = "unknown"
+            info = _DeviceInfoAttr(
+                label=dev.label, api=dev.api, arch=arch, model=model
+            )
+            entries[dev.label] = mlir.Attribute._CAPICreate(info._CAPIPtr)  # type: ignore[attr-defined]
+        module.attributes[_DEVICE_INFO_MAPPING_ATTR_NAME] = mlir.DictAttr.get(
+            entries
+        )
 
     def output(self, *outputs: Value[Any] | TensorValueLike) -> None:
         """Sets the output values of the graph and finalizes construction.

@@ -68,8 +68,8 @@ anything. Most structs don't require a custom destructor, and Mojo automatically
 adds a no-op destructor if you don't define one.
 
 The `__del__()` method takes its argument using the `deinit`
-[argument passing
-convention](/docs/manual/values/ownership/#argument-passing-conventions),
+[argument
+convention](/docs/manual/values/ownership/#argument-conventions),
 which indicates that the value is being deinitialized.
 
 ## Default destruction behavior
@@ -124,20 +124,19 @@ shadow variables to keep track of the state of your values to provide safety.
 These are often optimized away, but the Mojo approach eliminates this overhead
 entirely, making the generated code faster and avoiding ambiguity.
 
-## Destructors {#destructor}
+## Implicit destructors {#destructor}
 
-Mojo calls a value's destructor (`__del__()` method) when the value's lifetime
-ends (typically the point at which the value is last used). As we mentioned
-earlier, Mojo provides a default, no-op destructor for all types, so in most
-cases you don't need to define the `__del__()` method.
+Mojo calls a value's destructor after the value's last use unless a type
+opts out of `ImplicitlyDeletable` destruction. The deletable trait provides
+a default no-op destructor (`__del__()`), which you can override.
 
-You should define the `__del__()` method to perform any kind of cleanup the
-type requires. Usually, that includes freeing memory for any fields where you
-dynamically allocated memory (for example, via `UnsafePointer`) and
-closing any long-lived resources such as file handles.
+Create a custom `__del__()` implementation to perform any required cleanup.
+This might include freeing dynamically allocated memory (for example,
+through `UnsafePointer`) or releasing long-lived resources such as file
+handles.
 
-However, any struct that is just a simple collection of other types does not
-need to implement the destructor.
+Types that are simple collections of other types usually don't need to
+override `__del__()`.
 
 For example, consider this simple struct:
 
@@ -369,8 +368,8 @@ struct BatchProcessor:
 
 ### Explicit destruction in generic code
 
-Generic code parameterized over `AnyType` can accept both implicitly and
-explicitly destructible values. However, it cannot automatically destroy
+Generic code parameterized over `AnyType` can accept both implicitly deletable
+and explicitly destructible values. However, it cannot automatically destroy
 values that require explicit destruction.
 
 Because explicit destructors are type-specific, generic code has no way

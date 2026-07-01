@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -37,9 +36,26 @@ modular_py_binary(
 
 modular_py_test(
     name = "test_notification_latency",
-    srcs = ["test_notification_latency.py"],
+    srcs = [
+        "conftest.py",
+        "test_notification_latency.py",
+    ],
+    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
+    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
+    data = [
+        "@nixl_upstream//:libplugin_LIBFABRIC.so",
+        "@nixl_upstream//:libplugin_UCX.so",
+    ],
+    # TODO(GEX-3817): upstream NIXL only ships a CUDA-flavor libplugin_UCX.so;
+    # CPU-only machines (e.g. m7i) lack libcuda so the plugin cannot load, and
+    # the standard b200 CI machines lack proper RDMA config for UCX IB path.
+    # Mark manual until a suitable runner + ucx_cpu variant are available.
+    gpu_constraints = ["//:nvidia_gpu"],
     imports = ["."],
-    # UCX currently only supports x86_64 linux machines
+    tags = [
+        "gpu",
+        "manual",
+    ],
     target_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
@@ -53,27 +69,23 @@ modular_py_test(
 
 modular_py_test(
     name = "test_send_recv",
-    srcs = ["test_send_recv.py"],
-    gpu_constraints = ["//:has_gpu"],
-    imports = ["."],
-    tags = [
-        "gpu",
+    srcs = [
+        "conftest.py",
+        "test_send_recv.py",
     ],
-    # UCX currently only supports linux machines
-    target_compatible_with = [
-        "@platforms//os:linux",
+    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
+    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
+    data = [
+        "@nixl_upstream//:libplugin_LIBFABRIC.so",
+        "@nixl_upstream//:libplugin_UCX.so",
     ],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/pipelines/kv_cache",
-        requirement("numpy"),
+    # TODO(GEX-3817): upstream NIXL only ships a CUDA-flavor libplugin_UCX.so;
+    # AMD (mi355) lacks libcuda so the plugin cannot load there.  Gate to NVIDIA
+    # until ucx_rocm / ucx_cpu plugin variants are shipped.
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
     ],
-)
-
-modular_py_test(
-    name = "test_send_recv_extra_group",
-    srcs = ["test_send_recv_extra_group.py"],
-    gpu_constraints = ["//:has_gpu"],
     imports = ["."],
     tags = [
         "gpu",
@@ -91,8 +103,26 @@ modular_py_test(
 
 modular_py_test(
     name = "test_read_transfer",
-    srcs = ["test_read_transfer.py"],
+    srcs = [
+        "conftest.py",
+        "test_read_transfer.py",
+    ],
+    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
+    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
+    data = [
+        "@nixl_upstream//:libplugin_LIBFABRIC.so",
+        "@nixl_upstream//:libplugin_UCX.so",
+    ],
+    # TODO(GEX-3817): upstream NIXL only ships a CUDA-flavor libplugin_UCX.so;
+    # CPU-only machines (e.g. m7i) lack libcuda so the plugin cannot load, and
+    # b200 CI machines have IB misconfiguration causing UCX transfers to
+    # timeout. Mark manual until a suitable runner is available.
+    gpu_constraints = ["//:nvidia_gpu"],
     imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+    ],
     # UCX currently only supports linux machines
     target_compatible_with = [
         "@platforms//os:linux",
@@ -114,6 +144,7 @@ _4X_GPU_TESTS = [
 _LIGHT_TRANSFER_GPU_TESTS = [
     "test_basic_gpu.py",
     "test_send_recv_multi_thread_gpu.py",
+    "test_spawn_plugin_preload_gpu.py",
 ]
 
 modular_py_test(
@@ -121,7 +152,13 @@ modular_py_test(
     srcs = glob(
         ["*_gpu.py"],
         exclude = _4X_GPU_TESTS + _LIGHT_TRANSFER_GPU_TESTS,
-    ),
+    ) + ["conftest.py"],
+    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
+    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
+    data = [
+        "@nixl_upstream//:libplugin_LIBFABRIC.so",
+        "@nixl_upstream//:libplugin_UCX.so",
+    ],
     exec_properties = {
         "test.resources:gpu-memory": "5",
     },
@@ -144,7 +181,13 @@ modular_py_test(
 
 modular_py_test(
     name = "transfer_light_gpu_tests",
-    srcs = _LIGHT_TRANSFER_GPU_TESTS,
+    srcs = _LIGHT_TRANSFER_GPU_TESTS + ["conftest.py"],
+    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
+    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
+    data = [
+        "@nixl_upstream//:libplugin_LIBFABRIC.so",
+        "@nixl_upstream//:libplugin_UCX.so",
+    ],
     exec_properties = {
         "test.resources:gpu-memory": "3",
     },
@@ -165,7 +208,13 @@ modular_py_test(
 
 modular_py_test(
     name = "4x-gpu-tests",
-    srcs = _4X_GPU_TESTS,
+    srcs = _4X_GPU_TESTS + ["conftest.py"],
+    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
+    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
+    data = [
+        "@nixl_upstream//:libplugin_LIBFABRIC.so",
+        "@nixl_upstream//:libplugin_UCX.so",
+    ],
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },

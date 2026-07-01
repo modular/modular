@@ -34,7 +34,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from nn.attention.mha_mask import CausalMask, NullMask
@@ -269,7 +268,7 @@ def run_bit_exact_vs_dense[
         num_heads=num_heads,
         is_fp8_kv=False,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_dense_lt = mla_args_dense.gpu_layout_tensor()
+    var scalar_args_dense_tt = mla_args_dense.gpu_tile_tensor()
 
     # sparse_max_topk shrink is now derived inside mla_decode_sm100_dispatch
     # from indices_stride, so it's no longer passed at host-side projection.
@@ -277,7 +276,7 @@ def run_bit_exact_vs_dense[
         num_heads=num_heads,
         is_fp8_kv=False,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_sparse_lt = mla_args_sparse.gpu_layout_tensor()
+    var scalar_args_sparse_tt = mla_args_sparse.gpu_tile_tensor()
 
     print("  Launching dense BF16 MLA decode (reference)...")
     flare_mla_decoding[
@@ -292,7 +291,7 @@ def run_bit_exact_vs_dense[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_dense_lt),
+        scalar_args_dense_tt,
     )
     ctx.synchronize()
 
@@ -310,7 +309,7 @@ def run_bit_exact_vs_dense[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_sparse_lt),
+        scalar_args_sparse_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -390,93 +389,6 @@ def _coprime_multiplier(n: Int) -> Int:
     if _gcd(11, n) == 1:
         return 11
     return 13
-
-
-def host_reference[
-    q_type: DType,
-](
-    q_ptr: UnsafePointer[Scalar[q_type], _],
-    k_ptr: UnsafePointer[Scalar[q_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
-    batch_size: Int,
-    num_heads: Int,
-    num_keys: Int,
-    depth: Int,
-    v_depth: Int,
-    scale: Float32,
-    q_max_seq_len: Int = 1,
-    use_causal: Bool = False,
-    cache_len: Int = 0,
-):
-    """CPU fp32 reference for MLA decode.
-
-    Q: [batch_size * q_max_seq_len, num_heads, depth]
-    K: [batch_size, num_keys, depth] (already in q_type, no quantization).
-    V = K[:, :, :v_depth].
-    """
-    for b in range(batch_size):
-        for s in range(q_max_seq_len):
-            for h in range(num_heads):
-                var q_base = (
-                    b * q_max_seq_len * num_heads * depth
-                    + s * num_heads * depth
-                    + h * depth
-                )
-                var max_s = Float64(min_or_neg_inf[DType.float32]())
-                var s_buf = List(length=num_keys, fill=Float64(0))
-                var valid = List(length=num_keys, fill=False)
-
-                var causal_limit = num_keys
-                if use_causal:
-                    causal_limit = cache_len + s + 1
-                    if causal_limit > num_keys:
-                        causal_limit = num_keys
-
-                for k in range(num_keys):
-                    if use_causal and k >= causal_limit:
-                        valid[k] = False
-                        s_buf[k] = Float64(min_or_neg_inf[DType.float32]())
-                        continue
-                    valid[k] = True
-                    var k_base = b * num_keys * depth + k * depth
-                    var dot = Float64(0)
-                    for d in range(depth):
-                        dot += (
-                            q_ptr[q_base + d].cast[DType.float64]()
-                            * k_ptr[k_base + d].cast[DType.float64]()
-                        )
-                    s_buf[k] = dot * Float64(scale)
-                    if s_buf[k] > max_s:
-                        max_s = s_buf[k]
-
-                var sum_exp = Float64(0)
-                for k in range(num_keys):
-                    if not valid[k]:
-                        s_buf[k] = Float64(0)
-                        continue
-                    s_buf[k] = exp(s_buf[k] - max_s)
-                    sum_exp += s_buf[k]
-                for k in range(num_keys):
-                    if valid[k]:
-                        s_buf[k] = s_buf[k] / sum_exp
-
-                var o_base = (
-                    b * q_max_seq_len * num_heads * v_depth
-                    + s * num_heads * v_depth
-                    + h * v_depth
-                )
-                for d in range(v_depth):
-                    var acc = Float64(0)
-                    for k in range(num_keys):
-                        if not valid[k]:
-                            continue
-                        var k_base = b * num_keys * depth + k * depth
-                        acc += (
-                            s_buf[k] * k_ptr[k_base + d].cast[DType.float64]()
-                        )
-                    output_ptr[o_base + d] = acc.cast[q_type]()
-                _ = valid^
-                _ = s_buf^
 
 
 def host_reference_varkeys[
@@ -626,6 +538,7 @@ def run_test_sparse_kv_bf16[
     )
 
     var num_keys = cache_len + q_max_seq_len
+    var total_q_tokens = batch_size * q_max_seq_len
     comptime scale = Float32(0.125)
 
     comptime kv_params = KVCacheStaticParams(
@@ -711,23 +624,37 @@ def run_test_sparse_kv_bf16[
             for d in range(Q_DEPTH):
                 blocks_host[base + d] = k_host[k_base + d]
 
-    # Select topk unique tokens per batch via deterministic permutation.
-    var selected_tokens = List(length=batch_size * topk, fill=Int(0))
+    # Select topk unique tokens PER QUERY TOKEN via deterministic permutation.
+    #
+    # The sparse decode kernel gathers d_indices per query token, keyed by the
+    # global query-token index g = batch * q_max_seq_len + s. To actually
+    # exercise that (and catch a regression to per-batch gather), give each
+    # query token a DISTINCT top-k set: a per-token rotation `+ s` shifts the
+    # selected positions per query token. Because `mult` is coprime to
+    # num_keys and topk <= num_keys, each token's set stays internally unique
+    # while differing across query tokens, so a kernel that read the wrong
+    # token's indices would pick different keys and fail.
+    var selected_tokens = List(length=total_q_tokens * topk, fill=Int(0))
+    var mult = _coprime_multiplier(num_keys)
     for bi in range(batch_size):
-        var mult = _coprime_multiplier(num_keys)
-        for i in range(topk):
-            selected_tokens[bi * topk + i] = (i * mult + 1) % num_keys
+        for s in range(q_max_seq_len):
+            var g = bi * q_max_seq_len + s
+            for i in range(topk):
+                selected_tokens[g * topk + i] = (i * mult + 1 + s) % num_keys
 
-    # Build sparse reference K buffer [batch_size, topk, Q_DEPTH].
-    var k_sparse_ref_size = batch_size * topk * Q_DEPTH
+    # Build sparse reference K buffer [total_q_tokens, topk, Q_DEPTH] — one
+    # selected-key set per query token.
+    var k_sparse_ref_size = total_q_tokens * topk * Q_DEPTH
     var k_sparse_ref = ctx.enqueue_create_host_buffer[q_type](k_sparse_ref_size)
     for bi in range(batch_size):
-        for i in range(topk):
-            var t = selected_tokens[bi * topk + i]
-            var src_base = bi * num_keys * Q_DEPTH + t * Q_DEPTH
-            var dst_base = bi * topk * Q_DEPTH + i * Q_DEPTH
-            for d in range(Q_DEPTH):
-                k_sparse_ref[dst_base + d] = k_host[src_base + d]
+        for s in range(q_max_seq_len):
+            var g = bi * q_max_seq_len + s
+            for i in range(topk):
+                var t = selected_tokens[g * topk + i]
+                var src_base = bi * num_keys * Q_DEPTH + t * Q_DEPTH
+                var dst_base = g * topk * Q_DEPTH + i * Q_DEPTH
+                for d in range(Q_DEPTH):
+                    k_sparse_ref[dst_base + d] = k_host[src_base + d]
 
     var q_size = batch_size * q_max_seq_len * num_heads * Q_DEPTH
     var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
@@ -741,6 +668,7 @@ def run_test_sparse_kv_bf16[
         # tokens whose logical position < cache_len + s + 1.
         for b in range(batch_size):
             for s in range(q_max_seq_len):
+                var g = b * q_max_seq_len + s
                 var causal_limit = cache_len + s + 1
                 for h in range(num_heads):
                     var q_base = (
@@ -752,13 +680,13 @@ def run_test_sparse_kv_bf16[
                     var s_buf = List(length=topk, fill=Float64(0))
                     var valid = List(length=topk, fill=False)
                     for i in range(topk):
-                        var tok = selected_tokens[b * topk + i]
+                        var tok = selected_tokens[g * topk + i]
                         if tok >= causal_limit:
                             valid[i] = False
                             s_buf[i] = Float64(min_or_neg_inf[DType.float32]())
                             continue
                         valid[i] = True
-                        var k_base = b * topk * Q_DEPTH + i * Q_DEPTH
+                        var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
                         var dot = Float64(0)
                         for d in range(Q_DEPTH):
                             dot += (
@@ -791,7 +719,7 @@ def run_test_sparse_kv_bf16[
                         for i in range(topk):
                             if not valid[i]:
                                 continue
-                            var k_base = b * topk * Q_DEPTH + i * Q_DEPTH
+                            var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
                             acc += (
                                 s_buf[i]
                                 * k_sparse_ref[k_base + d].cast[DType.float64]()
@@ -800,18 +728,54 @@ def run_test_sparse_kv_bf16[
                     _ = valid^
                     _ = s_buf^
     else:
-        host_reference[q_type](
-            q_host.unsafe_ptr(),
-            k_sparse_ref.unsafe_ptr(),
-            ref_host.unsafe_ptr(),
-            batch_size,
-            num_heads,
-            topk,
-            Q_DEPTH,
-            V_DEPTH,
-            scale,
-            q_max_seq_len,
-        )
+        # Non-causal reference. Each query token attends to its OWN top-k set
+        # (k_sparse_ref is laid out [total_q_tokens, topk, Q_DEPTH]), so we
+        # cannot use the shared-key host_reference helper here.
+        for b in range(batch_size):
+            for s in range(q_max_seq_len):
+                var g = b * q_max_seq_len + s
+                for h in range(num_heads):
+                    var q_base = (
+                        b * q_max_seq_len * num_heads * Q_DEPTH
+                        + s * num_heads * Q_DEPTH
+                        + h * Q_DEPTH
+                    )
+                    var max_s = Float64(min_or_neg_inf[DType.float32]())
+                    var s_buf = List(length=topk, fill=Float64(0))
+                    for i in range(topk):
+                        var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
+                        var dot = Float64(0)
+                        for d in range(Q_DEPTH):
+                            dot += (
+                                q_host[q_base + d].cast[DType.float64]()
+                                * k_sparse_ref[k_base + d].cast[DType.float64]()
+                            )
+                        s_buf[i] = dot * Float64(scale)
+                        if s_buf[i] > max_s:
+                            max_s = s_buf[i]
+
+                    var sum_exp = Float64(0)
+                    for i in range(topk):
+                        s_buf[i] = exp(s_buf[i] - max_s)
+                        sum_exp += s_buf[i]
+                    for i in range(topk):
+                        s_buf[i] = s_buf[i] / sum_exp
+
+                    var o_base = (
+                        b * q_max_seq_len * num_heads * V_DEPTH
+                        + s * num_heads * V_DEPTH
+                        + h * V_DEPTH
+                    )
+                    for d in range(V_DEPTH):
+                        var acc = Float64(0)
+                        for i in range(topk):
+                            var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
+                            acc += (
+                                s_buf[i]
+                                * k_sparse_ref[k_base + d].cast[DType.float64]()
+                            )
+                        ref_host[o_base + d] = acc.cast[q_type]()
+                    _ = s_buf^
 
     # Device uploads.
     var blocks_device = ctx.enqueue_create_buffer[q_type](block_elems)
@@ -826,18 +790,24 @@ def run_test_sparse_kv_bf16[
     ctx.enqueue_copy(q_device, q_host)
     var out_device = ctx.enqueue_create_buffer[q_type](out_size)
 
-    # Build d_indices.
-    var total_indices = batch_size * topk
+    # Build d_indices, laid out [total_q_tokens, topk]. The sparse decode
+    # kernel gathers per query token (global index g = batch * q_max_seq_len
+    # + s), each row using that token's own selected_tokens set.
+    var total_indices = total_q_tokens * topk
     var h_indices = ctx.enqueue_create_host_buffer[DType.int32](total_indices)
     for bi in range(batch_size):
-        for i in range(topk):
-            var t = selected_tokens[bi * topk + i]
-            var page_idx = t // PAGE_SIZE
-            var tok_in_page = t % PAGE_SIZE
-            var block_id = Int(
-                lookup_table_host[bi * max_pages_per_batch + page_idx]
-            )
-            h_indices[bi * topk + i] = Int32(block_id * PAGE_SIZE + tok_in_page)
+        for s in range(q_max_seq_len):
+            var g = bi * q_max_seq_len + s
+            for i in range(topk):
+                var t = selected_tokens[g * topk + i]
+                var page_idx = t // PAGE_SIZE
+                var tok_in_page = t % PAGE_SIZE
+                var block_id = Int(
+                    lookup_table_host[bi * max_pages_per_batch + page_idx]
+                )
+                h_indices[g * topk + i] = Int32(
+                    block_id * PAGE_SIZE + tok_in_page
+                )
     var d_indices_device = ctx.enqueue_create_buffer[DType.int32](total_indices)
     ctx.enqueue_copy(d_indices_device, h_indices)
 
@@ -887,7 +857,6 @@ def run_test_sparse_kv_bf16[
     )
     var kv_cache = kv_collection.get_key_cache(0)
 
-    var total_q_tokens = batch_size * q_max_seq_len
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
         row_major((total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])),
@@ -917,7 +886,7 @@ def run_test_sparse_kv_bf16[
         num_heads=num_heads,
         is_fp8_kv=False,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     var indices_stride = topk
     print(
@@ -941,7 +910,7 @@ def run_test_sparse_kv_bf16[
             row_offsets_tt,
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
             d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
                 d_indices_device.unsafe_ptr()
             ),
@@ -961,7 +930,7 @@ def run_test_sparse_kv_bf16[
             row_offsets_tt,
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
             d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
                 d_indices_device.unsafe_ptr()
             ),
@@ -1362,7 +1331,7 @@ def run_test_sparse_kv_bf16_variable_topk[
         num_heads=num_heads,
         is_fp8_kv=False,
     ](batch_size, max_cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     print("  Launching MLA sparse KV_BF16 (variable topk)...")
     flare_mla_decoding[
@@ -1378,7 +1347,7 @@ def run_test_sparse_kv_bf16_variable_topk[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -1682,7 +1651,7 @@ def run_test_sparse_kv_bf16_attn_sink[
         num_heads=num_heads,
         is_fp8_kv=False,
     ](batch_size, cache_len, q_max_seq_len, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     print("  Launching MLA sparse KV_BF16 (attn_sink)...")
     flare_mla_decoding[
@@ -1698,7 +1667,7 @@ def run_test_sparse_kv_bf16_attn_sink[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -2246,7 +2215,7 @@ def run_test_sparse_kv_bf16_extra_kv[
         q_max_seq_len,
         ctx,
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     print("  Launching MLA sparse KV_BF16 (extra KV)...")
     flare_mla_decoding[
@@ -2262,7 +2231,7 @@ def run_test_sparse_kv_bf16_extra_kv[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
@@ -2645,7 +2614,7 @@ def run_test_sparse_kv_bf16_topk_clamping[
         q_max_seq_len,
         ctx,
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count = ctx.default_device_info.sm_count
     var dispatch_scalars = compute_mla_dispatch_scalars[
@@ -2681,7 +2650,7 @@ def run_test_sparse_kv_bf16_topk_clamping[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),

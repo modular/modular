@@ -184,8 +184,26 @@ def mesh_context(mesh: DeviceMesh) -> Iterator[DeviceMesh]:
 
     .. code-block:: python
 
+        from max.driver import CPU
+        from max.experimental.sharding import (
+            DeviceMesh,
+            get_active_mesh,
+            mesh_context,
+        )
+
+        mesh = DeviceMesh(
+            devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",)
+        )
+
         with mesh_context(mesh):
-            model = Transformer(...)  # all weights resolve against ``mesh``
+            # Spec-first constructions inside this block resolve against
+            # ``mesh`` without naming it explicitly.
+            active = get_active_mesh()
+
+    .. invisible-code-block: python
+
+        assert active is mesh
+        assert get_active_mesh() is None  # cleared on block exit
     """
     token = _active_mesh.set(mesh)
     try:

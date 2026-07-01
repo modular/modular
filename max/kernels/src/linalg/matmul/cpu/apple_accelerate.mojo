@@ -175,8 +175,8 @@ def _cblas_f32[
     alpha: Float32,
     beta: Float32,
     c_ptr: UnsafePointer[mut=True, Float32, ...],
-    a_ptr: UnsafePointer[Float32, ...],
-    b_ptr: UnsafePointer[Float32, ...],
+    a_ptr: UnsafePointer[mut=False, Float32, ...],
+    b_ptr: UnsafePointer[mut=False, Float32, ...],
 ):
     cblas_gemm_fn(
         _CBLASOrder.ROW_MAJOR,
@@ -212,8 +212,8 @@ def _cblas_f32[
     alpha: Float32,
     beta: Float32,
     c_ptr: UnsafePointer[mut=True, Float32, ...],
-    a_ptr: UnsafePointer[Float32, ...],
-    b_ptr: UnsafePointer[Float32, ...],
+    a_ptr: UnsafePointer[mut=False, Float32, ...],
+    b_ptr: UnsafePointer[mut=False, Float32, ...],
 ) raises:
     var cblas_gemm = get_cblas_f32_function()
 
@@ -368,8 +368,8 @@ def apple_matmul[
 ](
     cblas_gemm_fn: cblas_gemm_type,
     c: TileTensor[mut=True, ...],
-    a: TileTensor[...],
-    b: TileTensor[...],
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
 ) raises:
     comptime assert c.flat_rank >= 2
     comptime assert a.flat_rank >= 2
@@ -410,10 +410,9 @@ def apple_matmul[
         comptime simd_size = simd_width_of[c.dtype]()
 
         @always_inline
-        @parameter
         def epilogue_on_col_chunk[
             simd_width: Int, alignment: Int = 1
-        ](idx: Coord):
+        ](idx: Coord) {var}:
             var c_val = c.load[width=simd_width](idx)
             epilogue[c.dtype, simd_width](
                 Index(idx[0].value(), idx[1].value()), c_val
@@ -421,8 +420,8 @@ def apple_matmul[
 
         # TODO: thread a DeviceContext through the matmul stack so we can
         # drop this local construction.
-        elementwise[epilogue_on_col_chunk, simd_size](
-            (m, n), DeviceContext(api="cpu")
+        elementwise[simd_size](
+            epilogue_on_col_chunk, (m, n), DeviceContext(api="cpu")
         )
 
 
@@ -432,7 +431,11 @@ def apple_matmul[
     *,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
-](c: TileTensor[mut=True, ...], a: TileTensor[...], b: TileTensor[...]) raises:
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
+) raises:
     comptime assert (
         a.dtype == b.dtype == c.dtype == DType.float32
     ), "unsupported type in apple accelerate"
@@ -458,8 +461,8 @@ def apple_batched_matmul[
     ] = None,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor[...],
-    b: TileTensor[...],
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
     c_shape_idx: IndexList[rank],
 ) raises:
     comptime assert rank >= 3, "expecting at least rank-3 TileTensor"

@@ -20,7 +20,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.buffer_utils import cast_tensor_to
 from max.nn.kernels import kv_cache_ragged_radd
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, PagedCacheValues
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 
@@ -43,7 +43,14 @@ class KVCacheRaddModel:
         *kv_inputs: TensorValue,
     ) -> None:
         """Apply the radd operation to the KV cache."""
-        kv_blocks, cache_lengths, lookup_table, max_lengths, *_ = kv_inputs
+        (
+            kv_blocks,
+            cache_lengths,
+            lookup_table,
+            max_prompt_length,
+            max_cache_length,
+            *_,
+        ) = kv_inputs
         kv_cache_ragged_radd(
             kv_params=self.kv_params,
             a=a,
@@ -51,7 +58,8 @@ class KVCacheRaddModel:
                 kv_blocks=kv_blocks.buffer,
                 cache_lengths=cache_lengths.tensor,
                 lookup_table=lookup_table.tensor,
-                max_lengths=max_lengths.tensor,
+                max_prompt_length=max_prompt_length.tensor,
+                max_cache_length=max_cache_length.tensor,
             ),
             input_row_offsets=input_row_offsets,
             batch_offset=batch_offset,
@@ -70,7 +78,7 @@ def test_kv_cache_radd_basic() -> None:
     device = Accelerator()
     session = InferenceSession(devices=[device])
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         n_kv_heads=8,
         head_dim=128,
         dtype=dtype,
@@ -112,7 +120,7 @@ def test_kv_cache_radd_basic() -> None:
             a_type,
             input_row_offsets_type,
             batch_offset_type,
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         ],
     )
 
@@ -124,7 +132,7 @@ def test_kv_cache_radd_basic() -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
 
     kv_inputs = kv_manager.runtime_inputs([batch]).flatten()

@@ -62,9 +62,11 @@ struct Config(Equatable):
     var timeout: Float64
 
 
-def test_field_type_by_name() raises:
-    """Check `field_type["host"]` gives a handle whose .T is usable."""
-    comptime host_handle = reflect[Config].field_type["host"]
+def test_field_by_name() raises:
+    """Check `field["host"]` gives a handle whose .T is usable."""
+    # `field[name]` returns a `Reflected` handle itself (here `Reflected[String]`),
+    # not the bare field type, so you can keep chaining reflection methods on it.
+    comptime host_handle = reflect[Config].field["host"]
     var default_host: host_handle.T = "localhost"
     assert_equal(default_host, "localhost")
 
@@ -187,7 +189,7 @@ def test_field_offset_alignment() raises:
 # --- type_of ---
 
 
-def make_default[T: AnyType & Defaultable]() -> T:
+def make_default[T: Defaultable]() -> T:
     return T()
 
 
@@ -273,8 +275,7 @@ def eq[T: AnyType](a: T, b: T) -> Bool where conforms_to(T, Equatable):
 
 
 def test_eq_where_clause() raises:
-    """Check `where conforms_to(T, Equatable)` enables == without trait_downcast.
-    """
+    """Check `where conforms_to(T, Equatable)` enables `==` operator."""
     assert_true(eq(1, 1))
     assert_true(not eq(1, 2))
     assert_true(eq("hello", "hello"))
@@ -292,7 +293,7 @@ def main() raises:
 
     # Inspect a type
     test_base_name()
-    test_field_type_by_name()
+    test_field_by_name()
 
     # Detect field-level changes
     test_diff_fields_detects_changes()

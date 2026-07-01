@@ -318,13 +318,14 @@ class StructuralTagToolParser(ABC):
             - A non-empty list of :class:`ParsedToolCallDelta` when new
               content (tool name, id, or argument bytes) is ready to
               stream.
-            - An empty list ``[]`` once the parser has entered the
-              tool-calls section but has no deltas to emit yet; the
-              caller must suppress the raw structural token from flowing
-              as text.
-            - ``None`` when more tokens are needed before anything can
-              be emitted (for example, buffering a potential
-              section-begin marker).
+            - An empty list ``[]`` when the parser is actively handling
+              this chunk — either inside the tool-calls section or
+              holding back bytes that partially match a section marker.
+              The caller must suppress raw tokens so they don't leak as
+              assistant content.
+            - ``None`` when the chunk is plain text with no marker
+              activity; the caller should pass raw decoded tokens
+              through as assistant content.
         """
         self._buffer += delta
         deltas: list[ParsedToolCallDelta] = []
@@ -374,11 +375,17 @@ class StructuralTagToolParser(ABC):
                                 )
                             )
 
-            # Return [] (not None) while inside the tool-calls section so
-            # the streaming path knows to suppress raw structural tokens
-            # even when there are no deltas to emit yet.
+            # Returning None indicates nothing happening; router passes raw tokens as content.
+            # Return [] to indicate this chunk is actively buffering (e.g. partial marker); suppress raw
+            # tokens so they don't leak as content.
             in_tool_section = marker_pos != -1
-            return deltas if (deltas or in_tool_section) else None
+            has_holdback = (
+                not in_tool_section
+                and len(self._buffer) > self._state.sent_content_idx
+            )
+            return (
+                deltas if (deltas or in_tool_section or has_holdback) else None
+            )
 
         except Exception:
             logger.exception("Error parsing streaming tool call delta")

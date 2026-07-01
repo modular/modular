@@ -30,7 +30,6 @@ from std.sys import (
     size_of,
 )
 from std.sys.info import _is_amd_rdna
-from std.sys.intrinsics import _type_is_eq
 import std.gpu.primitives.warp as warp
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -100,6 +99,10 @@ from .apple.naive_fa_decode import (
     NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM,
     naive_fa_decode_apple,
 )
+from .apple.fa_prefill import (
+    FA_PREFILL_APPLE_MAX_HEAD_DIM,
+    fa_prefill_apple,
+)
 from .amd_structured.attention import Attention
 from .amd_structured.mha_prefill_v2 import (
     MhaConfigV2,
@@ -124,6 +127,7 @@ from nn.attention.mha_operand import (
     RaggedMHAOperand,
 )
 from nn.attention.gpu.mha_decode_partition_heuristic import (
+    mha_decoding_max_num_partitions,
     mha_decoding_num_partitions,
 )
 from nn.attention.gpu.nvidia.sm90.mha import mha_sm90_dispatch
@@ -250,6 +254,17 @@ def get_mha_decoding_num_partitions[
     num_heads: Int, group: Int
 ](batch_size: Int, num_keys: Int, ctx: DeviceContext) raises -> Int:
     return mha_decoding_num_partitions(
+        batch_size,
+        num_keys,
+        num_heads // group,
+        ctx,
+    )
+
+
+def get_mha_decoding_max_num_partitions[
+    num_heads: Int, group: Int
+](batch_size: Int, num_keys: Int, ctx: DeviceContext) raises -> Int:
+    return mha_decoding_max_num_partitions(
         batch_size,
         num_keys,
         num_heads // group,
@@ -515,7 +530,9 @@ def q_num_matrix_view_rows[
 
 
 @always_inline
-def q_num_matrix_view_rows[dtype: DType, //](q: TileTensor[dtype, ...]) -> Int:
+def q_num_matrix_view_rows[
+    dtype: DType, //
+](q: TileTensor[mut=False, dtype, ...]) -> Int:
     # TileTensor overload for the same computation.
     var num_rows: Int = Int(q.dim[0]())
 
@@ -525,7 +542,11 @@ def q_num_matrix_view_rows[dtype: DType, //](q: TileTensor[dtype, ...]) -> Int:
 
 
 def _apple_naive_fa_decode_enabled() -> Bool:
-    return getenv("MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE", "0") == "1"
+    return getenv("MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE", "1") != "0"
+
+
+def _apple_fa_prefill_enabled() -> Bool:
+    return getenv("MODULAR_ENABLE_APPLE_FA_PREFILL", "1") != "0"
 
 
 @always_inline
@@ -1142,17 +1163,40 @@ def flash_attention_dispatch[
                             partition_num_keys = 1
 
                 var num_partitions_value: Int
+                # Upper bound on num_partitions_value, independent of num_keys.
+                # The SM100 1Q decode grid launches this many partition CTAs so
+                # the grid shape is stable across num_keys (one CUDA graph per
+                # batch size); CTAs beyond num_partitions_value early-return.
+                # For explicit/override partition counts we do not over-launch,
+                # so max == actual.
+                var max_num_partitions_value: Int
                 if num_partitions:
                     num_partitions_value = num_partitions.value()
+                    max_num_partitions_value = num_partitions_value
                 elif (
                     dispatch_metadata.num_partitions > 0
                     and partition_num_keys == max_cache_valid_length_value
                 ):
                     num_partitions_value = dispatch_metadata.num_partitions
+                    max_num_partitions_value = num_partitions_value
                 else:
                     num_partitions_value = get_mha_decoding_num_partitions[
                         num_heads, group
                     ](batch_size, partition_num_keys, ctx)
+                    max_num_partitions_value = (
+                        get_mha_decoding_max_num_partitions[num_heads, group](
+                            batch_size, partition_num_keys, ctx
+                        )
+                    )
+
+                # The launched (max) count must bound the actual count, else the
+                # over-launched SM100 1Q grid would under-launch and silently
+                # drop partitions. (Also keeps max_num_partitions_value used on
+                # targets where the SM100 1Q construction is comptime-elided.)
+                debug_assert(
+                    max_num_partitions_value >= num_partitions_value,
+                    "max_num_partitions must be >= num_partitions",
+                )
 
                 comptime use_fa3_kernel = (
                     (is_sm90 or is_sm100)
@@ -1399,6 +1443,8 @@ def flash_attention_dispatch[
                                     SplitKPartition(
                                         exp_sum_qk_max_data.unsafe_ptr().as_unsafe_any_origin(),
                                         UInt32(num_partitions_value),
+                                        # sm90 does not over-launch: max == actual.
+                                        UInt32(num_partitions_value),
                                     ),
                                     ctx,
                                     sink_weights,
@@ -1426,6 +1472,7 @@ def flash_attention_dispatch[
                                     SplitKPartition(
                                         exp_sum_qk_max_data.unsafe_ptr().as_unsafe_any_origin(),
                                         UInt32(num_partitions_value),
+                                        UInt32(max_num_partitions_value),
                                     ),
                                     ctx,
                                     _optional_lt_to_tt(sink_weights),
@@ -1568,11 +1615,18 @@ def flash_attention_dispatch[
     else:
         # Assumes BSHD.
         comptime if has_apple_gpu_accelerator():
-            # Apple decode-only opt-in; larger head_dim/prefill/flag-off -> mha_gpu_naive.
+            # Apple attention. Decode (1 query row) -> `naive_fa_decode_apple`
+            # (head dim split across lanes, % WARP_SIZE gate). Prefill ->
+            # MMA-based `fa_prefill_apple` when depth % 16 == 0 and KV is
+            # contiguous or 16-aligned-paged; otherwise `mha_gpu_naive`. The KV
+            # gate is COMPTIME because the prefill resolves a page per 16-row
+            # sub-tile and comptime-asserts page_size % 16 == 0 (an odd page
+            # could bisect a sub-tile) -- KB apple-paged-kv-prefill-per-sub-tile.
             if (
                 is_token_generation
                 and _apple_naive_fa_decode_enabled()
                 and depth <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM
+                and depth % WARP_SIZE == 0
             ):
                 naive_fa_decode_apple[
                     ragged=ragged,
@@ -1597,28 +1651,92 @@ def flash_attention_dispatch[
                     sink_weights,
                 )
             else:
-                mha_gpu_naive[
-                    ragged=ragged,
-                    _use_valid_length=_use_valid_length,
-                    _is_cache_length_accurate=_is_cache_length_accurate,
-                    sink=sink,
-                ](
-                    q,
-                    k,
-                    v,
-                    mask_functor,
-                    output,
-                    valid_length.value(),
-                    scale,
-                    batch_size,
-                    max_prompt_len,
-                    max_cache_valid_length,
-                    num_heads,
-                    depth,
-                    group,
-                    ctx,
-                    sink_weights,
+                comptime apple_prefill_kv_ok = (
+                    k_t.page_size == 0 or k_t.page_size % 16 == 0
                 )
+                comptime apple_prefill_depth_ok = (
+                    depth <= FA_PREFILL_APPLE_MAX_HEAD_DIM and depth % 16 == 0
+                )
+                comptime if apple_prefill_kv_ok and apple_prefill_depth_ok:
+                    # Wide-threadgroup no-SMEM prefill (num_simdgroups=16): 16
+                    # simdgroups / 256 query rows share a threadgroup and read
+                    # K/V from DRAM (no staging, no barriers). It beat both the
+                    # block_dim=32 base and the SMEM-staged variant at every
+                    # shape measured (KB kernels/apple-m5-fa-prefill).
+                    # The 16x16 simdgroup MMA needs M5+.
+                    if (
+                        not is_token_generation
+                        and _apple_fa_prefill_enabled()
+                        and ctx.compute_capability() >= 5
+                    ):
+                        fa_prefill_apple[
+                            ragged=ragged,
+                            sink=sink,
+                            _use_valid_length=_use_valid_length,
+                            _is_cache_length_accurate=_is_cache_length_accurate,
+                        ](
+                            q,
+                            k,
+                            v,
+                            mask_functor,
+                            output,
+                            valid_length.value(),
+                            scale,
+                            batch_size,
+                            max_prompt_len,
+                            max_cache_valid_length,
+                            num_heads,
+                            depth,
+                            group,
+                            ctx,
+                            sink_weights,
+                        )
+                    else:
+                        mha_gpu_naive[
+                            ragged=ragged,
+                            _use_valid_length=_use_valid_length,
+                            _is_cache_length_accurate=_is_cache_length_accurate,
+                            sink=sink,
+                        ](
+                            q,
+                            k,
+                            v,
+                            mask_functor,
+                            output,
+                            valid_length.value(),
+                            scale,
+                            batch_size,
+                            max_prompt_len,
+                            max_cache_valid_length,
+                            num_heads,
+                            depth,
+                            group,
+                            ctx,
+                            sink_weights,
+                        )
+                else:
+                    mha_gpu_naive[
+                        ragged=ragged,
+                        _use_valid_length=_use_valid_length,
+                        _is_cache_length_accurate=_is_cache_length_accurate,
+                        sink=sink,
+                    ](
+                        q,
+                        k,
+                        v,
+                        mask_functor,
+                        output,
+                        valid_length.value(),
+                        scale,
+                        batch_size,
+                        max_prompt_len,
+                        max_cache_valid_length,
+                        num_heads,
+                        depth,
+                        group,
+                        ctx,
+                        sink_weights,
+                    )
         else:
             mha_gpu_naive[
                 ragged=ragged,
@@ -1688,6 +1806,16 @@ def flash_attention[
     var seq_len = q.dim[1]()
     var num_keys = k.dim[1]()
 
+    # Zero-sized attention (e.g. VAE mid-block attention on a
+    # ``(B, C, 0, 0)`` placeholder image flattens to ``seq_len=0``):
+    # nothing to compute.  The output buffer is pre-allocated zero
+    # element by the caller; softmax over an empty sequence has no
+    # defined value and the downstream readers also have zero seq.
+    # Skipping the dispatch avoids zero-grid kernel launches and
+    # undefined behavior in TMA descriptors with empty extents.
+    if batch_size == 0 or seq_len == 0 or num_keys == 0:
+        return
+
     # Whether head and depth are static. With BSHD, B and S are dynamic.
     # H and D are always known.
     # fmt: off
@@ -1703,19 +1831,29 @@ def flash_attention[
 
     var is_token_generation = seq_len == 1 and num_keys > seq_len
 
+    # Build the row-major K/V TileTensors directly (no throwaway LayoutTensor
+    # round-trip). BSHD layout: batch/seq are runtime, head/depth static, so
+    # mirror `k`'s static pattern with `Idx` for the known dims. The operand
+    # infers `buffer_layout` from the passed TileTensor.
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
+        TileTensor(
             k.ptr,
-            RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
-                k.runtime_layout.shape.value.canonicalize()
+            row_major(
+                Int(k.dim[0]()),
+                Int(k.dim[1]()),
+                Idx[kv_num_heads],
+                Idx[depth],
             ),
         )
     )
     var v_operand = LayoutTensorMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
+        TileTensor(
             v.ptr,
-            RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
-                v.runtime_layout.shape.value.canonicalize()
+            row_major(
+                Int(v.dim[0]()),
+                Int(v.dim[1]()),
+                Idx[kv_num_heads],
+                Idx[depth],
             ),
         )
     )
@@ -2103,7 +2241,7 @@ def mha[
     _is_cache_length_accurate: Bool = False,
     _padded_ndbuffer: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
     v: v_t,
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
@@ -5165,10 +5303,10 @@ def mha_splitk_reduce[
     intermediate_ptr: UnsafePointer[Scalar[intermediate_type], ImmutAnyOrigin],
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     exp_sum_ptr: UnsafePointer[
-        Scalar[get_accum_type[output_type]()], MutAnyOrigin
+        Scalar[get_accum_type[output_type]()], ImmutAnyOrigin
     ],
     qk_max_ptr: UnsafePointer[
-        Scalar[get_accum_type[output_type]()], MutAnyOrigin
+        Scalar[get_accum_type[output_type]()], ImmutAnyOrigin
     ],
     batch_size: Int,
     num_partitions: Int,
@@ -5786,20 +5924,30 @@ def mha_gpu_naive[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
+    # The naive reference accepts K/V with either a fully static or a fully
+    # dynamic layout (e.g. `Layout.row_major[4]`), so reinterpret each as a
+    # row-major view over its own shape -- this preserves the static/dynamic
+    # pattern exactly. A static `Idx[k.layout.shape[i]]` would be UNKNOWN_VALUE
+    # for a dynamic dim (corrupting strides), while all-runtime dims regress the
+    # static-dim path.
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
-            k.ptr,
-            RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
-                k.runtime_layout.shape.value.canonicalize()
-            ),
+        lt_to_tt(
+            LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
+                k.ptr,
+                RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
+                    k.runtime_layout.shape.value.canonicalize()
+                ),
+            )
         )
     )
     var v_operand = LayoutTensorMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
-            v.ptr,
-            RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
-                v.runtime_layout.shape.value.canonicalize()
-            ),
+        lt_to_tt(
+            LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
+                v.ptr,
+                RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
+                    v.runtime_layout.shape.value.canonicalize()
+                ),
+            )
         )
     )
     var null_valid_length = LayoutTensor[
@@ -6253,10 +6401,8 @@ def _naive_attention[
     )
     batched_matmul[transpose_b=transpose_k](score, q_tt, k_tt)
 
-    @__copy_capture(score)
-    @parameter
     @always_inline
-    def scale_and_mask[width: Int, alignment: Int = 1](coords: Coord):
+    def scale_and_mask[width: Int, alignment: Int = 1](coords: Coord) {var}:
         var score_idx = coord_to_index_list(coords)
         var vec = score.load_linear[width, alignment=alignment](score_idx)
         vec = vec * scale.cast[dtype]()
@@ -6268,8 +6414,8 @@ def _naive_attention[
         )
         score.store_linear[width, alignment=alignment](score_idx, vec)
 
-    elementwise[scale_and_mask, simd_size](
-        (batch_size, num_heads, seq_len, num_keys), ctx
+    elementwise[simd_size](
+        scale_and_mask, (batch_size, num_heads, seq_len, num_keys), ctx
     )
 
     softmax[dtype, simd_size, 4](score, score, axis=3)

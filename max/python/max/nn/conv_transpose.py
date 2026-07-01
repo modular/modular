@@ -348,7 +348,11 @@ class WeightNormConvTranspose1d(Module):
         self.bias = self.conv.bias
 
         del self.conv.weight
-        del self.conv.bias
+        # ``bias`` is only set as an instance attribute when ``has_bias=True``;
+        # otherwise it resolves to the dataclass class default and cannot be
+        # deleted through the instance.
+        if "bias" in vars(self.conv):
+            del self.conv.bias
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Apply the weight normalized convolution to input ``x``.

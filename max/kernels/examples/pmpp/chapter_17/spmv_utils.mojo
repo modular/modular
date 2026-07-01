@@ -21,8 +21,14 @@ struct COOMatrix(DevicePassable, TrivialRegisterPassable):
     var numNonzeros: Int
     var numRows: Int
     var numCols: Int
+
+    @__allow_legacy_any_origin_fields
     var rowIdx: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var colIdx: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var value: UnsafePointer[Float32, MutAnyOrigin]
 
     def _to_device_type(
@@ -56,8 +62,14 @@ struct CSRMatrix(DevicePassable, TrivialRegisterPassable):
     var numRows: Int
     var numCols: Int
     var numNonzeros: Int
+
+    @__allow_legacy_any_origin_fields
     var rowPtrs: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var colIdx: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var value: UnsafePointer[Float32, MutAnyOrigin]
 
     def _to_device_type(
@@ -91,7 +103,11 @@ struct ELLMatrix(DevicePassable, TrivialRegisterPassable):
     var numRows: Int
     var numCols: Int
     var nnzPerRow: Int
+
+    @__allow_legacy_any_origin_fields
     var colIdx: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var value: UnsafePointer[Float32, MutAnyOrigin]
 
     def _to_device_type(
@@ -123,8 +139,14 @@ struct CSCMatrix(DevicePassable, TrivialRegisterPassable):
     var numRows: Int
     var numCols: Int
     var numNonzeros: Int
+
+    @__allow_legacy_any_origin_fields
     var colPtrs: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var rowIdxs: UnsafePointer[UInt32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var values: UnsafePointer[Float32, MutAnyOrigin]
 
     def _to_device_type(

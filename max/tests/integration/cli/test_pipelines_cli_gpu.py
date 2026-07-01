@@ -15,7 +15,7 @@ import logging
 
 import hf_repo_lock
 import pytest
-from max.entrypoints import pipelines
+from max._entrypoints import pipelines
 from test_common.graph_utils import is_h100_h200
 from test_common.lora_utils import (
     create_multiple_test_lora_adapters,

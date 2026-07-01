@@ -50,7 +50,7 @@ from std.collections.string.string_slice import (
     _get_kgen_string,
     get_static_string,
 )
-from std.os import PathLike, abort
+from std.os import PathLike as stdPathLike, abort
 from std.pathlib import Path
 from std.sys._libc import dlclose, dlerror, dlopen, dlsym
 from std.sys._libc_errno import ErrNo, get_errno, set_errno
@@ -60,7 +60,6 @@ from std.memory.alloc import dealloc, ThinAllocation
 from std.memory.unsafe_pointer import unsafe_cast
 
 from std.sys.info import CompilationTarget, is_32bit, is_64bit, size_of
-from std.sys.intrinsics import _type_is_eq
 from .cstring import CStringSlice
 from .unsafe_union import UnsafeUnion
 
@@ -238,7 +237,7 @@ struct OwnedDLHandle(Movable):
         self._handle = _DLHandle(flags)
 
     def __init__[
-        PathLike: os.PathLike, //
+        PathLike: stdPathLike, //
     ](out self, path: PathLike, flags: Int = DEFAULT_RTLD) raises:
         """Initialize an OwnedDLHandle by loading the dynamic library at the
         given path.
@@ -485,7 +484,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         )
 
     def __init__[
-        PathLike: os.PathLike, //
+        PathLike: stdPathLike, //
     ](out self, path: PathLike, flags: Int = DEFAULT_RTLD) raises:
         """Initialize a DLHandle object by loading the dynamic library at the
         given path.
@@ -928,7 +927,9 @@ struct _Global[
         if opaque_ptr:
             dealloc(
                 ThinAllocation(
-                    unsafe_assume_ownership=opaque_ptr.value()
+                    unsafe_assume_ownership=opaque_ptr.unsafe_value().bitcast[
+                        Self.StorageType
+                    ]()
                 ).unsafe_with_layout({count = 1})
             )
 
@@ -1036,7 +1037,7 @@ def external_call[
     var loaded_pack = args.get_loaded_kgen_pack()
     comptime callee_kgen_string = _get_kgen_string[callee]()
 
-    comptime if _type_is_eq[return_type, NoneType]():
+    comptime if return_type == NoneType:
         __mlir_op.`pop.external_call`[func=callee_kgen_string, _type=None](
             loaded_pack
         )

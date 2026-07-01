@@ -227,7 +227,38 @@ class _OpaqueValue(Value[mo.OpaqueType]):
 
 
 class BufferValue(Value[mo.BufferType]):
-    """Represents a mutable semantic tensor within a :class:`~max.graph.Graph`."""
+    """Represents a mutable semantic tensor within a :class:`~max.graph.Graph`.
+
+    Unlike a :class:`TensorValue`, which is value semantic and produces a new
+    value from every operation, a ``BufferValue`` refers to memory you can
+    update in place. Read it into a tensor with
+    :func:`~max.graph.ops.buffer_load` and write a tensor back with
+    :func:`~max.graph.ops.buffer_store`. This is how a graph carries state that
+    must persist across executions, such as a key-value cache.
+
+    The following example loads a buffer input, updates it, and stores the
+    result back in place:
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.graph import BufferType, DeviceRef, Graph, ops
+
+        buffer_type = BufferType(DType.float32, shape=[4], device=DeviceRef.CPU())
+
+        with Graph("buffer_demo", input_types=[buffer_type]) as graph:
+            state = graph.inputs[0].buffer
+
+            # Read the current contents into a value-semantic tensor.
+            current = ops.buffer_load(state)
+
+            # Write an updated tensor back into the same memory.
+            ops.buffer_store(state, current + 1)
+            graph.output(current)
+
+            print(f"dtype: {state.dtype}")  # Output: dtype: DType.float32
+            print(f"shape: {state.shape}")  # Output: shape: [Dim(4)]
+    """
 
     def __init__(
         self, value: Value[Any] | _Value[mo.BufferType] | HasBufferValue

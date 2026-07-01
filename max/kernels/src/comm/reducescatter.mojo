@@ -266,6 +266,7 @@ def _reducescatter_kernel[
     BLOCK_SIZE: Int,
     output_lambda: elementwise_epilogue_type,
     use_multimem: Bool = False,
+    domain_id: Int = 0,
 ](
     in_bufs: InlineArray[
         TileTensor[dtype, in_layout, ImmutAnyOrigin],
@@ -294,7 +295,9 @@ def _reducescatter_kernel[
     )
 
     with PDL():
-        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
+            rank_sigs, my_sig, my_rank
+        )
 
         # Round-robin access pattern to balance NVLink traffic across GPUs.
         var reordered = InlineArray[
@@ -372,7 +375,9 @@ def _reducescatter_kernel[
                 ngpus, output_lambda=output_lambda, use_multimem=use_multimem
             ](sliced_tiles, out_buf, n_elements, config.stride)
 
-        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
+            rank_sigs, my_sig, my_rank
+        )
 
 
 @always_inline
@@ -386,6 +391,7 @@ def _reducescatter_p2p[
     output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
+    domain_id: Int = 0,
 ](
     list_of_in_bufs: InlineArray[
         TileTensor[dtype, in_layout, in_origin],
@@ -395,6 +401,7 @@ def _reducescatter_p2p[
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
     ctx: DeviceContext,
+    my_rank: Int,
     axis_size: Int,
     unit_numel: Int,
 ) raises:
@@ -409,6 +416,8 @@ def _reducescatter_p2p[
         output_lambda: Elementwise epilogue function to apply to reduced values.
         pdl_level: Control PDL behavior for the kernel.
         use_multimem: Whether multimem optimization is enabled.
+        domain_id: Barrier counter bank to use (0 for full-world; a distinct
+            nonzero value for grouped collectives). See `_multi_gpu_barrier`.
 
     Args:
         list_of_in_bufs: Input buffers from all GPUs (peer access required).
@@ -416,6 +425,7 @@ def _reducescatter_p2p[
         rank_sigs: Signal pointers for synchronization.
         max_num_blocks: Maximum number of thread blocks to launch.
         ctx: Device context for THIS GPU.
+        my_rank: Rank of THIS GPU within the reduce-scatter group.
         axis_size: Number of units along the scatter axis.
         unit_numel: Number of elements per unit.
     """
@@ -456,6 +466,7 @@ def _reducescatter_p2p[
         BLOCK_SIZE=BLOCK_SIZE,
         output_lambda=output_lambda,
         use_multimem=use_multimem,
+        domain_id=domain_id,
     ]
 
     # Launch the kernel
@@ -465,7 +476,7 @@ def _reducescatter_p2p[
         rank_sigs,
         axis_size,
         unit_numel,
-        Int(ctx.id()),
+        my_rank,
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
         attributes=pdl_launch_attributes(pdl_level),
@@ -483,6 +494,7 @@ def reducescatter[
     *,
     axis: Int = 0,
     use_multimem: Bool = False,
+    domain_id: Int = 0,
 ](
     input_buffers: InlineArray[
         TileTensor[dtype, in_layout, in_origin],
@@ -492,6 +504,7 @@ def reducescatter[
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
+    local_rank: Optional[Int] = None,
 ) raises:
     """Per-device reducescatter operation with axis-aware scatter.
 
@@ -510,6 +523,9 @@ def reducescatter[
             Requires 2D row-major inputs when axis >= 0.
         use_multimem: If True, use hardware-accelerated multimem reduction.
             Currently only valid with 1D input. TODO(KERN-2526): generalize.
+        domain_id: Barrier counter bank to use (0 for full-world; a distinct
+            nonzero value for grouped collectives sharing the same Signal
+            buffers). See `_multi_gpu_barrier`.
 
     Args:
         input_buffers: Input TileTensors from all GPUs (peer access required).
@@ -519,6 +535,8 @@ def reducescatter[
         ctx: Device context for THIS GPU.
         _max_num_blocks: Optional maximum number of thread blocks to launch.
             If not specified, uses MAX_NUM_BLOCKS_UPPER_BOUND.
+        local_rank: Optional rank of THIS GPU within the reduce-scatter group.
+            Defaults to the physical device id for full-world collectives.
 
     Raises:
         Error: If P2P access is not available between GPUs.
@@ -578,7 +596,7 @@ def reducescatter[
         unit_numel = dim_0 * simd_width
 
     # Validate output buffer shape for this rank's partition.
-    var my_rank = Int(ctx.id())
+    var my_rank = local_rank.value() if local_rank else Int(ctx.id())
     var config_check = ReduceScatterConfig[dtype, ngpus](
         axis_size, unit_numel, 0
     )
@@ -646,12 +664,14 @@ def reducescatter[
         output_lambda=actual_output_lambda,
         pdl_level=pdl_level,
         use_multimem=use_multimem,
+        domain_id=domain_id,
     ](
         input_buffers,
         output_buffer,
         rank_sigs,
         max_num_blocks,
         ctx,
+        my_rank,
         axis_size,
         unit_numel,
     )

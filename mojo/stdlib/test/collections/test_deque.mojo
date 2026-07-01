@@ -13,7 +13,7 @@
 
 from std.collections import Deque
 
-from test_utils import MoveOnly, Observable, check_write_to
+from test_utils import ExplicitDestroy, MoveOnly, Observable, check_write_to
 from std.testing import assert_equal, assert_false, assert_raises, assert_true
 from std.testing import TestSuite
 
@@ -1092,14 +1092,16 @@ def test_reversed_iter() raises:
 
 def _test_deque_iter_bounds[
     I: Iterator
-](var deque_iter: I, deque_len: Int) raises:
+](var deque_iter: I, deque_len: Int) raises where conforms_to(
+    I.Element, ImplicitlyDeletable
+):
     var iter = deque_iter^
 
     for i in range(deque_len):
         var lower, upper = iter.bounds()
         assert_equal(deque_len - i, lower)
         assert_equal(deque_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -1169,6 +1171,37 @@ struct NonEquatable(Copyable):
     pass
 
 
+@explicit_destroy(
+    "You must use .destroy() to consume `CopyableExplicitDestroy`"
+)
+struct CopyableExplicitDestroy(Copyable):
+    """Test type that is `Copyable` but must be explicitly destroyed."""
+
+    var value: Int
+    """Int data."""
+
+    @implicit
+    def __init__(out self, value: Int):
+        """Constructs a new instance.
+
+        Args:
+            value: The integer value to store.
+        """
+        self.value = value
+
+    def __init__(out self, *, copy: Self):
+        """Copies from another instance.
+
+        Args:
+            copy: The instance being copied from.
+        """
+        self.value = copy.value
+
+    def destroy(deinit self):
+        """Destroys self."""
+        pass
+
+
 def test_deque_conditional_conformances() raises:
     assert_true(conforms_to(Deque[Int], Equatable))
     assert_false(conforms_to(Deque[NonEquatable], Equatable))
@@ -1183,6 +1216,76 @@ def test_deque_conditional_conformances() raises:
 
     assert_true(conforms_to(Deque[Int], Writable))
     assert_false(conforms_to(Deque[NonEquatable], Writable))
+
+    # `ImplicitlyDeletable` is conditional on the element type.
+    assert_true(conforms_to(Deque[Int], ImplicitlyDeletable))
+    assert_false(conforms_to(Deque[ExplicitDestroy], ImplicitlyDeletable))
+
+    # Owned iteration requires `ImplicitlyDeletable` elements; consuming
+    # iteration moves elements out, so it no longer requires `Copyable`.
+    assert_true(conforms_to(Deque[Int], IterableOwned))
+    assert_false(conforms_to(Deque[ExplicitDestroy], IterableOwned))
+    assert_true(conforms_to(Deque[MoveOnly[Int]], IterableOwned))
+
+    # A `Copyable` but non-`ImplicitlyDeletable` element type makes the deque
+    # `Copyable` (copying never destroys an element) yet still linear.
+    assert_true(conforms_to(Deque[CopyableExplicitDestroy], Copyable))
+    assert_false(
+        conforms_to(Deque[CopyableExplicitDestroy], ImplicitlyDeletable)
+    )
+
+
+def test_deque_with_explicit_destroy_type() raises:
+    var deque = Deque[ExplicitDestroy](
+        ExplicitDestroy(0), ExplicitDestroy(1), ExplicitDestroy(2)
+    )
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    deque^.destroy_with(destroy_closure)
+
+    assert_equal(destroyed, [0, 1, 2])
+
+
+def test_deque_copy_copyable_explicit_destroy_type() raises:
+    # Copying requires only `Copyable`, not `ImplicitlyDeletable`: a deque of a
+    # `Copyable` but linear element type can be copied, and both the original
+    # and the copy must then be drained explicitly.
+    var deque = Deque[CopyableExplicitDestroy](
+        CopyableExplicitDestroy(0),
+        CopyableExplicitDestroy(1),
+        CopyableExplicitDestroy(2),
+    )
+    var deque_copy = deque.copy()
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: CopyableExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    deque^.destroy_with(destroy_closure)
+    deque_copy^.destroy_with(destroy_closure)
+
+    assert_equal(destroyed, [0, 1, 2, 0, 1, 2])
+
+
+def test_deque_empty_destroy_with() raises:
+    var deque = Deque[ExplicitDestroy]()
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    deque^.destroy_with(destroy_closure)
+
+    assert_equal(len(destroyed), 0)
 
 
 # ===-------------------------------------------------------------------===#
@@ -1259,6 +1362,20 @@ def test_deque_iter_owned_destroys_elements_if_partially_consumed() raises:
     _ = iter^
     assert_equal(copies, 0)
     assert_equal(dels, 2)
+
+
+def test_deque_iter_owned_move_only() raises:
+    # Owned iteration moves elements out, so it works for move-only
+    # (non-`Copyable`) element types.
+    var d = Deque[MoveOnly[Int]]()
+    d.append(MoveOnly[Int](1))
+    d.append(MoveOnly[Int](2))
+    d.append(MoveOnly[Int](3))
+
+    var result = List[Int]()
+    for elem in d^:
+        result.append(elem.data)
+    assert_equal(result, [1, 2, 3])
 
 
 def test_deque_iter_owned_bounds() raises:

@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -41,32 +40,23 @@ from typing_extensions import Self, override
 
 from .layers.rotary_embedding import ProportionalScalingParams
 
-# Use the native Gemma4Config if available (transformers >= 5.5.0.dev0),
-# otherwise fall back to our shim for older versions.
-try:
-    from transformers import Gemma4Config as Gemma4HFConfig
-except ImportError:
 
-    class Gemma4HFConfig(PretrainedConfig):  # type: ignore[no-redef]
-        model_type = "gemma4"
+def _resolve_num_global_kv_heads(text_config: PretrainedConfig) -> int:
+    """Returns the number of KV heads used by full-attention layers.
 
-        def __init__(
-            self,
-            vision_config: Any = None,
-            text_config: Any = None,
-            *args,
-            **kwargs,
-        ):
-            vision_config = vision_config if vision_config is not None else {}
-            text_config = text_config if text_config is not None else {}
-            self.vision_config = PretrainedConfig(**vision_config)
-            self.text_config = PretrainedConfig(**text_config)
-            super().__init__(*args, **kwargs)
-
-    try:
-        AutoConfig.register("gemma4", Gemma4HFConfig)
-    except ValueError:
-        pass
+    The Gemma 4 E*B checkpoints ship ``"num_global_key_value_heads": null``;
+    the transformers ``configuration_gemma4.py`` docstring defines null/absent
+    as "defaults to ``num_key_value_heads``". Note transformers never applies
+    that fallback in code -- its modeling only consults the field when
+    ``attention_k_eq_v`` is true (false on E*B), so resolving here matches the
+    HF runtime behavior.
+    """
+    num_global_kv_heads = getattr(
+        text_config, "num_global_key_value_heads", None
+    )
+    if num_global_kv_heads is None:
+        return text_config.num_key_value_heads
+    return num_global_kv_heads
 
 
 @dataclass(kw_only=True)
@@ -273,7 +263,9 @@ class Gemma4TextConfig(Gemma3Config):
             # Gemma4-specific fields
             vocab_size_per_layer_input=huggingface_config.vocab_size_per_layer_input,
             hidden_size_per_layer_input=huggingface_config.hidden_size_per_layer_input,
-            num_global_key_value_heads=huggingface_config.num_global_key_value_heads,
+            num_global_key_value_heads=_resolve_num_global_kv_heads(
+                huggingface_config
+            ),
             global_head_dim=huggingface_config.global_head_dim,
             attention_k_eq_v=huggingface_config.attention_k_eq_v,
             num_kv_shared_layers=huggingface_config.num_kv_shared_layers,
@@ -440,8 +432,9 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
     text_config: Gemma4TextConfig
     """The config object of the text backbone."""
 
-    vision_config: Gemma4VisionConfig
-    """The config object of the vision encoder."""
+    vision_config: Gemma4VisionConfig | None
+    """The config object of the vision encoder, or ``None`` for checkpoints
+    served text-only (the ``gemma4_unified`` line)."""
 
     tie_word_embeddings: bool = False
     """Whether to tie weight embeddings. When true, the output linear layer
@@ -506,7 +499,9 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
         )
         global_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
-            n_kv_heads=huggingface_config.text_config.num_global_key_value_heads,
+            n_kv_heads=_resolve_num_global_kv_heads(
+                huggingface_config.text_config
+            ),
             head_dim=huggingface_config.text_config.global_head_dim,
             num_layers=global_layers,
             devices=devices,
@@ -519,7 +514,10 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             num_draft_tokens=num_spec_tokens,
         )
         return MultiKVCacheParams.from_params(
-            sliding_window_kv_params, global_kv_params
+            {
+                "sliding_attention": sliding_window_kv_params,
+                "full_attention": global_kv_params,
+            }
         )
 
     @staticmethod
@@ -593,9 +591,18 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
-        vision_config = Gemma4VisionConfig.initialize_from_config(
-            hf_vision_config
-        )
+        vision_config: Gemma4VisionConfig | None
+        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
+            # These checkpoints (e.g. google/gemma-4-12B-it) carry a
+            # lightweight vision_embedder with a different schema that is not
+            # implemented yet; serve text-only. Keyed on model_type so a
+            # genuinely malformed full-vision config fails loudly below
+            # instead of silently degrading to text-only.
+            vision_config = None
+        else:
+            vision_config = Gemma4VisionConfig.initialize_from_config(
+                hf_vision_config
+            )
 
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
@@ -651,6 +658,13 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             huggingface_config,
             state_dict,
             self.dtype,
+            # Gemma 4 checkpoints nest the language tower under
+            # "model.language_model."; without these prefixes the per-layer
+            # quantized/ignored classification looks up "model.layers.*"
+            # keys that never exist, so ignore-listed (BF16) attention in
+            # modelopt 12B quants was never recognized as ignored.
+            state_dict_name_prefix="model.language_model.",
+            ignored_modules_prefix="model.language_model.",
         )
 
         for k, v in state_dict.items():

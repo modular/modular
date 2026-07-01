@@ -60,11 +60,12 @@ from std.os import abort
 
 from std.builtin.range import _StridedRange, _StridedScalarRange
 from std.memory import memcpy
-from std.sys.intrinsics import _type_is_eq_parse_time
 from std.collections import check_bounds
 from std.utils.numerics import max_finite
 from std.utils import IndexList
 from layout.coord import ComptimeInt, Coord, CoordLike
+from .layout import Layout
+from . import math as layout_math
 
 
 def _get_index_type(address_space: AddressSpace) -> DType:
@@ -231,7 +232,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         Returns:
             The number of elements in the array, regardless of ownership status.
         """
-        return math.abs(self._size)
+        return layout_math.abs(self._size)
 
     @always_inline("nodebug")
     def copy_from(mut self, offset: Int, source: Self, size: Int):
@@ -618,10 +619,10 @@ struct IntTuple(
     @always_inline("nodebug")
     def __init__[
         IterableType: Iterable
-    ](out self, iterable: IterableType) where _type_is_eq_parse_time[
-        IterableType.IteratorType[origin_of(iterable)].Element,
-        Tuple[IntTuple, IntTuple],
-    ]():
+    ](out self, iterable: IterableType) where (
+        IterableType.IteratorType[origin_of(iterable)].Element
+        == Tuple[IntTuple, IntTuple]
+    ):
         """Initialize an `IntTuple` from a zip iterator.
 
         Creates an `IntTuple` by appending each element from the zip iterator.

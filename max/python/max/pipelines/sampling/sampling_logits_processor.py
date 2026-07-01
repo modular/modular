@@ -102,7 +102,7 @@ class FusedSamplingProcessor:
 
     @staticmethod
     def allocate_identity_logit_offsets(
-        pipeline_config: PipelineConfig, device: Device
+        pipeline_config: PipelineConfig, device: Device, max_batch_size: int
     ) -> Buffer | None:
         """Returns a preallocated ``[0, 1, ..., max_batch_size]`` index buffer.
 
@@ -116,8 +116,6 @@ class FusedSamplingProcessor:
             or is_virtual_device_mode()
         ):
             return None
-        max_batch_size = pipeline_config.runtime.max_batch_size
-        assert max_batch_size is not None, "max_batch_size must be set"
         return Buffer.from_numpy(
             np.arange(max_batch_size + 1, dtype=np.uint32)
         ).to(device)
@@ -128,7 +126,6 @@ class FusedSamplingProcessor:
         sampler: Model,
         pipeline_config: PipelineConfig,
         context_batch: list[Any],
-        num_steps: int,
         device: Device,
         bitmask: npt.NDArray[np.int32] | None = None,
         vocab_size: int | None = None,
@@ -142,8 +139,10 @@ class FusedSamplingProcessor:
         self.vocab_size = vocab_size
         self._identity_logit_offsets = identity_logit_offsets
 
-        # If a structured decoding bitmask was provided, unpack packed-int masks
-        # and store in pinned memory for efficient per-step updates.
+        # If a structured decoding bitmask was provided, stage the packed int32
+        # bitmask in pinned memory for efficient per-step H2D updates. The
+        # sampler graph unpacks and applies it on the GPU (apply_packed_bitmask),
+        # so no CPU-side unpack to bool happens here.
         self.tensor_bitmask: Buffer | None = None
         self._pinned_bitmask: Buffer | None = None
 
@@ -159,28 +158,24 @@ class FusedSamplingProcessor:
             and self.vocab_size is not None
             and self.bitmask.shape[1] != self.vocab_size
         ):
-            # Unpack packed-int masks to boolean format
-            bits = 2 ** np.arange(32, dtype=np.int32)
-            unpacked = (self.bitmask[..., np.newaxis] & bits) != 0
-            unpacked = unpacked.reshape(self.batch_size, -1).astype(np.bool_)
-
-            # Allocate pinned bitmask buffer per-batch (actual_batch_size x vocab_size).
-            # This is smaller than pre-allocating max_batch_size x vocab_size.
+            # ``self.bitmask`` is a packed int32 bitmask
+            # [batch, ceil(vocab/32)]. Stage it as-is; the sampler graph
+            # unpacks and applies it on the GPU.
             if device.is_host:
                 # Host device case - no pinned memory needed
                 self._pinned_bitmask = Buffer(
-                    shape=unpacked.shape,
-                    dtype=DType.bool,
+                    shape=self.bitmask.shape,
+                    dtype=DType.int32,
                     device=device,
                 )
             else:
                 # GPU - allocate pinned memory for faster H2D transfer
                 self._pinned_bitmask = DevicePinnedBuffer(
-                    shape=unpacked.shape,
-                    dtype=DType.bool,
+                    shape=self.bitmask.shape,
+                    dtype=DType.int32,
                     device=device,
                 )
-            self._pinned_bitmask.to_numpy()[:] = unpacked
+            self._pinned_bitmask.to_numpy()[:] = self.bitmask
             self.tensor_bitmask = self._pinned_bitmask.to(self.device)
 
         batch_size = len(context_batch)
@@ -212,9 +207,7 @@ class FusedSamplingProcessor:
 
         self.penalty_inputs: PenaltyInputs | None = None
         if pipeline_config.sampling.enable_penalties:
-            self.penalty_inputs = PenaltyInputs.create(
-                context_batch, device, num_steps
-            )
+            self.penalty_inputs = PenaltyInputs.create(context_batch, device)
         else:
             needs_penalties = any(
                 context.sampling_params.needs_penalties
@@ -227,7 +220,7 @@ class FusedSamplingProcessor:
 
         self.min_tokens_masks = _build_min_tokens_masks(
             context_batch,
-            num_steps,
+            1,
             device,
             pipeline_config.sampling.enable_min_tokens,
         )
@@ -268,6 +261,11 @@ class FusedSamplingProcessor:
         logits = inputs.logits
         logit_offsets = inputs.logit_offsets
 
+        if logits.device != self.device:
+            logits = logits.to(self.device)
+            if logit_offsets is not None:
+                logit_offsets = logit_offsets.to(self.device)
+
         new_tokens, new_generated_tokens, new_seed = _sample_logits(
             self.sampler,
             logits,
@@ -294,9 +292,10 @@ class FusedSamplingProcessor:
     def update_bitmask(self, packed_bitmask: npt.NDArray[np.int32]) -> None:
         """Update the GPU bitmask with new FSM state for multi-step execution.
 
-        This method unpacks the packed-int bitmask from llguidance, copies it
-        to the pinned host buffer, and transfers it to the GPU. This keeps the
-        bitmask synchronized with the FSM state after each token is sampled.
+        Copies the packed int32 bitmask from llguidance into the pinned host
+        buffer and transfers it to the GPU, keeping the bitmask synchronized
+        with the FSM state after each token is sampled. Unpacking is done on the
+        GPU by the sampler graph (apply_packed_bitmask), not here.
 
         Args:
             packed_bitmask: Packed int32 bitmask from
@@ -310,13 +309,8 @@ class FusedSamplingProcessor:
         ):
             return
 
-        # Unpack packed-int format to boolean
-        bits = 2 ** np.arange(32, dtype=np.int32)
-        unpacked = (packed_bitmask[..., np.newaxis] & bits) != 0
-        unpacked = unpacked.reshape(self.batch_size, -1).astype(np.bool_)
-
-        # Copy to pinned buffer
-        self._pinned_bitmask.to_numpy()[:] = unpacked
+        # Copy the packed int32 bitmask straight into the pinned buffer.
+        self._pinned_bitmask.to_numpy()[:] = packed_bitmask
 
         # Transfer to GPU on the default stream. The H2D copy will complete
         # before subsequent GPU operations (like sampling) that use the bitmask.

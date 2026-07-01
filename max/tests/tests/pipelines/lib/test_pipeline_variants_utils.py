@@ -15,10 +15,14 @@
 import numpy as np
 from max.pipelines.context import (
     GenerationStatus,
+    StructuredOutputRegionDelimiters,
     TextContext,
     TokenBuffer,
 )
-from max.pipelines.lib.pipeline_variants.utils import build_response
+from max.pipelines.lib.pipeline_variants.utils import (
+    StructuredOutputHelper,
+    build_response,
+)
 from max.pipelines.modeling.types import RequestID
 
 
@@ -126,5 +130,155 @@ class TestBuildResponse:
         build_response(
             [ctx], max_seq_len=global_max_seq_len, max_growth_per_step=1
         )
-
         assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
+
+
+class TestTokensForConsume:
+    """``StructuredOutputHelper._tokens_for_consume``.
+
+    On the conditional-enforcement flip-on (``tool_choice=auto``), the fresh
+    matcher must consume the whole tool-call start marker, not just the token
+    that completed it — otherwise multi-token / namespace-prefixed markers
+    (e.g. MiniMax-M3's ``NS<tool_call>``) reject and enforcement falls open.
+    """
+
+    @staticmethod
+    def _helper(start_token_ids: list[int]) -> StructuredOutputHelper:
+        return StructuredOutputHelper(
+            tool_call_region_delimiters=StructuredOutputRegionDelimiters(
+                start_token_ids=start_token_ids,
+                end_token_ids=[999],
+            )
+        )
+
+    def test_flip_on_feeds_full_multitoken_marker(self) -> None:
+        # M3-style NS<tool_call> = two tokens; flip-on feeds both.
+        helper = self._helper([200058, 200052])
+        assert helper._tokens_for_consume(200052, was_enforced=False) == [
+            200058,
+            200052,
+        ]
+
+    def test_already_enforced_feeds_single_token(self) -> None:
+        helper = self._helper([200058, 200052])
+        assert helper._tokens_for_consume(77, was_enforced=True) == [77]
+
+    def test_single_token_marker_is_noop(self) -> None:
+        # Single-token markers (e.g. Kimi) feed just the token even on flip-on.
+        helper = self._helper([42])
+        assert helper._tokens_for_consume(42, was_enforced=False) == [42]
+
+    def test_no_delimiters_feeds_single_token(self) -> None:
+        helper = StructuredOutputHelper()
+        assert helper._tokens_for_consume(5, was_enforced=False) == [5]
+
+
+class TestAdvanceFsmAndComputeBitmasks:
+    """``StructuredOutputHelper.advance_fsm_and_compute_bitmasks``.
+
+    The async bitmask callback writes every consumer row in the consuming
+    batch's row order, attributing each row back to its slot in the producing
+    (previous) batch via ``rid_to_src``. The disaggregated decode engine can
+    admit a KV-transferred request straight into a verify batch -- with
+    ``generated_length > 0`` and draft tokens already attached -- without that
+    request ever having appeared in the decode engine's previous producing
+    batch. Such a row is absent from ``rid_to_src`` and trips the
+    single-writer attribution assertion.
+    """
+
+    @staticmethod
+    def _decoding_ctx() -> TextContext:
+        """A continuing (non-initial-prompt) unconstrained decode row."""
+        ctx = create_text_context(prompt_len=4, max_length=128)
+        # Mirror handle_prefill_response on the decode engine: applying the
+        # first generated token makes generated_length > 0 and clears
+        # is_initial_prompt -- exactly the state of a KV-transferred row.
+        ctx.update(new_token=99)
+        assert ctx.tokens.generated_length > 0
+        assert not ctx.is_initial_prompt
+        return ctx
+
+    @staticmethod
+    def _empty_bitmask(num_rows: int, num_positions: int) -> np.ndarray:
+        # Packed int32 bitmask, [rows, K+1, ceil(vocab/32)]. Vocab is small;
+        # the callback resets each row to -1 before any fill, so the only
+        # requirement is a writable rectangle of the right outer shape.
+        return np.zeros((num_rows, num_positions, 1), dtype=np.int32)
+
+    def test_transferred_row_absent_from_producing_batch_asserts(self) -> None:
+        """Repro: a disagg-transferred row in a verify batch has no producer.
+
+        The producing (previous) batch contains only ``producer``. The
+        consuming batch is ``[producer, transferred]`` -- ``transferred`` is
+        the KV-transferred request that the decode scheduler admitted directly
+        into the verify batch (generated_length > 0 routes it to tg_reqs,
+        skipping local context encoding). It is absent from the producing
+        batch, so ``rid_to_src.get(transferred.request_id)`` is None and the
+        single-writer attribution invariant fails.
+        """
+        helper = StructuredOutputHelper(enabled=True, vocab_size=16)
+
+        producer = self._decoding_ctx()
+        transferred = self._decoding_ctx()
+
+        producing_batch = [producer]
+        consuming_batch = [producer, transferred]
+
+        # Producing-batch-shaped spec-decode arrays: K=1 draft token.
+        accepted = np.zeros((1, 1), dtype=np.int64)
+        num_accepted = np.zeros((1,), dtype=np.int64)
+        bonus = np.full((1,), 99, dtype=np.int64)
+        next_draft = np.zeros((1, 1), dtype=np.int64)
+        bitmask_out = self._empty_bitmask(len(consuming_batch), num_positions=2)
+
+        try:
+            helper.advance_fsm_and_compute_bitmasks(
+                context_batch=producing_batch,
+                accepted_draft_tokens=accepted,
+                num_accepted=num_accepted,
+                bonus_tokens=bonus,
+                next_draft_tokens=next_draft,
+                bitmask_out=bitmask_out,
+                output_context_batch=consuming_batch,
+            )
+        except AssertionError as e:
+            assert "attributable continuing row" in str(e)
+            return
+        raise AssertionError(
+            "expected the single-writer attribution assertion to fire for the "
+            "transferred row absent from the producing batch"
+        )
+
+    def test_all_consumer_rows_present_in_producing_batch_ok(self) -> None:
+        """Control: steady decode->decode, every consumer row attributable.
+
+        When no row was admitted from outside the producing batch (the
+        aggregated steady-state path), the callback attributes every consumer
+        row and does not assert.
+        """
+        helper = StructuredOutputHelper(enabled=True, vocab_size=16)
+
+        row_a = self._decoding_ctx()
+        row_b = self._decoding_ctx()
+
+        producing_batch = [row_a, row_b]
+        consuming_batch = [row_a, row_b]
+
+        accepted = np.zeros((2, 1), dtype=np.int64)
+        num_accepted = np.zeros((2,), dtype=np.int64)
+        bonus = np.full((2,), 99, dtype=np.int64)
+        next_draft = np.zeros((2, 1), dtype=np.int64)
+        bitmask_out = self._empty_bitmask(len(consuming_batch), num_positions=2)
+
+        helper.advance_fsm_and_compute_bitmasks(
+            context_batch=producing_batch,
+            accepted_draft_tokens=accepted,
+            num_accepted=num_accepted,
+            bonus_tokens=bonus,
+            next_draft_tokens=next_draft,
+            bitmask_out=bitmask_out,
+            output_context_batch=consuming_batch,
+        )
+
+        # Unconstrained rows: callback resets every row to all-valid (-1).
+        assert (bitmask_out == -1).all()

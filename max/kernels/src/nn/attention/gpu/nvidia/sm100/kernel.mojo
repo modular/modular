@@ -35,12 +35,14 @@ from std.gpu.compute.arch.tcgen05 import (
 from std.gpu.memory import fence_mbarrier_init
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from layout.tma_async import RaggedTMA3DTile
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     SM100TensorAccumulator,
     elect,
     kv_sub_tile_rows,
+    o_store_tma_blocks_per_op,
 )
 from nn.attention.gpu.nvidia.common import (
     get_seq_info,
@@ -195,13 +197,24 @@ struct SM100MHA2Q[
     ]
     comptime OTMAStoreType = RaggedTMA3DTile[
         Self.output_type,
-        Self.config.swizzle_mode,
+        # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
+        # Q/K/V/S/P buffers governed by `config.swizzle_mode`).
+        TensorMapSwizzle.SWIZZLE_NONE,
         # 2Q: BM=128 (each WG writes one of two Q halves).
         # 1Q: BM=128 (both WGs cover the full BM=128 Q rows and write
         # disjoint depth-column ranges).
         BM=Self.config.BM // Self.config.num_qo,
         BN=Self.config.ov_depth,
+        middle_dim=Self.config.num_kv_heads if Self.fuse_gqa else Self.config.num_q_heads,
         group=Self.config.group if Self.fuse_gqa else 1,
+        # Batched rank-5 O store (must match dispatch.mojo's store).
+        tma_blocks_per_op=o_store_tma_blocks_per_op[
+            Self.output_type,
+            TensorMapSwizzle.SWIZZLE_NONE,
+            Self.config.ov_depth,
+            Self.config.group if Self.fuse_gqa else 1,
+            depth_splits=2,
+        ](),
     ]
     comptime PackType = Pack[
         Self.MaskType,
@@ -398,6 +411,16 @@ struct SM100MHA2Q[
         else:
             barrier()
 
+        # Read the TMEM base from SMEM EXACTLY ONCE here, post-barrier (the
+        # alloc on warp 1 + this barrier publish it), and carry it by register
+        # to every consumer (fa4_softmax / fa4_correction / fa4_mma). Mirrors
+        # the depth-512 fix: the consumers must NOT re-read
+        # `smem.tmem_addr_ptr()` in their bodies, because an in-body slot reload
+        # gated only on a pipeline barrier (not the alloc publish) can observe a
+        # stale/pre-alloc value under SM co-residency and feed a garbage TMEM
+        # operand to `UTCHMMA`. Same published value -> single-shot bit-identical.
+        var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
+
         # Programmatic Dependent Launch (PDL).  This is the only point every
         # thread of every CTA reaches before the warp-specialized early
         # returns below (invalid tiles bail in warps 0-13 while warps 14-15
@@ -453,6 +476,7 @@ struct SM100MHA2Q[
                     output_nonempty=Self.config.can_switch_to_1q(),
                 ](
                     smem,
+                    tmem_addr,
                     pos.score_row,
                     seq_info,
                     mask,
@@ -487,6 +511,7 @@ struct SM100MHA2Q[
                     Self.page_size,
                 ](
                     smem,
+                    tmem_addr,
                     seq_info.prompt_idx,
                     pos.score_row,
                     pos.num_keys,
@@ -573,7 +598,6 @@ struct SM100MHA2Q[
 
                 comptime if not Self.pair_cta:
                     if not seq_info.is_valid():
-                        var tmem_addr = smem.tmem_addr_ptr()[]
                         tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
                         tcgen05_dealloc[Int32(Self.cta_group)](
                             tmem_addr, UInt32(Self.config.sm100_tmem_cols)
@@ -596,6 +620,7 @@ struct SM100MHA2Q[
                     )
                     fa4_mma[Self.config, page_size=Self.page_size](
                         smem,
+                        tmem_addr,
                         seq_info.prompt_idx,
                         pos.score_row,
                         pos.num_keys,
@@ -615,7 +640,6 @@ struct SM100MHA2Q[
         comptime if Self.pair_cta:
             cluster_sync()
             if warp_idx == 0:
-                var tmem_addr = smem.tmem_addr_ptr()[]
                 tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
                 tcgen05_dealloc[Int32(Self.cta_group)](
                     tmem_addr, UInt32(Self.config.sm100_tmem_cols)

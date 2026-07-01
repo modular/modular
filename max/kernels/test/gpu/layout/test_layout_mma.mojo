@@ -154,7 +154,7 @@ def test_layout_mma[
             if debug:
                 if not isclose(out_val, out_ref, rtol=rtol):
                     print(i, out_val, out_ref)
-            testing.assert_true(isclose(out_val, out_ref, rtol=rtol))
+            assert_true(isclose(out_val, out_ref, rtol=rtol))
 
 
 def main() raises:

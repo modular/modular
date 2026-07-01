@@ -370,7 +370,8 @@ def gemv_split_k[
     unroll_factor: Int = 2,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
-    check_bounds: Bool = True,
+    check_bounds_m: Bool = True,
+    check_bounds_n: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     output: TileTensor[c_type, c_layout, MutAnyOrigin],
@@ -385,6 +386,13 @@ def gemv_split_k[
     implements a vector (1 x K) times a matrix (N x K).
     The impl can actually handle M > 1 but it's only optimal for tiny M. We use
     it for M = 1 only.
+
+    The launch grid covers ceildiv(m, tile_m) * tile_m rows and
+    ceildiv(n, tile_n) * tile_n columns, so the final blocks read and write
+    past the buffers unless the bounds guards are on: `check_bounds_m=False`
+    is only safe when the launcher guarantees m % tile_m == 0 (m is a runtime
+    value, so tile_m == 1 is the usual way to guarantee it), and
+    `check_bounds_n=False` is only safe when n % tile_n == 0.
     """
     comptime assert output.flat_rank == 2, "output must be of rank 2"
     comptime assert act.flat_rank == 2, "act must be of rank 2"
@@ -425,7 +433,7 @@ def gemv_split_k[
         # On AMD, use non-temporal loads to avoid L1/L2 cache pollution
         # (weights are read exactly once).
         comptime for i in range(tile_n):
-            comptime if check_bounds:
+            comptime if check_bounds_n:
                 if i + tile_id_n >= n:
                     continue
             comptime if is_amd_gpu():
@@ -440,7 +448,7 @@ def gemv_split_k[
 
         # Load activations and accumulate dot products.
         comptime for i in range(tile_m):
-            comptime if check_bounds:
+            comptime if check_bounds_m:
                 if i + tile_id_m >= m:
                     continue
             var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
@@ -504,7 +512,13 @@ def gemv_split_k[
         var row = tile_id_m + mid
         var col = tile_id_n
 
-        comptime if check_bounds:
+        # The grid covers ceildiv(m, tile_m) * tile_m rows, so the last
+        # block's tail rows fall outside the output when m % tile_m != 0.
+        comptime if check_bounds_m:
+            if row >= m:
+                continue
+
+        comptime if check_bounds_n:
             comptime for ni in range(tile_n):
                 if col + ni < n:
                     comptime if elementwise_lambda_fn:
@@ -670,6 +684,7 @@ def _amd_gemv_config[
 
 
 def _nvidia_gemv_config[
+    a_type: DType,
     simd_width: Int,
     static_K: Int,
     has_N: Bool,
@@ -682,6 +697,14 @@ def _nvidia_gemv_config[
     """
     comptime tile_k_256 = 256 * simd_width
     comptime tile_k_128 = 128 * simd_width
+
+    # FP32 (16B vectorized load -> simd_width 4 on B200). The tiny-M / small-N
+    # router GEMM (e.g. M<=16, N=128, K=6144) is HBM-bandwidth-bound on the N*K
+    # weight, so tile_n=1 maximizes the launched CTA count (one output column
+    # per block); 256 threads/block and unroll=2 are the swept winner, while
+    # tile_n>=2 and 128T regress. (KERN-3076.)
+    comptime if a_type == DType.float32:
+        return IndexList[3](256, 1, 2)
 
     var num_threads: Int
     comptime if simd_width <= 8:
@@ -747,11 +770,12 @@ def gemv_gpu_dispatch[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel.ON,
+    tile_m: Int = 1,
 ](
     kernel_func: GEMVAlgorithm,
     c: TileTensor[mut=True, ...],
-    a: TileTensor,
-    b: TileTensor,
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert c.rank == 2, "c must be of rank 2"
@@ -775,7 +799,6 @@ def gemv_gpu_dispatch[
 
     if kernel_func is GEMVAlgorithm.GEMV_SPLIT_K:
         logger.info("Executing: GEMV_SPLIT_K kernel")
-        comptime tile_m = 1
 
         @parameter
         def _gemv_split_k_dispatch[
@@ -783,7 +806,6 @@ def gemv_gpu_dispatch[
             tile_n: Int,
             unroll_factor: Int = 2,
         ]() raises:
-            comptime check_bounds = static_N % tile_n != 0
             comptime kernel = gemv_split_k[
                 c_type,
                 a_type,
@@ -797,7 +819,8 @@ def gemv_gpu_dispatch[
                 num_threads=num_threads,
                 unroll_factor=unroll_factor,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-                check_bounds=check_bounds,
+                check_bounds_m=tile_m > 1,
+                check_bounds_n=static_N % tile_n != 0,
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
@@ -828,6 +851,7 @@ def gemv_gpu_dispatch[
         else:
             # NVIDIA B200: shape-dependent dispatch for FP8 and BF16.
             comptime config = _nvidia_gemv_config[
+                a_type,
                 simd_width,
                 static_K,
                 has_N,
@@ -1052,8 +1076,8 @@ def gemv_gpu[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor,
-    b: TileTensor,
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert c.rank == 2, "c must be of rank 2"
@@ -1093,6 +1117,7 @@ def gemv_gpu[
 
     elif m == 1 and transpose_b == True:
         comptime if a_type in (
+            DType.float32,
             DType.bfloat16,
             DType.float16,
             DType.float8_e4m3fn,
@@ -1131,8 +1156,8 @@ def gemv[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: TileTensor[mut=True, ...],
-    a_buf: TileTensor,
-    b_buf: TileTensor,
+    a_buf: TileTensor[mut=False, ...],
+    b_buf: TileTensor[mut=False, ...],
 ) raises:
     comptime c_type = c_buf.dtype
     comptime simd_width = simd_width_of[c_type]()
@@ -1185,8 +1210,8 @@ def gemv[
 
 def naive_gemv(
     c_buf: TileTensor[mut=True, ...],
-    a_buf: TileTensor,
-    b_buf: TileTensor,
+    a_buf: TileTensor[mut=False, ...],
+    b_buf: TileTensor[mut=False, ...],
 ):
     comptime c_type = c_buf.dtype
     var M = Int(a_buf.dim[0]())
@@ -1243,11 +1268,13 @@ struct _MmaCpAsyncGmemLoaderA[
     var local_tid: Int
     var batch_idx: Int
     var cta_m: Int
+    var gemm_m: Int
     var k_each_chunk: Int
     var stage: Int
     var phase: UInt32
     var need_wait: Bool
     var smem_offsets: InlineArray[Int, Self.vec_per_iter]
+    var preds: InlineArray[Bool, Self.vec_per_iter]
 
     def __init__(
         out self,
@@ -1257,6 +1284,7 @@ struct _MmaCpAsyncGmemLoaderA[
         local_tid: Int,
         batch_idx: Int,
         cta_m: Int,
+        gemm_m: Int,
         k_each_chunk: Int,
     ):
         self.act = act
@@ -1265,6 +1293,7 @@ struct _MmaCpAsyncGmemLoaderA[
         self.local_tid = local_tid
         self.batch_idx = batch_idx
         self.cta_m = cta_m
+        self.gemm_m = gemm_m
         self.k_each_chunk = k_each_chunk
         self.stage = 0
         self.phase = UInt32(1)
@@ -1272,6 +1301,7 @@ struct _MmaCpAsyncGmemLoaderA[
         self.smem_offsets = InlineArray[Int, Self.vec_per_iter](
             uninitialized=True
         )
+        self.preds = InlineArray[Bool, Self.vec_per_iter](fill=False)
 
     def prepare(mut self):
         comptime for v in range(Self.vec_per_iter):
@@ -1279,7 +1309,9 @@ struct _MmaCpAsyncGmemLoaderA[
                 self.local_tid * Self.VEC_ELEMS
                 + v * Self.LOAD_THREADS * Self.VEC_ELEMS
             )
+            var m_idx = linear // Self.tile_k
             self.smem_offsets[v] = Self.swizzle(linear)
+            self.preds[v] = self.cta_m + m_idx < self.gemm_m
 
     def issue_mainloop(mut self, k_iters: Int):
         var gmem_a_off = 0
@@ -1309,13 +1341,27 @@ struct _MmaCpAsyncGmemLoaderA[
                 var m_idx = linear // Self.tile_k
                 var k_idx = linear % Self.tile_k
                 var gmem_k = self._k_project(k_idx) + gmem_a_off
-                var offset = self.act._linear_offset(
-                    Index(self.batch_idx, self.cta_m + m_idx, gmem_k)
-                )
-                async_copy[16, bypass_L1_16B=True, l2_prefetch=128](
-                    gmem_base + Int(offset),
-                    smem_tile_ptr + self.smem_offsets[v],
-                )
+                if self.preds[v]:
+                    var offset = self.act._linear_offset(
+                        Index(self.batch_idx, self.cta_m + m_idx, gmem_k)
+                    )
+                    async_copy[16, bypass_L1_16B=True, l2_prefetch=128](
+                        gmem_base + Int(offset),
+                        smem_tile_ptr + self.smem_offsets[v],
+                    )
+                else:
+                    # The grid covers ceildiv(gemm_m, tile_m) * tile_m rows;
+                    # zero-fill rows past gemm_m instead of reading OOB. The
+                    # epilogue's row guard discards their results.
+                    async_copy[
+                        Self.VEC_BYTES,
+                        bypass_L1_16B=True,
+                        fill=Scalar[Self.a_type](0),
+                    ](
+                        gmem_base,
+                        smem_tile_ptr + self.smem_offsets[v],
+                        src_size=0,
+                    )
 
             async_copy_arrive[noinc=True](self.smem_barrier[self.stage * 2])
 
@@ -1752,6 +1798,7 @@ def gemm_mma_cpasync_kernel[
             Int(a_local_tid),
             batch_idx,
             cta_m,
+            gemm_m,
             k_each_chunk,
         )
         loader.prepare()

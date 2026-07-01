@@ -60,7 +60,7 @@ def execute_fused_qkv_matmul[
     comptime fused_hidden_size = (2 * kv_hidden_size) + hidden_size
     comptime num_blocks = 32
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
+        dtype, kv_params, ...
     ]
 
     debug_assert(

@@ -24,7 +24,7 @@ and the compiler ensures it's respected everywhere the type is used.
 
 ## What alignment means
 
-Every byte in memory has an address. An address is N-byte aligned if it's
+Every byte in memory has an address. An address is N-byte aligned if its
 address is evenly divisible by N.
 
 Examples:
@@ -71,7 +71,7 @@ You can't reduce alignment below the natural alignment of the struct.
 The `@align` decorator specifies a _minimum_, not an override:
 
 ```mojo
-from sys import align_of
+from std.sys import align_of
 
 @align(4)
 struct TryToReduce:
@@ -85,7 +85,7 @@ When a struct contains an aligned field, the outer struct inherits that
 alignment:
 
 ```mojo
-from sys import align_of
+from std.sys import align_of
 
 @align(64)
 struct CacheAligned:
@@ -104,8 +104,8 @@ def main():
 Both stack and heap allocations respect `@align`:
 
 ```mojo
-from memory import UnsafePointer
-from sys import align_of
+from std.memory import UnsafePointer
+from std.sys import align_of
 
 @fieldwise_init
 @align(64)
@@ -132,8 +132,8 @@ Mojo lays out array elements using `size_of[T]()` as your stride, not
 `align_of[T]()`:
 
 ```mojo
-from memory import UnsafePointer
-from sys import size_of, align_of
+from std.memory import UnsafePointer
+from std.sys import size_of, align_of
 
 @align(64)
 struct CacheAligned:
@@ -162,7 +162,7 @@ share the same alignment requirement. Because of this, under certain
 circumstances, you may find that the alignment isn't tuned by its types:
 
 ```mojo
-from sys import align_of
+from std.sys import align_of
 
 @fieldwise_init
 @align(128)
@@ -179,7 +179,7 @@ of the decorator value (`N`) and the type's natural alignment
 produces a different result:
 
 ```mojo
-from sys import align_of
+from std.sys import align_of
 
 @fieldwise_init
 @align(4)
@@ -197,7 +197,7 @@ When `@align` is present, single-field register-passable structs
 aren't flattened. This preserves the alignment requirement:
 
 ```mojo
-from sys import align_of, size_of
+from std.sys import align_of, size_of
 
 @align(32)
 struct AlignedTrivial(RegisterPassable):
@@ -252,7 +252,7 @@ below the natural alignment of the struct. This can be useful as a fallback
 value in parametric code:
 
 ```mojo
-from sys import align_of
+from std.sys import align_of
 
 @align(1)
 struct MinimalAlign:

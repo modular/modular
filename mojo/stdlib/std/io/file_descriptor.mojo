@@ -73,9 +73,9 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             bytes: The byte span to write to this file.
         """
         written = external_call["write", c_ssize_t](
-            self.value._int_mlir_index(),
+            self.value.__mlir_index__(),
             bytes.unsafe_ptr(),
-            len(bytes)._int_mlir_index(),
+            len(bytes).__mlir_index__(),
         )
         assert written == len(bytes), "expected amount of bytes not written"
 
@@ -145,4 +145,4 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
 
         comptime if is_gpu():
             return False
-        return _external_call_const["isatty", c_int](c_int(self.value)) != 0
+        return external_call["isatty", c_int](c_int(self.value)) != 0

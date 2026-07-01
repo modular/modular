@@ -37,7 +37,7 @@ from max.nn.kernels import (
     rope_ragged_with_position_ids,
     rope_split_store_ragged,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from max.pipelines.kv_cache import PagedKVCacheManager
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.context_utils import create_text_context
@@ -556,7 +556,7 @@ def test_kv_cache_ragged_rope(
 ) -> None:
     num_q_heads = 32
     head_dim = 128
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=head_dim,
@@ -605,7 +605,7 @@ def test_kv_cache_ragged_rope(
             input_type,
             input_row_offsets_type,
             freqs_cis_type,
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         ]
 
         if use_position_ids:
@@ -628,7 +628,8 @@ def test_kv_cache_ragged_rope(
                 blocks,
                 cache_lengths,
                 lookup_table,
-                is_cache_empty,
+                max_prompt_length,
+                max_cache_length,
                 _attention_dispatch_metadata,
             ) = g.inputs[kv_start:]
 
@@ -638,7 +639,8 @@ def test_kv_cache_ragged_rope(
                 blocks.buffer,
                 cache_lengths.tensor,
                 lookup_table.tensor,
-                is_cache_empty.tensor,
+                max_prompt_length.tensor,
+                max_cache_length.tensor,
             )
 
             position_ids = g.inputs[3].tensor if use_position_ids else None
@@ -666,7 +668,7 @@ def test_kv_cache_ragged_rope(
     for context in batch:
         kv_manager.claim(context.request_id, replica_idx=0)
         assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
 
     input_row_offsets = Buffer(
         DType.uint32,
@@ -678,7 +680,7 @@ def test_kv_cache_ragged_rope(
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
 
     # Build provided_inputs with correct indices based on use_position_ids
     offset = 1 if use_position_ids else 0
@@ -688,8 +690,9 @@ def test_kv_cache_ragged_rope(
         3 + offset: kv_runtime_inputs.kv_blocks,
         4 + offset: kv_runtime_inputs.cache_lengths,
         5 + offset: kv_runtime_inputs.lookup_table,
-        6 + offset: kv_runtime_inputs.max_lengths,
-        7 + offset: kv_runtime_inputs.attention_dispatch_metadata,
+        6 + offset: kv_runtime_inputs.max_prompt_length,
+        7 + offset: kv_runtime_inputs.max_cache_length,
+        8 + offset: kv_runtime_inputs.attention_dispatch_metadata,
     }
 
     if use_position_ids:
@@ -725,7 +728,7 @@ def test_rope_split_store_ragged(
     """Tests rope_split_store_ragged compiles and produces valid output."""
     num_q_heads = 32
     head_dim = 128
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=head_dim,
@@ -774,7 +777,7 @@ def test_rope_split_store_ragged(
             qkv_type,
             input_row_offsets_type,
             freqs_cis_type,
-            *kv_params.get_symbolic_inputs().flatten(),
+            *kv_params.flattened_kv_inputs(),
         ]
 
         if use_position_ids:
@@ -797,7 +800,8 @@ def test_rope_split_store_ragged(
                 blocks,
                 cache_lengths,
                 lookup_table,
-                is_cache_empty,
+                max_prompt_length,
+                max_cache_length,
                 _attention_dispatch_metadata,
             ) = g.inputs[kv_start:]
 
@@ -807,7 +811,8 @@ def test_rope_split_store_ragged(
                 blocks.buffer,
                 cache_lengths.tensor,
                 lookup_table.tensor,
-                is_cache_empty.tensor,
+                max_prompt_length.tensor,
+                max_cache_length.tensor,
             )
 
             position_ids = g.inputs[3].tensor if use_position_ids else None
@@ -836,7 +841,7 @@ def test_rope_split_store_ragged(
     for context in batch:
         kv_manager.claim(context.request_id, replica_idx=0)
         assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
 
     input_row_offsets = Buffer(
         DType.uint32,
@@ -848,7 +853,7 @@ def test_rope_split_store_ragged(
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
 
     offset = 1 if use_position_ids else 0
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
@@ -857,8 +862,9 @@ def test_rope_split_store_ragged(
         3 + offset: kv_runtime_inputs.kv_blocks,
         4 + offset: kv_runtime_inputs.cache_lengths,
         5 + offset: kv_runtime_inputs.lookup_table,
-        6 + offset: kv_runtime_inputs.max_lengths,
-        7 + offset: kv_runtime_inputs.attention_dispatch_metadata,
+        6 + offset: kv_runtime_inputs.max_prompt_length,
+        7 + offset: kv_runtime_inputs.max_cache_length,
+        8 + offset: kv_runtime_inputs.attention_dispatch_metadata,
     }
 
     if use_position_ids:

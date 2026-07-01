@@ -11,13 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections import InlineArray
 from std.utils import StaticTuple
 from std.math.uutils import umod
 from std.sys import size_of
 
 from std.atomic import Atomic, Ordering
-from std.gpu.host import DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu import barrier, block_idx, thread_idx
+
+from .lamport import LAMPORT_SENTINEL_U32, Lamport, LamportGeneration
 
 
 # No-op (currently) group operation functions (enables vendor_ccl drop in replacement)
@@ -97,6 +100,24 @@ This constant sets the upper bound for the number of GPUS supported in this algo
 """
 
 
+comptime NUM_BARRIER_DOMAINS = MAX_GPUS
+"""Number of disjoint barrier counter banks held by a `Signal` buffer.
+
+`_multi_gpu_barrier` keys its `self_counter`/`peer_counter` slots by the
+in-block thread index, not the global device rank. When subgroup collectives
+(e.g. a `group_size`-of-4 TP collective) and full-world collectives share one
+`Signal` buffer, they advance the same counter slots at different rates and the
+generation counters desync -- a subsequent full-world barrier then spins
+forever waiting for a generation a peer will never publish.
+
+Giving each collective scope its own counter bank makes the barrier histories
+disjoint so scopes can never poison each other. `MAX_GPUS` banks is the loosest
+sufficient bound: there can be at most one distinct device-group per GPU, so a
+`1 + group_start // group_size` scope mapping never exceeds this. The cost is
+negligible -- the counters are tiny next to the embedded Lamport region.
+"""
+
+
 @fieldwise_init
 struct Signal:
     """A synchronization primitive for coordinating GPU thread blocks across multiple devices.
@@ -116,29 +137,151 @@ struct Signal:
     comptime flag_t = DType.uint32
 
     var self_counter: StaticTuple[
-        StaticTuple[Scalar[Self.flag_t], MAX_GPUS], MAX_NUM_BLOCKS_UPPER_BOUND
-    ]
-    """
-    A 2D array of counters with shape (MAX_NUM_BLOCKS_UPPER_BOUND, MAX_GPUS).
-    Each counter tracks the progress of a specific thread block on the current GPU.
-    Thread blocks increment their corresponding counter to signal completion of a phase,
-    allowing other GPUs to detect when synchronization points are reached.
-    The counters use atomic operations to ensure proper synchronization across devices.
-    """
-
-    var peer_counter: StaticTuple[
         StaticTuple[
             StaticTuple[Scalar[Self.flag_t], MAX_GPUS],
             MAX_NUM_BLOCKS_UPPER_BOUND,
         ],
-        2,
+        NUM_BARRIER_DOMAINS,
     ]
     """
-    A 3D array of counters with shape (2, MAX_NUM_BLOCKS_UPPER_BOUND, MAX_GPUS).
-    Contains two sets of counters to handle two synchronization points safely.
-    The dual counter design prevents race conditions where a peer block arrives
-    at the second sync point before the current block passes the first sync point.
+    A 3D array of counters with shape
+    (NUM_BARRIER_DOMAINS, MAX_NUM_BLOCKS_UPPER_BOUND, MAX_GPUS).
+    Each counter tracks the progress of a specific thread block on the current
+    GPU for a domain. Thread blocks increment their corresponding counter to
+    signal completion of a phase, allowing other GPUs to detect when
+    synchronization points are reached. The counters use atomic operations to
+    ensure proper synchronization across devices.
     """
+
+    var peer_counter: StaticTuple[
+        StaticTuple[
+            StaticTuple[
+                StaticTuple[Scalar[Self.flag_t], MAX_GPUS],
+                MAX_NUM_BLOCKS_UPPER_BOUND,
+            ],
+            2,
+        ],
+        NUM_BARRIER_DOMAINS,
+    ]
+    """
+    A 4D array of counters with shape
+    (NUM_BARRIER_DOMAINS, 2, MAX_NUM_BLOCKS_UPPER_BOUND, MAX_GPUS).
+    Each domain contains two sets of counters to handle two synchronization
+    points safely. The dual counter design prevents race conditions where a peer
+    block arrives at the second sync point before the current block passes the
+    first sync point.
+    """
+
+    var lamport_state: StaticTuple[Scalar[Self.flag_t], 4]
+    """Device-resident state for the in-kernel Lamport generation advance:
+    `[flag, prev_num_elements, arrival, reserved]`.
+
+    - `flag`: monotonically-increasing generation counter (read at kernel entry,
+      advanced once per call in the grid-barrier epilogue).
+    - `prev_num_elements`: previous call's element count = this call's
+      `clear_size`.
+    - `arrival`: per-call block-arrival counter for the exactly-once advance.
+    - reserved: pads to 16 bytes so `lamport_region` stays 16-byte aligned (the
+      128-bit atomic stores require it).
+
+    Zero-fill is the correct start state (flag 0, nothing to clear). This is the
+    sole source of the generation counter / clear extent -- the kernel reads and
+    advances it in-kernel, so the public op needs no per-call argument.
+    """
+
+    comptime _REGION_BYTES = (
+        LamportGeneration.NUM_GENERATIONS
+        * MAX_GPUS
+        * Lamport.MAX_SMALL_MESSAGE_BYTES
+    )
+    """Bytes of the embedded Lamport region: 3 generations x MAX_GPUS slots x the
+    per-slot max. Sized for MAX_GPUS so `Signal` is not parameterized by the
+    runtime gpu count (a smaller run leaves the tail slots unused)."""
+
+    var lamport_region: StaticTuple[UInt8, Self._REGION_BYTES]
+    """The barrier-free Lamport comm region: 3 rotating generations x MAX_GPUS
+    rank slots x the per-slot max message.
+
+    Disjoint from self_counter & peer_counter to enable a mix of lamport &
+    barrier-based collectives on the same signal buffer.
+    """
+
+    @always_inline
+    def lamport_state_ptr(
+        mut self,
+    ) -> UnsafePointer[Scalar[Self.flag_t], MutAnyOrigin]:
+        """Typed pointer to this `Signal`'s `lamport_state` block.
+
+        Index it with the `Lamport.STATE_*` constants. The field is located by
+        its own address (`UnsafePointer(to=...)`), so there is no hand-computed
+        byte offset to keep in sync with the field order.
+        """
+        return (
+            UnsafePointer(to=self.lamport_state)
+            .bitcast[Scalar[Self.flag_t]]()
+            .as_unsafe_any_origin()
+        )
+
+    @always_inline
+    def lamport_region_ptr[
+        dtype: DType
+    ](mut self) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+        """Typed pointer to the start of this `Signal`'s embedded Lamport region.
+        """
+        return (
+            UnsafePointer(to=self.lamport_region)
+            .bitcast[Scalar[dtype]]()
+            .as_unsafe_any_origin()
+        )
+
+
+def _lamport_init(
+    signal_buffer: DeviceBuffer[DType.uint8], ctx: DeviceContext
+) raises:
+    """Sets a signal buffer's embedded Lamport region to the sentinel.
+
+    The region-only half of `init_signal_buffer`: every pack in the region must
+    read as "not ready" (hold a `-0.0` lane) so no rank mistakes an unwritten
+    peer slot for real data. The universal sentinel is a single `uint32` pattern
+    (fp32 `-0.0`) that `has_neg_zero` detects under every supported transport
+    dtype, so the fill is a dtype-agnostic `uint32` memset needing no dedicated
+    kernel.
+
+    The region is the trailing `Signal.lamport_region` field, at byte offset
+    `sizeof(Signal) - Signal._REGION_BYTES`. `create_sub_buffer` takes its
+    offset and size in the view dtype's elements (`uint32`), hence the `// 4`.
+
+    Args:
+        signal_buffer: This rank's signal buffer (at least `sizeof(Signal)`
+            bytes).
+        ctx: The device context for this rank's GPU.
+    """
+    comptime offset = (size_of[Signal]() - Signal._REGION_BYTES) // 4
+    var region = signal_buffer.create_sub_buffer[DType.uint32](
+        offset, Signal._REGION_BYTES // 4
+    )
+    ctx.enqueue_memset(region, LAMPORT_SENTINEL_U32)
+
+
+def init_signal_buffer(
+    signal_buffer: DeviceBuffer[DType.uint8], ctx: DeviceContext
+) raises:
+    """Initializes a freshly allocated signal buffer for any comm collective.
+
+    Mojo-side equivalent of `Signals.buffers()` in allreduce.py: zero-fills the
+    whole buffer (the correct start state for the barrier counters and
+    `lamport_state`), then overwrites the embedded Lamport region with the
+    `-0.0` sentinel so the barrier-free Lamport allreduce reads every pack as
+    "not ready". Both memsets are enqueued on `ctx`'s stream, so the sentinel
+    fill is correctly ordered after the zero-fill.
+
+    Args:
+        signal_buffer: This rank's signal buffer (at least `sizeof(Signal)`
+            bytes).
+        ctx: The device context for this rank's GPU.
+    """
+    ctx.enqueue_memset[DType.uint8](signal_buffer, 0)
+    _lamport_init(signal_buffer, ctx)
 
 
 @always_inline
@@ -146,6 +289,7 @@ def _multi_gpu_barrier[
     ngpus: Int,
     is_start: Bool,
     need_fence: Bool = False,
+    domain_id: Int = 0,
 ](
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     self_sg: UnsafePointer[Signal, MutAnyOrigin],
@@ -160,6 +304,11 @@ def _multi_gpu_barrier[
         need_fence: Whether memory fence is needed.
             If True, uses release/acquire semantics.
             If False, uses volatile memory operations for faster communication.
+        domain_id: Selects which disjoint counter bank in the `Signal` buffer
+            this barrier uses (0..`NUM_BARRIER_DOMAINS`-1). Full-world
+            collectives use 0; grouped (subgroup) collectives must pass a
+            distinct nonzero domain so their barrier counters never alias the
+            full-world bank on a shared `Signal` buffer.
 
     Args:
         rank_sigs: Signal pointers for all GPUs.
@@ -173,6 +322,9 @@ def _multi_gpu_barrier[
     comptime assert (
         ngpus <= MAX_GPUS
     ), "too many GPUs for barrier implementation"
+    comptime assert (
+        0 <= domain_id < NUM_BARRIER_DOMAINS
+    ), "domain_id out of range for barrier counter banks"
 
     comptime if not is_start:
         barrier()
@@ -191,32 +343,51 @@ def _multi_gpu_barrier[
         # Each thread increments its own counter
         # Technically we only need one counter, but we use
         # multiple per block to eliminate the need to share the counter via smem.
+        #
+        # self_counter is [NUM_BARRIER_DOMAINS][MAX_NUM_BLOCKS][MAX_GPUS]; index
+        # the scope bank so subgroup and full-world barriers never alias.
+        comptime self_domain_offset = domain_id * (
+            MAX_NUM_BLOCKS_UPPER_BOUND * MAX_GPUS
+        )
         var internal_counter_ptr = (
-            self_sg.bitcast[Scalar[flag_t]]() + bid * MAX_GPUS + my_gpu
+            self_sg.bitcast[Scalar[flag_t]]()
+            + self_domain_offset
+            + bid * MAX_GPUS
+            + my_gpu
         )
         var val = internal_counter_ptr[] + 1
         internal_counter_ptr[] = val
 
-        # Get the number of flags in self_counter to skip over it
+        # peer_counter follows the whole self_counter array
         comptime peer_counter_offset = size_of[
             StaticTuple[
-                StaticTuple[Scalar[flag_t], MAX_GPUS],
-                MAX_NUM_BLOCKS_UPPER_BOUND,
+                StaticTuple[
+                    StaticTuple[Scalar[flag_t], MAX_GPUS],
+                    MAX_NUM_BLOCKS_UPPER_BOUND,
+                ],
+                NUM_BARRIER_DOMAINS,
             ]
         ]() // size_of[flag_t]()
+        # and is laid out [NUM_BARRIER_DOMAINS][2][MAX_NUM_BLOCKS][MAX_GPUS].
+        comptime peer_domain_offset = domain_id * (
+            2 * MAX_NUM_BLOCKS_UPPER_BOUND * MAX_GPUS
+        )
 
-        # this line should compute &rank_sigs[my_gpu]->peer_counter[val % 2][bid][my_rank]
+        # this line should compute &rank_sigs[my_gpu]->peer_counter[domain_id][val % 2][bid][my_rank]
         var peer_counter_ptr = (
             rank_sigs[my_gpu].bitcast[Scalar[flag_t]]()
             + peer_counter_offset
+            + peer_domain_offset
             + (val % 2) * (MAX_NUM_BLOCKS_UPPER_BOUND * MAX_GPUS)
             + bid * MAX_GPUS
             + my_rank
         )
-        # this line should compute &self_sg->peer_counter[val % 2][bid][my_gpu]
+        # this line should compute
+        # &self_sg->peer_counter[domain_id][val % 2][bid][my_gpu]
         var self_counter_ptr = (
             self_sg.bitcast[Scalar[flag_t]]()
             + peer_counter_offset
+            + peer_domain_offset
             + (val % 2) * (MAX_NUM_BLOCKS_UPPER_BOUND * MAX_GPUS)
             + bid * MAX_GPUS
             + my_gpu

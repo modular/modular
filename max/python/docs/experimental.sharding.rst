@@ -21,6 +21,14 @@ Device mesh
 
    DeviceMesh
 
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   get_active_mesh
+   mesh_context
+
 Placements
 ----------
 
@@ -34,28 +42,7 @@ Placements
    ReduceOp
    Replicated
    Sharded
-
-Per-shard dim wrappers
-----------------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   PerShardDim
-
-Sharding specifications
------------------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   DeviceMapping
-   NamedMapping
-   PlacementMapping
+   Collective
 
 Distributed types
 -----------------
@@ -65,9 +52,7 @@ Distributed types
    :toctree: generated
    :template: autosummary/class.rst
 
-   DistributedBufferType
    DistributedTensorType
-   DistributedType
    TensorLayout
 
 Per-op decisions
@@ -105,19 +90,7 @@ Exceptions
    :toctree: generated
    :template: autosummary/class.rst
 
-   ConversionError
    ShardingError
-
-Constants
----------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/data.rst
-
-   P
-   R
 
 Functions
 ---------
@@ -129,5 +102,4 @@ Functions
 
    build_action_set
    force_replicated_action_set
-   isolated_solver
    mode

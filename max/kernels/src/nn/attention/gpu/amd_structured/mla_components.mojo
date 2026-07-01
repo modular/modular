@@ -930,6 +930,7 @@ struct _MlaKDmaPair[
     # SGPR base across both sub-DMAs.
     comptime _HOIST = Self._P.KV_BLOCK >= 128
 
+    @__allow_legacy_any_origin_fields
     var k_full_gmem_tile: TileTensor[
         Self.config.dtype, Self._P._KFullPerTileLayoutT, ImmutAnyOrigin
     ]

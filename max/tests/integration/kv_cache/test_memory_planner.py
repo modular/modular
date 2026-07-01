@@ -19,7 +19,11 @@ import pytest
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, KVCacheQuantizationConfig
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVCacheQuantizationConfig,
+    MHAKVCacheParams,
+)
 from max.pipelines.kv_cache import (
     ModelConfig,
     ModelConfigWithKVCache,
@@ -43,7 +47,7 @@ class _KVConfig(_MinimalConfig):
     """Satisfies ModelConfigWithKVCache (adds ``get_kv_params``)."""
 
     def get_kv_params(self) -> KVCacheParams:
-        return KVCacheParams(
+        return MHAKVCacheParams(
             dtype=DType.float32,
             n_kv_heads=8,
             head_dim=128,

@@ -61,7 +61,7 @@ def llvm_intrinsic[
 
     comptime intrin_kgen_string = _get_kgen_string[intrin]()
 
-    comptime if _type_is_eq[type, NoneType]():
+    comptime if type == NoneType:
         __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=None,
@@ -737,58 +737,6 @@ def strided_store[
     scatter(value, offset, mask)
 
 
-# ===-------------------------------------------------------------------===#
-# _type_is_eq
-# ===-------------------------------------------------------------------===#
-
-
-def _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
-    """Compares the two type for equality.
-
-    Parameters:
-        t1: The LHS of the type comparison.
-        t2: The RHS of the type comparison.
-
-    Returns:
-        Returns True if t1 and t2 are the same type and False otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        `#kgen.type<`,
-        +t1,
-        `> : !kgen.type`,
-        `,`,
-        `#kgen.type<`,
-        +t2,
-        `> : !kgen.type`,
-        `> : !kgen.scalar<bool>`,
-    ]
-
-
-@always_inline("builtin")
-def _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
-    """Compares the two type for equality at parse-time.
-
-    Parameters:
-        t1: The LHS of the type comparison.
-        t2: The RHS of the type comparison.
-
-    Returns:
-        Returns True if t1 and t2 are the same type and False otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        `#kgen.type<`,
-        +t1,
-        `> : !kgen.type`,
-        `,`,
-        `#kgen.type<`,
-        +t2,
-        `> : !kgen.type`,
-        `> : !kgen.scalar<bool>`,
-    ]
-
-
 # ===----------------------------------------------------------------------=== #
 # Transitional type used for llvm_intrinsic
 # ===----------------------------------------------------------------------=== #
@@ -811,7 +759,7 @@ struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
         Returns:
             The tuple element at the requested index.
         """
-        return __mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](
+        return __mlir_op.`kgen.struct.extract`[index=i.__mlir_index__()](
             self._mlir_value
         )
 

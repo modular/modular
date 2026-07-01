@@ -64,7 +64,7 @@ from max.serve.scheduler.prefill_scheduler import (
     load_prefill_scheduler,
 )
 from max.serve.scheduler_result import SchedulerResult
-from max.serve.worker_interface.zmq_queue import (
+from max.serve.worker_interface._zmq_queue import (
     ClientIdentity,
     generate_zmq_ipc_path,
 )
@@ -633,7 +633,7 @@ def test_overlap_di_has_pending_outputs_prevents_no_progress() -> None:
     mock_pipeline = MagicMock(spec=OverlapTextGenerationPipeline)
     mock_pipeline.has_pending_outputs.return_value = True
     mock_pipeline.execute.return_value = {}
-    mock_pipeline.spec_decode_metrics.return_value = None
+    mock_pipeline.batch_spec_decode_metrics.return_value = None
     decode.pipeline = mock_pipeline
 
     result = decode.run_iteration()
@@ -2170,7 +2170,6 @@ def test_decode_request_ttl_propagates_from_pipeline_config() -> None:
     """``decode_request_ttl_s`` flows through ``from_pipeline_config``."""
     pipeline_config = MagicMock()
     pipeline_config.runtime.max_batch_size = 1
-    pipeline_config.runtime.max_num_steps = 1
     pipeline_config.runtime.max_batch_input_tokens = 8192
     pipeline_config.runtime.max_batch_total_tokens = 8192
     pipeline_config.runtime.enable_chunked_prefill = True
@@ -2183,7 +2182,7 @@ def test_decode_request_ttl_propagates_from_pipeline_config() -> None:
     pipeline_config.speculative = None
 
     config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config
+        pipeline_config, max_batch_size=1
     )
 
     assert config.decode_request_ttl_s == 42.0

@@ -26,6 +26,9 @@ a database writer — and the writer invokes
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,9 +36,24 @@ from typing import ClassVar, Protocol, TextIO
 
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
+    PrefillDecodeStats,
     StandardPercentileMetrics,
 )
 from typing_extensions import Self
+
+
+def _csv_line(values: list[str]) -> str:
+    """Format a row as a single RFC 4180 CSV line (no trailing newline)."""
+    buf = io.StringIO()
+    csv.writer(buf, lineterminator="").writerow(values)
+    return buf.getvalue()
+
+
+def _format_stats_cell(stats: PrefillDecodeStats | None) -> str:
+    """Serialize prefill/decode stats to a single JSON CSV cell."""
+    if stats is None:
+        return "ERR"
+    return json.dumps(stats.to_result_dict())
 
 
 class SweepUploader(Protocol):
@@ -98,6 +116,8 @@ class LLMBenchmarkResult(SweepServingBenchmarkResult):
     itl_mean: float = 0.0
     ttft_percentiles: dict[int, float] = field(default_factory=dict)
     itl_percentiles: dict[int, float] = field(default_factory=dict)
+    prefill_stats: PrefillDecodeStats | None = None
+    decode_stats: PrefillDecodeStats | None = None
 
     @classmethod
     def from_metrics(
@@ -128,6 +148,8 @@ class LLMBenchmarkResult(SweepServingBenchmarkResult):
             itl_percentiles={
                 p: _get_percentile(t.itl_ms, p) for p in percentiles
             },
+            prefill_stats=metrics.prefill_stats,
+            decode_stats=metrics.decode_stats,
         )
 
     @classmethod
@@ -152,6 +174,8 @@ class TextToImageBenchmarkResult(SweepServingBenchmarkResult):
     """Result from a text-to-image benchmark iteration."""
 
     total_generated_outputs: int = 0
+    prefill_stats: PrefillDecodeStats | None = None
+    decode_stats: PrefillDecodeStats | None = None
 
     @classmethod
     def zeros(cls, percentiles: list[int]) -> TextToImageBenchmarkResult:
@@ -187,6 +211,8 @@ class TextToImageBenchmarkResult(SweepServingBenchmarkResult):
             },
             result_filename=result_filename,
             total_generated_outputs=p.total_generated_outputs,
+            prefill_stats=metrics.prefill_stats,
+            decode_stats=metrics.decode_stats,
         )
 
 
@@ -226,7 +252,7 @@ class _BaseSweepResultWriter(ABC):
         print(msg, file=self._file, flush=True)
 
     def write_header(self) -> None:
-        self._emit_line(",".join(self.column_names))
+        self._emit_line(_csv_line(self.column_names))
 
     def __enter__(self) -> Self:
         self._file = open(self.path, "w")
@@ -345,7 +371,7 @@ class SweepServingBenchmarkResultWriter(_BaseSweepResultWriter):
             num_prompts=num_prompts,
             result=result,
         )
-        self._emit_line(",".join(values))
+        self._emit_line(_csv_line(values))
         if self.uploader is not None and result.result_filename:
             self.uploader.upload(result.result_filename)
 
@@ -366,6 +392,8 @@ class LLMBenchmarkResultWriter(SweepServingBenchmarkResultWriter):
             "time_to_first_token_mean_ms",
             "inter_token_latency_mean_ms",
             "total_req_latency_mean_ms",
+            "prefill_stats",
+            "decode_stats",
         )
 
     @property
@@ -384,6 +412,8 @@ class LLMBenchmarkResultWriter(SweepServingBenchmarkResultWriter):
             format_float(result.ttft_mean),
             format_float(result.itl_mean),
             format_float(result.req_latency_mean),
+            _format_stats_cell(result.prefill_stats),
+            _format_stats_cell(result.decode_stats),
         ]
         for p in self.percentiles:
             row.append(format_float(result.ttft_percentiles.get(p)))

@@ -16,6 +16,7 @@ import uuid
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
+import llguidance.numpy
 import numpy as np
 import pytest
 from llguidance import LLMatcher, LLTokenizer
@@ -39,7 +40,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
-    _MAGIC_DRAFT_TOKEN_ID,
+    MAGIC_DRAFT_TOKEN_ID,
 )
 from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
 from max.pipelines.lib.tool_parsing import StreamingToolCallState
@@ -458,10 +459,9 @@ def test_parse_delta_accumulates() -> None:
     """Test that parse_delta accumulates tokens in buffer."""
     parser = KimiToolParser()
 
-    # parse_delta should accumulate tokens; before any section marker lands,
-    # result is None
+    # parse_delta should accumulate tokens; return [] to indicate parser is actively buffering and raw tokens shouldn't be used yet.
     result1 = parser.parse_delta("<|tool_calls")
-    assert result1 is None
+    assert result1 == []
 
     # Once the section-begin marker is complete, returns [] (not None) so the
     # streaming path knows to suppress structural tokens even with no deltas yet
@@ -478,10 +478,8 @@ def test_parse_delta_returns_empty_list_inside_tool_section() -> None:
     """
     parser = KimiToolParser()
 
-    # Tokens that don't start/complete a section marker and have no sendable
-    # content return None (more context needed before anything can be emitted)
     result_pre = parser.parse_delta("<|tool_calls")
-    assert result_pre is None
+    assert result_pre == []
 
     # Once the section-begin marker completes, returns [] even with no deltas
     result_in_section = parser.parse_delta("_section_begin|>")
@@ -1202,6 +1200,20 @@ def test_parser_handles_json_content_when_no_tool_calls() -> None:
     assert result.content == json_response
 
 
+def _unpack_bitmask(packed: np.ndarray, vocab_size: int) -> np.ndarray:
+    """Unpack a packed int32 bitmask ``[..., ceil(vocab/32)]`` to bool
+    ``[..., vocab]`` so tests can index by token id and use ``.all()`` to mean
+    "fully unconstrained".
+
+    Mirrors the GPU ``apply_packed_bitmask`` layout: bit ``t`` lives in word
+    ``t >> 5`` at position ``t & 31``.
+    """
+    masks = np.int32(1) << np.arange(32, dtype=np.int32)
+    bits = (packed[..., np.newaxis] & masks) != 0
+    bits = bits.reshape(*packed.shape[:-1], -1)
+    return bits[..., :vocab_size]
+
+
 def test_sync_fill_constrains_name_only_after_section_consumed(
     ll_tokenizer: LLTokenizer,
     mock_tokenizer: PipelineTokenizer[Any, Any, Any],
@@ -1242,7 +1254,10 @@ def test_sync_fill_constrains_name_only_after_section_consumed(
 
     # Stale FSM: section opener not yet consumed -> the name slot (slot 0) is
     # left fully unconstrained, so the model could sample any name.
-    stale = helper.compute_speculative_bitmasks([ctx], drafts, num_positions)
+    stale = _unpack_bitmask(
+        helper.compute_speculative_bitmasks([ctx], drafts, num_positions),
+        _MinimalTokenizer._N_VOCAB,
+    )
     assert stale[0, 0].all()
 
     # Advance the FSM through the section/call/"functions." prefix, exactly as
@@ -1255,7 +1270,10 @@ def test_sync_fill_constrains_name_only_after_section_consumed(
 
     # Current FSM: the name slot is now constrained to the menu. The first
     # byte of "get_weather" is allowed; a byte no menu name starts with is not.
-    current = helper.compute_speculative_bitmasks([ctx], drafts, num_positions)
+    current = _unpack_bitmask(
+        helper.compute_speculative_bitmasks([ctx], drafts, num_positions),
+        _MinimalTokenizer._N_VOCAB,
+    )
     assert not current[0, 0].all()
     assert current[0, 0, ord("g")]  # tool: get_weather
     assert not current[0, 0, ord("z")]
@@ -1302,14 +1320,235 @@ def test_sync_fill_with_placeholder_drafts_leaves_bonus_slot_unconstrained(
 
     # Placeholder draft (what the sync path actually has): the fill breaks at
     # the invalid placeholder, leaving the bonus slot unconstrained.
-    magic = np.full((1, 1), _MAGIC_DRAFT_TOKEN_ID, dtype=np.int64)
-    bad = helper.compute_speculative_bitmasks([ctx], magic, num_positions)
+    magic = np.full((1, 1), MAGIC_DRAFT_TOKEN_ID, dtype=np.int64)
+    bad = _unpack_bitmask(
+        helper.compute_speculative_bitmasks([ctx], magic, num_positions),
+        _MinimalTokenizer._N_VOCAB,
+    )
     assert not bad[0, 0].all()  # slot 0 still constrained
     assert bad[0, 1].all()  # bonus slot UNCONSTRAINED -- the bug
 
     # Real draft (what adopt / gather provides): the bonus slot is constrained.
     real = np.array([[ord("g")]], dtype=np.int64)  # first byte of get_weather
-    good = helper.compute_speculative_bitmasks([ctx], real, num_positions)
+    good = _unpack_bitmask(
+        helper.compute_speculative_bitmasks([ctx], real, num_positions),
+        _MinimalTokenizer._N_VOCAB,
+    )
     assert not good[0, 1].all()  # bonus slot constrained
     assert good[0, 1, ord("e")]  # "get_weather" continues with 'e'
     assert not good[0, 1, ord("z")]  # an out-of-name byte is forbidden
+
+
+def _build_auto_ctx(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> tuple[StructuredOutputHelper, Any, LLMatcher]:
+    """A ``tool_choice=auto`` helper + context wired to the real Kimi grammar."""
+    section_begin, section_end = 256, 257
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    helper = StructuredOutputHelper(
+        enabled=True,
+        vocab_size=_MinimalTokenizer._N_VOCAB,
+        tool_call_region_delimiters=StructuredOutputRegionDelimiters(
+            start_token_ids=[section_begin], end_token_ids=[section_end]
+        ),
+    )
+    ctx = TextContext(max_length=4096, tokens=TokenBuffer(np.array([1])))
+    ctx._matcher = matcher
+    ctx.set_tool_region(
+        start_token_ids=[section_begin], end_token_ids=[section_end]
+    )
+    return helper, ctx, matcher
+
+
+def _commit(ctx: Any, matcher: LLMatcher, tokens: list[int]) -> None:
+    """Advance enforcement + matcher over committed tokens (Part-1 mirror)."""
+    for tok in tokens:
+        if ctx.update_enforcement_state(tok):
+            assert matcher.try_consume_tokens([tok]) == 1, (
+                f"prefix token {tok} unexpectedly rejected"
+            )
+
+
+@pytest.mark.parametrize(
+    "prefix, structural_tag, tail, label",
+    [
+        # Matcher sits right after ``functions.get_weather:0``; the next
+        # token is ``<|tool_call_argument_begin|>`` (260).
+        (
+            [256, 258] + list(b"functions.get_weather:0"),
+            260,
+            list(b'{"'),
+            "arg_begin",
+        ),
+        # Matcher sits right after the section opener; the next token is
+        # ``<|tool_call_begin|>`` (258).
+        ([256], 258, list(b"functions."), "call_begin"),
+    ],
+)
+def test_spec_decode_walk_preserves_matcher_state_across_structural_tag(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    prefix: list[int],
+    structural_tag: int,
+    tail: list[int],
+    label: str,
+) -> None:
+    """Speculative walk must preserve matcher state across structural tags.
+
+    The walk consumes draft tokens that cross a tool-call structural tag
+    (``<|tool_call_begin|>`` / ``<|tool_call_argument_begin|>``) and must leave
+    the matcher unchanged, so the next batch can still consume that same tag.
+    Guards the ``deep_copy`` fix against the ``rollback()`` desync.
+    """
+    helper, ctx, matcher = _build_auto_ctx(ll_tokenizer, mock_tokenizer)
+
+    # Commit up to just before the structural tag.
+    _commit(ctx, matcher, prefix)
+    assert ctx.grammar_enforced, f"[{label}] enforcement should be on"
+
+    # Sanity: the structural tag is legal at the current (pre-walk) state.
+    pre = _unpack_bitmask(
+        helper.compute_speculative_bitmasks(
+            [ctx], np.zeros((1, 0), dtype=np.int64), 1
+        ),
+        _MinimalTokenizer._N_VOCAB,
+    )
+    assert pre[0, 0, structural_tag], (
+        f"[{label}] structural tag {structural_tag} not legal pre-walk"
+    )
+
+    # Speculative walk over real drafts that cross the structural tag.
+    drafts = np.array([[structural_tag, *tail]], dtype=np.int64)
+    helper.compute_speculative_bitmasks(
+        [ctx], drafts, num_positions=drafts.shape[1] + 1
+    )
+
+    # The walk must leave the matcher unchanged. The next committed token is
+    # the same structural tag; it must still be consumable.
+    assert ctx.update_enforcement_state(structural_tag), (
+        f"[{label}] tag should still be grammar content after walk"
+    )
+    assert matcher.try_consume_tokens([structural_tag]) == 1, (
+        f"[{label}] matcher drifted past structural tag {structural_tag} "
+        f"-- speculative walk did not preserve matcher state"
+    )
+
+
+@pytest.mark.parametrize(
+    "prefix, walk, retry, rollback_is_inverse, label",
+    [
+        # Cross the ``(tool_call){0,N}`` repetition boundary: CALL_BEGIN is the
+        # entry token of the repeated ``tool_call`` non-terminal. rollback is
+        # NOT a perfect inverse here -- this is the defect that motivates the
+        # deep_copy fix in ``_speculatively_fill_bitmask_window``.
+        ([256], [258] + list(b"functions."), 258, False, "call_begin_entry"),
+        # Stay inside the single ``tool_call`` rule body: ARG_BEGIN is mid-rule.
+        # rollback IS a perfect inverse here.
+        (
+            [256, 258] + list(b"functions.get_weather:0"),
+            [260] + list(b'{"'),
+            260,
+            True,
+            "arg_begin_mid_rule",
+        ),
+    ],
+)
+def test_llguidance_rollback_inverse_behavior_across_rule_boundary(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    prefix: list[int],
+    walk: list[int],
+    retry: int,
+    rollback_is_inverse: bool,
+    label: str,
+) -> None:
+    """Characterizes ``LLMatcher.rollback``: inverse mid-rule, NOT across a
+    rule/repetition boundary.
+
+    Bypasses all MAX code (raw llguidance matcher only). This is a tripwire: it
+    pins the upstream behavior that ``_speculatively_fill_bitmask_window`` works
+    around by speculating on a ``deep_copy`` instead of consume+rollback. If a
+    future llguidance bump makes rollback a perfect inverse across rule
+    boundaries, the ``call_begin_entry`` case will flip and this test will fail
+    -- signalling that the deep_copy workaround could be simplified back to
+    rollback.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    for tok in prefix:
+        assert matcher.try_consume_tokens([tok]) == 1
+
+    before = llguidance.numpy.allocate_token_bitmask(
+        1, _MinimalTokenizer._N_VOCAB
+    )
+    llguidance.numpy.fill_next_token_bitmask(matcher, before, index=0)
+
+    consumed = 0
+    for tok in walk:
+        if matcher.try_consume_tokens([tok]) == 1:
+            consumed += 1
+        else:
+            break
+    matcher.rollback(consumed)
+
+    after = llguidance.numpy.allocate_token_bitmask(
+        1, _MinimalTokenizer._N_VOCAB
+    )
+    llguidance.numpy.fill_next_token_bitmask(matcher, after, index=0)
+
+    restored = bool(np.array_equal(before, after)) and (
+        matcher.try_consume_tokens([retry]) == 1
+    )
+    assert restored == rollback_is_inverse, (
+        f"[{label}] rollback({consumed}) inverse={restored}, "
+        f"expected {rollback_is_inverse} -- upstream llguidance rollback "
+        f"behavior across this boundary changed"
+    )
+
+
+def test_deep_copy_walk_avoids_rule_boundary_rollback_desync(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> None:
+    """Validates the fix direction: speculate on a ``deep_copy``, never rollback.
+
+    Walking draft tokens on ``matcher.deep_copy()`` leaves the real matcher
+    completely untouched, so the rule-boundary ``rollback`` defect cannot
+    desync it. The original matcher must still accept ``<|tool_call_begin|>``
+    (258) as the next committed token -- the exact case ``rollback`` breaks.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    assert matcher.try_consume_tokens([256]) == 1  # section_begin
+
+    before = llguidance.numpy.allocate_token_bitmask(
+        1, _MinimalTokenizer._N_VOCAB
+    )
+    llguidance.numpy.fill_next_token_bitmask(matcher, before, index=0)
+
+    # Speculative walk on a throwaway copy across the rule-entry boundary.
+    scratch = matcher.deep_copy()
+    for tok in [258, *list(b"functions.")]:
+        if scratch.try_consume_tokens([tok]) != 1:
+            break
+
+    after = llguidance.numpy.allocate_token_bitmask(
+        1, _MinimalTokenizer._N_VOCAB
+    )
+    llguidance.numpy.fill_next_token_bitmask(matcher, after, index=0)
+
+    assert np.array_equal(before, after), (
+        "real matcher mask changed despite walking only the deep_copy"
+    )
+    assert matcher.try_consume_tokens([258]) == 1, (
+        "real matcher should still accept <|tool_call_begin|> -- deep_copy "
+        "speculation leaves it untouched (the rollback desync is avoided)"
+    )

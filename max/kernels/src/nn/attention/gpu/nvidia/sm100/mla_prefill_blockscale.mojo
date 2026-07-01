@@ -26,6 +26,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     VConsumerPipeline,
     kv_sub_tile_rows,
     kv_num_sub_tiles,
+    o_store_tma_blocks_per_op,
     PagedRowIndices,
     SharedMemPointer,
     elect,
@@ -168,7 +169,17 @@ __extension SM100MLA:
             # 1Q/2Q signature; numerically `// 2` for num_qo=2.
             BM=Self.config.fa4_config.BM // Self.config.fa4_config.num_qo,
             BN=Self.config.fa4_config.ov_depth,
+            middle_dim=Self.config.num_q_heads,
             group=config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
+            # Concrete value: a GPU-kernel entry must be a fully-bound function.
+            # Matches the created store.
+            tma_blocks_per_op=o_store_tma_blocks_per_op[
+                Self.output_dtype,
+                Self.config.output_swizzle_mode,
+                Self.config.fa4_config.ov_depth,
+                config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
+                depth_splits=2,
+            ](),
         ],
         kv_lut: Self.KVLUTType,
         k_rope_lut: Self.KRopeType,
@@ -301,6 +312,11 @@ __extension SM100MLA:
 
         barrier()
 
+        # Read the TMEM base from SMEM ONCE here, post-barrier (alloc + this
+        # barrier publish it), and carry it by register into the shared
+        # fa4_softmax / fa4_correction consumers (see depth-512 fix).
+        var tmem_addr = ptr_tmem_addr[0]
+
         var role = warp_idx_to_role(warp_idx)
 
         # warp group partitioning
@@ -330,6 +346,7 @@ __extension SM100MLA:
                 Self.MaxSeqLenType,
             ](
                 attn_smem,
+                tmem_addr,
                 pos.score_row,
                 seq_info,
                 mask,
@@ -359,6 +376,7 @@ __extension SM100MLA:
                 Self.page_size,
             ](
                 attn_smem,
+                tmem_addr,
                 seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
@@ -1696,15 +1714,26 @@ def mla_sm100_prefill_blockscale[
 
     var num_rows_q = q_num_matrix_view_rows(q)
 
+    # Batched O store: half-depth box (depth_splits=2, shared with the 1Q
+    # combine) for SWIZZLE_NONE group==1; 0 (per-block) otherwise.
+    comptime store_blocks_per_op = o_store_tma_blocks_per_op[
+        output_dtype,
+        fa4_config.output_swizzle_mode,
+        fa4_config.fa4_config.ov_depth,
+        1,
+        depth_splits=2,
+    ]()
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_dtype,
         fa4_config.output_swizzle_mode,
         BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_qo,
         BN=fa4_config.fa4_config.ov_depth,
+        middle_dim=fa4_config.num_q_heads,
+        tma_blocks_per_op=store_blocks_per_op,
     ]
 
     var ragged_tma_store = RaggedStoreType.create(
-        ctx, output.ptr, rows=num_rows_q, middle_dim=fa4_config.num_q_heads
+        ctx, output.ptr, rows=num_rows_q
     )
 
     q_tma_op = q_tma[
@@ -1785,6 +1814,9 @@ def _mla_prefill_sm100_valid_length_dispatch[
         fa4_config.output_swizzle_mode,
         BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_qo,
         BN=fa4_config.fa4_config.ov_depth,
+        # Inferred from the created store; forwarded to the kernel impl.
+        middle_dim=_,
+        tma_blocks_per_op=_,
     ],
     q_tma_op: QTMATile[
         q_type,

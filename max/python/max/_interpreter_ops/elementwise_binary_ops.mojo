@@ -49,13 +49,11 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 
 
 comptime BINARY_ARITHMETIC_OPS = TypeList.of[
-    Trait=ElementwiseBinaryOp, Add, Sub, Mul, Div, Mod, Max, Min
+    Add, Sub, Mul, Div, Mod, Max, Min
 ]()
 
 # Binary boolean operations
-comptime BINARY_BOOLEAN_OPS = TypeList.of[
-    Trait=ElementwiseBinaryOp, And, Or, Xor
-]()
+comptime BINARY_BOOLEAN_OPS = TypeList.of[And, Or, Xor]()
 
 
 # =============================================================================
@@ -452,9 +450,7 @@ def bin_elementwise_op[
     """
 
     @always_inline
-    @parameter
-    @__copy_capture(out_ptr, lhs_ptr, rhs_ptr)
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
 
         var res = op.elementwise(
@@ -463,14 +459,14 @@ def bin_elementwise_op[
         out_ptr.store[width=width](i, res)
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=simd_width_of[dtype]()](Coord(size), ctx)
+        elementwise[simd_width=simd_width_of[dtype]()](func, Coord(size), ctx)
     else:
         # GPU execution - check GPU availability and op/dtype support
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_binary_op[
                 op
             ]() and dtype != DType.float64:
-                elementwise[func, simd_width=1, target="gpu"](Coord(size), ctx)
+                elementwise[simd_width=1, target="gpu"](func, Coord(size), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for this binary elementwise"
@@ -507,9 +503,7 @@ def pow_elementwise_op[
     """
 
     @always_inline
-    @parameter
-    @__copy_capture(out_ptr, lhs_ptr, rhs_ptr)
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
 
         var res = Pow.elementwise[dtype, dtype, width](
@@ -518,12 +512,12 @@ def pow_elementwise_op[
         out_ptr.store[width=width](i, res)
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=simd_width_of[dtype]()](Coord(size), ctx)
+        elementwise[simd_width=simd_width_of[dtype]()](func, Coord(size), ctx)
     else:
         # GPU execution - check GPU availability and dtype support
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=1, target="gpu"](Coord(size), ctx)
+                elementwise[simd_width=1, target="gpu"](func, Coord(size), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for pow with dtype float64"

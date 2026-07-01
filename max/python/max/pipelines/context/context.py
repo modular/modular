@@ -19,7 +19,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
-import llguidance
 import numpy as np
 import numpy.typing as npt
 from max.pipelines.request import RequestID
@@ -30,7 +29,7 @@ from .log_probabilities import LogProbabilities
 from .outputs import GenerationOutput, TextGenerationOutput
 from .sampling_params import SamplingParams
 from .status import GenerationStatus
-from .tokens import ImageMetadata, TokenBuffer
+from .tokens import ImageMetadata, TokenBuffer, TokenHashOverride
 
 _CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
@@ -208,6 +207,40 @@ class StructuredOutputRegionDelimiters:
 
     end_token_ids: list[int] | None = None
     """Token ID sequence marking the end of a structured output region."""
+
+
+@runtime_checkable
+class GrammarMatcher(Protocol):
+    """Per-request grammar matcher stepped each decode step.
+
+    Backend-agnostic interface; method names mirror llguidance's ``LLMatcher``
+    so a context can hold any backend's matcher (llguidance, xgrammar) without
+    branching. The llguidance ``LLMatcher`` satisfies this protocol natively.
+    """
+
+    def try_consume_tokens(self, tokens: list[int]) -> int:
+        """Advance the matcher; returns the number of tokens consumed."""
+        ...
+
+    def is_accepting(self) -> bool:
+        """Whether the matcher is at an accepting (stoppable) state."""
+        ...
+
+    def is_stopped(self) -> bool:
+        """Whether the matcher has reached a terminal state."""
+        ...
+
+    def get_error(self) -> str | None:
+        """Error message for the last rejection, if any (diagnostics)."""
+        ...
+
+    def get_grammar_warnings(self) -> Any:
+        """Grammar compilation warnings, if any (diagnostics)."""
+        ...
+
+    def deep_copy(self) -> GrammarMatcher:
+        """Independent copy for speculative walks (never mutates the original)."""
+        ...
 
 
 @dataclass
@@ -474,6 +507,16 @@ class TextContext:
     When set, the DKVConnector reads this during lookup() to determine
     which blocks are available in the external BlockStore system.
     """
+    cache_salt: str | None = field(default=None)
+    """Optional per-request salt that isolates this prompt's prefix-cache
+    entries from other requests sharing the same tokens.
+
+    Combined with the cluster-level ``kv_cache_hash_seed`` via XOR inside
+    ``BlockManager.compute_hashes_for_request`` to derive the root parent
+    hash. Has effect only when ``kv_cache_hash_algo`` is ``sha256`` or
+    ``sha256_64``; under ``ahash64`` the salt is dropped with a one-time
+    warning. Capped at 512 chars at the OpenAI schema layer.
+    """
 
     dkv_hint_instance_name: str = field(default="")
     """Instance name from the Orchestrator's dkv_cache_hint identifying
@@ -574,12 +617,12 @@ class TextContext:
 
         return ret_list
 
-    def set_matcher(self, matcher: llguidance.LLMatcher) -> None:
+    def set_matcher(self, matcher: GrammarMatcher) -> None:
         """Sets the grammar matcher for constrained decoding."""
         self._matcher = matcher
 
     @property
-    def matcher(self) -> llguidance.LLMatcher | None:
+    def matcher(self) -> GrammarMatcher | None:
         """The optional grammar matcher for constrained decoding."""
         return self._matcher
 
@@ -817,22 +860,44 @@ class TextContext:
         # a clean terminal state rather than logging a spurious rejection.
         if token in self.eos_tracker.eos_token_ids:
             self.grammar_state.grammar_enforced = False
-        elif (
-            self.grammar_state.update_enforcement_state(token)
-            and self.matcher.try_consume_tokens([token]) != 1
-        ):
-            _logger.error(
-                "Matcher rejected token %d (request %s); disabling "
-                "enforcement for the rest of the request. "
-                "matcher_errors=%s matcher_warnings=%s",
-                token,
-                self.request_id,
-                self.matcher.get_error(),
-                self.matcher.get_grammar_warnings(),
-            )
-            self.grammar_state.grammar_enforced = False
+        else:
+            was_enforced = self.grammar_state.grammar_enforced
+            if self.grammar_state.update_enforcement_state(token):
+                tokens = self._tokens_for_consume(token, was_enforced)
+                if self.matcher.try_consume_tokens(tokens) != len(tokens):
+                    _logger.error(
+                        "Matcher rejected %d token(s) ending at %d "
+                        "(request %s); disabling enforcement for the rest "
+                        "of the request. matcher_errors=%s "
+                        "matcher_warnings=%s",
+                        len(tokens),
+                        token,
+                        self.request_id,
+                        self.matcher.get_error(),
+                        self.matcher.get_grammar_warnings(),
+                    )
+                    self.grammar_state.grammar_enforced = False
 
         return True
+
+    def _tokens_for_consume(self, token: int, was_enforced: bool) -> list[int]:
+        """Tokens to feed the matcher for a conditional-enforcement step.
+
+        On the enforcement flip-on (``was_enforced`` was False and
+        ``update_enforcement_state`` just turned it True at a tool-call
+        ``SECTION_BEGIN``), the matcher is fresh and must consume the
+        ENTIRE start marker, not just the token that completed it. For
+        multi-token / namespace-prefixed markers (e.g. MiniMax-M3's
+        ``NS<tool_call>``) the grammar's ``start`` rule expects the prefix
+        first; feeding only the completing token leaves the matcher
+        expecting that prefix, so it rejects and enforcement silently
+        falls open. Single-token markers have ``start_token_ids ==
+        [token]``, so this is a no-op for them.
+        """
+        region = self.grammar_state.tool_region
+        if not was_enforced and region and region.start_token_ids:
+            return list(region.start_token_ids)
+        return [token]
 
     def update(
         self,
@@ -970,6 +1035,9 @@ class TextAndVisionContext(TextContext):
     images: list[ImageMetadata] = field(default_factory=list)
     """Metadata about each image in the prompt. """
 
+    token_hash_overrides: list[TokenHashOverride] = field(default_factory=list)
+    """Token-level content hashes to inject into prefix-cache block hashing."""
+
     extra_model_args: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
     """Extra model arguments for the vision model. These are model specific arguments."""
 
@@ -982,7 +1050,11 @@ class TextAndVisionContext(TextContext):
             ):
                 if next_img.start_idx < prev_img.start_idx:
                     raise ValueError("Images must be sorted")
-                if next_img.start_idx <= prev_img.end_idx:
+                # Ranges are half-open [start_idx, end_idx), so adjacent
+                # images (next.start_idx == prev.end_idx) do not overlap.
+                # Chat templates that emit no separator token between
+                # consecutive images produce exactly such touching ranges.
+                if next_img.start_idx < prev_img.end_idx:
                     raise ValueError("Images must be non-overlapping")
 
         for img in self.images:
@@ -1000,6 +1072,18 @@ class TextAndVisionContext(TextContext):
                 raise ValueError(
                     f"Images must be filled with <vision_token_id> ({self.vision_token_ids})"
                 )
+
+        token_override_indices: set[int] = set()
+        for override in self.token_hash_overrides:
+            if len(self.tokens) <= override.token_idx:
+                raise ValueError(
+                    "Token hash overrides must be before the end of the token array"
+                )
+            if override.token_idx in token_override_indices:
+                raise ValueError(
+                    f"Multiple token hash overrides target index {override.token_idx}"
+                )
+            token_override_indices.add(override.token_idx)
 
         self._validate_state()
 
@@ -1196,6 +1280,10 @@ class PixelContext:
     """
     output_format: str = field(default="jpeg")
     """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
+    seed: int | None = field(default=None)
+    """Optional RNG seed from the request. Preserved here so executors that
+    sample noise inside the compiled graph can consume the scalar directly,
+    rather than relying on tokenizer-baked random latents."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property
