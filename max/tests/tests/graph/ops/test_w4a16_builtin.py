@@ -18,12 +18,11 @@ import os
 import numpy as np
 import pytest
 import torch
-from max.driver import Accelerator, Buffer, CPU, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-
 
 GROUP_SIZE = 128
 
@@ -79,7 +78,7 @@ def _build_gemm_model(
     k: int,
     n: int,
     sample_output: bool = False,
-):
+) -> Model:
     device_ref = DeviceRef.from_device(device)
     groups = k // GROUP_SIZE
     with Graph(
@@ -119,7 +118,7 @@ def _build_composed_model(
     m: int,
     k: int,
     n: int,
-):
+) -> Model:
     device_ref = DeviceRef.from_device(device)
     groups = k // GROUP_SIZE
     with Graph(
@@ -139,7 +138,9 @@ def _build_composed_model(
                 values=[qweight_bytes.tensor, scales_bytes.tensor],
                 out_types=[
                     TensorType(DType.int32, (k, n // 8), device=device_ref),
-                    TensorType(DType.int32, (groups, n // 8), device=device_ref),
+                    TensorType(
+                        DType.int32, (groups, n // 8), device=device_ref
+                    ),
                     TensorType(DType.float16, (groups, n), device=device_ref),
                 ],
             )
@@ -161,14 +162,16 @@ def _build_qmatmul_model(
     m: int,
     k: int,
     n: int,
-):
+) -> Model:
     device_ref = DeviceRef.from_device(device)
     groups = k // GROUP_SIZE
     with Graph(
         name,
         input_types=[
             TensorType(DType.float16, (m, k), device=device_ref),
-            TensorType(DType.uint8, (k // 2 + groups * 2, n), device=device_ref),
+            TensorType(
+                DType.uint8, (k // 2 + groups * 2, n), device=device_ref
+            ),
         ],
     ) as graph:
         a, weight = graph.inputs
@@ -206,11 +209,13 @@ def _run_builtin_accuracy() -> None:
     qweight_bytes_np = _w4a16_to_gptq_bytes(qweight_np, k, n)
     scales_np = rng.normal(0, 0.1, size=(groups, n)).astype(np.float16)
     scales_bytes_np = scales_np.view(np.uint8).reshape(groups * 2, n)
-    ref_np = (a_np.astype(np.float32) @ _dequant_w4a16(qweight_np, scales_np)).astype(
-        np.float16
-    )
+    ref_np = (
+        a_np.astype(np.float32) @ _dequant_w4a16(qweight_np, scales_np)
+    ).astype(np.float16)
 
-    model = _build_composed_model("w4a16_builtin_composed_accuracy", device, m, k, n)
+    model = _build_composed_model(
+        "w4a16_builtin_composed_accuracy", device, m, k, n
+    )
     result = model.execute(
         Buffer.from_numpy(a_np).to(device),
         Buffer.from_numpy(qweight_bytes_np).to(device),
@@ -225,7 +230,9 @@ def _run_builtin_accuracy() -> None:
     qmatmul_model = _build_qmatmul_model(
         "w4a16_builtin_qmatmul_accuracy", device, m, k, n
     )
-    packed_weight_np = np.concatenate((qweight_bytes_np, scales_bytes_np), axis=0)
+    packed_weight_np = np.concatenate(
+        (qweight_bytes_np, scales_bytes_np), axis=0
+    )
     qmatmul_result = qmatmul_model.execute(
         Buffer.from_numpy(a_np).to(device),
         Buffer.from_numpy(packed_weight_np).to(device),
@@ -238,7 +245,9 @@ def _run_builtin_accuracy() -> None:
 
 def test_w4a16_builtin_llama_shape_sweep() -> None:
     if os.environ.get("MAX_W4A16_LLAMA_SHAPE_SWEEP") != "1":
-        pytest.skip("set MAX_W4A16_LLAMA_SHAPE_SWEEP=1 to run the full shape sweep")
+        pytest.skip(
+            "set MAX_W4A16_LLAMA_SHAPE_SWEEP=1 to run the full shape sweep"
+        )
     if accelerator_count() == 0:
         pytest.skip("W4A16 Llama shape sweep requires a GPU")
     _run_llama_shape_sweep()

@@ -1,3 +1,16 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
 from std.gpu import WARP_SIZE
 from std.sys import get_defined_bool, get_defined_int, is_defined
 
@@ -141,7 +154,8 @@ comptime KERNEL_VARIANT = DEFAULT_KERNEL_VARIANT
 comptime KERNEL_USES_FDOT2 = (
     get_defined_bool["USE_KPACKED_DOT2", False]() if is_defined[
         "USE_KPACKED_DOT2"
-    ]() else KERNEL_VARIANT == "kpacked_dot2"
+    ]() else KERNEL_VARIANT
+    == "kpacked_dot2"
 )
 comptime WARPS_M = (
     get_defined_int["WARPS_M"]() if is_defined["WARPS_M"]() else DEFAULT_WARPS_M

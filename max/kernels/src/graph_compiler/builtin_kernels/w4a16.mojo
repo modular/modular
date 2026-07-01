@@ -1,3 +1,16 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
 import extensibility as compiler
 
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, grid_dim
@@ -93,10 +106,7 @@ def _repack_qweight_perm_kernel[
 @__name(t"gptq_to_w4a16_fill_qzeros")
 def _fill_qzeros_kernel[
     qzeros_layout: TensorLayout,
-](
-    qzeros: TileTensor[DType.int32, qzeros_layout, MutAnyOrigin],
-    total: Int,
-):
+](qzeros: TileTensor[DType.int32, qzeros_layout, MutAnyOrigin], total: Int,):
     var tid = global_idx.x
     comptime block_size = 256
     var stride = grid_dim.x * block_size
@@ -200,7 +210,9 @@ struct GemmW4A16FP16:
         scales: InputTensor[dtype=DType.float16, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
-        comptime assert is_gpu[target](), "gemm_w4a16_fp16 requires a GPU target"
+        comptime assert is_gpu[
+            target
+        ](), "gemm_w4a16_fp16 requires a GPU target"
 
         var m = a.dim_size(0)
         var k = a.dim_size(1)
@@ -248,7 +260,9 @@ struct GPTQToW4A16Perm:
         perm_idx: InputTensor[dtype=DType.int32, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
-        comptime assert is_gpu[target](), "gptq_to_w4a16_perm requires a GPU target"
+        comptime assert is_gpu[
+            target
+        ](), "gptq_to_w4a16_perm requires a GPU target"
 
         var k = qweight.dim_size(0)
         var n = scales.dim_size(1)

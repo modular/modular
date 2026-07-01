@@ -75,9 +75,7 @@ def should_use_w4a16_gptq(device) -> bool:  # noqa: ANN001
     if not device.is_gpu:
         return False
     if is_virtual_device_mode():
-        return get_virtual_device_target_arch().startswith(
-            ("gfx11", "gfx12")
-        )
+        return get_virtual_device_target_arch().startswith(("gfx11", "gfx12"))
     try:
         arch = Accelerator(device.id).architecture_name
     except Exception:
@@ -212,7 +210,9 @@ def _gptq_w4a16_matmul(
             lhs_matrix.device,
             custom_values,
             out_types=[
-                TensorType(DType.int32, (k_dim, n_dim // 8), device=lhs_matrix.device),
+                TensorType(
+                    DType.int32, (k_dim, n_dim // 8), device=lhs_matrix.device
+                ),
                 TensorType(
                     DType.int32,
                     (k_dim // group_size, n_dim // 8),
@@ -232,7 +232,9 @@ def _gptq_w4a16_matmul(
         lhs_matrix.device,
         [lhs_matrix, qweight, qzeros, scales],
         out_types=[
-            TensorType(DType.float16, (lhs_matrix.shape[0], n_dim), lhs_matrix.device)
+            TensorType(
+                DType.float16, (lhs_matrix.shape[0], n_dim), lhs_matrix.device
+            )
         ],
     )[0].tensor
 

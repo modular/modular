@@ -28,8 +28,8 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.ops.quantized import should_use_w4a16_gptq
+from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weight import _compute_shard_range
 from max.nn.quant_config import QuantConfig
 
@@ -930,7 +930,9 @@ class GPTQAttentionWithRope(AttentionWithRope):
                 x.device,
                 custom_values,
                 out_types=[
-                    TensorType(DType.int32, (k_dim, n_dim // 8), device=x.device),
+                    TensorType(
+                        DType.int32, (k_dim, n_dim // 8), device=x.device
+                    ),
                     TensorType(
                         DType.int32,
                         (k_dim // group_size, n_dim // 8),
