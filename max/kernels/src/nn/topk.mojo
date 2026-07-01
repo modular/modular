@@ -13,7 +13,8 @@
 
 from std.math import ceildiv, exp, iota
 from std.math.uutils import ufloordiv, udivmod
-from std.memory import alloc
+from std.memory import ThinAllocation, alloc, dealloc
+from std.memory.alloc import Layout as AllocLayout
 from std.sys import align_of, simd_width_of, size_of, get_defined_bool
 
 import std.gpu.primitives.warp as warp
@@ -443,8 +444,11 @@ def fused_token_sampling_cpu[
         # materialize the out_vals which is of shape [input[:-1]] + [k]
         var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
         out_vals_shape[input.rank - 1] = bound_max_k
+        var out_vals_alloc = alloc(
+            AllocLayout[Scalar[dtype]](count=out_vals_shape.flattened_length())
+        ).into_deletable()
         var out_vals = TileTensor(
-            alloc[Scalar[dtype]](out_vals_shape.flattened_length()),
+            out_vals_alloc.unsafe_ptr(),
             row_major(Coord(out_vals_shape)),
         )
 
@@ -459,7 +463,7 @@ def fused_token_sampling_cpu[
             seed,
         )
 
-        out_vals.ptr.free()
+        dealloc(out_vals_alloc^.into_allocation())
 
 
 def _top_k_sampling[
@@ -548,8 +552,11 @@ def _top_k_sampling[
     var reshaped_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
     var reshaped_out_vals = reshape(out_vals, internal_out_shape)
 
+    var out_idxs_tmp_alloc = alloc(
+        AllocLayout[Int64](count=out_vals.num_elements())
+    )
     var out_idxs_tmp = TileTensor(
-        alloc[Int64](out_vals.num_elements()),
+        out_idxs_tmp_alloc.unsafe_ptr(),
         row_major(Coord(internal_out_shape)),  # topk returns K as last dim
     )
     var reshaped_input = reshape(input, internal_in_shape)
@@ -583,19 +590,21 @@ def _top_k_sampling[
         # Calculate softmax normalization
         var max_val = reshaped_out_vals[batch, 0][0]
         var sum_exp = Scalar[dtype](0)
-        var exp_vals = alloc[Scalar[dtype]](k_val)
+        var exp_vals = alloc(AllocLayout[Scalar[dtype]](count=k_val))
         var temp_val = temperature_val.cast[dtype]()
         for i in range(k_val):
             var val = reshaped_out_vals[batch, i][0]
             var exp_val = exp((val - max_val) / max(temp_val, 1e-6))
-            exp_vals[i] = exp_val
+            exp_vals.unsafe_ptr()[i] = exp_val
             sum_exp += exp_val
 
         # Handle top_p parameter - extract scalar value from buffer
         var top_p_val = Scalar[dtype](1.0)
         if top_p:
             top_p_val = top_p.value()[batch][0].cast[dtype]()
-        var _top_p = _adjust_top_p[dtype](top_p_val, exp_vals, k_val, sum_exp)
+        var _top_p = _adjust_top_p[dtype](
+            top_p_val, exp_vals.unsafe_ptr(), k_val, sum_exp
+        )
 
         # Handle seed parameter - extract scalar value from buffer
         var seed_val = UInt64(0)
@@ -609,12 +618,12 @@ def _top_k_sampling[
         # Sample using the normalized probabilities
         var r = sum_exp * _top_p * rng[0].cast[dtype]()
         for i in range(k_val):
-            r -= exp_vals[i]
+            r -= exp_vals.unsafe_ptr()[i]
             if r <= 0 or i == k_val - 1:
                 # Store the sampled index and value
                 reshaped_out_idxs[batch, 0] = out_idxs_tmp[batch, i]
                 break
-        exp_vals.free()
+        dealloc(exp_vals^)
 
         # Fill remaining positions with sentinel values for unused elements
         for remaining_k in range(k_val, max_k):
@@ -623,7 +632,7 @@ def _top_k_sampling[
                     dtype, True
                 ]()
             # Note: out_idxs for sampling only has 1 element in last dim, so no need to fill indices
-    out_idxs_tmp.ptr.free()
+    dealloc(out_idxs_tmp_alloc^)
 
 
 @always_inline("nodebug")

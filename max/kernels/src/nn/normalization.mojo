@@ -54,7 +54,8 @@ from layout import (
 )
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
-from std.memory import stack_allocation
+from std.memory import ThinAllocation, dealloc, stack_allocation
+from std.memory.alloc import Layout as AllocLayout
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -2714,9 +2715,11 @@ def rms_norm_fused_residual_add_cpu[
     comptime assert gamma1.rank == 1, "gamma1 must have rank 1"
     comptime assert gamma2.rank == 1, "gamma2 must have rank 1"
 
-    var intermediate_buffer_ptr = alloc[Scalar[dtype]](shape.flattened_length())
+    var intermediate_buffer_alloc = alloc(
+        AllocLayout[Scalar[dtype]](count=shape.flattened_length())
+    )
     var intermediate_buffer = TileTensor(
-        intermediate_buffer_ptr,
+        intermediate_buffer_alloc.unsafe_ptr(),
         row_major(Coord(shape)),
     )
 
@@ -2756,7 +2759,7 @@ def rms_norm_fused_residual_add_cpu[
         multiply_before_cast=multiply_before_cast,
     ](shape, gamma2, epsilon2, weight_offset2)
 
-    intermediate_buffer_ptr.free()
+    dealloc(intermediate_buffer_alloc^)
 
 
 # ===-----------------------------------------------------------------------===#

@@ -21,6 +21,8 @@ from std.sys import (
     size_of,
 )
 from std.ffi import external_call, _get_global_or_null
+from std.memory import dealloc
+from std.memory.alloc import Layout as AllocLayout
 from std.os import getenv
 
 from std.gpu import WARP_SIZE
@@ -529,7 +531,7 @@ def create_hilbert_lut(
     """
     var num_blocks = grid_x * grid_y
     # Allocate temporary host buffer.
-    var host_ptr = alloc[UInt32](num_blocks)
+    var host = alloc(AllocLayout[UInt32](count=num_blocks)).into_deletable()
 
     # Next power-of-two square dimension enclosing the rectangle.
     var dim_pow2 = 1
@@ -561,14 +563,14 @@ def create_hilbert_lut(
             s <<= 1
 
         if hx < UInt32(grid_x) and hy < UInt32(grid_y):
-            host_ptr[seen] = (hy << 16) | hx  # pack (y,x)
+            host.unsafe_span()[seen] = (hy << 16) | hx  # pack (y,x)
             seen += 1
         d += 1
 
     # Allocate device buffer and copy.
     var device_buf = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
-    ctx.enqueue_copy(device_buf, host_ptr)
-    host_ptr.free()
+    ctx.enqueue_copy(device_buf, host.unsafe_span())
+    dealloc(host^.into_allocation())
     return device_buf
 
 

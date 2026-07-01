@@ -22,7 +22,8 @@ from layout import (
     TileTensor,
 )
 from layout.tile_layout import TensorLayout, row_major
-from std.memory import alloc
+from std.memory import alloc, dealloc, Allocation
+from std.memory.alloc import Layout as AllocLayout
 from std.runtime.asyncrt import parallelism_level
 
 from std.utils.index import Index, IndexList
@@ -455,11 +456,11 @@ def _matmul_cpu_impl[
         comptime alignment = align_of[SIMD[c.dtype, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
-        var a_packed_ptr: Optional[
-            UnsafePointer[Scalar[a.dtype], MutUntrackedOrigin]
-        ] = None
+        var a_packed_alloc: Optional[Allocation[Scalar[a.dtype]]] = None
         comptime if use_i8mm:
-            a_packed_ptr = alloc[Scalar[a.dtype]](mh * kh, alignment=alignment)
+            a_packed_alloc = alloc(
+                AllocLayout[Scalar[a.dtype]](count=mh * kh, alignment=alignment)
+            )
 
         @always_inline
         @__copy_capture(m, k, num_tasks)
@@ -479,10 +480,12 @@ def _matmul_cpu_impl[
                 return
             var t0 = sub_matmul_config.offset[0]
             var t1 = t0 + sub_matmul_config.shape[0]
-            packA_i8mm[a.dtype](t0, t1, k, a.ptr, a_packed_ptr.unsafe_value())
+            packA_i8mm[a.dtype](
+                t0, t1, k, a.ptr, a_packed_alloc.unsafe_value().unsafe_ptr()
+            )
 
         @always_inline
-        @__copy_capture(m, k, num_tasks, n, a_packed_ptr, mh, kh)
+        @__copy_capture(m, k, num_tasks, n, mh, kh)
         @parameter
         def task_func(task_id: Int):
             var sub_matmul_config = get_partitioned_matmul[
@@ -512,7 +515,7 @@ def _matmul_cpu_impl[
                     alg,
                     c,
                     TileTensor(
-                        a_packed_ptr.unsafe_value(),
+                        a_packed_alloc.unsafe_value().unsafe_ptr(),
                         row_major(Coord(mh, kh)),
                     ),
                     b,
@@ -548,8 +551,13 @@ def _matmul_cpu_impl[
         # to be synchronous in order to keep that state alive
         sync_parallelize[task_func](num_tasks, ctx)
 
-        if a_packed_ptr:
-            a_packed_ptr.unsafe_value().free()
+        # NOTE: passing `dealloc[Scalar[a.dtype]]` directly crashes the
+        # compiler (simplifyBindParams, KGENAttrs.cpp) when the dtype is
+        # parametric; wrap it in a local function as a workaround.
+        def _dealloc_packed(var packed: Allocation[Scalar[a.dtype]]):
+            dealloc(packed^)
+
+        a_packed_alloc^.destroy_with(_dealloc_packed)
 
 
 @always_inline
@@ -588,12 +596,13 @@ def matmul[
 
         comptime scratch_simd = simd_width_of[scratch_type]()
         comptime scratch_align = align_of[SIMD[scratch_type, scratch_simd]]()
-        var scratch_ptr = alloc[Scalar[scratch_type]](
-            scratch_m * scratch_n, alignment=scratch_align
-        )
+        var scratch_alloc = alloc(
+            AllocLayout[Scalar[scratch_type]](
+                count=scratch_m * scratch_n, alignment=scratch_align
+            )
+        ).into_deletable()
         var scratch = TileTensor(
-            scratch_ptr,
-            row_major(Coord(scratch_m, scratch_n)),
+            scratch_alloc.unsafe_ptr(), row_major(Coord(scratch_m, scratch_n))
         )
 
         @parameter
@@ -617,7 +626,6 @@ def matmul[
             saturated_vnni=saturated_vnni,
         ](scratch, a, b, kernel_type_m, num_threads, ctx)
 
-        scratch_ptr.free()
         return
 
     comptime kernel_id = select_inner_kernel[a.dtype, b.dtype, c.dtype]()

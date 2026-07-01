@@ -22,6 +22,7 @@ from std.ffi import OwnedDLHandle, _Global
 from std.collections.optional import Optional
 from layout import TensorLayout, TileTensor
 from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.alloc import Layout as AllocLayout
 from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
@@ -272,7 +273,7 @@ def _get_global_comms(ngpus: Int) raises -> Communicators:
 
     var c = Communicators(ngpus=ngpus, comms=comms.copy())
 
-    var ptr = alloc[Communicators](1)
+    var ptr = alloc(AllocLayout[Communicators].single()).unsafe_leak()
     ptr.init_pointee_move(c)
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(NAME), ptr.bitcast[NoneType]()
