@@ -26,6 +26,15 @@ def swap[T: Movable](mut lhs: T, mut rhs: T):
     Args:
         lhs: Argument value swapped with rhs.
         rhs: Argument value swapped with lhs.
+
+    Example:
+    ```mojo
+    var a = 1
+    var b = 2
+    swap(a, b)
+    print(a)  # 2
+    print(b)  # 1
+    ```
     """
     var tmp = lhs^
     lhs = rhs^
