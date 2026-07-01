@@ -10,6 +10,7 @@
 # `etcd-cpp-api` here.
 
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -429,6 +430,10 @@ cc_binary(
     name = "libnixl.so",
     linkopts = [
         "-Wl,-z,undefs",
+        # Set the SONAME so a downstream link records a clean `libnixl.so`
+        # DT_NEEDED (rather than the bazel link-time path) and the runtime
+        # loader keys off the SONAME.
+        "-Wl,-soname,libnixl.so",
     ],
     linkshared = True,
     linkstatic = True,
@@ -440,6 +445,7 @@ cc_binary(
     name = "libnixl_build.so",
     linkopts = [
         "-Wl,-z,undefs",
+        "-Wl,-soname,libnixl_build.so",
     ],
     linkshared = True,
     linkstatic = True,
@@ -451,11 +457,24 @@ cc_binary(
     name = "libnixl_common.so",
     linkopts = [
         "-Wl,-z,undefs",
+        "-Wl,-soname,libnixl_common.so",
     ],
     linkshared = True,
     linkstatic = True,
     target_compatible_with = _LINUX_X86,
     deps = [":nixl_common"],
+)
+
+# Dynamic-link import of libnixl.so for in-tree consumers (e.g. libmax) that
+# want a DT_NEEDED on libnixl.so instead of folding the NIXL core object code
+# into their own shared object. libnixl.so already folds the full transitive
+# symbol set (core + infra + common + serdes + stream via alwayslink), so a
+# single import resolves everything the `:nixl*` object libraries used to
+# provide. Pair this with `:nixl_api_headers` for the compile-side includes.
+cc_import(
+    name = "nixl_shared",
+    shared_library = ":libnixl.so",
+    target_compatible_with = _LINUX_X86,
 )
 
 # --- Install prefix -------------------------------------------------------
