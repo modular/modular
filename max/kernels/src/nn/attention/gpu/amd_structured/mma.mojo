@@ -479,9 +479,14 @@ struct KVMmaOp[
                     var part_2 = _read_half[1]()
                     var frag = part_1.join(part_2)
 
-                    var dst = self.mma_tile_at[bk_tile, Int(k)]().vectorize[
-                        1, Self.input_frag_size
-                    ]()
+                    # `bk_tile % num_k_tiles` folds the global strip index into
+                    # the (possibly chunked) reg tile: identity when the reg
+                    # tile is full, slot 0 when the caller streams one strip at
+                    # a time (reg_chunk_keys == BK). Missing it OOB-corrupts a
+                    # chunked V tile.
+                    var dst = self.mma_tile_at[
+                        bk_tile % Self.num_k_tiles, Int(k)
+                    ]().vectorize[1, Self.input_frag_size]()
                     dst[Int(i), 0] = rebind[type_of(dst[Int(i), 0])](frag)
         else:
             comptime for k in range(Self.num_k_mmas):
@@ -499,9 +504,11 @@ struct KVMmaOp[
                         Self.in_type, Self.mma_shape
                     ].load_b_tr(mma_smem)
 
-                    var dst = self.mma_tile_at[bk_tile, Int(k)]().vectorize[
-                        1, Self.input_frag_size
-                    ]()
+                    # `bk_tile % num_k_tiles`: identity for a full reg tile,
+                    # slot 0 when streaming one strip at a time (chunked V).
+                    var dst = self.mma_tile_at[
+                        bk_tile % Self.num_k_tiles, Int(k)
+                    ]().vectorize[1, Self.input_frag_size]()
                     dst[Int(i), 0] = rebind[type_of(dst[Int(i), 0])](frag)
 
     @always_inline
@@ -538,7 +545,9 @@ struct KVMmaOp[
             Self.num_k_mmas == 1
         ), "FP8 V expects num_k_mmas == 1 (MMA_K >= BK)"
 
-        var dst = self.mma_tile_at[bk_tile, 0]().vectorize[
+        # `bk_tile % num_k_tiles`: identity for a full reg tile, slot 0 when
+        # streaming one strip at a time (chunked V).
+        var dst = self.mma_tile_at[bk_tile % Self.num_k_tiles, 0]().vectorize[
             1, Self.input_frag_size
         ]()
         comptime for dt in range(Self.num_mmas):

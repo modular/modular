@@ -193,12 +193,19 @@ struct KVBuffer[
     cache_depth: Int = depth,
     head_dim_offset: Int = 0,
     reg_chunk_depth: Int = depth,
+    reg_chunk_keys: Int = WN,
     smem_depth: Int = depth,
     # SMEM physical block width.  When `bk_smem < BK`, the SMEM stride is
     # `bk_smem` and each MMA K=BK strip is composed of `BK / bk_smem`
     # adjacent SMEM blocks.  Used by MLA decode at depth=576 (BK=128,
     # bk_smem=64) to avoid wasting an 8 KB pad on a partial block.
     bk_smem: Int = BK,
+    # Number of SMEM stages (double-buffer depth).  Defaults to 2, so every
+    # existing caller is byte-identical.  A single-block consumer with no KV
+    # streaming loop (e.g. MSA prefill: one `load_from_dram[0]`/
+    # `load_from_shared(0)`) never touches the 2nd stage, so it can pass 1 to
+    # halve the SMEM allocation.
+    num_smem_stages: Int = 2,
 ]:
     """KV cache buffer managing DMA, LDS staging, and register tiles.
 
@@ -238,14 +245,16 @@ struct KVBuffer[
     comptime num_k_tiles = ceildiv(
         Self.depth if Self.transpose else Self.WN, Self.BK
     )
-    # Register-side strip count. For the K path (transpose=True) the caller
-    # can cap depth coverage via reg_chunk_depth so the reg tile stays small
-    # even when SMEM holds the full depth; global strip index maps into the
-    # reg tile via `bk_tile % _reg_num_k_tiles`.
+    # Register-side strip count. The caller can cap the reg tile so it stays
+    # small even when SMEM holds the full tile: K (transpose=True) via
+    # reg_chunk_depth (depth coverage), V (transpose=False) via reg_chunk_keys
+    # (key coverage). The global strip index maps into the (aliased) reg tile
+    # via `bk_tile % _reg_num_k_tiles`; the caller must then drive the strip
+    # loop explicitly (load[strip] -> consume) so slots don't clobber early.
     comptime _reg_num_k_tiles = (
-        ceildiv(
-            Self.reg_chunk_depth, Self.BK
-        ) if Self.transpose else Self.num_k_tiles
+        ceildiv(Self.reg_chunk_depth, Self.BK) if Self.transpose else ceildiv(
+            Self.reg_chunk_keys, Self.BK
+        )
     )
 
     comptime warp_tile_rows = 32
@@ -263,7 +272,9 @@ struct KVBuffer[
     # coordinate arithmetic rather than pointer arithmetic
     # (col = buffer_idx * blocks_per_stage + block).
     comptime _blocks_per_stage = Self.num_repeats if Self.full_kv else 1
-    comptime _smem_total_cols = 2 * Self._blocks_per_stage * Self.bk_smem
+    comptime _smem_total_cols = (
+        Self.num_smem_stages * Self._blocks_per_stage * Self.bk_smem
+    )
     comptime _SmemParentLayout = MixedLayout[
         Coord[
             ComptimeInt[Self.BN], ComptimeInt[Self._smem_total_cols]
