@@ -71,10 +71,24 @@ class KVConnector(Protocol):
 
     Required call ordering per inference step:
       1. connector.load()            # post loads on the main stream
-      2. connector.wait_for_loads()  # block until loads have landed
+      2. connector.wait_for_loads()  # order loads before the forward pass
       3. connector.offload()         # kick off this step's offloads
       4. [model executes]
-      5. connector.wait_for_offloads()  # drain offloads posted this step
+      5. connector.wait_for_offloads()  # settle offloads posted this step
+
+    ``wait_for_loads`` guarantees the forward pass reads loaded data, but not
+    necessarily by blocking the host until it lands. A stream-ordered connector
+    may instead enqueue a cross-stream wait so the compute stream is GPU-ordered
+    after the loads and return without a host sync (the data can still be in
+    flight on return, ordered ahead of the forward pass on the device). A
+    host-polled connector blocks until the data has landed. Either way the model
+    in step 4 sees the loaded KV.
+
+    ``wait_for_offloads`` likewise need not block the host. A stream-ordered
+    connector may defer marking each block readable until its copy lands, polled
+    without a host sync, so a block offloaded this step can become readable on a
+    later step. Correctness holds: a block is never published before its bytes
+    are written.
     """
 
     @property
@@ -133,18 +147,28 @@ class KVConnector(Protocol):
         ...
 
     def wait_for_loads(self) -> None:
-        """Block until all posted loads have landed in device memory.
+        """Order all posted loads before the forward pass.
 
-        Called before the forward pass. Connectors whose loads are ordered on
-        the device stream (host/disk tiers) need no work here; the dKV
-        connector blocks on its off-stream NIXL READs. No-op by default.
+        Called before the forward pass. Connectors whose loads already ride the
+        device stream (host/disk tiers) need no work here. The dKV connector
+        does one of two things by transport: for a co-located (same-host) load it
+        enqueues a cross-stream CUDA event wait so the compute stream is
+        GPU-ordered after the H2D copies and returns without a host sync (the
+        copy may still be draining, ordered ahead of the forward pass); for a
+        remote NIXL load it host-polls the off-stream RDMA to completion. No-op
+        by default.
         """
         return None
 
     def wait_for_offloads(self) -> None:
-        """Drain offloads posted since the last call.
+        """Settle offloads posted since the last call.
 
-        Called after the forward pass. No-op by default.
+        Called after the forward pass. No-op by default. For a co-located
+        (same-host) offload the dKV connector defers marking the block readable
+        until its D2H copy lands, polled without a host sync, so the block can
+        become readable on a later step; for a remote NIXL offload it host-polls
+        the RDMA to completion and marks the block readable inline. A block is
+        never marked readable before its bytes land.
         """
         return None
 
