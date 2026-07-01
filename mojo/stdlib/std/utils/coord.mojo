@@ -1167,7 +1167,8 @@ def coord_to_index_list[
     return result
 
 
-def coord[
+@always_inline
+def dyn_coord[
     dtype: DType, *element_types: Movable
 ](
     var values: Tuple[*element_types],
@@ -1197,17 +1198,16 @@ def coord[
         )
 
 
-def coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
-    """Create a `Coord` from compile-time integer values.
+# values is a ZST since all elements are comptime
+comptime coord[*values: Int]: Coord[*_IntToComptimeInt[*values]] = {}
+"""Create a `Coord` from compile-time integer values.
 
-    Parameters:
-        values: The compile-time integer values.
+Parameters:
+    values: The compile-time integer values.
 
-    Returns:
-        A `Coord` instance containing `ComptimeInt` elements for each value.
-    """
-    # values is a ZST since all elements are comptime
-    return {}
+Returns:
+    A `Coord` instance containing `ComptimeInt` elements for each value.
+"""
 
 
 comptime DynamicCoord[dtype: DType, size: Int] = Coord[

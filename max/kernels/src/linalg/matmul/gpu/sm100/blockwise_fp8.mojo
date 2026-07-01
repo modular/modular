@@ -428,7 +428,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             comptime for n_vec in range(num_vecs_n):
                 comptime for m_vec in range(num_vecs_m):
                     comptime i_vec = n_vec * num_vecs_m + m_vec
-                    var dst_idx = Int(c_gmem_frag.layout(coord[m_vec, n_vec]()))
+                    var dst_idx = Int(c_gmem_frag.layout(coord[m_vec, n_vec]))
                     var dst_m_offset, dst_n_offset = divmod(
                         dst_idx, c_row_stride
                     )

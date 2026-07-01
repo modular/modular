@@ -45,8 +45,8 @@ def test_irfft_basic[
 
     # Input shape: [batch_size, input_size*2] because complex values are stored
     # as interleaved float32 (real, imag, real, imag, ...)
-    comptime input_shape = coord[batch_size, input_size * 2]()
-    comptime output_shape = coord[batch_size, output_size]()
+    comptime input_shape = coord[batch_size, input_size * 2]
+    comptime output_shape = coord[batch_size, output_size]
 
     var input_runtime_layout = row_major(input_shape)
     var output_runtime_layout = row_major(output_shape)

@@ -120,7 +120,7 @@ The following example shows how to use a `Layout` to convert between coordinates
 and index values.
 
 ```mojo
-var coords = coord[1, 1]()
+var coords = coord[1, 1]
 var idx = row_major3x4(coords)
 print("index at (1, 1): ", idx)
 print("coordinates at index 7:", row_major3x4.idx2crd(7))
@@ -166,11 +166,11 @@ can hold both compile-time and run-time integer values. Each element of a
 `Coord` is either an integer value or a nested tuple.
 
 You can create a simple `Coord` with all compile-time values or all run-time
-values using the [`coord()`](/docs/std/utils/coord/coord/) function:
+values using the [`coord`](/docs/std/utils/coord/coord/) comptime alias:
 
 ```mojo
-var comptime_coords = coord[4, 4]()
-var runtime_coords = coord[DType.int32]((a, b, c))
+var comptime_coords = coord[4, 4]
+var runtime_coords = Coord(Int32(a), Int32(b), Int32(c))
 ```
 
 You can mix compile-time and run-time values:
@@ -191,7 +191,7 @@ of `Coord` values:
 
 ```mojo
 var shape1 = Coord((Idx[6], Idx[8]))
-var shape2 = Coord((coord[2, 2](), coord[3, 4]()))
+var shape2 = Coord((coord[2, 2], coord[3, 4]))
 var shape3 = Coord((shape1, shape2))
 print(shape3)
 ```
@@ -334,7 +334,7 @@ comptime col_major3d = col_major[4, 4, 4]()
 Or you can pass in a `Coord` defining the shape of the layout.
 
 ```mojo
-var from_coords = row_major(coord[6, 8]())
+var from_coords = row_major(coord[6, 8])
 ```
 
 Defining a layout using `Coord` values lets you define both compile-time
@@ -347,17 +347,17 @@ GPU. However, sometimes you don't know the shape of the data—or you know
 the width of the data but not the number of rows.
 
 As described in the section on [`Coord` and `Idx`](#coord-and-idx), you can
-define a `Coord` using the `Coord` constructor or the `coord()` convenience
-function. Using `Coord`, you can define layouts with all compile-time
+define a `Coord` using the `Coord` constructor or the `coord` convenience
+comptime alias. Using `Coord`, you can define layouts with all compile-time
 dimensions, all run-time dimensions, or a mixture of the two.
 
 ```mojo
 # Layout with compile-time dimensions
-comptime row_major_comptime = row_major(coord[16, 8]())
+comptime row_major_comptime = row_major(coord[16, 8])
 
 # Layout with run-time dimensions
 var a, b = 4, 8
-var row_major_runtime = row_major(coord[DType.int32]((a, b)))
+var row_major_runtime = row_major(Coord(Int32(a), Int32(b)))
 
 # Mixed layout with one run-time dimension and one compile-time dimension
 var row_major_mixed = row_major((rows, Idx[columns]))
@@ -477,7 +477,7 @@ each column represents a tile worth of data.
 
 ```mojo
 var base = row_major[6, 4]()
-var result = zipped_divide[coord[2, 2]()](base)
+var result = zipped_divide[coord[2, 2]](base)
 print_layout(base.to_layout())
 print_layout(result.to_layout())
 ```
