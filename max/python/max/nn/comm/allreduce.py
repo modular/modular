@@ -15,10 +15,10 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 import numpy as np
-from max.driver import Accelerator, Buffer, enable_all_peer_access
+from max.driver import Accelerator, Buffer, Device, enable_all_peer_access
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -132,34 +132,27 @@ class Signals:
 
         self.devices = devices
 
-    def buffers(self) -> list[Buffer]:
-        """Allocates and returns buffers used for communication in allreduce.
+    @staticmethod
+    def _init_lamport_region(signal_buffers: list[Buffer]) -> None:
+        """Fills each signal buffer's Lamport comm region with the -0.0 sentinel.
 
-        Enables peer-to-peer access between all GPUs (idempotent) and
-        synchronizes so that buffers are ready for use when this method
-        returns.
+        The barrier-free Lamport allreduce uses -0.0 (``0x80000000`` per uint32)
+        as its "slot not yet written" marker and spins until a peer overwrites
+        the slot with real (producer-sanitized) data. A zero-filled region is
+        +0.0, which reads as already-written, so the very first use of each
+        generation would consume peer slots before the peers have pushed --
+        a data race that yields non-deterministic results. This fill must run
+        once per freshly allocated buffer set, before the first collective.
+
+        Callers own synchronizing the buffers' devices afterward so the fill is
+        visible before any allreduce runs.
+
+        Args:
+            signal_buffers: One freshly allocated signal buffer per device.
+
+        Raises:
+            ValueError: If ``NUM_BYTES`` cannot hold the Lamport region.
         """
-        try:
-            enable_all_peer_access()
-        except RuntimeError:
-            logging.getLogger(__name__).warning(
-                "Failed to enable peer-to-peer GPU access. "
-                "Collective operations will fall back to slower paths."
-            )
-
-        # Zero-fill: barrier counters and lamport_state start at 0 (their
-        # correct init). The embedded Lamport comm region is initialized
-        # to -0.0 below.
-        accelerators = [Accelerator(id=dev.id) for dev in self.devices]
-        signal_buffers = [
-            Buffer.zeros(
-                shape=(Signals.NUM_BYTES,),
-                dtype=DType.uint8,
-                device=accel,
-            )
-            for accel in accelerators
-        ]
-
         if (
             Signals.NUM_BYTES
             < Signals._LAMPORT_REGION_OFFSET + Signals._LAMPORT_REGION_BYTES
@@ -169,17 +162,13 @@ class Signals:
                 f"{Signals._LAMPORT_REGION_OFFSET + Signals._LAMPORT_REGION_BYTES}"
                 f" bytes, but got {Signals.NUM_BYTES}."
             )
-        # Fill the Lamport region with the universal sentinel via a dtype-
-        # agnostic uint32 fill (the sentinel is fp32 -0.0 per uint32; see
-        # `set_neg_zero` in lamport.mojo). This is the once-per-buffer init; the
-        # synchronize below guarantees every rank's region is sentinel before
-        # any allreduce runs (so no rank pushes into a peer's region before that
-        # peer has initialized it).
+        # Dtype-agnostic uint32 fill (the sentinel is fp32 -0.0 per uint32; see
+        # `set_neg_zero` in lamport.mojo). Slice assignment isn't supported on a
+        # device `Buffer`, but a sliced `__getitem__` returns a contiguous
+        # sub-view sharing the memory, which `inplace_copy_from` can fill from a
+        # host buffer (host -> device).
         start = Signals._LAMPORT_REGION_OFFSET // 4
         end = start + Signals._LAMPORT_REGION_BYTES // 4
-        # Slice assignment isn't supported on a device `Buffer`, but a sliced
-        # `__getitem__` returns a contiguous sub-view sharing the memory, which
-        # `inplace_copy_from` can fill from a host buffer (host -> device).
         sentinel = Buffer.from_numpy(
             np.full(end - start, np.uint32(Signals._LAMPORT_SENTINEL_U32))
         )
@@ -189,10 +178,64 @@ class Signals:
             ]
             region.inplace_copy_from(sentinel)
 
-        for accel in accelerators:
-            accel.synchronize()
+    @staticmethod
+    def allocate(devices: Sequence[Device]) -> list[Buffer]:
+        """Allocates one fully initialized signal buffer per device.
+
+        This is the single chokepoint for signal-buffer allocation: it enables
+        peer-to-peer access, zeroes the buffers (the correct init for the
+        barrier counters and ``lamport_state``), sentinel-initializes the
+        Lamport comm region, and synchronizes so the buffers are ready for use
+        when this method returns.
+
+        Args:
+            devices: Driver devices to allocate a buffer on, one each.
+
+        Returns:
+            One initialized signal buffer per device, in ``devices`` order.
+        """
+        # Peer access is only meaningful with more than one GPU; the call is
+        # idempotent and wrapped so a P2P-incapable host degrades gracefully.
+        if len(devices) > 1:
+            try:
+                enable_all_peer_access()
+            except RuntimeError:
+                logging.getLogger(__name__).warning(
+                    "Failed to enable peer-to-peer GPU access. "
+                    "Collective operations will fall back to slower paths."
+                )
+
+        # Zero-fill: barrier counters and lamport_state start at 0 (their
+        # correct init). The embedded Lamport comm region is sentinel-filled
+        # below.
+        signal_buffers = [
+            Buffer.zeros(
+                shape=(Signals.NUM_BYTES,),
+                dtype=DType.uint8,
+                device=dev,
+            )
+            for dev in devices
+        ]
+
+        # Init the Lamport comm region to the -0.0 sentinel; the synchronize
+        # below guarantees every rank's region is sentinel before any collective
+        # kernel
+        Signals._init_lamport_region(signal_buffers)
+
+        for dev in devices:
+            dev.synchronize()
 
         return signal_buffers
+
+    def buffers(self) -> list[Buffer]:
+        """Allocates and returns buffers used for communication in allreduce.
+
+        Thin adapter over :meth:`allocate` that maps this instance's graph
+        ``DeviceRef``\\ s to the driver accelerators the allocator needs.
+        """
+        return Signals.allocate(
+            [Accelerator(id=dev.id) for dev in self.devices]
+        )
 
     def input_types(self) -> list[BufferType]:
         """Gets graph input types corresponding to these signal buffers."""
