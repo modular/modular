@@ -203,6 +203,7 @@ def register_all_models() -> None:
             "llama4_conditional_arch",
         ),
         _LazyArch("MambaForCausalLM", ".mamba", "mamba_arch"),
+        _LazyArch("MiniCPMForCausalLM", ".minicpm", "minicpm_arch"),
         _LazyArch("MiniMaxM2ForCausalLM", ".minimax_m2", "minimax_m2_arch"),
         _LazyArch("NemotronHForCausalLM", ".nemotron_h", "nemotron_h_arch"),
         _LazyArch("MistralForCausalLM", ".mistral", "mistral_arch"),

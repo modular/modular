@@ -45,6 +45,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/llama3_modulev3",
     "//max/python/max/pipelines/architectures/llama4",
     "//max/python/max/pipelines/architectures/mamba",
+    "//max/python/max/pipelines/architectures/minicpm",
     "//max/python/max/pipelines/architectures/minimax_m2",
     "//max/python/max/pipelines/architectures/nemotron_h",
     "//max/python/max/pipelines/architectures/mistral",
