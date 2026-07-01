@@ -60,9 +60,6 @@ def _interpreter_only() -> Generator[None]:
 # DTypes to test for elementwise operations
 # Note: bfloat16 is excluded since NumPy doesn't support it natively
 FLOAT_DTYPES = [DType.float32, DType.float64]
-# Shape-rearrange ops are pure copies, so they also serve float16 (which has no
-# typed CPU kernel) via the width-based uint bit-cast.
-REARRANGE_FLOAT_DTYPES = FLOAT_DTYPES + [DType.float16]
 INT_DTYPES = [DType.int8, DType.int16, DType.int32, DType.int64]
 UINT_DTYPES = [DType.uint8, DType.uint16, DType.uint32, DType.uint64]
 SIGNED_DTYPES = FLOAT_DTYPES + INT_DTYPES
@@ -169,26 +166,6 @@ class TestBinaryElementwiseOps:
 
         expected = np.power(a_np, b_np)
         np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
-
-    @pytest.mark.parametrize("dtype", INT_DTYPES + UINT_DTYPES)
-    def test_pow_integer(self, dtype: DType) -> None:
-        """Int ``pow`` matches numpy; Pow sweeps integer dtypes (``div`` does not)."""
-        shape = [3, 4]
-        np_dtype = dtype.to_numpy()
-        # Small bases / exponent 2 keep the result within every int width.
-        a_np = np.arange(1, 13, dtype=np_dtype).reshape(shape)
-        b_np = np.full(shape, 2, dtype=np_dtype)
-
-        a = Tensor.from_dlpack(a_np)
-        b = Tensor.from_dlpack(b_np)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            c = a**b
-
-        expected = np.power(a_np, b_np)
-        np.testing.assert_array_equal(np.from_dlpack(c), expected)
 
     @pytest.mark.parametrize("dtype", ELEMENTWISE_DTYPES)
     def test_max(self, dtype: DType) -> None:
@@ -3358,30 +3335,6 @@ class TestConcatOp:
         expected = np.concatenate([a_np, b_np], axis=0)
         np.testing.assert_array_almost_equal(np.from_dlpack(result), expected)
 
-    @pytest.mark.parametrize("axis", [0, 1, -1])
-    @pytest.mark.parametrize(
-        "dtype",
-        [DType.uint8, DType.int16, DType.bool, DType.float16],
-    )
-    def test_concat_extra_dtypes(self, dtype: DType, axis: int) -> None:
-        """Concat over dtypes the old Mojo path also accepted.
-
-        float16 has no typed CPU kernel; it exercises the width-16 uint bit-cast.
-        """
-        a_np = np.array([[1, 0, 1], [0, 1, 1]]).astype(dtype.to_numpy())
-        b_np = np.array([[1, 1, 0], [0, 0, 1]]).astype(dtype.to_numpy())
-
-        a = Tensor.from_dlpack(a_np)
-        b = Tensor.from_dlpack(b_np)
-        with (
-            rc.EagerRealizationContext() as ctx,
-            realization_context(ctx),
-        ):
-            result = F.concat([a, b], axis=axis)
-
-        expected = np.concatenate([a_np, b_np], axis=axis)
-        np.testing.assert_array_equal(np.from_dlpack(result), expected)
-
 
 def _numpy_layer_norm(
     x: np.ndarray, gamma: np.ndarray, beta: np.ndarray, eps: float = 1e-5
@@ -3791,7 +3744,7 @@ class TestSliceOp:
         expected = x_np[2:7]
         np.testing.assert_array_equal(np.from_dlpack(result), expected)
 
-    @pytest.mark.parametrize("dtype", REARRANGE_FLOAT_DTYPES)
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_slice_2d(self, dtype: DType) -> None:
         """Test 2D slice across both dimensions."""
         np_dtype = dtype.to_numpy()
@@ -4555,7 +4508,7 @@ class TestSplitOp:
             assert isinstance(result, Tensor)
             np.testing.assert_array_equal(np.from_dlpack(result), exp)
 
-    @pytest.mark.parametrize("dtype", REARRANGE_FLOAT_DTYPES)
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     @pytest.mark.parametrize("axis", [0, 1])
     def test_2d_axes(self, dtype: DType, axis: int) -> None:
         """Test split on a 2D tensor along each axis."""
@@ -6570,7 +6523,7 @@ class TestTileOp:
 
         np.testing.assert_array_equal(np.from_dlpack(y), np.tile(x_np, reps))
 
-    @pytest.mark.parametrize("dtype", REARRANGE_FLOAT_DTYPES)
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     @pytest.mark.parametrize(
         "reps", [(2, 3), (1, 4), (3, 1)], ids=["2x3", "1x4", "3x1"]
     )
@@ -9028,7 +8981,7 @@ class TestLazyGCModelCompilation:
 
         cache: dict[str, object] = {}
         monkeypatch.setattr(matmul_gc, "_MATMUL_MODEL_CACHE", cache)
-        monkeypatch.setattr(matmul_gc, "_SWEPT", False)
+        monkeypatch.setattr(matmul_gc, "_swept", False)
         key = matmul_gc.CompilationTarget(
             matmul_gc._GRAPH_BASE_NAME, CPU(), DType.float32
         ).graph_name
@@ -9060,7 +9013,7 @@ class TestLazyGCModelCompilation:
         # Fresh cache dir with no stamp written.
         monkeypatch.setattr(gc_compile, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr(matmul_gc, "_MATMUL_MODEL_CACHE", {})
-        monkeypatch.setattr(matmul_gc, "_SWEPT", False)
+        monkeypatch.setattr(matmul_gc, "_swept", False)
         calls: list[str] = []
 
         def fake_per_target(target: object) -> object:
@@ -9091,7 +9044,7 @@ class TestLazyGCModelCompilation:
 
         cache: dict[str, object] = {}
         monkeypatch.setattr(unary_elementwise_gc, "_UNARY_MODEL_CACHE", cache)
-        monkeypatch.setattr(unary_elementwise_gc, "_SWEPT", False)
+        monkeypatch.setattr(unary_elementwise_gc, "_swept", False)
         key = unary_elementwise_gc._graph_name(mo.ExpOp, CPU(), DType.float32)
         calls: list[str] = []
 
@@ -9133,215 +9086,3 @@ class TestLazyGCModelCompilation:
         sig = gc_compile._context_signature()
         assert sig == gc_compile._context_signature()
         assert "accelerators=" in sig and "cpu=" in sig
-
-    def test_binary_model_compiles_once_and_reuses(self) -> None:
-        """A second call for the same binary target returns the cached model."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc
-
-        cpu = CPU()
-        first = elementwise_binary_gc.binary_model(mo.AddOp, cpu, DType.float32)
-        second = elementwise_binary_gc.binary_model(
-            mo.AddOp, cpu, DType.float32
-        )
-        assert first is second
-
-    def test_binary_comparison_model_compiles(self) -> None:
-        """A comparison op (bool output) compiles like an arithmetic one."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc
-
-        model = elementwise_binary_gc.binary_model(
-            mo.GreaterOp, CPU(), DType.float32
-        )
-        assert model is not None
-
-    def test_binary_model_unsupported_dtype_raises(self) -> None:
-        """Div sweeps floats only; an int dtype is outside the supported set."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc
-
-        with pytest.raises(
-            KeyError, match="Unsupported binary op/device/dtype"
-        ):
-            elementwise_binary_gc.binary_model(mo.DivOp, CPU(), DType.int32)
-
-    def test_binary_model_pow_integer_supported(self) -> None:
-        """Pow sweeps NUMERIC, so an int Pow compiles (not the Div case)."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc
-
-        model = elementwise_binary_gc.binary_model(mo.PowOp, CPU(), DType.int32)
-        assert model is not None
-
-    def test_binary_model_precompile_raises_on_miss(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """With =1, a supported-but-unswept target is a hard error."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc, gc_compile
-
-        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
-        monkeypatch.setattr(elementwise_binary_gc, "_BINARY_MODEL_CACHE", {})
-        # float32 Add is supported (passes the _is_supported guard), so the miss
-        # falls through to the precompile-mode hard error, not "Unsupported".
-        with pytest.raises(KeyError, match="No pre-compiled binary model"):
-            elementwise_binary_gc.binary_model(mo.AddOp, CPU(), DType.float32)
-
-    def test_binary_model_lazy_default_compiles_on_miss(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """By default (env var unset) a supported miss compiles lazily."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc, gc_compile
-
-        monkeypatch.delenv(
-            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
-        )
-        monkeypatch.setattr(elementwise_binary_gc, "_BINARY_MODEL_CACHE", {})
-        model = elementwise_binary_gc.binary_model(
-            mo.AddOp, CPU(), DType.float32
-        )
-        assert model is not None
-
-    def test_binary_model_adopts_warm_stamp(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        """A lazy binary miss with a matching stamp adopts via batched sweep."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc, gc_compile
-
-        monkeypatch.delenv(
-            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
-        )
-        monkeypatch.setattr(gc_compile, "_cache_dir", lambda: tmp_path)
-        gc_compile.write_warm_stamp()
-
-        cache: dict[str, object] = {}
-        monkeypatch.setattr(elementwise_binary_gc, "_BINARY_MODEL_CACHE", cache)
-        monkeypatch.setattr(elementwise_binary_gc, "_SWEPT", False)
-        key = elementwise_binary_gc._graph_name(mo.AddOp, CPU(), DType.float32)
-        calls: list[str] = []
-
-        def fake_sweep() -> None:
-            calls.append("sweep")
-            cache[key] = object()
-
-        monkeypatch.setattr(
-            elementwise_binary_gc, "compile_binary_sweep", fake_sweep
-        )
-        monkeypatch.setattr(
-            elementwise_binary_gc,
-            "_compile_binary_target",
-            lambda op, dev, dt: calls.append("per_target"),
-        )
-        elementwise_binary_gc.binary_model(mo.AddOp, CPU(), DType.float32)
-        assert calls == ["sweep"]
-
-    def test_binary_model_no_stamp_compiles_per_target(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        """Without a stamp, a lazy binary miss compiles the single target."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import elementwise_binary_gc, gc_compile
-
-        monkeypatch.delenv(
-            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
-        )
-        # Fresh cache dir with no stamp written.
-        monkeypatch.setattr(gc_compile, "_cache_dir", lambda: tmp_path)
-        monkeypatch.setattr(elementwise_binary_gc, "_BINARY_MODEL_CACHE", {})
-        monkeypatch.setattr(elementwise_binary_gc, "_SWEPT", False)
-        calls: list[str] = []
-
-        def fake_per_target(op: object, dev: object, dt: object) -> object:
-            calls.append("per_target")
-            return object()
-
-        monkeypatch.setattr(
-            elementwise_binary_gc,
-            "compile_binary_sweep",
-            lambda: calls.append("sweep"),
-        )
-        monkeypatch.setattr(
-            elementwise_binary_gc, "_compile_binary_target", fake_per_target
-        )
-        elementwise_binary_gc.binary_model(mo.AddOp, CPU(), DType.float32)
-        assert calls == ["per_target"]
-
-    def test_reduce_model_no_stamp_compiles_per_target(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        """Without a stamp, a lazy reduce miss compiles the single target."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import gc_compile, reduce_axis_gc
-
-        monkeypatch.delenv(
-            gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, raising=False
-        )
-        # Fresh cache dir with no stamp written.
-        monkeypatch.setattr(gc_compile, "_cache_dir", lambda: tmp_path)
-        monkeypatch.setattr(reduce_axis_gc, "_REDUCE_MODEL_CACHE", {})
-        monkeypatch.setattr(reduce_axis_gc, "_SWEPT", False)
-        calls: list[str] = []
-
-        def fake_per_target(
-            op: object, dev: object, dt: object, variant: object
-        ) -> object:
-            calls.append("per_target")
-            return object()
-
-        monkeypatch.setattr(
-            reduce_axis_gc,
-            "compile_reduce_axis_sweep",
-            lambda: calls.append("sweep"),
-        )
-        monkeypatch.setattr(
-            reduce_axis_gc, "_compile_reduce_axis_target", fake_per_target
-        )
-        reduce_axis_gc.reduce_model(mo.ReduceAddOp, CPU(), DType.float32)
-        assert calls == ["per_target"]
-
-    def test_shape_rearrange_precompile_raises_on_miss(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """With =1, a supported-but-unswept rearrange target is a hard error."""
-        from max._core.dialects import mo
-        from max._interpreter_ops import gc_compile, shape_rearrange_gc
-
-        monkeypatch.setenv(gc_compile.EAGER_OP_PRECOMPILE_ENV_VAR, "1")
-        monkeypatch.setattr(shape_rearrange_gc, "_MODEL_CACHE", {})
-        # uint32 concat passes the _is_supported guard, so the miss falls
-        # through to the precompile-mode hard error, not "Unsupported".
-        with pytest.raises(
-            KeyError, match="No pre-compiled shape-rearrange model"
-        ):
-            shape_rearrange_gc.model(mo.ConcatOp, CPU(), DType.uint32)
-
-    def test_uint_view_dtype_rejects_sub_byte(self) -> None:
-        """Byte-aligned dtypes bit-cast to a same-width uint; sub-byte raises."""
-        from max._interpreter_ops import shape_rearrange_gc
-
-        assert shape_rearrange_gc.uint_view_dtype(DType.float16) == DType.uint16
-        assert shape_rearrange_gc.uint_view_dtype(DType.float64) == DType.uint64
-        assert shape_rearrange_gc.uint_view_dtype(DType.bool) == DType.uint8
-        assert (
-            shape_rearrange_gc.uint_view_dtype(DType.float8_e4m3fn)
-            == DType.uint8
-        )
-        with pytest.raises(NotImplementedError, match="sub-byte"):
-            shape_rearrange_gc.uint_view_dtype(DType.float4_e2m1fn)
-
-    def test_tile_rank_over_cap_raises(self) -> None:
-        """Rank beyond an op's cap raises cleanly, not a kernel comptime assert.
-
-        Uses the same KeyError "Unsupported" signal as an unsupported dtype.
-        """
-        from max._core.dialects import mo
-        from max._interpreter_ops import shape_rearrange_gc
-
-        # tile's GC kernel supports up to rank 4; rank 5 must be rejected here.
-        with pytest.raises(
-            KeyError, match="Unsupported shape-rearrange rank 5"
-        ):
-            shape_rearrange_gc.model(mo.TileOp, CPU(), DType.uint8, rank=5)

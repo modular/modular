@@ -28,13 +28,7 @@ import max._interpreter_ops as ops
 import numpy as np
 from max import _core, graph
 from max._core.dialects import builtin, kgen, mo, mosh
-from max._interpreter_ops import (
-    elementwise_binary_gc,
-    matmul_gc,
-    reduce_axis_gc,
-    shape_rearrange_gc,
-    unary_elementwise_gc,
-)
+from max._interpreter_ops import matmul_gc, unary_elementwise_gc
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 
@@ -680,49 +674,71 @@ def _check_buffers_on_device(
             )
 
 
-# Binary elementwise operations (arithmetic, bitwise, and comparison)
+# Binary elementwise operations
 
 
-def _handle_binary_elementwise(
-    op: _core.Operation, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Dispatches an eager binary-elementwise op to its GC model.
+def binary_elementwise_handler(op_type: type) -> OpHandler:
+    op_binding = ops.BINARY_ELEMENTWISE[op_type]
 
-    Models are compiled once per (op, device, input dtype) at rank 1 (see
-    :func:`elementwise_binary_gc.binary_model`), so both operands are flattened
-    around the call and the result reshaped back (zero-copy views). The two
-    operands arrive already cast to a common dtype and broadcast to a common
-    shape, so a single rank-1 dtype keys the model exactly. The output dtype is
-    whatever the model produces — the same dtype for arithmetic/bitwise ops,
-    ``bool`` for the comparison predicates.
+    def handler(
+        op: _core.Operation,
+        inputs: Sequence[Buffer | None],
+    ) -> Sequence[Buffer]:
+        assert isinstance(inputs[0], Buffer)
+        assert isinstance(inputs[1], Buffer)
 
-    Args:
-        op: The binary-elementwise operation being handled.
-        inputs: The realized input buffers (``lhs``, ``rhs``).
+        target_device = _get_target_device(op)
+        _check_buffers_on_device(inputs, target_device)
 
-    Returns:
-        A single-element list holding the result buffer.
-    """
-    lhs, rhs = inputs
-    assert isinstance(lhs, Buffer)
-    assert isinstance(rhs, Buffer)
+        output = Buffer(
+            shape=inputs[0].shape,
+            dtype=inputs[0].dtype,
+            device=target_device,
+        )
 
-    model = elementwise_binary_gc.binary_model(type(op), lhs.device, lhs.dtype)
-    shape = elementwise_binary_gc.canonical_shape(lhs.shape)
-    lhs_view = lhs.view(lhs.dtype, shape)
-    rhs_view = rhs.view(rhs.dtype, shape)
-    (out,) = model(lhs_view, rhs_view)
-    return [out.view(out.dtype, lhs.shape)]
+        op_binding(
+            output, inputs[0], inputs[1], target_device._device_context_ptr()
+        )
+
+        return [output]
+
+    return handler
 
 
-# Wrapped in a function so the BINARY_GC_OPS access is deferred past the import
-# cycle between this module and elementwise_binary_gc (via the package).
-def _register_binary_elementwise_handlers() -> None:
-    for op_type in elementwise_binary_gc.BINARY_GC_OPS:
-        register_op_handler(op_type)(_handle_binary_elementwise)
+for op_type in ops.BINARY_ELEMENTWISE:
+    register_op_handler(op_type)(binary_elementwise_handler(op_type))
 
 
-_register_binary_elementwise_handlers()
+def binary_comparison_handler(op_type: type) -> OpHandler:
+    op_binding = ops.BINARY_ELEMENTWISE_COMPARISON[op_type]
+
+    def handler(
+        op: _core.Operation,
+        inputs: Sequence[Buffer | None],
+    ) -> Sequence[Buffer]:
+        assert isinstance(inputs[0], Buffer)
+        assert isinstance(inputs[1], Buffer)
+
+        target_device = _get_target_device(op)
+        _check_buffers_on_device(inputs, target_device)
+
+        output = Buffer(
+            shape=inputs[0].shape,
+            dtype=DType.bool,
+            device=target_device,
+        )
+
+        op_binding(
+            output, inputs[0], inputs[1], target_device._device_context_ptr()
+        )
+
+        return [output]
+
+    return handler
+
+
+for op_type in ops.BINARY_ELEMENTWISE_COMPARISON:
+    register_op_handler(op_type)(binary_comparison_handler(op_type))
 
 
 # Unary elementwise operations
@@ -1095,41 +1111,74 @@ def _handle_transpose(
 def _handle_slice(
     op: mo.SliceOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.slice via rmo.MoSliceOp with runtime starts/stops/steps.
+    """Handle mo.slice by dispatching to Mojo slice kernel.
 
-    Inputs: (input, starts, stops, steps); the latter three are rank-1 int64
-    tensors with one entry per dimension. Negative starts/stops are normalized
-    to the input dims; steps must be positive.
+    Args:
+        op: The slice operation.
+        inputs: Input buffers - (input, starts, stops, steps) where
+            starts/stops/steps are 1D tensors with one element per dimension.
+
+    Returns:
+        List containing the sliced tensor buffer.
     """
-    assert len(inputs) >= 4, f"SliceOp expects 4 inputs, got {len(inputs)}"
-    input_buffer, starts_b, stops_b, steps_b = inputs[:4]
-    assert isinstance(input_buffer, Buffer)
-    assert isinstance(starts_b, Buffer)
-    assert isinstance(stops_b, Buffer)
-    assert isinstance(steps_b, Buffer)
+    target_device = _get_target_device(op)
 
-    start_np = starts_b.to_numpy().astype(np.int64)
-    stop_np = stops_b.to_numpy().astype(np.int64)
-    step_np = steps_b.to_numpy().astype(np.int64)
-    assert (step_np > 0).all(), f"SliceOp steps must be positive, got {step_np}"
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+    assert isinstance(inputs[2], Buffer)
+    assert isinstance(inputs[3], Buffer)
 
+    input_buffer = inputs[0]
+    starts_buffer = inputs[1]
+    stops_buffer = inputs[2]
+    steps_buffer = inputs[3]
+
+    # Read starts/stops/steps to compute output shape
+    # .to_numpy() handles GPU->CPU transfer transparently
+    start_np = starts_buffer.to_numpy().astype(np.int64)
+    stop_np = stops_buffer.to_numpy().astype(np.int64)
+    step_np = steps_buffer.to_numpy().astype(np.int64)
+
+    # Normalize negative starts/stops relative to input dims (NumPy
+    # convention: -1 means last element, etc.).
     input_shape_np = np.array(input_buffer.shape, dtype=np.int64)
     start_np = np.where(start_np < 0, start_np + input_shape_np, start_np)
     stop_np = np.where(stop_np < 0, stop_np + input_shape_np, stop_np)
 
     rank = len(start_np)
-    udtype = shape_rearrange_gc.uint_view_dtype(input_buffer.dtype)
-    model = shape_rearrange_gc.model(
-        mo.SliceOp, input_buffer.device, udtype, rank
+    output_shape = tuple(
+        int(max(0, int(np.ceil((stop_np[i] - start_np[i]) / step_np[i]))))
+        for i in range(rank)
     )
-    (out,) = model(
-        input_buffer.view(udtype, input_buffer.shape),
-        Buffer.from_numpy(start_np),
-        Buffer.from_numpy(stop_np),
-        Buffer.from_numpy(step_np),
+
+    # Allocate output buffer on target device
+    output = Buffer(
+        shape=output_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
     )
-    # Trust the GC result's shape: rmo.slice clamps open-ended stops at runtime.
-    return [out.view(input_buffer.dtype, tuple(out.shape))]
+
+    # Pad starts/stops/steps to MAX_RANK=5 for Mojo kernel
+    max_rank = 5
+    pad_count = max_rank - rank
+    padded_starts = np.zeros(max_rank, dtype=np.int64)
+    padded_stops = np.ones(max_rank, dtype=np.int64)
+    padded_steps = np.ones(max_rank, dtype=np.int64)
+    padded_starts[pad_count:] = start_np
+    padded_stops[pad_count:] = stop_np
+    padded_steps[pad_count:] = step_np
+
+    # Call Mojo kernel
+    ops.data_movement_ops.Slice(
+        output,
+        input_buffer,
+        Buffer.from_numpy(padded_starts),
+        Buffer.from_numpy(padded_stops),
+        Buffer.from_numpy(padded_steps),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
 
 
 # Shape/parameter operations
@@ -1290,53 +1339,205 @@ def _handle_param_to_value(
     )
 
 
-# Reduce-along-axis operations (reduce / softmax / argmax / cumsum)
+# Reduce operations
 
 
-def _handle_reduce_axis(
-    op: _core.Operation, inputs: Sequence[Buffer | None]
+def reduce_handler(op_type: type) -> OpHandler:
+    op_binding = ops.REDUCE[op_type]
+
+    def handler(
+        op: _core.Operation,
+        inputs: Sequence[Buffer | None],
+    ) -> Sequence[Buffer]:
+        result_type = graph.Type.from_mlir(list(op.results)[0].type)
+        assert isinstance(result_type, graph.TensorType)
+        target_device = result_type.device.to_device()
+
+        assert isinstance(inputs[0], Buffer)
+
+        input_buffer = inputs[0]
+
+        # `axis` is a compile-time `index` attribute, not an operand.
+        axis = cast(_HasAxis, op).axis
+
+        # Calculate output shape (same as input with reduced axis dim = 1)
+        output_shape = list(input_buffer.shape)
+        output_shape[axis] = 1
+
+        output = Buffer(
+            shape=output_shape,
+            dtype=input_buffer.dtype,
+            device=target_device,
+        )
+
+        op_binding(
+            output, input_buffer, axis, target_device._device_context_ptr()
+        )
+
+        return [output]
+
+    return handler
+
+
+for op_type in ops.REDUCE:
+    register_op_handler(op_type)(reduce_handler(op_type))
+
+
+# ArgMax / ArgMin operations
+
+
+def _argmax_min_handler(
+    op: _core.Operation,
+    inputs: Sequence[Buffer | None],
+    kernel_fn: Any,
 ) -> Sequence[Buffer]:
-    """Dispatches an eager reduce-along-axis op to its GC model.
+    """Shared implementation for ArgMaxOp and ArgMinOp.
 
-    Reading the op's MLIR result type for the output shape and dtype keeps this
-    handler family-agnostic: reduced-axis ops (``[d0, 1, d2]``, ``int64`` for
-    argmax) and same-shape ops (``[d0, d1, d2]``) share one path. The operand is
-    view-shimmed to canonical rank 3 and the result back, both zero-copy.
+    Both ops reduce along an axis and return int64 indices. ``axis`` is a
+    compile-time ``index`` attribute carried on the op (not an operand).
 
     Args:
-        op: The reduce/softmax/argmax/cumsum operation being handled.
-        inputs: The realized input buffers; the first is the operand.
+        op: The argmax/argmin operation.
+        inputs: Input buffers - the input tensor.
+        kernel_fn: The Mojo kernel to call (ArgMax or ArgMin).
 
     Returns:
-        A single-element list holding the result buffer.
+        List containing the output int64 index tensor.
     """
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
 
-    x = inputs[0]
-    assert isinstance(x, Buffer)
-    _check_buffers_on_device(inputs, target_device)
+    assert isinstance(inputs[0], Buffer)
+
+    input_buffer = inputs[0]
 
     axis = cast(_HasAxis, op).axis
-    variant = reduce_axis_gc.variant_for(op)
-    model = reduce_axis_gc.reduce_model(type(op), x.device, x.dtype, variant)
+    in_shape = list(input_buffer.shape)
+    ndim = len(in_shape)
 
-    d0, d1, d2 = reduce_axis_gc.canonical_rank3(x.shape, axis)
-    x_view = x.view(x.dtype, (d0, d1, d2))
-    (out,) = model(x_view)
-    out_shape = tuple(int(dim) for dim in result_type.shape)
-    return [out.view(result_type.dtype, out_shape)]
+    if axis < 0:
+        axis += ndim
+
+    # Normalize to 3D: [dim0, dim1, dim2]
+    dim0 = prod(in_shape[:axis]) if axis > 0 else 1
+    dim1 = in_shape[axis]
+    dim2 = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
+
+    # Output shape: same as input with shape[axis] = 1, dtype always int64
+    output_shape = list(in_shape)
+    output_shape[axis] = 1
+    output = Buffer(shape=output_shape, dtype=DType.int64, device=target_device)
+
+    kernel_fn(
+        output,
+        input_buffer,
+        (dim0, dim1, dim2),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
 
 
-# Wrapped in a function so the REDUCE_AXIS_GC_OPS access is deferred past the
-# import cycle between this module and reduce_axis_gc (via the package).
-def _register_reduce_axis_handlers() -> None:
-    for op_type in reduce_axis_gc.REDUCE_AXIS_GC_OPS:
-        register_op_handler(op_type)(_handle_reduce_axis)
+@register_op_handler(mo.ReduceArgMaxOp)
+def _handle_argmax(
+    op: mo.ReduceArgMaxOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.reduce.arg_max by dispatching to Mojo argmax kernel."""
+    return _argmax_min_handler(op, inputs, ops.argmax_ops.ArgMax)
 
 
-_register_reduce_axis_handlers()
+@register_op_handler(mo.ReduceArgMinOp)
+def _handle_argmin(
+    op: mo.ReduceArgMinOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.reduce.arg_min by dispatching to Mojo argmin kernel."""
+    return _argmax_min_handler(op, inputs, ops.argmax_ops.ArgMin)
+
+
+# Softmax operations
+
+
+def softmax_handler(op_type: type) -> OpHandler:
+    op_binding = ops.SOFTMAX[op_type]
+
+    def handler(
+        op: _core.Operation,
+        inputs: Sequence[Buffer | None],
+    ) -> Sequence[Buffer]:
+        result_type = graph.Type.from_mlir(list(op.results)[0].type)
+        assert isinstance(result_type, graph.TensorType)
+        target_device = result_type.device.to_device()
+
+        assert isinstance(inputs[0], Buffer)
+
+        input_buffer = inputs[0]
+
+        # `axis` is a compile-time `index` attribute.
+        axis = cast(_HasAxis, op).axis
+
+        # Output shape is the same as input (not reduced)
+        output = Buffer(
+            shape=input_buffer.shape,
+            dtype=input_buffer.dtype,
+            device=target_device,
+        )
+
+        op_binding(
+            output, input_buffer, axis, target_device._device_context_ptr()
+        )
+
+        return [output]
+
+    return handler
+
+
+for op_type in ops.SOFTMAX:
+    register_op_handler(op_type)(softmax_handler(op_type))
+
+
+# Cumsum operation
+
+
+@register_op_handler(mo.CumsumOp)
+def _handle_cumsum(
+    op: mo.CumsumOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.cumsum by dispatching to Mojo cumsum kernel.
+
+    Args:
+        op: The cumsum operation.
+        inputs: Input buffers - the input tensor. ``axis`` is a compile-time
+            ``index`` attribute.
+
+    Returns:
+        List containing the cumsum tensor buffer.
+    """
+    assert isinstance(inputs[0], Buffer)  # input tensor
+
+    input_buffer = inputs[0]
+
+    # Extract axis, exclusive and reverse from op attributes
+    axis = op.axis
+    exclusive = op.exclusive
+    reverse = op.reverse
+
+    # Output shape is the same as input shape (cumsum preserves shape)
+    output = Buffer(
+        shape=input_buffer.shape,
+        dtype=input_buffer.dtype,
+        device=input_buffer.device,
+    )
+
+    ops.misc_ops.CumSum(
+        output,
+        input_buffer,
+        axis,
+        exclusive,
+        reverse,
+    )
+
+    return [output]
 
 
 # Layer norm operations
@@ -1668,7 +1869,7 @@ def _handle_select(
         device=target_device,
     )
 
-    ops.select_ops.Select(
+    ops.elementwise_comparison_ops.Select(
         output,
         inputs[0],
         inputs[1],
@@ -1686,45 +1887,67 @@ def _handle_select(
 def _handle_concat(
     op: mo.ConcatOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.concat via a pairwise rank-3 GC concat at axis=1.
+    """Handle mo.concat by concatenating input tensors along a given axis.
 
-    Each operand is view-shimmed to canonical rank 3 ``[outer, axis_i, inner]``
-    (zero-copy); a 2-input concat model folds them left-to-right; the result is
-    re-viewed to the concrete output shape. A single operand short-circuits.
+    Uses a Mojo memcpy kernel to copy contiguous slices from each input into
+    the output buffer, supporting both CPU and GPU.
+
+    Args:
+        op: The concat operation.
+        inputs: Input buffers to concatenate.
+
+    Returns:
+        List containing the concatenated tensor buffer.
     """
     target_device = _get_target_device(op)
-    tensors: list[Buffer] = []
-    for buf in inputs:
-        assert isinstance(buf, Buffer)
-        tensors.append(buf)
-    assert len(tensors) >= 1, "ConcatOp requires at least one input tensor"
-    _check_buffers_on_device(tensors, target_device)
-
-    if len(tensors) == 1:
-        # No-op concat: alias the input (buffers are values here), not a copy.
-        return [tensors[0]]
 
     axis = op.axis
-    ndim = len(tensors[0].shape)
+
+    tensor_inputs: list[Buffer] = []
+    for buf in inputs:
+        assert isinstance(buf, Buffer)
+        tensor_inputs.append(buf)
+    assert len(tensor_inputs) >= 1, (
+        "ConcatOp requires at least one input tensor"
+    )
+    _check_buffers_on_device(tensor_inputs, target_device)
+
+    # Normalize negative axis
+    ndim = len(tensor_inputs[0].shape)
     if axis < 0:
         axis += ndim
 
-    outer, _, inner = shape_rearrange_gc.canonical_rank3(tensors[0].shape, axis)
-    dtype = tensors[0].dtype
-    udtype = shape_rearrange_gc.uint_view_dtype(dtype)
-    gc_model = shape_rearrange_gc.model(mo.ConcatOp, tensors[0].device, udtype)
+    # Compute output shape
+    output_shape = list(tensor_inputs[0].shape)
+    output_shape[axis] = sum(inp.shape[axis] for inp in tensor_inputs)
 
-    def view3(buf: Buffer) -> Buffer:
-        a = buf.shape[axis]
-        return buf.view(udtype, (outer, a, inner))
+    output = Buffer(
+        shape=output_shape, dtype=tensor_inputs[0].dtype, device=target_device
+    )
+    ctx_ptr = target_device._device_context_ptr()
 
-    acc = view3(tensors[0])
-    for buf in tensors[1:]:
-        (acc,) = gc_model(acc, view3(buf))
+    # Decompose into contiguous memcpy calls.
+    # For axis=0, outer_size=1 so we get one call per input (optimal).
+    outer_size = prod(output_shape[:axis]) if axis > 0 else 1
+    suffix_size = prod(output_shape[axis + 1 :]) if axis < ndim - 1 else 1
+    out_axis_stride = output_shape[axis] * suffix_size
 
-    out_shape = list(tensors[0].shape)
-    out_shape[axis] = sum(t.shape[axis] for t in tensors)
-    return [acc.view(dtype, tuple(out_shape))]
+    dst_axis_offset = 0
+    for inp in tensor_inputs:
+        inner_count = inp.shape[axis] * suffix_size
+        inp_stride = inner_count
+        for outer_idx in range(outer_size):
+            ops.data_movement_ops.Memcpy(
+                output,
+                inp,
+                outer_idx * out_axis_stride + dst_axis_offset * suffix_size,
+                outer_idx * inp_stride,
+                inner_count,
+                ctx_ptr,
+            )
+        dst_axis_offset += inp.shape[axis]
+
+    return [output]
 
 
 # Gather operations
@@ -2133,39 +2356,55 @@ def _handle_scatter_nd_mul(
 def _handle_split(
     op: mo.SplitOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.split via a rank-3 dynamic-slice GC model, one call per chunk.
+    """Handle mo.split by copying each chunk via the Mojo split kernel.
 
-    The input is view-shimmed to ``[outer, D, inner]``; each chunk is sliced at
-    axis=1 with runtime ``(offset, offset+size)`` and re-viewed to its concrete
-    shape. Operands: input (device), splitSizes (host int64 rank-1).
+    Operands: input (device tensor), splitSizes (host int64 rank-1).
+    ``axis`` is a compile-time ``index`` attribute.
+    Returns N output buffers where N = len(splitSizes).
     """
-    assert isinstance(inputs[0], Buffer)
-    assert isinstance(inputs[1], Buffer)
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # splitSizes (host)
+
     input_buffer = inputs[0]
     split_sizes = [int(s) for s in inputs[1].to_numpy().flatten()]
+    axis = op.axis
 
     in_shape = list(input_buffer.shape)
     ndim = len(in_shape)
-    axis = op.axis
+
     if axis < 0:
         axis += ndim
 
-    outer, _, inner = shape_rearrange_gc.canonical_rank3(in_shape, axis)
-    dtype = input_buffer.dtype
-    udtype = shape_rearrange_gc.uint_view_dtype(dtype)
-    x_view = input_buffer.view(udtype, (outer, in_shape[axis], inner))
-    model = shape_rearrange_gc.model(mo.SplitOp, input_buffer.device, udtype)
+    dim0 = prod(in_shape[:axis]) if axis > 0 else 1
+    in_dim1 = in_shape[axis]
+    dim2 = prod(in_shape[axis + 1 :]) if axis < ndim - 1 else 1
 
+    ctx_ptr = target_device._device_context_ptr()
     outputs: list[Buffer] = []
-    offset = 0
-    for size in split_sizes:
-        lo = Buffer.from_numpy(np.array(offset, dtype=np.int64))
-        hi = Buffer.from_numpy(np.array(offset + size, dtype=np.int64))
-        (chunk,) = model(x_view, lo, hi)
+    axis_offset = 0
+
+    for chunk_size in split_sizes:
         out_shape = list(in_shape)
-        out_shape[axis] = size
-        outputs.append(chunk.view(dtype, tuple(out_shape)))
-        offset += size
+        out_shape[axis] = chunk_size
+
+        output = Buffer(
+            shape=out_shape,
+            dtype=input_buffer.dtype,
+            device=target_device,
+        )
+
+        ops.split_ops.SplitCopy(
+            output,
+            input_buffer,
+            (dim0, chunk_size, dim2, axis_offset, in_dim1),
+            ctx_ptr,
+        )
+
+        outputs.append(output)
+        axis_offset += chunk_size
+
     return outputs
 
 
@@ -2712,28 +2951,50 @@ def _handle_max_pool_ceil(
 def _handle_tile(
     op: mo.TileOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.tile via rmo.MoTileOp with runtime repeats. CPU-only.
+    """Handle mo.tile by repeating the input along each dimension.
 
-    Operands: input (device tensor), repeats (host int64 rank-1). Output
-    shape[i] = input shape[i] * repeats[i].
+    Operands: input (device tensor), repeats (host int64 rank-1).
+    Output shape[i] = input shape[i] * repeats[i].
+    CPU-only (mo.tile is MO_HostOnly).
+
+    Args:
+        op: The tile operation.
+        inputs: Input buffers - [input_tensor, repeats_tensor].
+
+    Returns:
+        List containing the tiled output tensor buffer.
     """
     target_device = _get_target_device(op)
-    _check_cpu_only(op, target_device)
-    assert isinstance(inputs[0], Buffer)
-    assert isinstance(inputs[1], Buffer)
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # repeats (host int64)
+
     input_buffer = inputs[0]
     repeats = [int(r) for r in inputs[1].to_numpy().flatten()]
 
-    rank = len(input_buffer.shape)
-    out_shape = tuple(input_buffer.shape[i] * repeats[i] for i in range(rank))
-    # int64 to match the graph's repeats operand regardless of input width.
-    reps = Buffer.from_numpy(np.asarray(repeats, dtype=np.int64))
-    udtype = shape_rearrange_gc.uint_view_dtype(input_buffer.dtype)
-    model = shape_rearrange_gc.model(
-        mo.TileOp, input_buffer.device, udtype, rank
+    in_shape = list(input_buffer.shape)
+    rank = len(in_shape)
+    out_shape = [in_shape[i] * repeats[i] for i in range(rank)]
+
+    in_strides = _row_major_strides(in_shape)
+    out_strides = _row_major_strides(out_shape)
+
+    output = Buffer(
+        shape=out_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
     )
-    (out,) = model(input_buffer.view(udtype, input_buffer.shape), reps)
-    return [out.view(input_buffer.dtype, out_shape)]
+
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.tile_ops.Tile(
+        output,
+        input_buffer,
+        (tuple(in_shape), out_strides, in_strides, rank),
+        ctx_ptr,
+    )
+
+    return [output]
 
 
 @register_op_handler(mo.LinalgBandPartOp)
@@ -3185,61 +3446,207 @@ def _handle_arg_nonzero(
 # Padding operations
 
 
-def _handle_pad_via_gc(
+def _pad_common(
     op: _core.Operation,
-    inputs: Sequence[Buffer | None],
-    op_type: type[_core.Operation],
-) -> Sequence[Buffer]:
-    """Dispatch a pad op to its GC model. Constant pad has a 3rd (constant) operand."""
-    assert isinstance(inputs[0], Buffer)
-    assert isinstance(inputs[1], Buffer)
-    input_buffer = inputs[0]
-    paddings = [int(p) for p in inputs[1].to_numpy().flatten()]
+    input_buffer: Buffer,
+    paddings: list[int],
+    target_device: Device,
+) -> tuple[list[int], list[int], tuple[int, ...], tuple[int, ...], int]:
+    """Compute output shape, strides, and total elements for a pad op.
+
+    Args:
+        op: The pad operation (used only to name the caller in errors).
+        input_buffer: The input tensor buffer.
+        paddings: Flat list [pre_0, post_0, pre_1, post_1, ...].
+        target_device: The target execution device.
+
+    Returns:
+        Tuple of (out_shape, in_shape, out_strides, in_strides, total).
+    """
     in_shape = list(input_buffer.shape)
     rank = len(in_shape)
-    out_shape = tuple(
+    out_shape = [
         in_shape[d] + paddings[2 * d] + paddings[2 * d + 1] for d in range(rank)
-    )
-    # int64 to match the graph's paddings operand dtype regardless of width.
-    pad_buf = Buffer.from_numpy(np.asarray(paddings, dtype=np.int64))
-    dtype = input_buffer.dtype
-    udtype = shape_rearrange_gc.uint_view_dtype(dtype)
-    model = shape_rearrange_gc.model(op_type, input_buffer.device, udtype, rank)
-    x_view = input_buffer.view(udtype, input_buffer.shape)
-    if op_type is mo.PadConstantOp:
-        assert isinstance(inputs[2], Buffer)
-        # Fill value: rank-0 scalar operand, in the copy's uint type.
-        const_buf = inputs[2].view(udtype, ())
-        (out,) = model(x_view, pad_buf, const_buf)
-    else:
-        (out,) = model(x_view, pad_buf)
-    return [out.view(dtype, out_shape)]
+    ]
+    in_strides = _row_major_strides(in_shape)
+    out_strides = _row_major_strides(out_shape)
+    total = prod(out_shape)
+    return out_shape, in_shape, out_strides, in_strides, total
 
 
 @register_op_handler(mo.PadConstantOp)
 def _handle_pad_constant(
     op: mo.PadConstantOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.pad.constant via rmo.MoPadConstantOp (CPU + GPU)."""
-    return _handle_pad_via_gc(op, inputs, mo.PadConstantOp)
+    """Handle mo.pad.constant via Mojo pad kernel (CPU and GPU).
+
+    Operands (MO_SingleDeviceWithHostOperands<["paddings", "constant"]>):
+      inputs[0]: input tensor (device)
+      inputs[1]: paddings (host, int32|int64, shape [2*rank])
+      inputs[2]: constant scalar (host, same dtype as input)
+
+    The padded region is filled with the scalar constant; the content
+    region copies from the input.
+
+    Args:
+        op: The pad_constant operation.
+        inputs: Input buffers.
+
+    Returns:
+        List containing the padded output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+    assert isinstance(inputs[2], Buffer)
+
+    input_buffer = inputs[0]
+    paddings = [int(p) for p in inputs[1].to_numpy().flatten()]
+    const_addr = int(inputs[2]._data_ptr())
+
+    out_shape, in_shape, out_strides, in_strides, total = _pad_common(
+        op, input_buffer, paddings, target_device
+    )
+
+    output = Buffer(
+        shape=out_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ctx_ptr = target_device._device_context_ptr()
+    ops.pad_ops.PadConstant(
+        output,
+        input_buffer,
+        (
+            paddings,
+            tuple(out_shape),
+            tuple(in_shape),
+            out_strides,
+            in_strides,
+            len(in_shape),
+            total,
+            const_addr,
+        ),
+        ctx_ptr,
+    )
+
+    return [output]
 
 
 @register_op_handler(mo.PadReflectOp)
 def _handle_pad_reflect(
     op: mo.PadReflectOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.pad.reflect via rmo.MoPadReflectOp (CPU-only)."""
-    _check_cpu_only(op, _get_target_device(op))
-    return _handle_pad_via_gc(op, inputs, mo.PadReflectOp)
+    """Handle mo.pad.reflect via Mojo pad kernel (CPU-only).
+
+    Operands (MO_HostOnly):
+      inputs[0]: input tensor
+      inputs[1]: paddings (host, int32|int64, shape [2*rank])
+
+    Padded cells mirror values from the content region using a periodic
+    reflection with period 2*(input_dim-1) per axis.
+
+    Note: values are always computed; the op has no ``sorted`` flag.
+
+    Args:
+        op: The pad_reflect operation.
+        inputs: Input buffers.
+
+    Returns:
+        List containing the reflected-padded output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+
+    input_buffer = inputs[0]
+    paddings = [int(p) for p in inputs[1].to_numpy().flatten()]
+
+    out_shape, in_shape, out_strides, in_strides, total = _pad_common(
+        op, input_buffer, paddings, target_device
+    )
+
+    output = Buffer(
+        shape=out_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ops.pad_ops.PadReflect(
+        output,
+        input_buffer,
+        (
+            paddings,
+            tuple(out_shape),
+            tuple(in_shape),
+            out_strides,
+            in_strides,
+            len(in_shape),
+            total,
+        ),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
 
 
 @register_op_handler(mo.PadRepeatOp)
 def _handle_pad_repeat(
     op: mo.PadRepeatOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.pad.repeat (edge pad) via rmo.MoPadRepeatOp (CPU-only)."""
-    _check_cpu_only(op, _get_target_device(op))
-    return _handle_pad_via_gc(op, inputs, mo.PadRepeatOp)
+    """Handle mo.pad.repeat (edge pad) via Mojo pad kernel (CPU-only).
+
+    Operands (MO_HostOnly):
+      inputs[0]: input tensor
+      inputs[1]: paddings (host, int32|int64, shape [2*rank])
+
+    Padded cells are filled by clamping the output coordinate to the
+    nearest valid input index per axis (nearest-edge / repeat semantics).
+
+    Args:
+        op: The pad_repeat operation.
+        inputs: Input buffers.
+
+    Returns:
+        List containing the edge-padded output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+
+    input_buffer = inputs[0]
+    paddings = [int(p) for p in inputs[1].to_numpy().flatten()]
+
+    out_shape, in_shape, out_strides, in_strides, total = _pad_common(
+        op, input_buffer, paddings, target_device
+    )
+
+    output = Buffer(
+        shape=out_shape,
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    ops.pad_ops.PadRepeat(
+        output,
+        input_buffer,
+        (
+            paddings,
+            tuple(out_shape),
+            tuple(in_shape),
+            out_strides,
+            in_strides,
+            len(in_shape),
+            total,
+        ),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
 
 
 @register_op_handler(mo.ResizeLinearOp)
