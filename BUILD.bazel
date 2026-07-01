@@ -166,7 +166,7 @@ platform(
     exec_properties = {
         "Pool": "m7i-large-executors",
         "OSFamily": "Linux",
-        "container-image": "docker://466483404629.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204",
         "dockerNetwork": "off",
     },
 )
