@@ -1000,11 +1000,14 @@ struct Deque[ElementType: Movable](
 
         If `n` is positive, rotates to the right.
         If `n` is negative, rotates to the left.
+        On an empty deque or when `n == 0`, this is a no-op.
 
         Args:
             n: Number of steps to rotate the deque
                 (defaults to 1).
         """
+        if n == 0 or len(self) == 0:
+            return
         if n < 0:
             for _ in range(-n):
                 (self._data + self._tail).init_pointee_move_from(
