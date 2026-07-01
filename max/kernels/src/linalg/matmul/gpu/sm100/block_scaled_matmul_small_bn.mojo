@@ -15,7 +15,7 @@ from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv, udivmod_unchecked
 from std.sys import align_of, size_of
 
-from std.gpu import WARP_SIZE, barrier
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     elect_one_sync,
@@ -847,6 +847,19 @@ def _sfb_cpasync_produce_tile_warpwide[
 
 @always_inline
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+# Declare the kernel's actual launch block size so the compiler register-allocates
+# accordingly and the CUDA driver permits the launch. Without this, the compiled
+# kernel's FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK is derived from register pressure
+# and can land below the launch block size (e.g. 256 < 288 for cta_group=2),
+# which cuLaunchKernel happens to permit on Blackwell but
+# cuGraphInstantiateWithParams rejects with CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES.
+# Total warps = 1 load + 1 sfb_load + (1 if cta_group==2 else 0) sfb_ready
+#             + 1 mma + 1 scheduler + 4 epilogue.
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(32 * (8 + (1 if config.cta_group == 2 else 0)))
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
