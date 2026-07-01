@@ -1305,9 +1305,9 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
   };
 
   auto adjustIdentifierLoc = [&](unsigned offset) {
-    if (loc.isValid())
-      return llvm::SMLoc::getFromPointer(loc.getPointer() + offset);
-    return loc;
+    if (!identifierLoc.isValid())
+      return identifierLoc;
+    return llvm::SMLoc::getFromPointer(identifierLoc.getPointer() + offset);
   };
 
   // If the name starts with a `.`, it is relative to the current package.
@@ -1349,14 +1349,33 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
   SmallVector<StringRef> remainingNames;
   name.split(remainingNames, '.');
   name = remainingNames.pop_back_val();
-  for (StringRef parentName : remainingNames) {
+  for (auto [i, parentName] : enumerate(remainingNames)) {
     ModuleState &nextState =
         importSubModuleState(parentName, parentDecl, loc, identifierLoc);
     parentDecl = nextState.decl;
-    if (!isa_and_nonnull<PackageOp>(parentDecl->getIfOperation()))
-      return emitError("'" + parentName +
-                       "' does not refer to a nested package");
-    identifierLoc = adjustIdentifierLoc(parentName.size() + 1);
+
+    // If we've recursed through a package, all is well; continue.
+    if (isa_and_nonnull<PackageOp>(parentDecl->getIfOperation())) {
+      identifierLoc = adjustIdentifierLoc(parentName.size() + 1);
+      continue;
+    }
+
+    // Otherwise we've hit an error case.
+
+    // We've found a *module* - not a package. We can't recurse any further. The
+    // user has probably written one of the following:
+    //   - import package.(module)+(.symbol)?
+    //   - from package.(module)+(.symbol)? import other_symbol
+    if (isa_and_nonnull<FileModuleOp>(parentDecl->getIfOperation())) {
+      auto child = i + 1 < remainingNames.size() ? remainingNames[i + 1] : name;
+      return emitError(
+          "'" + parentName +
+          "' is a module, not a package; it has no nested module or package '" +
+          child + "'");
+    }
+
+    // Otherwise the user has done something we can't recognise.
+    return emitError("'" + parentName + "' does not refer to a nested package");
   }
 
   return importSubModuleState(name, parentDecl, loc, identifierLoc);
