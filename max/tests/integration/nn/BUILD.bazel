@@ -425,7 +425,7 @@ modular_py_test(
         "test_mlp_fp4_gpu.py",
     ],
     exec_properties = {
-        "test.resources:gpu-memory": "2",
+        "test.resources:gpu-memory": "1",
     },
     tags = [
         "gpu",
@@ -451,7 +451,7 @@ modular_py_test(
         "test_moe_nvfp4_gpu.py",
     ],
     exec_properties = {
-        "test.resources:gpu-memory": "2",
+        "test.resources:gpu-memory": "1",
     },
     tags = [
         "gpu",

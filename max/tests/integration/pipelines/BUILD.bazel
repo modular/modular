@@ -264,7 +264,7 @@ modular_py_test(
         ],
     ),
     exec_properties = {
-        "test.resources:gpu-memory": "23",
+        "test.resources:gpu-memory": "22",
     },
     gpu_constraints = ["//:has_gpu"],
     ignore_extra_deps = [

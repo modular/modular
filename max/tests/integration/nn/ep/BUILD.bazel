@@ -76,7 +76,7 @@ modular_py_test(
     srcs = _QUANTIZED_TESTS + ["conftest.py"],
     env = _COMMON_ENV,
     exec_properties = {
-        "test.resources:gpu-memory": "18",
+        "test.resources:gpu-memory": "11",
     },
     gpu_constraints = [
         "//:has_multi_gpu",
