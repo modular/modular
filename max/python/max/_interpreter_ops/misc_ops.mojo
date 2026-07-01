@@ -34,13 +34,16 @@ from extensibility import StaticTensorSpec
 from builtin_kernels import Range, range_shape
 
 from std.utils.coord import Coord
+from std.utils.numerics import get_accum_type
 
 from op_utils import (
     _get_dtype,
     _get_buffer_ptr,
     _get_size,
     _get_ctx,
+    _get_shape,
     _make_ptr,
+    MAX_RANK,
     Dispatchable,
     dispatch_dtype,
 )
@@ -66,6 +69,9 @@ def PyInit_misc_ops() abi("C") -> PythonObject:
         )
         b.def_function[random_uniform_dispatcher](
             "RandomUniform", docstring="Random uniform distribution"
+        )
+        b.def_function[cumsum_dispatcher](
+            "CumSum", docstring="Cumulative sum along axis"
         )
         return b.finalize()
     except e:
@@ -563,3 +569,143 @@ def random_uniform_dispatcher(
         )
     else:
         raise Error("Unsupported dtype for random_uniform: " + String(dtype))
+
+
+# ===----------------------------------------------------------------------=== #
+# Cumsum operation
+# ===----------------------------------------------------------------------=== #
+
+
+def _cumsum_cpu[
+    dtype: DType,
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    dim0: Int,
+    dim1: Int,
+    dim2: Int,
+    exclusive: Int,
+    reverse: Int,
+):
+    """CPU cumsum on a rank-3 normalized buffer [dim0, dim1, dim2].
+
+    Cumsum is applied along axis=1 (dim1). dim0 is the product of dimensions
+    before the original axis, dim2 is the product of dimensions after.
+
+    Parameters:
+        dtype: The data type of the arrays.
+
+    Args:
+        out_ptr: Pointer to the output buffer.
+        in_ptr: Pointer to the input buffer.
+        dim0: Product of dimensions before the cumsum axis.
+        dim1: Size of the cumsum axis.
+        dim2: Product of dimensions after the cumsum axis.
+        exclusive: 1 for exclusive cumsum (first element is 0), 0 otherwise.
+        reverse: 1 for reverse direction along the axis, 0 otherwise.
+    """
+    # Use float64 accumulator for float32 for precision, same type otherwise.
+    # This matches the behavior in nn/cumsum.mojo.
+    comptime accum_type = DType.float64 if dtype == DType.float32 else get_accum_type[
+        dtype
+    ]()
+
+    # Strides for row-major [dim0, dim1, dim2] layout.
+    var stride0 = dim1 * dim2
+    var stride1 = dim2
+
+    for i0 in range(dim0):
+        for i2 in range(dim2):
+            var accumulator: Scalar[accum_type] = 0
+
+            for d in range(dim1):
+                var d_adj = (dim1 - 1 - d) if reverse else d
+                var idx = i0 * stride0 + d_adj * stride1 + i2
+
+                if exclusive:
+                    out_ptr[idx] = accumulator.cast[dtype]()
+                    accumulator += in_ptr[idx].cast[accum_type]()
+                else:
+                    accumulator += in_ptr[idx].cast[accum_type]()
+                    out_ptr[idx] = accumulator.cast[dtype]()
+
+
+@fieldwise_init
+struct _CumsumBody(Dispatchable):
+    """Dispatch body for the CumSum operation over data dtypes."""
+
+    var out_addr: Int
+    var in_addr: Int
+    var dim0: Int
+    var dim1: Int
+    var dim2: Int
+    var exclusive: Int
+    var reverse: Int
+
+    def call[t: DType](self) raises -> None:
+        comptime if t == DType.bool:
+            raise Error("Unsupported dtype for cumsum: bool")
+        else:
+            _cumsum_cpu[t](
+                _make_ptr[t](self.out_addr),
+                _make_ptr[t](self.in_addr),
+                self.dim0,
+                self.dim1,
+                self.dim2,
+                self.exclusive,
+                self.reverse,
+            )
+
+
+def cumsum_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    exclusive: PythonObject,
+    reverse: PythonObject,
+) raises:
+    """Cumsum dispatcher with dtype dispatch.
+
+    Normalizes the input to rank-3 [dim0, dim1, dim2] and dispatches by dtype.
+
+    Args:
+        out_buffer: The output buffer object (same shape as input).
+        in_buffer: The input buffer object.
+        axis: The axis along which to compute cumsum (non-negative integer).
+        exclusive: 1 for exclusive cumsum, 0 otherwise.
+        reverse: 1 for reverse cumsum, 0 otherwise.
+    """
+    var dtype = _get_dtype(in_buffer)
+    var axis_val = Int(py=axis)
+    var exclusive_val = Int(py=exclusive)
+    var reverse_val = Int(py=reverse)
+
+    # Extract input shape and compute normalized rank-3 shape:
+    # dim0: product of dims before axis
+    # dim1: the cumsum axis dimension
+    # dim2: product of dims after axis
+    var in_shape_py = in_buffer.shape
+    var rank = Int(py=len(in_shape_py))
+    var in_shape = _get_shape(in_shape_py, rank)
+
+    var dim0 = 1
+    for i in range(axis_val):
+        dim0 *= in_shape[i]
+
+    var dim1 = in_shape[axis_val]
+
+    var dim2 = 1
+    for i in range(axis_val + 1, rank):
+        dim2 *= in_shape[i]
+
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var in_addr = Int(py=in_buffer._data_ptr())
+
+    if dtype == DType.bool:
+        raise Error("Unsupported dtype for cumsum: " + String(dtype))
+    dispatch_dtype(
+        _CumsumBody(
+            out_addr, in_addr, dim0, dim1, dim2, exclusive_val, reverse_val
+        ),
+        dtype,
+    )

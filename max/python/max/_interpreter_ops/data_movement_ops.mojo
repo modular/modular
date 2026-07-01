@@ -13,7 +13,8 @@
 
 """Mojo kernel wrappers for data movement MO interpreter operations.
 
-Contains broadcast, transpose, memcpy, and mutable-store-slice operations.
+Contains broadcast, transpose, memcpy, slice, and mutable-store-slice
+operations.
 """
 
 from std.os import abort
@@ -31,6 +32,7 @@ from extensibility import StaticTensorSpec
 from layout import IntTuple, create_unknown_int_tuple
 from builtin_kernels import (
     MutableStoreSlice,
+    Slice,
     StaticBroadcastTo,
     Transpose,
 )
@@ -67,6 +69,7 @@ def PyInit_data_movement_ops() abi("C") -> PythonObject:
             "Memcpy",
             docstring="Copy elements between buffers with offsets",
         )
+        b.def_function[slice_dispatcher]("Slice", docstring="Slice operation")
         b.def_function[mutable_store_slice_dispatcher](
             "MutableStoreSlice",
             docstring="Write a dense slice into a strided region in-place",
@@ -495,6 +498,198 @@ def memcpy_op[
                 )
         else:
             raise Error("No GPU accelerator available")
+
+
+# ===----------------------------------------------------------------------=== #
+# Slice operation
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def slice_op[
+    dtype: DType
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_shape: IndexList[MAX_RANK],
+    out_shape: IndexList[MAX_RANK],
+    starts_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    stops_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    steps_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    ctx: DeviceContext,
+) raises:
+    """Call Slice.execute with MAX_RANK tensors.
+
+    Parameters:
+        dtype: The data type of the input/output arrays.
+
+    Args:
+        out_ptr: Pointer to the output buffer data.
+        in_ptr: Pointer to the input buffer data.
+        in_shape: Padded input shape (MAX_RANK).
+        out_shape: Padded output shape (MAX_RANK).
+        starts_ptr: Pointer to padded start indices (int64, length MAX_RANK).
+        stops_ptr: Pointer to padded stop indices (int64, length MAX_RANK).
+        steps_ptr: Pointer to padded step indices (int64, length MAX_RANK).
+        ctx: Device context.
+    """
+    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
+    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
+
+    var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
+        in_ptr, in_shape
+    )
+    var output_tensor = ManagedTensorSlice[
+        io_spec=Output, static_spec=out_spec
+    ](out_ptr, out_shape)
+
+    comptime idx_spec = StaticTensorSpec[DType.int64, 1, ...].get_unknown()
+
+    var starts_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
+        starts_ptr, IndexList[1](MAX_RANK)
+    )
+    var stops_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
+        stops_ptr, IndexList[1](MAX_RANK)
+    )
+    var steps_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
+        steps_ptr, IndexList[1](MAX_RANK)
+    )
+
+    comptime unknown_starts = create_unknown_int_tuple(MAX_RANK)
+    comptime unknown_steps = create_unknown_int_tuple(MAX_RANK)
+
+    if ctx.api() == "cpu":
+        Slice.execute[
+            target="cpu",
+            _trace_name="interpreter.slice",
+            static_starts=unknown_starts,
+            static_steps=unknown_steps,
+            dtype=dtype,
+            rank=MAX_RANK,
+        ](
+            output_tensor,
+            input_tensor,
+            starts_tensor,
+            stops_tensor,
+            steps_tensor,
+            ctx,
+        )
+    else:
+        comptime if has_accelerator():
+            comptime if dtype != DType.float64:
+                Slice.execute[
+                    target="gpu",
+                    _trace_name="interpreter.slice",
+                    static_starts=unknown_starts,
+                    static_steps=unknown_steps,
+                    dtype=dtype,
+                    rank=MAX_RANK,
+                ](
+                    output_tensor,
+                    input_tensor,
+                    starts_tensor,
+                    stops_tensor,
+                    steps_tensor,
+                    ctx,
+                )
+            else:
+                raise Error(
+                    "GPU execution not supported for slice with dtype float64"
+                )
+        else:
+            raise Error("No GPU accelerator available")
+
+
+@fieldwise_init
+struct _SliceBody(Dispatchable):
+    """Dispatch body for the Slice operation over data dtypes."""
+
+    var out_addr: Int
+    var in_addr: Int
+    var in_shape: IndexList[MAX_RANK]
+    var out_shape: IndexList[MAX_RANK]
+    var starts_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin]
+    var stops_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin]
+    var steps_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin]
+    var ctx: DeviceContext
+
+    def call[t: DType](self) raises -> None:
+        slice_op[t](
+            _make_ptr[t](self.out_addr),
+            _make_ptr[t](self.in_addr),
+            self.in_shape,
+            self.out_shape,
+            self.starts_ptr,
+            self.stops_ptr,
+            self.steps_ptr,
+            self.ctx,
+        )
+
+
+def slice_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    starts_buffer: PythonObject,
+    stops_buffer: PythonObject,
+    steps_buffer: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Slice dispatcher - unwraps PythonObjects and dispatches.
+
+    Pads shapes to MAX_RANK with leading 1s and dispatches a single MAX_RANK
+    slice operation. The starts/stops/steps buffers must already be padded
+    to MAX_RANK length.
+
+    Args:
+        out_buffer: The output buffer object.
+        in_buffer: The input buffer object.
+        starts_buffer: 1D int64 buffer with padded start indices.
+        stops_buffer: 1D int64 buffer with padded stop indices.
+        steps_buffer: 1D int64 buffer with padded step indices.
+        device_context_ptr: Device context pointer.
+    """
+    var dtype = _get_dtype(in_buffer)
+    var in_shape_obj = in_buffer.shape
+    var out_shape_obj = out_buffer.shape
+    var in_rank = Int(py=len(in_shape_obj))
+    var out_rank = Int(py=len(out_shape_obj))
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var in_addr = Int(py=in_buffer._data_ptr())
+    var ctx = _get_ctx(device_context_ptr)
+
+    # Validate ranks
+    if in_rank > MAX_RANK or out_rank > MAX_RANK:
+        raise Error(
+            "Unsupported rank for slice: in_rank="
+            + String(in_rank)
+            + ", out_rank="
+            + String(out_rank)
+            + ". Max supported rank is "
+            + String(MAX_RANK)
+        )
+
+    # Pad shapes to MAX_RANK with leading 1s
+    var padded_in_shape = _pad_shape_to_max_rank(in_shape_obj, in_rank)
+    var padded_out_shape = _pad_shape_to_max_rank(out_shape_obj, out_rank)
+
+    # Get pointers to padded starts/stops/steps (already padded by Python)
+    var starts_ptr = _get_buffer_ptr[DType.int64](starts_buffer)
+    var stops_ptr = _get_buffer_ptr[DType.int64](stops_buffer)
+    var steps_ptr = _get_buffer_ptr[DType.int64](steps_buffer)
+
+    dispatch_dtype(
+        _SliceBody(
+            out_addr,
+            in_addr,
+            padded_in_shape,
+            padded_out_shape,
+            starts_ptr,
+            stops_ptr,
+            steps_ptr,
+            ctx,
+        ),
+        dtype,
+    )
 
 
 # ===----------------------------------------------------------------------=== #

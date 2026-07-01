@@ -270,13 +270,6 @@ This version is still a work in progress.
   the full kernel library at import. Set `MAX_EAGER_OP_PRECOMPILE=1` to
   precompile the full matrix at import instead.
 
-- The eager interpreter's shape-rearrange ops (`pad` constant/reflect/edge,
-  `tile`, `split`, `concat`, and `slice`) now run through pre-compiled
-  graph-compiler models instead of hand-written Mojo bindings, matching the
-  matmul, elementwise, and reduce migrations. Structural parameters (pad
-  widths, repeat counts, split/slice bounds) stay runtime operands, so one
-  compiled graph per `(op, device, dtype[, rank])` serves every shape.
-
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
   machine's devices and drops a stamp. A later lazy eager process on the same

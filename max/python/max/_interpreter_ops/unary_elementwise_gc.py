@@ -130,26 +130,11 @@ _UNARY_OPS: dict[type[_core.Operation], UnarySpec] = {
 
 UNARY_GC_OPS = tuple(_UNARY_OPS)
 
-# Indexed by op name so an rmo dispatch resolves to the mo-keyed spec; see
-# gc_compile.canonical_op_name.
-_UNARY_OPS_BY_NAME = {
-    op_type.__name__: spec for op_type, spec in _UNARY_OPS.items()
-}
-
-
-def _spec_for(op_type: type[_core.Operation]) -> UnarySpec | None:
-    name = gc_compile.canonical_op_name(op_type, _UNARY_OPS_BY_NAME)
-    return _UNARY_OPS_BY_NAME.get(name)
-
-
 # These lower to libm calls the GC backend only supports on CPU ("libm
 # operations are only available on CPU targets") — verified failing on both
 # Metal and CUDA (B200). Swept on CPU only, matching the historical interpreter
-# binding's GPU allowlist, which excluded exactly these four. Keyed by canonical
-# name so the guard also catches the ``rmo`` aliases (``MoLog1pOp`` etc.).
-_CPU_ONLY_OP_NAMES = frozenset(
-    op.__name__ for op in (mo.Log1pOp, mo.AtanhOp, mo.ErfOp, mo.GeluOp)
-)
+# binding's GPU allowlist, which excluded exactly these four.
+_CPU_ONLY_OPS = frozenset({mo.Log1pOp, mo.AtanhOp, mo.ErfOp, mo.GeluOp})
 
 _UNARY_MODEL_CACHE: dict[str, engine.Model] = {}
 
@@ -181,8 +166,7 @@ def _graph_name(
     op_type: type[_core.Operation], device: Device, dtype: DType
 ) -> str:
     """Graph ``sym_name`` and cache key for one (op, device, dtype)."""
-    name = gc_compile.canonical_op_name(op_type, _UNARY_OPS_BY_NAME)
-    return f"unary_{name}_{device.label}_{device.id}_{dtype.name}"
+    return f"unary_{op_type.__name__}_{device.label}_{device.id}_{dtype.name}"
 
 
 def canonical_shape(shape: Sequence[int]) -> tuple[int]:
@@ -221,19 +205,16 @@ def _is_supported(
     are unsupported on accelerators, and each op supports only its
     ``dtype_class``'s dtypes.
     """
-    spec = _spec_for(op_type)
+    spec = _UNARY_OPS.get(op_type)
     if spec is None:
         return False
-    if device.label != "cpu" and (
-        gc_compile.canonical_op_name(op_type, _UNARY_OPS_BY_NAME)
-        in _CPU_ONLY_OP_NAMES
-    ):
+    if device.label != "cpu" and op_type in _CPU_ONLY_OPS:
         return False
     return dtype in _supported_dtypes(spec.dtype_class, device)
 
 
 # True once a batched sweep has run, so dispatch attempts adoption at most once.
-_SWEPT = False
+_swept = False
 
 
 @in_default_mlir_context
@@ -250,7 +231,7 @@ def compile_unary_sweep() -> None:
     target never reaches the backend; a derived supported set is the real fix
     (MXF-477).
     """
-    global _SWEPT
+    global _swept
     module = Module()
     for op_type, spec in _UNARY_OPS.items():
         for device in _DEVICES:
@@ -259,7 +240,7 @@ def compile_unary_sweep() -> None:
                     _build_unary_graph(module, op_type, spec, device, dtype)
     session = engine.InferenceSession(devices=list(_DEVICES))
     _UNARY_MODEL_CACHE.update(session.load_all(module, weights_registry={}))
-    _SWEPT = True
+    _swept = True
 
 
 @in_default_mlir_context
@@ -268,9 +249,7 @@ def _compile_unary_target(
 ) -> engine.Model:
     """Build and compile a single (op, device, dtype) unary graph."""
     module = Module()
-    spec = _spec_for(op_type)
-    assert spec is not None, f"unsupported op {op_type!r} reached compile"
-    _build_unary_graph(module, op_type, spec, device, dtype)
+    _build_unary_graph(module, op_type, _UNARY_OPS[op_type], device, dtype)
     session = gc_compile.session_for(device)
     _UNARY_MODEL_CACHE.update(session.load_all(module, weights_registry={}))
     return _UNARY_MODEL_CACHE[_graph_name(op_type, device, dtype)]
@@ -305,11 +284,10 @@ def unary_model(
     if model is not None:
         return model
     if not _is_supported(op_type, device, dtype):
-        spec = _spec_for(op_type)
-        supported = _supported_dtypes(spec.dtype_class, device) if spec else []
         raise KeyError(
             f"Unsupported unary op/device/dtype for key {key!r}."
-            f"  Supported dtypes for this op/device: {supported}"
+            "  Supported dtypes for this op/device: "
+            f"{_supported_dtypes(_UNARY_OPS[op_type].dtype_class, device) if op_type in _UNARY_OPS else '[]'}"
         )
     if gc_compile.should_precompile():
         # TODO(MXF-510): raise UnsupportedGraphError so executors fall back.
@@ -324,11 +302,11 @@ def unary_model(
         model = _UNARY_MODEL_CACHE.get(key)
         if model is not None:
             return model
-        global _SWEPT
-        if not _SWEPT and gc_compile.warm_stamp_matches():
-            # Mark _SWEPT before attempting so a stale stamp can't loop; guard
+        global _swept
+        if not _swept and gc_compile.warm_stamp_matches():
+            # Mark _swept before attempting so a stale stamp can't loop; guard
             # so an adoption failure falls through to per-target, not the op.
-            _SWEPT = True
+            _swept = True
             try:
                 compile_unary_sweep()
             except Exception:
