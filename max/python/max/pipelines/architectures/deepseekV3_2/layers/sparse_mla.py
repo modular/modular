@@ -25,6 +25,7 @@ from max.graph import (
 )
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.attention.multi_latent_attention import (
+    LatentAttentionWithRope,
     MLAPrefillMetadata,
 )
 from max.nn.attention.multi_latent_attention_fp8 import (
@@ -662,3 +663,596 @@ class TensorParallelSparseLatentAttentionWithRopeFp8(
             self.allreduce(inputs=outs, signal_buffers=signal_buffers),
             topk_indices,
         )
+
+
+class SparseLatentAttentionWithRope(LatentAttentionWithRope):
+    """BF16 latent attention with optional sparse decode (logical KV positions; MOGG remaps)."""
+
+    def __init__(
+        self,
+        *,
+        rope: RotaryEmbedding,
+        num_attention_heads: int,
+        num_key_value_heads: int,
+        hidden_size: int,
+        kv_params: KVCacheParams,
+        dtype: DType,
+        indexer_quant_config: QuantConfig,
+        devices: list[DeviceRef] | None = None,
+        linear_cls: Callable[..., Linear] = Linear,
+        scale: float | None = None,
+        q_lora_rank: int = 1536,
+        kv_lora_rank: int = 512,
+        qk_nope_head_dim: int = 128,
+        qk_rope_head_dim: int = 64,
+        v_head_dim: int = 128,
+        buffer_size: int = 16384,
+        graph_mode: str | None = None,
+        norm_dtype: DType = DType.bfloat16,
+        index_n_heads: int = 64,
+        index_head_dim: int = 128,
+        index_topk: int = 2048,
+        skip_topk: bool = False,
+    ):
+        super().__init__(
+            rope=rope,
+            num_attention_heads=num_attention_heads,
+            num_key_value_heads=num_key_value_heads,
+            hidden_size=hidden_size,
+            kv_params=kv_params,
+            dtype=dtype,
+            devices=devices,
+            linear_cls=linear_cls,
+            scale=scale,
+            q_lora_rank=q_lora_rank,
+            kv_lora_rank=kv_lora_rank,
+            qk_nope_head_dim=qk_nope_head_dim,
+            qk_rope_head_dim=qk_rope_head_dim,
+            v_head_dim=v_head_dim,
+            buffer_size=buffer_size,
+            graph_mode=graph_mode,
+            norm_dtype=norm_dtype,
+        )
+        self.indexer_quant_config = indexer_quant_config
+        self.skip_topk = skip_topk
+        self.index_n_heads = index_n_heads
+        self.index_head_dim = index_head_dim
+        self.index_topk = index_topk
+        if skip_topk:
+            self.indexer = None
+        else:
+            self.indexer = Indexer(
+                dim=hidden_size,
+                index_n_heads=index_n_heads,
+                index_head_dim=index_head_dim,
+                qk_rope_head_dim=qk_rope_head_dim,
+                index_topk=index_topk,
+                q_lora_rank=q_lora_rank,
+                devices=self.devices,
+                quant_config=indexer_quant_config,
+                k_norm_dtype=norm_dtype,
+            )
+
+    @LatentAttentionWithRope.sharding_strategy.setter  # type: ignore[attr-defined]
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Extends the base setter so the indexer participates in sharding."""
+        LatentAttentionWithRope.sharding_strategy.fset(self, strategy)  # type: ignore[attr-defined]
+        if self.indexer is None:
+            return
+        if strategy.is_replicate or strategy.is_tensor_parallel:
+            rep = ShardingStrategy.replicate(strategy.num_devices)
+            for linear in (
+                self.indexer.wq_b,
+                self.indexer.wk,
+                self.indexer.weights_proj,
+            ):
+                linear.weight.sharding_strategy = rep
+                if linear.weight_scale is not None:
+                    linear.weight_scale.sharding_strategy = rep
+                if linear.input_scale is not None:
+                    linear.input_scale.sharding_strategy = rep
+            self.indexer.k_norm.sharding_strategy = rep
+
+    def _mla_impl(
+        self,
+        xq: TensorValue,
+        kv: TensorValue,
+        kv_collection: PagedCacheValues,
+        layer_idx: TensorValue,
+        input_row_offsets: TensorValue,
+        freqs_cis: TensorValue,
+        kv_norm_gamma: TensorValue,
+        _mla_prefill_metadata: MLAPrefillMetadata | None = None,
+        epsilon: float = 1e-6,
+    ) -> TensorValue:
+        return self._mla_impl_sparse(
+            xq,
+            kv,
+            kv_collection,
+            layer_idx,
+            input_row_offsets,
+            freqs_cis,
+            kv_norm_gamma,
+            _mla_prefill_metadata,
+            epsilon,
+        )
+
+    def _mla_impl_sparse(
+        self,
+        xq: TensorValue,
+        kv: TensorValue,
+        kv_collection: PagedCacheValues,
+        layer_idx: TensorValue,
+        input_row_offsets: TensorValue,
+        freqs_cis: TensorValue,
+        kv_norm_gamma: TensorValue,
+        _mla_prefill_metadata: MLAPrefillMetadata | None = None,
+        epsilon: float = 1e-6,
+        *,
+        sparse_indices: TensorValue | None = None,
+        sparse_topk_lengths: TensorValue | None = None,
+        sparse_attn_sink: TensorValue | None = None,
+        sparse_indices_stride: int | None = None,
+    ) -> TensorValue:
+        attn_kwargs: dict[str, Any] = {
+            "q": xq,
+            "kv": kv,
+            "input_row_offsets": input_row_offsets,
+            "freqs_cis": freqs_cis,
+            "kv_norm_gamma": kv_norm_gamma,
+            "kv_params": self.kv_params,
+            "kv_collection": kv_collection,
+            "layer_idx": layer_idx,
+            "epsilon": epsilon,
+            "mask_variant": MHAMaskVariant.CAUSAL_MASK,
+            "scale": self.scale,
+            "v_head_dim": self.v_head_dim,
+        }
+
+        if self.graph_mode in ["prefill", "auto"]:
+            if _mla_prefill_metadata is None:
+                mla_prefill_metadata = self.create_mla_prefill_metadata(
+                    input_row_offsets, kv_collection
+                )
+            else:
+                mla_prefill_metadata = _mla_prefill_metadata
+
+            attn_kwargs["buffer_row_offsets"] = (
+                mla_prefill_metadata.buffer_row_offsets
+            )
+            attn_kwargs["cache_offsets"] = mla_prefill_metadata.cache_offsets
+            attn_kwargs["buffer_length"] = (
+                mla_prefill_metadata.buffer_lengths.to(DeviceRef.CPU())
+            )
+            attn_kwargs["w_k"] = self.w_k
+            attn_kwargs["w_uv"] = self.w_uv
+
+        if self.graph_mode in ["decode", "auto"]:
+            attn_kwargs["w_uk"] = self.w_uk
+            attn_kwargs["w_uv"] = self.w_uv
+            assert kv_collection.attention_dispatch_metadata is not None
+            attn_kwargs["scalar_args"] = (
+                kv_collection.attention_dispatch_metadata
+            )
+            assert kv_collection.mla_num_partitions is not None
+            attn_kwargs["num_partitions_scalar"] = (
+                kv_collection.mla_num_partitions
+            )
+
+        sparse_kw: dict[str, Any] = {}
+        if sparse_indices is not None:
+            sparse_kw = {
+                "sparse_indices": sparse_indices,
+                "sparse_topk_lengths": sparse_topk_lengths,
+                "sparse_attn_sink": sparse_attn_sink,
+                "sparse_indices_stride": sparse_indices_stride,
+            }
+
+        if self.graph_mode == "prefill":
+            result = mla_prefill_graph(**attn_kwargs)
+        elif self.graph_mode == "decode":
+            result = mla_decode_graph(**attn_kwargs, **sparse_kw)
+        else:
+            result = mla_prefill_decode_graph(**attn_kwargs, **sparse_kw)
+
+        return result.reshape((-1, self.n_heads * self.v_head_dim))
+
+    def __call__(  # type: ignore[override]
+        self,
+        layer_idx: TensorValue,
+        x: TensorValue,
+        kv_collection: PagedCacheValues,
+        indexer_kv_collection: PagedCacheValues,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
+        mla_prefill_metadata: MLAPrefillMetadata | None = None,
+        prev_topk_indices: TensorValue | None = None,
+        reuse_prev_topk: bool = False,
+    ) -> tuple[TensorValue, TensorValue]:
+        q_lora_rank = self.q_lora_rank
+        if q_lora_rank is None:
+            raise ValueError(
+                "q_lora_rank is required for SparseLatentAttentionWithRope"
+            )
+
+        qkv = x @ self.wqkv.T
+        q_a_out, kv = ops.split(qkv, [q_lora_rank, self.cache_head_dim], axis=1)
+
+        q_a_normed = self.q_a_layernorm(q_a_out)
+        xq = q_a_normed @ self.q_b_proj.T
+        xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))
+
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
+
+        if self.indexer is not None and not reuse_prev_topk:
+            topk_indices = self.indexer(
+                x,
+                q_a_normed,
+                freqs_cis,
+                input_row_offsets,
+                indexer_kv_collection,
+                layer_idx,
+                mask_variant=MHAMaskVariant.CAUSAL_MASK
+                if self.graph_mode in ["prefill", "auto"]
+                else MHAMaskVariant.NULL_MASK,
+            )
+            topk_indices = ops.where(
+                (topk_indices != -1),
+                topk_indices,
+                ops.broadcast_to(
+                    ops.constant(
+                        0, dtype=topk_indices.dtype, device=topk_indices.device
+                    ),
+                    topk_indices.shape,
+                ),
+            )
+        else:
+            if prev_topk_indices is None:
+                raise ValueError(
+                    "Shared (skip_topk) sparse attention layers require top-k "
+                    "indices from a previous full indexer layer."
+                )
+            topk_indices = prev_topk_indices
+
+        batch_dim = kv_collection.lookup_table.shape[0]
+        sparse_topk_lengths = ops.broadcast_to(
+            ops.constant(
+                self.index_topk,
+                dtype=DType.int32,
+                device=xq.device,
+            ),
+            (batch_dim,),
+        )
+        sparse_attn_sink = ops.broadcast_to(
+            ops.constant(float("-inf"), dtype=DType.float32, device=xq.device),
+            (self.n_heads,),
+        )
+
+        attn_out = self._mla_impl_sparse(
+            xq,
+            kv,
+            kv_collection,
+            layer_idx,
+            input_row_offsets,
+            freqs_cis,
+            self.kv_a_proj_layernorm,
+            mla_prefill_metadata,
+            sparse_indices=topk_indices,
+            sparse_topk_lengths=sparse_topk_lengths,
+            sparse_attn_sink=sparse_attn_sink,
+            sparse_indices_stride=self.index_topk,
+        )
+
+        return self.o_proj(attn_out), topk_indices
+
+    def shard(  # type: ignore[override]
+        self, devices: Iterable[DeviceRef]
+    ) -> list[SparseLatentAttentionWithRope]:
+        """Creates sharded views of this module across devices."""
+        if not self.sharding_strategy:
+            raise ValueError(
+                "SparseLatentAttentionWithRope cannot be sharded because no "
+                "sharding strategy was provided."
+            )
+        if not (
+            self.sharding_strategy.is_replicate
+            or self.sharding_strategy.is_tensor_parallel
+        ):
+            raise ValueError(
+                "Only replicate or tensor parallel sharding strategies are "
+                "supported for SparseLatentAttentionWithRope"
+            )
+
+        is_tp = self.sharding_strategy.is_tensor_parallel
+        local_heads = (
+            self.n_heads // self.sharding_strategy.num_devices
+            if is_tp
+            else self.n_heads
+        )
+
+        q_lora_rank = self.q_lora_rank
+        if q_lora_rank is None:
+            raise ValueError(
+                "q_lora_rank is required for SparseLatentAttentionWithRope"
+            )
+
+        q_a_proj_shards = self.q_a_proj.shard(devices)
+        q_a_layernorm_weight_shards = self.q_a_layernorm.weight.shard(devices)
+        q_b_proj_shards = self.q_b_proj.shard(devices)
+        kv_a_proj_layernorm_shards = self.kv_a_proj_layernorm.shard(devices)
+        kv_a_proj_with_mqa_shards = self.kv_a_proj_with_mqa.shard(devices)
+        kv_b_proj_shards = self.kv_b_proj.shard(devices)
+        o_proj_shards = self.o_proj.shard(devices)
+
+        indexer_wq_b_shards = None
+        indexer_wk_shards = None
+        indexer_weights_proj_shards = None
+        indexer_k_norm_shards = None
+        if self.indexer is not None:
+            indexer_wq_b_shards = self.indexer.wq_b.shard(devices)
+            indexer_wk_shards = self.indexer.wk.shard(devices)
+            indexer_weights_proj_shards = self.indexer.weights_proj.shard(
+                devices
+            )
+            indexer_k_norm_shards = self.indexer.k_norm.shard(devices)
+
+        replicas: list[SparseLatentAttentionWithRope] = []
+        for shard_idx, device in enumerate(devices):
+            replica = SparseLatentAttentionWithRope(
+                rope=self.rope,
+                num_attention_heads=local_heads,
+                num_key_value_heads=self.num_key_value_heads,
+                hidden_size=self.hidden_size,
+                kv_params=self.kv_params,
+                dtype=self.dtype,
+                indexer_quant_config=self.indexer_quant_config,
+                devices=[device],
+                graph_mode=self.graph_mode,
+                linear_cls=self.linear_cls,
+                scale=self._scale,
+                q_lora_rank=q_lora_rank,
+                kv_lora_rank=self.kv_lora_rank,
+                qk_nope_head_dim=self.qk_nope_head_dim,
+                qk_rope_head_dim=self.qk_rope_head_dim,
+                v_head_dim=self.v_head_dim,
+                buffer_size=self.BUFFER_TOK_SIZE,
+                norm_dtype=self.norm_dtype,
+                index_n_heads=self.index_n_heads,
+                index_head_dim=self.index_head_dim,
+                index_topk=self.index_topk,
+                skip_topk=self.skip_topk,
+            )
+
+            replica.q_a_proj = q_a_proj_shards[shard_idx]
+            replica.q_a_layernorm.weight = q_a_layernorm_weight_shards[
+                shard_idx
+            ]
+            replica.q_b_proj = q_b_proj_shards[shard_idx]
+            replica.kv_a_proj_layernorm = kv_a_proj_layernorm_shards[shard_idx]
+            replica.kv_a_proj_with_mqa = kv_a_proj_with_mqa_shards[shard_idx]
+            replica.kv_b_proj = kv_b_proj_shards[shard_idx]
+            replica.o_proj = o_proj_shards[shard_idx]
+
+            if self.indexer is not None:
+                assert indexer_wq_b_shards is not None
+                assert indexer_wk_shards is not None
+                assert indexer_weights_proj_shards is not None
+                assert indexer_k_norm_shards is not None
+                assert replica.indexer is not None
+                replica.indexer.wq_b = indexer_wq_b_shards[shard_idx]
+                replica.indexer.wk = indexer_wk_shards[shard_idx]
+                replica.indexer.weights_proj = indexer_weights_proj_shards[
+                    shard_idx
+                ]
+                replica.indexer.k_norm = indexer_k_norm_shards[shard_idx]
+
+            replicas.append(replica)
+
+        return replicas
+
+
+class DataParallelSparseLatentAttentionWithRope(SparseLatentAttentionWithRope):
+    """Data-parallel sparse BF16 MLA: per-device optional sparse index tensors."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+
+        num_devices = len(self.devices)
+        self.sharding_strategy = ShardingStrategy.replicate(num_devices)
+        self.list_of_attentions = self.shard(self.devices)
+
+    def create_mla_prefill_metadata(  # type: ignore[override]
+        self,
+        input_row_offsets_: list[TensorValue],
+        kv_collections: list[PagedCacheValues],
+    ) -> list[MLAPrefillMetadata]:
+        multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
+
+        for input_row_offsets, kv_collection in zip(
+            input_row_offsets_, kv_collections, strict=True
+        ):
+            multi_mla_prefill_metadata.append(
+                super().create_mla_prefill_metadata(
+                    input_row_offsets, kv_collection
+                )
+            )
+
+        return multi_mla_prefill_metadata
+
+    def __call__(  # type: ignore[override]
+        self,
+        layer_idx: TensorValue,
+        xs: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+        kv_collections: Sequence[PagedCacheValues],
+        indexer_kv_collections: Sequence[PagedCacheValues],
+        freqs_cis: list[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+        mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
+        prev_topk_indices: list[TensorValue] | None = None,
+        reuse_prev_topk: bool = False,
+    ) -> tuple[list[TensorValue], list[TensorValue]]:
+        del signal_buffers
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+
+        n = len(self.devices)
+        if not (
+            len(xs)
+            == len(kv_collections)
+            == len(indexer_kv_collections)
+            == len(freqs_cis)
+            == len(input_row_offsets)
+            == n
+        ):
+            raise ValueError(
+                "xs, kv_collections, indexer_kv_collections, freqs_cis, and "
+                f"input_row_offsets must all have length equal to number of devices "
+                f"({n})"
+            )
+
+        outs: list[TensorValue] = []
+        topk_outs: list[TensorValue] = []
+        for i in range(n):
+            prev_topk_i = prev_topk_indices[i] if prev_topk_indices else None
+            if xs[i].shape[0] == 0:
+                outs.append(xs[i])
+                topk_outs.append(
+                    prev_topk_i
+                    if prev_topk_i is not None
+                    else ops.broadcast_to(
+                        ops.constant(0, dtype=DType.int32, device=xs[i].device),
+                        (xs[i].shape[0], self.index_topk),
+                    )
+                )
+                continue
+
+            mla_prefill_metadata_i: MLAPrefillMetadata | None
+            if (
+                mla_prefill_metadata is not None
+                and len(mla_prefill_metadata) == n
+            ):
+                mla_prefill_metadata_i = mla_prefill_metadata[i]
+            else:
+                assert (
+                    mla_prefill_metadata is None
+                    or len(mla_prefill_metadata) == 0
+                )
+                mla_prefill_metadata_i = None
+
+            attn_out, topk_indices = self.list_of_attentions[i](
+                layer_idx=layer_idx,
+                x=xs[i],
+                kv_collection=kv_collections[i],
+                indexer_kv_collection=indexer_kv_collections[i],
+                freqs_cis=freqs_cis[i],
+                input_row_offsets=input_row_offsets[i],
+                mla_prefill_metadata=mla_prefill_metadata_i,
+                prev_topk_indices=prev_topk_i,
+                reuse_prev_topk=reuse_prev_topk,
+            )
+            outs.append(attn_out)
+            topk_outs.append(topk_indices)
+        return outs, topk_outs
+
+
+class TensorParallelSparseLatentAttentionWithRope(
+    SparseLatentAttentionWithRope
+):
+    """Tensor-parallel sparse BF16 MLA."""
+
+    def __init__(self, *, skip_allreduce: bool = False, **kwargs) -> None:
+        super().__init__(**kwargs)
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+
+        num_devices = len(self.devices)
+        self.skip_allreduce = skip_allreduce
+        self.sharding_strategy = ShardingStrategy.tensor_parallel(num_devices)
+        self.allreduce = Allreduce(num_devices)
+        self.list_of_attentions = self.shard(self.devices)
+
+    def create_mla_prefill_metadata(  # type: ignore[override]
+        self,
+        input_row_offsets_: list[TensorValue],
+        kv_collections: list[PagedCacheValues],
+    ) -> list[MLAPrefillMetadata]:
+        multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
+
+        for input_row_offsets, kv_collection in zip(
+            input_row_offsets_, kv_collections, strict=True
+        ):
+            multi_mla_prefill_metadata.append(
+                super().create_mla_prefill_metadata(
+                    input_row_offsets, kv_collection
+                )
+            )
+
+        return multi_mla_prefill_metadata
+
+    def __call__(  # type: ignore[override]
+        self,
+        layer_idx: TensorValue,
+        xs: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+        kv_collections: Sequence[PagedCacheValues],
+        indexer_kv_collections: Sequence[PagedCacheValues],
+        freqs_cis: list[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+        mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
+        prev_topk_indices: list[TensorValue] | None = None,
+        reuse_prev_topk: bool = False,
+    ) -> tuple[list[TensorValue], list[TensorValue]]:
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+
+        n = len(self.devices)
+        if not (
+            len(xs)
+            == len(kv_collections)
+            == len(indexer_kv_collections)
+            == len(freqs_cis)
+            == len(input_row_offsets)
+            == n
+        ):
+            raise ValueError(
+                "xs, kv_collections, indexer_kv_collections, freqs_cis, and "
+                f"input_row_offsets must all have length equal to number of devices "
+                f"({n})"
+            )
+
+        outs: list[TensorValue] = []
+        topk_outs: list[TensorValue] = []
+        for i in range(n):
+            mla_prefill_metadata_i: MLAPrefillMetadata | None
+            if (
+                mla_prefill_metadata is not None
+                and len(mla_prefill_metadata) == n
+            ):
+                mla_prefill_metadata_i = mla_prefill_metadata[i]
+            else:
+                mla_prefill_metadata_i = None
+
+            prev_topk_i = prev_topk_indices[i] if prev_topk_indices else None
+            attn_out, topk_indices = self.list_of_attentions[i](
+                layer_idx=layer_idx,
+                x=xs[i],
+                kv_collection=kv_collections[i],
+                indexer_kv_collection=indexer_kv_collections[i],
+                freqs_cis=freqs_cis[i],
+                input_row_offsets=input_row_offsets[i],
+                mla_prefill_metadata=mla_prefill_metadata_i,
+                prev_topk_indices=prev_topk_i,
+                reuse_prev_topk=reuse_prev_topk,
+            )
+            outs.append(attn_out)
+            topk_outs.append(topk_indices)
+
+        if self.skip_allreduce:
+            return outs, topk_outs
+
+        return self.allreduce(
+            inputs=outs, signal_buffers=signal_buffers
+        ), topk_outs

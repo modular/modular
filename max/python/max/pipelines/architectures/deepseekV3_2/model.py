@@ -111,7 +111,8 @@ class DeepseekV3_2Model(DeepseekV3Model):
                     ep_kwargs["fused_shared_expert"] = True
                 else:
                     ep_kwargs["fused_shared_expert"] = (
-                        quant_config.shared_experts_weight_dtype is None
+                        quant_config.shared_experts_dtype(DType.bfloat16)
+                        == dtype
                     )
 
             if quant_config is not None:

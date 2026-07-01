@@ -58,7 +58,9 @@ from max.nn.transformer.distributed_transformer import (
 from ..deepseekV3.deepseekV3 import deepseek_logits_postprocess
 from .layers import DeepseekV3_2MLP, DeepseekV3_2MoE, DeepseekV3_2TopKRouter
 from .layers.sparse_mla import (
+    DataParallelSparseLatentAttentionWithRope,
     DataParallelSparseLatentAttentionWithRopeFp8,
+    TensorParallelSparseLatentAttentionWithRope,
     TensorParallelSparseLatentAttentionWithRopeFp8,
 )
 from .model_config import DeepseekV3_2Config
@@ -172,19 +174,12 @@ class DeepseekV3_2DecoderLayer(Module):
         self.mlp: DeepseekV3_2MLP | DeepseekV3_2MoE | MoE
         self.mlp_shards: list[DeepseekV3_2MLP | DeepseekV3_2MoE | Module]
 
-        nvfp4_enabled = (
-            config.quant_config is not None and config.quant_config.is_nvfp4
-        )
-        use_fp8_mla = config.quant_config is not None and not nvfp4_enabled
         if config.quant_config is None:
             raise ValueError(
                 "DeepSeekV3.2 sparse attention requires a quantization config."
             )
 
-        if not use_fp8_mla:
-            raise ValueError(
-                "DeepSeekV3.2 must be executed with fp8 (due to fp8 indexer)."
-            )
+        attn_quantized = layer_idx in config.quant_config.attn_quantized_layers
 
         assert isinstance(config.kv_params, MultiKVCacheParams)
         mla_kv_params = config.kv_params.children["mla"]
@@ -217,20 +212,38 @@ class DeepseekV3_2DecoderLayer(Module):
 
         self.tp_attention = num_devices > 1 and config.data_parallel_degree == 1
         self.self_attn: (
-            DataParallelSparseLatentAttentionWithRopeFp8
+            DataParallelSparseLatentAttentionWithRope
+            | DataParallelSparseLatentAttentionWithRopeFp8
+            | TensorParallelSparseLatentAttentionWithRope
             | TensorParallelSparseLatentAttentionWithRopeFp8
         )
         if self.tp_attention:
-            self.self_attn = TensorParallelSparseLatentAttentionWithRopeFp8(
-                skip_allreduce=True,
+            if attn_quantized:
+                self.self_attn = TensorParallelSparseLatentAttentionWithRopeFp8(
+                    skip_allreduce=True,
+                    norm_dtype=config.norm_dtype,
+                    quant_config=config.quant_config,
+                    **sparse_attn_kwargs,
+                )
+            else:
+                self.self_attn = TensorParallelSparseLatentAttentionWithRope(
+                    skip_allreduce=True,
+                    norm_dtype=config.norm_dtype,
+                    dtype=DType.bfloat16,
+                    indexer_quant_config=config.quant_config,
+                    **sparse_attn_kwargs,
+                )
+        elif attn_quantized:
+            self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
                 norm_dtype=config.norm_dtype,
                 quant_config=config.quant_config,
                 **sparse_attn_kwargs,
             )
         else:
-            self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
+            self.self_attn = DataParallelSparseLatentAttentionWithRope(
                 norm_dtype=config.norm_dtype,
-                quant_config=config.quant_config,
+                dtype=DType.bfloat16,
+                indexer_quant_config=config.quant_config,
                 **sparse_attn_kwargs,
             )
 
@@ -324,7 +337,7 @@ class DeepseekV3_2DecoderLayer(Module):
                 ep_batch_manager=self.ep_manager,
                 quant_config=layer_quant_config,
                 shared_experts_dtype=(
-                    quant_cfg.shared_experts_dtype(mlp_dtype)
+                    quant_cfg.shared_experts_dtype(DType.bfloat16)
                     if quant_cfg is not None
                     else DType.bfloat16
                 ),
