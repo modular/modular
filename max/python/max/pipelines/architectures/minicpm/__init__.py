@@ -15,4 +15,4 @@ from .arch import minicpm_arch
 from .model import MiniCPMModel
 from .model_config import MiniCPMConfig
 
-__all__ = ["minicpm_arch", "MiniCPMModel", "MiniCPMConfig"]
+__all__ = ["MiniCPMConfig", "MiniCPMModel", "minicpm_arch"]

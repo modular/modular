@@ -52,9 +52,9 @@ class MiniCPMConfig(ArchConfigWithKVCache):
     kv_params: KVCacheParams
     devices: list[DeviceRef]
 
-    embedding_multiplier: float = 1.0  
-    residual_multiplier: float = 1.0  
-    logits_scaling: float = 1.0  
+    embedding_multiplier: float = 1.0
+    residual_multiplier: float = 1.0
+    logits_scaling: float = 1.0
 
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE

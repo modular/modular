@@ -28,7 +28,11 @@ from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 
 from .layers.attention import MiniCPMAttention
@@ -38,14 +42,16 @@ from .model_config import MiniCPMConfig
 
 
 class MiniCPMRope:
-    def __init__(self, head_dim: int, max_seq_len: int, rope_theta: float) -> None:
+    def __init__(
+        self, head_dim: int, max_seq_len: int, rope_theta: float
+    ) -> None:
         self._head_dim = head_dim
         self._max_seq_len = max_seq_len
         self._rope_theta = rope_theta
         self.interleaved = False  # split-half (GPT-NeoX/Llama) RoPE
 
     @property
-    def freqs_cis(self):
+    def freqs_cis(self) -> TensorValue:
         return build_minicpm_freqs_cis(
             head_dim=self._head_dim,
             max_seq_len=self._max_seq_len,
@@ -259,9 +265,11 @@ class MiniCPM(Module[..., tuple[Tensor, ...]]):
         """
 
         kv_inputs = iter(x._graph_value for x in variadic_args)
-        kv_collections = (
-            self.kv_params.get_symbolic_inputs().unflatten(kv_inputs).inputs
+        unflattened = self.kv_params.get_symbolic_inputs().unflatten(kv_inputs)
+        assert isinstance(unflattened, KVCacheInputs), (
+            f"Expected KVCacheInputs, got {type(unflattened)}"
         )
+        kv_collections = unflattened.inputs
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets
         )

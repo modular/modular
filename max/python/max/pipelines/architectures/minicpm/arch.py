@@ -14,12 +14,13 @@
 """MiniCPM architecture registration for the MAX pipeline registry."""
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.modeling.types import PipelineTask
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
 )
+from max.pipelines.modeling.types import PipelineTask
+
 from . import weight_adapters
 from .model import MiniCPMModel
 from .model_config import MiniCPMConfig

@@ -1,4 +1,20 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
 """Weight adapters for MiniCPMForCausalLM."""
+
+from typing import Any
+
 from max.graph.weights import WeightData, Weights
 from transformers import AutoConfig
 
@@ -6,14 +22,14 @@ from transformers import AutoConfig
 def convert_safetensor_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: AutoConfig | None = None,
-    pipeline_config=None,
+    pipeline_config: Any | None = None,
     **kwargs,
 ) -> dict[str, WeightData]:
     new_state_dict: dict[str, WeightData] = {}
     for key, value in state_dict.items():
         # Remap model. → language_model.
         if key.startswith("model."):
-            new_key = "language_model." + key[len("model."):]
+            new_key = "language_model." + key[len("model.") :]
         elif key == "lm_head.weight":
             new_key = "language_model.lm_head.weight"
         else:
@@ -25,7 +41,7 @@ def convert_safetensor_state_dict(
 def convert_gguf_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: AutoConfig | None = None,
-    pipeline_config=None,
+    pipeline_config: Any | None = None,
     **kwargs,
 ) -> dict[str, WeightData]:
     gguf_mapping = {
