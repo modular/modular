@@ -18,6 +18,7 @@ from std.python.bindings import PythonModuleBuilder
 
 from _mojo_module import (
     Buffer,
+    BufferView,
     Bundle,
     Context,
     Device,
@@ -59,8 +60,16 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
             .def_method[Context.load_function]("load_function")
         )
 
-        _ = b.add_type[Buffer]("Buffer").def_method[Buffer.get_byte_size](
-            "get_byte_size"
+        _ = (
+            b.add_type[Buffer]("Buffer")
+            .def_method[Buffer.get_byte_size]("get_byte_size")
+            .def_method[Buffer.view]("view")
+        )
+
+        _ = (
+            b.add_type[BufferView]("BufferView")
+            .def_method[BufferView.get_byte_offset]("get_byte_offset")
+            .def_method[BufferView.get_byte_size]("get_byte_size")
         )
 
         _ = b.add_type[Bundle]("Bundle").def_method[Bundle.get_function_name](

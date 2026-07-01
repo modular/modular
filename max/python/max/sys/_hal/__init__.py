@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import mojo.importer
 
-from .buffer import Buffer
+from .buffer import Buffer, BufferView
 from .bundle import Bundle
 from .context import Context
 from .device import Device
@@ -34,6 +34,7 @@ from .stream import Stream
 
 __all__ = [
     "Buffer",
+    "BufferView",
     "Bundle",
     "Context",
     "Device",
