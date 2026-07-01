@@ -107,13 +107,27 @@ cc_import(
     target_compatible_with = ["@platforms//os:linux"],
 )
 
+# libmax dynamically links libnixl.so, which ships in the wheel on
+# linux_x86_64 only (NIXL is not built for aarch64 or macOS). Declared as a
+# cc_import dep of max_lib (like the other indirect deps) so it is co-located
+# with libmax in the solib tree and resolved at runtime.
+cc_import(
+    name = "nixl_lib",
+    shared_library = "modular/lib/libnixl.so",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
 cc_import(
     name = "max_lib",
     shared_library = glob(["modular/lib/libmax.*"])[0],
     visibility = ["//visibility:public"],
     data = ["modular/lib/*.so"],
     deps = [":" + dep + "_lib" for dep in INDIRECT_DEPENDENCIES] + select({
-        "@platforms//os:linux": [":NVPTX_lib"],
+        "@//:linux_x86_64": [":NVPTX_lib", ":nixl_lib"],
+        "@//:linux_aarch64": [":NVPTX_lib"],
         "//conditions:default": [],
     })
 )
