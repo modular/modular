@@ -101,6 +101,7 @@ def small_MN_gemms[
             pdl_level=pdl_level,
             tile_k=config.tile_k,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            swapAB=config.swapAB,
         ](
             c,
             a,
@@ -162,6 +163,55 @@ def small_MN_gemms[
 
 
 @always_inline
+def try_small_MN_gemms_bf16[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
+    ctx: DeviceContext,
+) raises -> Int:
+    """Try to dispatch via the bf16 SmallMNGemms tuning table.
+
+    Returns `DISPATCH_HIT` if the (N, K) matches an entry and the runtime `m`
+    falls into one of its `[M, M_end)` buckets; otherwise returns
+    `DISPATCH_MISS` without launching anything. Shared between the M=1 GEMV
+    path (`dispatch_gemv`) and the main bf16 dispatch
+    (`matmul_dispatch_sm100_bf16`) so the table is consulted once, in one
+    place.
+    """
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
+
+    comptime small_MN_gemms_table = Table(
+        _get_tuning_list_small_MN_gemms_bf16(), "small_MN_gemms_configs"
+    )
+
+    @always_inline
+    def small_MN_gemms_rule(x: TuningConfigSmallMNGemms) {} -> Bool:
+        return x.K == static_K and x.N == static_N
+
+    comptime small_MN_gemms_configs = small_MN_gemms_table.find(
+        rule=small_MN_gemms_rule
+    )
+
+    comptime if small_MN_gemms_configs:
+        var m = Int(c.dim[0]())
+        comptime for config in small_MN_gemms_configs:
+            if m >= config.M and m < config.M_end:
+                logger.info("Dispatching to small_MN_gemms: ", config)
+                small_MN_gemms[
+                    config=config,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    pdl_level=pdl_level,
+                ](c, a, b, ctx)
+                return DISPATCH_HIT
+
+    return DISPATCH_MISS
+
+
+@always_inline
 def dispatch_gemv[
     c_type: DType,
     a_type: DType,
@@ -184,7 +234,10 @@ def dispatch_gemv[
 
     For most M=1 shapes GEMV is preferred, but for certain large (N, K)
     combinations the SM100 GEMM kernel achieves higher throughput. Add new
-    (N, K) pairs to `SM100_GEMV_SHAPES` as they are identified through benchmarking.
+    (N, K) pairs to `SM100_GEMV_SHAPES` as they are identified through
+    benchmarking, or to the SmallMNGemms tuning table when the shape needs an
+    explicit cp-async / split-K config (the bf16 branch consults that table
+    via `matmul_dispatch_sm100_bf16` before falling back to the heuristic).
 
     N=1 always routes to GEMV: SM100 TMA requires N * sizeof(c_type) % 16 == 0.
     """
@@ -192,6 +245,19 @@ def dispatch_gemv[
     comptime static_K = a.static_shape[1]
 
     comptime static_NK = Index(static_N, static_K)
+
+    # Shared with `matmul_dispatch_sm100_bf16`: bf16 shapes that register a
+    # SmallMNGemms config (cp-async swapAB for Kimi-style decode, the
+    # small-N decode family, etc.) want the tuning-table kernel even at M=1.
+    # On MISS this returns DISPATCH_MISS and we fall through to the GEMV path
+    # below.
+    comptime if a_type == DType.bfloat16 and c_type in (DType.bfloat16,):
+        var status = try_small_MN_gemms_bf16[
+            elementwise_lambda_fn=elementwise_lambda_wrapper,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+        if status:
+            return
 
     # (N, K) shapes where SM100 GEMM outperforms GEMV kernel.
     comptime SM100_GEMV_SHAPES = [
@@ -877,29 +943,12 @@ def matmul_dispatch_sm100_bf16[
         ](c, a, b, ctx)
         return DISPATCH_HIT
 
-    comptime small_MN_gemms_table = Table(
-        _get_tuning_list_small_MN_gemms_bf16(), "small_MN_gemms_configs"
-    )
-
-    @always_inline
-    def small_MN_gemms_rule(x: TuningConfigSmallMNGemms) {} -> Bool:
-        return x.K == static_K and x.N == static_N
-
-    comptime small_MN_gemms_configs = small_MN_gemms_table.find(
-        rule=small_MN_gemms_rule
-    )
-
-    comptime if small_MN_gemms_configs and c_type in (DType.bfloat16,):
-        var m = Int(c.dim[0]())
-        comptime for config in small_MN_gemms_configs:
-            if m >= config.M and m < config.M_end:
-                logger.info("Dispatching to small_MN_gemms: ", config)
-                small_MN_gemms[
-                    config=config,
-                    elementwise_lambda_fn=elementwise_lambda_wrapper,
-                    pdl_level=pdl_level,
-                ](c, a, b, ctx)
-                return DISPATCH_HIT
+    var small_mn_status = try_small_MN_gemms_bf16[
+        elementwise_lambda_fn=elementwise_lambda_wrapper,
+        pdl_level=pdl_level,
+    ](c, a, b, ctx)
+    if small_mn_status:
+        return DISPATCH_HIT
 
     return sm100_heuristic_and_outliers_dispatch[
         transpose_b=transpose_b,
