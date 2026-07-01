@@ -28,7 +28,13 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import aiofiles
-from httpx import AsyncClient, HTTPStatusError
+from httpx import (
+    AsyncClient,
+    HTTPStatusError,
+    Timeout,
+    TimeoutException,
+    TransportError,
+)
 from max.pipelines.context.exceptions import InputError
 from max.serve.config import Settings
 from PIL import Image, UnidentifiedImageError
@@ -48,6 +54,17 @@ _DATA_URI_OFFLOAD_THRESHOLD = 256 * 1024
 # moment it crosses the size cap, instead of buffering the whole (potentially
 # huge) body before checking its length.
 _HTTP_CHUNK_SIZE = 256 * 1024
+
+# Explicit fetch timeouts. httpx's default is a 5s timeout on *every* operation,
+# which is far too aggressive for media downloads: a large video (or a slow
+# CDN) routinely needs more than 5s, and any stall longer than that raises a
+# ``ReadTimeout`` that — left unhandled — surfaces as an opaque HTTP 500 (and
+# the client then retries the whole generation). The read timeout below is
+# per-chunk (each ``_HTTP_CHUNK_SIZE`` read must complete within it), not a cap
+# on total download time; total size is already bounded by the byte cap. Pick
+# values generous enough for slow-but-steady transfers while still failing a
+# truly stalled connection in bounded time.
+_FETCH_TIMEOUT = Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)
 
 # Some media hosts (e.g. Wikimedia, Google Cloud Storage) reject requests that
 # carry a default library User-Agent (httpx sends ``python-httpx/...``) with an
@@ -227,7 +244,9 @@ async def resolve_image_from_url(
 
     if image_ref.scheme == "http" or image_ref.scheme == "https":
         # TODO: Evaluate creating a single AsyncClient for the app.
-        async with AsyncClient(headers=_FETCH_HEADERS) as client:
+        async with AsyncClient(
+            headers=_FETCH_HEADERS, timeout=_FETCH_TIMEOUT
+        ) as client:
             try:
                 async with client.stream(
                     "GET", str(image_ref), follow_redirects=True
@@ -257,6 +276,21 @@ async def resolve_image_from_url(
             except HTTPStatusError as e:
                 raise ValueError(
                     f"Failed to fetch image: HTTP {e.response.status_code}"
+                ) from None
+            except TimeoutException:
+                # A slow/stalled download must not surface as an opaque 500
+                # (which the client then retries). Turn it into a clean input
+                # error attributable to the unreachable/slow media source.
+                raise InputError(
+                    f"timed out fetching {media_kind} from its URL; the source "
+                    "may be too slow or the file too large"
+                ) from None
+            except TransportError as e:
+                # Connection reset / DNS / network failure mid-fetch: same
+                # treatment as a timeout, a clean input error rather than a 500.
+                raise InputError(
+                    f"failed to fetch {media_kind} from its URL "
+                    f"({type(e).__name__})"
                 ) from None
             logger.debug(
                 "ResolvedImageUrl: %s -> %d bytes", image_ref, len(images_bytes)

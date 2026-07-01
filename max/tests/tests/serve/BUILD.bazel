@@ -66,6 +66,7 @@ modular_py_test(
         "//max/python/max/serve/worker_interface",
         requirement("async-asgi-testclient"),
         requirement("fastapi"),
+        requirement("httpx"),
         requirement("openai"),
         requirement("opentelemetry-api"),
         requirement("numpy"),
