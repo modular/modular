@@ -43,15 +43,13 @@ from . import (  # type: ignore[attr-defined]
     matmul_gc,
     misc_ops,
     nms_ops,
-    pad_ops,
     pooling_ops,
     reduce_axis_gc,
     resize_ops,
     rms_norm_ops,
     roi_align_ops,
     select_ops,
-    split_ops,
-    tile_ops,
+    shape_rearrange_gc,
     topk_ops,
     unary_elementwise_gc,
 )
@@ -78,6 +76,7 @@ def _precompile_gc_models() -> None:
         unary_elementwise_gc.compile_unary_sweep()
         elementwise_binary_gc.compile_binary_sweep()
         reduce_axis_gc.compile_reduce_axis_sweep()
+        shape_rearrange_gc.compile_shape_rearrange_sweep()
 
 
 _precompile_gc_models()

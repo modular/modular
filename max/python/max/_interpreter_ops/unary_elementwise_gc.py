@@ -233,7 +233,7 @@ def _is_supported(
 
 
 # True once a batched sweep has run, so dispatch attempts adoption at most once.
-_swept = False
+_SWEPT = False
 
 
 @in_default_mlir_context
@@ -250,7 +250,7 @@ def compile_unary_sweep() -> None:
     target never reaches the backend; a derived supported set is the real fix
     (MXF-477).
     """
-    global _swept
+    global _SWEPT
     module = Module()
     for op_type, spec in _UNARY_OPS.items():
         for device in _DEVICES:
@@ -259,7 +259,7 @@ def compile_unary_sweep() -> None:
                     _build_unary_graph(module, op_type, spec, device, dtype)
     session = engine.InferenceSession(devices=list(_DEVICES))
     _UNARY_MODEL_CACHE.update(session.load_all(module, weights_registry={}))
-    _swept = True
+    _SWEPT = True
 
 
 @in_default_mlir_context
@@ -324,11 +324,11 @@ def unary_model(
         model = _UNARY_MODEL_CACHE.get(key)
         if model is not None:
             return model
-        global _swept
-        if not _swept and gc_compile.warm_stamp_matches():
-            # Mark _swept before attempting so a stale stamp can't loop; guard
+        global _SWEPT
+        if not _SWEPT and gc_compile.warm_stamp_matches():
+            # Mark _SWEPT before attempting so a stale stamp can't loop; guard
             # so an adoption failure falls through to per-target, not the op.
-            _swept = True
+            _SWEPT = True
             try:
                 compile_unary_sweep()
             except Exception:

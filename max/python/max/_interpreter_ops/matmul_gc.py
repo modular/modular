@@ -120,7 +120,7 @@ def _build_matmul_graph(
 
 
 # True once a batched sweep has run, so dispatch attempts adoption at most once.
-_swept = False
+_SWEPT = False
 
 
 @in_default_mlir_context
@@ -133,14 +133,14 @@ def compile_matmul_sweep() -> None:
     stamp. In the adoption case the identical batched module hashes to the warm
     on-disk cache key, so ``load_all`` is a fast load rather than a recompile.
     """
-    global _swept
+    global _SWEPT
     module = Module()
     for compilation_target in _COMPILATION_TARGETS:
         _build_matmul_graph(module, compilation_target)
     devices = {ct.device for ct in _COMPILATION_TARGETS}
     session = engine.InferenceSession(devices=devices)
     _MATMUL_MODEL_CACHE.update(session.load_all(module, weights_registry={}))
-    _swept = True
+    _SWEPT = True
 
 
 @in_default_mlir_context
@@ -195,11 +195,11 @@ def matmul_model(device: Device, dtype: DType) -> engine.Model:
         model = _MATMUL_MODEL_CACHE.get(target.graph_name)
         if model is not None:
             return model
-        global _swept
-        if not _swept and gc_compile.warm_stamp_matches():
-            # Mark _swept before attempting so a stale stamp can't loop; guard
+        global _SWEPT
+        if not _SWEPT and gc_compile.warm_stamp_matches():
+            # Mark _SWEPT before attempting so a stale stamp can't loop; guard
             # so an adoption failure falls through to per-target, not the op.
-            _swept = True
+            _SWEPT = True
             try:
                 compile_matmul_sweep()
             except Exception:
