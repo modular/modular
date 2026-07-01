@@ -2166,7 +2166,6 @@ def log10[
     Returns:
         The `log10` of the input.
     """
-
     comptime if is_nvidia_gpu():
         comptime log10_2 = 0.301029995663981195213738894724493027
 
@@ -2179,8 +2178,10 @@ def log10[
                 ](x)
                 * log10_2
             )
+
     elif is_amd_gpu():
         return _llvm_unary_fn["llvm.log10"](x)
+
     elif is_apple_gpu():
         return _llvm_unary_fn["llvm.air.log10"](x)
 
