@@ -147,6 +147,15 @@ struct Set[
 
         Returns:
             Whether or not the set contains the element.
+
+        Example:
+        ```mojo
+        from std.collections import Set
+
+        var s = Set[Int](1, 2, 3)
+        print(2 in s)   # True
+        print(99 in s)  # False
+        ```
         """
         return t in self._data
 
@@ -452,6 +461,15 @@ struct Set[
 
         Args:
             t: The element to add to the set.
+
+        Example:
+        ```mojo
+        from std.collections import Set
+
+        var s = Set[Int](1, 2)
+        s.add(3)
+        print(len(s))  # 3
+        ```
         """
         self._data[t^] = None
 
@@ -463,6 +481,15 @@ struct Set[
 
         Raises:
             If the element isn't in the set to remove.
+
+        Example:
+        ```mojo
+        from std.collections import Set
+
+        var s = Set[Int](1, 2, 3)
+        s.remove(2)
+        print(len(s))  # 2
+        ```
         """
         self._data.pop(t)
 
@@ -492,6 +519,15 @@ struct Set[
         Returns:
             A new set containing any elements which appear in either
             this set or the `other` set.
+
+        Example:
+        ```mojo
+        from std.collections import Set
+
+        var a = Set[Int](1, 2)
+        var b = Set[Int](2, 3)
+        var c = a.union(b)  # {1, 2, 3}
+        ```
         """
         var result = self.copy()
         for o in other:
@@ -510,6 +546,15 @@ struct Set[
         Returns:
             A new set containing only the elements which appear in both
             this set and the `other` set.
+
+        Example:
+        ```mojo
+        from std.collections import Set
+
+        var a = Set[Int](1, 2, 3)
+        var b = Set[Int](2, 3, 4)
+        var c = a.intersection(b)  # {2, 3}
+        ```
         """
         var result = Set[Self.T, Self.H]()
         for v in self:
@@ -529,6 +574,15 @@ struct Set[
         Returns:
             A new set containing elements that are in this set but not in
             the `other` set.
+
+        Example:
+        ```mojo
+        from std.collections import Set
+
+        var a = Set[Int](1, 2, 3)
+        var b = Set[Int](2, 3, 4)
+        var c = a.difference(b)  # {1}
+        ```
         """
         var result = Set[Self.T, Self.H]()
         for e in self:
@@ -601,6 +655,16 @@ struct Set[
 
         Returns:
             True if this set is a subset of the `other` set, False otherwise.
+
+        Example:
+        ```mojo
+        from std.collections import Set
+
+        var a = Set[Int](1, 2)
+        var b = Set[Int](1, 2, 3)
+        print(a.issubset(b))  # True
+        print(b.issubset(a))  # False
+        ```
         """
         if len(self) > len(other):
             return False
@@ -621,6 +685,15 @@ struct Set[
 
         Returns:
             True if this set is disjoint with the `other` set, False otherwise.
+
+        Example:
+        ```mojo
+        from std.collections import Set
+
+        var a = Set[Int](1, 2)
+        var b = Set[Int](3, 4)
+        print(a.isdisjoint(b))  # True
+        ```
         """
         for element in self:
             if element in other:
@@ -658,6 +731,15 @@ struct Set[
 
         Returns:
             A new set containing the symmetric difference of the two sets.
+
+        Example:
+        ```mojo
+        from std.collections import Set
+
+        var a = Set[Int](1, 2, 3)
+        var b = Set[Int](2, 3, 4)
+        var c = a.symmetric_difference(b)  # {1, 4}
+        ```
         """
         var result = Set[Self.T, Self.H]()
 
@@ -686,6 +768,15 @@ struct Set[
 
         Args:
             value: The element to remove from the set.
+
+        Example:
+        ```mojo
+        from std.collections import Set
+
+        var s = Set[Int](1, 2, 3)
+        s.discard(2)   # removes 2
+        s.discard(99)  # does nothing, no error
+        ```
         """
         try:
             self._data.pop(value)
@@ -697,5 +788,14 @@ struct Set[
 
         This method modifies the set in-place, removing all of its elements.
         After calling this method, the set will be empty.
+
+        Example:
+        ```mojo
+        from std.collections import Set
+
+        var s = Set[Int](1, 2, 3)
+        s.clear()
+        print(len(s))  # 0
+        ```
         """
         self._data.clear()
