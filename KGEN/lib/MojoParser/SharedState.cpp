@@ -1665,10 +1665,11 @@ SharedState::createDeferredModuleState(StringAttr declName, StringRef filePath,
                                        FileLineColLoc loc) {
   // A deferred module: the FileModuleOp + decl exist but its file is NOT
   // opened. The decl carries an invalid cursor; it is opened + lexed on first
-  // body resolution.
-  return createFileModuleState(
-      declName, parentState, loc, diags.convertLocToSMLoc(loc),
-      /*cursor=*/LexerCursor(), /*endCursor=*/LexerCursor(), filePath);
+  // body resolution, at which point materializeDeferredModule sets its real
+  // location.
+  return createFileModuleState(declName, parentState, loc, /*declLoc=*/SMLoc(),
+                               /*cursor=*/LexerCursor(),
+                               /*endCursor=*/LexerCursor(), filePath);
 }
 
 LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
@@ -1686,8 +1687,10 @@ LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
     return failure();
   }
 
-  // Wire up the parse cursor so the body can now be resolved.
+  // Wire up the parse cursor so the body can now be resolved. Now that the file
+  // is open, give the decl its real source location.
   Lexer lexer(diags, moduleBuffer);
+  decl.setLoc(lexer.getToken().getLoc());
   decl.setParseCursor(lexer.getCursor(), LexerCursor::getEOF(moduleBuffer));
 
   // Auto-import the core language modules and notify the listener - the
@@ -1709,9 +1712,10 @@ SharedState::createPackageState(StringAttr declName, StringRef packagePath,
   // ModuleState::nestedModules (populated by insertNestedModule below).
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
   auto packageOp = PackageOp::create(moduleBuilder, loc, declName);
-  SMLoc declLoc = declResolver->shared.diags.convertLocToSMLoc(loc);
+  // Note we intentionally don't set a valid 'loc' here. The real loc is set
+  // if/when the module is actually opened on demand.
   ASTDecl &decl = declResolver->createUnlistedDecl(
-      static_cast<Operation *>(packageOp), declLoc, parentState.decl,
+      static_cast<Operation *>(packageOp), /*loc=*/SMLoc(), parentState.decl,
       parentState.decl->getCursor(), parentState.decl->getCursor(),
       /*indentation=*/-1);
   // Register the symbol so ModuleType::getDecl() works.

@@ -84,6 +84,7 @@ public:
   getLoc() const {
     return loc;
   }
+  void setLoc(llvm::SMLoc newLoc) { loc = newLoc; }
   LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG ASTDecl *
   getParentDecl() const {
     return parentDecl;
