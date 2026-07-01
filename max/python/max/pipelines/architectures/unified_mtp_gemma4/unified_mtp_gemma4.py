@@ -69,6 +69,7 @@ class UnifiedMTPGemma4(Module):
         draft_config: Gemma4AssistantConfig,
         speculative_config: SpeculativeConfig | None = None,
         enable_structured_output: bool = False,
+        use_greedy_acceptance: bool = False,
     ) -> None:
         super().__init__()
         self.config = config
@@ -78,6 +79,21 @@ class UnifiedMTPGemma4(Module):
             if speculative_config
             else 1
         )
+        # Greedy acceptance (argmax) has no mid-graph allocation, so the fused
+        # spec graph is CUDA-graph-capturable; the stochastic path is not.
+        # Greedy serving only (temp 0, top_k 1); relaxed/synthetic are rejected.
+        if use_greedy_acceptance and speculative_config is not None:
+            if speculative_config.use_relaxed_acceptance_for_thinking:
+                raise ValueError(
+                    "use_greedy_acceptance is incompatible with "
+                    "use_relaxed_acceptance_for_thinking"
+                )
+            if speculative_config.synthetic_acceptance_rate is not None:
+                raise ValueError(
+                    "use_greedy_acceptance is incompatible with "
+                    "synthetic_acceptance_rate"
+                )
+        self.use_greedy_acceptance = use_greedy_acceptance
         relaxed_topk: int | None = None
         relaxed_delta: float | None = None
         if (
@@ -93,7 +109,7 @@ class UnifiedMTPGemma4(Module):
                 else None
             ),
             num_draft_steps=self.num_draft_steps,
-            use_stochastic=True,
+            use_stochastic=not use_greedy_acceptance,
             relaxed_topk=relaxed_topk,
             relaxed_delta=relaxed_delta,
         )

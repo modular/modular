@@ -186,6 +186,17 @@ class SpeculativeConfig(ConfigFileModel):
         ),
     )
 
+    use_greedy_acceptance: bool = Field(
+        default=False,
+        description=(
+            "Use greedy (argmax) draft acceptance instead of the stochastic "
+            "sampler. The greedy path has no mid-graph allocation, so the "
+            "fused speculative graph can be CUDA-graph captured. Valid only "
+            "for greedy serving (temperature 0, top_k 1); incompatible with "
+            "relaxed and synthetic acceptance."
+        ),
+    )
+
     @field_validator("relaxed_topk")
     @classmethod
     def _validate_relaxed_topk(cls, v: int) -> int:
