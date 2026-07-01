@@ -29,9 +29,12 @@ from linalg.utils import partition_work
 from std.memory import (
     alloc,
     bitcast,
+    dealloc,
     memcpy,
     stack_allocation,
+    Allocation,
 )
+from std.memory.alloc import Layout as AllocLayout
 
 from std.runtime.asyncrt import parallelism_level
 
@@ -261,8 +264,8 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 
 def _quantize_a_Q8_K[
     group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
-](a: LayoutTensor[mut=False, dtype, ...]) -> UnsafePointer[
-    _block_Q8_K_packed[group_size], MutUntrackedOrigin
+](a: LayoutTensor[mut=False, dtype, ...]) -> Allocation[
+    _block_Q8_K_packed[group_size]
 ]:
     comptime assert a.rank == 2
     comptime quantized_k = _block_QK_K.quantized_k
@@ -271,10 +274,12 @@ def _quantize_a_Q8_K[
     var M = a.dim[0]()
     var K = a.dim[1]()
 
-    var packed_base_ptr = alloc[_block_Q8_K_packed[group_size]](
-        M * (K // quantized_k)
+    var packed_base_alloc = alloc(
+        AllocLayout[_block_Q8_K_packed[group_size]](
+            count=M * (K // quantized_k)
+        )
     )
-    var packed_ptr = packed_base_ptr
+    var packed_ptr = packed_base_alloc.unsafe_ptr()
 
     for ko in range(0, K, quantized_k):
         var am_ptr = a.ptr + ko
@@ -333,9 +338,7 @@ def _quantize_a_Q8_K[
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = am_ptr
 
-    # TODO(MOCO-2074): Suppress false positive unused var warning.
-    _ = packed_ptr
-    return packed_base_ptr
+    return packed_base_alloc^
 
 
 def _expand_q_bits_lo[
@@ -1458,9 +1461,10 @@ def _matmul_Qb_K[
     var K = a.dim[1]()
     var k_blocks = K // _block_QK_K.quantized_k
 
-    var a_packed_base_ptr = _quantize_a_Q8_K[
+    var a_packed_base_alloc = _quantize_a_Q8_K[
         group_size, interleave_group_sums=interleave_group_sums
     ](a)
+    a_packed_base_ptr = a_packed_base_alloc.unsafe_ptr()
 
     comptime grain_size = simd_width * 2
 
@@ -1520,7 +1524,7 @@ def _matmul_Qb_K[
 
     sync_parallelize[task_func](num_workers, ctx)
 
-    a_packed_base_ptr.free()
+    dealloc(a_packed_base_alloc^)
 
 
 def matmul_Q4_K[

@@ -14,6 +14,8 @@
 from std.sys.info import _current_target, simd_width_of
 from std.math import ceildiv
 from std.math.uutils import udivmod
+from std.memory import ThinAllocation, dealloc
+from std.memory.alloc import Layout as AllocLayout
 
 from std.algorithm.functional import elementwise, unswitch
 from std.gpu import global_idx
@@ -1811,6 +1813,10 @@ def _matmul_common[
 ) raises:
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
+
+    var c_alloc_layout = AllocLayout[Scalar[output_dtype]](
+        count=TOTAL_SEQ_LEN * N
+    )
     var c_nd: LayoutTensor[
         output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutUntrackedOrigin
     ]
@@ -1819,7 +1825,7 @@ def _matmul_common[
         # The CPU matmul codepath uses the C buffer as a workspace
         # even if an epilogue is provided, here we just allocate
         # something to ensure we don't segfault.
-        var c_ptr = alloc[Scalar[output_dtype]](TOTAL_SEQ_LEN * N)
+        var c_ptr = alloc(c_alloc_layout).unsafe_leak()
 
         c_nd = {
             c_ptr,
@@ -1842,7 +1848,11 @@ def _matmul_common[
     ](lt_to_tt(c_nd), lt_to_tt(hidden_state), lt_to_tt(weight), context)
 
     comptime if is_cpu[target]():
-        c_nd.ptr.free()
+        dealloc(
+            ThinAllocation(unsafe_assume_ownership=c_nd.ptr).unsafe_with_layout(
+                c_alloc_layout
+            )
+        )
 
 
 @always_inline
@@ -2995,7 +3005,9 @@ def _qmatmul_gguf_quantized_alloc_output[
     # The CPU matmul codepath uses the C buffer as a workspace
     # even if an epilogue is provided, here we just allocate
     # something to ensure we don't segfault.
-    var c_ptr = alloc[Float32](TOTAL_SEQ_LEN * N)
+    var c_ptr = alloc(
+        AllocLayout[Float32](count=TOTAL_SEQ_LEN * N)
+    ).unsafe_leak()
 
     c_nd = {
         c_ptr,
@@ -3006,7 +3018,11 @@ def _qmatmul_gguf_quantized_alloc_output[
         quantization_encoding, elementwise_lambda_fn
     ](hidden_state, weight, c_nd)
 
-    c_nd.ptr.free()
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=c_ptr).unsafe_with_layout(
+            AllocLayout[Float32](count=TOTAL_SEQ_LEN * N)
+        )
+    )
 
 
 @always_inline

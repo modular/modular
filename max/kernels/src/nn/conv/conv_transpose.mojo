@@ -13,6 +13,8 @@
 
 from std.math import align_down, ceildiv
 
+from std.memory import ThinAllocation, alloc, dealloc
+from std.memory.alloc import Layout as AllocLayout
 from std.sys import align_of, simd_width_of
 
 from _cudnn.cnn_infer import (
@@ -1427,14 +1429,17 @@ def conv_transposed_cpu[
             packed_filter_shape = rebind[IndexList[packed_filter_rank]](
                 pack_filter_shape(filter, 1)
             )
-            packed_filter_ptr = alloc[Scalar[filter.dtype]](
-                packed_filter_shape.flattened_length()
-            )
         else:
             packed_filter_shape = IndexList[packed_filter_rank]()
 
             comptime for i in range(packed_filter_rank):
                 packed_filter_shape[i] = Int(filter.layout.shape[i]().value())
+
+        var packed_filter_alloc_layout = AllocLayout[Scalar[filter.dtype]](
+            count=packed_filter_shape.flattened_length()
+        )
+        comptime if not filter_packed:
+            packed_filter_ptr = alloc(packed_filter_alloc_layout).unsafe_leak()
 
         var packed_filter = TileTensor(
             packed_filter_ptr,
@@ -1494,7 +1499,11 @@ def conv_transposed_cpu[
         ].run(output, input, packed_filter, conv_shape, ctx)
 
         comptime if not filter_packed:
-            packed_filter_ptr.free()
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=packed_filter_ptr
+                ).unsafe_with_layout(packed_filter_alloc_layout)
+            )
 
 
 # ===----------------------------------------------------------------------=== #

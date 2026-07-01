@@ -45,7 +45,8 @@ from linalg.matmul.cpu.apple_accelerate import (
 )
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
-from std.memory import memset_zero, stack_allocation
+from std.memory import alloc, dealloc, memset_zero, stack_allocation
+from std.memory.alloc import DeletableAllocation, Layout as AllocLayout
 from nn.attention.mha_mask import MHAMask
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -756,17 +757,21 @@ struct _FlashAttention[
                 Span(sum_vals_storage), row_major[Self._config.block_m]()
             )
 
-            var packed_ptr_allocated = max_seq_len != 1
-            var packed_ptr: UnsafePointer[
-                Scalar[Self.dtype], MutUntrackedOrigin
-            ]
-            if packed_ptr_allocated:
-                packed_ptr = alloc[Scalar[Self.dtype]](
-                    packed_size,
-                    alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
-                )
-            else:
-                packed_ptr = type_of(packed_ptr).unsafe_dangling()
+            var packed_alloc = Optional[
+                DeletableAllocation[Scalar[Self.dtype]]
+            ]()
+            var packed_ptr = type_of(
+                packed_alloc.value().unsafe_ptr()
+            ).unsafe_dangling()
+
+            if max_seq_len != 1:
+                packed_alloc = alloc(
+                    AllocLayout[Scalar[Self.dtype]](
+                        count=packed_size,
+                        alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
+                    )
+                ).into_deletable()
+                packed_ptr = packed_alloc.unsafe_value().unsafe_ptr()
 
             var q_seq_stride = num_heads * depth_dim
 
@@ -938,8 +943,14 @@ struct _FlashAttention[
                     o_ptr += q_seq_stride
                     oz_ptr += Self._config.o_block_n
 
-            if packed_ptr_allocated:
-                packed_ptr.free()
+            # NOTE: passing `dealloc[Scalar[Self.dtype]]` directly crashes the
+            # when the dtype is parametric; wrap it in a local function as a workaround.
+            def _dealloc_packed(
+                var packed: DeletableAllocation[Scalar[Self.dtype]],
+            ):
+                dealloc(packed^.into_allocation())
+
+            packed_alloc^.destroy_with(_dealloc_packed)
 
         sync_parallelize[task_func](num_threads, ctx)
 

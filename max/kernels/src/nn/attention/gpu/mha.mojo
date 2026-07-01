@@ -89,7 +89,8 @@ from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.bmm import batched_matmul
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.transpose import transpose
-from std.memory import stack_allocation
+from std.memory import ThinAllocation, dealloc, stack_allocation
+from std.memory.alloc import Layout as AllocLayout
 
 from .amd_rdna.attention import AttentionRDNA
 from .amd_rdna.mha_decode import AttentionRDNA
@@ -6024,53 +6025,63 @@ def _naive_attention_with_transpose[
     var depth = q.dim[3]()
 
     # Q, K, V transposed
-    var qt_ptr = alloc[Scalar[dtype]](q.size())
-    var kt_ptr = alloc[Scalar[dtype]](k.size())
-    var vt_ptr = alloc[Scalar[dtype]](v.size())
+    var qt_alloc = alloc(
+        AllocLayout[Scalar[dtype]](count=q.size())
+    ).into_deletable()
+    var kt_alloc = alloc(
+        AllocLayout[Scalar[dtype]](count=k.size())
+    ).into_deletable()
+    var vt_alloc = alloc(
+        AllocLayout[Scalar[dtype]](count=v.size())
+    ).into_deletable()
     # Score = softmax(Q * K)
     var score_size = batch_size * num_heads * seq_len * num_keys
-    var score_ptr = alloc[Scalar[dtype]](score_size)
+    var score_alloc = alloc(
+        AllocLayout[Scalar[dtype]](count=score_size)
+    ).into_deletable()
     # O = Score * V. It's transposed and will be transposed back to output.
-    var ot_ptr = alloc[Scalar[dtype]](output.size())
+    var ot_alloc = alloc(
+        AllocLayout[Scalar[dtype]](count=output.size())
+    ).into_deletable()
 
     var qt = TileTensor(
-        qt_ptr,
+        qt_alloc.unsafe_ptr(),
         row_major(batch_size, num_heads, seq_len, depth),
     )
     var kt = TileTensor(
-        kt_ptr,
+        kt_alloc.unsafe_ptr(),
         row_major(batch_size, num_heads, depth, num_keys),
     )
     var vt = TileTensor(
-        vt_ptr,
+        vt_alloc.unsafe_ptr(),
         row_major(batch_size, num_heads, num_keys, depth),
     )
     var ot = TileTensor(
-        ot_ptr,
+        ot_alloc.unsafe_ptr(),
         row_major(batch_size, num_heads, seq_len, depth),
     )
 
     comptime layout_4d = Layout.row_major[4]()
     var qt_lt = LayoutTensor[dtype, layout_4d](
-        qt_ptr,
+        qt_alloc.unsafe_ptr(),
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_heads, seq_len, depth)
         ),
     )
     var kt_lt = LayoutTensor[dtype, layout_4d](
-        kt_ptr,
+        kt_alloc.unsafe_ptr(),
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_heads, depth, num_keys)
         ),
     )
     var vt_lt = LayoutTensor[dtype, layout_4d](
-        vt_ptr,
+        vt_alloc.unsafe_ptr(),
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_heads, num_keys, depth)
         ),
     )
     var ot_lt = LayoutTensor[dtype, layout_4d](
-        ot_ptr,
+        ot_alloc.unsafe_ptr(),
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_heads, seq_len, depth)
         ),
@@ -6155,11 +6166,11 @@ def _naive_attention_with_transpose[
 
     transpose(output_tt, ot, o_perm.ptr)
 
-    qt_ptr.free()
-    kt_ptr.free()
-    vt_ptr.free()
-    score_ptr.free()
-    ot_ptr.free()
+    dealloc(qt_alloc^.into_allocation())
+    dealloc(kt_alloc^.into_allocation())
+    dealloc(vt_alloc^.into_allocation())
+    dealloc(score_alloc^.into_allocation())
+    dealloc(ot_alloc^.into_allocation())
 
 
 def _naive_attention[
@@ -6190,9 +6201,11 @@ def _naive_attention[
 
     # Allocate intermediate memory buffer.
     var score_size = batch_size * num_heads * seq_len * num_keys
-    var score_ptr = alloc[Scalar[dtype]](score_size)
+    var score_alloc = alloc(
+        AllocLayout[Scalar[dtype]](count=score_size)
+    ).into_deletable()
     var score = TileTensor(
-        score_ptr,
+        score_alloc.unsafe_ptr(),
         row_major((batch_size, num_heads, seq_len, num_keys)),
     )
 
@@ -6237,7 +6250,8 @@ def _naive_attention[
         scale_and_mask, (batch_size, num_heads, seq_len, num_keys), ctx
     )
 
-    softmax[dtype, simd_size, 4](score, score, axis=3)
+    # `as_unsafe_any_origin()` is used to avoid exclusivity violations
+    softmax[dtype, simd_size, 4](score, score.as_unsafe_any_origin(), axis=3)
 
     var output_tt = TileTensor(
         output.ptr,
@@ -6263,4 +6277,4 @@ def _naive_attention[
     )
     batched_matmul[transpose_b=False](output_tt, score, v_tt)
 
-    score_ptr.free()
+    dealloc(score_alloc^.into_allocation())

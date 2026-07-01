@@ -21,7 +21,8 @@ from std.sys import argv
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc, bitcast
+from std.memory import alloc, bitcast, dealloc, ThinAllocation
+from std.memory.alloc import Layout as AllocLayout
 from std.random import rand, random_ui64, seed
 from internal_utils import assert_almost_equal
 from layout import (
@@ -134,14 +135,22 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var b_size = Int(n.value()) * (KType.static_value // 2)
     var c_size = Int(m.value()) * Int(n.value())
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
+    var a_host_alloc = alloc(
+        AllocLayout[Scalar[a_type]](count=a_size)
+    ).into_deletable()
+    var a_host = TileTensor(a_host_alloc.unsafe_ptr(), a_shape)
+    var b_host_alloc = alloc(
+        AllocLayout[Scalar[b_type]](count=b_size)
+    ).into_deletable()
+    var b_host = TileTensor(b_host_alloc.unsafe_ptr(), b_shape)
+    var c_host_alloc = alloc(
+        AllocLayout[Scalar[c_type]](count=c_size)
+    ).into_deletable()
+    var c_host = TileTensor(c_host_alloc.unsafe_ptr(), c_shape)
+    var c_host_ref_alloc = alloc(
+        AllocLayout[Scalar[c_type]](count=c_size)
+    ).into_deletable()
+    var c_host_ref = TileTensor(c_host_ref_alloc.unsafe_ptr(), c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_tensor = TileTensor(a_device, a_shape)
@@ -187,10 +196,18 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var a_scales_total = a_scales_shape.product()
     var b_scales_total = b_scales_shape.product()
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
-    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
+    var a_scales_host_alloc = alloc(
+        AllocLayout[Scalar[scales_dtype]](count=a_scales_total)
+    ).into_deletable()
+    var a_scales_host = TileTensor(
+        a_scales_host_alloc.unsafe_ptr(), a_scales_shape
+    )
+    var b_scales_host_alloc = alloc(
+        AllocLayout[Scalar[scales_dtype]](count=b_scales_total)
+    ).into_deletable()
+    var b_scales_host = TileTensor(
+        b_scales_host_alloc.unsafe_ptr(), b_scales_shape
+    )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
@@ -249,10 +266,10 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 )
 
     # Move operands to the Device
-    ctx.enqueue_copy(a_device, a_host_ptr)
-    ctx.enqueue_copy(b_device, b_host_ptr)
-    ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
-    ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
+    ctx.enqueue_copy(a_device, a_host_alloc.unsafe_ptr())
+    ctx.enqueue_copy(b_device, b_host_alloc.unsafe_ptr())
+    ctx.enqueue_copy(a_scales_device, a_scales_host_alloc.unsafe_ptr())
+    ctx.enqueue_copy(b_scales_device, b_scales_host_alloc.unsafe_ptr())
 
     comptime matmul_config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
@@ -351,8 +368,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host_ptr, c_device)
-    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+    ctx.enqueue_copy(c_host_alloc.unsafe_ptr(), c_device)
+    ctx.enqueue_copy(c_host_ref_alloc.unsafe_ptr(), c_device_ref)
     ctx.synchronize()
 
     # When epilogue multiplies by 2, scale reference to match.
@@ -370,12 +387,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
+    dealloc(a_host_alloc^.into_allocation())
+    dealloc(b_host_alloc^.into_allocation())
+    dealloc(c_host_alloc^.into_allocation())
+    dealloc(c_host_ref_alloc^.into_allocation())
+    dealloc(a_scales_host_alloc^.into_allocation())
+    dealloc(b_scales_host_alloc^.into_allocation())
     _ = a_device^
     _ = b_device^
     _ = c_device^

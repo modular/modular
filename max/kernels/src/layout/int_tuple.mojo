@@ -59,7 +59,8 @@ var total_size = size(shape)  # Results in 120
 from std.os import abort
 
 from std.builtin.range import _StridedRange, _StridedScalarRange
-from std.memory import memcpy
+from std.memory import dealloc, memcpy, ThinAllocation
+from std.memory.alloc import Layout as AllocLayout
 from std.collections import check_bounds
 from std.utils.numerics import max_finite
 from std.utils import IndexList
@@ -144,7 +145,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             size: Number of integers to allocate space for. Defaults to 0.
         """
         if size > 0:
-            self._data = alloc[Int](size)
+            self._data = alloc(AllocLayout[Int](count=size)).unsafe_leak()
         else:
             self._data = {}
         self._size = size
@@ -161,7 +162,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         self._size = copy._size
         if copy.owning():
             var size = copy.size()
-            self._data = alloc[Int](size)
+            self._data = alloc(AllocLayout[Int](count=size)).unsafe_leak()
             self.copy_from(0, copy, size)
         else:
             self._data = copy._data
@@ -174,7 +175,11 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         double-free errors with views.
         """
         if self.owning() and self._data:
-            self._data.unsafe_value().free()
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._data.unsafe_value()
+                ).unsafe_with_layout(AllocLayout[Int](count=self.size()))
+            )
 
     @always_inline("nodebug")
     def __getitem__(self, idx: Int) -> Int:
