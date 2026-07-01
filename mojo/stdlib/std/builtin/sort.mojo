@@ -445,6 +445,13 @@ def partition[
     Args:
         span: Input buffer.
         k: Index of the partition element.
+
+    Example:
+    ```mojo
+    var nums = List[Int](5, 1, 3, 2, 4)
+    partition[def(a: Int, b: Int) -> Bool: return a < b](Span(nums), 3)
+    # The first 3 elements are now the 3 smallest, in unspecified order
+    ```
     """
 
     _partition[cmp_fn](span, k)
@@ -502,6 +509,13 @@ def sort[
 
     Args:
         span: The span to be sorted.
+
+    Example:
+    ```mojo
+    var nums = List[Int](3, 1, 2)
+    sort[def(a: Int, b: Int) -> Bool: return a < b](Span(nums))
+    # list is now [1, 2, 3]
+    ```
     """
 
     _sort[cmp_fn, stable=stable](span)
@@ -523,6 +537,13 @@ def sort[
 
     Args:
         span: The span to be sorted.
+
+    Example:
+    ```mojo
+    var nums = List[Int](3, 1, 2)
+    sort(Span(nums))
+    # list is now [1, 2, 3]
+    ```
     """
 
     @parameter
