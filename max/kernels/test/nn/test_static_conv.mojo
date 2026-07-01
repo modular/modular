@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, isclose
-from std.random import rand
 from std.sys.info import simd_width_of
 
 from std.itertools import product
@@ -48,8 +47,8 @@ def test[
 ]() raises:
     # Output Shape.
     # fmt: off
-    comptime HO = (H + pad_h[0] + pad_h[1] - dilation[1] * (R - 1) - 1) // stride[0] + 1
-    comptime WO = (W + pad_w[0] + pad_w[1] - dilation[0] * (S - 1) - 1) // stride[1] + 1
+    comptime HO = (H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1) // stride[0] + 1
+    comptime WO = (W + pad_w[0] + pad_w[1] - dilation[1] * (S - 1) - 1) // stride[1] + 1
     # fmt: on
     comptime type = DType.float32
     comptime simd_size = simd_width_of[type]()
@@ -70,15 +69,39 @@ def test[
         num_groups=num_groups,
     )
 
-    var input_ptr = List(length=N * H * W * C, fill=Scalar[type](0))
+    var input_size = N * H * W * C
+    var input_guard_size = C * (
+        W * max(pad_h[0], pad_h[1]) + max(pad_w[0], pad_w[1])
+    )
+    var input_storage_ptr = List(
+        length=input_size + 2 * input_guard_size, fill=Scalar[type](0)
+    )
+    var input_ptr = input_storage_ptr.unsafe_ptr() + input_guard_size
     var filter_ptr = List(length=R * S * C * F, fill=Scalar[type](0))
 
     # output from conv w/ dynamic and static shapes.
     var output_ptr_static = List(length=N * HO * WO * F, fill=Scalar[type](0))
     var output_ptr_dynamic = List(length=N * HO * WO * F, fill=Scalar[type](0))
 
-    rand(input_ptr)
-    rand(filter_ptr)
+    for i in range(input_guard_size):
+        input_storage_ptr[i] = Scalar[type](100.0)
+        input_storage_ptr[input_guard_size + input_size + i] = Scalar[type](
+            -100.0
+        )
+
+    var input_value = -8
+    for i in range(input_size):
+        input_ptr[i] = Scalar[type](Float64(input_value) * 0.01)
+        input_value += 1
+        if input_value > 8:
+            input_value = -8
+
+    var filter_value = -6
+    for i in range(R * S * C * F):
+        filter_ptr[i] = Scalar[type](Float64(filter_value) * 0.01)
+        filter_value += 1
+        if filter_value > 6:
+            filter_value = -6
 
     comptime layout_4d = Layout.row_major[4]()
     comptime layout_5d = Layout.row_major[5]()
@@ -204,7 +227,7 @@ def test[
                 "rerr",
                 abs(actual - expected) / abs(expected + 1e-10),
             )
-            return
+            raise Error("static conv output mismatch")
 
     # CHECK: Succeed
     print("Succeed")
@@ -213,7 +236,7 @@ def test[
     _ = packed_filter_ptr_static^
     _ = packed_filter_ptr_dynamic^
     _ = filter_ptr^
-    _ = input_ptr^
+    _ = input_storage_ptr^
 
 
 def main() raises:
@@ -242,6 +265,19 @@ def main() raises:
         Index(1, 1),  # dilation
         Index(1, 1),  # pad_h
         Index(1, 1),  # pad_w
+    ]()
+    test[
+        1,  # N
+        1,  # H
+        50,  # W
+        8,  # C
+        1,  # R
+        14,  # S
+        64,  # F
+        Index(1, 1),  # stride
+        Index(1, 3),  # dilation
+        Index(0, 0),  # pad_h
+        Index(13, 13),  # pad_w
     ]()
 
     # Each test will build a specialization of the conv kernel.
