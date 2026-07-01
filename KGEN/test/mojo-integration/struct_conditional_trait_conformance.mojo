@@ -11,7 +11,6 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-
 # ===========================================================================
 # Basic Types for Testing
 # ===========================================================================
@@ -793,6 +792,24 @@ def test_conforms_to_evaluates_where_clause():
     )
 
 
+def all_copyable_from_param_list[*Ts: AnyType]() -> Bool:
+    return conforms_to(Ts.values, Copyable)
+
+
+def test_conforms_to_param_list_checked_types():
+    # CHECK: param_list_checked_types_satisfied: True
+    print(
+        "param_list_checked_types_satisfied:",
+        all_copyable_from_param_list[CopyableType, ImplCopyableType](),
+    )
+
+    # CHECK: param_list_checked_types_unsatisfied: False
+    print(
+        "param_list_checked_types_unsatisfied:",
+        all_copyable_from_param_list[CopyableType, MovableOnlyType](),
+    )
+
+
 # ===========================================================================
 # conforms_to with symbolic type parameter (elaborator path)
 # ===========================================================================
@@ -1318,6 +1335,7 @@ def main():
     test_copy_via_impl_copyable()
     test_synth_copy_with_impl_copyable_type()
     test_conforms_to_evaluates_where_clause()
+    test_conforms_to_param_list_checked_types()
     test_symbolic_conforms_to()
     test_guarded_conditional_call()
     test_comptime_if_guard()

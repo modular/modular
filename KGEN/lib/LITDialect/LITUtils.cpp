@@ -488,17 +488,10 @@ void LIT::canonicalizeTraitCompositionSymbols(
   sortAndDeduplicateSymbols(symbols);
 }
 
-FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
-    TypeConformsToTraitAttr conformsTo,
+static FailureOr<TypedAttr> simplifyScalarConformsToAgainstTypeValue(
+    TypedAttr typeValue, ArrayRef<SymbolRefAttr> traitSymbols, MLIRContext *ctx,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
-  auto symOr = conformsTo.getTraitSymbols();
-  if (!symOr)
-    return failure();
-
-  auto concreteList = sugarDynCast<ParamListAttr>(conformsTo.getTypeValue());
-  if (!concreteList || concreteList.getValues().size() != 1)
-    return failure();
-  TypedAttr typeValue = UpcastAttr::strip(concreteList.getValues().front());
+  typeValue = UpcastAttr::strip(typeValue);
 
   TraitType traitType;
   if (auto typeParam = sugarDynCast<TypeParamAttr>(typeValue)) {
@@ -520,7 +513,47 @@ FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
   // type value, but we can prove correctness if the type variable has
   // a tighter trait bound.
   DenseSet<SymbolRefAttr> symbolSet(symbols.begin(), symbols.end());
-  for (SymbolRefAttr toCheck : *symOr) {
+  for (SymbolRefAttr toCheck : traitSymbols) {
+    if (!symbolSet.contains(toCheck))
+      return failure();
+  }
+
+  return {SIMDAttr::getScalarBool(ctx, true)};
+}
+
+FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
+    TypeConformsToTraitAttr conformsTo,
+    llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
+  auto traitSymbolsOr = conformsTo.getTraitSymbols();
+  if (!traitSymbolsOr)
+    return failure();
+
+  TypedAttr paramList = conformsTo.getTypeValue();
+  if (auto concreteList = sugarDynCast<ParamListAttr>(paramList)) {
+    for (TypedAttr element : concreteList.getValues()) {
+      FailureOr<TypedAttr> result = simplifyScalarConformsToAgainstTypeValue(
+          element, *traitSymbolsOr, conformsTo.getContext(), traitDeclResolver);
+      if (failed(result))
+        return failure();
+    }
+    return {SIMDAttr::getScalarBool(conformsTo.getContext(), true)};
+  }
+
+  paramList = UpcastAttr::strip(paramList);
+  auto paramListType = dyn_cast<ParamListType>(paramList.getType());
+  if (!paramListType)
+    return failure();
+
+  TraitType traitType =
+      dyn_cast<TraitType>(getCanonicalType(paramListType.getElementType()));
+  if (!traitType)
+    return failure();
+
+  SmallVector<SymbolRefAttr> symbols(traitType.getSymbols());
+  canonicalizeTraitCompositionSymbols(symbols, traitDeclResolver);
+
+  DenseSet<SymbolRefAttr> symbolSet(symbols.begin(), symbols.end());
+  for (SymbolRefAttr toCheck : *traitSymbolsOr) {
     if (!symbolSet.contains(toCheck))
       return failure();
   }
@@ -585,15 +618,34 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
   // Handle TypeConformsToTraitAttr.
   if (auto conformsTo =
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
+    auto traitDeclResolver = [&](SymbolRefAttr symbol) -> TraitDeclOp {
+      return symtab.lookupSymbolIn<TraitDeclOp>(module, symbol);
+    };
+
     // Try LIT-specific trait type folding first, then fall back to
     // constraint-aware struct resolution.
-    FailureOr<TypedAttr> result = simplifyConformsToAgainstTypeValue(
-        conformsTo, [&](SymbolRefAttr symbol) -> TraitDeclOp {
-          return symtab.lookupSymbolIn<TraitDeclOp>(module, symbol);
-        });
+    FailureOr<TypedAttr> result =
+        simplifyConformsToAgainstTypeValue(conformsTo, traitDeclResolver);
     if (succeeded(result))
       return result;
-    return conformsTo.evaluateWithContext(*this);
+
+    auto concreteList = sugarDynCast<ParamListAttr>(conformsTo.getTypeValue());
+    auto traitSymbolsOr = conformsTo.getTraitSymbols();
+    if (!concreteList || !traitSymbolsOr)
+      return conformsTo.evaluateWithContext(*this);
+
+    return foldConformanceConjunction(
+        conformsTo.getContext(), concreteList.getValues(),
+        [&](TypedAttr element) -> FailureOr<TypedAttr> {
+          auto scalarConformsTo =
+              TypeConformsToTraitAttr::get(element, conformsTo.getTraitType());
+          FailureOr<TypedAttr> scalarResult =
+              simplifyConformsToAgainstTypeValue(scalarConformsTo,
+                                                 traitDeclResolver);
+          if (succeeded(scalarResult))
+            return scalarResult;
+          return scalarConformsTo.evaluateWithContext(*this);
+        });
   }
 
   // Handle DowncastAttr.
@@ -692,9 +744,10 @@ static TypedAttr stripIdentityWrappers(TypedAttr attr);
 
 /// Normalize a `conforms_to` for structural comparison: strip identity wrappers
 /// (rebind/upcast/downcast) from the type value so `conforms_to(upcast<T>, X)`
-/// matches `conforms_to(T, X)`, and split multi-trait into an AND of
-/// single-trait conforms_to. Returns null if \p prop is not a conforms_to, or
-/// is single-trait needing no stripping.
+/// matches `conforms_to(T, X)`, and decompose concrete variadic lists and
+/// multi-trait checks into an AND of scalar, single-trait `conforms_to`
+/// propositions. Returns null if \p prop is not a `conforms_to`, or if it is
+/// already normalized and cannot be decomposed.
 static TypedAttr decomposeConformsTo(TypedAttr prop) {
   auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(prop);
   if (!conformsTo)
@@ -702,29 +755,71 @@ static TypedAttr decomposeConformsTo(TypedAttr prop) {
 
   TypedAttr typeValue = stripIdentityWrappers(conformsTo.getTypeValue());
 
-  std::optional<ArrayRef<SymbolRefAttr>> symOr = conformsTo.getTraitSymbols();
+  std::optional<ArrayRef<SymbolRefAttr>> traitSymbolsOr =
+      conformsTo.getTraitSymbols();
   // Not yet resolved.
-  if (!symOr)
+  if (!traitSymbolsOr)
     return {};
 
-  ArrayRef<SymbolRefAttr> traitSymbols = *symOr;
+  ArrayRef<SymbolRefAttr> traitSymbols = *traitSymbolsOr;
+  auto concreteList = sugarDynCast<ParamListAttr>(typeValue);
+  bool hasMultipleElements =
+      concreteList && concreteList.getValues().size() > 1;
   assert(!traitSymbols.empty());
-  if (traitSymbols.size() == 1) {
+  if (traitSymbols.size() == 1 && !hasMultipleElements) {
     // Nothing to split. Only rebuild when stripping changed the type value;
     // otherwise report "not decomposable" so callers use the prop unchanged.
     if (typeValue == conformsTo.getTypeValue())
       return {};
     return TypeConformsToTraitAttr::get(typeValue, conformsTo.getTraitType());
   }
+  // An empty concrete pack is vacuously true; callers handle that via the
+  // earlier simplifier paths. Guard here so we never feed an empty operand
+  // list to `ParamOperatorAttr::get(POC::And, ...)` (which asserts).
+  if (concreteList && concreteList.getValues().empty())
+    return {};
 
   SmallVector<TypedAttr> operands;
-  operands.reserve(traitSymbols.size());
-  for (SymbolRefAttr sym : traitSymbols) {
-    auto singleTrait = TraitType::get(conformsTo.getContext(), {sym});
-    operands.push_back(
-        TypeConformsToTraitAttr::get(typeValue, singleTrait.getPValue()));
+  if (concreteList) {
+    operands.reserve(concreteList.getValues().size() * traitSymbols.size());
+    for (TypedAttr element : concreteList.getValues()) {
+      element = stripIdentityWrappers(element);
+      for (SymbolRefAttr sym : traitSymbols) {
+        auto singleTrait = TraitType::get(conformsTo.getContext(), {sym});
+        operands.push_back(
+            TypeConformsToTraitAttr::get(element, singleTrait.getPValue()));
+      }
+    }
+  } else {
+    operands.reserve(traitSymbols.size());
+    for (SymbolRefAttr sym : traitSymbols) {
+      auto singleTrait = TraitType::get(conformsTo.getContext(), {sym});
+      operands.push_back(
+          TypeConformsToTraitAttr::get(typeValue, singleTrait.getPValue()));
+    }
   }
   return ParamOperatorAttr::get(POC::And, operands);
+}
+
+static bool conformanceParamListContainsElement(TypedAttr paramList,
+                                                TypedAttr element) {
+  paramList = stripIdentityWrappers(getCanonicalAttr(paramList));
+  element = stripIdentityWrappers(getCanonicalAttr(element));
+
+  if (auto get = dyn_cast<ParamListGetAttr>(element)) {
+    TypedAttr getParamList =
+        stripIdentityWrappers(getCanonicalAttr(get.getParamList()));
+    return isEqualCanon(paramList, getParamList);
+  }
+
+  if (auto concreteList = sugarDynCast<ParamListAttr>(paramList)) {
+    for (TypedAttr candidate : concreteList.getValues())
+      if (isEqualCanon(stripIdentityWrappers(getCanonicalAttr(candidate)),
+                       element))
+        return true;
+  }
+
+  return false;
 }
 
 /// Check if prop is NOT(inner), i.e., XOR(inner, true). Returns inner if so.
@@ -768,6 +863,38 @@ ConstraintRelation LIT::inferConstraintRelation(TypedAttr propA,
   // sound because we know propA is not also trivially false at this point.
   if (isTriviallyFalseProposition(propB))
     return CR::Contradicts;
+
+  if (auto conformsToA = dyn_cast<TypeConformsToTraitAttr>(propA)) {
+    if (auto conformsToB = dyn_cast<TypeConformsToTraitAttr>(propB)) {
+      std::optional<ArrayRef<SymbolRefAttr>> symbolsA =
+          conformsToA.getTraitSymbols();
+      std::optional<ArrayRef<SymbolRefAttr>> symbolsB =
+          conformsToB.getTraitSymbols();
+      bool traitsImply = false;
+      if (symbolsA && symbolsB) {
+        DenseSet<SymbolRefAttr> symbols(symbolsA->begin(), symbolsA->end());
+        traitsImply = llvm::all_of(*symbolsB, [&](SymbolRefAttr symbol) {
+          return symbols.contains(symbol);
+        });
+      }
+      if (isEqualCanon(stripIdentityWrappers(
+                           getCanonicalAttr(conformsToA.getTypeValue())),
+                       stripIdentityWrappers(
+                           getCanonicalAttr(conformsToB.getTypeValue()))) &&
+          traitsImply)
+        return CR::Implies;
+
+      auto paramList = sugarDynCast<ParamListAttr>(conformsToB.getTypeValue());
+      if (paramList && paramList.getValues().size() == 1) {
+        TypedAttr element = stripIdentityWrappers(
+            getCanonicalAttr(paramList.getValues().front()));
+        if (conformanceParamListContainsElement(conformsToA.getTypeValue(),
+                                                element) &&
+            traitsImply)
+          return CR::Implies;
+      }
+    }
+  }
 
   // Negation rule: A contradicts NOT(A).
   // If B = NOT(inner) and A implies inner, then A contradicts B.
@@ -910,22 +1037,45 @@ TraitType LIT::getTraitBoundFromAssumptions(
 
   TypedAttr targetStripped = stripIdentityWrappers(typeAttr);
 
+  auto targetParamListGet = dyn_cast<ParamListGetAttr>(targetStripped);
+  TypedAttr targetParamList;
+  if (targetParamListGet)
+    targetParamList = stripIdentityWrappers(
+        getCanonicalAttr(targetParamListGet.getParamList()));
+
   // Collect trait symbols from all relevant conforms_to constraints.
   SmallVector<SymbolRefAttr> allTraits;
   for (ConstraintAttr assumption : assumptions) {
     forEachConformsToInProposition(
         assumption.getProposition(), [&](TypeConformsToTraitAttr ct) {
-          auto concreteList = sugarDynCast<ParamListAttr>(ct.getTypeValue());
-          if (!concreteList || concreteList.getValues().size() != 1)
+          std::optional<ArrayRef<SymbolRefAttr>> traitSymbolsOr =
+              ct.getTraitSymbols();
+          if (!traitSymbolsOr)
             return;
-          TypedAttr elementStripped = stripIdentityWrappers(
-              getCanonicalAttr(concreteList.getValues().front()));
-          if (!isEqualCanon(elementStripped, targetStripped))
+
+          TypedAttr checkedParamList = ct.getTypeValue();
+          if (auto concreteList =
+                  sugarDynCast<ParamListAttr>(checkedParamList)) {
+            for (TypedAttr element : concreteList.getValues()) {
+              TypedAttr elementStripped =
+                  stripIdentityWrappers(getCanonicalAttr(element));
+              if (!isEqualCanon(elementStripped, targetStripped))
+                continue;
+              for (SymbolRefAttr symbol : *traitSymbolsOr) {
+                if (!llvm::is_contained(allTraits, symbol))
+                  allTraits.push_back(symbol);
+              }
+            }
             return;
-          std::optional<ArrayRef<SymbolRefAttr>> symOr = ct.getTraitSymbols();
-          if (!symOr)
+          }
+
+          if (!targetParamListGet)
             return;
-          for (SymbolRefAttr symbol : *symOr) {
+          TypedAttr assumptionParamList =
+              stripIdentityWrappers(getCanonicalAttr(checkedParamList));
+          if (!isEqualCanon(assumptionParamList, targetParamList))
+            return;
+          for (SymbolRefAttr symbol : *traitSymbolsOr) {
             if (!llvm::is_contained(allTraits, symbol))
               allTraits.push_back(symbol);
           }

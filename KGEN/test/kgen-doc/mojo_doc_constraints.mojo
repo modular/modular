@@ -12,6 +12,9 @@
 # RUN: kgen-doc %s 2>&1 | FileCheck %s --allow-empty --check-prefix CHECK-DIAG --implicit-check-not=warning
 # CHECK-DIAG-NOT: warning
 
+from std.builtin.variadics import TypeList
+
+
 ##===----------------------------------------------------------------------===##
 # Helper predicates for constraint testing
 ##===----------------------------------------------------------------------===##
@@ -423,6 +426,15 @@ def fn_with_compound_trait_conformance[
     Parameters:
         T: A type that must conform to both Serializable and Printable.
     """
+    pass
+
+
+# CHECK-LABEL: "name": "fn_with_empty_pack_conformance",
+# CHECK: "signature": "def fn_with_empty_pack_conformance() where True"
+def fn_with_empty_pack_conformance() where (
+    conforms_to(TypeList.of[Trait=AnyType]().values, Printable)
+):
+    """Function with a vacuously satisfied empty pack conformance constraint."""
     pass
 
 

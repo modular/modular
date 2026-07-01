@@ -398,9 +398,9 @@ bool parseConformsToString(StringRef printed, StringRef &paramName,
   auto [lhs, rhs] = inner.split(", ");
   if (rhs.empty())
     return false;
-  // Multi-type `conforms_to(T, U, Trait)` has additional checked operands
-  // before the trait. Keep those as explicit where clauses instead of folding
-  // `U, Trait` into T's rendered type bounds.
+  // If either side contains another comma, this is not a simple
+  // `conforms_to(ParamName, Trait)` pair. Keep it as an explicit where clause
+  // instead of folding an ambiguous value into T's rendered type bounds.
   if (lhs.contains(',') || rhs.contains(','))
     return false;
   // Only merge if the type is a simple identifier (no dots = not an associated

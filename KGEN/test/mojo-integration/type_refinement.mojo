@@ -1310,6 +1310,14 @@ def greet_variadic_elements[*Ts: AnyType](*args: *Ts):
         print("variadic-refine:", args[i].greet())
 
 
+def copy_variadic_elements_from_conforms_to_param_list[
+    *Ts: ImplicitlyDeletable & Movable
+](*args: *Ts) where conforms_to(Ts.values, Copyable):
+    comptime for i in range(args.__len__()):
+        _ = args[i].copy()
+    print("variadic-conforms-to-param-list-refine: ok")
+
+
 def test_rebind_refinement():
     var d = Dog("Rex")
     # CHECK: read: Dog(Rex) | Woof! I'm Rex | Dog(Rex)
@@ -1329,6 +1337,8 @@ def test_variadic_element_refinement():
     # CHECK: variadic-refine: Woof! I'm Rex
     # CHECK: variadic-refine: Meow! I'm Luna
     greet_variadic_elements(Dog("Rex"), Cat("Luna"))
+    # CHECK: variadic-conforms-to-param-list-refine: ok
+    copy_variadic_elements_from_conforms_to_param_list(Dog("Rex"), Cat("Luna"))
 
 
 def main():

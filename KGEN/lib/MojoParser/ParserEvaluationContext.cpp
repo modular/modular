@@ -7,6 +7,7 @@
 #include "ParserEvaluationContext.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -124,16 +125,35 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
   // Handle TypeConformsToTraitAttr.
   if (auto conformsTo =
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
+    auto traitDeclResolver = [&](SymbolRefAttr symbol) -> TraitDeclOp {
+      ASTDecl &decl = shared.declResolver->getDeclForTypeSymbol(symbol);
+      return cast<TraitDeclOp>(decl.getIfOperation());
+    };
+
     // Try LIT-specific trait type folding first, then fall back to the attr
     // folder for struct resolution.
-    FailureOr<TypedAttr> result = simplifyConformsToAgainstTypeValue(
-        conformsTo, [&](SymbolRefAttr symbol) -> TraitDeclOp {
-          ASTDecl &decl = shared.declResolver->getDeclForTypeSymbol(symbol);
-          return cast<TraitDeclOp>(decl.getIfOperation());
-        });
+    FailureOr<TypedAttr> result =
+        simplifyConformsToAgainstTypeValue(conformsTo, traitDeclResolver);
     if (succeeded(result))
       return result;
-    return conformsTo.evaluateWithContext(*this);
+
+    auto concreteList = sugarDynCast<ParamListAttr>(conformsTo.getTypeValue());
+    auto traitSymbolsOr = conformsTo.getTraitSymbols();
+    if (!concreteList || !traitSymbolsOr)
+      return conformsTo.evaluateWithContext(*this);
+
+    return foldConformanceConjunction(
+        conformsTo.getContext(), concreteList.getValues(),
+        [&](TypedAttr element) -> FailureOr<TypedAttr> {
+          auto scalarConformsTo =
+              TypeConformsToTraitAttr::get(element, conformsTo.getTraitType());
+          FailureOr<TypedAttr> scalarResult =
+              simplifyConformsToAgainstTypeValue(scalarConformsTo,
+                                                 traitDeclResolver);
+          if (succeeded(scalarResult))
+            return scalarResult;
+          return scalarConformsTo.evaluateWithContext(*this);
+        });
   }
 
   // For now, only fold IsSubTraitAttr in parser context, un-foldable parametric
