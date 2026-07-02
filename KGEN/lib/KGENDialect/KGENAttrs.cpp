@@ -673,22 +673,45 @@ TypedAttr DowncastAttr::getTypeRefIfResolved() {
 //===----------------------------------------------------------------------===//
 
 Type TypeConformsToTraitAttr::getType() const {
-  return SIMDType::get(1,
-                       DTypeConstantAttr::get(getContext(), KGENDType::kBool));
+  return SIMDType::getScalarBoolType(getContext());
 }
 
-TypeConformsToTraitAttr TypeConformsToTraitAttr::get(TypedAttr typeValue,
-                                                     TypedAttr traitType) {
-  // TODO(MOCO-4177): Canonicalize multi-trait and concrete param-list
-  // `conforms_to` propositions to `POC::And` once context evaluation recurses
-  // through boolean proposition operands.
-  return Base::get(typeValue.getContext(),
-                   getConformsToCheckedParamList(typeValue), traitType);
+TypedAttr TypeConformsToTraitAttr::get(TypedAttr typeValue,
+                                       TypedAttr traitType) {
+  SmallVector<TypedAttr> inputs;
+  if (auto lst = sugarDynCast<ParamListAttr>(UpcastAttr::strip(typeValue))) {
+    for (TypedAttr input : lst.getValues())
+      inputs.push_back(input);
+  } else {
+    inputs.push_back(typeValue);
+  }
+
+  // conforms_to([], whatever...) is always true.
+  if (inputs.empty())
+    return {SIMDAttr::getScalarBool(typeValue.getContext(), true)};
+
+  TypedAttr ret = Base::get(typeValue.getContext(), inputs.front(), traitType);
+  for (TypedAttr input : ArrayRef<TypedAttr>(inputs).drop_front())
+    ret = ParamOperatorAttr::get(
+        POC::And, ret, Base::get(typeValue.getContext(), input, traitType));
+
+  return ret;
 }
 
-TypeConformsToTraitAttr TypeConformsToTraitAttr::getChecked(
+TypedAttr TypeConformsToTraitAttr::getChecked(
     function_ref<InFlightDiagnostic()> emitError, TypedAttr typeValue,
     TypedAttr traitType) {
+  return get(typeValue, traitType);
+}
+
+TypedAttr TypeConformsToTraitAttr::get(MLIRContext *ctx, TypedAttr typeValue,
+                                       TypedAttr traitType) {
+  return get(typeValue, traitType);
+}
+
+TypedAttr TypeConformsToTraitAttr::getChecked(
+    function_ref<InFlightDiagnostic()> emitError, MLIRContext *ctx,
+    TypedAttr typeValue, TypedAttr traitType) {
   return get(typeValue, traitType);
 }
 
@@ -733,10 +756,9 @@ TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp,
 LogicalResult
 TypeConformsToTraitAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                 TypedAttr typeValue, TypedAttr /*traitType*/) {
-  MLIRContext *ctx = typeValue.getContext();
-  if (typeValue.getType() != ParamListType::get(TypeType::get(ctx)))
-    return emitError() << "expected param_list<!kgen.type> value, got "
-                       << typeValue.getType();
+  // Two cases, either an abstract type list, or a single concrete type value.
+  // TODO: how do we verify that typeValue is a type expression here in KGEN
+  // dialect?
   return success();
 }
 
