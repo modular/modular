@@ -857,17 +857,17 @@ ConstraintRelation LIT::inferConstraintRelation(TypedAttr propA,
   return CR::Unprovable;
 }
 
-LIT::ConformanceResult
-LIT::evaluateConstraint(ParameterEvaluator &evaluator,
-                        ConstraintAttr constraint,
-                        ArrayRef<ConstraintAttr> callerAssumptions) {
+TriState
+LIT::canDischargeConstraint(ParameterEvaluator &evaluator,
+                            ConstraintAttr constraint,
+                            ArrayRef<ConstraintAttr> callerAssumptions) {
   TypedAttr prop = getCanonicalAttr(constraint.getProposition());
   TypedAttr rebound = getCanonicalAttr(evaluator.getReboundAttribute(prop));
 
   if (isTriviallyTrueProposition(rebound))
-    return ConformanceResult::Yes;
+    return TriState::yes();
   if (isTriviallyFalseProposition(rebound))
-    return ConformanceResult::No;
+    return TriState::no();
 
   bool anyImplies = false;
   for (ConstraintAttr assumption : callerAssumptions) {
@@ -875,7 +875,7 @@ LIT::evaluateConstraint(ParameterEvaluator &evaluator,
         evaluator.getReboundAttribute(assumption.getProposition()));
     switch (inferConstraintRelation(assumptionRebound, rebound)) {
     case ConstraintRelation::Contradicts:
-      return ConformanceResult::No;
+      return TriState::no();
     case ConstraintRelation::Implies:
       anyImplies = true;
       break;
@@ -884,9 +884,9 @@ LIT::evaluateConstraint(ParameterEvaluator &evaluator,
     }
   }
   if (anyImplies)
-    return ConformanceResult::Yes;
+    return TriState::yes();
 
-  return ConformanceResult::NeedsEvidence;
+  return TriState::unknown();
 }
 
 /// Visit each TypeConformsToTraitAttr found in a constraint proposition.

@@ -17,6 +17,7 @@
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "KGEN/Support/TriState.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/SMLoc.h"
@@ -121,20 +122,20 @@ public:
   }
 
   // Returns the upcastability verdict for converting a type value to a trait:
-  //   - `Yes`           the type value can be upcast to the trait;
-  //   - `No`            it definitively cannot;
-  //   - `NeedsEvidence` conformance is unprovable but not contradicted, so the
-  //                     upcast is potentially satisfiable based on the context.
+  //   - `yes`     the type value can be upcast to the trait;
+  //   - `no`      it definitively cannot;
+  //   - `unknown` conformance is unprovable but not contradicted, so the
+  //               upcast is potentially satisfiable based on the context.
   // Returns failure for non-applicable cases (i.e., `fromType` is not a
   // typetype and/or `toType` is not a trait type).
   //
   // When `scopeDependent` is non-null, it is set to whether the returned
   // verdict was derived from `declScope`'s `where` assumptions rather than from
-  // the `(fromType, toType)` pair alone. An assumption-derived `Yes`/`No` is
+  // the `(fromType, toType)` pair alone. An assumption-derived `yes`/`no` is
   // scope-dependent: the same type pair can yield a different verdict in a
   // scope with a different assumption set, so callers that memoize keyed on the
   // type pair must not cache a scope-dependent verdict.
-  static FailureOr<ConformanceResult>
+  static FailureOr<TriState>
   canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
                       ASTType toType, ASTDecl *declScope,
                       bool *scopeDependent = nullptr);
@@ -302,7 +303,7 @@ public:
   /// by invoking (one level of) conversion operations.  This does not generate
   /// any IR.
   // When `deferralCtx` is non-null and the only obstacle to the conversion is
-  // an unprovable (`NeedsEvidence`) trait conformance, the conversion is
+  // an unprovable (`unknown`) trait conformance, the conversion is
   // reported as convertible (and not cached since it's context-dependent).
   static bool canImplicitlyConvertToType(
       ASTExprAnd<CValue> value, ASTType requiredType, ASTDecl &declScope,

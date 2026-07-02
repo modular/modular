@@ -190,27 +190,26 @@ public:
   /// conformance).
   ///
   /// Returns:
-  /// - ConformanceResult::Yes if the type definitely conforms
-  /// - ConformanceResult::No if the type definitely does not conform
-  /// - ConformanceResult::NeedsEvidence if conformance depends on constraints
-  ///   that cannot be evaluated statically
-  ConformanceResult
-  checkConformance(TraitType trait, SharedState &shared,
-                   ArrayRef<ConstraintAttr> callerAssumptions) const;
+  /// - `yes` if the type definitely conforms
+  /// - `no` if the type definitely does not conform
+  /// - `unknown` if conformance depends on constraints that cannot be
+  ///   evaluated statically
+  TriState doesConformTo(TraitType trait, SharedState &shared,
+                         ArrayRef<ConstraintAttr> callerAssumptions) const;
 
   /// Given a standard trait like Copyable, look up the conformance.  On
   /// success, the ASTDecl of the trait itself is returned, it is otherwise
   /// null.
-  std::pair<ConformanceResult, ASTDecl *>
-  checkBuiltinConformance(StringRef traitName, llvm::SMLoc loc,
-                          SharedState &shared,
-                          ArrayRef<ConstraintAttr> callerAssumptions) const;
+  std::pair<TriState, ASTDecl *>
+  conformsToBuiltinTrait(StringRef traitName, llvm::SMLoc loc,
+                         SharedState &shared,
+                         ArrayRef<ConstraintAttr> callerAssumptions) const;
 
   /// This returns true if the current type unconditionally conforms to the
   /// specified builtin trait, e.g. "Movable".
-  bool conformsToBuiltinTrait(StringRef traitName, llvm::SMLoc loc,
-                              SharedState &shared,
-                              ArrayRef<ConstraintAttr> callerAssumptions) const;
+  bool provenConformsToBuiltinTrait(
+      StringRef traitName, llvm::SMLoc loc, SharedState &shared,
+      ArrayRef<ConstraintAttr> callerAssumptions) const;
 
   /// Given a reference, return the element as an ASTType.  This aborts
   /// if the current type isn't a reference.

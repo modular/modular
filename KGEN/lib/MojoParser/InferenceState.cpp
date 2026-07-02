@@ -58,16 +58,14 @@ void InferenceState::setInferredValue(size_t paramIdx, TypedAttr paramVal,
     IREmitter emitter(declScope, EC_TypeParamValue);
     if (auto nmTarget = ASTType(paramVal).getNonmaterializableTarget(shared)) {
       TypedAttr nmTargetAttr = PValue(nmTarget).get();
-      FailureOr<ConformanceResult> typeUpCastable =
-          IREmitter::canMetaTypeUpCastTo(shared, declScope.getLoc(),
-                                         nmTargetAttr.getType(), targetType,
-                                         &declScope);
+      FailureOr<TriState> typeUpCastable = IREmitter::canMetaTypeUpCastTo(
+          shared, declScope.getLoc(), nmTargetAttr.getType(), targetType,
+          &declScope);
       // If the nonmaterializable type can be upcast to the target type, then
       // make sure we infer to the nonmaterializable type:
       //    def example[T: TrivialRegisterPassable](a: T): ...
       //    example(1) # T should be Int, not IntLiteral.
-      if (succeeded(typeUpCastable) &&
-          *typeUpCastable == ConformanceResult::Yes) {
+      if (succeeded(typeUpCastable) && typeUpCastable->isTrue()) {
         SyntheticNode expr(declScope.getLoc());
         paramVal = emitter.emitPValue({nmTargetAttr, &expr}, EC_TypeParamValue,
                                       targetType);
@@ -176,13 +174,13 @@ LogicalResult InferenceState::checkBodyConstraints() {
   // Verify that no concrete constraints are violated. Any unprovable concrete
   // constraints are recorded in `bodyUnprovableConstraints`. The caller is
   // responsible for surfacing any errors if appropriate.
-  ConstraintResult result =
-      LIT::checkConstraints(declScope, declaredParamPogs, concreteConstraints,
-                            /*origConstraints=*/{}, diag.getDiag(),
-                            &bodyUnprovableConstraints, &evaluator);
+  TriState result = LIT::canDischargeConstraints(
+      declScope, declaredParamPogs, concreteConstraints,
+      /*origConstraints=*/{}, diag.getDiag(), &bodyUnprovableConstraints,
+      &evaluator);
   for (size_t idx : concreteConstraintIndices)
     dischargedBodyConstraints.set(idx);
-  return success(result != ConstraintResult::Violated);
+  return success(!result.isFalse());
 }
 
 TypedAttr

@@ -654,9 +654,9 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
     if (!trait)
       return !decl;
 
-    FailureOr<ConformanceResult> upCast = IREmitter::canMetaTypeUpCastTo(
+    FailureOr<TriState> upCast = IREmitter::canMetaTypeUpCastTo(
         shared, loc, type.extractMetaType(), trait, decl);
-    return succeeded(upCast) && *upCast == ConformanceResult::Yes;
+    return succeeded(upCast) && upCast->isTrue();
   };
 
   if (checkPR("TrivialRegisterPassable"))
@@ -735,8 +735,8 @@ FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
   // If it doesn't conform to the corresponding trait. Only claim
   // ProvablyNonTrivial when we can definitively prove non-conformance.
   auto [conformanceResult, traitDecl] =
-      checkBuiltinConformance(traitName, loc, shared, {});
-  if (conformanceResult == ConformanceResult::No)
+      conformsToBuiltinTrait(traitName, loc, shared, {});
+  if (conformanceResult.isFalse())
     return FnTriviality::ProvablyNonTrivial;
 
   if (!typeDecl->getParentDecl())
@@ -824,10 +824,10 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared, bool isImplicit,
   StringRef traitName = isImplicit ? "ImplicitlyCopyable" : "Copyable";
 
   // Conservative: only claim copyable when provably so. If conformance
-  // depends on unresolved constraints (NeedsEvidence), return false and let
+  // depends on unresolved constraints (`unknown`), return false and let
   // the constraint system prove it in the appropriate context.
-  return conformsToBuiltinTrait(traitName, typeDecl->getLoc(), shared,
-                                ASTDecl::getAssumptionsFromScope(scope));
+  return provenConformsToBuiltinTrait(traitName, typeDecl->getLoc(), shared,
+                                      ASTDecl::getAssumptionsFromScope(scope));
 }
 
 /// Return true if this type is implicitly copyable, either because it is
@@ -860,48 +860,48 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared,
     return true;
 
   // Check whether the type conforms to `Movable` trait.  Use
-  // checkBuiltinConformance (not doesNominalTypeConformTo directly) so that
+  // conformsToBuiltinTrait (not doesNominalTypeConformTo directly) so that
   // concrete parameter bindings are available to evaluate conditional
   // conformance constraints — matching isCopyable's behavior.
-  return conformsToBuiltinTrait("Movable", typeDecl->getLoc(), shared,
-                                ASTDecl::getAssumptionsFromScope(scope));
+  return provenConformsToBuiltinTrait("Movable", typeDecl->getLoc(), shared,
+                                      ASTDecl::getAssumptionsFromScope(scope));
 }
 
-ConformanceResult
-ASTType::checkConformance(TraitType trait, SharedState &shared,
-                          ArrayRef<ConstraintAttr> callerAssumptions) const {
+TriState
+ASTType::doesConformTo(TraitType trait, SharedState &shared,
+                       ArrayRef<ConstraintAttr> callerAssumptions) const {
   ASTDecl *typeDecl = getDecl(shared);
   if (!typeDecl)
-    return ConformanceResult::No;
+    return TriState::no();
   return typeDecl->doesNominalTypeConformTo(trait, *this, callerAssumptions);
 }
 
 /// Given a standard trait like Copyable, look up the conformance.  On
 /// success, the ASTDecl of the trait itself is returned, it is otherwise
 /// null.
-std::pair<ConformanceResult, ASTDecl *> ASTType::checkBuiltinConformance(
+std::pair<TriState, ASTDecl *> ASTType::conformsToBuiltinTrait(
     StringRef traitName, llvm::SMLoc loc, SharedState &shared,
     ArrayRef<ConstraintAttr> callerAssumptions) const {
   ASTDecl *traitDecl = shared.lookupBuiltinTrait(traitName, loc);
   if (!traitDecl)
-    return {ConformanceResult::No, {}};
+    return {TriState::no(), {}};
 
   auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
   if (!trait)
-    return {ConformanceResult::No, {}};
+    return {TriState::no(), {}};
 
-  return {checkConformance(trait.bindReference(), shared, callerAssumptions),
+  return {doesConformTo(trait.bindReference(), shared, callerAssumptions),
           traitDecl};
 }
 
 /// This returns true if the current type unconditionally conforms to the
 /// specified builtin trait, e.g. "Movable".
-bool ASTType::conformsToBuiltinTrait(
+bool ASTType::provenConformsToBuiltinTrait(
     StringRef traitName, llvm::SMLoc loc, SharedState &shared,
     ArrayRef<ConstraintAttr> callerAssumptions) const {
   auto [conformanceResult, traitDecl] =
-      checkBuiltinConformance(traitName, loc, shared, callerAssumptions);
-  return conformanceResult == ConformanceResult::Yes;
+      conformsToBuiltinTrait(traitName, loc, shared, callerAssumptions);
+  return conformanceResult.isTrue();
 }
 
 bool ASTType::isRegisterType(llvm::SMLoc loc, SharedState &shared) const {

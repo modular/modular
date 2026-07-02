@@ -14,6 +14,7 @@
 #define KGEN_MOJOPARSER_CONSTRAINTS_H
 
 #include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/Support/TriState.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/SMLoc.h"
@@ -39,21 +40,17 @@ class SharedState;
 void emitConstraintInconclusive(DeclResolver &resolver, MojoInflightDiag &diag,
                                 ConstraintAttr constraint);
 
-/// Result of checking constraints.
-enum class ConstraintResult {
-  Violated,   // Some constraints are violated.
-  Unprovable, // No violated constraints but some constraints cannot be proven.
-  Satisfied,  // All constraints are satisfied.
-};
-
-/// Check that the given constraints are satisfied under the given scope. An
-/// optional callback can be provided to emit failures for constraint
-/// violations. If provided, unprovableConstraints will be populated with any
-/// unprovable constraints encountered. An optional ParameterEvaluator can be
-/// provided to substitute parameters into the constraints. Additional
-/// assumptions can be passed to consider alongside the scope's known
-/// assumptions (e.g., a conformance constraint during trait checking).
-ConstraintResult checkConstraints(
+/// Check that the given constraints are satisfied under the given scope.
+/// Returns a three-valued verdict: `yes` if all constraints are satisfied, `no`
+/// if some constraint is violated, and `unknown` if no constraint is violated
+/// but some cannot be proven. An optional callback can be provided to emit
+/// failures for constraint violations. If provided, unprovableConstraints will
+/// be populated with any unprovable constraints encountered. An optional
+/// ParameterEvaluator can be provided to substitute parameters into the
+/// constraints. Additional assumptions can be passed to consider alongside the
+/// scope's known assumptions (e.g., a conformance constraint during trait
+/// checking).
+TriState canDischargeConstraints(
     ASTDecl &declScope, PogListAttr paramListAttr,
     ArrayRef<ConstraintAttr> constraints,
     ArrayRef<ConstraintAttr> origConstraints,

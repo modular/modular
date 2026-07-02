@@ -1228,14 +1228,14 @@ void TypeCheckedParamList::emitBodyConstraints() {
       violationDiag = shared.emitError(loc ? *loc : deferral.deferralLoc);
       return *violationDiag;
     };
-    ConstraintResult result = LIT::checkConstraints(
+    TriState result = LIT::canDischargeConstraints(
         declScope, /*paramListAttr=*/PogListAttr(), {deferral.constraint},
         /*origConstraints=*/{}, getDiag, &stillUnprovable,
         /*evaluator=*/nullptr);
-    if (result == ConstraintResult::Satisfied)
+    if (result.isTrue())
       continue;
 
-    if (result == ConstraintResult::Unprovable) {
+    if (result.isUnknown()) {
       MojoInflightDiag diag = shared.emitError(deferral.deferralLoc)
                               << "invalid bindings in signature: lacking "
                                  "evidence to prove correctness";
@@ -1248,9 +1248,10 @@ void TypeCheckedParamList::emitBodyConstraints() {
             << unprovable.getProposition();
       }
     }
-    // For `Violated`, `getDiag` was invoked and `checkConstraints` populated
-    // `violationDiag` with a "violated constraint" message plus per-constraint
-    // notes. It will commit when `violationDiag` goes out of scope.
+    // For `Violated`, `getDiag` was invoked and `canDischargeConstraints`
+    // populated `violationDiag` with a "violated constraint" message plus
+    // per-constraint notes. It will commit when `violationDiag` goes out of
+    // scope.
   }
 }
 

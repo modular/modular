@@ -53,7 +53,7 @@ void LIT::emitConstraintInconclusive(DeclResolver &resolver,
   });
 }
 
-ConstraintResult LIT::checkConstraints(
+TriState LIT::canDischargeConstraints(
     ASTDecl &declScope, PogListAttr paramListAttr,
     ArrayRef<ConstraintAttr> constraints,
     ArrayRef<ConstraintAttr> origConstraints,
@@ -62,7 +62,7 @@ ConstraintResult LIT::checkConstraints(
     ParameterEvaluator *evaluator,
     ArrayRef<ConstraintAttr> additionalAssumptions) {
   if (constraints.empty())
-    return ConstraintResult::Satisfied;
+    return TriState::yes();
 
   SmallVector<ConstraintAttr> assumptions;
   declScope.getKnownAssumptionsIncludingParents(assumptions);
@@ -136,7 +136,7 @@ ConstraintResult LIT::checkConstraints(
           << remapper.replace(prop);
     }
 
-    return ConstraintResult::Violated;
+    return TriState::no();
   }
 
   if (!localUnprovableConstraints.empty()) {
@@ -144,10 +144,10 @@ ConstraintResult LIT::checkConstraints(
     if (unprovableConstraints)
       unprovableConstraints->append(localUnprovableConstraints.begin(),
                                     localUnprovableConstraints.end());
-    return ConstraintResult::Unprovable;
+    return TriState::unknown();
   }
 
-  return ConstraintResult::Satisfied;
+  return TriState::yes();
 }
 
 /// Rewrite cond(a, b, a) patterns to and(a, b) for constraint propositions.
@@ -216,8 +216,7 @@ bool LIT::attrConformsToTraitUnderAssumptions(
     TypedAttr actualAttr, TraitType expectedTrait, SharedState &shared,
     ArrayRef<ConstraintAttr> assumptions) {
   ASTType actualType(actualAttr.getType());
-  if (actualType.checkConformance(expectedTrait, shared, {}) ==
-      ConformanceResult::Yes) {
+  if (actualType.doesConformTo(expectedTrait, shared, {}).isTrue()) {
     return true;
   }
 
@@ -232,6 +231,7 @@ bool LIT::attrConformsToTraitUnderAssumptions(
   if (!refinedBound)
     return false;
 
-  return ASTType(refinedBound).checkConformance(expectedTrait, shared, {}) ==
-         ConformanceResult::Yes;
+  return ASTType(refinedBound)
+      .doesConformTo(expectedTrait, shared, {})
+      .isTrue();
 }

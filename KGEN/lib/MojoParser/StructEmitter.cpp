@@ -705,12 +705,12 @@ FnOp StructEmitter::synthesizeEmptyDtor(ConstraintAttr conformanceConstraint) {
   // ImplicitlyDeletable.
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     ASTType fieldType = fieldOp.getType();
-    ConformanceResult confResult =
+    TriState confResult =
         fieldType
-            .checkBuiltinConformance("ImplicitlyDeletable", structDecl.getLoc(),
-                                     shared, {})
+            .conformsToBuiltinTrait("ImplicitlyDeletable", structDecl.getLoc(),
+                                    shared, {})
             .first;
-    if (confResult != ConformanceResult::Yes &&
+    if (!confResult.isTrue() &&
         !fieldType.isTrivialRegisterType(structDecl.getLoc(), shared)) {
       emitError(fieldOp.getLoc())
           << "field '" << fieldOp.getName()

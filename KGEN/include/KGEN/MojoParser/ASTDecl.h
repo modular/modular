@@ -13,6 +13,7 @@
 
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "KGEN/Support/TriState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/MapVector.h"
@@ -29,7 +30,6 @@ class DocStringAttr;
 class DocString;
 class TraitDeclOp;
 class TraitType;
-enum class ConformanceResult;
 
 using DeclIRValue = SmartVariant<Operation *, CValue, std::nullopt_t>;
 
@@ -179,17 +179,16 @@ public:
 
   /// Given a decl for a struct or trait type, check if this type conforms
   /// to the specified trait type. Returns a 3-state result:
-  /// - ConformanceResult::Yes if the type definitely conforms
-  /// - ConformanceResult::No if the type definitely does not conform
-  /// - ConformanceResult::NeedsEvidence if conformance depends on constraints
-  ///   that cannot be evaluated statically (e.g., generic parameters)
+  /// - `yes` if the type definitely conforms
+  /// - `no` if the type definitely does not conform
+  /// - `unknown` if conformance depends on constraints that cannot be
+  ///   evaluated statically (e.g., generic parameters)
   ///
   /// If concreteType is provided, its parameter bindings are used to evaluate
   /// conditional trait conformances. If callerAssumptions is non-empty, those
   /// where-clause assumptions are used to prove unfoldable constraints.
-  ConformanceResult
-  doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
-                           ArrayRef<ConstraintAttr> callerAssumptions);
+  TriState doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
+                                    ArrayRef<ConstraintAttr> callerAssumptions);
 
   /// Find all extensions in this scope that target a specific struct.
   /// If filterTrait is provided, only returns extensions that implement that

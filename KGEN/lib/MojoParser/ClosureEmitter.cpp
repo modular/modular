@@ -2504,7 +2504,7 @@ ClosureEmitter::buildParamCaptureInfo(ParamType paramType,
     move = makeWitness(moveParent);
 
   TypedAttr del;
-  if (selfType.conformsToBuiltinTrait(
+  if (selfType.provenConformsToBuiltinTrait(
           "ImplicitlyDeletable", nestedFnDecl.getLoc(), shared, assumptions))
     del = makeWitness(implicitlyDestructibleParent);
 

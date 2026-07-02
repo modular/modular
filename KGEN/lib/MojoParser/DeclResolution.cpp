@@ -3131,14 +3131,14 @@ static auto silenceErrors(MLIRContext *ctx) {
 static bool structConformsToTrait(ASTDecl &structDecl, StringRef traitName) {
   auto [conformanceResult, traitDecl] =
       ASTType(cast<StructDeclOp>(structDecl.getIfOperation()).bindReference())
-          .checkBuiltinConformance(traitName, structDecl.getLoc(),
-                                   structDecl.getShared(), {});
+          .conformsToBuiltinTrait(traitName, structDecl.getLoc(),
+                                  structDecl.getShared(), {});
   // Use optimistic conformance check - conditional conformances should still
   // trigger synthesis of the relevant methods (with matching constraints).
   // No caller scope: the struct's own parameter bindings (via concreteType)
   // are sufficient; where-clause assumptions from an enclosing function are
   // not relevant for deciding which methods to synthesize on the struct.
-  return conformanceResult != ConformanceResult::No;
+  return !conformanceResult.isFalse();
 }
 
 // Look up the conditional conformance constraint for a specific trait from
