@@ -18,6 +18,8 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Value.h"
+#include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/SmallVector.h"
 #include <optional>
 #include <string>
 
@@ -401,6 +403,47 @@ struct ConvertPOPToLLVMPattern : public mlir::ConvertOpToLLVMPattern<OpT> {
   /// Convert a type. Return null if the type conversion failed.
   Type convertType(Type type) const {
     return getTypeConverter()->convertType(type);
+  }
+
+  /// Builds an LLVM inline-asm op (ATT dialect, no side effects).
+  mlir::LLVM::InlineAsmOp
+  createInlineAsm(mlir::ConversionPatternRewriter &rewriter, mlir::Location loc,
+                  llvm::StringRef asmStr, llvm::StringRef asmConstraints,
+                  Type resultType, llvm::SmallVector<Value> operands) const {
+    const auto asmDialectAttr = mlir::LLVM::AsmDialectAttr::get(
+        rewriter.getContext(), mlir::LLVM::AsmDialect::AD_ATT);
+    return mlir::LLVM::InlineAsmOp::create(
+        rewriter, loc, resultType,
+        /*operands=*/operands,
+        /*asm_string=*/asmStr,
+        /*constraints=*/asmConstraints, /*has_side_effects=*/false,
+        /*is_align_stack=*/false, mlir::LLVM::TailCallKind::None,
+        /*asm_dialect=*/asmDialectAttr,
+        /*operand_attrs=*/mlir::ArrayAttr());
+  }
+
+  /// Creates a signless integer constant sized like `intType`.
+  template <typename intType>
+  Value createConstant(mlir::ConversionPatternRewriter &rewriter,
+                       mlir::Location loc, uint64_t value) const {
+    return mlir::LLVM::ConstantOp::create(
+        rewriter, loc, rewriter.getIntegerType(sizeof(intType) * 8), value);
+  }
+
+  /// Creates an f32 floating-point constant.
+  Value createConstant(mlir::ConversionPatternRewriter &rewriter,
+                       mlir::Location loc, llvm::APFloat value) const {
+    return mlir::LLVM::ConstantOp::create(rewriter, loc, rewriter.getF32Type(),
+                                          value);
+  }
+
+  /// Extracts element `index` of a vector `value`.
+  Value extractElement(mlir::ConversionPatternRewriter &rewriter,
+                       mlir::Location loc, Type resType, Value value,
+                       unsigned index) const {
+    return mlir::LLVM::ExtractElementOp::create(
+        rewriter, loc, resType, value,
+        createConstant<uint32_t>(rewriter, loc, index));
   }
 };
 
