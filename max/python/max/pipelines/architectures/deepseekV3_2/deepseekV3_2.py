@@ -337,7 +337,7 @@ class DeepseekV3_2DecoderLayer(Module):
                 ep_batch_manager=self.ep_manager,
                 quant_config=layer_quant_config,
                 shared_experts_dtype=(
-                    quant_cfg.shared_experts_dtype(DType.bfloat16)
+                    quant_cfg.shared_experts_dtype(mlp_dtype)
                     if quant_cfg is not None
                     else DType.bfloat16
                 ),

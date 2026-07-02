@@ -936,8 +936,8 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/zai-org_GLM-5.1-FP8_golden/1/6a79dc15919c845af6e762d41d7e38bae299eb78b20e4b8a4024de24f4c1b0cb/zai-org_GLM-5.1-FP8_golden.tar.gz"
       json_file: "torch_zai-org_GLM-5.1-FP8_float8_e4m3fn_golden.json"
-    cos_dist_threshold: 6.6e-04
-    kl_div_threshold: 1.7e-01
+    cos_dist_threshold: 1.1e-03
+    kl_div_threshold: 4.0e-01
     timeout: 1200
 
   nvidia/DeepSeek-R1-0528-NVFP4-v2:
