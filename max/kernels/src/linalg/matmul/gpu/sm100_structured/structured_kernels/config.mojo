@@ -1087,6 +1087,7 @@ struct BlockScaledMatmulConfig[
     var num_sf_k_tiles: Int
     var is_small_bn: Bool
     var gemm_kind: GEMMKind
+    var prefetch_tiles_n: Int
 
     def __init__(
         out self,
@@ -1107,6 +1108,7 @@ struct BlockScaledMatmulConfig[
         is_small_bn: Bool = False,
         register_based_epilogue: Bool = True,
         gemm_kind: GEMMKind = GEMMKind.GEMM,
+        prefetch_tiles_n: Int = 0,
     ):
         comptime assert Self.a_type == Self.b_type
 
@@ -1128,6 +1130,7 @@ struct BlockScaledMatmulConfig[
         )
 
         self.gemm_kind = gemm_kind
+        self.prefetch_tiles_n = prefetch_tiles_n
 
         # Scaling factors configuration (SFA, SFB)
         self.scaling_kind = scaling_kind
@@ -1246,6 +1249,7 @@ struct BlockScaledMatmulConfig[
             is_small_bn=self.is_small_bn,
             register_based_epilogue=self.register_based_epilogue,
             gemm_kind=self.gemm_kind,
+            prefetch_tiles_n=self.prefetch_tiles_n,
         )
 
     def write_to[W: Writer](self, mut writer: W):

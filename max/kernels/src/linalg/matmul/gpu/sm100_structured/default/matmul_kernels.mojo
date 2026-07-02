@@ -1176,6 +1176,129 @@ struct BlackwellMatmulSM100Kernel[
 
     @staticmethod
     @always_inline
+    def prefetch_b_tiles[
+        tiles_origin: MutOrigin,
+        //,
+    ](
+        b_tma_op: Self.BTmaOp,
+        tiles: ProducerTiles[
+            tiles_origin,
+            Self.TilePayload,
+            Self.SmemType.num_group_pipeline_stages,
+            Self.config.k_group_size,
+        ],
+        peer_cta_coord: Tuple[Int, Int, Int],
+        work_tile_coord: Tuple[Int, Int, Int],
+        b_multicast_mask: UInt16,
+        iter_idx: UInt32,
+        elect_one_cta: Bool,
+    ):
+        """Load B tiles only; set full expected bytes (A+B) on the barrier.
+
+        Called before wait_on_dependent_grids() to prefetch the static weight
+        matrix (kernel-B in non-swapAB mode).  The barrier will not fire until
+        the matching complete_a_tiles() call delivers the remaining A bytes.
+
+        Args:
+            b_tma_op: 3D TMA descriptor for B matrix.
+            tiles: ProducerStage context with encapsulated tile access.
+            peer_cta_coord: (rank_n, rank_m, peer_m_rank) for peer CTA slicing.
+            work_tile_coord: (m, n, batch) coordinates.
+            b_multicast_mask: Multicast mask for B tiles.
+            iter_idx: K iteration index (base index for k_group).
+            elect_one_cta: True if this CTA should call expect_bytes.
+        """
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+
+        var b_gmem_n_coord = (
+            peer_rank_m * Self.b_tma_rows
+            + peer_rank_n * Self.BN
+            + work_tile_coord[1] * Self.MMA_N
+        )
+        var batch_coord = work_tile_coord[2]
+
+        if elect_one_sync():
+            if elect_one_cta:
+                tiles.expect_bytes(Self.input_expected_bytes)
+
+            var barrier = tiles.barrier()
+
+            comptime for j in range(Self.config.k_group_size):
+                var _, b_tile = tiles.payload().get_tile[
+                    Self.config.k_group_size
+                ](tiles.stage(), j)
+
+                var b_peer_tile = type_of(b_tile)(
+                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tile.layout,
+                )
+
+                var k_coord = Int(iter_idx + UInt32(j)) * Self.BK
+
+                b_tma_op.async_multicast_load_3d[Self.cta_group](
+                    b_peer_tile,
+                    barrier[0],
+                    (k_coord, b_gmem_n_coord, batch_coord),
+                    b_multicast_mask,
+                )
+
+    @staticmethod
+    @always_inline
+    def complete_a_tiles(
+        a_tma_op: Self.ATmaOp,
+        stage: UInt32,
+        barrier: MbarPtr,
+        payload: Self.TilePayload,
+        peer_cta_coord: Tuple[Int, Int, Int],
+        work_tile_coord: Tuple[Int, Int, Int],
+        a_multicast_mask: UInt16,
+        iter_idx: UInt32,
+    ):
+        """Load A tiles into a previously prefetched stage.
+
+        Delivers the remaining A bytes so that the stage barrier fires and
+        the consumer can proceed.  Pair with prefetch_b_tiles().
+
+        Args:
+            a_tma_op: 3D TMA descriptor for A matrix.
+            stage: Stage index saved from the prefetch phase.
+            barrier: Barrier pointer saved from the prefetch phase.
+            payload: Tile payload from the pipeline (gives smem pointers).
+            peer_cta_coord: (rank_n, rank_m, peer_m_rank) for peer CTA slicing.
+            work_tile_coord: (m, n, batch) coordinates.
+            a_multicast_mask: Multicast mask for A tiles.
+            iter_idx: K iteration index (base index for k_group).
+        """
+        var peer_m_rank = peer_cta_coord[2]
+
+        var a_gmem_m_coord = (
+            peer_m_rank * Self.a_tma_rows + work_tile_coord[0] * Self.BM
+        )
+        var batch_coord = work_tile_coord[2]
+
+        if elect_one_sync():
+            comptime for j in range(Self.config.k_group_size):
+                var a_tile, _ = payload.get_tile[Self.config.k_group_size](
+                    stage, j
+                )
+
+                var a_peer_tile = type_of(a_tile)(
+                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tile.layout,
+                )
+
+                var k_coord = Int(iter_idx + UInt32(j)) * Self.BK
+
+                a_tma_op.async_multicast_load_3d[Self.cta_group](
+                    a_peer_tile,
+                    barrier[0],
+                    (k_coord, a_gmem_m_coord, batch_coord),
+                    a_multicast_mask,
+                )
+
+    @staticmethod
+    @always_inline
     def load_input_tiles_splitk[
         a_tma_origin: ImmutOrigin,
         b_tma_origin: ImmutOrigin,
@@ -1546,9 +1669,19 @@ struct BlackwellMatmulSM100Kernel[
             with MatmulProfilerType[0](workspace, 0):
                 comptime if (
                     Self.pdl_level > PDLLevel.OFF
-                    and Self.config.AB_swapped
                     and Self.config.prefetch_tiles_n > 0
                 ):
+                    comptime assert (
+                        Self.config.prefetch_tiles_n
+                        <= Self.num_group_pipeline_stages
+                    ), (
+                        "prefetch_tiles_n ("
+                        + String(Self.config.prefetch_tiles_n)
+                        + ") must not exceed num_group_pipeline_stages ("
+                        + String(Self.num_group_pipeline_stages)
+                        + "); Phase 1 would fill the ring before barriers can"
+                        " fire."
+                    )
                     with input_pipeline.producer() as producer:
                         for current in load_iter:
                             scheduler.throttle_signal(
@@ -1576,39 +1709,77 @@ struct BlackwellMatmulSM100Kernel[
                             comptime for pf in range(
                                 Self.config.prefetch_tiles_n
                             ):
-                                with producer.acquire() as tiles:
-                                    prefetch_stages[pf] = tiles.stage()
-                                    prefetch_barriers[pf] = tiles.barrier()
-                                    prefetch_payloads[pf] = tiles.payload()
-                                    Self.prefetch_a_tiles(
-                                        a_tma_op,
-                                        tiles,
-                                        ctx.peer_cta_coord,
-                                        work_coord,
-                                        ctx.a_multicast_mask,
-                                        UInt32(pf * Self.config.k_group_size),
-                                        ctx.elect_one_cta,
-                                    )
-                                # __exit__: advances producer ring index;
-                                # consumer still blocked (A bytes only)
+                                if (
+                                    UInt32(pf * Self.config.k_group_size)
+                                    < num_iters
+                                ):
+                                    with producer.acquire() as tiles:
+                                        prefetch_stages[pf] = tiles.stage()
+                                        prefetch_barriers[pf] = tiles.barrier()
+                                        prefetch_payloads[pf] = tiles.payload()
+                                        comptime if Self.config.AB_swapped:
+                                            Self.prefetch_a_tiles(
+                                                a_tma_op,
+                                                tiles,
+                                                ctx.peer_cta_coord,
+                                                work_coord,
+                                                ctx.a_multicast_mask,
+                                                UInt32(
+                                                    pf
+                                                    * Self.config.k_group_size
+                                                ),
+                                                ctx.elect_one_cta,
+                                            )
+                                        else:
+                                            Self.prefetch_b_tiles(
+                                                b_tma_op,
+                                                tiles,
+                                                ctx.peer_cta_coord,
+                                                work_coord,
+                                                ctx.b_multicast_mask,
+                                                UInt32(
+                                                    pf
+                                                    * Self.config.k_group_size
+                                                ),
+                                                ctx.elect_one_cta,
+                                            )
 
                             wait_on_dependent_grids()
 
-                            # Phase 2: deliver B tiles to complete prefetched stages
+                            # Phase 2: complete activation tiles
                             comptime for pf in range(
                                 Self.config.prefetch_tiles_n
                             ):
-                                Self.complete_b_tiles(
-                                    b_tma_op,
-                                    prefetch_stages[pf],
-                                    prefetch_barriers[pf],
-                                    prefetch_payloads[pf],
-                                    ctx.peer_cta_coord,
-                                    work_coord,
-                                    ctx.b_multicast_mask,
-                                    UInt32(pf * Self.config.k_group_size),
-                                )
-                                # A+B bytes now == expected → barrier fires
+                                if (
+                                    UInt32(pf * Self.config.k_group_size)
+                                    < num_iters
+                                ):
+                                    comptime if Self.config.AB_swapped:
+                                        Self.complete_b_tiles(
+                                            b_tma_op,
+                                            prefetch_stages[pf],
+                                            prefetch_barriers[pf],
+                                            prefetch_payloads[pf],
+                                            ctx.peer_cta_coord,
+                                            work_coord,
+                                            ctx.b_multicast_mask,
+                                            UInt32(
+                                                pf * Self.config.k_group_size
+                                            ),
+                                        )
+                                    else:
+                                        Self.complete_a_tiles(
+                                            a_tma_op,
+                                            prefetch_stages[pf],
+                                            prefetch_barriers[pf],
+                                            prefetch_payloads[pf],
+                                            ctx.peer_cta_coord,
+                                            work_coord,
+                                            ctx.a_multicast_mask,
+                                            UInt32(
+                                                pf * Self.config.k_group_size
+                                            ),
+                                        )
 
                             # Phase 3: remaining K iterations (normal paired loads)
                             for i in range(
