@@ -20,7 +20,7 @@ from std.format._utils import (
 from std.memory import (
     UnsafeMaybeUninit,
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
 )
 from std.hashlib.hasher import Hasher
@@ -513,7 +513,7 @@ struct Variant[*Ts: Movable](
 
     comptime _Storage: _VariantStorage = _VariantStorageFor[*Self.Ts]
 
-    comptime __del__is_trivial = is_trivially_destructible[Self._Storage]()
+    comptime __del__is_trivial = is_trivially_deletable[Self._Storage]()
     comptime __copy_ctor_is_trivial = is_trivially_copyable[Self._Storage]()
     comptime __move_ctor_is_trivial = is_trivially_movable[Self._Storage]()
 
@@ -900,10 +900,7 @@ struct Variant[*Ts: Movable](
 
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
-        comptime if conforms_to(Ts[i], ImplicitlyDeletable):
-            if not is_trivially_destructible[Ts[i]]():
-                return False
-        else:
+        if not is_trivially_deletable[Ts[i]]():
             return False
     return True
 

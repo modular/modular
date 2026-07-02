@@ -15,7 +15,7 @@ from std.ffi import _Global
 from std.memory import (
     UnsafeMaybeUninit,
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
 )
 from std.os import abort
@@ -253,13 +253,13 @@ def test_variant_trivial_del() raises:
     comptime yes = ConfigureTrivial[del_is_trivial=True]
     comptime no = ConfigureTrivial[del_is_trivial=False]
 
-    assert_true(is_trivially_destructible[Variant[yes]]())
-    assert_false(is_trivially_destructible[Variant[no]]())
-    assert_false(is_trivially_destructible[Variant[yes, no]]())
+    assert_true(is_trivially_deletable[Variant[yes]]())
+    assert_false(is_trivially_deletable[Variant[no]]())
+    assert_false(is_trivially_deletable[Variant[yes, no]]())
 
     # TODO (MOCO-3016):
     # check variant of linear type
-    # assert_false(is_trivially_destructible[Variant[LinearType]]())
+    # assert_false(is_trivially_deletable[Variant[LinearType]]())
 
 
 def test_variant_trivial_copyinit() raises:

@@ -35,7 +35,7 @@ from .memory import (
     memset_zero,
     destroy_n,
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
     uninit_copy_n,
     uninit_move_n,

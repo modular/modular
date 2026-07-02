@@ -234,6 +234,11 @@ This version is still a work in progress.
 - `ImplicitlyDestructible` has been renamed to `ImplicitlyDeletable`, for better
   name consistency with its required `__del__()` "delete" special method.
 
+- `is_trivially_destructible()` has been renamed to `is_trivially_deletable()`,
+  for consistency with the `ImplicitlyDeletable` rename. It now also accepts any
+  type (`T: AnyType`) instead of requiring `T: ImplicitlyDeletable`, returning
+  `False` for non-`ImplicitlyDeletable` (linear) types.
+
 - The `Reflected.field_type[name]` reflection member has been renamed to
   `Reflected.field[name]`, because it returns a chainable `Reflected` handle
   for the named field rather than the field's bare type, so the old name was

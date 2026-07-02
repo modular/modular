@@ -18,7 +18,7 @@ from std.hashlib import hash
 from std.memory import (
     UnsafeMaybeUninit,
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
 )
 from test_utils import (
@@ -385,11 +385,11 @@ def test_write_repr_to() raises:
 
 
 def test_inline_array_triviality() raises:
-    assert_true(is_trivially_destructible[InlineArray[Int, 1]]())
+    assert_true(is_trivially_deletable[InlineArray[Int, 1]]())
     assert_true(is_trivially_copyable[InlineArray[Int, 1]]())
     assert_true(is_trivially_movable[InlineArray[Int, 1]]())
 
-    assert_false(is_trivially_destructible[InlineArray[String, 1]]())
+    assert_false(is_trivially_deletable[InlineArray[String, 1]]())
     assert_false(is_trivially_copyable[InlineArray[String, 1]]())
     assert_true(is_trivially_movable[InlineArray[String, 1]]())
 

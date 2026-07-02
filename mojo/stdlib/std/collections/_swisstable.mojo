@@ -31,7 +31,7 @@ from std.memory import (
     memcpy,
     memset,
     pack_bits,
-    is_trivially_destructible,
+    is_trivially_deletable,
 )
 from std.memory.alloc import Layout
 from std.sys.intrinsics import likely
@@ -218,10 +218,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
     `@explicit_destroy` types) or that has a non-trivial destructor.
     """
     comptime for i in range(Ts.size):
-        comptime if conforms_to(Ts[i], ImplicitlyDeletable):
-            if not is_trivially_destructible[Ts[i]]():
-                return False
-        else:
+        if not is_trivially_deletable[Ts[i]]():
             return False
     return True
 
@@ -527,7 +524,7 @@ struct SwissTable[
             Both `K` and `V` must be `ImplicitlyDeletable`, since entries are
             destroyed in place.
         """
-        comptime if not is_trivially_destructible[
+        comptime if not is_trivially_deletable[
             SwissTableEntry[Self.K, Self.V, Self.H]
         ]():
             for i in range(self._capacity):

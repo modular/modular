@@ -14,7 +14,7 @@
 
 from std.memory import (
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
 )
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
@@ -45,7 +45,7 @@ struct ConditionalTriviality[
         self.add_event(EVENT_INIT)
 
     def __del__(deinit self):
-        comptime if is_trivially_destructible[Self.T]():
+        comptime if is_trivially_deletable[Self.T]():
             self.add_event(EVENT_DEL | EVENT_TRIVIAL)
         else:
             self.add_event(EVENT_DEL)
@@ -70,7 +70,7 @@ struct ConditionalTriviality[
 struct StructInheritTriviality[T: Copyable & ImplicitlyDeletable](Copyable):
     comptime __move_ctor_is_trivial = is_trivially_movable[Self.T]()
     comptime __copy_ctor_is_trivial = is_trivially_copyable[Self.T]()
-    comptime __del__is_trivial = is_trivially_destructible[Self.T]()
+    comptime __del__is_trivial = is_trivially_deletable[Self.T]()
 
 
 # ===-----------------------------------------------------------------------===#

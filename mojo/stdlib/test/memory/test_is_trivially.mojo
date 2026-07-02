@@ -13,7 +13,7 @@
 
 from std.memory import (
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
 )
 from std.testing import TestSuite, assert_false, assert_true
@@ -49,21 +49,21 @@ struct NoneTrivial(Copyable):
 def test_builtin_scalar_types() raises:
     assert_true(is_trivially_movable[Int]())
     assert_true(is_trivially_copyable[Int]())
-    assert_true(is_trivially_destructible[Int]())
+    assert_true(is_trivially_deletable[Int]())
 
     assert_true(is_trivially_movable[Bool]())
     assert_true(is_trivially_copyable[Bool]())
-    assert_true(is_trivially_destructible[Bool]())
+    assert_true(is_trivially_deletable[Bool]())
 
     assert_true(is_trivially_movable[Float64]())
     assert_true(is_trivially_copyable[Float64]())
-    assert_true(is_trivially_destructible[Float64]())
+    assert_true(is_trivially_deletable[Float64]())
 
 
 def test_string_is_non_trivial_copy_and_del() raises:
     # `String` owns a heap buffer, so copy and destruction are not trivial.
     assert_false(is_trivially_copyable[String]())
-    assert_false(is_trivially_destructible[String]())
+    assert_false(is_trivially_deletable[String]())
     # Moves remain a bit-copy though.
     assert_true(is_trivially_movable[String]())
 
@@ -71,13 +71,13 @@ def test_string_is_non_trivial_copy_and_del() raises:
 def test_struct_with_only_trivial_fields() raises:
     assert_true(is_trivially_movable[AllTrivial]())
     assert_true(is_trivially_copyable[AllTrivial]())
-    assert_true(is_trivially_destructible[AllTrivial]())
+    assert_true(is_trivially_deletable[AllTrivial]())
 
 
 def test_struct_with_user_defined_lifecycle() raises:
     assert_false(is_trivially_movable[NoneTrivial]())
     assert_false(is_trivially_copyable[NoneTrivial]())
-    assert_false(is_trivially_destructible[NoneTrivial]())
+    assert_false(is_trivially_deletable[NoneTrivial]())
 
 
 def test_configure_trivial_flags() raises:
@@ -89,7 +89,7 @@ def test_configure_trivial_flags() raises:
     ]
     assert_true(is_trivially_movable[AllOn]())
     assert_true(is_trivially_copyable[AllOn]())
-    assert_true(is_trivially_destructible[AllOn]())
+    assert_true(is_trivially_deletable[AllOn]())
 
     comptime OnlyMove = ConfigureTrivial[
         del_is_trivial=False,
@@ -98,7 +98,7 @@ def test_configure_trivial_flags() raises:
     ]
     assert_true(is_trivially_movable[OnlyMove]())
     assert_false(is_trivially_copyable[OnlyMove]())
-    assert_false(is_trivially_destructible[OnlyMove]())
+    assert_false(is_trivially_deletable[OnlyMove]())
 
     comptime OnlyCopy = ConfigureTrivial[
         del_is_trivial=False,
@@ -107,7 +107,7 @@ def test_configure_trivial_flags() raises:
     ]
     assert_false(is_trivially_movable[OnlyCopy]())
     assert_true(is_trivially_copyable[OnlyCopy]())
-    assert_false(is_trivially_destructible[OnlyCopy]())
+    assert_false(is_trivially_deletable[OnlyCopy]())
 
     comptime OnlyDel = ConfigureTrivial[
         del_is_trivial=True,
@@ -116,14 +116,14 @@ def test_configure_trivial_flags() raises:
     ]
     assert_false(is_trivially_movable[OnlyDel]())
     assert_false(is_trivially_copyable[OnlyDel]())
-    assert_true(is_trivially_destructible[OnlyDel]())
+    assert_true(is_trivially_deletable[OnlyDel]())
 
 
 def test_helpers_match_underlying_flags() raises:
     # The helpers must agree with the raw trait fields they wrap.
     assert_equal_bool(is_trivially_movable[Int](), Int.__move_ctor_is_trivial)
     assert_equal_bool(is_trivially_copyable[Int](), Int.__copy_ctor_is_trivial)
-    assert_equal_bool(is_trivially_destructible[Int](), Int.__del__is_trivial)
+    assert_equal_bool(is_trivially_deletable[Int](), Int.__del__is_trivial)
     assert_equal_bool(
         is_trivially_movable[String](), String.__move_ctor_is_trivial
     )
@@ -131,7 +131,7 @@ def test_helpers_match_underlying_flags() raises:
         is_trivially_copyable[String](), String.__copy_ctor_is_trivial
     )
     assert_equal_bool(
-        is_trivially_destructible[String](), String.__del__is_trivial
+        is_trivially_deletable[String](), String.__del__is_trivial
     )
 
 
