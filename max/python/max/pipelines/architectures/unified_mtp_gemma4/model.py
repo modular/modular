@@ -508,7 +508,7 @@ class UnifiedMTPGemma4Model(
         state_dict: dict[str, WeightData],
         module: Module | None = None,
     ) -> tuple[Graph, dict[str, DLPackArray]]:
-        """Build the vision encoder graph (mirrors Gemma3_MultiModalModel)."""
+        """Build the vision model with our input types and graph"""
         vision_model = Gemma4VisionModel(
             config,
             device=DeviceRef.from_device(self.devices[0]),

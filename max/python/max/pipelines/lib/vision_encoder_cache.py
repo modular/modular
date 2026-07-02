@@ -280,6 +280,18 @@ class VisionEncoderCache(Generic[VLMContextType]):
         for count, img_hash, req_id in zip(
             per_image_token_counts, image_hashes, request_ids, strict=True
         ):
+            start = offset
+            offset += count
+            # 0 is the no-content-hash sentinel (build_video_inputs appends it
+            # for a range with no hash). lookup() treats a falsy hash as a
+            # miss, so an entry cached under 0 is never retrievable -- it would
+            # just waste memory and hold a slot + ref. Skip alloc/insert/
+            # acquire for it, but still advance past its tokens in the encoder
+            # output (this method only populates the cache for future reuse;
+            # the current forward uses the encoder output directly, so skipping
+            # is output-neutral).
+            if not img_hash:
+                continue
             # Allocate owned copies rather than views so the cache entry does
             # not pin the (variable-size) vision-encoder output buffer.  This
             # prevents GPU allocator fragmentation caused by mismatched holes
@@ -291,12 +303,10 @@ class VisionEncoderCache(Generic[VLMContextType]):
                     dtype=dev_tensor.dtype,
                     device=dev_tensor.device,
                 )
-                slot.inplace_copy_from(dev_tensor[offset : offset + count, :])
+                slot.inplace_copy_from(dev_tensor[start : start + count, :])
                 per_device.append(slot)
-            offset += count
-            if img_hash is not None:
-                self.insert(img_hash, per_device, count)
-                self.acquire(req_id, img_hash)
+            self.insert(img_hash, per_device, count)
+            self.acquire(req_id, img_hash)
 
     @traced
     def prepare_vision_outputs(
