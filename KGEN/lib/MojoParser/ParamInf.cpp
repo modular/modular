@@ -28,7 +28,6 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
-#include "llvm/ADT/SetOperations.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
@@ -620,38 +619,6 @@ LogicalResult ParamInf::inferFromParamList() {
     return getMojoDiag(loc);
   };
 
-  // TODO: This is a generally useful for things like ternary statements where
-  // we can merge two type values to the common bound, maybe we should
-  // generalize this.
-  auto mergeTwoMetaType = [&](ASTType typeA, ASTType typeB) -> Type {
-    if (typeA.isEqualCanon(typeB))
-      return typeA;
-
-    auto extractTraitBound = [&](ASTType type) -> TraitType {
-      if (auto anyTrait = dyn_cast<AnyTraitType>(type.extractMetaType()))
-        return anyTrait.getTraitType();
-
-      ASTDecl *decl = type.getDecl(shared);
-      auto structDecl = cast<StructDeclOp>(decl->getIfOperation());
-      return structDecl.getCanonicalTrait();
-    };
-
-    TraitType traitA = extractTraitBound(typeA);
-    TraitType traitB = extractTraitBound(typeB);
-    if (traitA == traitB)
-      return traitA;
-
-    llvm::DenseSet<SymbolRefAttr> symbolsA(traitA.getSymbols().begin(),
-                                           traitA.getSymbols().end());
-    llvm::DenseSet<SymbolRefAttr> symbolsB(traitB.getSymbols().begin(),
-                                           traitB.getSymbols().end());
-    llvm::set_intersect(symbolsA, symbolsB);
-
-    SmallVector<SymbolRefAttr> symbols(symbolsA.begin(), symbolsA.end());
-    canonicalizeTraitCompositionSymbols(shared, symbols);
-    return TraitType::get(shared.getContext(), symbols);
-  };
-
   // Do basic validation of the argument list using shared logic.
   CallOperands::PogAssignment pogAssignment;
   if (failed(givenBindings.assignToPogs(declaredParamPogs,
@@ -763,8 +730,8 @@ LogicalResult ParamInf::inferFromParamList() {
             continue;
           }
 
-          mergedTypeBound =
-              mergeTwoMetaType(mergedTypeBound, typeValue.getType());
+          mergedTypeBound = mergeTwoMetaTypeBounds(shared, mergedTypeBound,
+                                                   typeValue.getType());
         }
       }
 

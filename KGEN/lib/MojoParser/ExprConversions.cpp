@@ -13,6 +13,7 @@
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "InferenceState.h"
+
 #include "OverloadSet.h"
 
 #include "KGEN/MojoParser/Constraints.h"
@@ -21,6 +22,7 @@
 #include "ParserEvaluationContext.h"
 #include "SpecializeInf.h"
 #include "StructEmitter.h"
+#include "Traits.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -1242,6 +1244,12 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
 
   if (type1.isEqualCanon(type2))
     return succeed(type1);
+
+  if (LIT::isFirstLevelTypeExpr(val1.ir.getIfPValue()) &&
+      LIT::isFirstLevelTypeExpr(val2.ir.getIfPValue())) {
+    result = LIT::mergeTwoMetaTypeBounds(emitter.shared, type1, type2);
+    return {CTR_Success, PValue(), PValue()};
+  }
 
   // Ok, they are different types.  If either type has a __merge_with__ member,
   // then we use that in preference to anything else.

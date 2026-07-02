@@ -36,6 +36,13 @@ LogicalResult verifyAndBuildConformance(ASTDecl &structDecl,
 void canonicalizeTraitCompositionSymbols(
     SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols);
 
+/// Canonicalize the list of symbols that form a trait composition, but also
+/// take constraints into account, `symbolConstraints` maps each symbol in the
+/// provided `symbols` vector to its constraints.
+SmallVector<ConstraintAttr> canonicalizeTraitSymbolsAndConstraints(
+    SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols,
+    const DenseMap<SymbolRefAttr, ConstraintAttr> &symbolConstraints);
+
 /// Reduce the list of trait composition symbols to the minimal set of symbols
 /// that still implies the original trait composition.
 SmallVector<SymbolRefAttr>
@@ -46,6 +53,10 @@ reduceTraitCompositionSymbols(SharedState &shared,
 /// trait bound implied by any `conforms_to(type, Trait)` constraints.
 TraitType getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
                                        ArrayRef<ConstraintAttr> assumptions);
+
+/// Merge two meta-type values `typeA` and `typeB` into a single meta-type whose
+/// trait bound is the common (intersection) bound of the two inputs.
+Type mergeTwoMetaTypeBounds(SharedState &shared, ASTType typeA, ASTType typeB);
 
 FnTypeGeneratorType specializeSignature(FnOp traitFn, ASTType newSelfType,
                                         DeclResolver &declResolver);
