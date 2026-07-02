@@ -27,6 +27,7 @@ modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [
+        "//max/python/max/_xgrammar",
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",

@@ -25,6 +25,11 @@ import sys
 
 import numpy as np
 from max import _xgrammar as xgr
+from max._xgrammar.structural_tag import (
+    ConstStringFormat,
+    JSONSchemaFormat,
+    OrFormat,
+)
 
 _VOCAB = [
     "{",
@@ -97,6 +102,29 @@ def test_structural_tag_bridge() -> None:
     )
     roundtripped = xgr.StructuralTag.model_validate_json(tag.model_dump_json())
     assert isinstance(roundtripped, xgr.StructuralTag)
+
+    compiled = _compiler().compile_structural_tag(tag)
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_or_format_compiles() -> None:
+    """``OrFormat`` must be usable end to end.
+
+    ``OrFormat`` has a forward-referenced ``List["Format"]`` field, so it must
+    appear in ``structural_tag``'s ``model_rebuild()`` block; otherwise
+    constructing it raises ``PydanticUserError``. Guards the generic shim layer
+    (construct, serialize, compile) independently of any model wiring.
+    """
+    tag = xgr.StructuralTag(
+        format=OrFormat(
+            elements=[
+                JSONSchemaFormat(json_schema={"type": "object"}),
+                ConstStringFormat(value="null"),
+            ]
+        )
+    )
+    roundtripped = xgr.StructuralTag.model_validate_json(tag.model_dump_json())
+    assert roundtripped.format.type == "or"
 
     compiled = _compiler().compile_structural_tag(tag)
     assert isinstance(compiled, xgr.CompiledGrammar)

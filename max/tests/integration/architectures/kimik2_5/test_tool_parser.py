@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 from llguidance import LLMatcher, LLTokenizer
 from llguidance._tokenizer import TokenizerWrapper
+from max import _xgrammar as xgrammar
 from max.pipelines.architectures.kimik2_5.tool_parser import (
     _MAX_TOOL_CALL_SECTIONS,
     IM_END,
@@ -41,6 +42,9 @@ from max.pipelines.context import (
 )
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     MAGIC_DRAFT_TOKEN_ID,
+)
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    XgrammarBackend,
 )
 from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
 from max.pipelines.lib.tool_parsing import StreamingToolCallState
@@ -762,6 +766,41 @@ def _section(name: str, idx: int, args: str) -> str:
     )
 
 
+# Backends that must both accept the combined tool-call + response_format
+# grammar. llguidance builds a Lark ``tool_calls | json_response`` alternation;
+# xgrammar builds an ``OrFormat`` structural tag around the built-in Kimi
+# tool-call envelope. Both are validated by the same behavioral tests below.
+_STRUCTURED_OUTPUT_BACKENDS = ["llguidance", "xgrammar"]
+
+
+def _make_grammar_matcher(
+    backend: str,
+    grammar: str,
+    ll_tokenizer: LLTokenizer,
+    minimal_tokenizer: _MinimalTokenizer,
+) -> Any:
+    """Compile ``grammar`` for ``backend`` and return a stepping matcher.
+
+    Both returned matchers satisfy the ``GrammarMatcher`` interface used by the
+    decode path (``try_consume_tokens`` / ``is_accepting``), so a single
+    behavioral test can drive either backend. Compilation raising is itself the
+    signal that the grammar is invalid for that backend.
+    """
+    if backend == "llguidance":
+        return LLMatcher(ll_tokenizer, grammar)
+    # xgrammar: build a RAW-vocab tokenizer info from the same byte+special
+    # vocab the llguidance matcher uses, then compile the structural tag through
+    # the production backend path (str -> StructuralTag -> compile_structural_tag).
+    tokenizer_info = xgrammar.TokenizerInfo(
+        minimal_tokenizer.tokens,
+        vocab_type=xgrammar.VocabType.RAW,
+        vocab_size=_MinimalTokenizer._N_VOCAB,
+        stop_token_ids=[minimal_tokenizer.eos_token_id],
+    )
+    compiler = xgrammar.GrammarCompiler(tokenizer_info)
+    return XgrammarBackend(compiler).create_matcher(grammar)
+
+
 def test_generate_tool_call_grammar_with_tool_names(
     ll_tokenizer: LLTokenizer,
     mock_tokenizer: PipelineTokenizer[Any, Any, Any],
@@ -887,6 +926,176 @@ def test_generate_tool_call_grammar_combined_accepts_json_object_type(
 
     matcher = LLMatcher(ll_tokenizer, grammar)
     assert matcher is not None
+
+
+# --- Combined tool-call + response_format, both structured-output backends ---
+#
+# Each backend should support serving tool-calling and response_format=json_schema in one request.
+# Both backends are driven through the same behavioral assertions via ``_make_grammar_matcher``.
+
+_COMBINED_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"answer": {"type": "string"}},
+    "required": ["answer"],
+}
+
+
+@pytest.mark.parametrize("backend", _STRUCTURED_OUTPUT_BACKENDS)
+def test_combined_tool_and_response_format_grammar_compiles(
+    backend: str,
+    ll_tokenizer: LLTokenizer,
+    minimal_tokenizer: _MinimalTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> None:
+    """The combined grammar compiles on both backends.
+
+    Compilation raising is the failure signal: the xgrammar path must produce a
+    valid ``OrFormat`` structural tag and the llguidance path a valid Lark
+    alternation.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather", "search"),
+        response_format_schema=_COMBINED_RESPONSE_SCHEMA,
+        tokenizer=mock_tokenizer,
+        backend=backend,
+    )
+    assert isinstance(grammar, str) and grammar
+
+    matcher = _make_grammar_matcher(
+        backend, grammar, ll_tokenizer, minimal_tokenizer
+    )
+    assert matcher is not None
+
+
+@pytest.mark.parametrize("backend", _STRUCTURED_OUTPUT_BACKENDS)
+def test_combined_grammar_accepts_conforming_json_response(
+    backend: str,
+    ll_tokenizer: LLTokenizer,
+    minimal_tokenizer: _MinimalTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> None:
+    """The response_format branch accepts a schema-conforming JSON response.
+
+    ``json.dumps`` default spacing is accepted under both xgrammar whitespace
+    modes (permissive, or the space-mandating strict mode) and by llguidance,
+    so the same payload validates on either backend.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather"),
+        response_format_schema=_COMBINED_RESPONSE_SCHEMA,
+        tokenizer=mock_tokenizer,
+        backend=backend,
+    )
+    matcher = _make_grammar_matcher(
+        backend, grammar, ll_tokenizer, minimal_tokenizer
+    )
+
+    tokens = minimal_tokenizer(json.dumps({"answer": "sunny"}))
+    consumed = matcher.try_consume_tokens(tokens)
+    assert consumed == len(tokens), (
+        f"[{backend}] rejected a conforming JSON response at offset "
+        f"{consumed} of {len(tokens)}; error: {matcher.get_error()}"
+    )
+    assert matcher.is_accepting(), (
+        f"[{backend}] matcher not at an accepting state after a complete "
+        f"schema-conforming JSON response"
+    )
+
+
+@pytest.mark.parametrize("backend", _STRUCTURED_OUTPUT_BACKENDS)
+def test_combined_grammar_enforces_response_schema(
+    backend: str,
+    ll_tokenizer: LLTokenizer,
+    minimal_tokenizer: _MinimalTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> None:
+    """The response_format branch enforces the schema on both backends.
+
+    A JSON object missing the required ``answer`` field must not be a complete,
+    accepted output. (Under xgrammar auto-reasoning the bytes may be consumed as
+    reasoning text, so the backend-agnostic invariant is ``not is_accepting``
+    rather than a partial token consume.)
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather"),
+        response_format_schema=_COMBINED_RESPONSE_SCHEMA,
+        tokenizer=mock_tokenizer,
+        backend=backend,
+    )
+    matcher = _make_grammar_matcher(
+        backend, grammar, ll_tokenizer, minimal_tokenizer
+    )
+
+    matcher.try_consume_tokens(minimal_tokenizer("{}"))  # missing "answer"
+    assert not matcher.is_accepting(), (
+        f"[{backend}] accepted a JSON response missing a required field — "
+        f"the response schema was not enforced"
+    )
+
+
+@pytest.mark.parametrize("backend", _STRUCTURED_OUTPUT_BACKENDS)
+def test_combined_grammar_still_accepts_tool_call(
+    backend: str,
+    ll_tokenizer: LLTokenizer,
+    minimal_tokenizer: _MinimalTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> None:
+    """Adding response_format must not break the tool-call branch.
+
+    Reasoning framing differs by backend: the xgrammar built-in Kimi envelope
+    requires a ``</think>`` reasoning close before the section under auto tool
+    choice, whereas llguidance keeps the reasoning block optional. Both must
+    still accept a complete tool call.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather"),
+        response_format_schema=_COMBINED_RESPONSE_SCHEMA,
+        tokenizer=mock_tokenizer,
+        backend=backend,
+    )
+    matcher = _make_grammar_matcher(
+        backend, grammar, ll_tokenizer, minimal_tokenizer
+    )
+
+    section = _section("get_weather", 0, json.dumps({"location": "NYC"}))
+    tool_text = (THINK_END + section) if backend == "xgrammar" else section
+    tokens = minimal_tokenizer(tool_text)
+    consumed = matcher.try_consume_tokens(tokens)
+    assert consumed == len(tokens), (
+        f"[{backend}] rejected a tool call in the combined grammar at offset "
+        f"{consumed} of {len(tokens)}; error: {matcher.get_error()}"
+    )
+    assert matcher.is_accepting(), (
+        f"[{backend}] matcher not accepting after a complete tool call"
+    )
+
+
+def test_combined_grammar_xgrammar_structural_tag_shape(
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> None:
+    """xgrammar combined grammar is an ``or`` of the tool envelope and json_schema.
+
+    Complements the llguidance ``json_response`` / ``%json`` string assertions:
+    the xgrammar grammar is a serialized StructuralTag whose top-level format is
+    an ``OrFormat`` carrying the response schema verbatim in a ``json_schema``
+    alternative.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather"),
+        response_format_schema=_COMBINED_RESPONSE_SCHEMA,
+        tokenizer=mock_tokenizer,
+        backend="xgrammar",
+    )
+    tag = xgrammar.StructuralTag.model_validate_json(grammar)
+    assert tag.format.type == "or"
+    element_types = {element.type for element in tag.format.elements}
+    assert "json_schema" in element_types
+    json_branch = next(
+        element
+        for element in tag.format.elements
+        if element.type == "json_schema"
+    )
+    assert json_branch.json_schema == _COMBINED_RESPONSE_SCHEMA
 
 
 def test_grammar_accepts_up_to_max_sections(

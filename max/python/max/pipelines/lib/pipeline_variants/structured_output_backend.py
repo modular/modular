@@ -39,6 +39,11 @@ import numpy.typing as npt
 from llguidance import LLMatcher, LLTokenizer
 from llguidance._tokenizer import TokenizerWrapper
 from max import _xgrammar as xgrammar
+from max._xgrammar.structural_tag import (
+    JSONSchemaFormat,
+    OrFormat,
+    StructuralTag,
+)
 from max.pipelines.context import GrammarMatcher
 from max.pipelines.context.exceptions import InputError
 from transformers import PreTrainedTokenizerBase, PreTrainedTokenizerFast
@@ -317,6 +322,7 @@ def build_xgrammar_tool_grammar(
     tools: list[dict[str, Any]],
     tool_choice: str | dict[str, Any],
     reasoning: bool = False,
+    response_format_schema: dict[str, Any] | None = None,
 ) -> str:
     """Build a serialized xgrammar tool-call grammar (StructuralTag JSON).
 
@@ -325,11 +331,18 @@ def build_xgrammar_tool_grammar(
     arguments to that tool's JSON schema. The returned JSON string is passed
     as a grammar to :meth:`XgrammarBackend.create_matcher`.
 
+    When ``response_format_schema`` is provided, the grammar accepts *either* a
+    tool call *or* a JSON response matching that schema, mirroring the
+    llguidance path's ``start: tool_calls | json_response`` alternation.
+
     Args:
         model_format: xgrammar model-format key (e.g. ``"kimi"``).
         tools: OpenAI-style tool dicts (``{"type": "function", "function": ...}``).
         tool_choice: ``"auto"``, ``"required"``, or a named choice.
         reasoning: Whether the model interleaves reasoning before tool calls.
+        response_format_schema: Optional JSON schema for a ``response_format``
+            json_schema response. When set, the grammar allows a
+            schema-conforming JSON response as an alternative to a tool call.
 
     Returns:
         The StructuralTag serialized as a JSON string.
@@ -340,6 +353,18 @@ def build_xgrammar_tool_grammar(
         tool_choice=tool_choice,
         reasoning=reasoning,
     )
+    if response_format_schema is not None:
+        # Allow either a tool call (the built-in envelope) or a JSON response
+        # conforming to the schema. This is the xgrammar analogue of the
+        # llguidance ``tool_calls | json_response`` alternation.
+        tag = StructuralTag(
+            format=OrFormat(
+                elements=[
+                    tag.format,
+                    JSONSchemaFormat(json_schema=response_format_schema),
+                ]
+            )
+        )
     return tag.model_dump_json()
 
 
