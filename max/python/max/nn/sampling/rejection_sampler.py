@@ -22,6 +22,8 @@ from max.nn.layer import Module
 # Using -10000 to match the existing sampling code pattern.
 _MASKED_LOGIT_VALUE = -10000.0
 
+_GREEDY_TEMPERATURE_EPS = 1e-5
+
 
 def _multinomial(
     probs: TensorValue, residual_rand: TensorValue | None = None
@@ -483,6 +485,12 @@ def stochastic_acceptance_sampler(
 
     device = draft_tokens.device
 
+    is_greedy_row = temperature < ops.constant(
+        _GREEDY_TEMPERATURE_EPS,
+        dtype=temperature.dtype,
+        device=temperature.device,
+    )
+
     temperature = ops.max(
         temperature,
         ops.constant(1e-6, dtype=temperature.dtype, device=temperature.device),
@@ -564,6 +572,18 @@ def stochastic_acceptance_sampler(
     coins = ops.random.uniform(p_target.type)
     rejected_strict = coins >= p_target
     recovered_strict = _multinomial(target_probs)
+
+    all_target_argmax = ops.squeeze(
+        ops.argmax(target_logits_3d, axis=-1), axis=-1
+    )
+    target_argmax_draft = ops.rebind(
+        all_target_argmax[:, :-1], [Dim("batch_size"), Dim("num_steps")]
+    )
+    bonus_argmax = all_target_argmax[:, -1:]
+    rejected_greedy = ops.not_equal(
+        token_indices, target_argmax_draft.cast(token_indices.dtype)
+    )
+    recovered_greedy = target_argmax_draft.cast(recovered_strict.dtype)
 
     use_relaxed = (
         in_thinking_phase is not None
@@ -650,6 +670,15 @@ def stochastic_acceptance_sampler(
         rejected = rejected_strict
         recovered_token_ids = recovered_strict
 
+    is_greedy_bk = ops.broadcast_to(
+        ops.unsqueeze(is_greedy_row, axis=-1),
+        shape=[Dim("batch_size"), Dim("num_steps")],
+    )
+    rejected = ops.where(is_greedy_bk, rejected_greedy, rejected)
+    recovered_token_ids = ops.where(
+        is_greedy_bk, recovered_greedy, recovered_token_ids
+    )
+
     first_rejected_idx = ops.squeeze(
         _find_first_rejected(rejected, device), axis=-1
     )
@@ -664,8 +693,19 @@ def stochastic_acceptance_sampler(
         min_top_p=min_top_p,
         seed=seed_per_batch,
     )
+    bonus_token_tensor = bonus_token_ids.tensor
+    is_greedy_b = ops.broadcast_to(
+        ops.unsqueeze(is_greedy_row, axis=-1), shape=[Dim("batch_size"), 1]
+    )
+    bonus_token_tensor = ops.where(
+        is_greedy_b,
+        ops.rebind(bonus_argmax, [Dim("batch_size"), 1]).cast(
+            bonus_token_tensor.dtype
+        ),
+        bonus_token_tensor,
+    )
 
-    return first_rejected_idx, recovered_token_ids, bonus_token_ids.tensor
+    return first_rejected_idx, recovered_token_ids, bonus_token_tensor
 
 
 class RejectionSamplerWithResiduals(Module):
