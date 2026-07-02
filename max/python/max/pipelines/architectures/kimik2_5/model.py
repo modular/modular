@@ -65,6 +65,10 @@ from max.pipelines.lib.eplb_stats import (
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.pipelines.modeling.config_enums import is_float4_encoding
 from max.pipelines.request import RequestID
+from max.pipelines.weights.mxfp4_preshuffle import (
+    preshuffle_mxfp4_b_experts,
+    preshuffle_mxfp4_b_scales,
+)
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 
@@ -74,10 +78,6 @@ from .context import KimiK2_5TextAndVisionContext
 from .kimi_nvfp4_policy import infer_kimi_nvfp4_weight_flags
 from .kimik2_5 import KimiK2_5
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig
-from .weight_adapters import (
-    preshuffle_mxfp4_b_experts,
-    preshuffle_mxfp4_b_scales,
-)
 
 logger = logging.getLogger("max.pipelines")
 
