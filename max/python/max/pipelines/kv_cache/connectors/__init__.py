@@ -96,6 +96,7 @@ def create_connector(
         return DKVConnector(
             replica_kv_memory=replica_kv_memory,
             local_block_store_endpoint=kv_connector_config.block_store_endpoint,
+            devices=devices,
         )
 
     if connector == KVConnectorType.tiered:

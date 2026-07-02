@@ -35,7 +35,9 @@ import sys
 from collections.abc import Sequence
 
 import msgspec
+from max.driver import Device
 from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
+from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
@@ -112,6 +114,7 @@ class DKVConnector:
         self,
         replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
         local_block_store_endpoint: str,
+        devices: Sequence[Device],
     ) -> None:
         # Deferred so importing this module (e.g. for DKVExternalBlockMetadata,
         # or by non-dKV pipelines) does not require the optional, runtime-
@@ -126,8 +129,18 @@ class DKVConnector:
         listen_port = int(os.getenv("MODULAR_DKV_NIXL_LISTEN_PORT", "0"))
         backend = os.getenv("MODULAR_NIXL_TRANSFER_BACKEND") or None
 
+        # ``devices`` is the pipeline's flat, ordered device list across every
+        # replica; split it into each replica's canonical device order so a
+        # client can bind its shard ids to that order. This is the same split the
+        # cache manager applies, and it is sourced independently of
+        # ``to_memory``, so it is a real cross-check on the buffer ordering rather
+        # than a restatement of it.
+        devices_per_replica = split_into_groups(
+            list(devices), len(replica_kv_memory)
+        )
+
         # One Rust client per replica, each registering only its replica's
-        # device buffers with NIXL.
+        # device buffers with NIXL, in that replica's canonical device order.
         self._clients = [
             self._make_client(
                 _DkvConnectorClient,
@@ -135,8 +148,11 @@ class DKVConnector:
                 local_block_store_endpoint,
                 listen_port,
                 backend,
+                replica_devices,
             )
-            for kv_memory in replica_kv_memory
+            for kv_memory, replica_devices in zip(
+                replica_kv_memory, devices_per_replica, strict=True
+            )
         ]
 
     @staticmethod
@@ -146,6 +162,7 @@ class DKVConnector:
         local_block_store_endpoint: str,
         listen_port: int,
         backend: str | None,
+        expected_devices: Sequence[Device],
     ) -> object:
         # Per-buffer (ptr, byte length, device ordinal) for NIXL registration.
         # Each KVCacheMemory wraps a ``[num_pages, bytes_per_page]`` uint8 device
@@ -153,6 +170,13 @@ class DKVConnector:
         # that hold identical data and must be registered too.
         device_buffer_meta: list[tuple[int, int, int]] = []
         device_ids: set[int] = set()
+        # MAX's compute stream per device ordinal, so the same-host offload can
+        # order each device's D2H after the forward pass that wrote its blocks
+        # via a CUDA event in that device's own context. Events and streams are
+        # per context, so multi-device TP needs a handle per device rather than
+        # one shared handle. A device whose stream has no native handle (e.g. a
+        # CPU stream) maps to 0, which routes that device's transfers over NIXL.
+        compute_streams: dict[int, int] = {}
         is_mla = False
         for mem in kv_memory:
             buffers = mem.all_buffers
@@ -167,6 +191,52 @@ class DKVConnector:
                     )
                 )
                 device_ids.add(buffer.device.id)
+                compute_streams[buffer.device.id] = (
+                    buffer.device.default_stream.native_stream_handle
+                )
+
+        # The Rust client keys each block by its shard's position in
+        # ``device_buffer_meta`` (``tp_shard_id``), so that position must equal
+        # the shard's rank in the replica's canonical device order. The per-shard
+        # keying assumes exactly one buffer per device, so two layouts would
+        # break it and are rejected here rather than silently mis-keyed. A
+        # quantized cache appends its scale buffers after the value buffers, so
+        # each device appears twice and the scales would never be keyed or
+        # transferred, giving a wrong dequant. A ``MultiKVCacheBuffer`` (hybrid
+        # sliding and global, or speculative draft and target) concatenates
+        # several caches, so a device appears once per cache and ``tp_shard_id``
+        # stops equalling a device rank. Both show up as more registered buffers
+        # than distinct devices. dKV does not carry the extra buffers yet,
+        # tracked by CLIN-1460, so fail loudly.
+        if not is_mla and len(device_buffer_meta) != len(device_ids):
+            raise NotImplementedError(
+                "The dKV connector requires exactly one KV buffer per device for "
+                f"non-MLA TP, but got {len(device_buffer_meta)} buffers across "
+                f"{len(device_ids)} devices. Quantized (FP8 scale) caches and "
+                "multi-cache buffers (hybrid or speculative decoding) are not "
+                "supported on the dKV connector yet (CLIN-1460)."
+            )
+
+        # Bind ``tp_shard_id`` to device identity rather than to registration
+        # luck. A remote peer fetches a block by the ``(tp_shard_id, group,
+        # seq_hash)`` key, so its shard ids must line up with ours by device
+        # rank. ``expected_devices`` is the replica's device order sourced from
+        # the pipeline config, so comparing it against the order the buffers
+        # actually registered in catches a future ``to_memory`` change that
+        # reorders buffers before it silently shifts every key. First-occurrence
+        # order collapses an MLA replica's peer buffers and a quantized cache's
+        # scale buffers down to one entry per device.
+        registered_order = list(
+            dict.fromkeys(device_id for _, _, device_id in device_buffer_meta)
+        )
+        expected_order = [device.id for device in expected_devices]
+        if registered_order != expected_order:
+            raise ValueError(
+                "dKV registered KV buffers in device order "
+                f"{registered_order}, which does not match the replica's "
+                f"canonical device order {expected_order}. tp_shard_id is bound "
+                "to that order, so a mismatch would mis-key blocks across peers."
+            )
 
         # ``total_num_pages`` is the buffer's physical page count
         # (``buffer.shape[0]``), which already includes MAX's trailing "null"
@@ -175,17 +245,6 @@ class DKVConnector:
         # so it must be the physical count; valid-block offsets are unaffected
         # since the null page is last and is never transferred.
         total_num_pages = kv_memory[0].total_num_pages
-
-        # MAX's compute stream, so the same-host offload can order its D2H after
-        # the forward pass that wrote the blocks (via a CUDA event). Use the
-        # first buffer's device — the one whose primary context the Rust client
-        # retains (it registers ``device_buffer_meta[0]`` first). ``0`` (e.g. a
-        # CPU stream with no native handle) routes offloads over NIXL, which is
-        # correct. One handle suffices for the single participating shard (MLA);
-        # multi-device TP would need a per-device stream (a future extension).
-        main_stream = kv_memory[
-            0
-        ].buffer.device.default_stream.native_stream_handle
 
         return client_cls(
             local_block_store_endpoint,
@@ -196,7 +255,7 @@ class DKVConnector:
             is_mla,
             listen_port=listen_port,
             backend=backend,
-            main_stream=main_stream,
+            compute_streams=compute_streams,
         )
 
     @property
