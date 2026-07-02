@@ -37,6 +37,7 @@ class LLVMTypeConverter;
 class NamedAttrList;
 class Operation;
 class RewritePatternSet;
+class SymbolTable;
 } // namespace mlir
 
 namespace M::KGEN {
@@ -79,6 +80,23 @@ public:
   populateLowerPOPToLLVMPatterns(mlir::RewritePatternSet &patterns,
                                  mlir::LLVMTypeConverter &converter,
                                  TargetInfoAttr target) const {}
+
+  /// Contributes this target's patterns to the global (module-scoped) POP ->
+  /// LLVM lowering (LowerGlobalPOPToLLVM), i.e. lowerings that create or query
+  /// module-level symbols and therefore need a `SymbolTable`. The default
+  /// contributes none. Mirrors the plugin's
+  /// `populateLowerGlobalPOPToLLVMPatterns`, so a plugin is just another target
+  /// lowering.
+  virtual void populateLowerGlobalPOPToLLVMPatterns(
+      mlir::RewritePatternSet &patterns, mlir::LLVMTypeConverter &converter,
+      mlir::SymbolTable &symtab, TargetInfoAttr target) const {}
+
+  /// Returns whether `op` is lowered by this target in the global POP->LLVM
+  /// pass rather than the regular one (used to route the op via
+  /// conversion-target legality). Default false.
+  virtual bool isLoweredInGlobalPOPPass(mlir::Operation *op) const {
+    return false;
+  }
 
   /// Marks `func` (an exported `llvm.func` lowered for this target) with any
   /// target-specific attribute or calling convention that identifies it as a
