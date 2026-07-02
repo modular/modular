@@ -685,7 +685,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         ],
         residuals: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
-        epsilons: InputVariadicTensors[dtype=dtype, ...],
+        epsilons: InputVariadicTensors[dtype=DType.float32, ...],
         weight_offsets: InputVariadicTensors[dtype=dtype, ...],
         scales_ub: InputVariadicTensors[dtype=DType.float32, ...],
         dev_ctxs_input: DeviceContextList,

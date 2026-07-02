@@ -70,7 +70,7 @@ def _verify_results[
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
-    epsilon: Scalar[in_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
 ) raises:
@@ -302,7 +302,7 @@ def _verify_add_results[
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
-    epsilon: Scalar[in_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
     residual_dev: DeviceBuffer[in_dtype],
@@ -697,7 +697,7 @@ def bench_allreduce_rmsnorm_fp8[
     list_of_ctx[0].enqueue_copy(gamma_dev, gamma_host)
 
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(num_cols))))
-    var epsilon = Scalar[in_dtype](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[in_dtype](0.0)
     var scale_ub = max_finite[out_dtype]().cast[DType.float32]()
 

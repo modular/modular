@@ -80,7 +80,7 @@ def _run_rms_norm_unfused(
     gamma_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     M: Int,
     K: Int,
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     ctx: DeviceContext,
 ) raises:
     """Per-device RMSNorm reading [M, K] from `in_ptr` and writing [M, K] to
@@ -273,7 +273,7 @@ def rmsnorm_test[
             ),
             M,
             K,
-            EPS.cast[dtype](),
+            EPS,
             list_of_ctx[g],
         )
     for g in range(ngpus):
@@ -481,7 +481,7 @@ def unsynced_skew_test[
                 ),
                 M,
                 K,
-                EPS.cast[dtype](),
+                EPS,
                 list_of_ctx[g],
             )
         for g in range(ngpus):

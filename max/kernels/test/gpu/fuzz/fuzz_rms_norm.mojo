@@ -96,7 +96,7 @@ def run_one_case(
 
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
-    var epsilon = Scalar[rn_type](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[rn_type](0.0)
 
     @always_inline

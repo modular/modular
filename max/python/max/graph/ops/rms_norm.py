@@ -13,6 +13,7 @@
 """Op implementation for rms_norm."""
 
 from max._core.dialects import builtin, kgen, mo
+from max.dtype import DType
 
 from ..graph import Graph
 from ..type import DeviceRef, TensorType
@@ -114,7 +115,7 @@ def rms_norm(
         ),
         input=input,
         weight=weight,
-        epsilon=constant(epsilon, input.dtype, DeviceRef.CPU()),
+        epsilon=constant(epsilon, DType.float32, DeviceRef.CPU()),
         weight_offset=constant(weight_offset, input.dtype, DeviceRef.CPU()),
         multiply_before_cast=builtin.BoolAttr(multiply_before_cast),
         output_param_decls=kgen.ParamDeclArrayAttr([]),

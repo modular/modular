@@ -24,7 +24,7 @@ from std.utils.index import Index, IndexList
 
 def compute_rms[
     dtype: DType
-](data: TileTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[
+](data: TileTensor[dtype, ...], size: Int, eps: Float32) -> Scalar[
     DType.float32
 ]:
     comptime assert data.rank == 1, "data.rank must be 1"
@@ -32,10 +32,7 @@ def compute_rms[
     for i in range(size):
         var d = data.raw_load(i).cast[DType.float32]()
         sum_of_squares += d * d
-    return sqrt(
-        (sum_of_squares / Float32(data.num_elements()))
-        + eps.cast[DType.float32]()
-    )
+    return sqrt((sum_of_squares / Float32(data.num_elements())) + eps)
 
 
 def run_rms_norm_cpu[
@@ -62,7 +59,7 @@ def run_rms_norm_cpu[
         gamma_ptr,
         row_major(Coord(param_shape)),
     )
-    var epsilon = Scalar[dtype](0.0001)
+    var epsilon = Float32(0.0001)
     var weight_offset = Scalar[dtype](0.0)
 
     @__copy_capture(input_buf)

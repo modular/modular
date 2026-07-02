@@ -357,6 +357,13 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed a precision loss in the normalization ops where the `epsilon` value was
+  carried in the input's dtype (for example `bfloat16`) before use. A small
+  epsilon such as `1e-6` is not representable in `bfloat16`, so it was silently
+  rounded. The `epsilon` for `rms_norm`, `layer_norm`, `group_norm`, and the
+  fused residual, FP8-quantized, and distributed all-reduce variants is now
+  carried as `float32` end to end — from the graph op through the graph
+  compiler to the kernel. The Python `epsilon: float` argument is unchanged.
 - Fixed MAX Serve crashing the model worker on the first host KV-cache
   offload/reload when run with `--kv-connector dkv`. The dKV connector had
   drifted out of sync with its client and no longer passed the required

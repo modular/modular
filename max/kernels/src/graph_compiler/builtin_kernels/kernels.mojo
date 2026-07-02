@@ -2266,7 +2266,7 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         ],
         residual: InputTensor[dtype=dtype, rank=rank, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: InputTensor[dtype=dtype, ...],
+        epsilon: InputTensor[dtype=DType.float32, ...],
         weight_offset: InputTensor[dtype=dtype, ...],
         scale_ub: InputTensor[dtype=DType.float32, ...],
         ctx: DeviceContext,

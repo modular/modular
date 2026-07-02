@@ -59,8 +59,8 @@ def bench_rms_norm_fused_residual_add_gpu[
     )
     var gamma1 = TileTensor(gamma1_d, row_major(Coord(param_shape)))
     var gamma2 = TileTensor(gamma2_d, row_major(Coord(param_shape)))
-    var epsilon1 = Scalar[dtype](0.001)
-    var epsilon2 = Scalar[dtype](0.001)
+    var epsilon1 = Float32(0.001)
+    var epsilon2 = Float32(0.001)
     var weight_offset1 = Scalar[dtype](0.0)
     var weight_offset2 = Scalar[dtype](0.0)
 

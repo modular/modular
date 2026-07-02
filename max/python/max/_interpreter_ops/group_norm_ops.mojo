@@ -66,7 +66,7 @@ def _group_norm_cpu[
     num_channels: Int,
     spatial_size: Int,
     num_groups: Int,
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
 ) where dtype.is_floating_point():
     """CPU group normalization on [N, C, spatial_size] flattened layout.
 
@@ -115,7 +115,9 @@ def _group_norm_cpu[
             var_val = var_val / Scalar[dtype](group_size)
 
             # Pass 3: normalize with per-channel affine
-            var inv_std = Scalar[dtype](1) / sqrt(var_val + epsilon)
+            var inv_std = Scalar[dtype](1) / sqrt(
+                var_val + epsilon.cast[dtype]()
+            )
             for c_off in range(channels_per_group):
                 var c = c_start + c_off
                 var base = (n * num_channels + c) * spatial_size
@@ -139,7 +141,7 @@ def _group_norm_gpu[
     gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     beta_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[rank],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     num_groups: Int32,
     ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
@@ -238,7 +240,7 @@ def _call[
     for i in range(2, rank):
         spatial_size *= in_shape[i]
 
-    var epsilon = _get_buffer_ptr[dtype](epsilon_buffer)[0]
+    var epsilon = _get_buffer_ptr[DType.float32](epsilon_buffer)[0]
 
     if ctx.api() == "cpu":
         _group_norm_cpu[dtype](

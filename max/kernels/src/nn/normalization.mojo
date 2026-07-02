@@ -325,7 +325,7 @@ def layer_norm_gpu_warp_tiling[
 ](
     shape: IndexList[2],
     beta: TileTensor[dtype, LayoutType, origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
 ):
     comptime assert beta.rank == 1, "beta must have rank 1"
     comptime align = align_of[SIMD[dtype, simd_width]]()
@@ -405,7 +405,7 @@ def layer_norm_gpu_block[
 ](
     shape: IndexList[2],
     beta: TileTensor[dtype, LayoutType, origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
 ):
     comptime assert beta.rank == 1, "beta must have rank 1"
     comptime align = align_of[SIMD[dtype, simd_width]]()
@@ -511,7 +511,7 @@ def layer_norm_gpu[
 ](
     shape: IndexList[rank, ...],
     beta: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     *,
     ctx: DeviceContext,
 ) raises:
@@ -675,7 +675,7 @@ def layer_norm_cpu[
     num_rows: Int,
     num_cols: Int,
     beta: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
 ) raises:
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
     defined as $(x-mean(x))/(sqrt(var(x)+eps)*gamma_fn + beta$.
@@ -733,7 +733,7 @@ def layer_norm_cpu[
         var var_val = variance[dtype, input_gen_wrapper](
             num_cols, mean_val, 0
         )  # use biased estimator
-        var norm_factor = rsqrt(var_val + epsilon)
+        var norm_factor = rsqrt(var_val + epsilon.cast[dtype]())
 
         def _normalize[simd_width: Int](col: Int) {beta, mut}:
             var out_val = input_fn[simd_width, 1](row, col)
@@ -768,7 +768,7 @@ def layer_norm_cpu[
 ](
     shape: IndexList[rank],
     beta: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     ctx: Optional[DeviceContext] = None,
 ):
     comptime assert beta.rank == 1, "beta must have rank 1"
@@ -840,7 +840,7 @@ def layer_norm[
     shape: IndexList[rank],
     gamma_shape: IndexList[1],
     beta: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     ctx: DeviceContext,
 ) raises:
     comptime assert beta.rank == 1, "beta must have rank 1"
@@ -886,7 +886,7 @@ def layer_norm_shape[
     input: TileTensor[mut=False, dtype, ...],
     gamma: TileTensor[mut=False, dtype, ...],
     beta: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
 ) -> IndexList[input.rank]:
     """
     Compute the output shape of a `layer_norm` operation.
@@ -925,7 +925,7 @@ def _rms_norm_warp_tiling_subkernel[
     idx: Int,
     vec_data: SIMD[accum_type, simd_width],
     gamma_val: SIMD[dtype, simd_width],
-    epsilon: Scalar[accum_type],
+    epsilon: Float32,
     weight_offset: Scalar[accum_type],
     num_cols: Int,
 ) -> SIMD[dtype, simd_width]:
@@ -940,7 +940,9 @@ def _rms_norm_warp_tiling_subkernel[
             thread_m2
         )
 
-    var norm_factor = rsqrt((row_m2 / Scalar[accum_type](num_cols)) + epsilon)
+    var norm_factor = rsqrt(
+        (row_m2 / Scalar[accum_type](num_cols)) + epsilon.cast[accum_type]()
+    )
     var norm_val: SIMD[dtype, simd_width] = 0
     if idx < num_cols:
         comptime if multiply_before_cast:
@@ -972,7 +974,7 @@ def rms_norm_gpu_warp_tiling_128[
     multiply_before_cast: Bool,
 ](
     gamma: TileTensor[dtype, LayoutType, origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     num_rows: Int,
     num_cols: Int,
@@ -983,7 +985,6 @@ def rms_norm_gpu_warp_tiling_128[
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
-    var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     var vec_data = SIMD[accum_type, simd_width](0)
@@ -1013,7 +1014,7 @@ def rms_norm_gpu_warp_tiling_128[
             idx,
             vec_data,
             gamma_val,
-            eps_accum,
+            epsilon,
             weight_offset_accum,
             num_cols,
         )
@@ -1055,7 +1056,7 @@ def rms_norm_gpu_warp_per_row[
     multiply_before_cast: Bool,
 ](
     gamma: TileTensor[dtype, LayoutType, origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     num_rows: Int,
     num_cols: Int,
@@ -1256,7 +1257,7 @@ def rms_norm_gpu_warp_tiling[
 ](
     shape: IndexList[rank],
     gamma: TileTensor[dtype, LayoutType, origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
@@ -1361,7 +1362,7 @@ def _rms_norm_gpu_block_subkernel[
     multiply_before_cast: Bool,
 ](
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
@@ -1555,7 +1556,7 @@ def rms_norm_gpu_block[
     multiply_before_cast: Bool,
 ](
     gamma: TileTensor[dtype, LayoutType, origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
@@ -1584,7 +1585,7 @@ def rms_norm_gpu[
 ](
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -2000,7 +2001,7 @@ def rms_norm_cpu[
     multiply_before_cast: Bool,
 ](
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
 ):
@@ -2069,7 +2070,7 @@ def rms_norm_cpu[
 ](
     shape: IndexList[rank],
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     ctx: Optional[DeviceContext] = None,
 ):
@@ -2145,7 +2146,7 @@ def _rms_norm_impl[
 ](
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -2245,10 +2246,10 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
     multiply_before_cast: Bool,
 ](
     gamma1: TileTensor[dtype, LayoutType1, origin1],
-    epsilon1: Scalar[dtype],
+    epsilon1: Float32,
     weight_offset1: Scalar[dtype],
     gamma2: TileTensor[dtype, LayoutType2, origin2],
-    epsilon2: Scalar[dtype],
+    epsilon2: Float32,
     weight_offset2: Scalar[dtype],
     num_cols: Int,
 ):
@@ -2262,9 +2263,7 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
 
-    var eps_accum1 = epsilon1.cast[accum_type]()
     var weight_offset_accum1 = weight_offset1.cast[accum_type]()
-    var eps_accum2 = epsilon2.cast[accum_type]()
     var weight_offset_accum2 = weight_offset2.cast[accum_type]()
 
     var vec_data = SIMD[dtype, simd_width](0)
@@ -2288,7 +2287,7 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
             idx,
             vec_data.cast[accum_type](),
             gamma1_val,
-            eps_accum1,
+            epsilon1,
             weight_offset_accum1,
             num_cols,
         )
@@ -2309,7 +2308,7 @@ def rms_norm_fused_residual_add_gpu_warp_tiling[
             idx,
             norm1_val.cast[accum_type](),
             gamma2_val,
-            eps_accum2,
+            epsilon2,
             weight_offset_accum2,
             num_cols,
         )
@@ -2347,10 +2346,10 @@ def rms_norm_fused_residual_add_gpu_block[
     multiply_before_cast: Bool,
 ](
     gamma1: TileTensor[dtype, LayoutType1, origin1],
-    epsilon1: Scalar[dtype],
+    epsilon1: Float32,
     weight_offset1: Scalar[dtype],
     gamma2: TileTensor[dtype, LayoutType2, origin2],
-    epsilon2: Scalar[dtype],
+    epsilon2: Float32,
     weight_offset2: Scalar[dtype],
     num_cols: Int,
 ):
@@ -2507,10 +2506,10 @@ def rms_norm_fused_residual_add_gpu[
 ](
     shape: IndexList[rank, ...],
     gamma1: TileTensor[mut=False, dtype, ...],
-    epsilon1: Scalar[dtype],
+    epsilon1: Float32,
     weight_offset1: Scalar[dtype],
     gamma2: TileTensor[mut=False, dtype, ...],
-    epsilon2: Scalar[dtype],
+    epsilon2: Float32,
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -2706,10 +2705,10 @@ def rms_norm_fused_residual_add_cpu[
 ](
     shape: IndexList[rank],
     gamma1: TileTensor[mut=False, dtype, ...],
-    epsilon1: Scalar[dtype],
+    epsilon1: Float32,
     weight_offset1: Scalar[dtype],
     gamma2: TileTensor[mut=False, dtype, ...],
-    epsilon2: Scalar[dtype],
+    epsilon2: Float32,
     weight_offset2: Scalar[dtype],
 ) raises:
     comptime assert gamma1.rank == 1, "gamma1 must have rank 1"
@@ -2792,7 +2791,7 @@ def _rms_norm_rope_gpu_warp_tiling[
     multiply_before_cast: Bool,
 ](
     gamma: TileTensor[input_dtype, LayoutType, origin],
-    epsilon: Scalar[input_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[input_dtype],
     num_cols: Int,
 ):
@@ -2946,7 +2945,7 @@ def _rms_norm_rope_gpu_warp_tiling_128[
     multiply_before_cast: Bool,
 ](
     gamma: TileTensor[input_dtype, LayoutType, origin],
-    epsilon: Scalar[input_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[input_dtype],
     num_rows: Int,
     num_cols: Int,
@@ -3134,7 +3133,7 @@ def _rms_norm_rope_gpu_block[
     multiply_before_cast: Bool,
 ](
     gamma: TileTensor[input_dtype, LayoutType, origin],
-    epsilon: Scalar[input_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[input_dtype],
     num_cols: Int,
 ):
@@ -3271,7 +3270,7 @@ def rms_norm_rope_gpu[
 ](
     shape: IndexList[rank, ...],
     gamma: TileTensor[mut=False, input_dtype, ...],
-    epsilon: Scalar[input_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[input_dtype],
     cos_vals: TileTensor[mut=False, cos_sin_dtype, ...],
     sin_vals: TileTensor[mut=False, cos_sin_dtype, ...],
@@ -3481,7 +3480,7 @@ def rms_norm[
 ](
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -3916,7 +3915,7 @@ def apply_qk_rms_norm_gpu_block[
     qk_var: TileTensor[DType.float32, var_layout, var_origin],
     q: TileTensor[in_dtype, q_layout, q_origin],
     k: TileTensor[in_dtype, k_layout, k_origin],
-    epsilon: Scalar[DType.float32],
+    epsilon: Float32,
     q_cols: Int,
     k_cols: Int,
 ) where (q_out_mut and k_out_mut):
@@ -3988,7 +3987,7 @@ def apply_qk_rms_norm_gpu[
     qk_var: TileTensor[mut=False, DType.float32, ...],
     q: TileTensor[mut=False, in_dtype, ...],
     k: TileTensor[mut=False, in_dtype, ...],
-    epsilon: Scalar[DType.float32],
+    epsilon: Float32,
     rows: Int,
     q_cols: Int,
     k_cols: Int,
@@ -4114,7 +4113,7 @@ def apply_qk_rms_norm_cpu[
     qk_var: TileTensor[mut=False, DType.float32, ...],
     q: TileTensor[mut=False, in_dtype, ...],
     k: TileTensor[mut=False, in_dtype, ...],
-    epsilon: Scalar[DType.float32],
+    epsilon: Float32,
     rows: Int,
     q_cols: Int,
     k_cols: Int,
@@ -4157,7 +4156,7 @@ def apply_qk_rms_norm[
     qk_var: TileTensor[mut=False, DType.float32, ...],
     q: TileTensor[mut=False, in_dtype, ...],
     k: TileTensor[mut=False, in_dtype, ...],
-    epsilon: Scalar[DType.float32],
+    epsilon: Float32,
     rows: Int,
     q_cols: Int,
     k_cols: Int,
@@ -4269,10 +4268,10 @@ def _rms_norm_fused_residual_add_impl[
 ](
     shape: IndexList[rank],
     gamma1: TileTensor[mut=False, dtype, ...],
-    epsilon1: Scalar[dtype],
+    epsilon1: Float32,
     weight_offset1: Scalar[dtype],
     gamma2: TileTensor[mut=False, dtype, ...],
-    epsilon2: Scalar[dtype],
+    epsilon2: Float32,
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -4360,10 +4359,10 @@ def rms_norm_fused_residual_add[
 ](
     shape: IndexList[rank],
     gamma1: TileTensor[mut=False, dtype, ...],
-    epsilon1: Scalar[dtype],
+    epsilon1: Float32,
     weight_offset1: Scalar[dtype],
     gamma2: TileTensor[mut=False, dtype, ...],
-    epsilon2: Scalar[dtype],
+    epsilon2: Float32,
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -4464,7 +4463,7 @@ def group_norm_gpu_warp_tiling[
     beta_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
 ](
     output: TileTensor[dtype, LayoutType, origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     num_groups: Int,
     channels_per_group: Int,
     spatial: Int,
@@ -4538,7 +4537,7 @@ def group_norm_gpu_block[
     beta_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
 ](
     output: TileTensor[dtype, LayoutType, origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     num_groups: Int,
     channels_per_group: Int,
     spatial: Int,
@@ -4707,7 +4706,7 @@ def group_norm_gpu_multi_block_norm[
 ](
     output: TileTensor[dtype, OutputLayoutType, output_origin],
     stats: TileTensor[get_accum_type[dtype](), StatsLayoutType, stats_origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     num_groups: Int,
     channels_per_group: Int,
     spatial: Int,
@@ -4813,7 +4812,7 @@ def group_norm_gpu[
     beta_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
 ](
     shape: IndexList[rank, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     output: TileTensor[mut=True, dtype, ...],
     num_groups: Int,
     ctx: DeviceContext,
@@ -5101,7 +5100,7 @@ def group_norm[
     target: StaticString = "gpu",
 ](
     shape: IndexList[rank],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     groups: Int32,
     output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,

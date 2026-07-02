@@ -107,7 +107,7 @@ def run_one_case(
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
-    var epsilon = Scalar[ln_type](1e-5)
+    var epsilon = Float32(1e-5)
 
     @__copy_capture(data_buf)
     @always_inline

@@ -238,7 +238,7 @@ def fused_rope_rmsnorm_kernel[
                     idx,
                     vec_data,
                     gamma_val,
-                    epsilon.cast[accum_type](),
+                    epsilon,
                     0.0,
                     kv_norm_dim,
                 )
@@ -430,7 +430,7 @@ def fused_rope_rmsnorm_quantization_kernel[
                     idx,
                     vec_data,
                     gamma_val,
-                    epsilon.cast[accum_type](),
+                    epsilon,
                     0.0,
                     kv_norm_dim,
                 )
@@ -1048,16 +1048,12 @@ def mla_decode_branch_fp8[
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     extra_k: OptionalReg[collection_t.CacheType] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    extra_scales_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
 ) raises:
@@ -1361,16 +1357,12 @@ def mla_prefill_decode_graph_fp8[
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     extra_k: OptionalReg[collection_t.CacheType] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    extra_scales_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
 ) raises:

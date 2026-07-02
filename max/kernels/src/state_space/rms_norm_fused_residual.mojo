@@ -65,7 +65,7 @@ def _rms_norm_fused_residual_cpu_2d[
     multiply_before_cast: Bool = True,
 ](
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
@@ -198,7 +198,7 @@ def rms_norm_fused_residual_cpu[
 ](
     shape: IndexList[rank],
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
@@ -304,7 +304,7 @@ def rms_norm_fused_residual_gpu_block[
     multiply_before_cast: Bool,
 ](
     gamma: TileTensor[dtype, GammaLayout, MutAnyOrigin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     num_cols: Int,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
@@ -409,7 +409,7 @@ def rms_norm_fused_residual_gpu[
 ](
     shape: IndexList[rank, ...],
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
@@ -527,7 +527,7 @@ def _rms_norm_fused_residual_impl[
 ](
     shape: IndexList[rank],
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
@@ -645,7 +645,7 @@ def rms_norm_fused_residual[
 ](
     shape: IndexList[rank],
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),

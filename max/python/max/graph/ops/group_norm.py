@@ -94,7 +94,7 @@ def group_norm(
         input=input,
         gamma=gamma,
         beta=beta,
-        epsilon=constant(epsilon, input.dtype, DeviceRef.CPU()),
+        epsilon=constant(epsilon, DType.float32, DeviceRef.CPU()),
         num_groups=constant(num_groups, DType.int32, DeviceRef.CPU()),
         output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor

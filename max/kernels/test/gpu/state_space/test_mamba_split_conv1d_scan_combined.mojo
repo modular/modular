@@ -295,7 +295,7 @@ def run_mamba_split_conv1d_scan_combined_gpu[
         row_major(batch, seqlen, out_dim if has_outproj else dim),
     )
 
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
 
     # Run CPU kernel
     mamba_split_conv1d_scan_combined_cpu[
@@ -346,7 +346,7 @@ def run_mamba_split_conv1d_scan_combined_gpu[
         outproj_weight_cpu_lt.as_unsafe_any_origin(),
         outproj_bias_cpu_lt.as_unsafe_any_origin(),
         output_cpu_cpu_lt.as_unsafe_any_origin(),
-        epsilon,
+        epsilon.cast[dtype](),
     )
 
     # Run GPU kernel
@@ -408,7 +408,7 @@ def run_mamba_split_conv1d_scan_combined_gpu[
         outproj_weight_gpu_lt,
         outproj_bias_gpu_lt,
         output_gpu_gpu_lt,
-        epsilon,
+        epsilon.cast[dtype](),
         grid_dim=(num_blocks,),
         block_dim=(BLOCK_SIZE,),
     )

@@ -71,8 +71,8 @@ def run_rms_norm_fused_residual_add_gpu[
     var result_unfused_buf = result_unfused_h
     var unfused_intermediate_buf = unfused_intermediate_h
     var residual_fused_output_buf = residual_fused_output_h
-    var epsilon1 = Scalar[dtype](0.001)
-    var epsilon2 = Scalar[dtype](0.002)
+    var epsilon1 = Float32(0.001)
+    var epsilon2 = Float32(0.002)
     var weight_offset1 = Scalar[dtype](0.0)
     var weight_offset2 = Scalar[dtype](0.0)
 

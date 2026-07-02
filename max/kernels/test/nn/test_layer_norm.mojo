@@ -47,7 +47,7 @@ def run_layer_norm_cpu[
     var output_buf = TileTensor(output_ptr, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_ptr, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_ptr, row_major(Coord(param_shape)))
-    var epsilon = Scalar[dtype](0.0001)
+    var epsilon = Float32(0.0001)
 
     @__copy_capture(input_buf)
     @always_inline
@@ -89,7 +89,7 @@ def run_layer_norm_cpu[
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = rsqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon.cast[dtype]())
         var idx = r * cols + c
         var val = ((input_ptr[idx] - mean_ref) * norm_factor_ref) * gamma_ptr[
             c

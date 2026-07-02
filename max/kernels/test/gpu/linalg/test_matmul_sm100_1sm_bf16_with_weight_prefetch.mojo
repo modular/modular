@@ -261,7 +261,7 @@ def test_rmsnorm_then_matmul[
     ctx.enqueue_copy(b_device, b_host_ptr)
     ctx.enqueue_copy(gamma_device, gamma_host_ptr)
 
-    var epsilon = Scalar[a_type](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[a_type](0.0)
     var norm_shape = Index(M, K)
 

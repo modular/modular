@@ -24,7 +24,7 @@ from std.utils.index import Index, IndexList
 
 def compute_rms[
     dtype: DType
-](data: TileTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[dtype]:
+](data: TileTensor[dtype, ...], size: Int, eps: Float32) -> Scalar[dtype]:
     comptime assert data.flat_rank == 1, "data.rank must be 1"
     comptime assert data.element_size == 1
 
@@ -69,7 +69,7 @@ def run_rms_norm_gpu[
 
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[dtype](0.0)
 
     ctx.enqueue_copy(data_d, data_h)

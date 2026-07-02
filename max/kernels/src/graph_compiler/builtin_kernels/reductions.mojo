@@ -335,7 +335,7 @@ struct ApplyQKRMSNorm:
         qk_var: InputTensor[dtype=DType.float32, rank=2, ...],
         gamma_q: InputTensor[dtype=DType.float32, rank=1, ...],
         gamma_k: InputTensor[dtype=DType.float32, rank=1, ...],
-        epsilon: Scalar[DType.float32],
+        epsilon: Float32,
         ctx: DeviceContext,
     ) capturing raises:
         comptime assert q.dtype == k.dtype, "q and k must share a dtype"
@@ -593,7 +593,7 @@ struct LayerNorm:
         input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         gamma: FusedInputTensor[dtype=dtype, rank=1, ...],
         beta: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
+        epsilon: Float32,
         ctx: DeviceContext,
     ) capturing raises:
         if output.shape() != input.shape():
@@ -644,7 +644,7 @@ def reduce_layer_norm_shape[
     input: InputTensor[dtype=dtype, rank=rank, ...],
     gamma: InputTensor[dtype=dtype, rank=1, ...],
     beta: InputTensor[dtype=dtype, rank=1, ...],
-    epsilon: Scalar[dtype=dtype],
+    epsilon: Float32,
 ) -> IndexList[rank]:
     return input.shape()
 
@@ -661,7 +661,7 @@ struct ReduceRMSNorm:
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
+        epsilon: Float32,
         weight_offset: Scalar[dtype=dtype],
         ctx: DeviceContext,
     ) capturing raises:
@@ -715,7 +715,7 @@ def reduce_rms_norm_shape[
 ](
     input: InputTensor[dtype=dtype, rank=rank, ...],
     gamma: InputTensor[dtype=dtype, rank=1, ...],
-    epsilon: Scalar[dtype=dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype=dtype],
 ) -> IndexList[rank]:
     return input.shape()
@@ -742,7 +742,7 @@ struct ReduceRMSNormRoPE:
         output: FusedOutputTensor[dtype=output_dtype, rank=rank, ...],
         input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         weight: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
+        epsilon: Float32,
         weight_offset: Scalar[dtype=dtype],
         cos_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
         sin_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
@@ -813,7 +813,7 @@ def composite_rms_norm_rope_shape[
 ](
     input: InputTensor[dtype=dtype, rank=rank, ...],
     weight: InputTensor[dtype=dtype, rank=1, ...],
-    epsilon: Scalar[dtype=dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype=dtype],
     cos_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
     sin_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
@@ -833,7 +833,7 @@ struct ReduceGroupNorm:
         input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         gamma: FusedInputTensor[dtype=dtype, rank=1, ...],
         beta: FusedInputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
+        epsilon: Float32,
         num_groups: Int32,
         ctx: DeviceContext,
     ) capturing raises:
@@ -873,7 +873,7 @@ def reduce_group_norm_shape[
     input: InputTensor[dtype=dtype, rank=rank, ...],
     gamma: InputTensor[dtype=dtype, rank=1, ...],
     beta: InputTensor[dtype=dtype, rank=1, ...],
-    epsilon: Scalar[dtype=dtype],
+    epsilon: Float32,
     num_groups: Int32,
 ) -> IndexList[rank]:
     return input.shape()
@@ -1014,8 +1014,8 @@ struct ReduceRMSNormFusedResidualAdd:
         residual_input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         gamma1: InputTensor[dtype=dtype, rank=1, ...],
         gamma2: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon1: Scalar[dtype=dtype],
-        epsilon2: Scalar[dtype=dtype],
+        epsilon1: Float32,
+        epsilon2: Float32,
         weight_offset1: Scalar[dtype=dtype],
         weight_offset2: Scalar[dtype=dtype],
         ctx: DeviceContext,
@@ -1094,8 +1094,8 @@ def composite_rms_norm_fused_residual_add_shape[
     residual_input: InputTensor[dtype=dtype, rank=rank, ...],
     gamma1: InputTensor[dtype=dtype, rank=1, ...],
     gamma2: InputTensor[dtype=dtype, rank=1, ...],
-    epsilon1: Scalar[dtype=dtype],
-    epsilon2: Scalar[dtype=dtype],
+    epsilon1: Float32,
+    epsilon2: Float32,
     weight_offset1: Scalar[dtype=dtype],
     weight_offset2: Scalar[dtype=dtype],
 ) -> IndexList[rank]:

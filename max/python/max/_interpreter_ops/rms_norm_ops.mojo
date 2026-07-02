@@ -65,7 +65,7 @@ def _rms_norm_cpu[
     gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_dim: Int,
     feature_dim: Int,
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     multiply_before_cast: Bool,
 ) where dtype.is_floating_point():
@@ -98,7 +98,9 @@ def _rms_norm_cpu[
         for i in range(feature_dim):
             var val = in_ptr[offset + i]
             sum_sq += val * val
-        var rms = sqrt(sum_sq / Scalar[dtype](feature_dim) + epsilon)
+        var rms = sqrt(
+            sum_sq / Scalar[dtype](feature_dim) + epsilon.cast[dtype]()
+        )
 
         # Pass 2: normalize
         var inv_rms = Scalar[dtype](1) / rms
@@ -117,7 +119,7 @@ def rms_norm_op[
     gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[2],
     gamma_shape: IndexList[1],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
@@ -257,7 +259,7 @@ def _dispatch_rms_norm[
         _get_buffer_ptr[dtype](gamma_buffer),
         normalized_shape,
         gamma_shape,
-        _get_buffer_ptr[dtype](epsilon_buffer)[0],
+        _get_buffer_ptr[DType.float32](epsilon_buffer)[0],
         _get_buffer_ptr[dtype](weight_offset_buffer)[0],
         ctx,
     )
@@ -274,8 +276,8 @@ def rms_norm_dispatcher(
     """RMS normalization dispatcher with dtype and multiply_before_cast dispatch.
 
     Normalizes the input to rank-2 [batch, feature_dim] and dispatches by dtype.
-    Epsilon and weight_offset are scalar tensors on CPU with the same dtype as
-    input.
+    Epsilon is a float32 scalar tensor on CPU; weight_offset is a scalar
+    tensor on CPU with the same dtype as input.
 
     Args:
         out_buffer: Output buffer.

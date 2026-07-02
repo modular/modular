@@ -158,11 +158,12 @@ def test_dynamic[
         # Gamma values between 0.5 and 1.5 to create variety after normalization
         gamma_host[i] = Scalar[in_dtype](0.5 + Float64((i % 11)) * 0.1)
 
-    # Cast epsilon and weight_offset to in_dtype (matching kernel signature),
-    # then back to Float32 so reference and kernel see the same values.
-    var epsilon_id = Scalar[in_dtype](1e-5)
+    # epsilon is Float32 (the kernel signature), so the reference and kernel
+    # both consume it directly. weight_offset is cast to in_dtype (matching its
+    # kernel signature) and back to Float32 so reference and kernel see the
+    # same value.
+    var epsilon = Float32(1e-5)
     var weight_offset_id = Scalar[in_dtype](weight_offset)
-    var epsilon_f32 = epsilon_id.cast[DType.float32]()
     var weight_offset_f32 = weight_offset_id.cast[DType.float32]()
 
     # Compute reference
@@ -173,7 +174,7 @@ def test_dynamic[
         expected_scales_host.unsafe_ptr(),
         rows,
         cols,
-        epsilon_f32,
+        epsilon,
         weight_offset_f32,
         scale_ub,
     )
@@ -222,7 +223,7 @@ def test_dynamic[
         shape,
         out_tile,
         gamma_tensor,
-        epsilon_id,
+        epsilon,
         weight_offset_id,
         ctx,
         scale_ub,

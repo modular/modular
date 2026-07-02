@@ -261,7 +261,7 @@ def run_ssd_combined_gpu[
     )
     var gamma_gpu_lt = TileTensor(gamma_gpu, row_major(dim))
 
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[dtype](0.0)
 
     # Run CPU kernel with host tensors
@@ -300,7 +300,7 @@ def run_ssd_combined_gpu[
         z_cpu_lt,
         delta_bias_cpu_lt,
         gamma_cpu_lt,
-        epsilon,
+        epsilon.cast[dtype](),
         weight_offset,
     )
 
@@ -352,7 +352,7 @@ def run_ssd_combined_gpu[
         z_gpu_lt,
         delta_bias_gpu_lt,
         gamma_gpu_lt,
-        epsilon,
+        epsilon.cast[dtype](),
         weight_offset,
         grid_dim=(num_blocks,),
         block_dim=(BLOCK_SIZE,),

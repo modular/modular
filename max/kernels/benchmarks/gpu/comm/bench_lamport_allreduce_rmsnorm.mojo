@@ -77,7 +77,7 @@ def _run_rms_norm[
     gamma_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     M: Int,
     K: Int,
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     ctx: DeviceContext,
 ) raises:
     var shape = Index(M, K)
@@ -178,7 +178,7 @@ def _verify_results[
         ),
         num_rows,
         num_cols,
-        epsilon,
+        epsilon.cast[DType.float32](),
         ctx0,
     )
     ctx0.synchronize()
@@ -466,7 +466,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
                 ),
                 num_rows,
                 num_cols,
-                epsilon,
+                epsilon.cast[DType.float32](),
                 ctx_inner,
             )
 

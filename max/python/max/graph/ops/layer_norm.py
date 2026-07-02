@@ -13,6 +13,7 @@
 """Op implementation for layer_norm."""
 
 from max._core.dialects import kgen, mo
+from max.dtype import DType
 
 from .. import dtype_promotion
 from ..dim import StaticDim
@@ -113,6 +114,6 @@ def layer_norm(
         input,
         gamma,
         beta,
-        constant(epsilon, input.dtype, DeviceRef.CPU()),
+        constant(epsilon, DType.float32, DeviceRef.CPU()),
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor

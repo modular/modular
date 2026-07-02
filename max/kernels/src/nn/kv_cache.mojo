@@ -960,7 +960,7 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
     k_cache: cache_t,
     q_gamma: TileTensor[dtype, q_gamma_layout, q_gamma_origin],
     k_gamma: TileTensor[dtype, k_gamma_layout, k_gamma_origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[DType.uint32, offsets_layout, offsets_origin],
@@ -976,7 +976,6 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
     ), "input_row_offsets must be rank 1"
 
     comptime accum_type = get_accum_type[dtype]()
-    var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     var tid = thread_idx.x
@@ -1027,7 +1026,7 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
         idx,
         vec_data,
         gamma_val,
-        eps_accum,
+        epsilon,
         weight_offset_accum,
         num_cols,
     )
@@ -1072,7 +1071,7 @@ def fused_qk_rms_norm_ragged_paged[
     ],
     q_gamma: TileTensor[mut=False, dtype, ...],
     k_gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
@@ -1226,7 +1225,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     q_gamma: TileTensor[dtype, q_gamma_layout, q_gamma_origin],
     k_gamma: TileTensor[dtype, k_gamma_layout, k_gamma_origin],
     freqs_cis: TileTensor[freq_dtype, freqs_layout, freqs_origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[DType.uint32, offsets_layout, offsets_origin],
@@ -1243,7 +1242,6 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     ), "input_row_offsets must be rank 1"
 
     comptime accum_type = get_accum_type[dtype]()
-    var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     comptime head_dim = q_gamma.static_shape[0]
@@ -1297,7 +1295,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
         idx,
         vec_data,
         gamma_val,
-        eps_accum,
+        epsilon,
         weight_offset_accum,
         num_cols,
     )
@@ -1434,7 +1432,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
     q_gamma: TileTensor[mut=False, dtype, ...],
     k_gamma: TileTensor[mut=False, dtype, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
@@ -1607,7 +1605,7 @@ def rms_norm_kv_cache_ragged_paged[
         ...,
     ],
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
@@ -1799,7 +1797,7 @@ def rms_norm_value_cache_ragged_paged[
         ...,
     ],
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,

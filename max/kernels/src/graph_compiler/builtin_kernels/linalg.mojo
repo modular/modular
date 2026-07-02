@@ -113,7 +113,7 @@ struct MatmulFusedPartialRMSNorm:
         input: InputTensor[dtype=dtype, rank=rank, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
+        epsilon: Float32,
         weight_offset: Scalar[dtype=dtype],
         ctx: DeviceContext,
     ) capturing raises:
@@ -151,7 +151,7 @@ def composite_matmul_fused_partial_rms_norm_shape[
     input: InputTensor[dtype=dtype, rank=rank, ...],
     weight: InputTensor[dtype=dtype, rank=2, ...],
     gamma: InputTensor[dtype=dtype, rank=1, ...],
-    epsilon: Scalar[dtype=dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype=dtype],
 ) -> IndexList[rank]:
     # Return the input shape for normed output

@@ -66,7 +66,7 @@ def _host_reference[
     unnormed_ref: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     n: Int,
     n_normed: Int,
-    eps: Scalar[a_type],
+    eps: Float32,
 ):
     """Reference partial RMS norm on a [1, n] row, computed in f64."""
     var n_unnormed = n - n_normed
@@ -191,7 +191,7 @@ def main() raises:
         var a_iter0 = TileTensor(cb_a.offset_ptr(0), a_shape)
         var b_iter0 = TileTensor(cb_b.offset_ptr(0), b_shape)
 
-        var eps = Scalar[a_type](0.001)
+        var eps = Float32(0.001)
 
         # Kernel-internal scratch: reused across iters by design.
         var counter_buf = ctx.enqueue_create_buffer[DType.int32](1)
