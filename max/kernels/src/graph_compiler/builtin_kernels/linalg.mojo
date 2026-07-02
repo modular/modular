@@ -17,7 +17,11 @@
 # ===-----------------------------------------------------------------------===#
 
 from std.collections import OptionalReg
-from std.sys.info import simd_width_of, _accelerator_arch
+from std.sys.info import (
+    simd_width_of,
+    _accelerator_arch,
+    has_apple_gpu_accelerator,
+)
 import extensibility as compiler
 
 # ===-----------------------------------------------------------------------===#
@@ -40,6 +44,7 @@ from linalg.matmul.gpu.amd import (
     mxfp4_grouped_matmul_amd_preb,
 )
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
+from linalg.matmul.gpu.apple.fp4_matmul import enqueue_apple_fp4_matmul
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
@@ -1000,6 +1005,49 @@ struct Struct_matmul_mxfp4_dequant_fp8:
         ), "MXFP4 matmul scales must be float8_e8m0fnu"
 
         mxfp4_matmul_sm90(
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@compiler.register("mo.matmul.weight.only.block.scaled.apple")
+struct Struct_matmul_weight_only_block_scaled_apple:
+    """Apple M5 weight-only NVFP4 (W4A16) matmul: `out = a @ dequant(b)^T`.
+
+    Unlike `mo.matmul.dynamic.block.scaled` (the NVIDIA SM100 path), the
+    activation `a` stays in bf16 (NOT dynamically quantized to FP4) and the
+    weight block scales are PLAIN rank-2 `[N, K // 16]` (NOT the SM100 rank-5
+    TCGEN05 interleave). The FP4 weight is dequantized to bf16 in-register at
+    the MMA loader seam (`enqueue_apple_fp4_matmul`); weights stay packed in
+    DRAM. The NVFP4 per-tensor `weight_scale_2` scalar is applied at the graph
+    level by the caller (a post-matmul multiply), so it is NOT an input here.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        b_scales: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "Apple weight-only block-scaled matmul only supports GPUs"
+        comptime assert has_apple_gpu_accelerator(), (
+            "mo.matmul.weight.only.block.scaled.apple requires an Apple"
+            " (Metal) GPU accelerator"
+        )
+
+        enqueue_apple_fp4_matmul[c_type=c_type](
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),

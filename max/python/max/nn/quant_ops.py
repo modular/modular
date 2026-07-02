@@ -15,11 +15,13 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
 from .kernels import (
+    _apple_weight_only_block_scaled_matmul,
     _fused_qkv_index_ragged_matmul_scaled_mxfp8,
     _fused_qkv_ragged_matmul_scaled_float4,
     _fused_qkv_ragged_matmul_scaled_float8,
     _fused_qkv_ragged_matmul_scaled_mxfp8,
     _grouped_matmul_rowwise_dynamic_scaled_fp8,
+    _is_apple_gpu,
     block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
     dynamic_block_scaled_matmul,
@@ -93,6 +95,43 @@ def _matmul_float4(
     Returns:
         The output tensor in bf16.
     """
+    if _is_apple_gpu():
+        # Apple M5 weight-only (W4A16) path: keep the activation in bf16 (do
+        # NOT dynamically quantize it to FP4) and feed the weight's PLAIN
+        # rank-2 ``[N, K // 16]`` block scales straight to the kernel (no
+        # rank-5 TCGEN05 interleave). The FP4 weight is dequantized to bf16
+        # in-register at the MMA loader seam. The kernel applies only the
+        # per-16-element block scale, so the NVFP4 per-tensor ``weight_scale_2``
+        # is folded in here as a post-matmul scalar multiply. (``input_scale``
+        # cancels: the SM100 path scales x by ``1/input_scale`` then folds
+        # ``input_scale`` back into the epilogue alpha; with bf16 activations
+        # neither step happens, so the only surviving global factor is
+        # ``weight_scale_2``.)
+        weight_scale = weight_scale.to(x.device)
+        if scales_pre_interleaved:
+            # Pre-interleaved checkpoints store rank-2 scales flattened from
+            # the SM100 5D layout, which Apple's rank-2 [N, K//16] consumer
+            # cannot read directly. The FLUX.2 adapter deinterleaves to true
+            # rank-2 at load (scales_pre_interleaved=False), so this is not hit
+            # on the supported path.
+            raise NotImplementedError(
+                "Apple W4A16 path requires deinterleaved rank-2 weight scales "
+                "(scales_pre_interleaved=False)"
+            )
+        res = _apple_weight_only_block_scaled_matmul(
+            x,
+            weight,
+            weight_scale,
+            out_type=DType.bfloat16,
+        )
+        # Fold the NVFP4 per-tensor scale (the kernel applies block scales
+        # only). Do the multiply in f32 for precision, then cast the product to
+        # bf16 -- folding a bf16-rounded scale would lose mantissa bits before
+        # the multiply.
+        return (res.cast(DType.float32) * weight_scale_2.to(res.device)).cast(
+            DType.bfloat16
+        )
+
     x, x_scales = quantize_dynamic_block_scaled(
         x,
         tensor_sf=1.0 / input_scale,

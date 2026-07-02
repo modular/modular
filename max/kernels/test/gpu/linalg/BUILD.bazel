@@ -22,6 +22,10 @@ _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS = [
 _EXTRA_CONSTRAINTS = {
     "test_amd_matmul_asm.mojo": ["//:amd_gpu"],
     "test_apple_gpu_matmul.mojo": ["//:apple_gpu"],
+    # Apple M5 W4A16 (NVFP4) — covers all three dispatch paths (fused in-register
+    # B-loader, materialize->dense, and the matmul2d 16x32x16 deep-K path). Apple
+    # M5 only (Metal 4 / AIR 2.8); the generic glob loop generates the mojo_test.
+    "test_apple_fp4_matmul.mojo": ["//:apple_gpu"],
     "test_async_copy_wgmma.mojo": ["//:h100_gpu"],
     "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_gemm_kernel_new.mojo": ["//:nvidia_gpu"],  # Requires 32-thread warps
