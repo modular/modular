@@ -45,6 +45,9 @@ bool LIT::isVariadicOfMetaType(Type type) {
 }
 
 bool LIT::isFirstLevelTypeExpr(TypedAttr typeExpr) {
+  if (!typeExpr)
+    return false;
+
   auto type = SugarAttr::strip(typeExpr.getType());
   if (auto param = dyn_cast<ParamType>(type)) {
     return sugarIsa<StructMetaMetaType, AnyTraitType,

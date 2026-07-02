@@ -30,6 +30,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "llvm/ADT/SetOperations.h"
 
 using namespace M;
 using namespace KGEN;
@@ -1123,6 +1124,90 @@ void LIT::canonicalizeTraitCompositionSymbols(
       });
 
   sortAndDeduplicateSymbols(symbols);
+}
+
+SmallVector<ConstraintAttr> LIT::canonicalizeTraitSymbolsAndConstraints(
+    SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols,
+    const DenseMap<SymbolRefAttr, ConstraintAttr> &constraintMap) {
+
+  // Canonicalize the symbols first.
+  canonicalizeTraitCompositionSymbols(shared, symbols);
+  if (constraintMap.empty())
+    return {};
+
+  // fill in the missing constraints if we have an non-empty map.
+  SmallVector<ConstraintAttr> constraints;
+  constraints.reserve(symbols.size());
+  for (SymbolRefAttr symbol : symbols) {
+    if (auto it = constraintMap.find(symbol); it != constraintMap.end()) {
+      constraints.push_back(it->second);
+    } else {
+      // FIXME(MOCO-4250): `True` is wrong, should be inherited from parents.
+      constraints.push_back(getUnconditionalConstraint(shared.getContext()));
+    }
+  }
+  return constraints;
+}
+
+Type LIT::mergeTwoMetaTypeBounds(SharedState &shared, ASTType typeA,
+                                 ASTType typeB) {
+  if (typeA.isEqualCanon(typeB))
+    return typeA;
+
+  auto extractTraitBound = [&](ASTType type) -> TraitType {
+    if (auto anyTrait = dyn_cast<AnyTraitType>(type.extractMetaType()))
+      return anyTrait.getTraitType();
+
+    ASTDecl *decl = type.getDecl(shared);
+    auto structDecl = cast<StructDeclOp>(decl->getIfOperation());
+    return structDecl.getCanonicalTrait();
+  };
+
+  TraitType traitA = extractTraitBound(typeA);
+  TraitType traitB = extractTraitBound(typeB);
+  if (traitA == traitB)
+    return traitA;
+
+  llvm::SmallDenseSet<SymbolRefAttr> symbolsA(traitA.getSymbols().begin(),
+                                              traitA.getSymbols().end());
+  llvm::SmallDenseSet<SymbolRefAttr> symbolsB(traitB.getSymbols().begin(),
+                                              traitB.getSymbols().end());
+  llvm::set_intersect(symbolsA, symbolsB);
+
+  DenseMap<SymbolRefAttr, ConstraintAttr> constraints;
+  if (!traitA.getConstraints().empty() || !traitB.getConstraints().empty()) {
+    auto findConstraint = [](TraitType trait, SymbolRefAttr symbol) {
+      auto it = llvm::find(trait.getSymbols(), symbol);
+      size_t idx = std::distance(trait.getSymbols().begin(), it);
+      return trait.getConstraints()[idx];
+    };
+
+    for (SymbolRefAttr commonTrait : symbolsA) {
+      // The original constraints for the common trait.
+      SmallVector<ConstraintAttr, 2> origCons;
+      if (!traitA.getConstraints().empty())
+        origCons.push_back(findConstraint(traitA, commonTrait));
+      if (!traitB.getConstraints().empty())
+        origCons.push_back(findConstraint(traitB, commonTrait));
+
+      assert(!origCons.empty());
+      // Conjunct the constraints.
+      TypedAttr prop = origCons.front().getProposition();
+      Location loc = origCons.front().getLoc();
+      if (constraints.size() == 2) {
+        ConstraintAttr consB = origCons.back();
+        prop = ParamOperatorAttr::get(POC::And, prop, consB.getProposition());
+        loc = FusedLoc::get(shared.getContext(), {loc, consB.getLoc()});
+      }
+      constraints[commonTrait] = ConstraintAttr::get(prop, loc);
+    }
+  }
+
+  SmallVector<SymbolRefAttr> symbols(symbolsA.begin(), symbolsA.end());
+  SmallVector<ConstraintAttr> mergedConstraints =
+      canonicalizeTraitSymbolsAndConstraints(shared, symbols, constraints);
+
+  return TraitType::get(shared.getContext(), symbols, mergedConstraints);
 }
 
 SmallVector<SymbolRefAttr>

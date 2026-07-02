@@ -3306,18 +3306,9 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   }
 
   // Build canonical trait with constraints for conditional conformance.
-  // TODO: When conditional conformance is extended to struct extensions,
-  // consider extracting this logic into a shared helper function.
-  canonicalizeTraitCompositionSymbols(shared, parentTraits);
-  SmallVector<ConstraintAttr> constraintsArray;
-  constraintsArray.reserve(parentTraits.size());
-  for (SymbolRefAttr symbol : parentTraits) {
-    auto it = traitConstraints.find(symbol);
-    if (it != traitConstraints.end())
-      constraintsArray.push_back(it->second);
-    else
-      constraintsArray.push_back(getUnconditionalConstraint(getContext()));
-  }
+  SmallVector<ConstraintAttr> constraintsArray =
+      canonicalizeTraitSymbolsAndConstraints(shared, parentTraits,
+                                             traitConstraints);
   structOp.setCanonicalTrait(
       TraitType::get(getContext(), parentTraits, constraintsArray));
 
