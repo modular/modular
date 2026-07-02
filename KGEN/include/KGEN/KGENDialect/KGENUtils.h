@@ -261,31 +261,6 @@ void printConformsToParamList(AsmPrinter &p, TypedAttr typeValue);
 /// scalar form or the canonical `param_list<!kgen.type>` storage form.
 ParseResult parseConformsToParamList(AsmParser &p, TypedAttr &typeValue);
 
-/// Normalize a single checked value (a scalar type value, or a `param_list` of
-/// type values) into the `param_list<!kgen.type>` operand stored by
-/// `TypeConformsToTraitAttr`. This is the single source of truth for the
-/// operand shape, shared by the attribute builders and the assembly parser.
-TypedAttr getConformsToCheckedParamList(TypedAttr checkedValue);
-/// Normalize a non-empty list of scalar type values into the
-/// `param_list<!kgen.type>` operand stored by `TypeConformsToTraitAttr`.
-TypedAttr getConformsToCheckedParamList(ArrayRef<TypedAttr> checkedValues);
-
-/// Fold a conjunction of per-element conformance results into a single
-/// proposition. For each element, \p evalElement returns one of:
-///   - `failure()`: the conjunction cannot be evaluated; propagated as failure.
-///   - a null `TypedAttr` (success): the "dependency blocked" skip sentinel,
-///     propagated so the caller retries later instead of collapsing the result.
-///   - a concrete proposition: a trivially-true element is dropped, a
-///     trivially-false element collapses the conjunction to `false`, and any
-///     other proposition is kept as an open conjunct.
-/// An empty \p elements list (or one whose elements are all trivially true)
-/// folds to `true`. A single retained conjunct folds to that conjunct, so a
-/// lone unresolved element returns an attribute equal to the original
-/// `conforms_to` proposition.
-FailureOr<TypedAttr> foldConformanceConjunction(
-    MLIRContext *ctx, ArrayRef<TypedAttr> elements,
-    llvm::function_ref<FailureOr<TypedAttr>(TypedAttr)> evalElement);
-
 /// Parse and print a witness entry which has syntactic form `name : type =
 /// value`.
 ParseResult parseWitnessEntry(AsmParser &p, StringAttr &name,

@@ -536,7 +536,7 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
   }];
 
   let assemblyFormat =
-    "`<` custom<ConformsToParamList>($typeValue) `,` custom<TypeParamValue>($traitType) `>`";
+    "`<` custom<TypeParamValue>($typeValue) `,` custom<TypeParamValue>($traitType) `>`";
 
   let parameters = (ins
     "TypedAttr":$typeValue,
@@ -548,7 +548,9 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
     /// param_list of type values — normalizing to the stored
     /// `param_list<!kgen.type>` representation.
     AttrBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
-                                        "TypedAttr":$traitType)>
+                                        "TypedAttr":$traitType), "", "TypedAttr">,
+    // Verbose form with MLIRContext, needed for ODS constructors.
+    AttrBuilder<(ins "TypedAttr":$typeValue, "TypedAttr":$traitType), "", "TypedAttr">
   ];
 
   let extraClassDeclaration = [{
@@ -568,6 +570,7 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
                                   ParameterEvaluator &evaluator) const;
   }];
 
+  let skipDefaultBuilders = 1;
   let genVerifyDecl = 1;
 }
 
@@ -1964,7 +1967,8 @@ def KGEN_EnvAttr : KGENAttr<"Env", "env"> {
 // associative operations are take arbitrary arity, also to make
 // canonicalization simpler.
 def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
-    ContextuallyEvaluatedAttrInterface,
+    DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                               ["evaluateWithContext"]>,
     DeclareAttrInterfaceMethods<ParameterAttrInterface,
                                 ["isLessThan", "validateForElaborator"]>
   ]> {

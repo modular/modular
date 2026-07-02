@@ -137,23 +137,7 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
     if (succeeded(result))
       return result;
 
-    auto concreteList = sugarDynCast<ParamListAttr>(conformsTo.getTypeValue());
-    auto traitSymbolsOr = conformsTo.getTraitSymbols();
-    if (!concreteList || !traitSymbolsOr)
-      return conformsTo.evaluateWithContext(*this);
-
-    return foldConformanceConjunction(
-        conformsTo.getContext(), concreteList.getValues(),
-        [&](TypedAttr element) -> FailureOr<TypedAttr> {
-          auto scalarConformsTo =
-              TypeConformsToTraitAttr::get(element, conformsTo.getTraitType());
-          FailureOr<TypedAttr> scalarResult =
-              simplifyConformsToAgainstTypeValue(scalarConformsTo,
-                                                 traitDeclResolver);
-          if (succeeded(scalarResult))
-            return scalarResult;
-          return scalarConformsTo.evaluateWithContext(*this);
-        });
+    return conformsTo.evaluateWithContext(*this);
   }
 
   // For now, only fold IsSubTraitAttr in parser context, un-foldable parametric

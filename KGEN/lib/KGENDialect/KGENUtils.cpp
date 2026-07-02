@@ -566,79 +566,6 @@ void KGEN::printColonTypeParamValue(AsmPrinter &p, TypedAttr value) {
   printParamValue(p, value);
 }
 
-TypedAttr
-KGEN::getConformsToCheckedParamList(ArrayRef<TypedAttr> checkedValues) {
-  MLIRContext *ctx = checkedValues.front().getContext();
-  auto paramListType = ParamListType::get(TypeType::get(ctx));
-  SmallVector<TypedAttr> elements;
-  elements.reserve(checkedValues.size());
-  for (TypedAttr checkedValue : checkedValues)
-    elements.push_back(UpcastAttr::get(TypeType::get(ctx), checkedValue));
-  return ParamListAttr::get(elements, paramListType);
-}
-
-TypedAttr KGEN::getConformsToCheckedParamList(TypedAttr checkedValue) {
-  MLIRContext *ctx = checkedValue.getContext();
-  if (isa<ParamListType>(checkedValue.getType()))
-    return UpcastAttr::get(ParamListType::get(TypeType::get(ctx)),
-                           checkedValue);
-  return getConformsToCheckedParamList(ArrayRef<TypedAttr>{checkedValue});
-}
-
-FailureOr<TypedAttr> KGEN::foldConformanceConjunction(
-    MLIRContext *ctx, ArrayRef<TypedAttr> elements,
-    llvm::function_ref<FailureOr<TypedAttr>(TypedAttr)> evalElement) {
-  SmallVector<TypedAttr> props;
-  for (TypedAttr element : elements) {
-    FailureOr<TypedAttr> result = evalElement(element);
-    if (failed(result))
-      return failure();
-    // A successful-but-null result is the "skip — dependency blocked" sentinel.
-    // Accumulated truths don't determine the conjunction, so propagate the skip
-    // rather than collapsing to false.
-    if (!*result)
-      return TypedAttr();
-
-    TypedAttr prop = getCanonicalAttr(*result);
-    if (isTriviallyFalseProposition(prop))
-      return {SIMDAttr::getScalarBool(ctx, false)};
-    if (!isTriviallyTrueProposition(prop))
-      props.push_back(prop);
-  }
-
-  if (props.empty())
-    return {SIMDAttr::getScalarBool(ctx, true)};
-  return {ParamOperatorAttr::get(POC::And, props)};
-}
-
-/// Strip the 1-element `ParamListAttr` literal + outer `Upcast` for a
-/// `TypeConformsToTraitAttr` operand, returning the underlying scalar when the
-/// singleton sugar applies. Returns the original operand otherwise.
-static TypedAttr peelConformsToSingleton(TypedAttr typeValue) {
-  if (auto list = sugarDynCast<ParamListAttr>(typeValue);
-      list && list.getValues().size() == 1)
-    return UpcastAttr::strip(list.getValues().front());
-  return typeValue;
-}
-
-void KGEN::printConformsToParamList(AsmPrinter &p, TypedAttr typeValue) {
-  p.printAttribute(peelConformsToSingleton(typeValue));
-}
-
-ParseResult KGEN::parseConformsToParamList(AsmParser &p, TypedAttr &typeValue) {
-  Attribute attr;
-  if (p.parseAttribute(attr))
-    return failure();
-
-  auto typedAttr = dyn_cast<TypedAttr>(attr);
-  if (!typedAttr)
-    return p.emitError(p.getCurrentLocation(),
-                       "expected a typed attribute operand");
-
-  typeValue = getConformsToCheckedParamList(typedAttr);
-  return success();
-}
-
 ParseResult KGEN::parseWitnessEntry(AsmParser &p, StringAttr &name,
                                     TypedAttr &method) {
   std::string nameStr;
@@ -1648,7 +1575,7 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
   }
 
   if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(value)) {
-    TypedAttr operand = peelConformsToSingleton(conformsTo.getTypeValue());
+    TypedAttr operand = conformsTo.getTypeValue();
     p << "conforms_to(:";
     printKGENType(p, operand.getType());
     p << ' ';

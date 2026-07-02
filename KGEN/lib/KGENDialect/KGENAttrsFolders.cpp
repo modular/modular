@@ -116,61 +116,76 @@ GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
 }
 
 //===----------------------------------------------------------------------===//
+// ParamOperatorAttr
+//===----------------------------------------------------------------------===//
+
+// FIXME(MOCO-4110): The reason why we need to extend
+// `ParamOperatorAttr::evaluateWithContext` here is because
+// `ContextuallyEvaluatedAttrInterface` is **NOT** always created with a
+// context. For things like `TypeConformsToTraitAttr` that canonicalizes to a
+// `ParamOperatorAttr` without a context, it then needs to be further evaluated
+// here.
+//
+// If we can make `EvalContext` mandatory for creating any
+// `ContextuallyEvaluatedAttrInterface`, we could then delete the code below. At
+// that time, every `ContextuallyEvaluatedAttrInterface` should be in
+// canonicalized + fully-evaluated form UPON CONSTRUCTION, which eliminates the
+// need for `evaluator.getReboundXXX`, and the attr evaluation can be
+// implemented in a much more local way.
+FailureOr<TypedAttr> ParamOperatorAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  bool changed = false;
+  SmallVector<TypedAttr> operands(getOperands());
+  for (auto [i, cur] : llvm::enumerate(operands)) {
+    if (auto ctxEval = sugarDynCast<ContextuallyEvaluatedAttrInterface>(cur)) {
+      FailureOr<TypedAttr> result = context.evaluateExpression(ctxEval);
+      if (failed(result)) {
+        operands[i] = cur;
+        continue;
+      }
+
+      TypedAttr evaluated = *result;
+      // Defer the entire evaluation
+      if (!evaluated)
+        return TypedAttr();
+
+      changed |= (operands[i] != evaluated);
+      operands[i] =
+          ParamOperatorAttr::getRebind(evaluated, operands[i].getType());
+    }
+  }
+  if (changed)
+    return ParamOperatorAttr::get(getOpcode(), operands, getType());
+
+  // Can not be further folded.
+  return failure();
+}
+
+//===----------------------------------------------------------------------===//
 // TypeConformsToTraitAttr
 //===----------------------------------------------------------------------===//
 
 FailureOr<TypedAttr> TypeConformsToTraitAttr::evaluateWithContext(
     ParameterEvaluationContext &context) const {
-  auto paramList = sugarDynCast<ParamListAttr>(getTypeValue());
-  if (!paramList)
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      context.resolveStructOp(getTypeValue(), /*acceptAsync=*/false);
+  if (failed(resolvedOr)) {
+    // In materialization contexts, failure to resolve means the type is not a
+    // struct (e.g. MLIR primitive types like `index`). Non-struct types don't
+    // conform to any traits, so return false.
+    if (context.isMaterializationContext())
+      return {SIMDAttr::getScalarBool(getContext(), false)};
     return failure();
+  }
 
-  // Evaluate each checked type independently and AND the results together.
-  // When a single element can't be resolved we return it as an open
-  // proposition; `foldConformanceConjunction` collapses a lone conjunct back to
-  // itself, so the 1-element case yields an attribute equal to `this` (i.e. the
-  // attribute is left unevaluated, matching the pre-pack `failure()` behavior),
-  // while multi-element packs simplify away the elements already proven.
-  return foldConformanceConjunction(
-      getContext(), paramList.getValues(),
-      [&](TypedAttr typeValue) -> FailureOr<TypedAttr> {
-        typeValue = UpcastAttr::strip(typeValue);
-        TypedAttr singletonConformsTo = cast<TypedAttr>(
-            TypeConformsToTraitAttr::get(typeValue, getTraitType()));
-
-        FailureOr<ResolvedStructHandle> resolvedOr =
-            context.resolveStructOp(typeValue, /*acceptAsync=*/false);
-        if (failed(resolvedOr)) {
-          // In materialization contexts, failure to resolve means the type is
-          // not a struct (e.g. MLIR primitive types like `index`). Non-struct
-          // types don't conform to any traits, so the element is false.
-          if (context.isMaterializationContext())
-            return {SIMDAttr::getScalarBool(getContext(), false)};
-          // Otherwise defer the element as an open proposition.
-          return singletonConformsTo;
-        }
-
-        ResolvedStructHandle resolved = *resolvedOr;
-        FailureOr<TypedAttr> result = failure();
-        // `simplify` only consults `getTraitSymbols()`; per-element
-        // specialization flows in through the `withEvaluator` binding below
-        // (the trait's conformance constraint is rewritten against *this*
-        // element's struct params). `simplify` must remain pack-oblivious for
-        // this per-element loop to be correct — adding a pack-aware filter
-        // inside `simplify` would double-specialize against the wrong element.
-        context.withEvaluator(
-            resolved.decl.getInputParams(), resolved.paramValues,
-            [&](ParameterEvaluator &evaluator) {
-              result = simplify(SymbolTable(resolved.decl.getOperation()),
-                                evaluator);
-            });
-        // A failed simplify defers the element as an open proposition; a
-        // null/concrete result (skip sentinel, true, false, or residual prop)
-        // flows straight to the conjunction folder.
-        if (failed(result))
-          return singletonConformsTo;
-        return result;
+  ResolvedStructHandle resolved = *resolvedOr;
+  FailureOr<TypedAttr> result = failure();
+  context.withEvaluator(
+      resolved.decl.getInputParams(), resolved.paramValues,
+      [&](ParameterEvaluator &evaluator) {
+        result = simplify(SymbolTable(resolved.decl.getOperation()), evaluator);
       });
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
