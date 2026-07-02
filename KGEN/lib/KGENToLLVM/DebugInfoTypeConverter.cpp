@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGENToLLVM/Target/TargetLowering.h"
 #include "LLVMLoweringUtils.h"
 #include "mlir/Support/DebugStringHelper.h"
 
@@ -25,9 +26,9 @@ using namespace DebugInfo;
 /// applicable.
 static std::string getKGENDTypeAsString(TargetInfoAttr targetInfo,
                                         KGENDType dtype) {
-  if (targetInfo.getTriple().isNVPTX())
-    if (std::optional<std::string> name =
-            DebugInfoEncoding::getKGENDTypeAsCppString(dtype))
+  if (const TargetLowering *lowering =
+          TargetLoweringRegistry::get().lookup(targetInfo.getTriple()))
+    if (std::optional<std::string> name = lowering->getDTypeDebugName(dtype))
       return *name;
   return DebugInfoEncoding::getKGENDTypeAsString(dtype);
 }
@@ -48,47 +49,15 @@ auto buildIntFpDebugType(MLIRContext *ctx, TargetInfoAttr targetInfo,
                 align);
 }
 
-/// Returns a target-specific conversion for the dtype if applicable. Otherwise
-/// returns null.
-static DIType buildTargetSpecificDebugTypeFromDType(MLIRContext *ctx,
-                                                    TargetInfoAttr targetInfo,
-                                                    uint8_t dtype,
-                                                    size_t indexWidth) {
-  if (targetInfo.getTriple().isNVPTX()) {
-    // cuda-gdb expects non-standard data types to be structure types with
-    // special names. e.g.
-    // https://docs.nvidia.com/cuda/cuda-math-api/struct____nv__bfloat16.html
-    if (llvm::is_contained(
-            {DType::f8e5m2, DType::f8e4m3fn, DType::bf16, DType::f16}, dtype)) {
-      StringRef name;
-      if (dtype == DType::f8e5m2)
-        name = "__nv_fp8_e5m2";
-      else if (dtype == DType::f8e4m3fn)
-        name = "__nv_fp8_e4m3";
-      else if (dtype == DType::bf16)
-        name = "__nv_bfloat16";
-      else
-        name = "__half";
-      unsigned width = DType(dtype).getWidthInBits();
-      DType storageDType = *DType::getInt(width, /*isSigned=*/false);
-      // The structure contains a single `__x` field.
-      auto baseType = buildIntFpDebugType<DIBasicUIntType>(
-          ctx, targetInfo, storageDType.getValue(), width, width);
-      auto memberType = DIMemberType::get("__x", baseType);
-      return DIStructType::get(StringAttr::get(ctx, name), {memberType});
-    }
-  }
-
-  return {};
-}
-
 static DIType buildDebugTypeFromDType(MLIRContext *ctx,
                                       TargetInfoAttr targetInfo, uint8_t dtype,
                                       size_t indexWidth) {
-  // Check if the target implements specialized conversions for this dtype.
-  if (DIType specializedResult = buildTargetSpecificDebugTypeFromDType(
-          ctx, targetInfo, dtype, indexWidth))
-    return specializedResult;
+  // Check if the target implements a specialized debug type for this dtype.
+  if (const TargetLowering *lowering =
+          TargetLoweringRegistry::get().lookup(targetInfo.getTriple()))
+    if (DIType specializedResult =
+            lowering->buildDebugTypeForDType(ctx, KGENDType(dtype)))
+      return specializedResult;
 
   // Process various builtin dtypes.
   switch (dtype) {

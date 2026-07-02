@@ -25,6 +25,7 @@
 #include "llvm/ADT/StringRef.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -36,11 +37,16 @@ struct object_creator;
 
 namespace mlir {
 class LLVMTypeConverter;
+class MLIRContext;
 class NamedAttrList;
 class Operation;
 class RewritePatternSet;
 class SymbolTable;
 } // namespace mlir
+
+namespace M::DebugInfo {
+class DIType;
+} // namespace M::DebugInfo
 
 namespace M::KGEN {
 
@@ -175,6 +181,19 @@ public:
                                       TargetInfoAttr target) const {
     return false;
   }
+
+  /// Returns a target-specific spelling of `dtype`'s name for debug info, or
+  /// nullopt to use the generic encoding (e.g. a target's debugger may expect
+  /// language-specific type names). The default has no preference.
+  virtual std::optional<std::string> getDTypeDebugName(KGENDType dtype) const {
+    return std::nullopt;
+  }
+
+  /// Returns a target-specific debug type for `dtype`, or a null type to use
+  /// the generic encoding (e.g. a target's debugger may expect certain dtypes
+  /// as specially-named struct types). The default returns a null type.
+  virtual DebugInfo::DIType buildDebugTypeForDType(mlir::MLIRContext *ctx,
+                                                   KGENDType dtype) const;
 };
 
 /// Registry of `TargetLowering`s, dispatched by triple. Lowering-stage
