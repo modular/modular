@@ -6,10 +6,19 @@
 
 #include "KGENToLLVM/Target/TargetLowering.h"
 
+#include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/TargetParser/Triple.h"
 
 namespace M::KGEN {
+
+// Default: no target-specific debug type. Defined out-of-line so the header
+// only needs a forward declaration of `DebugInfo::DIType`.
+DebugInfo::DIType
+TargetLowering::buildDebugTypeForDType(mlir::MLIRContext *ctx,
+                                       KGENDType dtype) const {
+  return {};
+}
 
 static llvm::ManagedStatic<TargetLoweringRegistry> theLoweringRegistry;
 
