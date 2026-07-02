@@ -359,51 +359,6 @@ struct ConvertPOPAbs : public ConvertPOPToLLVMPattern<AbsOp> {
       return success();
     }
 
-    // For NVPTX, lower certain floating-point abs to NVVM intrinsics
-    if ((dtype == DType::f16 || dtype == DType::bf16) &&
-        getTypeConverter()->getTarget().getTriple().isNVPTX()) {
-      unsigned size = *op.getType().getResolvedSize();
-      assert(llvm::isPowerOf2_32(size) && "Unexpected vector width");
-
-      StringRef nvvmIntr = "llvm.nvvm.fabs";
-      if (size == 1) {
-        rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-            op, type, rewriter.getStringAttr(nvvmIntr),
-            SmallVector<Value>{adaptor.getOperand()});
-        return success();
-      }
-
-      Location loc = op.getLoc();
-      SmallVector<Value> resultVals;
-
-      // Work down the vector, extracting consecutive two-element subvectors,
-      // calling the appropriate 'abs' intrinsic on them, and re-inserting them
-      // into the result vector.
-      auto res =
-          LLVM::PoisonOp::create(rewriter, op.getLoc(), type).getResult();
-      auto subvecTy =
-          VectorType::get(2, cast<VectorType>(type).getElementType());
-      for (unsigned i = 0; i < size; i += 2) {
-        auto idx = LLVM::ConstantOp::create(rewriter, loc,
-                                            rewriter.getIntegerType(64), i);
-        auto subvec = LLVM::CallIntrinsicOp::create(
-                          rewriter, loc, subvecTy,
-                          rewriter.getStringAttr("llvm.vector.extract"),
-                          {adaptor.getOperand(), idx})
-                          .getResult(0);
-        auto abs = LLVM::CallIntrinsicOp::create(
-                       rewriter, loc, subvecTy,
-                       rewriter.getStringAttr(nvvmIntr), {subvec})
-                       .getResult(0);
-        res = LLVM::CallIntrinsicOp::create(
-                  rewriter, loc, type,
-                  rewriter.getStringAttr("llvm.vector.insert"), {res, abs, idx})
-                  .getResult(0);
-      }
-      rewriter.replaceOp(op, res);
-      return success();
-    }
-
     // Else, just use the regular LLVM intrinsic
     rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
         op, type, rewriter.getStringAttr("llvm.fabs"),
@@ -680,36 +635,6 @@ private:
     return dtype.getSizeInBytes();
   }
 
-  LLVM::InlineAsmOp createInlineAsm(ConversionPatternRewriter &rewriter,
-                                    Location loc, StringRef asmStr,
-                                    StringRef asmConstraints, Type resultType,
-                                    SmallVector<Value> operands) const {
-    const auto asmDialectAttr = LLVM::AsmDialectAttr::get(
-        rewriter.getContext(), LLVM::AsmDialect::AD_ATT);
-    return LLVM::InlineAsmOp::create(
-        rewriter, loc, resultType,
-        /*operands=*/operands,
-        /*asm_string=*/asmStr,
-        /*constraints=*/asmConstraints, /*has_side_effects=*/false,
-        /*is_align_stack=*/false, LLVM::TailCallKind::None,
-        /*asm_dialect=*/asmDialectAttr,
-        /*operand_attrs=*/mlir::ArrayAttr());
-  }
-
-  /// Helper function to create a 32-bit signless constant.
-  template <typename intType>
-  Value createConstant(ConversionPatternRewriter &rewriter, Location loc,
-                       uint64_t value) const {
-    return LLVM::ConstantOp::create(
-        rewriter, loc, rewriter.getIntegerType(sizeof(intType) * 8), value);
-  }
-
-  Value createConstant(ConversionPatternRewriter &rewriter, Location loc,
-                       APFloat value) const {
-    return LLVM::ConstantOp::create(rewriter, loc, rewriter.getF32Type(),
-                                    value);
-  }
-
   Type getConvertedScalarType(SIMDType simd) const {
     return convertType(
         SIMDType::get(simd.getContext(), /*size=*/1, *simd.getResolvedDType()));
@@ -717,13 +642,6 @@ private:
 
   Type convertKGENDType(MLIRContext *ctx, KGENDType dtype) const {
     return getConvertedScalarType(SIMDType::get(ctx, /*size=*/1, dtype));
-  }
-
-  Value extractElement(ConversionPatternRewriter &rewriter, Location loc,
-                       Type resType, Value value, unsigned index) const {
-    return LLVM::ExtractElementOp::create(
-        rewriter, loc, resType, value,
-        createConstant<uint32_t>(rewriter, loc, index));
   }
 
   /// Fast conversion of f32 to bf16 on AMDGPU that is not supported by LLVM and
@@ -814,132 +732,6 @@ private:
     }
 
     rewriter.replaceOp(op, res);
-    return success();
-  }
-
-  /// Convert vector of FP32 type to vector of FP8 (F8E4M3FN or F8E5M2) on NVPTX
-  /// The conversion relies on NVPTX-specific instructions to perform the
-  /// conversion, therefore no need to rely on `fast` attribute on a `pop.cast`.
-  LogicalResult
-  convertF32ToF8OnNVPTX(ConversionPatternRewriter &rewriter, CastOp op,
-                        Value value, APFloat::Semantics fromFloatSemantics,
-                        APFloat::Semantics toFloatSemantics) const {
-    assert(isNVPTX_HopperAndAbove(getTypeConverter()->getTarget()) &&
-           "lowering of f32 to f8 is only supported on NVIDIA Hopper "
-           "architectures or above");
-    Location loc = op.getLoc();
-    auto simd = cast<SIMDType>(op.getInput().getType());
-    const uint64_t size = *simd.getResolvedSize();
-
-    Type f32Type = convertType(rewriter.getF32Type());
-    Type f8Type = convertType(op.getType());
-
-    StringRef asmStr =
-        toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN
-            ? "cvt.rn.satfinite.e4m3x2.f32"
-            : "cvt.rn.satfinite.e5m2x2.f32";
-
-    assert(llvm::isPowerOf2_64(size) && "SIMD size must be a power of 2");
-    if (size > 1) {
-      Value res = LLVM::UndefOp::create(
-          rewriter, op.getLoc(),
-          VectorType::get(size / 2, rewriter.getIntegerType(16)));
-      for (uint64_t i = 0; i < size; i += 2) {
-        Value firstFp = extractElement(rewriter, loc, f32Type, value, i + 1);
-        Value secondFp = extractElement(rewriter, loc, f32Type, value, i);
-        Value converted =
-            createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1, $2;",
-                            "=h,f,f", rewriter.getIntegerType(16),
-                            {firstFp, secondFp})
-                .getResult(0);
-        res = LLVM::InsertElementOp::create(
-            rewriter, loc, res, converted,
-            createConstant<uint32_t>(rewriter, loc, i / 2));
-      }
-
-      rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, f8Type, res);
-    } else {
-      Value converted =
-          createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1, $2;",
-                          "=h,f,f", rewriter.getIntegerType(16),
-                          {createConstant(rewriter, loc, APFloat(0.0f)), value})
-              .getResult(0);
-      rewriter.replaceOpWithNewOp<LLVM::TruncOp>(op, f8Type, converted);
-    }
-    return success();
-  }
-
-  /// Helper function to convert vector of F8 (F8E4M3FN or F8E5M2) to F16 on
-  /// NVPTX without replacing the operation
-  Value convertF8ToF16OnNVPTXHelper(ConversionPatternRewriter &rewriter,
-                                    CastOp op, Value value,
-                                    APFloat::Semantics fromFloatSemantics,
-                                    APFloat::Semantics toFloatSemantics) const {
-    assert(isNVPTX_HopperAndAbove(getTypeConverter()->getTarget()) &&
-           "lowering of f8 to f16 or f32 is only supported on NVIDIA Hopper "
-           "architectures or above");
-    Location loc = op.getLoc();
-    auto simd = cast<SIMDType>(op.getInput().getType());
-    const uint64_t size = *simd.getResolvedSize();
-
-    Type f16Type = Float16Type::get(rewriter.getContext());
-
-    StringRef asmStr =
-        fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN
-            ? "cvt.rn.f16x2.e4m3x2"
-            : "cvt.rn.f16x2.e5m2x2";
-
-    Type ui16Type = rewriter.getIntegerType(16);
-    assert(llvm::isPowerOf2_64(size) && "SIMD size must be a power of 2");
-    if (size > 1) {
-      // Bitcast the value to a vector of i16 as NVPTX instruction expects
-      // packed f8 as i16.
-      value = LLVM::BitcastOp::create(
-          rewriter, loc, VectorType::get(size / 2, ui16Type), value);
-      // Create a vector of I32 to hold the result of the conversion. At the end
-      // it will be bitcasted to f16
-      Value res = LLVM::UndefOp::create(
-          rewriter, op.getLoc(),
-          VectorType::get(size / 2, rewriter.getIntegerType(32)));
-      for (uint64_t i = 0, e = size / 2; i < e; ++i) {
-        Value converted =
-            createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1;", "=r,h",
-                            rewriter.getIntegerType(32),
-                            {extractElement(rewriter, loc, ui16Type, value, i)})
-                .getResult(0);
-        res = LLVM::InsertElementOp::create(
-            rewriter, loc, res, converted,
-            createConstant<uint32_t>(rewriter, loc, i));
-      }
-      return LLVM::BitcastOp::create(rewriter, loc,
-                                     VectorType::get(size, f16Type), res);
-    } else {
-      Type ui8Type = rewriter.getIntegerType(8);
-      Value ui16 = LLVM::ZExtOp::create(
-          rewriter, loc, ui16Type,
-          LLVM::BitcastOp::create(rewriter, loc, ui8Type, value));
-      Value converted =
-          createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1;", "=r,h",
-                          rewriter.getIntegerType(32), {ui16})
-              .getResult(0);
-      // At this point result contains two elements, while we're only interested
-      // in lower one.
-      converted = LLVM::TruncOp::create(rewriter, loc, ui16Type, converted);
-      return LLVM::BitcastOp::create(rewriter, loc, f16Type, converted);
-    }
-  }
-
-  /// Convert scalar or vector of FP8 (F8E4M3FN or F8E5M2) to a scalar or vector
-  /// of F16 on NVPTX. The conversion relies on NVPTX-specific instructions to
-  /// perform the conversion, therefore no need to rely on `fast` attribute on a
-  /// `pop.cast`.
-  LogicalResult
-  convertF8ToF16OnNVPTX(ConversionPatternRewriter &rewriter, CastOp op,
-                        Value value, APFloat::Semantics fromFloatSemantics,
-                        APFloat::Semantics toFloatSemantics) const {
-    rewriter.replaceOp(op, convertF8ToF16OnNVPTXHelper(rewriter, op, value,
-                                                       fromFloatSemantics,
-                                                       toFloatSemantics));
     return success();
   }
 
@@ -1283,11 +1075,6 @@ private:
       // NVPTX backend of getting SM version and expecting targeted GPU has at
       // least that version.
       if (simd) {
-        if (isNVPTX_HopperAndAbove(target)) {
-          return convertF32ToF8OnNVPTX(rewriter, cast, value,
-                                       fromFloatSemantics, toFloatSemantics);
-        }
-
         if (target.getTriple().isAMDGPU()) {
           return convertF32ToF8OnAMDGPU(rewriter, cast, value,
                                         fromFloatSemantics, toFloatSemantics);
@@ -1303,21 +1090,6 @@ private:
       if (simd && target.getTriple().isAMDGPU()) {
         return convertF32ToF8OnAMDGPU(rewriter, cast, value, fromFloatSemantics,
                                       toFloatSemantics);
-      }
-      return failure();
-    }
-
-    // Convert F8 (either e4m3fn or e5m2) to F16
-    if ((fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN ||
-         fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2) &&
-        toFloatSemantics == llvm::APFloat::Semantics::S_IEEEhalf) {
-      // This might not be ideal to check the targeted GPU by the name, but it's
-      // what stdlib does for now. Might be better to use approach similar to
-      // NVPTX backend of getting SM version and expecting targeted GPU has at
-      // least that version.
-      if (simd && isNVPTX_HopperAndAbove(target)) {
-        return convertF8ToF16OnNVPTX(rewriter, cast, value, fromFloatSemantics,
-                                     toFloatSemantics);
       }
       return failure();
     }
