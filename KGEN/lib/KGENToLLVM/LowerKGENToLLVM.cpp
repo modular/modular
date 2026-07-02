@@ -15,6 +15,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGENToLLVM/Target/TargetLowering.h"
 #include "LLVMLoweringUtils.h"
 #include "LowerKGENToLLVMRewriteCABIFns.h"
 #include "Support/Compiler/MLIRDType.h"
@@ -32,17 +33,10 @@
 #include "mlir/IR/Threading.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
-#include "llvm/Support/AMDGPUAddrSpace.h"
 
 using namespace M;
 using namespace KGEN;
 namespace LLVM = mlir::LLVM;
-
-// Defined by the Metal backend; declared here for now. Marks Metal kernel
-// entry functions so the backend can find them.
-namespace M::KGEN {
-extern const char *kMetalKernelAttr;
-} // namespace M::KGEN
 
 /// Get the LLVM linkage kind for an export kind.
 static LLVM::Linkage getLinkageKind(ExportKind exportKind) {
@@ -116,50 +110,6 @@ static ErrorOrSuccess addArrayAttrToDict(Builder builder, NamedAttrList &attrs,
   return Error("non-integral dtypes are not supported");
 }
 
-/// Helper function to get min and max values of a work group size attribute.
-template <typename AttrT>
-static ErrorOr<std::pair<int64_t, int64_t>>
-getWorkGroupSizeRangeHelper(AttrT attr) {
-  SmallVector<int64_t> values;
-  if constexpr (std::is_same_v<POP::ArrayAttr, AttrT>) {
-    if (attr.getValues().size() != 1 && attr.getValues().size() != 2)
-      return Error("ArrayAttr must contain exactly one or two values");
-
-    Attribute element = attr.getValues()[0];
-    values =
-        llvm::map_to_vector(attr.getValues(), [](Attribute attr) -> int64_t {
-          if (auto integerAttr = ::dyn_cast<IntegerAttr>(attr))
-            return static_cast<int64_t>(integerAttr.getInt());
-          return static_cast<int64_t>(::cast<KGEN::SIMDAttr>(attr)
-                                          .getValues()
-                                          .front()
-                                          .getIntVal()
-                                          .getSExtValue());
-        });
-  } else if constexpr (std::is_same_v<IntegerAttr, AttrT>) {
-    values.push_back(static_cast<int64_t>(attr.getInt()));
-  } else {
-    llvm_unreachable(
-        "must be either an ArrayAttr of 1 elementor an IntegerAttr");
-  }
-  if (values.size() == 1)
-    values.insert(values.begin(), 1);
-
-  return std::make_pair(values[0], values[1]);
-}
-
-static ErrorOr<std::pair<int64_t, int64_t>>
-getWorkGroupSizeRange(Attribute value) {
-  if (auto array = dyn_cast<POP::ArrayAttr>(value)) {
-    return getWorkGroupSizeRangeHelper(array);
-  }
-  if (auto integer = dyn_cast<IntegerAttr>(value)) {
-    return getWorkGroupSizeRangeHelper(integer);
-  }
-  return Error("attribute type must either be ArrayAttr of 1 or 2 elements or "
-               "IntegerAttr ");
-}
-
 //===----------------------------------------------------------------------===//
 // ConvertKGENFunc
 //===----------------------------------------------------------------------===//
@@ -171,23 +121,17 @@ struct AttributeIdentifiers {
 };
 } // namespace
 
-/// Return true if function requires byval or byref arguments to be set.
-/// For now this is only required for NVPTX and AMDGPU targets
+/// Return true if the function's borrowed pointer arguments must be passed by
+/// value, as determined by the target lowering (e.g. exported kernels on
+/// targets that require it).
 static bool functionRequiresByVal(LLVM::LLVMFuncOp func,
                                   TargetInfoAttr target) {
   if (func.getLinkage() != LLVM::Linkage::External)
     return false;
 
-  if (target.getTriple().isNVPTX() &&
-      func->hasAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName()))
-    return true;
-
-  if (target.getTriple().isAMDGPU() &&
-      func.getCConv() == mlir::LLVM::cconv::CConv::AMDGPU_KERNEL) {
-    // TODO: Need to check getKernelFuncAttrName() for AMDGPU ?
-    return true;
-  }
-  return false;
+  const TargetLowering *lowering =
+      TargetLoweringRegistry::get().lookup(target.getTriple());
+  return lowering && lowering->isExportedKernel(func);
 }
 
 /// Map `llvm.` attribute passed via `@__llvm_metadata` decorator to either
@@ -452,6 +396,8 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
   SmallVector<Attribute> passthrough =
       llvm::to_vector(func.getPassthroughAttr());
   Builder b(func.getContext());
+  const TargetLowering *lowering =
+      TargetLoweringRegistry::get().lookup(target.getTriple());
 
   for (const NamedAttribute &attr : metadata) {
     // Treat `llvm.*` metadata attributes as passthrough function attributes.
@@ -469,40 +415,17 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
           err.isError())
         return mlir::emitError(func.getLoc()) << err.takeError();
       continue;
-    } else if (isa<mlir::ROCDL::ROCDLDialect>(nameDialect)) {
-      // FIXME: Remove when integer conversion to StringAttr is done by the
-      // ROCDL -> LLVM IR
-      if (attr.getName() ==
-          mlir::ROCDL::ROCDLDialect::getFlatWorkGroupSizeAttrName()) {
-        auto valuesOr = getWorkGroupSizeRange(value);
-        if (valuesOr.isError())
-          return mlir::emitError(func.getLoc(), "unsupported `")
-                 << attr.getName() << "`: " << valuesOr.takeError();
-        std::pair<int64_t, int64_t> values = valuesOr.get();
-        std::string flatBufferStringValue =
-            std::to_string(values.first) + ", " + std::to_string(values.second);
-        attrs.append(attr.getName().strref(),
-                     b.getStringAttr(flatBufferStringValue));
-        continue;
-      }
-    } else if (isa<POP::POPDialect>(nameDialect)) {
-      if (attr.getName() == "pop.air.max_work_group_size") {
+    }
 
-        // Metal does not support min value for workgroup size, so
-        // min value other than 1 is ignored. Also record the
-        // `pop.air.max_work_group_size` attribute as a string attribute
-        // (removing `pop.` prefix) to allow passing it through to LLVM IR.
-        auto valuesOr = getWorkGroupSizeRange(value);
-        if (valuesOr.isError())
-          return mlir::emitError(func.getLoc(), "unsupported `")
-                 << attr.getName() << "`: " << valuesOr.takeError();
-        std::pair<int64_t, int64_t> values = valuesOr.get();
-        passthrough.push_back(
-            b.getArrayAttr({b.getStringAttr(attr.getName().strref().drop_front(
-                                StringRef("pop.").size())),
-                            b.getStringAttr(std::to_string(values.second))}));
+    // Target-dialect function metadata is translated by the target lowering;
+    // the annotation's dialect and the active target always correspond.
+    if (lowering) {
+      bool handled = false;
+      if (failed(lowering->mapFuncMetadata(func, attr, attrs, passthrough,
+                                           handled)))
+        return failure();
+      if (handled)
         continue;
-      }
     }
 
     // For anything else, forward them as function attributes.
@@ -535,21 +458,17 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
     }
   }
 
-  // Only GPU functions pass borrowed arguments by value.
+  // Some targets pass borrowed arguments by value for exported functions.
   bool needsByVal = functionRequiresByVal(func, target);
 
-  // Attach either `byval` or `byref` attribute to the function
-  auto addByValAttribute = [tc](NamedAttrList &attrs, Type type,
-                                LLVM::LLVMFuncOp func, TargetInfoAttr target) {
+  // Attach the by-value argument attribute per the target's argument-passing
+  // convention.
+  auto addByValAttribute = [tc, lowering](NamedAttrList &attrs, Type type,
+                                          LLVM::LLVMFuncOp func) {
+    assert(lowering && "by-val kernel args require a target lowering");
     MLIRContext *ctx = func.getContext();
-    llvm::Triple triple = target.getTriple();
-    assert((triple.isNVPTX() || triple.isAMDGPU()) &&
-           "expected either NVPTX or AMDGPU target");
     StringAttr byValAttr =
-        triple.isNVPTX()
-            ? StringAttr::get(ctx, LLVM::LLVMDialect::getByValAttrName())
-            : StringAttr::get(ctx, LLVM::LLVMDialect::getByRefAttrName());
-
+        StringAttr::get(ctx, lowering->getKernelByValArgAttrName());
     attrs.set(byValAttr, TypeAttr::get(tc->convertType(
                              cast<PointerType>(type).getElementType())));
   };
@@ -583,30 +502,13 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
                  << attr.getName() << '=' << value;
         }
 
-        if (isa<mlir::NVVM::NVVMDialect>(nameDialect)) {
-          // Only take action if target is NVPTX for nvvm annotations and
-          // no-op for other backends with this annotation.
-          // This is a quick hack to make mojo code with this annotation also
-          // work for other backends like AMDGPUs.
-          // TODO: build more general language mechanism to have this annotation
-          // parameterized with target at mojo level.
-          if (target.getTriple().isNVPTX()) {
-            if (attr.getName() ==
-                mlir::NVVM::NVVMDialect::getGridConstantAttrName()) {
-              list.set(attr.getName(), b.getUnitAttr());
-              // FIXME(MOCO-1342): Remove this, once we are able to
-              // explicitly pass alignment.
-              list.set(StringAttr::get(func->getContext(),
-                                       LLVM::LLVMDialect::getAlignAttrName()),
-                       IntegerAttr::get(b.getI32Type(), 64));
-            }
-          }
-
-          continue;
-        }
-
-        return mlir::emitError(func.getLoc(), "unsupported LLVM arg metadata: ")
-               << attr.getName();
+        // The target lowering applies the kernel-argument annotations it
+        // recognizes and drops the rest, so the same mojo code stays portable
+        // across backends.
+        // TODO: build a more general language mechanism to parameterize this
+        // annotation by target at the mojo level.
+        if (lowering)
+          lowering->mapKernelArgMetadata(func, attr, list);
       }
     }
 
@@ -619,7 +521,7 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
       [[fallthrough]];
     case ArgConvention::ReadMem:
       if (needsByVal)
-        addByValAttribute(list, type, func, target);
+        addByValAttribute(list, type, func);
       list.set(ids.nonnull, b.getUnitAttr());
       list.set(ids.noundef, b.getUnitAttr());
       break;
@@ -713,67 +615,6 @@ static bool isEmptyType(Type type) {
         return emptyType;
       })
       .Default([](Type /* default */) { return false; });
-}
-
-/// Promotes AMDGPU kernel `byref` args whose pointee is a struct from flat
-/// (addrspace 0) to the kernarg/constant address space (addrspace 4), and
-/// inserts an `addrspacecast` back to flat at the entry block so the body
-/// keeps operating on flat pointers.
-///
-/// This matches Clang's HIP/OpenCL lowering and lets
-/// `AMDGPUPromoteKernelArguments` + `InferAddressSpaces` recognize loads
-/// through the kernarg struct as kernarg-origin pointers, enabling
-/// `s_load_dwordx2` for the kernarg itself and `global_load_*` for
-/// downstream dereferences instead of falling back to flat memory ops.
-///
-/// Must run AFTER the KGEN→LLVM dialect conversion finishes — mutating
-/// block-arg types mid-conversion would race with the driver's recorded
-/// type mapping and surface as stray `unrealized_conversion_cast` ops in
-/// downstream uses.
-static void promoteAMDGPUKernArgStructByRefToConstantAS(LLVM::LLVMFuncOp func) {
-  if (func.getCConv() != mlir::LLVM::cconv::CConv::AMDGPU_KERNEL)
-    return;
-
-  MLIRContext *ctx = func.getContext();
-  auto flatPtrTy = LLVM::LLVMPointerType::get(ctx, /*addressSpace=*/0);
-  auto kernArgPtrTy = LLVM::LLVMPointerType::get(
-      ctx, /*addressSpace=*/llvm::AMDGPUAS::CONSTANT_ADDRESS);
-  auto byrefName = StringAttr::get(ctx, LLVM::LLVMDialect::getByRefAttrName());
-
-  LLVM::LLVMFunctionType origFnTy = func.getFunctionType();
-  SmallVector<Type> newInputs(origFnTy.getParams().begin(),
-                              origFnTy.getParams().end());
-  Block *entry = func.getBody().empty() ? nullptr : &func.getBody().front();
-  bool anyChanged = false;
-
-  for (unsigned i = 0, e = newInputs.size(); i != e; ++i) {
-    // Only promote byref kernargs whose pointee is a struct.
-    auto byrefAttr = dyn_cast_or_null<TypeAttr>(func.getArgAttr(i, byrefName));
-    if (!byrefAttr)
-      continue;
-    if (!isa<LLVM::LLVMStructType>(byrefAttr.getValue()))
-      continue;
-    if (!isa<LLVM::LLVMPointerType>(newInputs[i]))
-      continue;
-
-    newInputs[i] = kernArgPtrTy;
-    anyChanged = true;
-    if (entry) {
-      BlockArgument arg = entry->getArgument(i);
-      arg.setType(kernArgPtrTy);
-      OpBuilder builder(ctx);
-      builder.setInsertionPointToStart(entry);
-      auto cast =
-          LLVM::AddrSpaceCastOp::create(builder, func.getLoc(), flatPtrTy, arg);
-      arg.replaceAllUsesExcept(cast.getResult(), cast);
-    }
-  }
-
-  if (anyChanged) {
-    auto newFnTy = LLVM::LLVMFunctionType::get(origFnTy.getReturnType(),
-                                               newInputs, origFnTy.isVarArg());
-    func.setFunctionType(newFnTy);
-  }
 }
 
 /// Drops empty struct arguments from funcOp and replace usage with an undef
@@ -872,23 +713,11 @@ public:
     if (func.isExported()) {
       funcOp.setDsoLocal(true);
 
-      // Exported functions to the GPU target get a special metadata
-      // attribute to tell LLVM that these are kernel functions.
-      if (target.getTriple().isNVPTX()) {
-        funcOp->setAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName(),
-                        b.getUnitAttr());
-      } else if (target.getTriple().isAMDGPU()) {
-        funcOp.setCConv(mlir::LLVM::cconv::CConv::AMDGPU_KERNEL);
-      } else if (isMetalTriple(target.getTriple())) {
-        SmallVector<Attribute> passthrough =
-            llvm::to_vector(funcOp.getPassthroughAttr());
-        Builder b(funcOp.getContext());
-        passthrough.push_back(b.getArrayAttr(
-            {b.getStringAttr(kMetalKernelAttr), b.getStringAttr("true")}));
-        funcOp.setPassthroughAttr(b.getArrayAttr(passthrough));
-      } else if (target.isGPU()) {
-        llvm::report_fatal_error(
-            "Unknown GPU target. Which Calling Convention to use ?");
+      // Let the target lowering apply any target-specific marking to exported
+      // functions so the backend can recognize them.
+      if (const TargetLowering *lowering =
+              TargetLoweringRegistry::get().lookup(target.getTriple())) {
+        lowering->markExportedKernel(funcOp);
       }
     }
     if (failed(convertLLVMMetadata(
@@ -1445,11 +1274,12 @@ void LowerKGENToLLVMPass::runOnOperation() {
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();
 
-  // Promote AMDGPU kernel struct-pointee `byref` args to the kernarg /
-  // constant address space (addrspace 4).
-  if (typeConverter.getTarget().getTriple().isAMDGPU()) {
+  // Let the target lowering apply any target-specific finalization to each
+  // converted function.
+  if (const TargetLowering *lowering = TargetLoweringRegistry::get().lookup(
+          typeConverter.getTarget().getTriple())) {
     for (auto funcOp : theModule.getOps<LLVM::LLVMFuncOp>())
-      promoteAMDGPUKernArgStructByRefToConstantAS(funcOp);
+      lowering->finalizeConvertedFunction(funcOp);
   }
 
   // Apply C ABI to abi("C") function definitions. This rewrites the function

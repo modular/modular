@@ -16,10 +16,14 @@
 #define KGEN_KGENTOLLVM_TARGET_TARGETLOWERING_H
 
 #include "Support/MDialect/MAttrs.h"
+#include "mlir/IR/Attributes.h"
+#include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace llvm {
@@ -30,6 +34,8 @@ struct object_creator;
 
 namespace mlir {
 class LLVMTypeConverter;
+class NamedAttrList;
+class Operation;
 class RewritePatternSet;
 } // namespace mlir
 
@@ -64,8 +70,8 @@ public:
   }
 
   /// Contributes this target's patterns to the POP -> LLVM lowering
-  /// (LowerPOPToLLVM): e.g. fp8 / bf16 casts that lower to ISA intrinsics. The
-  /// default contributes none. Mirrors the plugin's
+  /// (LowerPOPToLLVM): e.g. casts that lower to target-specific ISA intrinsics.
+  /// The default contributes none. Mirrors the plugin's
   /// `populateLowerPOPToLLVMPatterns`, so a plugin is just another target
   /// lowering. Called after the generic patterns; target patterns use a higher
   /// benefit so they win for the ops they handle.
@@ -73,6 +79,57 @@ public:
   populateLowerPOPToLLVMPatterns(mlir::RewritePatternSet &patterns,
                                  mlir::LLVMTypeConverter &converter,
                                  TargetInfoAttr target) const {}
+
+  /// Marks `func` (an exported `llvm.func` lowered for this target) with any
+  /// target-specific attribute or calling convention that identifies it as a
+  /// kernel entry point to the backend. The default does nothing, which is
+  /// correct for targets with no kernel concept. Called from LowerKGENToLLVM
+  /// when lowering an exported function.
+  virtual void markExportedKernel(mlir::Operation *func) const {}
+
+  /// Returns whether `func` is an exported kernel for this target, i.e. it
+  /// carries the marking applied by `markExportedKernel`. The default returns
+  /// false: targets with no kernel concept have no exported kernels.
+  virtual bool isExportedKernel(mlir::Operation *func) const { return false; }
+
+  /// Returns the LLVM argument-attribute name this target uses to pass a
+  /// borrowed pointer argument to a kernel by value. Only queried for targets
+  /// whose `isExportedKernel` returns true, so the default is empty.
+  virtual llvm::StringRef getKernelByValArgAttrName() const { return {}; }
+
+  /// Translates a kernel-argument annotation `attr` (carried via the
+  /// `@__llvm_metadata` decorator) into LLVM argument attributes on `argAttrs`.
+  /// A target overrides this to apply the annotations it recognizes.
+  ///
+  /// The default drops the annotation: an annotation a target does not
+  /// recognize is silently ignored, keeping the same mojo code portable across
+  /// backends.
+  /// TODO: replace the drop-by-default behavior with a more precise per-target
+  /// policy that distinguishes a foreign-but-known annotation from a genuinely
+  /// unsupported one.
+  virtual void mapKernelArgMetadata(mlir::Operation *func,
+                                    mlir::NamedAttribute attr,
+                                    mlir::NamedAttrList &argAttrs) const {}
+
+  /// Applies any target-specific finalization to `func` after the KGEN -> LLVM
+  /// dialect conversion completes. The default does nothing.
+  virtual void finalizeConvertedFunction(mlir::Operation *func) const {}
+
+  /// Translates a target-dialect function-level metadata attribute `attr`
+  /// (carried via the `@__llvm_metadata` decorator) into LLVM function
+  /// attributes (`funcAttrs`) or passthrough entries (`passthrough`). Sets
+  /// `handled` to true when the attribute was consumed; leaves it false to let
+  /// the caller fall back to generic passthrough handling. Returns failure
+  /// (with an error emitted on `func`) if the attribute is recognized but
+  /// malformed. The default handles nothing.
+  virtual mlir::LogicalResult
+  mapFuncMetadata(mlir::Operation *func, mlir::NamedAttribute attr,
+                  mlir::NamedAttrList &funcAttrs,
+                  llvm::SmallVectorImpl<mlir::Attribute> &passthrough,
+                  bool &handled) const {
+    handled = false;
+    return mlir::success();
+  }
 };
 
 /// Registry of `TargetLowering`s, dispatched by triple. Lowering-stage

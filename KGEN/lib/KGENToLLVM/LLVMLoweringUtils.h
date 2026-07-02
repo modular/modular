@@ -484,6 +484,12 @@ bool isFP4(Type fpType);
 /// bitwidth of the integer width. Else return std::nullopt.
 std::optional<int> isFPTyLoweredAsInt(Type fpType);
 
+/// Parse a work-group-size metadata attribute into a `(min, max)` pair. Accepts
+/// a `pop.array` of one or two elements or a scalar integer; a lone value is
+/// treated as the max with min defaulting to 1. Used by GPU target lowerings to
+/// translate `@__llvm_metadata` work-group-size annotations.
+ErrorOr<std::pair<int64_t, int64_t>> getWorkGroupSizeRange(Attribute value);
+
 /// Recursively squash pairs of unrealized_conversion_cast ops that cancel out.
 /// For example, cast<A→B>(cast<B→A>(v)) reduces to v.
 /// Used to clean up residual casts before generating calls.
