@@ -211,6 +211,22 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `to_numpy_array` and `from_numpy_array` to the new `python.numpy` module
+  for moving flat numeric data between Mojo `Span`/`List` and NumPy arrays
+  without hand-written `ctypes` plumbing:
+
+  ```mojo
+  from std.python.numpy import from_numpy_array, to_numpy_array
+
+  var values: List[Float64] = [1.0, 2.0, 3.0]
+  var array = to_numpy_array(values)                 # NumPy array (copies)
+  var span = from_numpy_array[DType.float64](array)  # borrow array as a Span
+  ```
+
+  Both support the fixed-width numeric dtypes. `to_numpy_array` copies its
+  input into a new, independent array; `from_numpy_array` borrows the array's
+  buffer zero-copy.
+
 - `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
   to this `Scalar` type. Because of this some conversions have become more
   strict.
