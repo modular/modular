@@ -274,46 +274,119 @@ def _try_merge_line(result: list[str], line: str, head_indent: int) -> bool:
     return merged
 
 
-def _scan_code_brackets(
-    line: str, in_string: bool, quote: str | None
-) -> tuple[int, bool, str | None]:
-    """Return ``(bracket_delta, in_string, quote)`` for *line*.
+def _opens_interp(line: str, end: int) -> bool:
+    """Whether the string opening at *end* is an interpolating f/t-string.
 
-    Counts ``()[]{}`` in code only, skipping ``#`` comments and string
-    literals (single- and triple-quoted, any f/t/r prefix). *quote*
-    (``\"\"\"`` or ``'''``) carries an open triple-quoted string across lines,
-    so a bracket inside a docstring, comment, or string never desyncs depth.
+    Only a valid prefix counts (<=2 of ``r``/``f``/``t``), so a keyword left
+    flush against a quote (``if"..."``) is not read as an f/t-string.
+    """
+    start = end
+    while start > 0 and line[start - 1].isalpha():
+        start -= 1
+    prefix = line[start:end]
+    return (
+        len(prefix) <= 2
+        and all(c in "rftRFT" for c in prefix)
+        and any(c in "ftFT" for c in prefix)
+    )
+
+
+def _quote_at(line: str, i: int) -> str:
+    """The string delimiter opening at *i* -- a triple or single quote."""
+    return line[i : i + 3] if line[i : i + 3] in ('"""', "'''") else line[i]
+
+
+def _skip_string(line: str, i: int, quote: str, is_interp: bool) -> int:
+    """Skip a string; *i* starts just past the opening *quote*. Return the
+    index past the close, or ``-1`` if it does not close on this line.
+
+    In an f/t string, ``{...}`` interpolations are skipped as code (see
+    `_skip_interp`) so a nested same-quote string is not read as the close.
+    """
+    n = len(line)
+    while i < n:
+        if line[i] == "\\":
+            i += 2  # escaped char, a \" never counts toward the close
+        elif line.startswith(quote, i):
+            return i + len(quote)
+        elif is_interp and (
+            line.startswith("{{", i) or line.startswith("}}", i)
+        ):
+            i += 2  # escaped brace, not interpolation
+        elif is_interp and line[i] == "{":
+            i = _skip_interp(line, i + 1)
+            if i == -1:
+                return -1
+        else:
+            i += 1
+    return -1
+
+
+def _skip_interp(line: str, i: int) -> int:
+    """Skip a ``{...}`` interpolation (code body); *i* starts just past the
+    ``{``. Return the index past the matching ``}``, else ``-1``.
+
+    Nested strings and ``{...}`` (dict/set literals) are skipped recursively.
+    """
+    n = len(line)
+    while i < n:
+        c = line[i]
+        if c == "}":
+            return i + 1
+        elif c in "\"'":
+            q = _quote_at(line, i)
+            i = _skip_string(line, i + len(q), q, _opens_interp(line, i))
+            if i == -1:
+                return -1
+        elif c == "{":
+            i = _skip_interp(line, i + 1)  # nested dict/set literal
+            if i == -1:
+                return -1
+        else:
+            i += 1
+    return -1
+
+
+def _scan_code_brackets(line: str, quote: str | None) -> tuple[int, str | None]:
+    """Return ``(bracket_delta, quote)`` for *line*, counting ``()[]{}`` in
+    code only.
+
+    String literals contribute nothing, each is skipped whole so a bracket or
+    a nested same-quote string like ``t"{"("}"`` never desyncs depth. *quote*
+    is an open triple-quoted string carried in from the previous line, or
+    ``None``. The return carries a still-open one forward. Interpolation state
+    is not carried across lines.
     """
     delta = 0
     i, n = 0, len(line)
+
+    # Finish a triple-quoted string carried from the previous line.
+    if quote:
+        i = _skip_string(line, 0, quote, False)
+        if i == -1:
+            return delta, quote
+
     while i < n:
-        if quote:  # inside a string: walk to its closing delimiter
-            if len(quote) == 1 and line[i] == "\\":
-                i += 2  # escaped char (single-line strings only)
-            elif line.startswith(quote, i):
-                i += len(quote)
-                quote = None
-            else:
-                i += 1
-        else:
-            c = line[i]
-            if c == "#":
-                break  # rest of the line is a comment
-            if c in "([{":
-                delta += 1
-            elif c in ")]}":
-                delta -= 1
-            elif c in "\"'":
-                quote = (
-                    line[i : i + 3] if line[i : i + 3] in ('"""', "'''") else c
-                )
-                i += len(quote)  # step past the opener
-                continue
+        c = line[i]
+        if c == "#":
+            break  # comment to end of line
+        elif c in "([{":
+            delta += 1
             i += 1
-    # Only an open triple-quoted string carries over to the next line.
-    if quote and len(quote) == 3:
-        return delta, True, quote
-    return delta, False, None
+        elif c in ")]}":
+            delta -= 1
+            i += 1
+        elif c in "\"'":
+            q = _quote_at(line, i)
+            end = _skip_string(line, i + len(q), q, _opens_interp(line, i))
+            if end == -1:
+                # Unterminated: only a triple-quoted string carries over.
+                return delta, (q if len(q) == 3 else None)
+            i = end
+        else:
+            i += 1
+
+    return delta, None
 
 
 def _normalize_mojo_source(text: str) -> str:
@@ -331,7 +404,6 @@ def _normalize_mojo_source(text: str) -> str:
 
     lines = text.split("\n")
     result: list[str] = []
-    in_multiline_string = False
     ml_quote: str | None = None
     in_fmt_off = False
     bracket_depth = 0
@@ -347,7 +419,7 @@ def _normalize_mojo_source(text: str) -> str:
             in_fmt_off = False
 
         at_statement_level = (
-            bracket_depth == 0 and not in_multiline_string and not in_fmt_off
+            bracket_depth == 0 and ml_quote is None and not in_fmt_off
         )
         # Try to merge this line into the previous one. Needs a previous
         # line to merge into.
@@ -362,13 +434,9 @@ def _normalize_mojo_source(text: str) -> str:
             if at_statement_level:
                 head_indent = len(line) - len(stripped)
 
-        # Update bracket/string state for the next iteration, counting only
-        # brackets that appear in code -- never inside strings or comments.
-        # An unbalanced bracket in a docstring or comment must not desync the
-        # depth and silently disable normalization for the rest of the scope.
-        delta, in_multiline_string, ml_quote = _scan_code_brackets(
-            line, in_multiline_string, ml_quote
-        )
+        # Update the code-bracket depth for the next line. Brackets inside
+        # strings and comments are ignored, so prose never disables rejoining.
+        delta, ml_quote = _scan_code_brackets(line, ml_quote)
         bracket_depth += delta
 
     return "\n".join(result)
