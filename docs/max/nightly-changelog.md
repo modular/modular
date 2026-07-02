@@ -59,6 +59,14 @@ This version is still a work in progress.
   the thinking back into the `content` field wrapped in `<think>...</think>`
   tags, matching the official MiniMax M3 endpoint. The field is a no-op for
   every other model.
+- Gemma 4 with multi-token prediction (MTP) speculative decoding
+  (`UnifiedMTPGemma4ForCausalLM`) now supports image and video input.
+  Previously this path was served text-only: image tokens were ingested by
+  the tokenizer but the vision encoder output never reached the language
+  model, so image prompts were answered as if the model were blind. The
+  vision encoder now runs during prefill and its projected soft-token
+  embeddings are merged into the target model, matching the non-MTP Gemma 4
+  path.
 
 ## MAX framework
 

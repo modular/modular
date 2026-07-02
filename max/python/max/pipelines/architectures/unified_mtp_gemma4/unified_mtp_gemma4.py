@@ -123,6 +123,8 @@ class UnifiedMTPGemma4(Module):
         self,
         tokens: TensorValue,
         input_row_offsets: TensorValue,
+        image_embeddings: list[TensorValue],
+        image_token_indices: list[TensorValue],
         draft_tokens: TensorValue,
         signal_buffers: list[BufferValue],
         sliding_kv_collections: list[PagedCacheValues],
@@ -162,18 +164,13 @@ class UnifiedMTPGemma4(Module):
         n_devs = len(devices)
         device0 = devices[0]
 
-        # Create empty image embeddings/indices for text-only MTP
-        hidden_size = self.config.text_config.hidden_size
-        empty_image_embeddings = [
-            ops.constant(0, DType.bfloat16, dev).broadcast_to([0, hidden_size])
-            for dev in devices
-        ]
-        empty_image_indices = [
-            ops.constant(0, DType.int32, dev).broadcast_to([0])
-            for dev in devices
-        ]
-
         # -- 3. Target forward --
+        # Vision embeddings are scattered into the target's token embeddings at
+        # image_token_indices. Images are only present during prefill, where
+        # draft_tokens is [batch, 0] (K=0), so merged_tokens == prompt tokens
+        # and merged_offsets_per_dev == input_row_offsets: the indices computed
+        # against the active window map directly onto merged_tokens. During
+        # decode both lists are empty (zero-row), so the scatter is a no-op.
         target_outputs = self.target(
             merged_tokens,
             signal_buffers,
@@ -181,8 +178,8 @@ class UnifiedMTPGemma4(Module):
             global_kv_collections,
             return_n_logits,
             merged_offsets_per_dev,
-            empty_image_embeddings,
-            empty_image_indices,
+            image_embeddings,
+            image_token_indices,
         )
 
         logits = target_outputs[1]
@@ -391,6 +388,8 @@ class UnifiedMTPGemma4(Module):
             SpecDecodeInputTypeSpec(
                 distributed=True,
                 data_parallel_degree=1,
+                enable_vision=True,
+                vision_hidden_size=self.config.text_config.hidden_size,
                 include_in_thinking_phase=True,
                 enable_structured_output=self.enable_structured_output,
             ),

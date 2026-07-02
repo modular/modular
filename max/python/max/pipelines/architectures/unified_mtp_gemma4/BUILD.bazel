@@ -22,7 +22,6 @@ modular_py_library(
         "//max/python/max/pipelines/architectures/gemma3",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/gemma4_assistant",
-        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",

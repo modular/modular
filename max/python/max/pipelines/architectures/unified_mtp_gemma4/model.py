@@ -17,16 +17,23 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from max.driver import Buffer, Device
+import numpy as np
+import numpy.typing as npt
+from max.driver import Buffer, Device, DevicePinnedBuffer, DLPackArray
+from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
-from max.graph.weights import WeightData, Weights, WeightsAdapter, load_weights
+from max.graph import DeviceRef, Graph, Module
+from max.graph.weights import (
+    WeightData,
+    Weights,
+    WeightsAdapter,
+    load_weights,
+)
 from max.nn.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -43,9 +50,22 @@ from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
+from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
+from max.pipelines.modeling.types import RequestID
 from transformers import AutoConfig
 
+from ..gemma4.batch_vision_inputs import (
+    ImageInputs,
+    VideoInputs,
+    VisionRawInputs,
+    create_empty_embeddings,
+    create_empty_indices,
+    merge_per_device_buffers,
+)
+from ..gemma4.context import Gemma4Context
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
+from ..gemma4.vision_model.vision_model import Gemma4VisionModel
+from ..gemma4.weight_adapters import convert_safetensor_vision_state_dict
 from ..gemma4_assistant.gemma4_assistant import Gemma4Assistant
 from ..gemma4_assistant.model_config import Gemma4AssistantConfig
 from .batch_processor import UnifiedMTPGemma4BatchProcessor
@@ -72,11 +92,26 @@ class UnifiedMTPGemma4Inputs(UnifiedSpecDecodeInputs):
     signal_buffers: list[Buffer]
     batch_context_lengths: list[Buffer]
 
+    # Vision inputs. ``images``/``video`` carry the raw encoder inputs consumed
+    # by ``execute``; ``combined_embeds``/``combined_indices`` are the per-device
+    # projected soft-token embeddings and scatter indices bound to the graph
+    # (empty for text-only and decode steps).
+    images: ImageInputs | None = None
+    video: VideoInputs | None = None
+    combined_embeds: list[Buffer] | None = None
+    combined_indices: list[Buffer] | None = None
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         assert self.kv_cache_inputs is not None
+        assert self.combined_embeds is not None
+        assert self.combined_indices is not None
         prefix = (
             self.tokens,
+            # Vision embeds + scatter indices follow tokens, matching
+            # build_spec_decode_input_types(enable_vision=True).
+            *self.combined_embeds,
+            *self.combined_indices,
             self.input_row_offsets,
             self.host_input_row_offsets,
             self.return_n_logits,
@@ -93,7 +128,7 @@ class UnifiedMTPGemma4Inputs(UnifiedSpecDecodeInputs):
 class UnifiedMTPGemma4Model(
     _UnifiedSpecDecodeModelMixin,
     AlwaysSignalBuffersMixin,
-    PipelineModelWithKVCache[TextContext],
+    PipelineModelWithKVCache[Gemma4Context],
 ):
     """Gemma4 with MTP: merge + target + rejection + shift in one graph."""
 
@@ -103,6 +138,12 @@ class UnifiedMTPGemma4Model(
     )
 
     model: Model
+    """The compiled unified MTP graph (target + draft + rejection). This is the
+    graph exposed for device graph capture / replay."""
+
+    vision_model: Model | None
+    """The compiled vision encoder graph, or None for text-only checkpoints.
+    Runs eagerly during prefill (outside the captured graph)."""
 
     def __init__(
         self,
@@ -131,9 +172,30 @@ class UnifiedMTPGemma4Model(
         # Force signal buffer initialization.
         _ = self.signal_buffers
 
-        self.model = self.load_model(session)
+        self._scatter_buffers: dict[int, tuple[Buffer, list[Buffer]]] = {}
 
-    def load_model(self, session: InferenceSession) -> Model:
+        self.vision_model, self.model = self.load_model(session)
+
+        self._ve_cache: VisionEncoderCache[Gemma4Context] = VisionEncoderCache(
+            max_entries=pipeline_config.runtime.max_vision_cache_entries
+        )
+
+        if self._batch_processor is not None:
+            assert isinstance(
+                self._batch_processor, UnifiedMTPGemma4BatchProcessor
+            )
+            self._batch_processor.bind_model_state(
+                config=self.config,
+                ve_cache=self._ve_cache,
+            )
+
+    def release(self, request_id: RequestID) -> None:
+        """Release vision encoder cache for a completed request."""
+        self._ve_cache.release_request(request_id)
+
+    def load_model(
+        self, session: InferenceSession
+    ) -> tuple[Model | None, Model]:
         max_batch_size = self._max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
@@ -162,6 +224,7 @@ class UnifiedMTPGemma4Model(
                 state_dict=target_state_dict,
                 return_logits=ReturnLogits.VARIABLE,
             )
+            self.config = config
 
             # -- 4. Create draft config --
             draft_hf_config = draft_model_config.huggingface_config
@@ -228,19 +291,45 @@ class UnifiedMTPGemma4Model(
             # and the graph to declare no draft KV inputs.
             self._draft_kv_params = None
 
-            # -- 9. Build graph and compile --
+            # -- 9. Build the vision + unified graphs into one Module --
+            module = Module()
+
+            # Vision encoder graph (built into the shared Module so it compiles
+            # and loads alongside the unified graph). Its weights live under
+            # model.vision_tower.* / model.embed_vision.* in the target
+            # checkpoint and are stripped from the language state dict, so they
+            # are extracted separately here.
+            vision_graph: Graph | None = None
+            vision_state_dict: dict[str, DLPackArray] = {}
+            if config.vision_config is not None:
+                vision_weights_dict = convert_safetensor_vision_state_dict(
+                    dict(self.weights.items())
+                )
+                vision_graph, vision_state_dict = self._build_vision_graph(
+                    config, vision_weights_dict, module=module
+                )
+
+            n_devs = len(self.devices)
             with Graph(
                 "gemma4_with_mtp_graph",
                 input_types=nn_model.input_types(self.kv_params),
+                module=module,
             ) as graph:
-                (
-                    tokens,
-                    device_input_row_offsets,
-                    host_input_row_offsets,
-                    return_n_logits,
-                    data_parallel_splits,
-                    *variadic_args,
-                ) = graph.inputs
+                graph_inputs = iter(graph.inputs)
+                tokens = next(graph_inputs)
+                # Vision embeds + scatter indices follow tokens, matching
+                # build_spec_decode_input_types(enable_vision=True).
+                image_embeddings = [
+                    next(graph_inputs).tensor for _ in range(n_devs)
+                ]
+                image_token_indices = [
+                    next(graph_inputs).tensor for _ in range(n_devs)
+                ]
+                device_input_row_offsets = next(graph_inputs)
+                host_input_row_offsets = next(graph_inputs)
+                return_n_logits = next(graph_inputs)
+                data_parallel_splits = next(graph_inputs)
+                variadic_args = list(graph_inputs)
 
                 variadic_args_iter = iter(variadic_args)
                 signal_buffers = [
@@ -281,6 +370,8 @@ class UnifiedMTPGemma4Model(
                 outputs = nn_model(
                     tokens=tokens.tensor,
                     input_row_offsets=device_input_row_offsets.tensor,
+                    image_embeddings=image_embeddings,
+                    image_token_indices=image_token_indices,
                     draft_tokens=draft_tokens,
                     signal_buffers=signal_buffers,
                     sliding_kv_collections=sliding_kv_collections,
@@ -304,16 +395,102 @@ class UnifiedMTPGemma4Model(
                 graph.output(*outputs)
 
             timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
+            combined_weights = {**vision_state_dict, **self.state_dict}
+            models = session.load_all(module, weights_registry=combined_weights)
+            vision_model = (
+                models[vision_graph.name] if vision_graph is not None else None
+            )
+            model = models[graph.name]
 
-        return model
+        return vision_model, model
 
     def execute(
         self,
         model_inputs: ModelInputs,
     ) -> UnifiedEagleOutputs:
-        """Execute and return all 3 graph outputs for speculative decoding."""
+        """Execute and return all 3 graph outputs for speculative decoding.
+
+        Runs the vision encoder (prefill only) before the unified graph and
+        binds the projected soft-token embeddings + scatter indices. Images
+        only appear during prefill (draft_tokens is [batch, 0]); decode steps
+        replay the captured unified graph with the empty defaults, so this
+        pre-pass is a no-op there.
+        """
         assert isinstance(model_inputs, UnifiedMTPGemma4Inputs)
+
+        # --- image embeddings ---
+        image_embeddings: list[Buffer]
+        image_scatter: list[Buffer]
+        img = model_inputs.images
+        if img is not None and img.raw is not None:
+            raw_embeds = self._run_vision_encoder(img.raw)
+            assert img.cache_context_batch is not None
+            assert img.cache_uncached_contexts is not None
+            assert img.cache_per_image_token_counts is not None
+            image_embeddings, scatter_np = (
+                self._ve_cache.prepare_vision_outputs(
+                    context_batch=img.cache_context_batch,
+                    uncached_contexts=img.cache_uncached_contexts,
+                    vision_embeds=raw_embeds,
+                    per_image_token_counts=img.cache_per_image_token_counts,
+                    n_devices=len(self.devices),
+                    empty_embeddings=self._empty_embeddings(),
+                )
+            )
+            if len(scatter_np) > 0:
+                image_scatter = self._scatter_to_devices(scatter_np)
+            else:
+                image_scatter = self._empty_indices()
+        elif img is not None and img.cached_embeddings is not None:
+            image_embeddings = img.cached_embeddings
+            if img.cached_token_indices is not None:
+                image_scatter = img.cached_token_indices
+            else:
+                assert img.cached_token_indices_np is not None
+                image_scatter = self._scatter_to_devices(
+                    img.cached_token_indices_np
+                )
+        else:
+            image_embeddings = self._empty_embeddings()
+            image_scatter = self._empty_indices()
+
+        # --- video embeddings ---
+        video_embeddings: list[Buffer]
+        video_scatter: list[Buffer]
+        vid = model_inputs.video
+        if vid is not None and vid.cached_embeddings is not None:
+            video_embeddings = vid.cached_embeddings
+        elif vid is not None and vid.raw is not None:
+            video_embeddings = self._run_vision_encoder(vid.raw)
+            if vid.cache_hashes:
+                assert vid.cache_per_video_token_counts is not None
+                assert vid.cache_req_ids is not None
+                self._ve_cache._cache_and_split(
+                    vision_outputs=video_embeddings,
+                    per_image_token_counts=vid.cache_per_video_token_counts,
+                    image_hashes=vid.cache_hashes,
+                    request_ids=vid.cache_req_ids,
+                )
+        else:
+            video_embeddings = self._empty_embeddings()
+
+        if vid is not None:
+            if vid.token_indices is not None:
+                video_scatter = vid.token_indices
+            else:
+                assert vid.token_indices_np is not None
+                video_scatter = self._scatter_to_devices(vid.token_indices_np)
+        else:
+            video_scatter = self._empty_indices()
+
+        # --- merge image + video into the graph-bound buffers ---
+        model_inputs.combined_embeds = merge_per_device_buffers(
+            image_embeddings, video_embeddings
+        )
+        model_inputs.combined_indices = merge_per_device_buffers(
+            image_scatter, video_scatter
+        )
+
         model_outputs = self.model.execute(*model_inputs.buffers)
         assert len(model_outputs) == 3, (
             f"Expected 3 outputs, got {len(model_outputs)}"
@@ -324,6 +501,112 @@ class UnifiedMTPGemma4Model(
             next_tokens=model_outputs[1],
             next_draft_tokens=model_outputs[2],
         )
+
+    def _build_vision_graph(
+        self,
+        config: Gemma4ForConditionalGenerationConfig,
+        state_dict: dict[str, WeightData],
+        module: Module | None = None,
+    ) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Build the vision encoder graph (mirrors Gemma3_MultiModalModel)."""
+        vision_model = Gemma4VisionModel(
+            config,
+            device=DeviceRef.from_device(self.devices[0]),
+        )
+        vision_model.load_state_dict(
+            state_dict=state_dict,
+            override_quantization_encoding=True,
+            weight_alignment=1,
+            strict=True,
+        )
+        with Graph(
+            "gemma4_vision",
+            input_types=vision_model.input_types(),
+            module=module,
+        ) as vision_graph:
+            all_inputs = vision_graph.inputs
+            n_devices = len(self.devices)
+
+            patches_flat_list = [inp.tensor for inp in all_inputs[:n_devices]]
+            all_inputs = all_inputs[n_devices:]
+
+            pixel_position_ids_list = [
+                inp.tensor for inp in all_inputs[:n_devices]
+            ]
+            all_inputs = all_inputs[n_devices:]
+
+            cu_seqlens_list = [inp.tensor for inp in all_inputs[:n_devices]]
+            all_inputs = all_inputs[n_devices:]
+
+            pool_gather_index_list = [
+                inp.tensor for inp in all_inputs[:n_devices]
+            ]
+            all_inputs = all_inputs[n_devices:]
+
+            max_seq_len = all_inputs[0].tensor
+
+            outputs = vision_model(
+                patches_flat_list,
+                pixel_position_ids_list,
+                cu_seqlens_list,
+                pool_gather_index_list,
+                max_seq_len,
+            )
+            vision_graph.output(*outputs)
+
+        return vision_graph, vision_model.state_dict()
+
+    def _run_vision_encoder(self, raw: VisionRawInputs) -> list[Buffer]:
+        if self.vision_model is None:
+            raise ValueError(
+                "This checkpoint is served text-only (no vision encoder"
+                " is loaded); image and video inputs are not supported."
+            )
+        return self.vision_model(
+            *raw.patches_flat,
+            *raw.pixel_position_ids,
+            *raw.cu_seqlens,
+            *raw.pool_gather_index,
+            raw.max_seq_len,
+        )
+
+    def _scatter_to_devices(
+        self, scatter_np: npt.NDArray[np.int32]
+    ) -> list[Buffer]:
+        """Copy scatter indices to each device using cached pinned buffers."""
+        dev = self.devices[0]
+        n = len(scatter_np)
+        bufs = self._scatter_buffers.get(n)
+        host: Buffer
+        if bufs is None:
+            if not dev.is_host:
+                host = DevicePinnedBuffer(
+                    dtype=DType.int32, shape=(n,), device=dev
+                )
+            else:
+                host = Buffer(shape=(n,), dtype=DType.int32, device=dev)
+            device = [host.to(d) for d in self.devices]
+            bufs = (host, device)
+            self._scatter_buffers[n] = bufs
+        host, device = bufs
+        host.to_numpy()[:] = scatter_np.astype(np.int32)
+        for d in device:
+            d.inplace_copy_from(host)
+        return device
+
+    def _empty_embeddings(self) -> list[Buffer]:
+        if not hasattr(self, "_cached_empty_embeddings"):
+            self._cached_empty_embeddings = create_empty_embeddings(
+                self.devices,
+                self.huggingface_config.text_config.hidden_size,
+                self.config.unquantized_dtype,
+            )
+        return self._cached_empty_embeddings
+
+    def _empty_indices(self) -> list[Buffer]:
+        if not hasattr(self, "_cached_empty_indices"):
+            self._cached_empty_indices = create_empty_indices(self.devices)
+        return self._cached_empty_indices
 
     @classmethod
     def calculate_max_seq_len(
