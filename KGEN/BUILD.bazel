@@ -1031,8 +1031,14 @@ modular_cc_library(
 
 modular_cc_library(
     name = "KGENToLLVM",
-    srcs = glob(["lib/KGENToLLVM/*.cpp"]),
-    hdrs = glob(["lib/KGENToLLVM/*.h"]),
+    srcs = glob([
+        "lib/KGENToLLVM/*.cpp",
+        "lib/KGENToLLVM/Target/**/*.cpp",
+    ]),
+    hdrs = glob([
+        "lib/KGENToLLVM/*.h",
+        "lib/KGENToLLVM/Target/**/*.h",
+    ]),
     strip_include_prefix = "lib",
     visibility = [
         "//KGEN:consumers",
@@ -1047,6 +1053,10 @@ modular_cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:IndexDialect",
     ],
+    # TargetLowering implementations self-register via a static initializer and
+    # aren't referenced directly, so the linker would drop them. Force them to
+    # be linked.
+    alwayslink = True,
 )
 
 modular_cc_library(
