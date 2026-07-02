@@ -343,6 +343,7 @@ _GPU_MEMORY = {
     "test_mxfp4_grouped_matmul_amd_kernels.mojo": "2",
     "test_mxfp4_matmul_amd.mojo": "2",
     "test_mxfp4_moe_matmul_amd_routed.mojo": "8",
+    "test_ping_pong.mojo": "1",
     "test_ping_pong_shapes.mojo": "2",
     "test_pipeline_framework.mojo": "1",
     "test_pipeline_ldg.mojo": "1",
