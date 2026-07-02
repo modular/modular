@@ -15,10 +15,12 @@
 #ifndef KGEN_KGENTOLLVM_TARGET_TARGETLOWERING_H
 #define KGEN_KGENTOLLVM_TARGET_TARGETLOWERING_H
 
+#include "KGEN/KGENDialect/KGENDType.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -147,6 +149,31 @@ public:
                   bool &handled) const {
     handled = false;
     return mlir::success();
+  }
+
+  /// Contributes the dtype conversions this target supports natively (beyond
+  /// the common LLVM fpext/fptrunc set), by calling `addConversion(from, to)`
+  /// for each. Used by the POP legalizer to decide which casts need software
+  /// widening. The default contributes none.
+  virtual void populateLegalConversions(
+      TargetInfoAttr target,
+      llvm::function_ref<void(KGENDType from, KGENDType to)> addConversion)
+      const {}
+
+  /// Returns whether `dtype` needs legalization on this target beyond the
+  /// generic "float width <= 8 bits" rule the legalizer already applies (e.g. a
+  /// target that lacks native arithmetic for some 16-bit float). Default false.
+  virtual bool typeNeedsExtraLegalization(KGENDType dtype,
+                                          TargetInfoAttr target) const {
+    return false;
+  }
+
+  /// Returns whether a `pop.cast` between `fromDType` and `toDType` is handled
+  /// by a later target-specific pass (so the POP legalizer should skip it
+  /// here). Default false.
+  virtual bool castHandledByLaterPass(KGENDType fromDType, KGENDType toDType,
+                                      TargetInfoAttr target) const {
+    return false;
   }
 };
 
