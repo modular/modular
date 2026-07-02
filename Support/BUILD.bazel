@@ -1071,6 +1071,16 @@ modular_cc_library(
     ],
 )
 
+modular_cc_library(
+    name = "Metrics",
+    srcs = ["lib/Metrics.cpp"],
+    hdrs = ["include/Support/Metrics.h"],
+    deps = [
+        ":SymbolExport",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 mlir_nanobind(
     name = "MDialectNanobindInc",
     srcs = glob(["include/Support/MDialect/*.td"]),

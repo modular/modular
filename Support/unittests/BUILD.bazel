@@ -321,3 +321,12 @@ modular_cc_test(
     srcs = glob(["Diagnostics/*.cpp"]),
     deps = ["//Support:Diagnostics"],
 )
+
+modular_cc_test(
+    name = "MetricsTest",
+    srcs = ["MetricsTest.cpp"],
+    deps = [
+        "//Support:Metrics",
+        "@llvm-project//llvm:Support",
+    ],
+)
