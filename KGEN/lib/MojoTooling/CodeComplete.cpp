@@ -168,7 +168,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
         StringAttr nameAttr =
             TypeSwitch<Operation *, StringAttr>(subRef.getIfOperation())
                 .Case<FileModuleOp, PackageOp>(
-                    [](auto m) { return m.getSymNameAttr(); })
+                    [](auto m) { return m.getDeclName(); })
                 .Default(StringAttr());
         if (!nameAttr || nameAttr.getValue() == "__init__")
           continue;

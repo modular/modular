@@ -136,8 +136,8 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
         .Case<StructDeclOp, StructFieldOp, VarDeclOp>(
             [](auto op) { return op.getName(); })
         .Case([](FnOp op) { return op.getSourceName(); })
-        .Case<FileModuleOp, PackageOp, ImportOp>(
-            [](auto op) { return op.getSymName(); })
+        .Case<FileModuleOp, PackageOp>([](auto op) { return op.getDeclName(); })
+        .Case([](ImportOp op) { return op.getSymName(); })
         .Case([](AliasDeclOp op) {
           return demangleParameterName(op.getParamDecl().getName(),
                                        /*forUser*/ true);
