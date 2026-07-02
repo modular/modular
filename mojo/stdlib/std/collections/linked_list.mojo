@@ -19,20 +19,28 @@ traversal. The implementation includes iterator support for forward and reverse
 traversal.
 """
 
-from std.builtin.rebind import downcast
+from std.builtin.rebind import downcast, rebind_var
 from std.collections import check_bounds
 from std.reflection import call_location
 import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
+from std.memory import is_trivially_deletable
 from std.os import abort
 
 from std.sys import align_of, size_of
 
 
+@explicit_destroy(
+    "A `Node` with a non-`ImplicitlyDeletable` element must be consumed with"
+    " `_into_value()`; its owning `LinkedList` manages this."
+)
 struct Node[
-    ElementType: Movable & ImplicitlyDeletable,
-](Movable):
+    ElementType: Movable,
+](
+    ImplicitlyDeletable where conforms_to(ElementType, ImplicitlyDeletable),
+    Movable,
+):
     """A node in a linked list data structure.
 
     Parameters:
@@ -84,6 +92,20 @@ struct Node[
         self._prev = prev.value() if prev else Self._OpaquePointer()
         self._next = next.value() if next else Self._OpaquePointer()
 
+    # TODO(MOCO-4228)
+    comptime __del__is_trivial = is_trivially_deletable[Self.ElementType]()
+
+    # TODO(MOCO-4228): Let the compiler synthesize this method
+    def __del__(
+        deinit self,
+    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+        """Destroy the entry's key and value.
+
+        Constraints:
+            `ElementType` must be `ImplicitlyDeletable`.
+        """
+        pass
+
     def _into_value(deinit self) -> Self.ElementType:
         return self.value^
 
@@ -100,7 +122,7 @@ struct Node[
 
 
 def _make_node[
-    T: Movable & ImplicitlyDeletable
+    T: Movable
 ](
     out node: Node[T],
     var value: T,
@@ -126,7 +148,7 @@ def _make_node[
 struct _LinkedListIter[
     mut: Bool,
     //,
-    ElementType: Copyable & ImplicitlyDeletable,
+    ElementType: Copyable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -220,14 +242,19 @@ struct _LinkedListIterOwned[T: Movable & ImplicitlyDeletable](
         return (sz, {sz})
 
 
-struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
+@explicit_destroy(
+    "A `LinkedList` with non-`ImplicitlyDeletable` elements must be explicitly"
+    " destroyed with `destroy_with()`"
+)
+struct LinkedList[ElementType: Movable](
     Boolable,
     Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
+    ImplicitlyDeletable where conforms_to(ElementType, ImplicitlyDeletable),
     Iterable,
-    IterableOwned,
+    IterableOwned where conforms_to(ElementType, ImplicitlyDeletable),
     Movable,
     Sized,
     Writable where conforms_to(ElementType, Writable),
@@ -247,12 +274,10 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         UnsafePointer[Node[Self.ElementType], MutUntrackedOrigin]
     ]
 
-    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDeletable` from the
-    # `downcast`s below — it is already implied by `ElementType`'s bound.
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _LinkedListIter[
-        downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
+        downcast[Self.ElementType, Copyable],
         iterable_origin,
     ]
     """The iterator type for this linked list.
@@ -263,8 +288,9 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
     """
 
     comptime IteratorOwnedType: Iterator = _LinkedListIterOwned[
-        Self.ElementType
+        downcast[Self.ElementType, ImplicitlyDeletable]
     ]
+
     """The owned iterator type for this linked list."""
 
     var _head: Self._NodePointer
@@ -323,8 +349,19 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             self.append(curr.value()[].value.copy())
             curr = curr.value()[].next()
 
-    def __del__(deinit self):
-        """Clean up the list by freeing all nodes.
+    def _delete_list_elements(
+        mut self, destroy_func: Some[def(var Self.ElementType)]
+    ):
+        """Hand each element to `destroy_func`, then free every node.
+
+        Shared teardown for `clear`, `__del__`, and `destroy_with`.
+
+        Leaves the list "spent": `_head`/`_tail` dangle at freed memory, so the
+        caller must either reset them (see `clear`) or be about to drop `self`
+        (see `__del__`/`destroy_with`).
+
+        Args:
+            destroy_func: A closure called once per element to consume it.
 
         Notes:
             Time Complexity: O(n) in len(self).
@@ -333,13 +370,39 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         while curr:
             var nn = curr.value()
             var next = nn[].next()
-            nn.destroy_pointee()
+            destroy_func(nn.take_pointee()._into_value())
             dealloc(
                 ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
                     {count = 1}
                 )
             )
             curr = next
+
+    def __del__(
+        deinit self,
+    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+        """Clean up the list by freeing all nodes.
+
+        Notes:
+            Time Complexity: O(n) in len(self).
+        """
+        self.clear()
+
+    def destroy_with(
+        deinit self, destroy_func: Some[def(var Self.ElementType)], /
+    ):
+        """Consume the list, destroying each element with a closure.
+
+        Use this to tear down a `LinkedList` whose elements are not
+        `ImplicitlyDeletable`.
+
+        Args:
+            destroy_func: A closure called once per element to destroy it.
+
+        Notes:
+            Time Complexity: O(n) in len(self).
+        """
+        self._delete_list_elements(destroy_func)
 
     def append(mut self, var value: Self.ElementType):
         """Add an element to the end of the list.
@@ -545,7 +608,9 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             self._size -= 1
             return Optional[Self.ElementType](node^._into_value())
 
-    def clear(mut self):
+    def clear(
+        mut self,
+    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
         """Removes all elements from the list.
 
         Notes:
@@ -566,8 +631,14 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         self._tail = Self._NodePointer()
         self._size = 0
 
+    # TODO(MSTDL-2808): Add `ImplicitlyDeletable` compliance to the `insert` and
+    # `extend` methods of `LinkedList`.
     @always_inline
-    def insert[I: Indexer](mut self, idx: I, var elem: Self.ElementType) raises:
+    def insert[
+        I: Indexer
+    ](mut self, idx: I, var elem: Self.ElementType) raises where conforms_to(
+        Self.ElementType, ImplicitlyDeletable
+    ):
         """Insert an element `elem` into the list at index `idx`.
 
         Parameters:
@@ -636,7 +707,11 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         else:
             raise Error("Index ", i, " out of bounds")
 
-    def extend(mut self, var other: Self):
+    # TODO(MSTDL-2808): Add `ImplicitlyDeletable` compliance to the `insert` and
+    # `extend` methods of `LinkedList`.
+    def extend(
+        mut self, var other: Self
+    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
         """Extends the list with another.
 
         Args:
@@ -844,7 +919,11 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         """
         return self._size
 
-    def __iter__(var self) -> Self.IteratorOwnedType:
+    def __iter__(
+        var self,
+    ) -> Self.IteratorOwnedType where conforms_to(
+        Self.ElementType, ImplicitlyDeletable
+    ):
         """Consume the linked list and return an iterator over its elements.
 
         Returns:
@@ -855,7 +934,12 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             - O(1) for iterator construction.
             - O(n) in len(self) for a complete iteration of the list.
         """
-        return Self.IteratorOwnedType(self^)
+        # TODO(MOCO-4205): Remove `trait_downcast` and `downcast`.
+        return Self.IteratorOwnedType(
+            rebind_var[
+                LinkedList[downcast[Self.ElementType, ImplicitlyDeletable]]
+            ](self^)
+        )
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
@@ -875,22 +959,16 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         return _LinkedListIter(
             rebind[
                 Pointer[
-                    LinkedList[
-                        downcast[
-                            Self.ElementType, Copyable & ImplicitlyDeletable
-                        ]
-                    ],
+                    LinkedList[downcast[Self.ElementType, Copyable]],
                     origin_of(self),
                 ]
             ](Pointer(to=self))
         )
 
-    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDeletable` from the
-    # `downcast`s below — it is already implied by `ElementType`'s bound.
     def __reversed__(
         ref self,
     ) -> _LinkedListIter[
-        downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
+        downcast[Self.ElementType, Copyable],
         origin_of(self),
         forward=False,
     ]:
@@ -909,17 +987,13 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             Self.ElementType, Copyable
         ), "LinkedList iteration requires the element to be `Copyable`."
         return _LinkedListIter[
-            downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
+            downcast[Self.ElementType, Copyable],
             origin_of(self),
             forward=False,
         ](
             rebind[
                 Pointer[
-                    LinkedList[
-                        downcast[
-                            Self.ElementType, Copyable & ImplicitlyDeletable
-                        ]
-                    ],
+                    LinkedList[downcast[Self.ElementType, Copyable]],
                     origin_of(self),
                 ]
             ](Pointer(to=self))

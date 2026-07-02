@@ -305,6 +305,16 @@ This version is still a work in progress.
       transparent.
     - Consuming iteration (`for entry in dict^`) is likewise conditional,
       requiring `ValueType` to be `ImplicitlyDeletable`.
+  - `LinkedList[ElementType]`
+    - Unlike `Dict`, a `LinkedList` with non-`ImplicitlyDeletable` elements can
+      be populated (`append`, `prepend`) and then torn down with
+      `destroy_with()`.
+    - Element-destroying operations (`insert`, `extend`, `clear`) still require
+      `ElementType` to be `ImplicitlyDeletable`. For deletable element types
+      (the common case) this is transparent.
+    - Consuming iteration (`for x in list^`, the `IterableOwned` conformance)
+      is likewise conditional, requiring `ElementType` to be
+      `ImplicitlyDeletable`.
 
 - Is is now possible to iterate over owned elements in
   `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`

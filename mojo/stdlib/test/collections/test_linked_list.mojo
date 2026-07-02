@@ -18,6 +18,7 @@ from test_utils import (
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
+    ExplicitDestroy,
     MoveCounter,
     MoveOnly,
     check_write_to,
@@ -770,6 +771,52 @@ def test_linked_list_move_only() raises:
 
     l.clear()
     assert_equal(len(l), 0)
+
+
+# ===-------------------------------------------------------------------===#
+# Conditional `ImplicitlyDeletable` (MSTDL-2775)
+# ===-------------------------------------------------------------------===#
+
+
+def test_linked_list_conditional_implicitly_deletable() raises:
+    assert_true(conforms_to(LinkedList[Int], ImplicitlyDeletable))
+    assert_false(conforms_to(LinkedList[ExplicitDestroy], ImplicitlyDeletable))
+    assert_true(conforms_to(LinkedList[Int], IterableOwned))
+    assert_true(conforms_to(LinkedList[MoveOnly[Int]], IterableOwned))
+    assert_false(conforms_to(LinkedList[ExplicitDestroy], IterableOwned))
+
+
+def test_linked_list_destroy_with() raises:
+    var ll = LinkedList[ExplicitDestroy]()
+    ll.append(ExplicitDestroy(1))
+    ll.append(ExplicitDestroy(2))
+    ll.append(ExplicitDestroy(3))
+    ll.append(ExplicitDestroy(4))
+    ll.append(ExplicitDestroy(5))
+    var destroy_order = List[Int]()
+
+    def dispose(var data: ExplicitDestroy) {mut}:
+        destroy_order.append(data.value)
+        data^.destroy()
+
+    ll^.destroy_with(dispose)
+    assert_equal(len(destroy_order), 5)
+    for i in range(len(destroy_order)):
+        assert_true(destroy_order[i] == i + 1)
+
+
+def test_empty_linked_list_destroy_with() raises:
+    # `destroy_with` on an empty (linear-valued) linked list must run and free the
+    # backing without invoking the closure — there are no entries.
+    var ll = LinkedList[ExplicitDestroy]()
+    var calls = 0
+
+    def dispose(var data: ExplicitDestroy) {mut}:
+        calls += 1
+        data^.destroy()
+
+    ll^.destroy_with(dispose)
+    assert_equal(calls, 0)
 
 
 def main() raises:
