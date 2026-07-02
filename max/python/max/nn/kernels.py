@@ -1628,7 +1628,9 @@ def fused_qk_rms_norm_rope_ragged(
         k_gamma: The rank-1 key RMSNorm weight. Its size must match ``q_gamma``
             and ``kv_params.head_dim``.
         freqs_cis: The RoPE frequency tensor. Its second dimension determines
-            the RoPE dimension. Must share ``input``'s dtype.
+            the RoPE dimension. Must share ``input``'s dtype, or be
+            ``float32`` (the kernel upcasts freqs to the fp32 accumulator, so a
+            higher-precision table is consumed losslessly).
         epsilon: The RMSNorm epsilon value.
         layer_idx: The layer index for the KV cache. Must have dtype ``uint32``.
         weight_offset: The constant offset added to each RMSNorm weight.
@@ -1644,7 +1646,7 @@ def fused_qk_rms_norm_rope_ragged(
         ValueError: If the input ranks are invalid, the row offset or layer
             index dtypes are invalid, the gamma weights have different sizes,
             the gamma size does not match the head dimension, or ``freqs_cis``
-            dtype does not match ``input``.
+            dtype neither matches ``input`` nor is ``float32``.
     """
     _check_dtype(
         DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
@@ -1669,10 +1671,14 @@ def fused_qk_rms_norm_rope_ragged(
             "expected input head_dim to match kv_params.head_dim, got"
             f" {input.shape[2]} and {kv_params.head_dim}"
         )
-    if freqs_cis.dtype != input.dtype:
+    # The kernel is freq-dtype-parametric: it loads freqs_cis and upcasts to
+    # the fp32 accumulator before the RoPE rotation, so a higher-precision
+    # (fp32) freqs table is consumed losslessly regardless of the input dtype.
+    # Allow fp32 freqs with a lower-precision input; otherwise require a match.
+    if freqs_cis.dtype != input.dtype and freqs_cis.dtype != DType.float32:
         raise ValueError(
-            "expected freqs_cis dtype to match input dtype, got"
-            f" {freqs_cis.dtype} and {input.dtype}"
+            "expected freqs_cis dtype to match input dtype (or be float32),"
+            f" got {freqs_cis.dtype} and {input.dtype}"
         )
 
     parameters: dict[str, bool | int | str | DType] = {
