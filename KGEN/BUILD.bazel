@@ -948,7 +948,6 @@ modular_shared_library(
         "//MLRT:AsyncRT/RuntimeGlobals",
         "//MLRT:AsyncRT/Support",
         "//MLRT:Core",
-        "//MLRT:Core/Tensor",
         "//MLRT:Driver/DeviceContext",
         "//Support:Base",
         "//Support:BinaryID",
