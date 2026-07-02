@@ -331,6 +331,35 @@ def depth512_softmax[
     # ---- Scale -----------------------------------------------------------
     var scale_log2e: Scalar[accum_dtype] = scale * log2e
 
+    # ---- FP8 P-scale / lazy-rescale knob ---------------------------------
+    # Fixed P scale for FP8-QKV only. Lifts the un-normalized
+    # softmax probabilities P = exp2(score - row_max) out of the e4m3
+    # subnormal floor before the fp8 cast that feeds the P@V SS MMA, reducing
+    # PV-GEMM quantization error. Since the softmax uses exp2, the scale is
+    # exactly an additive +bias in the exp2 argument (added raw, NOT
+    # multiplied by scale_log2e). row_sum is accumulated from the SAME scaled
+    # P and the output is normalized by 1/row_sum, so the scale cancels
+    # exactly -- no explicit descale. This path has no sink term.
+    #
+    # `p_fp8_bias` and the lazy-rescale gate `rescale_threshold` are the same
+    # knob (both in the exp2/log2 domain), linked as
+    # `p_fp8_bias = 8 + rescale_threshold`:
+    #   fp8 : rescale_threshold = -2,  p_fp8_bias = 6   (a 64x P lift out of
+    #         the e4m3 subnormal floor)
+    #   bf16: rescale_threshold = -8,  p_fp8_bias = 0   (no bias)
+    # The fp8 threshold of -2 (bias 6) was chosen as the perf sweet spot: a
+    # prefill sweep of the threshold magnitude gained ~6% and saturated at
+    # T=2, and it is accuracy-neutral vs the prior x256 default (bit-identical
+    # tail-stress regression test + byte-identical Gemma-4-31B fp8-KV 16k
+    # e2e). The bias is applied ONLY inside `comptime if p_fp8_bias != 0:` so
+    # the bf16 codegen is byte-identical. Overflow-safe: the lazy-rescale
+    # gate (threshold -2) lets a non-rescaled tile's max lag the true max
+    # by up to 2 (log2), so max P = exp2(2 + 6) = 256 < 448 (e4m3 max).
+    comptime rescale_threshold: Scalar[accum_dtype] = Scalar[accum_dtype](
+        -8
+    ) if size_of[qkv_dtype]() >= 2 else Scalar[accum_dtype](-2)
+    comptime p_fp8_bias: Scalar[accum_dtype] = 8 + rescale_threshold
+
     # ---- Barriers --------------------------------------------------------
     var mbars = Depth512MBars[config.num_kv_stages, config.split_o](
         smem.mbar_base()
@@ -548,8 +577,22 @@ def depth512_softmax[
         comptime vs_len = effective_bn // exp_simd
         comptime score_to_logit_ratio: Int = 4
 
+        # fp8 P scale: fold +p_fp8_bias into the exp2 bias via a single fused
+        # multiply-add, matching score_to_logit's fma_ftz:
+        # fma_ftz(-row_max, scale, p_fp8_bias) = -m*scale + p_fp8_bias, so
+        # score_to_logit = fma(score, scale, -m*scale + p_fp8_bias). ftz is
+        # harmless here -- any fp32 subnormal is lost when P truncates to fp8
+        # anyway. `p_fp8_bias` is the unified P-scale/lazy-rescale knob defined
+        # in the outer scope; `comptime if p_fp8_bias != 0` keeps the bf16
+        # expression byte-identical (no `+ 0.0` instruction emitted).
         var vscale = f32x2(scale_log2e)
-        var vneg_max_scaled = f32x2(-row_max * scale_log2e)
+        var vneg_max_scaled: f32x2
+        comptime if p_fp8_bias != 0:
+            vneg_max_scaled = fma_ftz(
+                f32x2(-row_max), f32x2(scale_log2e), f32x2(p_fp8_bias)
+            )
+        else:
+            vneg_max_scaled = f32x2(-row_max * scale_log2e)
 
         @parameter
         @always_inline
@@ -685,10 +728,6 @@ def depth512_softmax[
     var s_cur_tmem = s_odd_tmem
     var s_nxt_pipeline = pipeline_s_even
     var s_nxt_tmem = s_even_tmem
-
-    comptime rescale_threshold: Float32 = Float32(-8) if size_of[
-        qkv_dtype
-    ]() >= 2 else Float32(0)
 
     @parameter
     @always_inline

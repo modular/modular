@@ -236,6 +236,12 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # Tail-stress regression guard for the FA4 256x P-scale (engineered
+    # peaked softmax with an informative e4m3-underflow tail). SM100-only.
+    "attention/test_mha_sm100_qkv_fp8_d128_tail_stress.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # TODO(KERN-2410): Investigate and enable on macOS
     "test_bicubic.mojo": select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
