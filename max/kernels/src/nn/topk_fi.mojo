@@ -13,6 +13,7 @@
 
 from std.bit import log2_floor
 from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
     block_dim,
@@ -1198,8 +1199,11 @@ def apply_min_p_mask_kernel[
             probs[row_start + i] = Scalar[dtype](0)
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
+)
 @__name(
-    t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}",
+    t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}_{from_logits}",
 )
 def TopKTopPSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
@@ -1211,6 +1215,7 @@ def TopKTopPSamplingFromProbKernel[
     dtype: DType,
     out_idx_type: DType,
     deterministic: Bool,
+    from_logits: Bool = False,
 ](
     probs: TileTensor[dtype, ProbsLayoutType, probs_origin],
     output: TileTensor[out_idx_type, OutputLayoutType, output_origin],
@@ -1222,6 +1227,8 @@ def TopKTopPSamplingFromProbKernel[
     d: Int,
     rng_seed: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]],
     rng_offset: UInt64,
+    temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    min_p: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
 ):
     """Kernel for joint top-k + top-p sampling from probability distribution.
 
@@ -1233,8 +1240,20 @@ def TopKTopPSamplingFromProbKernel[
     When top_p_val = 1.0 and top_p_arr is null, this degrades to top-k-only
     with zero overhead since sum < 1.0 is always true.
 
+    When `from_logits` is True, `probs` contains raw logits and softmax with
+    per-row temperature scaling is fused into the kernel: every load is
+    transformed to `exp((logit - row_max) / temp)`, the unnormalized softmax
+    value with the row maximum shifted to exactly 1.0. The pivot search over
+    [0, 1] is unchanged; the total unnormalized mass `z` replaces the
+    normalized distribution's implicit total of 1.0 in the initial CDF budget
+    and scales the top-p threshold. The optional min-p mask is applied inline
+    (in this domain the max "probability" is 1.0, so the mask threshold is
+    simply `min_p`), matching `apply_min_p_mask_kernel` semantics in the
+    normalized domain.
+
     Args:
-        probs: Input probability distribution [batch_size, d].
+        probs: Input probability distribution [batch_size, d], or raw logits
+            when `from_logits` is True.
         output: Output sampled indices [batch_size].
         indices: Optional row indices for batch indexing [batch_size].
         top_k_arr: Optional per-row top_k values [batch_size].
@@ -1245,6 +1264,10 @@ def TopKTopPSamplingFromProbKernel[
         rng_seed: Pointer to seed value. If non-null, rng_seed[0] is used
             as the seed. If null, defaults to 0.
         rng_offset: Random offset for Random number generator.
+        temperature: Optional per-row temperature [batch_size]. Only used
+            when `from_logits` is True; defaults to 1.0 per row.
+        min_p: Optional per-row min-p thresholds [batch_size]. Only used
+            when `from_logits` is True.
     """
     comptime assert output.flat_rank == 1
 
@@ -1280,6 +1303,71 @@ def TopKTopPSamplingFromProbKernel[
         var probs_ptr = probs.ptr + row_idx * d
         var probs_row = TileTensor(probs_ptr, row_major(Idx[1], d))
 
+        # From-logits mode: resolve per-row temperature / min-p and compute
+        # the row max and total unnormalized softmax mass z in two uniform
+        # passes. z defaults to 1.0 in from-prob mode so the CDF budget and
+        # top-p scaling below are domain-independent.
+        var inv_temp = Float32(1.0)
+        var row_max = Float32(0.0)
+        var min_p_thresh = Float32(0.0)
+        var z = Float32(1.0)
+
+        comptime if from_logits:
+            var temp_val = Float32(1.0)
+            if temperature:
+                temp_val = temperature.unsafe_value()[row_idx]
+            # Clamp to prevent division by zero on greedy (T=0) rows.
+            inv_temp = 1.0 / max(temp_val, Float32(1e-6))
+            if min_p:
+                min_p_thresh = min_p.unsafe_value()[row_idx]
+
+            # Pass 1: block max of the logits.
+            var thread_max = Scalar[DType.float32].MIN
+            for i in range(tx, d // vec_size, block_size):
+                var v = probs_row.load[width=vec_size](
+                    (Idx[0], i * vec_size)
+                ).cast[DType.float32]()
+                thread_max = max(thread_max, v.reduce_max())
+            row_max = block.max[block_size=block_size, broadcast=True](
+                thread_max
+            )
+
+            # Pass 2: block sum of exp((logit - row_max) / temp). The full
+            # (unmasked) mass is used, matching the separate-softmax path
+            # where probabilities are normalized before min-p masking.
+            var thread_sum = Float32(0.0)
+            for i in range(tx, d // vec_size, block_size):
+                var v = probs_row.load[width=vec_size](
+                    (Idx[0], i * vec_size)
+                ).cast[DType.float32]()
+                thread_sum += exp((v - row_max) * inv_temp).reduce_add()
+            z = block.sum[block_size=block_size, broadcast=True](thread_sum)
+
+        @parameter
+        @always_inline
+        def load_dist[width: Int](offset: Int) -> SIMD[DType.float32, width]:
+            # Load `width` elements of the sampling distribution at `offset`.
+            # In from-logits mode this is the unnormalized softmax value with
+            # the min-p mask applied inline.
+            var v = probs_row.load[width=width]((Idx[0], offset)).cast[
+                DType.float32
+            ]()
+
+            comptime if from_logits:
+                var e = exp((v - row_max) * inv_temp)
+                # Same predicate as apply_min_p_mask_kernel (`< threshold`
+                # zeroes; NaN compares false and is preserved).
+                if min_p_thresh > 0:
+                    comptime for j in range(width):
+                        if e[j] < min_p_thresh:
+                            e[j] = 0
+                return e
+            else:
+                return v
+
+        # Top-p budget in the working domain (z == 1.0 in from-prob mode).
+        var p_eff = p * z
+
         # The final sampled index, produced by whichever search path runs.
         var sampled_id = 0
 
@@ -1311,7 +1399,7 @@ def TopKTopPSamplingFromProbKernel[
             # barrier.
             var low: Float32 = 0.0
             var high: Float32 = 1.0
-            var q: Float32 = 1.0
+            var q: Float32 = z
 
             for _it in range(MAX_ITERS):
                 var done = done_sram[0] != 0
@@ -1323,7 +1411,7 @@ def TopKTopPSamplingFromProbKernel[
                     var search_id = d
                     var last_valid_id = 0
                     for j in range(d):
-                        var pv = Float32(probs_row.load[width=1]((Idx[0], j)))
+                        var pv = Float32(load_dist[1](j))
                         if pv > low:
                             last_valid_id = j
                             cum += pv
@@ -1332,9 +1420,7 @@ def TopKTopPSamplingFromProbKernel[
                     if search_id == d:
                         search_id = last_valid_id
 
-                    var pivot_0 = Float32(
-                        probs_row.load[width=1]((Idx[0], search_id))
-                    )
+                    var pivot_0 = Float32(load_dist[1](search_id))
                     var pivot_1 = (pivot_0 + high) / 2.0
 
                     # Sequential counts + prob mass for both pivots.
@@ -1343,7 +1429,7 @@ def TopKTopPSamplingFromProbKernel[
                     var count_1: Int = 0
                     var value_1: Float32 = 0.0
                     for j in range(d):
-                        var pv = Float32(probs_row.load[width=1]((Idx[0], j)))
+                        var pv = Float32(load_dist[1](j))
                         if pv > pivot_0:
                             count_0 += 1
                             value_0 += pv
@@ -1351,13 +1437,13 @@ def TopKTopPSamplingFromProbKernel[
                             count_1 += 1
                             value_1 += pv
 
-                    if count_0 < k and value_0 <= p:
+                    if count_0 < k and value_0 <= p_eff:
                         # Case 1: pivot_0 accepted - count below k AND mass
                         # below p. Use <= so that p=0 correctly accepts the
                         # argmax.
                         out_id_sram[0] = search_id
                         done_sram[0] = 1
-                    elif count_1 < k and value_1 <= p:
+                    elif count_1 < k and value_1 <= p_eff:
                         # Case 2: pivot_0 rejected, pivot_1 accepted.
                         low = pivot_0
                         high = pivot_1
@@ -1384,7 +1470,7 @@ def TopKTopPSamplingFromProbKernel[
 
             var probs_vec: SIMD[DType.float32, vec_size]
             var aggregate: Float32
-            var q: Float32 = 1.0
+            var q: Float32 = z
             var low: Float32 = 0.0
             var high: Float32 = 1.0
 
@@ -1400,9 +1486,9 @@ def TopKTopPSamplingFromProbKernel[
                 for i in range(ceildiv(d, block_size * vec_size)):
                     probs_vec = 0
                     if (i * block_size + tx) * vec_size < d:
-                        probs_vec = probs_row.load[width=vec_size](
-                            (Idx[0], ((i * block_size + tx) * vec_size))
-                        ).cast[DType.float32]()
+                        probs_vec = load_dist[vec_size](
+                            (i * block_size + tx) * vec_size
+                        )
 
                     var result = device_sampling_from_prob[
                         vec_size, block_size, dtype, deterministic
@@ -1435,9 +1521,7 @@ def TopKTopPSamplingFromProbKernel[
                 if sampled_id == d:
                     sampled_id = last_valid_id_sram[0]
 
-                var pivot_0 = Float32(
-                    probs_row.load[width=1]((Idx[0], sampled_id))
-                )
+                var pivot_0 = Float32(load_dist[1](sampled_id))
                 var pivot_1 = (pivot_0 + high) / 2.0
 
                 # Accumulate thread-local value counts across all chunks.
@@ -1447,9 +1531,9 @@ def TopKTopPSamplingFromProbKernel[
                 for i in range(ceildiv(d, block_size * vec_size)):
                     probs_vec = 0
                     if (i * block_size + tx) * vec_size < d:
-                        probs_vec = probs_row.load[width=vec_size](
-                            (Idx[0], ((i * block_size + tx) * vec_size))
-                        ).cast[DType.float32]()
+                        probs_vec = load_dist[vec_size](
+                            (i * block_size + tx) * vec_size
+                        )
 
                     var probs_gt_pivot_0_values = SIMD[
                         DType.float32, vec_size
@@ -1499,7 +1583,7 @@ def TopKTopPSamplingFromProbKernel[
 
                 if (
                     aggregate_gt_pivot_0.count < Int32(k)
-                    and aggregate_gt_pivot_0.value <= p
+                    and aggregate_gt_pivot_0.value <= p_eff
                 ):
                     # Case 1: pivot_0 accepted - count below k AND prob mass below p.
                     # Use <= so that p=0 correctly accepts the argmax (sum_above=0).
@@ -1512,7 +1596,7 @@ def TopKTopPSamplingFromProbKernel[
 
                 if (
                     aggregate_gt_pivot_1.count < Int32(k)
-                    and aggregate_gt_pivot_1.value <= p
+                    and aggregate_gt_pivot_1.value <= p_eff
                 ):
                     # Case 2: pivot_0 rejected, pivot_1 accepted.
                     low = pivot_0
@@ -1533,6 +1617,7 @@ def topk_topp_sampling_from_prob[
     dtype: DType,
     out_idx_type: DType,
     block_size: Int = 1024,
+    from_logits: Bool = False,
     TopKArrLayoutType: TensorLayout = Layout[
         shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
@@ -1546,6 +1631,14 @@ def topk_topp_sampling_from_prob[
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     SeedLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
+    ],
+    TemperatureLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
+    ],
+    MinPLayoutType: TensorLayout = Layout[
         shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
@@ -1569,6 +1662,12 @@ def topk_topp_sampling_from_prob[
     top_p_arr: Optional[
         TileTensor[DType.float32, TopPArrLayoutType, ImmutAnyOrigin]
     ] = None,
+    temperature: Optional[
+        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+    ] = None,
+    min_p: Optional[
+        TileTensor[DType.float32, MinPLayoutType, ImmutAnyOrigin]
+    ] = None,
 ) raises:
     """Joint top-k + top-p sampling from probability distribution.
 
@@ -1576,9 +1675,15 @@ def topk_topp_sampling_from_prob[
     top-k count constraint AND the top-p nucleus constraint. When top_p_val is
     1.0 (default) this behaves identically to topk_sampling_from_prob.
 
+    When `from_logits` is True, `probs` contains raw logits: softmax with
+    per-row temperature scaling and the optional min-p mask are fused into
+    the sampling kernel, avoiding the [batch_size, d] probability round-trip
+    through global memory and the separate softmax / mask kernel launches.
+
     Args:
         ctx: Device context for kernel execution.
-        probs: Input probability distribution [batch_size, d].
+        probs: Input probability distribution [batch_size, d], or raw logits
+            when `from_logits` is True.
         output: Output sampled indices [batch_size].
         top_k_val: Default top-k value (number of top tokens to consider).
         top_p_val: Default top-p value (nucleus probability threshold).
@@ -1589,6 +1694,10 @@ def topk_topp_sampling_from_prob[
         indices: Optional row indices for batch indexing [batch_size].
         top_k_arr: Optional per-row top-k values [batch_size].
         top_p_arr: Optional per-row top-p values [batch_size].
+        temperature: Optional per-row temperature values [batch_size]. Only
+            used when `from_logits` is True; defaults to 1.0 per row.
+        min_p: Optional per-row min-p thresholds [batch_size]. Only used
+            when `from_logits` is True.
 
     Raises:
         Error: If tensor ranks or shapes are invalid.
@@ -1648,6 +1757,16 @@ def topk_topp_sampling_from_prob[
         if rng_seed:
             seed_ptr = rng_seed.unsafe_value().ptr
 
+        var temperature_ptr: Optional[
+            UnsafePointer[Float32, ImmutAnyOrigin]
+        ] = None
+        if temperature:
+            temperature_ptr = temperature.unsafe_value().ptr
+
+        var min_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
+        if min_p:
+            min_p_ptr = min_p.unsafe_value().ptr
+
         @parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
             comptime kernel = TopKTopPSamplingFromProbKernel[
@@ -1660,6 +1779,7 @@ def topk_topp_sampling_from_prob[
                 dtype,
                 out_idx_type,
                 deterministic,
+                from_logits,
             ]
             ctx.enqueue_function[kernel](
                 probs.as_immut(),
@@ -1672,6 +1792,8 @@ def topk_topp_sampling_from_prob[
                 d,
                 seed_ptr,
                 rng_offset,
+                temperature_ptr,
+                min_p_ptr,
                 grid_dim=batch_size,
                 block_dim=block_size,
                 attributes=pdl_launch_attributes(PDLLevel.ON),

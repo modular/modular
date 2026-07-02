@@ -313,6 +313,12 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- GPU token sampling with `top_k >= 10` is now 2-4x faster. The softmax,
+  temperature scaling, and min-p masking steps are fused into the top-k/top-p
+  rejection-sampling kernel, eliminating an intermediate probability buffer
+  and two kernel launches per sampling call. The dispatch threshold between
+  the two-stage top-k kernel and the rejection-sampling kernel was lowered
+  from `top_k = 32` to `top_k = 10` to match the new performance crossover.
 - The `TileTensor` layout type no longer takes an `element_size` parameter. A
   tensor's logical element width is now carried by its `Storage` parameter via
   `PointerStorage[element_width]` (default `PointerStorage[1]`), and
@@ -354,6 +360,11 @@ This version is still a work in progress.
   already-written and produced non-deterministic results.
 
 ## Breaking changes
+
+- Removed `InferenceSession.use_old_top_k_kernel()` and the
+  `USE_OLD_TOP_K_KERNEL` environment variable. The legacy top-k sampling
+  kernel this fallback selected has been deleted; the current two-stage
+  top-k kernel is now used unconditionally.
 
 ## Fixes
 

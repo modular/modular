@@ -563,7 +563,13 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
 
 
 def main() raises:
-    var N = arg_parse("N", 1024)
+    # If no N was provided (kbench env args or --N= on the CLI), run the
+    # built-in dispatch grid instead of the parameterized benchmark.
+    var N = arg_parse("N", -1)
+    if N < 0:
+        bench_dispatch_all()
+        return
+
     var K = arg_parse("K", 50)
     var block_size = arg_parse("block_size", 256)
     var batch_size = arg_parse("batch_size", 8)
@@ -597,8 +603,6 @@ def main() raises:
 
     m.dump_report()
 
-    bench_dispatch_all()
-
 
 from std.benchmark import BenchConfig
 from nn.topk import fused_token_sampling_gpu
@@ -626,8 +630,10 @@ def bench_dispatch[
     var seed_tt = TileTensor(seed_buf, row_major(batch_size))
     var seed_imm = seed_tt.as_unsafe_any_origin().as_immut()
 
+    # Regime labels mirror the dispatch threshold in fused_token_sampling_gpu
+    # (two-stage kernel below max_k = 10, FI rejection sampling at or above).
     comptime regime = "gumbel" if max_k == -1 else (
-        "topk_lt32" if max_k < 32 else "topk_ge32"
+        "topk_lt10" if max_k < 10 else "topk_ge10"
     )
     var label = (
         String(regime)
@@ -701,6 +707,7 @@ def bench_dispatch_all() raises:
         for bs in batch_sizes:
             for v in vocab_sizes:
                 bench_dispatch[dtype, -1](b, ctx, bs, v)
+                bench_dispatch[dtype, 5](b, ctx, bs, v)
                 bench_dispatch[dtype, 20](b, ctx, bs, v)
                 bench_dispatch[dtype, 50](b, ctx, bs, v)
 
