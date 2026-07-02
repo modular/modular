@@ -272,7 +272,7 @@ struct Pointer[
     def __init__(
         out self, other: Pointer[address_space=Self.address_space, ...]
     ) where Self.origin.contains[other.origin]:
-        """Implicitly cast a pointer with one origin to a another origin when
+        """Implicitly cast a pointer with one origin to another origin when
         the result origin is a superset.
 
         Args:
