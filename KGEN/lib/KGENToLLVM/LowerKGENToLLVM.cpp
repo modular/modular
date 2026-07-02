@@ -38,6 +38,12 @@ using namespace M;
 using namespace KGEN;
 namespace LLVM = mlir::LLVM;
 
+// Defined here so the symbol is self-contained when KGENToLLVM is linked to a
+// plugin.
+namespace M::KGEN {
+/*extern*/ const char *kMetalKernelAttr = "metal.kernel";
+} // namespace M::KGEN
+
 /// Get the LLVM linkage kind for an export kind.
 static LLVM::Linkage getLinkageKind(ExportKind exportKind) {
   switch (exportKind) {
