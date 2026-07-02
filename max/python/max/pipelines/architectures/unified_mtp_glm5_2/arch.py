@@ -31,7 +31,9 @@ unified_mtp_glm5_2_arch = SupportedArchitecture(
     ],
     default_encoding="float8_e4m3fn",
     supported_encodings={
+        "float4_e2m1fnx2",
         "float8_e4m3fn",
+        "bfloat16",
     },
     multi_gpu_supported=True,
     pipeline_model=UnifiedMTPGlm5_2Model,

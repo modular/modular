@@ -370,12 +370,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         )
         kv_b_proj_shards = self.kv_b_proj.shard(devices)
         kv_b_proj_scale_shards = self.kv_b_proj_scale.shard(devices)
-        o_proj_weight_shards = self.o_proj.weight.shard(devices)
-
-        if self.o_proj.input_scale is not None:
-            o_proj_scale_shards = self.o_proj.input_scale.shard(devices)
-        if self.o_proj.weight_scale is not None:
-            o_proj_weight_scale_shards = self.o_proj.weight_scale.shard(devices)
+        o_proj_shards = self.o_proj.shard(devices)
 
         if self.indexer is not None:
             indexer_wq_b_shards = self.indexer.wq_b.shard(devices)
@@ -426,13 +421,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             ]
             replica.kv_b_proj = kv_b_proj_shards[shard_idx]
             replica.kv_b_proj_scale = kv_b_proj_scale_shards[shard_idx]
-            replica.o_proj.weight = o_proj_weight_shards[shard_idx]
-            if self.o_proj.input_scale is not None:
-                replica.o_proj.input_scale = o_proj_scale_shards[shard_idx]
-            if self.o_proj.weight_scale is not None:
-                replica.o_proj.weight_scale = o_proj_weight_scale_shards[
-                    shard_idx
-                ]
+            replica.o_proj = o_proj_shards[shard_idx]
 
             if self.indexer is not None:
                 assert replica.indexer is not None
@@ -892,9 +881,12 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
                 input_row_offsets,
                 indexer_kv_collection,
                 layer_idx,
-                mask_variant=MHAMaskVariant.CAUSAL_MASK
-                if self.graph_mode in ["prefill", "auto"]
-                else MHAMaskVariant.NULL_MASK,
+                # TODO(KERN-2997): Once the graph mode is no longer hardcoded to
+                # "decode", this should be conditionally set to NULL_MASK.
+                # Must stay CAUSAL for MTP: the target verifies K+1 merged
+                # tokens in one decode forward, so a NULL_MASK top-k would leak
+                # future draft-position keys into each verification query.
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
             )
             topk_indices = ops.where(
                 (topk_indices != -1),

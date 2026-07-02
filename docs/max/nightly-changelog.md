@@ -19,7 +19,8 @@ This version is still a work in progress.
   computes its top-k selection on the first MTP step and reuses it on the
   rest. Enabled automatically for GLM checkpoints that ship a NextN layer when
   speculative decoding is requested with no separate draft model. Validated on
-  `zai-org/GLM-5.2-FP8` across 8 B200s (`--speculative-method mtp`).
+  `zai-org/GLM-5.2-FP8` and `nvidia/GLM-5.2-NVFP4` across 8 B200s
+  (`--speculative-method mtp`).
 - Added Laguna (`LagunaForCausalLM`), poolside's decoder-only sparse-MoE
   language model. It uses sigmoid expert routing with a per-expert
   score-correction bias, a per-element softplus attention-output gate, and
