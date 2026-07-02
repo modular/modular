@@ -95,9 +95,11 @@ bool TargetBackend::isSharedMemoryGlobal(
          global.hasExternalLinkage();
 }
 
-static llvm::ManagedStatic<TargetBackendRegistry> TheRegistry;
+static llvm::ManagedStatic<TargetBackendRegistry> theBackendRegistry;
 
-TargetBackendRegistry &TargetBackendRegistry::get() { return *TheRegistry; }
+TargetBackendRegistry &TargetBackendRegistry::get() {
+  return *theBackendRegistry;
+}
 
 void TargetBackendRegistry::add(std::unique_ptr<TargetBackend> backend) {
   Backends.push_back(std::move(backend));

@@ -13,6 +13,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/PluginUtils.h"
+#include "KGENToLLVM/Target/TargetLowering.h"
 #include "LLVMLoweringUtils.h"
 #include "LowerPOPToLLVMExternalCalls.h"
 #include "Support/Compiler/MLIRDType.h"
@@ -3565,6 +3566,15 @@ void LowerPOPToLLVMPass::runOnOperation() {
     // plugin system and building it.
     (void)pluginMgr->populateLowerPOPToLLVMPatterns(patterns, typeConverter,
                                                     targetInfo);
+  }
+
+  // Target-specific patterns contributed by the target lowering, inserted after
+  // the generic patterns. Target patterns use a higher benefit to win for the
+  // ops they handle.
+  if (const TargetLowering *lowering =
+          TargetLoweringRegistry::get().lookup(targetInfo.getTriple())) {
+    lowering->populateLowerPOPToLLVMPatterns(patterns, typeConverter,
+                                             targetInfo);
   }
 
   if (failed(mlir::applyPartialConversion(*func, target, std::move(patterns))))
