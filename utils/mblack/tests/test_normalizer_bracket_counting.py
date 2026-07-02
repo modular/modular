@@ -90,7 +90,7 @@ def test_unmatched_paren_in_multiline_docstring_does_not_disable_continuation():
         "    var b = 2\n"
         '    var s = """multi\n'
         '    line""".upper()\n'
-        '    var f = f"""x {a +\n'
+        '    var f = t"""x {a +\n'
         '        b} y"""\n'
         "    var x = a +\n"
         "        b\n"
@@ -105,7 +105,7 @@ def test_unmatched_paren_in_multiline_docstring_does_not_disable_continuation():
         "    var b = 2\n"
         '    var s = """multi\n'
         '    line""".upper()\n'
-        '    var f = f"""x {a +\n'
+        '    var f = t"""x {a +\n'
         '        b} y"""\n'
         "    var x = a + b\n"
     )
