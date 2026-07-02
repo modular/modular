@@ -1268,6 +1268,54 @@ bool KGEN::isNVPTX_HopperAndAbove(TargetInfoAttr target) {
 }
 
 //===----------------------------------------------------------------------===//
+// getWorkGroupSizeRange
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// Helper to extract the min and max values of a work-group-size attribute.
+template <typename AttrT>
+ErrorOr<std::pair<int64_t, int64_t>> getWorkGroupSizeRangeHelper(AttrT attr) {
+  SmallVector<int64_t> values;
+  if constexpr (std::is_same_v<POP::ArrayAttr, AttrT>) {
+    if (attr.getValues().size() != 1 && attr.getValues().size() != 2)
+      return Error("ArrayAttr must contain exactly one or two values");
+
+    values =
+        llvm::map_to_vector(attr.getValues(), [](Attribute attr) -> int64_t {
+          if (auto integerAttr = ::dyn_cast<IntegerAttr>(attr))
+            return static_cast<int64_t>(integerAttr.getInt());
+          return static_cast<int64_t>(::cast<KGEN::SIMDAttr>(attr)
+                                          .getValues()
+                                          .front()
+                                          .getIntVal()
+                                          .getSExtValue());
+        });
+  } else if constexpr (std::is_same_v<IntegerAttr, AttrT>) {
+    values.push_back(static_cast<int64_t>(attr.getInt()));
+  } else {
+    llvm_unreachable(
+        "must be either an ArrayAttr of 1 element or an IntegerAttr");
+  }
+  if (values.size() == 1)
+    values.insert(values.begin(), 1);
+
+  return std::make_pair(values[0], values[1]);
+}
+} // namespace
+
+ErrorOr<std::pair<int64_t, int64_t>>
+KGEN::getWorkGroupSizeRange(Attribute value) {
+  if (auto array = dyn_cast<POP::ArrayAttr>(value)) {
+    return getWorkGroupSizeRangeHelper(array);
+  }
+  if (auto integer = dyn_cast<IntegerAttr>(value)) {
+    return getWorkGroupSizeRangeHelper(integer);
+  }
+  return Error("attribute type must be either an ArrayAttr of 1 or 2 elements "
+               "or an IntegerAttr");
+}
+
+//===----------------------------------------------------------------------===//
 // squashPointlessCasts
 //===----------------------------------------------------------------------===//
 
