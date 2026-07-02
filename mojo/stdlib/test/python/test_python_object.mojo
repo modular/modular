@@ -569,8 +569,8 @@ def test_py_slice() raises:
         _ = with_2d[0:1][4]
 
 
-def test_contains_dunder() raises:
-    with assert_raises(contains="'int' object is not iterable"):
+def test_contains() raises:
+    with assert_raises(contains="argument of type 'int' is not"):
         var z = PythonObject(0)
         _ = 5 in z
 
@@ -589,6 +589,34 @@ def test_contains_dunder() raises:
     assert_true("A" in y)
     assert_false("C" in y)
     assert_true("B" in y)
+
+    var CONTAINS_SOURCE = """
+class ContainsOnly:
+  def __contains__(self, value):
+    return value == 'hit'
+
+class ContainsRaises:
+  def __contains__(self, value):
+    raise ValueError('boom')
+
+class IterOnly:
+  def __iter__(self):
+    return iter([1, 2, 3])
+"""
+
+    var python = Python()
+    _ = python.eval(CONTAINS_SOURCE)
+    var contains_only = python.evaluate("ContainsOnly()")
+    assert_true("hit" in contains_only)
+    assert_false("miss" in contains_only)
+
+    var contains_raises = python.evaluate("ContainsRaises()")
+    with assert_raises(contains="boom"):
+        _ = "hit" in contains_raises
+
+    var iter_only = python.evaluate("IterOnly()")
+    assert_true(2 in iter_only)
+    assert_false(4 in iter_only)
 
 
 @fieldwise_init

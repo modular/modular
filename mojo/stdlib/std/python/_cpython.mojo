@@ -954,6 +954,11 @@ comptime PyObject_Hash = ExternalFunction[
     # Py_hash_t PyObject_Hash(PyObject *o)
     def(PyObjectPtr) thin abi("C") -> Py_hash_t,
 ]
+comptime PySequence_Contains = ExternalFunction[
+    "PySequence_Contains",
+    # int PySequence_Contains(PyObject *o, PyObject *value)
+    def(PyObjectPtr, PyObjectPtr) thin abi("C") -> c_int,
+]
 comptime PyObject_IsTrue = ExternalFunction[
     "PyObject_IsTrue",
     # int PyObject_IsTrue(PyObject *o)
@@ -1410,6 +1415,7 @@ struct CPython(Defaultable, Movable):
     var _PyObject_SetAttrString: PyObject_SetAttrString.type
     var _PyObject_Str: PyObject_Str.type
     var _PyObject_Hash: PyObject_Hash.type
+    var _PySequence_Contains: PySequence_Contains.type
     var _PyObject_IsTrue: PyObject_IsTrue.type
     var _PyObject_Type: PyObject_Type.type
     var _PyObject_Length: PyObject_Length.type
@@ -1586,6 +1592,7 @@ struct CPython(Defaultable, Movable):
         )
         self._PyObject_Str = PyObject_Str.load(self.lib.borrow())
         self._PyObject_Hash = PyObject_Hash.load(self.lib.borrow())
+        self._PySequence_Contains = PySequence_Contains.load(self.lib.borrow())
         self._PyObject_IsTrue = PyObject_IsTrue.load(self.lib.borrow())
         self._PyObject_Type = PyObject_Type.load(self.lib.borrow())
         self._PyObject_Length = PyObject_Length.load(self.lib.borrow())
@@ -2196,6 +2203,19 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/object.html#c.PyObject_Hash
         """
         return self._PyObject_Hash(obj)
+
+    def PySequence_Contains(
+        self, obj: PyObjectPtr, value: PyObjectPtr
+    ) -> c_int:
+        """Determine whether `obj` contains `value`.
+
+        Returns `1` if `obj` contains `value`, `0` if it does not, and `-1`
+        on failure.
+
+        References:
+        - https://docs.python.org/3/c-api/sequence.html#c.PySequence_Contains
+        """
+        return self._PySequence_Contains(obj, value)
 
     def PyObject_IsTrue(self, obj: PyObjectPtr) -> c_int:
         """Returns `1` if the object `obj` is considered to be true, and `0`
