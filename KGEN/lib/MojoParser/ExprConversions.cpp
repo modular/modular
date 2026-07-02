@@ -141,11 +141,11 @@ static bool canFullyDischargeBodyConstraints(
   ArrayRef<ConstraintAttr> actualConstraints = actual.getBodyConstraints();
   auto actualParamList = cast<PogListAttr>(actual.getMetadata());
   OptionalDiag diag(declScope.getShared(), loc, /*discardError=*/true);
-  return checkConstraints(declScope, actualParamList, actualConstraints,
-                          actualConstraints, diag.getDiag(),
-                          /*unprovableConstraints=*/nullptr,
-                          /*evaluator=*/nullptr,
-                          additionalAssumptions) == ConstraintResult::Satisfied;
+  return canDischargeConstraints(declScope, actualParamList, actualConstraints,
+                                 actualConstraints, diag.getDiag(),
+                                 /*unprovableConstraints=*/nullptr,
+                                 /*evaluator=*/nullptr, additionalAssumptions)
+      .isTrue();
 }
 
 /// Returns true if the constraints on `actual` can be fully discharged to reach
@@ -911,11 +911,11 @@ classifyEmptyGeneratorToBody(ASTExprAnd<CValue> valueExpr, ASTType requiredType,
   OptionalDiag diag(declScope.getShared(), valueExpr.expr->getLoc(),
                     /*discardError=*/true);
   bool satisfied =
-      checkConstraints(declScope, paramList, bodyConstraints,
-                       /*origConstraints=*/{}, diag.getDiag(),
-                       /*unprovableConstraints=*/nullptr,
-                       /*evaluator=*/nullptr,
-                       additionalAssumptions) == ConstraintResult::Satisfied;
+      canDischargeConstraints(declScope, paramList, bodyConstraints,
+                              /*origConstraints=*/{}, diag.getDiag(),
+                              /*unprovableConstraints=*/nullptr,
+                              /*evaluator=*/nullptr, additionalAssumptions)
+          .isTrue();
   return ConversionResult::scopeDependent(satisfied);
 }
 
@@ -1522,10 +1522,11 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
                                      TraitType trait) {
   // Use a special wrapper decl in the builtins as stubs.
   ASTType wrapperType = shared.getBuiltinStubsMLIRType(loc);
-  return wrapperType.checkConformance(
-             trait, shared,
-             ASTDecl::getAssumptionsFromScope(wrapperType.getDecl(shared))) ==
-         ConformanceResult::Yes;
+  return wrapperType
+      .doesConformTo(
+          trait, shared,
+          ASTDecl::getAssumptionsFromScope(wrapperType.getDecl(shared)))
+      .isTrue();
 }
 
 /// Emit a conversion from an MLIR type to a trait type by materializing stubs
@@ -1562,8 +1563,7 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
   // Explicitly check that the wrapper conforms to the trait so that
   // conformances & special functions may be generated.  __MLIRType has only
   // unconditional conformances, so no caller scope is needed.
-  if (wrapperType.checkConformance(trait, shared, {}) !=
-      ConformanceResult::Yes) {
+  if (!wrapperType.doesConformTo(trait, shared, {}).isTrue()) {
     MojoInflightDiag diag =
         shared.emitError(value.expr->getLoc(), "cannot bind MLIR type ")
         << mlirType << " to trait " << ASTType(trait);
@@ -1602,20 +1602,14 @@ static ASTDecl *getClosureTraitDecl(SharedState &shared,
   return nullptr;
 }
 
-/// The definite conformance verdict for a settled check: `Yes` when proven,
-/// `No` otherwise. Never yields `NeedsEvidence`, so use this only where the
-/// outcome is already fully proven.
-static ConformanceResult getProvenConformance(bool proven) {
-  return proven ? ConformanceResult::Yes : ConformanceResult::No;
-}
-
-// Returns the upcastability verdict (`Yes`/`No`/`NeedsEvidence`) for converting
-// a type value to a trait. Returns failure for non-applicable cases (i.e.,
+// Returns the upcastability verdict (`yes`/`no`/`unknown`) for converting a
+// type value to a trait. Returns failure for non-applicable cases (i.e.,
 // `fromType` is not a typetype and/or `toType` is not a trait type).
-FailureOr<ConformanceResult>
-IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
-                               ASTType toType, ASTDecl *declScope,
-                               bool *scopeDependent) {
+FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(SharedState &shared,
+                                                   SMLoc loc, ASTType fromType,
+                                                   ASTType toType,
+                                                   ASTDecl *declScope,
+                                                   bool *scopeDependent) {
   // By default the verdict depends only on the (fromType, toType) pair. The
   // branches below that consult `declScope`'s assumptions set this, since an
   // assumption-derived verdict is scope-dependent and must not be memoized.
@@ -1623,14 +1617,14 @@ IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
     *scopeDependent = false;
 
   if (isEqualCanon(fromType, toType))
-    return ConformanceResult::Yes;
+    return TriState::yes();
 
   // Trait metatypes/struct MetaMetaType are allowed to upcast to trivial
   // types.
   FailureOr<bool> upCastable =
       isValidUpCastToTypeType(shared, fromType, toType);
   if (succeeded(upCastable))
-    return getProvenConformance(*upCastable);
+    return TriState::fromBool(*upCastable);
 
   auto canFnLiteralUpCastToTrait = [&](TypedAttr fnPValue,
                                        AnyTraitType anyTrait) {
@@ -1668,7 +1662,7 @@ IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
               traitDeclOp && traitDeclOp.getDefinesClosure()) {
             if (succeeded(shared.closureEmitter->isCompatibleWith(
                     fromType, &symbolDecl))) {
-              return ConformanceResult::Yes;
+              return TriState::yes();
             }
           }
         }
@@ -1681,18 +1675,18 @@ IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
         auto assumptions = ASTDecl::getAssumptionsFromScope(declScope);
         if (scopeDependent && !assumptions.empty())
           *scopeDependent = true;
-        return fromType.checkConformance(trait, shared, assumptions);
+        return fromType.doesConformTo(trait, shared, assumptions);
       }
     } else if (auto fnGen =
                    sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaType>(
                        fromType)) {
-      return getProvenConformance(canFnLiteralUpCastToTrait(
+      return TriState::fromBool(canFnLiteralUpCastToTrait(
           fnGen.getType().getSymbolConstantAttr(), anyTrait));
     } else {
       // This isn't relevant, e.g. in function pointer to closure case.
       return failure();
     }
-    return getProvenConformance(result);
+    return TriState::fromBool(result);
   }
 
   if (auto anyTrait = sugarDynCast<AnyTraitType>(toType)) {
@@ -1702,7 +1696,7 @@ IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
     // one metatype level up.
     if (auto fnGen = sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaMetaType>(
             fromType)) {
-      return getProvenConformance(canFnLiteralUpCastToTrait(
+      return TriState::fromBool(canFnLiteralUpCastToTrait(
           fnGen.getType().getType().getSymbolConstantAttr(), anyTrait));
     }
 
@@ -1722,8 +1716,8 @@ IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
       auto assumptions = ASTDecl::getAssumptionsFromScope(declScope);
       if (scopeDependent && !assumptions.empty())
         *scopeDependent = true;
-      return concreteType.checkConformance(anyTrait.getTraitType(), shared,
-                                           assumptions);
+      return concreteType.doesConformTo(anyTrait.getTraitType(), shared,
+                                        assumptions);
     }
   }
 
@@ -1828,17 +1822,13 @@ bool IREmitter::canImplicitlyConvertToType(
 
   // Resolve a tri-state conformance verdict into a boolean result that is
   // potentially cached. Returns the boolean result.
-  auto resolveTriStateVerdict = [&](ConformanceResult verdict,
+  auto resolveTriStateVerdict = [&](TriState verdict,
                                     bool scopeDependent) -> bool {
-    switch (verdict) {
-    case ConformanceResult::Yes:
+    if (verdict.isTrue())
       return cacheAndReturnVal(rvType, requiredType, true, scopeDependent);
-    case ConformanceResult::NeedsEvidence:
+    if (verdict.isUnknown())
       return deferralCtx != nullptr;
-    case ConformanceResult::No:
-      return cacheAndReturnVal(rvType, requiredType, false, scopeDependent);
-    }
-    llvm_unreachable("unhandled ConformanceResult verdict");
+    return cacheAndReturnVal(rvType, requiredType, false, scopeDependent);
   };
 
   // Empty generators are zero-cost convertible to their body type when the
@@ -1851,7 +1841,7 @@ bool IREmitter::canImplicitlyConvertToType(
     return *resolved;
 
   bool upCastScopeDependent = false;
-  FailureOr<ConformanceResult> canUpCast =
+  FailureOr<TriState> canUpCast =
       canMetaTypeUpCastTo(shared, value.expr->getLoc(), rvType, requiredType,
                           &declScope, &upCastScopeDependent);
   if (succeeded(canUpCast))
@@ -1871,7 +1861,7 @@ bool IREmitter::canImplicitlyConvertToType(
     ASTType fromEltTp = sugarCast<ParamListType>(rvType).getElementType();
     // Reuse assumptions from above for variadic element upcast.
     bool eltUpCastScopeDependent = false;
-    FailureOr<ConformanceResult> canUpCast =
+    FailureOr<TriState> canUpCast =
         canMetaTypeUpCastTo(shared, value.expr->getLoc(), fromEltTp, toEltTp,
                             &declScope, &eltUpCastScopeDependent);
     if (succeeded(canUpCast))
@@ -2000,8 +1990,8 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
     }
 
     if (concreteType &&
-        concreteType.checkConformance(anyTrait.getTraitType(), shared, {}) ==
-            ConformanceResult::Yes) {
+        concreteType.doesConformTo(anyTrait.getTraitType(), shared, {})
+            .isTrue()) {
       // This is just the trait itself, not a conformance, just upcast.
       return PValue(TypeParamAttr::get(ASTType(typePValue), anyTrait));
     }
@@ -2119,10 +2109,10 @@ CValue IREmitter::emitImplicitConversionToType(
       return emitCResult(ParamListAttr::get(converted, dstVATp), expr, dest);
     } else {
       // Must match the check in canImplicitlyConvertToType.
-      FailureOr<ConformanceResult> canUpCast =
+      FailureOr<TriState> canUpCast =
           canMetaTypeUpCastTo(shared, valueExpr.expr->getLoc(), fromEltTp,
                               toEltTp, &getDeclScope());
-      if (failed(canUpCast) || *canUpCast != ConformanceResult::Yes)
+      if (failed(canUpCast) || !canUpCast->isTrue())
         return emitVariadicError();
 
       // The source is not resolved yet, this is a simple upcast.

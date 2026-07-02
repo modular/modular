@@ -101,20 +101,22 @@ static bool isInheritedFnOp(FnOp fnOp) {
 /// definitively satisfied or violated - unprovable constraints trigger errors.
 ///
 /// Returns:
-///   - Satisfied: conformance implies all method constraints
-///   - Violated: method constraints contradict the conformance
-///   - Unprovable: constraints cannot be proven or disproven (error case)
-static ConstraintResult
-checkMethodConstraintStatus(FnOp method, ConstraintAttr conformanceConstraint,
-                            ASTDecl &structDecl) {
+///   - `yes`: conformance implies all method constraints
+///   - `no`: method constraints contradict the conformance
+///   - `unknown`: constraints cannot be proven or disproven (error case)
+static TriState
+canDischargeMethodConstraints(FnOp method, ConstraintAttr conformanceConstraint,
+                              ASTDecl &structDecl) {
   ArrayRef<ConstraintAttr> methodConstraints =
       method.getFuncTypeGenerator().getParamListAttrs().getBodyConstraints();
   if (methodConstraints.empty())
-    return ConstraintResult::Satisfied;
+    return TriState::yes();
 
   TypedAttr confProp = getCanonicalAttr(conformanceConstraint.getProposition());
 
-  bool hasUnprovable = false;
+  // Fold each method constraint's verdict together: a single `no` fails the
+  // whole conformance, and any `unknown` leaves it unprovable.
+  TriState result = TriState::yes();
   for (ConstraintAttr methodConstraint : methodConstraints) {
     TypedAttr methodProp = getCanonicalAttr(methodConstraint.getProposition());
 
@@ -124,28 +126,26 @@ checkMethodConstraintStatus(FnOp method, ConstraintAttr conformanceConstraint,
 
     // Trivially false method constraint is always violated.
     if (isTriviallyFalseProposition(methodProp))
-      return ConstraintResult::Violated;
+      return TriState::no();
 
-    // Unconditional conformance can't prove non-trivial constraints, but
-    // keep scanning for violations before returning Unprovable.
+    // Unconditional conformance can't prove a non-trivial constraint.
     if (isTriviallyTrueProposition(confProp)) {
-      hasUnprovable = true;
+      result &= TriState::unknown();
       continue;
     }
 
     switch (inferConstraintRelation(confProp, methodProp)) {
     case ConstraintRelation::Contradicts:
-      return ConstraintResult::Violated;
+      return TriState::no();
     case ConstraintRelation::Implies:
-      continue;
+      break;
     case ConstraintRelation::Unprovable:
-      hasUnprovable = true;
+      result &= TriState::unknown();
       break;
     }
   }
 
-  return hasUnprovable ? ConstraintResult::Unprovable
-                       : ConstraintResult::Satisfied;
+  return result;
 }
 
 // Signature resolves any methods in 'structDecl' with 'name' that were
@@ -259,11 +259,10 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
       // Check if this method's constraints are valid for the conformance.
       // Following overload selection rules, we require constraints to be
       // definitively provable or disproved - unprovable constraints are errors.
-      ConstraintResult status =
-          checkMethodConstraintStatus(cast<FnOp>(decl->getIfOperation()),
-                                      conformanceConstraint, structDecl);
-      switch (status) {
-      case ConstraintResult::Satisfied:
+      TriState status =
+          canDischargeMethodConstraints(cast<FnOp>(decl->getIfOperation()),
+                                        conformanceConstraint, structDecl);
+      if (status.isTrue()) {
         // Since we are not using the default implementation, set the ASTDecl
         // which were inserted for referencing default method to be fully
         // resolved.
@@ -276,7 +275,8 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
         // disabled.
         structFnDecl->markDisabled();
         return success();
-      case ConstraintResult::Unprovable:
+      }
+      if (status.isUnknown()) {
         // Cannot prove or disprove - error per overload selection rules.
         shared.emitError(decl->getLoc())
             << "method '" << name.str()
@@ -284,10 +284,9 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
                "conformance constraint; all candidates must have provable "
                "or contradicted constraints";
         return failure();
-      case ConstraintResult::Violated:
-        // Method constraints contradict conformance - not a valid override.
-        break;
       }
+      // Violated: method constraints contradict conformance - not a valid
+      // override.
     }
 
     // The struct doesn't provide an override, see if the wrapper def we're
@@ -656,21 +655,17 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
         continue;
       }
 
-      ConstraintResult status =
-          checkMethodConstraintStatus(fnOp, conformanceConstraint, structDecl);
-      switch (status) {
-      case ConstraintResult::Satisfied:
+      TriState status = canDischargeMethodConstraints(
+          fnOp, conformanceConstraint, structDecl);
+      if (status.isTrue()) {
         provableDecls.push_back(decl);
-        break;
-      case ConstraintResult::Violated:
-        // Method constraints contradict conformance - not a valid candidate.
-        break;
-      case ConstraintResult::Unprovable:
+      } else if (status.isUnknown()) {
         // Track unprovable candidates - if any match the trait signature,
         // we must error since we can't definitively select a witness.
         unprovableDecls.push_back(decl);
-        break;
       }
+      // Violated: method constraints contradict conformance - not a valid
+      // candidate.
     }
 
     // Check if there are unprovable candidates whose signature matches the
@@ -977,22 +972,22 @@ static TraitType getDeclProvidedTrait(ASTDecl *decl) {
 /// parameter bindings for evaluating conditional trait conformances.
 ///
 /// Returns:
-/// - ConformanceResult::Yes if the type definitely conforms
-/// - ConformanceResult::No if the type definitely does not conform
-/// - ConformanceResult::NeedsEvidence if conformance depends on constraints
-///   that cannot be evaluated statically
-ConformanceResult
+/// - `yes` if the type definitely conforms
+/// - `no` if the type definitely does not conform
+/// - `unknown` if conformance depends on constraints that cannot be evaluated
+///   statically
+TriState
 ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
                                   ArrayRef<ConstraintAttr> callerAssumptions) {
   // We only need trait symbol to verify trait conformance, not the resolved
   // witness table.
   if (failed(shared.declResolver->resolveSignature(*this, getLoc())))
-    return ConformanceResult::No; // Error emitted.
+    return TriState::no(); // Error emitted.
 
   // Collect all the symbols that the type explicitly provides.
   TraitType providedCanonTrait = getDeclProvidedTrait(this);
   if (providedCanonTrait == trait)
-    return ConformanceResult::Yes;
+    return TriState::yes();
 
   // Set up parameter evaluator if we have parameter bindings for constraint
   // evaluation. Uses the parser's evaluation context needed for folding
@@ -1036,16 +1031,13 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
         continue;
       }
 
-      switch (evaluateConstraint(*evaluator, constraint, callerAssumptions)) {
-      case ConformanceResult::Yes:
+      TriState constraintResult =
+          canDischargeConstraint(*evaluator, constraint, callerAssumptions);
+      if (constraintResult.isTrue())
         provenSymbols.insert(symbol);
-        break;
-      case ConformanceResult::NeedsEvidence:
+      else if (constraintResult.isUnknown())
         unprovenSymbols.insert(symbol);
-        break;
-      case ConformanceResult::No:
-        break;
-      }
+      // Otherwise the constraint is disproven, so the symbol is not provided.
     }
   }
 
@@ -1107,19 +1099,19 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
     // Symbol is not provided at all. If the type's concrete identity is
     // unknown, i.e. its metatype is a trait bound rather than a concrete struct
     // metatype, then a missing trait is not definitively absent: A `where
-    // conforms_to(...)` assumption could supply it. Report NeedsEvidence.
+    // conforms_to(...)` assumption could supply it. Report `unknown`.
     if (concreteType) {
       Type meta = ASTType(getCanonicalType(concreteType)).extractMetaType();
       if (sugarIsa<AnyTraitType, TraitType>(meta))
-        return ConformanceResult::NeedsEvidence;
+        return TriState::unknown();
     }
-    return ConformanceResult::No;
+    return TriState::no();
   }
 
   // All required symbols are present (either proven or unproven).
   if (hasUnprovenRequired)
-    return ConformanceResult::NeedsEvidence;
-  return ConformanceResult::Yes;
+    return TriState::unknown();
+  return TriState::yes();
 }
 
 void LIT::canonicalizeTraitCompositionSymbols(
@@ -1317,8 +1309,7 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
                .bindReference({typeValue});
   }
 
-  if (type.checkConformance(trait, shared, callerAssumptions) ==
-      ConformanceResult::No) {
+  if (type.doesConformTo(trait, shared, callerAssumptions).isFalse()) {
     // Does not conform. This is the only non-error case where we return an
     // empty attr.
     return TypedAttr();
@@ -1417,9 +1408,9 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // Check that the struct or super trait implements the trait.
   // Assumptions needed: e.g. `where AllWritable[*Ts]` proves
   // Tuple[*Ts]: Writable.
-  ConformanceResult verdict = type.checkConformance(
+  TriState verdict = type.doesConformTo(
       trait, shared, ASTDecl::getAssumptionsFromScope(&getDeclScope()));
-  if (verdict == ConformanceResult::No) {
+  if (verdict.isFalse()) {
     MojoInflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                             << type << " to trait " << ASTType(trait)
                             << value.expr->getRange();
@@ -1429,7 +1420,7 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // If conformance is unprovable (but not contradicted) and a deferral context
   // is installed, record the conformance obligation as deferred, and emit a
   // downcast into the target trait type.
-  if (verdict == ConformanceResult::NeedsEvidence && deferredTypingContext) {
+  if (verdict.isUnknown() && deferredTypingContext) {
     // Canonicalize the trait's ancestor symbols so the obligation matches the
     // spelling of the `where`-clause assumption that discharges it.
     SmallVector<SymbolRefAttr> symbols(trait.getSymbols());

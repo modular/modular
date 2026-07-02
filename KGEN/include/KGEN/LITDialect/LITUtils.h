@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/Support/TriState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -236,21 +237,14 @@ inline bool constraintImplies(TypedAttr propA, TypedAttr propB) {
   return inferConstraintRelation(propA, propB) == ConstraintRelation::Implies;
 }
 
-/// Result of checking whether a type conforms to a trait.
-/// This is a 3-state result because conditional conformances may not be
-/// provable at compile time.
-enum class ConformanceResult {
-  Yes,          // Definitely conforms (unconditional or constraint proven true)
-  No,           // Definitely does not conform (constraint proven false)
-  NeedsEvidence // Conditional conformance that can't be proven statically
-};
-
 /// Evaluate a conditional constraint using a pre-built evaluator that already
 /// has struct parameters bound. Caller assumptions may prove or disprove the
-/// rebound constraint via inferConstraintRelation.
-ConformanceResult
-evaluateConstraint(ParameterEvaluator &evaluator, ConstraintAttr constraint,
-                   ArrayRef<ConstraintAttr> callerAssumptions = {});
+/// rebound constraint via inferConstraintRelation. Returns a three-valued
+/// verdict: `yes` if the constraint is proven, `no` if disproven, and `unknown`
+/// for a conditional conformance that can't be decided statically.
+TriState
+canDischargeConstraint(ParameterEvaluator &evaluator, ConstraintAttr constraint,
+                       ArrayRef<ConstraintAttr> callerAssumptions = {});
 
 /// Given a type expression and a set of assumptions, compute the effective
 /// trait bound implied by any `conforms_to(type, Trait)` constraints. Returns a
