@@ -24,12 +24,6 @@ class InflightDiag;
 namespace KGEN {
 class ParamDeclAttr;
 
-enum class FnTriviality {
-  ProvablyTrivial,
-  ProvablyNonTrivial,
-  Unknown,
-};
-
 } // namespace KGEN
 
 namespace KGEN::LIT {
@@ -129,11 +123,11 @@ public:
   bool isTrivial(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return the 'kind' of triviality this type possesses for the given
-  /// trait: 'ImplicitlyDeletable', 'Copyable', or 'Movable'. Returns either
-  /// provably trivial, provably non-trivial, or unprovable (unfolded member).
-  FnTriviality getSpecialFunctionTriviality(llvm::SMLoc loc,
-                                            SpecialFunctionKind kind,
-                                            SharedState &shared) const;
+  /// trait: 'ImplicitlyDeletable', 'Copyable', or 'Movable'. Returns `yes` when
+  /// provably trivial, `no` when provably non-trivial, and `unknown` when it
+  /// can't be proven (e.g. an unfolded member).
+  TriState isSpecialFunctionTrivial(llvm::SMLoc loc, SpecialFunctionKind kind,
+                                    SharedState &shared) const;
 
   /// Return true if this type is provably implicitly 'trivially' copyable, as
   /// defined by its '__copy_ctor_is_trivial' member and whether or not it

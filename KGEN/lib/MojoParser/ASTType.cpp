@@ -702,13 +702,13 @@ bool ASTType::isTrivial(llvm::SMLoc loc, SharedState &shared) const {
          TypeConvention::RegisterPassableTrivial;
 }
 
-FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
-                                                   SpecialFunctionKind kind,
-                                                   SharedState &shared) const {
+TriState ASTType::isSpecialFunctionTrivial(llvm::SMLoc loc,
+                                           SpecialFunctionKind kind,
+                                           SharedState &shared) const {
   // MLIR types and types conforming to AnyTrivialRegType are assumed to be
   // trivial for all purposes
   if (isTrivialRegisterType(loc, shared))
-    return FnTriviality::ProvablyTrivial;
+    return TriState::yes();
 
   StringRef traitName;
   StringRef isTrivialHook;
@@ -732,15 +732,15 @@ FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
   ASTDecl *typeDecl = getDecl(shared);
   assert(typeDecl && "MLIR types shouldn't reach here");
 
-  // If it doesn't conform to the corresponding trait. Only claim
-  // ProvablyNonTrivial when we can definitively prove non-conformance.
+  // If it doesn't conform to the corresponding trait. Only return `no`
+  // (provably non-trivial) when we can definitively prove non-conformance.
   auto [conformanceResult, traitDecl] =
       conformsToBuiltinTrait(traitName, loc, shared, {});
   if (conformanceResult.isFalse())
-    return FnTriviality::ProvablyNonTrivial;
+    return TriState::no();
 
   if (!typeDecl->getParentDecl())
-    return FnTriviality::Unknown;
+    return TriState::unknown();
 
   auto witnessName = StringAttr::get(shared.getContext(), isTrivialHook);
   auto witnessSymbolName = getFlattenedSymbolName(traitDecl->getSymbolRef());
@@ -755,39 +755,38 @@ FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
 
   auto structAttr = dyn_cast_if_present<LITStructAttr>(fieldIsTrivial);
   if (!structAttr)
-    return FnTriviality::Unknown;
+    return TriState::unknown();
 
   assert(structAttr.getType() == boolType);
   auto structVals = structAttr.getValues();
   if (structVals.size() != 1)
-    return FnTriviality::Unknown;
+    return TriState::unknown();
 
   if (auto &[name, boolVal] = structVals.front(); name == "_mlir_value") {
     if (auto boolAttr = dyn_cast<SIMDAttr>(boolVal))
-      return boolAttr.getAsBool() ? FnTriviality::ProvablyTrivial
-                                  : FnTriviality::ProvablyNonTrivial;
+      return boolAttr.getAsBool() ? TriState::yes() : TriState::no();
   }
 
-  return FnTriviality::Unknown;
+  return TriState::unknown();
 }
 
 bool ASTType::isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
                                                     SharedState &shared) const {
   return isImplicitlyCopyable(loc, shared) &&
-         getSpecialFunctionTriviality(loc, SpecialFunctionKind::kCopyCtor,
-                                      shared) == FnTriviality::ProvablyTrivial;
+         isSpecialFunctionTrivial(loc, SpecialFunctionKind::kCopyCtor,
+                                  shared) == TriState::yes();
 }
 
 bool ASTType::isProvablyTriviallyMoveable(llvm::SMLoc loc,
                                           SharedState &shared) const {
-  return getSpecialFunctionTriviality(loc, SpecialFunctionKind::kMoveCtor,
-                                      shared) == FnTriviality::ProvablyTrivial;
+  return isSpecialFunctionTrivial(loc, SpecialFunctionKind::kMoveCtor,
+                                  shared) == TriState::yes();
 }
 
 bool ASTType::isProvablyTriviallyDeletable(llvm::SMLoc loc,
                                            SharedState &shared) const {
-  return getSpecialFunctionTriviality(loc, SpecialFunctionKind::kDel, shared) ==
-         FnTriviality::ProvablyTrivial;
+  return isSpecialFunctionTrivial(loc, SpecialFunctionKind::kDel, shared) ==
+         TriState::yes();
 }
 
 /// Return true if this type is a register-passable type that can be passed
