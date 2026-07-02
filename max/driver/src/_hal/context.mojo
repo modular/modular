@@ -19,8 +19,6 @@ from .plugin import (
     ContextHandle,
     FunctionHandle,
     RuntimeBundleHandle,
-    StaticBundleHandle,
-    CompilationOptionsHandle,
     M_driver_static_bundle,
     M_driver_slice,
     M_driver_bundle_compilation_options,
@@ -217,8 +215,8 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         var runtime_bundle = UnsafeMaybeUninit[RuntimeBundleHandle]()
         var status = raw._raw.bundle_load.f(
             self._handle,
-            rebind[StaticBundleHandle](UnsafePointer(to=static_bundle)),
-            rebind[CompilationOptionsHandle](UnsafePointer(to=opts)),
+            UnsafePointer(to=static_bundle),
+            UnsafePointer(to=opts),
             OutParam[RuntimeBundleHandle](to=runtime_bundle),
         )
         if status != STATUS_SUCCESS:
