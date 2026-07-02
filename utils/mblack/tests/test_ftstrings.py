@@ -231,3 +231,79 @@ def test_long_fstring_with_operator_in_interpolation_not_wrapped(prefix):
     assert result == source, (
         f"Long {prefix}-string with // in interpolation should not be wrapped in parens"
     )
+
+
+@pytest.mark.parametrize("prefix", ["f", "t"])
+def test_hash_in_interpolation_is_not_read_as_comment(prefix):
+    """A "#" nested in an f/t-string interpolation (``t"{"#"}"``) must not be
+    read as a trailing comment. If it is the ``.upper()`` continuation joins
+    onto a truncated ``String(t"{"`` and corrupts the line."""
+    source = (
+        "def main():\n"
+        f'    var s = String({prefix}"{{"#"}}")\n'
+        "        .upper()\n"
+    )
+    expected = (
+        "def main():\n"
+        f'    var s = String({prefix}"{{"#"}}").upper()\n'
+    )
+    assert_mojo_format(source, expected)
+
+
+@pytest.mark.parametrize("prefix", ["f", "t"])
+def test_hash_in_triple_quoted_interpolation_is_not_read_as_comment(prefix):
+    """The triple-quoted variant of the same hazard: a "#" nested in a
+    triple-quoted f/t-string's interpolation must not be read as a comment."""
+    source = (
+        "def main():\n"
+        f'    var s = String({prefix}"""{{"#"}}""")\n'
+        "        .upper()\n"
+    )
+    expected = (
+        "def main():\n"
+        f'    var s = String({prefix}"""{{"#"}}""").upper()\n'
+    )
+    assert_mojo_format(source, expected)
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        '"{{x}}"',  # escaped braces
+        '"{ {1: 2} }"',  # nested braces: a dict literal in the interpolation
+        '"{a:>{w}}"',  # nested braces in a format spec
+    ],
+)
+@pytest.mark.parametrize("prefix", ["f", "t"])
+def test_comment_after_braces_in_ftstring_is_stripped_before_merge(
+    prefix, literal
+):
+    """A trailing comment after an f/t-string with escaped or nested braces
+    must still be stripped before a continuation merges; otherwise the
+    ``.upper()`` lands after the ``#`` and is silently commented out."""
+    source = (
+        "def main():\n"
+        f"    var s = {prefix}{literal}  # comment\n"
+        "        .upper()\n"
+    )
+    expected = (
+        "def main():\n" + f"    var s = {prefix}{literal}.upper()  # comment\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+@pytest.mark.parametrize("prefix", ["f", "t"])
+def test_hash_in_interpolation_with_real_trailing_comment(prefix):
+    """Both halves of the hazard at once: the "#" inside the interpolation
+    must be skipped, while the real comment after the string is still
+    stripped before the continuation merges (and reattached after)."""
+    source = (
+        "def main():\n"
+        f'    var s = String({prefix}"{{"#"}}")  # real comment\n'
+        "        .upper()\n"
+    )
+    expected = (
+        "def main():\n"
+        f'    var s = String({prefix}"{{"#"}}").upper()  # real comment\n'
+    )
+    assert_mojo_format(source, expected)

@@ -230,26 +230,29 @@ _MOJO_LINE_NORMALIZERS = [
     _join_dot_continuation,
 ]
 
-# Matches the trailing comment portion of a line: optional whitespace then #
-# to end-of-string, but only when # is not inside a quoted string.  The
-# leading alternation skips over single- and double-quoted string literals
-# (including escaped quotes) so the ``(\s*#.*)$`` only fires on a real comment.
-_TRAILING_COMMENT = re.compile(
-    r"""^((?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^#"'])*)(\s*#.*)$"""
-)
-
 
 def _split_trailing_comment(line: str) -> tuple[str, str]:
-    """Split *line* into ``(code, comment)`` around the first ``#`` outside quotes.
+    """Split *line* into ``(code, comment)`` around the first ``#`` outside a
+    string literal.
 
-    *comment* includes any whitespace between the code and ``#``.
-    Returns ``(line, "")`` when there is no trailing comment.
+    *comment* includes any whitespace between the code and ``#``.  String
+    literals are skipped whole (see `_skip_string`), so a ``#`` inside one
+    never starts a comment.  Returns ``(line, "")`` when there is none.
     """
-    match = _TRAILING_COMMENT.match(line)
-    if match:
-        code = match.group(1).rstrip()
-        comment = line[len(code) :]
-        return code, comment
+    if "#" not in line:  # fast path: nothing to split
+        return line, ""
+    i, n = 0, len(line)
+    while i < n:
+        c = line[i]
+        if c == "#":
+            code = line[:i].rstrip()
+            return code, line[len(code) :]
+        elif c in "\"'":
+            i = _skip_string_at(line, i)
+            if i == -1:
+                return line, ""
+        else:
+            i += 1
     return line, ""
 
 
@@ -296,6 +299,13 @@ def _quote_at(line: str, i: int) -> str:
     return line[i : i + 3] if line[i : i + 3] in ('"""', "'''") else line[i]
 
 
+def _skip_string_at(line: str, i: int) -> int:
+    """Skip the string literal whose opening quote is at *i*. Return the
+    index past the close, or ``-1`` if it does not close on this line."""
+    q = _quote_at(line, i)
+    return _skip_string(line, i + len(q), q, _opens_interp(line, i))
+
+
 def _skip_string(line: str, i: int, quote: str, is_interp: bool) -> int:
     """Skip a string; *i* starts just past the opening *quote*. Return the
     index past the close, or ``-1`` if it does not close on this line.
@@ -334,8 +344,7 @@ def _skip_interp(line: str, i: int) -> int:
         if c == "}":
             return i + 1
         elif c in "\"'":
-            q = _quote_at(line, i)
-            i = _skip_string(line, i + len(q), q, _opens_interp(line, i))
+            i = _skip_string_at(line, i)
             if i == -1:
                 return -1
         elif c == "{":
@@ -377,10 +386,10 @@ def _scan_code_brackets(line: str, quote: str | None) -> tuple[int, str | None]:
             delta -= 1
             i += 1
         elif c in "\"'":
-            q = _quote_at(line, i)
-            end = _skip_string(line, i + len(q), q, _opens_interp(line, i))
+            end = _skip_string_at(line, i)
             if end == -1:
                 # Unterminated: only a triple-quoted string carries over.
+                q = _quote_at(line, i)
                 return delta, (q if len(q) == 3 else None)
             i = end
         else:
