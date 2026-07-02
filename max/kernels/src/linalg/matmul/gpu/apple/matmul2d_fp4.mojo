@@ -64,7 +64,6 @@ from std.gpu.compute.arch.mma_apple import _mma_apple_transposable
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
-from std.sys.info import is_apple_m5
 from std.utils import IndexList
 
 from layout import TileTensor, Idx
@@ -93,13 +92,25 @@ comptime M2D_N = 32
 comptime M2D_K = 16
 
 
-@always_inline
-def _check_apple_m5_matmul2d():
-    """Compile-time guard: this kernel requires an Apple M5 (Metal 4) target."""
-    comptime assert is_apple_m5(), (
-        "matmul2d W4A16 (Apple M5 NVFP4) requires an Apple M5 GPU target"
-        " (Metal 4 / AIR 2.8); the current target is not Apple M5."
-    )
+def _require_apple_m5(ctx: DeviceContext) raises:
+    """Runtime guard: reject a non-Apple-M5 GPU at the host enqueue entry.
+
+    The kernel body uses the Apple simdgroup MMA (`_mma_apple`), which compiles
+    for any Apple GPU target, so the Metal-4 / M5 requirement is enforced at
+    launch rather than with a compile-time assert. A compile-time assert would
+    break a non-M5 Apple build (e.g. CI compiling for a non-M5 target); this
+    matches the dense `enqueue_apple_matmul` pattern (runtime check, not a
+    comptime assert).
+    """
+    var cc = ctx.compute_capability()
+    if cc != 5:
+        raise Error(
+            (
+                "matmul2d W4A16 (Apple M5 NVFP4) requires Apple M5"
+                " (compute_capability == 5); got compute_capability="
+            ),
+            cc,
+        )
 
 
 @always_inline
@@ -188,8 +199,6 @@ def matmul2d_mma_regc_bt_native(
             elements 0-7 = N 0..15, 8-15 = N 16..31).
         c_acc: This lane's 16-element C accumulator, updated in place.
     """
-    _check_apple_m5_matmul2d()
-
     var d_lo = SIMD[DType.float32, 8](0)
     _mma_apple_transposable(
         d_lo,
@@ -797,6 +806,8 @@ def enqueue_matmul2d_fp4[
     Raises:
         If the attached GPU is not Apple M5 (`compute_capability == 5`).
     """
+    _require_apple_m5(ctx)
+
     comptime MM = Matmul2dFp4[
         c_type,
         elementwise_lambda_fn,
@@ -896,6 +907,8 @@ def enqueue_matmul2d_fp4_smem[
     Raises:
         If the attached GPU is not Apple M5 (`compute_capability == 5`).
     """
+    _require_apple_m5(ctx)
+
     comptime MM = Matmul2dFp4[
         c_type,
         elementwise_lambda_fn,
