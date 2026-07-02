@@ -583,12 +583,18 @@ async def _run_openai_stream_request(
                         if not data.choices:
                             continue
 
-                        # Any valid response chunk counts as having received content
-                        has_content = True
-
                         # Only track timing for chunks with actual text
                         text_content = content_extractor(data)
                         if text_content:
+                            # A response only counts as content-bearing once it
+                            # streams actual text. Chunks that carry only a role
+                            # or finish_reason, or that put text in a delta
+                            # field we don't model (e.g. a model whose output
+                            # lands outside reasoning/reasoning_content/content),
+                            # leave this False so the request is flagged rather
+                            # than recorded as a success with ttft=0 and no
+                            # tokens.
+                            has_content = True
                             timestamp = time.perf_counter()
                             # First token
                             if ttft == 0.0:
@@ -609,8 +615,11 @@ async def _run_openai_stream_request(
                             generated_text += text_content
                     if not has_content:
                         output.error = (
-                            "No content returned, there could be an issue with"
-                            " accuracy"
+                            "No text content captured from the response"
+                            " (choices were present but"
+                            " delta.reasoning/reasoning_content/content were"
+                            " all empty). The model may stream text in a field"
+                            " this client does not parse."
                         )
                         output.success = False
                     else:

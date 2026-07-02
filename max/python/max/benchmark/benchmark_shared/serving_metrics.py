@@ -28,7 +28,6 @@ from max.benchmark.benchmark_shared.metrics import (
     RatePercentileMetrics,
     SpecDecodeStats,
     StandardPercentileMetrics,
-    SteadyStateResult,
     TextGenAggregates,
     ThroughputMetrics,
 )
@@ -38,7 +37,10 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncOutput,
     measured_window_duration,
 )
-from max.benchmark.benchmark_shared.steady_state import detect_steady_state
+from max.benchmark.benchmark_shared.steady_state import (
+    detect_steady_state,
+    reject_metric_outliers,
+)
 from max.profiler.cpu import CPUMetrics
 from transformers import PreTrainedTokenizerBase
 
@@ -192,6 +194,8 @@ def calculate_metrics(
     collect_gpu_stats: bool,
     kv_block_size: int,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
+    *,
+    reject_outliers: bool = False,
 ) -> BenchmarkResult:
     actual_output_lens: list[int] = []
     failures = 0
@@ -383,6 +387,23 @@ def calculate_metrics(
         if len(per_turn_cache_retentions) > 0
         else None
     )
+
+    # Per-request outlier rejection via Iglewicz-Hoaglin modified z-score.
+    # Applied independently to each latency series so one noisy metric
+    # doesn't mask a clean one. Only active when the caller opts in
+    # (steady-state window path); the default head/tail trim path leaves
+    # all series unchanged.
+    if reject_outliers:
+        ttft_keep = reject_metric_outliers(ttfts)
+        tpot_keep = reject_metric_outliers(tpots)
+        itl_keep = reject_metric_outliers(itls)
+        latency_keep = reject_metric_outliers(latencies)
+        ttfts = [v for v, k in zip(ttfts, ttft_keep, strict=False) if k]
+        tpots = [v for v, k in zip(tpots, tpot_keep, strict=False) if k]
+        itls = [v for v, k in zip(itls, itl_keep, strict=False) if k]
+        latencies = [
+            v for v, k in zip(latencies, latency_keep, strict=False) if k
+        ]
 
     text_data = TextGenAggregates(
         duration=measured_duration,
@@ -581,74 +602,46 @@ def build_text_generation_result(
     spec_decode_stats: SpecDecodeStats | None = None,
     kv_block_size: int = 128,
 ) -> BenchmarkResult:
-    """Compute metrics and build the result dict for text-generation tasks."""
+    """Compute metrics and build the result for text-generation tasks.
+
+    Uses a single reported metric set selected by the following strategy:
+
+    - Run MAD-based steady-state detection (``detect_steady_state``).
+    - If detection succeeds: compute metrics over the detected steady-state
+      window with ``skip_first=0``, ``skip_last=0``, and per-request
+      outlier rejection via the Iglewicz-Hoaglin modified z-score
+      (``reject_outliers=True``). Duration is the wall-clock span of the
+      window (first submit to last complete of the window requests).
+    - If detection is skipped (concurrency==1) or fails: fall back to the
+      full-run path with the caller-supplied head/tail trim and no outlier
+      rejection. This guarantees identical behavior to the previous
+      implementation for non-steady-state runs.
+
+    Lightweight detection diagnostics (``steady_state_detected``,
+    ``steady_state_window_count``, ``steady_state_mode``,
+    ``steady_state_warning``, ``num_outliers_rejected``) are attached to
+    the returned ``BenchmarkResult`` for observability without duplicating
+    the full metric set.
+    """
     if not _is_text_generation_outputs(outputs):
         raise TypeError(
             "Expected all outputs to be RequestFuncOutput"
             " in text-generation benchmark flow."
         )
-    text_metrics = calculate_metrics(
-        outputs=outputs,
-        dur_s=benchmark_duration,
-        tokenizer=tokenizer,
-        gpu_metrics=gpu_metrics,
-        cpu_metrics=cpu_metrics,
-        skip_first_n_requests=skip_first_n_requests,
-        skip_last_n_requests=skip_last_n_requests,
-        max_concurrency=max_concurrency,
-        max_concurrent_conversations=max_concurrent_conversations,
-        collect_gpu_stats=collect_gpu_stats,
-        metrics_by_endpoint=metrics_by_endpoint,
-        kv_block_size=kv_block_size,
-    )
 
-    for warn in text_metrics.confidence_warnings():
-        logger.warning(f"Confidence: {warn}")
-
-    steady_state_result = _compute_steady_state_result(
-        outputs=outputs,
-        tokenizer=tokenizer,
-        gpu_metrics=gpu_metrics,
-        cpu_metrics=cpu_metrics,
-        max_concurrency=max_concurrency,
-        max_concurrent_conversations=max_concurrent_conversations,
-        collect_gpu_stats=collect_gpu_stats,
-        metrics_by_endpoint=metrics_by_endpoint,
-        kv_block_size=kv_block_size,
-    )
-
-    return text_metrics.model_copy(
-        update={
-            "steady_state_result": steady_state_result,
-            "spec_decode_stats": spec_decode_stats,
-            "task_type": "text",
-        }
-    )
-
-
-def _compute_steady_state_result(
-    *,
-    outputs: Sequence[RequestFuncOutput],
-    tokenizer: PreTrainedTokenizerBase | None,
-    gpu_metrics: list[dict[str, GPUStats]] | None,
-    cpu_metrics: CPUMetrics | None,
-    max_concurrency: int | None,
-    max_concurrent_conversations: int | None,
-    collect_gpu_stats: bool,
-    metrics_by_endpoint: Mapping[str, ParsedMetrics] | None,
-    kv_block_size: int = 128,
-) -> SteadyStateResult:
-    """Detect steady-state window and return a SteadyStateResult."""
     steady = detect_steady_state(outputs, max_concurrency=max_concurrency)
-    # Persist detection mode for downstream consumers; skip it when
-    # detection was skipped (concurrency=1) so the default "full"
-    # isn't mistaken for a real result.
-    mode = (
+
+    # Persist detection mode for downstream consumers; None when detection
+    # was skipped (concurrency=1) so the default "full" isn't mistaken for
+    # a real result.
+    mode: str | None = (
         steady.mode if (steady.detected or steady.warning is not None) else None
     )
 
-    ss_metrics: TextGenAggregates | None = None
+    num_outliers_rejected = 0
+
     if steady.detected:
+        # Build the steady-state sub-list and compute its wall-clock span.
         ss_index_set = set(steady.steady_state_indices)
         ss_outputs = [
             out
@@ -661,39 +654,20 @@ def _compute_steady_state_result(
             if out.request_submit_time is not None
             and out.request_complete_time is not None
         ]
+
         if len(ss_valid) >= 2:
             ss_valid.sort(key=lambda o: o.request_submit_time or 0.0)
             first_submit = ss_valid[0].request_submit_time
             last_complete = ss_valid[-1].request_complete_time
             assert first_submit is not None and last_complete is not None
-            ss_duration = last_complete - first_submit
-            ss_duration = max(ss_duration, 1e-9)
+            ss_duration = max(last_complete - first_submit, 1e-9)
+        else:
+            ss_duration = benchmark_duration
 
-            ss_metrics = calculate_metrics(
-                outputs=ss_outputs,
-                dur_s=ss_duration,
-                tokenizer=tokenizer,
-                gpu_metrics=gpu_metrics,
-                cpu_metrics=cpu_metrics,
-                skip_first_n_requests=0,
-                skip_last_n_requests=0,
-                max_concurrency=max_concurrency,
-                max_concurrent_conversations=max_concurrent_conversations,
-                collect_gpu_stats=collect_gpu_stats,
-                metrics_by_endpoint=metrics_by_endpoint,
-                kv_block_size=kv_block_size,
-            ).text_data
-            assert ss_metrics is not None  # text-gen path always populates
-
-        # start_index and end_index are in original dispatch order and
-        # may span requests filtered out by detect_steady_state (failed,
-        # missing TPOT, etc.), particularly in multi-turn runs where
-        # sessions interleave. Call out the valid-count separately so
-        # the gap isn't mistaken for a bug.
+        # Log detection details before calling calculate_metrics so any
+        # downstream warnings appear after the info line.
         assert steady.start_index is not None and steady.end_index is not None
         dispatch_span = steady.end_index - steady.start_index
-        # Only show dispatch_span when it differs from the valid count
-        # (multi-turn interleaving); single-turn matches would be noise.
         span_note = (
             f" spans {dispatch_span} positions"
             if dispatch_span != steady.steady_state_count
@@ -711,15 +685,80 @@ def _compute_steady_state_result(
             f" {steady.total_requests} total valid in the run)"
             f"{mode_note}"
         )
-    elif steady.warning:
-        logger.warning(f"Steady-state detection: {steady.warning}")
 
-    return SteadyStateResult(
-        detected=steady.detected,
-        start_index=steady.start_index,
-        end_index=steady.end_index,
-        count=steady.steady_state_count,
-        warning=steady.warning,
-        mode=mode,
-        metrics=ss_metrics,
+        text_metrics = calculate_metrics(
+            outputs=ss_outputs,
+            dur_s=ss_duration,
+            tokenizer=tokenizer,
+            gpu_metrics=gpu_metrics,
+            cpu_metrics=cpu_metrics,
+            skip_first_n_requests=0,
+            skip_last_n_requests=0,
+            max_concurrency=max_concurrency,
+            max_concurrent_conversations=max_concurrent_conversations,
+            collect_gpu_stats=collect_gpu_stats,
+            metrics_by_endpoint=metrics_by_endpoint,
+            kv_block_size=kv_block_size,
+            reject_outliers=True,
+        )
+
+        # Diagnostic: number of per-request TTFT outliers rejected in the
+        # steady-state window. TTFT is the headline steady-state metric and
+        # is one value per request, so this count is bounded by the request
+        # count and directly interpretable (a step-level count over per-chunk
+        # ITL/TPOT series would be far larger than the request count and
+        # misleading as a headline diagnostic).
+        _active = [o for o in ss_outputs if o.success and not o.cancelled]
+        _ss_ttfts = [o.ttft for o in _active if o.ttft is not None]
+        num_outliers_rejected = sum(
+            1 for keep in reject_metric_outliers(_ss_ttfts) if not keep
+        )
+
+    else:
+        # Detection did not run or did not converge. Only surface this at
+        # WARNING level when the run actually produced successful requests.
+        # When there are none (a serving/run failure, e.g. the "0 of 10000
+        # valid" case in PERF-2615), the steady-state detector is the wrong
+        # messenger: the failure is already reflected in the failure count and
+        # the reported metrics, so a "too few valid requests" warning is
+        # misleading noise on top of an already-failed run. Genuine cases with
+        # some successful-but-unusable requests still warn.
+        n_success = sum(1 for o in outputs if o.success and not o.cancelled)
+        if steady.warning and n_success > 0:
+            logger.warning(f"Steady-state detection: {steady.warning}")
+        elif n_success == 0:
+            logger.info(
+                "Steady-state detection skipped: run produced no successful"
+                " requests; reporting full-run metrics over all outputs."
+            )
+
+        text_metrics = calculate_metrics(
+            outputs=outputs,
+            dur_s=benchmark_duration,
+            tokenizer=tokenizer,
+            gpu_metrics=gpu_metrics,
+            cpu_metrics=cpu_metrics,
+            skip_first_n_requests=skip_first_n_requests,
+            skip_last_n_requests=skip_last_n_requests,
+            max_concurrency=max_concurrency,
+            max_concurrent_conversations=max_concurrent_conversations,
+            collect_gpu_stats=collect_gpu_stats,
+            metrics_by_endpoint=metrics_by_endpoint,
+            kv_block_size=kv_block_size,
+            reject_outliers=False,
+        )
+
+    for warn in text_metrics.confidence_warnings():
+        logger.warning(f"Confidence: {warn}")
+
+    return text_metrics.model_copy(
+        update={
+            "steady_state_detected": steady.detected,
+            "steady_state_window_count": steady.steady_state_count,
+            "steady_state_mode": mode,
+            "steady_state_warning": steady.warning,
+            "num_outliers_rejected": num_outliers_rejected,
+            "spec_decode_stats": spec_decode_stats,
+            "task_type": "text",
+        }
     )

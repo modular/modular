@@ -24,7 +24,6 @@ from max.benchmark.benchmark_shared.metrics import (
     RatePercentileMetrics,
     SpecDecodeStats,
     StandardPercentileMetrics,
-    SteadyStateResult,
     TextGenAggregates,
     ThroughputMetrics,
     _compute_confidence_info,
@@ -908,17 +907,12 @@ def test_pixel_metrics_to_result_dict() -> None:
 
 
 def test_benchmark_result_rejects_text_only_fields_for_pixel_task() -> None:
+    """Diagnostic steady-state scalars on a pixel task raise ValidationError."""
     with pytest.raises(ValidationError):
         BenchmarkResult(
             task_type="pixel",
             max_concurrency=1,
-            steady_state_result=SteadyStateResult(
-                detected=False,
-                start_index=None,
-                end_index=None,
-                count=0,
-                warning=None,
-            ),
+            steady_state_detected=False,
             pixel_data=PixelGenAggregates(
                 duration=1.0,
                 completed=1,
@@ -932,17 +926,16 @@ def test_benchmark_result_rejects_text_only_fields_for_pixel_task() -> None:
         )
 
 
-def test_benchmark_result_to_result_dict_includes_text_only_fields() -> None:
+def test_benchmark_result_to_result_dict_includes_diagnostic_scalars() -> None:
+    """to_result_dict emits steady-state diagnostic scalars and spec_decode fields."""
     result = _make_metrics()
     result = result.model_copy(
         update={
-            "steady_state_result": SteadyStateResult(
-                detected=True,
-                start_index=0,
-                end_index=9,
-                count=10,
-                warning=None,
-            ),
+            "steady_state_detected": True,
+            "steady_state_window_count": 120,
+            "steady_state_mode": "full",
+            "steady_state_warning": None,
+            "num_outliers_rejected": 3,
             "spec_decode_stats": SpecDecodeStats(
                 acceptance_rate=55.0,
                 acceptance_length=2.0,
@@ -951,4 +944,17 @@ def test_benchmark_result_to_result_dict_includes_text_only_fields() -> None:
     )
     d = result.to_result_dict()
     assert d["steady_state_detected"] is True
+    assert d["steady_state_window_count"] == 120
+    assert d["steady_state_mode"] == "full"
+    assert d["steady_state_warning"] is None
+    assert d["num_outliers_rejected"] == 3
     assert d["spec_decode_acceptance_rate"] == 55.0
+
+
+def test_benchmark_result_to_result_dict_omits_diagnostics_when_none() -> None:
+    """When steady_state_detected is None the diagnostic keys are absent."""
+    result = _make_metrics()
+    d = result.to_result_dict()
+    assert "steady_state_detected" not in d
+    assert "steady_state_window_count" not in d
+    assert "num_outliers_rejected" not in d

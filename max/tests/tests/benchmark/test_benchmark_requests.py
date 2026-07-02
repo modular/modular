@@ -432,6 +432,62 @@ class TestRequestDriver:
         assert result.generated_text == "Hello world!"
         assert result.prompt_len == 10
 
+    async def test_openai_chat_completions_choices_but_no_text_is_failure(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """Choices present but no modeled text field must fail, not succeed with ttft=0.
+
+        Regression test for PERF-2615: gpt-oss streamed chunks that had
+        ``choices`` but carried text in a delta field this client does not
+        model, so ``reasoning``/``reasoning_content``/``content`` were all
+        empty. Those runs were marked success with ttft=0 and no tokens, which
+        zeroed out TTFT/TPOT for the whole run and produced a misleading
+        "0 valid requests" steady-state warning. Such a response must now be a
+        failure.
+        """
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Test prompt",
+            images=[],
+            api_url="http://localhost:8000/chat/completions",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        # Chunks have choices but the text is in an unmodeled delta field;
+        # reasoning/reasoning_content/content are all absent, so no text is
+        # captured.
+        mock_response_data = [
+            b'data: {"choices": [{"delta": {"role": "assistant"}}]}\n\n',
+            b'data: {"choices": [{"delta": {"unmodeled_channel": "hi"}}]}\n\n',
+            b'data: {"choices": [{"delta": {}, "finish_reason": "stop"}]}\n\n',
+            b"data: [DONE]\n\n",
+        ]
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            for item in mock_response_data:
+                yield item
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is False
+        assert result.ttft == 0.0
+        assert result.generated_text == ""
+        assert result.error is not None
+        assert "No text content" in result.error
+
     @pytest.mark.asyncio
     async def test_openai_chat_completions_merges_reasoning_reasoning_content_and_content(
         self,
@@ -703,7 +759,7 @@ class TestRequestDriver:
         result = await driver.request(request_input)
 
         assert result.success is False
-        assert "No content returned" in result.error
+        assert "No text content" in result.error
 
     @pytest.mark.asyncio
     async def test_request_driver_with_progress_bar(
