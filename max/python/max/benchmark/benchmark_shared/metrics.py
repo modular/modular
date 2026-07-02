@@ -733,53 +733,6 @@ class PixelGenAggregates(_CompletedRunBase):
 BenchmarkType = Literal["text", "pixel"]
 
 
-@dataclass(kw_only=True)
-class SteadyStateResult:
-    """Steady-state detection outcome and its per-window metrics."""
-
-    detected: bool
-    start_index: int | None
-    end_index: int | None
-    count: int
-    warning: str | None
-    mode: str | None = None
-    # ``TextGenAggregates`` rather than ``BenchmarkResult``: steady
-    # state is text-only, and using the parent type would self-contain once
-    # steady-state data moves into ``BenchmarkResult`` for result
-    # publication.
-    metrics: TextGenAggregates | None = None
-
-    def to_result_dict(self) -> dict[str, object]:
-        """Return a flat dict of steady-state keys with the same layout as the full-run result dict."""
-        d: dict[str, object] = {
-            "steady_state_detected": self.detected,
-            "steady_state_start_index": self.start_index,
-            "steady_state_end_index": self.end_index,
-            "steady_state_count": self.count,
-            "steady_state_warning": self.warning,
-        }
-        if self.mode is not None:
-            d["steady_state_mode"] = self.mode
-        if self.metrics is not None:
-            t = self.metrics
-            for suffix, value in [
-                ("request_throughput", t.request_throughput),
-                ("mean_ttft_ms", t.ttft_ms.mean),
-                ("p99_ttft_ms", t.ttft_ms.p99),
-                ("mean_tpot_ms", t.tpot_ms.mean),
-                ("p99_tpot_ms", t.tpot_ms.p99),
-                ("mean_itl_ms", t.itl_ms.mean),
-                ("p99_itl_ms", t.itl_ms.p99),
-                ("mean_latency_ms", t.latency_ms.mean),
-                ("p99_latency_ms", t.latency_ms.p99),
-            ]:
-                d[f"steady_state_{suffix}"] = value
-            for name in ("ttft_ms", "tpot_ms", "itl_ms", "latency_ms"):
-                pm = getattr(t, name)
-                d.update(pm.confidence_to_flat_dict(f"steady_state_{name}"))
-        return d
-
-
 class BenchmarkResult(BaseModel):
     """Per-iteration benchmark result for text- and pixel-generation tasks."""
 
@@ -823,10 +776,21 @@ class BenchmarkResult(BaseModel):
     pixel_data: PixelGenAggregates | None = None
 
     # Text-generation-only fields. Stay ``None`` for pixel workloads.
-    steady_state_result: SteadyStateResult | None = None
     spec_decode_stats: SpecDecodeStats | None = None
     session_server_stats: dict[str, list[ServerTokenStats]] | None = None
     aggregate_server_stats: list[ServerTokenStats] | None = None
+
+    # Lightweight steady-state detection diagnostics (scalars only — no
+    # duplicate metric set). Populated by ``build_text_generation_result``
+    # after MAD-based window detection. ``None`` for pixel workloads and
+    # failed iterations.
+    steady_state_detected: bool | None = None
+    steady_state_window_count: int | None = None
+    steady_state_mode: str | None = None
+    steady_state_warning: str | None = None
+    # Per-request TTFT outliers rejected in the steady-state window
+    # (bounded by the request count). See build_text_generation_result.
+    num_outliers_rejected: int | None = None
 
     @model_validator(mode="after")
     def _check_data_matches_task_type(self) -> BenchmarkResult:
@@ -835,10 +799,14 @@ class BenchmarkResult(BaseModel):
         if self.pixel_data is not None and self.task_type != "pixel":
             raise ValueError(f"pixel_data set but task_type={self.task_type!r}")
         text_only_fields = (
-            self.steady_state_result,
             self.spec_decode_stats,
             self.session_server_stats,
             self.aggregate_server_stats,
+            self.steady_state_detected,
+            self.steady_state_window_count,
+            self.steady_state_mode,
+            self.steady_state_warning,
+            self.num_outliers_rejected,
         )
         if self.task_type != "text" and any(
             field is not None for field in text_only_fields
@@ -1013,8 +981,14 @@ class BenchmarkResult(BaseModel):
 
         if self.lora_metrics is not None:
             d["lora_metrics"] = self.lora_metrics.to_result_dict()
-        if self.steady_state_result is not None:
-            d.update(self.steady_state_result.to_result_dict())
+        # Lightweight steady-state detection diagnostics (no duplicate metric
+        # set — scalars only for observability / PERF-2615 telemetry).
+        if self.steady_state_detected is not None:
+            d["steady_state_detected"] = self.steady_state_detected
+            d["steady_state_window_count"] = self.steady_state_window_count
+            d["steady_state_mode"] = self.steady_state_mode
+            d["steady_state_warning"] = self.steady_state_warning
+            d["num_outliers_rejected"] = self.num_outliers_rejected
         if self.spec_decode_stats is not None:
             d.update(self.spec_decode_stats.to_result_dict())
         if self.session_server_stats is not None:
