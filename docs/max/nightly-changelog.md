@@ -46,6 +46,16 @@ This version is still a work in progress.
   read-modify-write that writes only the active slots (+52% output tok/s at
   concurrency 32).
 - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
+- Added tool-calling, reasoning, and structured-output (`response_format`)
+  support to GLM-5.1 / GLM-5.2, enabled with
+  `--tool-parser glm45 --reasoning-parser glm45 --enable-structured-output`.
+  Reasoning uses `<think>`/`</think>`; tool calls use the model's native
+  `<tool_call>…<arg_key>…<arg_value>…</tool_call>` format. With constrained
+  decoding, tool-call arguments are constrained to each tool's JSON schema
+  (declared keys, `required` properties, and per-property types — including
+  nested objects/arrays, enums, numeric bounds, and string patterns), and the
+  call sequence terminates on the model's turn-ender so it can't loop. Validated
+  on `zai-org/GLM-5.2-FP8`.
 - Added support for the Ideogram 4 (`Ideogram4Pipeline`) text-to-image
   flow-matching diffusion transformer. The pipeline pairs a Qwen3-VL text
   encoder (run text-only, emitting concatenated intermediate hidden states)

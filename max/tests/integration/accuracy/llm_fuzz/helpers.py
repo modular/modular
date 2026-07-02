@@ -197,6 +197,13 @@ STRUCTURAL_LEAK_MARKERS: tuple[str, ...] = (
     # MiniMax M2 — architectures/minimax_m2/tool_parser.py
     "<minimax:tool_call>",
     "</minimax:tool_call>",
+    # GLM-4.5+ (GLM-5.1 / GLM-5.2) — architectures/glm5_1/tool_parser.py
+    "<tool_call>",
+    "</tool_call>",
+    "<arg_key>",
+    "</arg_key>",
+    "<arg_value>",
+    "</arg_value>",
     # Shared reasoning delimiters (Kimi K2.5, MiniMax M2).
     "<think>",
     "</think>",

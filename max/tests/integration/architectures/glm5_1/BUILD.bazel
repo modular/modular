@@ -36,10 +36,22 @@ modular_py_library(
 )
 
 modular_py_test(
+    name = "test_tool_parser",
+    srcs = ["test_tool_parser.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("llguidance"),
+    ],
+)
+
+modular_py_test(
     name = "glm5_1",
     size = "large",
     srcs = glob(
         ["**/test_*.py"],
+        exclude = ["test_tool_parser.py"],
     ) + [
         "conftest.py",
     ],
