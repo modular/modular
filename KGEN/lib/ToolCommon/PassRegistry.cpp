@@ -61,7 +61,7 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   KGEN::registerSynthesizeDebugInfo();
   KGEN::registerVerifyParameters();
   KGEN::registerLowerSuspensionPoints();
-  KGEN::registerPluginSpecificLLVMLowering();
+  KGEN::registerTargetSpecificLLVMLowering();
   KGEN::registerLowerToLLVMPipeline();
   KGEN::registerIPDF();
   KGEN::registerSCCP();

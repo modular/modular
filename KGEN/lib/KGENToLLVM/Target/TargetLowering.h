@@ -39,6 +39,7 @@ namespace mlir {
 class LLVMTypeConverter;
 class MLIRContext;
 class NamedAttrList;
+class OpPassManager;
 class Operation;
 class RewritePatternSet;
 class SymbolTable;
@@ -98,6 +99,11 @@ public:
   virtual void populateLowerGlobalPOPToLLVMPatterns(
       mlir::RewritePatternSet &patterns, mlir::LLVMTypeConverter &converter,
       mlir::SymbolTable &symtab, TargetInfoAttr target) const {}
+
+  /// Contributes target-specific MLIR passes that run on the LLVM-dialect IR
+  /// after the generic lowering pipeline and before translation to LLVM IR
+  /// (e.g. late passes provided by a compiler plugin). The default adds none.
+  virtual void addPostLowerToLLVMPasses(mlir::OpPassManager &pm) const {}
 
   /// Returns whether `op` is lowered by this target in the global POP->LLVM
   /// pass rather than the regular one (used to route the op via

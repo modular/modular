@@ -18,12 +18,6 @@ using namespace M;
 
 void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
                                     const LowerToLLVMOptions &options) {
-  buildLowerToLLVMPipeline(pm, options, nullptr);
-}
-
-void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
-                                    const LowerToLLVMOptions &options,
-                                    const PluginManager *plugin) {
   using mlir::LLVM::LLVMFuncOp;
 
   // Run all LLVM lowering passes.
@@ -32,8 +26,8 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<LLVMFuncOp>(createKGENVerifierPass());
   pm.addPass(createLowerRuntimeClosures());
   pm.addNestedPass<LLVMFuncOp>(createLegalizePOPOperations());
-  pm.addPass(createLowerGlobalPOPToLLVM(plugin));
-  pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM(plugin));
+  pm.addPass(createLowerGlobalPOPToLLVM());
+  pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM());
   pm.addNestedPass<LLVMFuncOp>(createLowerControlFlow());
   pm.addNestedPass<LLVMFuncOp>(mlir::createReconcileUnrealizedCastsPass());
   pm.addNestedPass<LLVMFuncOp>(createLowerSuspensionPoints());
@@ -46,13 +40,9 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<LLVMFuncOp>(mlir::createCanonicalizerPass(config));
   pm.addNestedPass<LLVMFuncOp>(mlir::createCSEPass());
 
-  // Host shim that lets a compiler plugin attach additional MLIR passes to
-  // modify the LLVM-dialect IR before translation to LLVM IR. Owns the
-  // PluginManager lifecycle via the same dual-source pattern as
-  // LowerPOPToLLVMPass: caller-injected here for production builds, or
-  // pass-local + default-constructed when no plugin is supplied (the
-  // standalone CLI path through `kgen-opt -lower-to-llvm`).
-  pm.addPass(createPluginSpecificLLVMLowering(plugin));
+  // Let each target contribute late MLIR passes on the LLVM-dialect IR before
+  // translation to LLVM IR, dispatched through the target lowering.
+  pm.addPass(createTargetSpecificLLVMLowering());
 
   // Run the LLVM lowering for debug info last.
   pm.addPass(DebugInfo::createDebugInfoToLLVM(
