@@ -163,7 +163,6 @@ class ResnetBlock2D(Module[[Tensor, Tensor | None], Tensor]):
 
         h = F.silu(self.norm1(x))
         h = self.conv1(h)
-
         h = F.silu(self.norm2(h))
 
         if self._use_fused_conv_residual():

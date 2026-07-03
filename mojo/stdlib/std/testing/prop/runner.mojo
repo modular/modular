@@ -10,7 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the property test runner and configuration."""
 
+from .random import Rng
 from .strategy import Strategy
 from std.time import perf_counter_ns
 

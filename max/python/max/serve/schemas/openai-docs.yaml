@@ -22,7 +22,7 @@ info:
     - [Serve an embedding model](/max/inference/embeddings)
     - [Image-to-text use cases](/max/inference/image-to-text)
     - [Image generation](/max/inference/image-generation)
-    - [Deploy MAX on GPU in the cloud](/max/tutorials/max-serve-local-to-cloud)
+    - [Deploy MAX on GPU in the cloud](/max/deploy/local-to-cloud/)
 
     ## OpenAI API compatibility
 
@@ -33,13 +33,13 @@ info:
 
     - **Supported endpoints:**
 
-        - [Responses](#operation/createResponse) (`/v1/responses`)
-        - [Chat completions](#operation/createChatCompletion) (`/v1/chat/completions`)
-        - [Completions](#operation/createCompletion) (`/v1/completions`)
-        - [Embeddings](#operation/createEmbedding) (`/v1/embeddings`)
-        - [Batches](#operation/createBatch) (`/v1/batches`) - The `v1/batches` API is only available as part of Modular's Dedicated Endpoint and Enterprise [editions](https://www.modular.com/pricing).
-        - [List models](#operation/listModels) (`/v1/models`)
-        - [Health check](#operation/health) (`/health`)
+        - [Responses](#POST/v1/responses) (`/v1/responses`)
+        - [Chat completions](#POST/v1/chat/completions) (`/v1/chat/completions`)
+        - [Completions](#POST/v1/completions) (`/v1/completions`)
+        - [Embeddings](#POST/v1/embeddings) (`/v1/embeddings`)
+        - [Batches](#POST/v1/batches) (`/v1/batches`) - The `v1/batches` API is only available as part of Modular's Dedicated Endpoint and Enterprise [editions](https://www.modular.com/pricing).
+        - [List models](#GET/v1/models) (`/v1/models`)
+        - [Health check](#GET/health) (`/health`)
 
     - **Parameter handling:** While aiming for high compatibility, not all
     OpenAI body parameters are implemented. Some may be accepted as no-ops
@@ -57,10 +57,9 @@ paths:
       operationId: createResponse
       summary: Create response
       description: |
-        Creates a response for the given input using the
-        [Responses API](/max/inference/image-generation), which supports
-        multi-modal AI tasks including text-to-image and image-to-image
-        generation. This endpoint follows the
+        Creates a response for the given input. Supports image generation
+        (text-to-image, image-to-image) and video generation (text-to-video,
+        image-to-video). This endpoint follows the
         [Open Responses](https://huggingface.co/blog/open-responses)
         specification.
 
@@ -72,37 +71,8 @@ paths:
         ```
 
         For detailed usage examples, see the
-        [image generation guide](/max/inference/image-generation).
-      x-codeSamples:
-        - lang: curl
-          label: Text-to-image
-          source: |
-            curl -X POST http://localhost:8000/v1/responses \
-              -H "Content-Type: application/json" \
-              -d '{
-                "model": "black-forest-labs/FLUX.2-dev",
-                "input": "A serene mountain landscape at sunset",
-                "provider_options": {
-                  "image": {"height": 1024, "width": 1024, "steps": 50}
-                }
-              }' | jq -r '.output[0].content[0].image_data' | base64 -d > output.png
-        - lang: curl
-          label: Image-to-image
-          source: |
-            curl -X POST http://localhost:8000/v1/responses \
-              -H "Content-Type: application/json" \
-              -d '{
-                "model": "black-forest-labs/FLUX.2-dev",
-                "input": [
-                  {"role": "user", "content": [
-                    {"type": "input_image", "image_url": "https://example.com/input.jpg"},
-                    {"type": "input_text", "text": "Transform this into a watercolor painting"}
-                  ]}
-                ],
-                "provider_options": {
-                  "image": {"height": 1024, "width": 1024, "steps": 50}
-                }
-              }' | jq -r '.output[0].content[0].image_data' | base64 -d > output.png
+        [image generation guide](/max/inference/image-generation) and the
+        [video generation guide](/max/inference/video-generation).
       requestBody:
         required: true
         content:
@@ -115,43 +85,264 @@ paths:
               properties:
                 model:
                   type: string
-                  description: ID of the model to use.
+                  description: |
+                    ID of the model to use. Determines whether image or video
+                    provider options apply.
                 input:
                   description: |
-                    The input for the response. Can be a string for text-to-image,
-                    or a structured message array for image-to-image.
+                    Input for the request. Use a plain string for text-only
+                    generation. Use a structured message array to include an
+                    image (for image-to-image or image-to-video workflows).
                   oneOf:
                     - type: string
+                      description: Text prompt for text-to-image or text-to-video generation.
                     - type: array
+                      description: |
+                        Structured message array for image input workflows.
+                        Each message has a `role` and a `content` array of
+                        typed content parts.
                       items:
                         type: object
+                        required:
+                          - role
+                          - content
+                        properties:
+                          role:
+                            type: string
+                            enum: [user]
+                          content:
+                            type: array
+                            items:
+                              type: object
+                              required:
+                                - type
+                              properties:
+                                type:
+                                  type: string
+                                  enum: [input_image, input_text]
+                                image_url:
+                                  type: string
+                                  description: |
+                                    URL or base64 data URI of the input image.
+                                    Required when `type` is `input_image`.
+                                    Format: `https://…` or
+                                    `data:<mime-type>;base64,<data>`.
+                                text:
+                                  type: string
+                                  description: |
+                                    Text prompt or transformation instruction.
+                                    Required when `type` is `input_text`.
                 provider_options:
                   type: object
                   description: |
-                    Provider-specific options for image generation.
+                    Provider-specific generation options. Use the `image` key
+                    for image generation models and the `video` key for video
+                    generation models. The `max` key applies to all models.
                   properties:
                     image:
                       type: object
+                      description: Options for image generation models.
                       properties:
                         height:
                           type: integer
-                          description: Output image height in pixels (must be a multiple of 16).
-                          default: 1024
+                          description: |
+                            Output image height in pixels. Must be at least 128
+                            and a multiple of 8. Defaults to the model's
+                            native resolution.
+                          minimum: 128
                         width:
                           type: integer
-                          description: Output image width in pixels (must be a multiple of 16).
-                          default: 1024
+                          description: |
+                            Output image width in pixels. Must be at least 128
+                            and a multiple of 8. Defaults to the model's
+                            native resolution.
+                          minimum: 128
                         steps:
                           type: integer
-                          description: Number of denoising steps.
-                          default: 28
+                          description: |
+                            Number of denoising steps. More steps produce
+                            higher quality but take longer. Defaults to the
+                            model's recommended value.
+                          minimum: 1
                         guidance_scale:
                           type: number
-                          description: Prompt adherence strength.
+                          description: |
+                            Prompt adherence strength. Higher values (7–10)
+                            follow the prompt more closely; lower values (1–3)
+                            allow more creative variation.
                           default: 3.5
+                          minimum: 0.0
                         negative_prompt:
                           type: string
-                          description: What to avoid generating.
+                          description: |
+                            Text describing what to avoid in the output. Best
+                            practice is to put all negative guidance here
+                            rather than in the main prompt.
+                        secondary_prompt:
+                          type: string
+                          description: |
+                            Second text prompt passed to the second text
+                            encoder. Supported by FLUX and Z-Image models;
+                            ignored by others.
+                        secondary_negative_prompt:
+                          type: string
+                          description: |
+                            Second negative prompt passed to the second text
+                            encoder. Supported by FLUX and Z-Image models;
+                            ignored by others.
+                        num_images:
+                          type: integer
+                          description: Number of images to generate per request.
+                          default: 1
+                          minimum: 1
+                        strength:
+                          type: number
+                          description: |
+                            Image-to-image denoising strength in the range
+                            (0, 1]. Higher values add more noise and preserve
+                            less of the input image. Ignored for text-to-image
+                            requests.
+                          default: 0.6
+                          exclusiveMinimum: 0.0
+                          maximum: 1.0
+                        output_format:
+                          type: string
+                          description: Encoding format for the output image.
+                          default: jpeg
+                          enum: [jpeg, png, webp]
+                        true_cfg_scale:
+                          type: number
+                          description: |
+                            True classifier-free guidance scale. Enabled when
+                            greater than 1.0 and `negative_prompt` is set.
+                          default: 1.0
+                          exclusiveMinimum: 0.0
+                        cfg_normalization:
+                          type: boolean
+                          description: |
+                            Clip the guided prediction norm to the positive
+                            prediction norm during CFG.
+                          default: false
+                        cfg_truncation:
+                          type: number
+                          description: |
+                            Disable CFG for timesteps where the normalized
+                            time `t_norm` exceeds this value.
+                          default: 1.0
+                          exclusiveMinimum: 0.0
+                        residual_threshold:
+                          type: number
+                          description: |
+                            First-block cache (FBCache) reuse threshold.
+                            Lower values skip fewer denoising steps (higher
+                            quality, slower). Uses the model default when
+                            omitted. Requires `--first-block-caching` at
+                            server startup.
+                          exclusiveMinimum: 0.0
+                        response_format:
+                          type: string
+                          description: |
+                            How the generated image is returned.
+                            `b64_json` — base64-encoded image data returned
+                            inline in `output[0].content[0].image_data`.
+                            `url` — the server saves the image and returns a
+                            download URL.
+                          default: b64_json
+                          enum: [b64_json, url]
+                    video:
+                      type: object
+                      description: Options for video generation models.
+                      properties:
+                        height:
+                          type: integer
+                          description: |
+                            Output video height in pixels. Defaults to the
+                            model's native resolution.
+                          minimum: 1
+                        width:
+                          type: integer
+                          description: |
+                            Output video width in pixels. Defaults to the
+                            model's native resolution.
+                          minimum: 1
+                        num_frames:
+                          type: integer
+                          description: |
+                            Number of frames to generate. Total duration equals
+                            `num_frames / frames_per_second`. Defaults to the
+                            model's recommended clip length.
+                          minimum: 1
+                        frames_per_second:
+                          type: integer
+                          description: Frame rate of the output video in fps.
+                          default: 16
+                          minimum: 1
+                        steps:
+                          type: integer
+                          description: |
+                            Number of denoising steps. More steps produce
+                            higher quality but take longer. Defaults to the
+                            model's recommended value.
+                          minimum: 1
+                        guidance_scale:
+                          type: number
+                          description: |
+                            Prompt adherence strength. Higher values (7–10)
+                            follow the prompt more closely; lower values (1–3)
+                            allow more creative variation.
+                          default: 3.5
+                          minimum: 0.0
+                        guidance_scale_2:
+                          type: number
+                          description: |
+                            Secondary guidance scale applied at a boundary
+                            timestep. Supported by Wan models; ignored by
+                            others.
+                          exclusiveMinimum: 0.0
+                        negative_prompt:
+                          type: string
+                          description: |
+                            Text describing what to avoid in the output.
+                        true_cfg_scale:
+                          type: number
+                          description: |
+                            True classifier-free guidance scale. Enabled when
+                            greater than 1.0 and `negative_prompt` is set.
+                          default: 1.0
+                          exclusiveMinimum: 0.0
+                        cfg_normalization:
+                          type: boolean
+                          description: |
+                            Clip the guided prediction norm to the positive
+                            prediction norm during CFG.
+                          default: false
+                        cfg_truncation:
+                          type: number
+                          description: |
+                            Disable CFG for timesteps where the normalized
+                            time `t_norm` exceeds this value.
+                          default: 1.0
+                          exclusiveMinimum: 0.0
+                        residual_threshold:
+                          type: number
+                          description: |
+                            First-block cache (FBCache) reuse threshold.
+                            Lower values skip fewer denoising steps (higher
+                            quality, slower). Uses the model default when
+                            omitted. Requires `--first-block-caching` at
+                            server startup.
+                          exclusiveMinimum: 0.0
+                        response_format:
+                          type: string
+                          description: |
+                            How the generated video is returned.
+                            `url` — the server saves the video to a temporary
+                            file and returns a download URL at
+                            `/v1/videos/{video_id}/content`.
+                            `b64_json` — base64-encoded mp4 data returned
+                            inline in `output[0].content[0].video_data`.
+                          default: url
+                          enum: [url, b64_json]
             examples:
               textToImage:
                 summary: Text-to-image generation
@@ -162,7 +353,55 @@ paths:
                     image:
                       height: 1024
                       width: 1024
-                      steps: 50
+                      steps: 28
+              imageToImage:
+                summary: Image-to-image generation
+                value:
+                  model: "black-forest-labs/FLUX.2-dev"
+                  input:
+                    - role: user
+                      content:
+                        - type: input_image
+                          image_url: "https://example.com/input.jpg"
+                        - type: input_text
+                          text: "Transform this into a watercolor painting"
+                  provider_options:
+                    image:
+                      height: 1024
+                      width: 1024
+                      steps: 28
+              textToVideo:
+                summary: Text-to-video generation
+                value:
+                  model: "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+                  input: "A campfire crackles in a forest clearing at night, sparks spiraling upward into a star-filled sky"
+                  provider_options:
+                    video:
+                      height: 512
+                      width: 512
+                      steps: 28
+                      num_frames: 81
+                      frames_per_second: 16
+                      response_format: b64_json
+              imageToVideo:
+                summary: Image-to-video generation
+                value:
+                  model: "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+                  input:
+                    - role: user
+                      content:
+                        - type: input_image
+                          image_url: "data:image/png;base64,<base64-encoded-image>"
+                        - type: input_text
+                          text: "The campfire grows larger, sparks spiraling upward"
+                  provider_options:
+                    video:
+                      height: 512
+                      width: 512
+                      steps: 28
+                      num_frames: 81
+                      frames_per_second: 16
+                      response_format: b64_json
       responses:
         '200':
           description: OK
@@ -171,11 +410,32 @@ paths:
               schema:
                 type: object
                 properties:
+                  id:
+                    type: string
+                    description: Unique identifier for the response.
+                  object:
+                    type: string
+                    description: Always `response`.
+                  created_at:
+                    type: integer
+                    description: Unix timestamp of when the response was created.
+                  model:
+                    type: string
+                    description: Model used to generate the response.
+                  status:
+                    type: string
+                    description: Completion status of the response.
                   output:
                     type: array
+                    description: |
+                      List of output messages. Each message has a `content`
+                      array containing one or more generated items.
                     items:
                       type: object
                       properties:
+                        role:
+                          type: string
+                          description: Always `assistant`.
                         content:
                           type: array
                           items:
@@ -183,7 +443,24 @@ paths:
                             properties:
                               image_data:
                                 type: string
-                                description: Base64-encoded image data.
+                                description: |
+                                  Base64-encoded image data. Present when
+                                  `provider_options.image.response_format` is
+                                  `b64_json` (the default for image models).
+                              video_data:
+                                type: string
+                                description: |
+                                  Base64-encoded mp4 video data. Present when
+                                  `provider_options.video.response_format` is
+                                  `b64_json`.
+                              video_url:
+                                type: string
+                                description: |
+                                  URL to download the generated video. Present
+                                  when `provider_options.video.response_format`
+                                  is `url` (the default for video models).
+                                  Download from
+                                  `GET /v1/videos/{video_id}/content`.
         '400':
           description: Bad request
           content:
@@ -220,7 +497,7 @@ paths:
                       "content": "Who won the world series in 2020?"
                     },
                 ],
-                max_tokens=100
+                max_completion_tokens=100
             )
 
             print(completion.choices[0].message.content)
@@ -236,7 +513,7 @@ paths:
                     "content": "Who won the world series in 2020?"
                   }
                 ],
-                "max_tokens": 100
+                "max_completion_tokens": 100
               }'
       requestBody:
         required: true
@@ -252,7 +529,7 @@ paths:
                   messages:
                     - role: "user"
                       content: "Who won the world series in 2020?"
-                  max_tokens: 100
+                  max_completion_tokens: 100
               streaming:
                 summary: Streaming chat completion
                 value:
@@ -263,7 +540,7 @@ paths:
                     - role: "user"
                       content: "Write a short poem about AI."
                   stream: true
-                  max_tokens: 100
+                  max_completion_tokens: 100
               withTools:
                 summary: Chat completion with tools
                 value:
@@ -285,7 +562,7 @@ paths:
                               type: "string"
                           required: ["location"]
                   tool_choice: "auto"
-                  max_tokens: 100
+                  max_completion_tokens: 100
               jsonResponse:
                 summary: Chat completion with JSON response format
                 value:
@@ -297,7 +574,7 @@ paths:
                       content: "Generate a JSON object with name, age, and occupation fields"
                   response_format:
                     type: "json_object"
-                  max_tokens: 100
+                  max_completion_tokens: 100
               withImage:
                 summary: Chat completion with image
                 value:
@@ -318,7 +595,7 @@ paths:
                           }
                         }
                       ]
-                  max_tokens: 300
+                  max_completion_tokens: 300
       responses:
         '200':
           description: OK
@@ -466,7 +743,10 @@ paths:
                           tokens: null
                           top_logprobs: []
                     system_fingerprint: null
-                    usage: null
+                    usage:
+                      prompt_tokens: 5
+                      completion_tokens: 36
+                      total_tokens: 41
                 withLogprobs:
                   summary: Completion response with logprobs
                   value:
@@ -798,8 +1078,29 @@ components:
         max_tokens:
           type: integer
           minimum: 1
+          deprecated: true
           description: |
             The maximum number of tokens to generate in the chat completion.
+        max_completion_tokens:
+          type: integer
+          minimum: 1
+          description: |
+            The maximum number of tokens to generate in the chat completion.
+            Preferred alias for `max_tokens`. If both are supplied,
+            `max_completion_tokens` takes precedence (no error is raised).
+        thinking:
+          type: object
+          required:
+            - type
+          description: |
+            Controls model reasoning, translated to the chat template's thinking
+            flags. The effect is model-dependent: only models whose chat
+            template reads these flags honor it.
+          properties:
+            type:
+              type: string
+              enum: [enabled, disabled, adaptive]
+              description: The reasoning mode.
         logprobs:
           type: boolean
           description: |
@@ -854,9 +1155,12 @@ components:
       properties:
         role:
           type: string
-          enum: [system, user, assistant, function]
+          enum: [system, user, assistant, developer, function, tool, root]
           description: |
-            The role of the message author.
+            The role of the message author. Use `tool` for a message that
+            carries the result of a tool call (paired with `tool_call_id`).
+            `root` is a model-gated vendor role accepted only when the model's
+            tokenizer enables it.
         content:
           oneOf:
             - type: string
@@ -864,7 +1168,7 @@ components:
                 The content of the message as a string.
             - type: array
               description: |
-                The content of the message as an array of content parts. For user messages, content parts can be of type text or image_url.
+                The content of the message as an array of content parts. For user messages, content parts can be of type text, image_url, or video_url.
               items:
                 oneOf:
                   - type: object
@@ -897,10 +1201,91 @@ components:
                             type: string
                             description: |
                               Either a URL of the image or a base64 encoded image with the data-uri scheme.
+                          detail:
+                            type: string
+                            description: |
+                              Optional quality tier. Mutually exclusive with
+                              max_long_side_pixel.
+                          max_long_side_pixel:
+                            type: integer
+                            minimum: 1
+                            description: |
+                              Optional sizing hint. Downscale the image so its
+                              longest side is at most this many pixels.
+                  - type: object
+                    required:
+                      - type
+                      - video_url
+                    properties:
+                      type:
+                        type: string
+                        enum: [video_url]
+                        description: The type of the content part.
+                      video_url:
+                        type: object
+                        required:
+                          - url
+                        properties:
+                          url:
+                            type: string
+                            description: |
+                              Either a URL of the video or the base64 encoded video data.
+                          fps:
+                            type: number
+                            exclusiveMinimum: 0
+                            description: |
+                              Optional sampling hint. Frames per second to
+                              sample the video at.
+                          max_frames:
+                            type: integer
+                            minimum: 1
+                            description: |
+                              Optional sampling hint. Maximum number of frames
+                              to sample from the video.
+                          detail:
+                            type: string
+                            description: |
+                              Optional quality tier. Mutually exclusive with
+                              max_long_side_pixel.
+                          max_long_side_pixel:
+                            type: integer
+                            minimum: 1
+                            description: |
+                              Optional sizing hint. Downscale the video so its
+                              longest side is at most this many pixels.
         name:
           type: string
           description: |
             The name of the author of this message.
+        tool_call_id:
+          type: string
+          description: |
+            For a `tool` role message, the ID of the tool call this message
+            responds to. Must match an `id` from a prior assistant message's
+            `tool_calls`; a missing, mismatched, or incomplete set of tool
+            replies is rejected with a 400 error.
+        tool_calls:
+          type: array
+          description: |
+            Tool calls generated by the model on an `assistant` message. Echo
+            them back unchanged in the follow-up request, each paired with a
+            `tool` role message whose `tool_call_id` matches the call's `id`.
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+                enum: [function]
+              function:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  arguments:
+                    type: string
+                    description: JSON-encoded string of the call arguments.
 
     ChatCompletionTool:
       type: object
@@ -920,7 +1305,12 @@ components:
       properties:
         name:
           type: string
-          description: The name of the function to be called
+          maxLength: 64
+          description: |
+            The name of the function to be called. Must be at most 64
+            characters. The default character set is `[a-zA-Z0-9_-]`; some model
+            parsers widen it to allow dotted or namespaced names (for example,
+            `my-tool.v2`).
         description:
           type: string
           description: A description of what the function does
@@ -1322,6 +1712,16 @@ components:
         total_tokens:
           type: integer
           description: Total number of tokens used in the request (prompt + completion)
+        completion_tokens_details:
+          type: object
+          description: |
+            Breakdown of the generated completion tokens.
+          properties:
+            reasoning_tokens:
+              type: integer
+              description: |
+                Tokens generated as model reasoning (chain of thought).
+                Populated for reasoning models; otherwise 0.
 
     ErrorResponse:
       type: object

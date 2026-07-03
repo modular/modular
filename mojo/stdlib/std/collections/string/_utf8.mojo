@@ -14,7 +14,7 @@
 """Implement UTF-8 utils."""
 
 from std.base64._b64encode import _sub_with_saturation
-from std.sys import simd_width_of
+from std.sys import simd_width_of, simd_byte_width
 from std.sys.intrinsics import likely
 
 from std.bit import count_leading_zeros
@@ -109,7 +109,7 @@ def _utf8_char_width(b: Byte) -> Int:
 
 @always_inline
 def _extract_vector[
-    width: Int, //, offset: Int
+    width: SIMDSize, //, offset: Int
 ](a: SIMD[DType.uint8, width], b: SIMD[DType.uint8, width]) -> SIMD[
     DType.uint8, width
 ]:
@@ -165,7 +165,7 @@ def _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
 
     ptr = span.unsafe_ptr()
     length = len(span)
-    comptime simd_size = sys.simd_byte_width()
+    comptime simd_size = simd_byte_width()
     var i: Int = 0
     var previous = SIMD[DType.uint8, simd_size]()
 
@@ -270,7 +270,7 @@ def _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
 @parameter
 @always_inline
 def _is_utf8_continuation_byte[
-    w: Int
+    w: SIMDSize
 ](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
     return vec.cast[DType.int8]().lt(-(0b1000_0000 >> 1))
 
@@ -408,7 +408,7 @@ struct UTF8Chunks[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
             raise StopIteration()
 
         @always_inline
-        def safe_get(i: Int) unified {read self} -> Byte:
+        def safe_get(i: Int) {read self} -> Byte:
             return self._bytes[i] if i < len(self._bytes) else Byte(0)
 
         @always_inline

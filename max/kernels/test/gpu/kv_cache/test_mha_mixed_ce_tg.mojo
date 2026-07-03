@@ -28,16 +28,15 @@ from std.utils import IndexList
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 
 
-def execute_ragged_flash_attention(
-    ctx: DeviceContext,
-) raises:
-    comptime num_q_heads = 32
-    comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
-    comptime type = DType.float32
+def execute_ragged_flash_attention[
+    num_q_heads: Int,
+    kv_params: KVCacheStaticParams,
+    type: DType,
+](ctx: DeviceContext,) raises:
     comptime num_paged_blocks = 32
     comptime page_size = 128
     comptime PagedCollectionType = PagedKVCacheCollection[
-        type, kv_params, page_size
+        type, kv_params, page_size, ...
     ]
     var num_layers = 1
     var layer_idx = 0
@@ -74,20 +73,18 @@ def execute_ragged_flash_attention(
 
     # Q ragged tensors
     comptime q_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     var true_ce_q_size = (
-        true_ce_total_length * num_q_heads * Int(kv_params.head_size)
+        true_ce_total_length * num_q_heads * kv_params.head_size
     )
     var mixed_ce_q_size = (
-        mixed_ce_total_length * num_q_heads * Int(kv_params.head_size)
+        mixed_ce_total_length * num_q_heads * kv_params.head_size
     )
 
     var true_ce_q_ragged = ManagedLayoutTensor[type, q_layout](
         RuntimeLayout[q_layout].row_major(
-            IndexList[3](
-                true_ce_total_length, num_q_heads, Int(kv_params.head_size)
-            )
+            IndexList[3](true_ce_total_length, num_q_heads, kv_params.head_size)
         ),
         ctx,
     )
@@ -97,7 +94,7 @@ def execute_ragged_flash_attention(
     var mixed_ce_q_ragged = ManagedLayoutTensor[type, q_layout](
         RuntimeLayout[q_layout].row_major(
             IndexList[3](
-                mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+                mixed_ce_total_length, num_q_heads, kv_params.head_size
             )
         ),
         ctx,
@@ -111,7 +108,7 @@ def execute_ragged_flash_attention(
         mixed_ce_cache_lengths_table.input_row_offsets.host_ptr
     )
 
-    var head_stride = num_q_heads * Int(kv_params.head_size)
+    var head_stride = num_q_heads * kv_params.head_size
     for bs_idx in range(batch_size):
         mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
 
@@ -138,7 +135,7 @@ def execute_ragged_flash_attention(
     var mixed_ce_output = ManagedLayoutTensor[type, q_layout](
         RuntimeLayout[q_layout].row_major(
             IndexList[3](
-                mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+                mixed_ce_total_length, num_q_heads, kv_params.head_size
             )
         ),
         ctx,
@@ -147,9 +144,7 @@ def execute_ragged_flash_attention(
 
     var true_ce_output = ManagedLayoutTensor[type, q_layout](
         RuntimeLayout[q_layout].row_major(
-            IndexList[3](
-                true_ce_total_length, num_q_heads, Int(kv_params.head_size)
-            )
+            IndexList[3](true_ce_total_length, num_q_heads, kv_params.head_size)
         ),
         ctx,
     )
@@ -162,8 +157,8 @@ def execute_ragged_flash_attention(
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block_paged = ManagedLayoutTensor[type, kv_layout](
         RuntimeLayout[kv_layout].row_major(kv_shape), ctx
@@ -239,15 +234,24 @@ def execute_ragged_flash_attention(
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
                     true_ce_val = true_ce_output_host[
-                        true_ce_ragged_offset + s, h, Int(hd)
+                        true_ce_ragged_offset + s, h, hd
                     ]
                     mixed_ce_val = mixed_ce_output_host[
-                        mixed_ce_ragged_offset + s, h, Int(hd)
+                        mixed_ce_ragged_offset + s, h, hd
                     ]
                     try:
+                        # 1 BF16 ULP tolerance: the SM100 1Q vs 2Q paths
+                        # (dispatched per-call based on max_prompt_len)
+                        # use different FP reduction orders, so cross-
+                        # dispatch comparisons here aren't bit-identical
+                        # even when both paths are correct. rtol=1e-2 /
+                        # atol=1e-5 matches the convention used in the
+                        # SM100 MHA test suite (e.g. test_mha_causal_mask).
                         assert_almost_equal(
                             true_ce_val,
                             mixed_ce_val,
+                            atol=1e-5,
+                            rtol=1e-2,
                         )
                     except e:
                         print(
@@ -267,4 +271,13 @@ def execute_ragged_flash_attention(
 
 def main() raises:
     with DeviceContext() as ctx:
-        execute_ragged_flash_attention(ctx)
+        # group=4 fp32 (original config)
+        execute_ragged_flash_attention[
+            32, KVCacheStaticParams(num_heads=8, head_size=128), DType.float32
+        ](ctx)
+        print("PASS: group=4 fp32 paged KV cache")
+        # group=16 bf16 (405B TP=8 config)
+        execute_ragged_flash_attention[
+            16, KVCacheStaticParams(num_heads=1, head_size=128), DType.bfloat16
+        ](ctx)
+        print("PASS: group=16 bf16 paged KV cache")

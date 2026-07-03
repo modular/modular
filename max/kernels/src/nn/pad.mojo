@@ -35,7 +35,7 @@ def _fill[
     value: Scalar[dtype],
     count: Int,
 ):
-    _ = TileTensor(dst, row_major(Idx(count))).fill(value)
+    _ = TileTensor(dst, row_major(count)).fill(value)
 
 
 # TODO: could this be deleted? maybe replaced with faster collapsed loop.
@@ -130,7 +130,9 @@ def pad_constant[
         address_space=AddressSpace.GENERIC,
         ...,
     ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     paddings: UnsafePointer[Scalar[paddings_type], _],
     constant: Scalar[constant_type],
 ):
@@ -157,8 +159,6 @@ def pad_constant[
     var constant_cast = rebind[Scalar[dtype]](constant[0])
     comptime output_rank = output.rank
 
-    @__copy_capture(constant_cast)
-    @parameter
     def pad_constant_wrapper(
         output: UnsafePointer[
             mut=True, Scalar[dtype], address_space=AddressSpace.GENERIC, ...
@@ -170,7 +170,7 @@ def pad_constant[
         output_shape: IndexList[output_rank],
         output_strides: UnsafePointer[mut=True, Scalar[DType.int], _],
         input_strides: UnsafePointer[Scalar[DType.int], _],
-    ):
+    ) {var constant_cast}:
         return _pad_constant_impl[output_rank, dtype, paddings_type](
             output,
             input,
@@ -184,8 +184,7 @@ def pad_constant[
     return _do_pad[
         dtype,
         paddings_type,
-        pad_constant_wrapper,
-    ](output, input, paddings)
+    ](output, input, paddings, pad_constant_wrapper)
 
 
 def pad_reflect[
@@ -198,7 +197,9 @@ def pad_reflect[
         address_space=AddressSpace.GENERIC,
         ...,
     ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     paddings: UnsafePointer[Scalar[paddings_type], _],
 ):
     """
@@ -226,7 +227,6 @@ def pad_reflect[
 
     comptime output_rank = output.rank
 
-    @parameter
     def pad_reflect_wrapper(
         output: UnsafePointer[
             mut=True, Scalar[dtype], address_space=AddressSpace.GENERIC, ...
@@ -238,7 +238,7 @@ def pad_reflect[
         output_shape: IndexList[output_rank],
         output_strides: UnsafePointer[mut=True, Scalar[DType.int], _],
         input_strides: UnsafePointer[Scalar[DType.int], _],
-    ):
+    ) {}:
         return _pad_reflect_impl[output_rank, dtype, paddings_type](
             output, input, paddings, output_shape, output_strides, input_strides
         )
@@ -246,8 +246,7 @@ def pad_reflect[
     return _do_pad[
         dtype,
         paddings_type,
-        pad_reflect_wrapper,
-    ](output, input, paddings)
+    ](output, input, paddings, pad_reflect_wrapper)
 
 
 @always_inline
@@ -255,8 +254,8 @@ def pad_shape[
     input_type: DType,
     paddings_type: DType,
 ](
-    input_buf: TileTensor[input_type, ...],
-    paddings_buf: TileTensor[paddings_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    paddings_buf: TileTensor[mut=False, paddings_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
@@ -300,7 +299,8 @@ def _do_pad[
     //,
     dtype: DType,
     paddings_type: DType,
-    pad_impl_fn: def(
+    PadImplFn: ImplicitlyCopyable
+    & def(
         UnsafePointer[
             mut=True, Scalar[dtype], address_space=AddressSpace.GENERIC, ...
         ],
@@ -309,7 +309,7 @@ def _do_pad[
         IndexList[OutputLayoutType.rank],
         UnsafePointer[mut=True, Scalar[DType.int], _],
         UnsafePointer[Scalar[DType.int], _],
-    ) capturing[_] -> None,
+    ) -> None,
 ](
     output: TileTensor[
         mut=True,
@@ -318,8 +318,11 @@ def _do_pad[
         address_space=AddressSpace.GENERIC,
         ...,
     ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     paddings: UnsafePointer[Scalar[paddings_type], _],
+    pad_impl_fn: PadImplFn,
 ):
     var input_strides_stack = InlineArray[Scalar[DType.int], output.rank](
         uninitialized=True
@@ -575,8 +578,14 @@ def _memcpy_regions_fast[
                 copy_from * output_axis_stride
             )
 
+            # dest and src are non-overlapping slices of the same buffer
+            # (shared origin). Opt out of exclusivity with an unsafe any-origin:
+            # memcpy's non-overlap requirement is a caller contract the
+            # exclusivity checker can't prove.
             memcpy(
-                dest=copy_to_ptr, src=copy_from_ptr, count=output_axis_stride
+                dest=copy_to_ptr,
+                src=copy_from_ptr.as_unsafe_any_origin(),
+                count=output_axis_stride,
             )
             copy_to += -1 if pre_copy else +1
 
@@ -784,7 +793,7 @@ def pad_repeat[
     paddings_type: DType,
 ](
     output: TileTensor[mut=True, dtype, ...],
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     paddings: UnsafePointer[Scalar[paddings_type], _],
 ):
     """
@@ -826,7 +835,7 @@ def pad_repeat[
     )
 
     comptime for i in range(output.rank):
-        loop_bounds[i] = IndexList[2](0, input.layout.shape[i]().value())
+        loop_bounds[i] = IndexList[2](0, Int(input.layout.shape[i]().value()))
 
     var non_pad_iter = _NestedLoopIter[output.rank](loop_bounds)
 
@@ -834,7 +843,7 @@ def pad_repeat[
         var output_idx = input_idx + pre_pads
         var in_idx = Int(input.layout(Coord(input_idx)))
         var out_idx = Int(output.layout(Coord(output_idx)))
-        output.ptr[out_idx] = input.ptr[in_idx]
+        output.raw_store(out_idx, input.raw_load(in_idx))
 
     for axis in reversed(range(comptime (output.rank))):
         for i in range(axis):
@@ -860,7 +869,7 @@ def pad_repeat[
             var in_idx = Int(output.layout(Coord(read_idx)))
 
             var out_idx = Int(output.layout(Coord(write_idx)))
-            output.ptr[out_idx] = output.ptr[in_idx]
+            output.raw_store(out_idx, output.raw_load(in_idx))
 
         # and now post-padding
         var post_lower = pre_pads[axis] + Int(input.dim(axis))
@@ -876,4 +885,4 @@ def pad_repeat[
 
             var in_idx = Int(output.layout(Coord(read_idx)))
             var out_idx = Int(output.layout(Coord(write_idx)))
-            output.ptr[out_idx] = output.ptr[in_idx]
+            output.raw_store(out_idx, output.raw_load(in_idx))

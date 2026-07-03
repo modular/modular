@@ -71,7 +71,7 @@ def kernel_3[
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    num_threads: UInt = 128,
+    num_threads: Int = 128,
 ](
     a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
@@ -113,7 +113,7 @@ def kernel_3[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
-            ExternalOrigin[mut=True],
+            UntrackedOrigin[mut=True],
         ]
     ](
         external_memory[
@@ -128,28 +128,28 @@ def kernel_3[
     comptime a_smem_tile_t = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
@@ -169,9 +169,7 @@ def kernel_3[
 
     comptime accum_type = get_accum_type[a_type]()
 
-    comptime c_frag_size = MMA_M * MMA_N // Int(
-        num_threads
-    )  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
+    comptime c_frag_size = MMA_M * MMA_N // num_threads  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
     var c_frag: InlineArray[
         Scalar[accum_type], c_frag_size
     ]  # array of accumulator elements
@@ -318,7 +316,7 @@ def kernel_3[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    comptime num_warps = num_threads // UInt(WARP_SIZE)
+    comptime num_warps = num_threads // WARP_SIZE
 
     ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
@@ -326,7 +324,7 @@ def kernel_3[
         comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_warp_tile = ctile.tile[MMA_M // Int(num_warps), MMA_N](
+            c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
                 4 * m_mma + warp_id(), n_mma
             )
 
@@ -364,9 +362,9 @@ def blackwell_kernel_3[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutUntrackedOrigin],
+    a: LayoutTensor[a_type, a_layout, MutUntrackedOrigin],
+    b: LayoutTensor[b_type, b_layout, MutUntrackedOrigin],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()
@@ -413,7 +411,7 @@ def blackwell_kernel_3[
         num_threads=block_dim,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c,
@@ -514,9 +512,9 @@ def test_blackwell_kernel_3[
     ) if transpose_b else Layout.row_major(K, N)
     comptime c_layout = Layout.row_major(M, N)
 
-    var a_host_ptr = alloc[Scalar[a_type]](M * K)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = alloc[Scalar[b_type]](N * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)
@@ -623,10 +621,6 @@ def test_blackwell_kernel_3[
             atol=0.0001,
             rtol=rtol,
         )
-
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
 
 
 def main() raises:

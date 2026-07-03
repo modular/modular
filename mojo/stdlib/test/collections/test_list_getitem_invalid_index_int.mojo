@@ -17,7 +17,7 @@ from std.testing import TestSuite
 # CHECK-LABEL: test_fail_list_index
 def test_fail_list_index() raises:
     print("== test_fail_list_index")
-    # CHECK: List index out of bounds: index (4) valid range: -3 <= index < 3
+    # CHECK: index 4 is out of bounds, valid range is 0 to 2
     nums = [1, 2, 3]
     print(nums[4])
 

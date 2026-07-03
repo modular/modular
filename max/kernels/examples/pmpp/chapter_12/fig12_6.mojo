@@ -15,7 +15,7 @@ from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
-from std.os import Atomic
+from std.atomic import Atomic
 
 
 # ========================== CONFIGURATION ==========================
@@ -133,7 +133,7 @@ def main() raises:
         print("Input size:", N, "elements")
 
         comptime kernel = filter_kernel
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             d_input,
             d_output,
             d_output_size,

@@ -11,6 +11,16 @@ max.graph
 
 .. currentmodule:: max.graph
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   graph.ops
+   graph.quantization
+   graph.weights
+
 Graph construction
 ------------------
 
@@ -21,6 +31,18 @@ Graph construction
 
    Graph
    KernelLibrary
+   Module
+
+Custom extensions
+-----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   default_custom_extensions
+   default_custom_extensions_scope
 
 Graph values
 ------------
@@ -73,6 +95,7 @@ Devices
    :template: autosummary/class.rst
 
    DeviceKind
+   DevicePlacementPolicy
    DeviceRef
 
 Weights
@@ -86,12 +109,13 @@ Weights
    ShardingStrategy
    Weight
 
-Submodules
-----------
+Configuration
+-------------
 
-.. toctree::
-   :maxdepth: 1
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
 
-   graph.ops
-   graph.quantization
-   graph.weights
+   GraphDebugConfig
+

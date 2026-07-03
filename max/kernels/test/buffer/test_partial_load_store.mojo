@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer.buffer import partial_simd_load, partial_simd_store
+from linalg.utils import partial_simd_load, partial_simd_store
 from std.testing import TestSuite
 
 

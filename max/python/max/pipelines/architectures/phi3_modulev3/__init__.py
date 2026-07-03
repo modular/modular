@@ -10,7 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Phi-3 transformer architecture for text generation."""
 
 from .arch import phi3_modulev3_arch
+from .model import Phi3Model
 
-__all__ = ["phi3_modulev3_arch"]
+__all__ = [
+    "Phi3Model",
+    "phi3_modulev3_arch",
+]

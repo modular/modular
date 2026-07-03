@@ -10,8 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Z-Image diffusion architecture for image generation."""
 
-from .arch import z_image_arch
+from .arch import ZImageArchConfig, z_image_arch
 from .model import ZImageTransformerModel
+from .model_config import ZImageConfig
 
-__all__ = ["ZImageTransformerModel", "z_image_arch"]
+__all__ = [
+    "ZImageArchConfig",
+    "ZImageConfig",
+    "ZImageTransformerModel",
+    "z_image_arch",
+]

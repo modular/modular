@@ -14,7 +14,7 @@
 from std.sys import is_gpu
 
 from asyncrt_test_utils import create_test_device_context
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
@@ -35,10 +35,10 @@ struct ZeroSized(
 ):
     comptime device_type: AnyType = Self
 
-    def _to_device_type[
-        origin: MutOrigin
-    ](self, target: UnsafePointer[NoneType, origin]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -61,10 +61,10 @@ struct NotZeroSized(
 ):
     comptime device_type: AnyType = Self
 
-    def _to_device_type[
-        origin: MutOrigin
-    ](self, target: UnsafePointer[NoneType, origin]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -137,24 +137,16 @@ def _run_test_function_compilation(ctx: DeviceContext) raises:
     # the signature.
 
     print("Compiling _vec_func[NotZeroSized]")
-    var compiled_vec_func_0 = ctx.compile_function_experimental[
-        _vec_func[NotZeroSized]
-    ]()
+    var compiled_vec_func_0 = ctx.compile_function[_vec_func[NotZeroSized]]()
 
     print("Compiling _vec_func[ZeroSizet]")
-    var compiled_vec_func_1 = ctx.compile_function_experimental[
-        _vec_func[ZeroSized]
-    ]()
+    var compiled_vec_func_1 = ctx.compile_function[_vec_func[ZeroSized]]()
 
     print("Compiling _vec_func_not_zero")
-    var compiled_vec_func_2 = ctx.compile_function_experimental[
-        _vec_func_not_zero
-    ]()
+    var compiled_vec_func_2 = ctx.compile_function[_vec_func_not_zero]()
 
     print("Compiling _vec_func_zero")
-    var compiled_vec_func_3 = ctx.compile_function_experimental[
-        _vec_func_zero
-    ]()
+    var compiled_vec_func_3 = ctx.compile_function[_vec_func_zero]()
 
     _ = compiled_vec_func_0
     _ = compiled_vec_func_1
@@ -192,7 +184,7 @@ def _run_test_function_checked(ctx: DeviceContext) raises:
     in1.enqueue_fill(scalar)
 
     print("compiling vec_func")
-    var compiled_vec_func = ctx.compile_function_experimental[vec_func]()
+    var compiled_vec_func = ctx.compile_function[vec_func]()
     print("calling vec_func")
     ctx.enqueue_function(
         compiled_vec_func,

@@ -22,15 +22,6 @@ from std.format._utils import (
     FormatStruct,
 )
 from std.hashlib.hasher import Hasher
-from std.reflection.traits import (
-    AllCopyable,
-    AllEquatable,
-    AllHashable,
-    AllImplicitlyCopyable,
-    AllRegisterPassable,
-    AllWritable,
-)
-from std.sys.intrinsics import _type_is_eq
 
 from std.reflection.type_info import _unqualified_type_name
 
@@ -43,23 +34,25 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 
 @lldb_formatter_wrapping_type
 struct Tuple[*element_types: Movable](
-    Copyable where AllCopyable[*element_types],
-    Equatable where AllEquatable[*element_types],
-    Hashable where AllHashable[*element_types],
-    # TODO(MOCO-3421): AllImplicitlyCopyable implies AllCopyable since
-    # ImplicitlyCopyable refines Copyable, but the compiler can't infer
-    # parent trait constraints from derived ones yet. Remove AllCopyable
-    # from this where clause once that's fixed.
+    Copyable where element_types.all_conforms_to[Copyable](),
+    Defaultable where element_types.all_conforms_to[Defaultable](),
+    Equatable where element_types.all_conforms_to[Equatable](),
+    Hashable where element_types.all_conforms_to[Hashable](),
+    # TODO(MOCO-3421): all_conforms_to[ImplicitlyCopyable] implies
+    # all_conforms_to[Copyable] since ImplicitlyCopyable refines Copyable, but
+    # the compiler can't infer parent trait constraints from derived ones yet.
+    # Remove the Copyable check from this where clause once that's fixed.
     ImplicitlyCopyable where (
-        AllImplicitlyCopyable[*element_types] and AllCopyable[*element_types]
+        element_types.all_conforms_to[ImplicitlyCopyable]()
+        and element_types.all_conforms_to[Copyable]()
     ),
-    # ImplicitlyDestructible and Movable are listed explicitly because
+    # ImplicitlyDeletable and Movable are listed explicitly because
     # conditional conformances require all conformances to be stated.
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
-    RegisterPassable where AllRegisterPassable[*element_types],
+    RegisterPassable where element_types.all_conforms_to[RegisterPassable](),
     Sized,
-    Writable where AllWritable[*element_types],
+    Writable where element_types.all_conforms_to[Writable](),
 ):
     """The type of a literal tuple expression.
 
@@ -70,25 +63,46 @@ struct Tuple[*element_types: Movable](
     """
 
     comptime _mlir_type = __mlir_type[
-        `!kgen.pack<:`,
-        Variadic.TypesOfTrait[Movable],
-        Self.element_types,
-        `>`,
+        `!kgen.struct<:`,
+        type_of(Self.element_types.values),
+        Self.element_types.values,
+        ` isParamPack>`,
     ]
 
     var _mlir_value: Self._mlir_type
     """The underlying storage for the tuple."""
 
-    # Overload that crushes down IR generated on the caller side.
     @always_inline("nodebug")
-    def __init__(out self: Tuple[]):
-        """Construct an empty tuple."""
+    def __init__(out self):
+        """Construct a tuple with default-initialized elements.
+
+        Constraints:
+            All `element_types` must conform to `Defaultable`. The constraint
+            is enforced via a per-element `comptime assert` in the body
+            instead of an explicit `where` clause so that callers whose
+            element types come from a comptime reducer (which the solver
+            can't reduce through when checking
+            `all_conforms_to[Defaultable]()`) can
+            still default-construct.
+        """
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._mlir_value)
         )
 
+        # TODO(MOCO-3791): Replace the per-element `comptime assert` below
+        # with `where Self.element_types.all_conforms_to[Defaultable]()`
+        # once the solver can prove reducer-based `where` clauses for
+        # generic callers that forward parameter packs.
+        comptime for i in range(Self.__len__()):
+            comptime TUnknown = Self.element_types[i]
+            comptime assert conforms_to(TUnknown, Defaultable), (
+                "Tuple default-construction requires all element types to"
+                " conform to `Defaultable`"
+            )
+            UnsafePointer(to=self[i]).init_pointee_move({})
+
     @always_inline("nodebug")
-    def __init__(out self, var *args: * Self.element_types):
+    def __init__(out self, var *args: *Self.element_types):
         """Construct the tuple.
 
         Args:
@@ -109,19 +123,18 @@ struct Tuple[*element_types: Movable](
     def __del__(deinit self):
         """Destructor that destroys all of the elements."""
 
-        # Run the destructor on each member, the destructor of !kgen.pack is
+        # Run the destructor on each member, the destructor of !kgen.struct is
         # trivial and won't do anything.
         comptime for i in range(Self.__len__()):
             comptime TUnknown = Self.element_types[i]
             _constrained_conforms_to[
-                conforms_to(TUnknown, ImplicitlyDestructible),
+                conforms_to(TUnknown, ImplicitlyDeletable),
                 Parent=Self,
                 Element=TUnknown,
-                ParentConformsTo="ImplicitlyDestructible",
+                ParentConformsTo="ImplicitlyDeletable",
             ]()
-            UnsafePointer(
-                to=trait_downcast[ImplicitlyDestructible](self[i])
-            ).destroy_pointee()
+            comptime assert conforms_to(TUnknown, ImplicitlyDeletable)
+            UnsafePointer(to=self[i]).destroy_pointee()
 
     @always_inline("nodebug")
     def __init__(out self, *, copy: Self):
@@ -136,18 +149,17 @@ struct Tuple[*element_types: Movable](
         )
 
         comptime for i in range(Self.__len__()):
+            comptime assert conforms_to(Self.element_types[i], Copyable)
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
-            UnsafePointer(
-                to=trait_downcast[Copyable](self[i])
-            ).init_pointee_copy(trait_downcast[Copyable](copy[i]))
+            UnsafePointer(to=self[i]).init_pointee_copy(copy[i])
 
     @always_inline("nodebug")
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Move construct the tuple.
 
         Args:
-            take: The value to move from.
+            move: The value to move from.
         """
         # Mark '_mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
@@ -158,9 +170,9 @@ struct Tuple[*element_types: Movable](
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
             UnsafePointer(to=self[i]).init_pointee_move_from(
-                UnsafePointer(to=take[i])
+                UnsafePointer(to=move[i])
             )
-        # Note: The destructor on `take` is auto-disabled in a moveinit.
+        # Note: The destructor on `move` is auto-disabled in a moveinit.
 
     @always_inline("builtin")
     @staticmethod
@@ -170,9 +182,7 @@ struct Tuple[*element_types: Movable](
         Returns:
             The tuple length.
         """
-
-        comptime result = Variadic.size_types[Self.element_types]
-        return result
+        return Self.element_types.size
 
     @always_inline("nodebug")
     def __len__(self) -> Int:
@@ -200,8 +210,9 @@ struct Tuple[*element_types: Movable](
         var storage_kgen_ptr = UnsafePointer(to=self._mlir_value).address
 
         # KGenPointer to the element.
-        var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[
-            index=idx.__mlir_index__()
+        var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
+            index=idx.__mlir_index__(),
+            _type=UnsafePointer[Self.element_types[idx]]._mlir_type,
         ](storage_kgen_ptr)
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 
@@ -228,34 +239,16 @@ struct Tuple[*element_types: Movable](
         """
 
         comptime for i in range(type_of(self).__len__()):
-            comptime if _type_is_eq[Self.element_types[i], T]():
+            comptime if Self.element_types[i] == T:
                 if rebind[T](self[i]) == value:
                     return True
 
         return False
 
-    @always_inline("nodebug")
-    def __init__[
-        *elt_types: Movable & Defaultable
-    ](out self: Tuple[*elt_types]):
-        """Construct a tuple with default-initialized elements.
-
-        Parameters:
-            elt_types: The types of the elements contained in the Tuple.
-        """
-
-        # Mark 'self._mlir_value' as being initialized so we can work on it.
-        __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self._mlir_value)
-        )
-
-        comptime for i in range(type_of(self).__len__()):
-            UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
-
     @always_inline
     def __eq__(
         self, other: Self
-    ) -> Bool where AllEquatable[*Self.element_types]:
+    ) -> Bool where Self.element_types.all_conforms_to[Equatable]():
         """Compare this tuple to another tuple using equality comparison.
 
         Args:
@@ -265,70 +258,14 @@ struct Tuple[*element_types: Movable](
             True if this tuple is equal to the other tuple, False otherwise.
         """
         comptime for i in range(type_of(self).__len__()):
-            if trait_downcast[Equatable](self[i]) != trait_downcast[Equatable](
-                other[i]
-            ):
+            comptime assert conforms_to(Self.element_types[i], Equatable)
+            if self[i] != other[i]:
                 return False
         return True
-
-    @always_inline
-    def __eq__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
-        """Compare this tuple to another tuple of a potentially different type.
-
-        This overload enables cross-type and cross-length comparisons such as
-        `(1, "a") == (1, "b")` or `(1, 2, 3) == (1, 2)`.
-
-        Parameters:
-            self_elt_types: The types of the elements in this tuple.
-            other_elt_types: The types of the elements in the other tuple.
-
-        Args:
-            other: The other tuple to compare against.
-
-        Returns:
-            True if the tuples are equal, False otherwise.
-        """
-        comptime self_len = type_of(self).__len__()
-        comptime other_len = type_of(other).__len__()
-
-        comptime if self_len != other_len:
-            return False
-
-        comptime for i in range(type_of(self).__len__()):
-            comptime self_type = type_of(self[i])
-            comptime other_type = type_of(other[i])
-            comptime assert _type_is_eq[
-                self_type, other_type
-            ](), "Tuple elements must be of the same type to compare."
-            if self[i] != rebind[self_type](other[i]):
-                return False
-        return True
-
-    @always_inline
-    def __ne__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
-        """Compare this tuple to another tuple of a potentially different type.
-
-        Parameters:
-            self_elt_types: The types of the elements in this tuple.
-            other_elt_types: The types of the elements in the other tuple.
-
-        Args:
-            other: The other tuple to compare against.
-
-        Returns:
-            True if the tuples are not equal, False otherwise.
-        """
-        return not self == other
 
     def __hash__[
         H: Hasher
-    ](self, mut hasher: H) where AllHashable[*Self.element_types]:
+    ](self, mut hasher: H) where Self.element_types.all_conforms_to[Hashable]():
         """Hashes the tuple using the given hasher.
 
         Parameters:
@@ -338,12 +275,15 @@ struct Tuple[*element_types: Movable](
             hasher: The hasher instance.
         """
         comptime for i in range(type_of(self).__len__()):
-            trait_downcast[Hashable](self[i]).__hash__(hasher)
+            comptime assert conforms_to(Self.element_types[i], Hashable)
+            self[i].__hash__(hasher)
 
     @no_inline
     def _write_tuple_to[
         *, is_repr: Bool
-    ](self, mut writer: Some[Writer]) where AllWritable[*Self.element_types]:
+    ](self, mut writer: Some[Writer]) where Self.element_types.all_conforms_to[
+        Writable
+    ]():
         """Write this tuple's elements to a writer.
 
         Parameters:
@@ -355,10 +295,11 @@ struct Tuple[*element_types: Movable](
 
         @parameter
         def elements[i: Int](mut writer: Some[Writer]):
+            comptime assert conforms_to(Self.element_types[i], Writable)
             comptime if is_repr:
-                trait_downcast[Writable](self[i]).write_repr_to(writer)
+                self[i].write_repr_to(writer)
             else:
-                trait_downcast[Writable](self[i]).write_to(writer)
+                self[i].write_to(writer)
 
         write_sequence_to[
             size=Self.__len__(),
@@ -371,7 +312,7 @@ struct Tuple[*element_types: Movable](
     @no_inline
     def write_to(
         self, mut writer: Some[Writer]
-    ) where AllWritable[*Self.element_types]:
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Write this tuple's text representation to a writer.
 
         Elements are formatted using their `write_to()` representation.
@@ -387,7 +328,7 @@ struct Tuple[*element_types: Movable](
     @no_inline
     def write_repr_to(
         self, mut writer: Some[Writer]
-    ) where AllWritable[*Self.element_types]:
+    ) where Self.element_types.all_conforms_to[Writable]():
         """Write this tuple's debug representation to a writer.
 
         Outputs the type name and parameters followed by elements formatted
@@ -409,10 +350,9 @@ struct Tuple[*element_types: Movable](
         ]()
 
     @always_inline
-    def _compare[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Int:
+    def _compare(
+        self, other: Self
+    ) -> Int where Self.element_types.all_conforms_to[Comparable]():
         comptime self_len = type_of(self).__len__()
         comptime other_len = type_of(other).__len__()
 
@@ -422,16 +362,10 @@ struct Tuple[*element_types: Movable](
         comptime min_length = min(self_len, other_len)
 
         comptime for i in range(min_length):
-            comptime self_type = type_of(self[i])
-            comptime other_type = type_of(other[i])
-            comptime assert _type_is_eq[self_type, other_type](), String(
-                "Mismatch between tuple elements at index ",
-                i,
-                " must be of the same type to compare.",
-            )
-            if self[i] < rebind[self_type](other[i]):
+            comptime assert conforms_to(Self.element_types[i], Comparable)
+            if self[i] < other[i]:
                 return -1
-            if rebind[self_type](other[i]) < self[i]:
+            if other[i] < self[i]:
                 return 1
 
         comptime if self_len < other_len:
@@ -442,16 +376,10 @@ struct Tuple[*element_types: Movable](
             return 0
 
     @always_inline
-    def __lt__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        //,
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+    def __lt__(
+        self, other: Self
+    ) -> Bool where Self.element_types.all_conforms_to[Comparable]():
         """Compare this tuple to another tuple using less than comparison.
-
-        Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -462,16 +390,10 @@ struct Tuple[*element_types: Movable](
         return self._compare(other) < 0
 
     @always_inline
-    def __le__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        //,
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+    def __le__(
+        self, other: Self
+    ) -> Bool where Self.element_types.all_conforms_to[Comparable]():
         """Compare this tuple to another tuple using less than or equal to comparison.
-
-        Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -482,17 +404,10 @@ struct Tuple[*element_types: Movable](
         return self._compare(other) <= 0
 
     @always_inline
-    def __gt__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        //,
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+    def __gt__(
+        self, other: Self
+    ) -> Bool where Self.element_types.all_conforms_to[Comparable]():
         """Compare this tuple to another tuple using greater than comparison.
-
-        Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other
-                Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -504,16 +419,10 @@ struct Tuple[*element_types: Movable](
         return self._compare(other) > 0
 
     @always_inline
-    def __ge__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        //,
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+    def __ge__(
+        self, other: Self
+    ) -> Bool where Self.element_types.all_conforms_to[Comparable]():
         """Compare this tuple to another tuple using greater than or equal to comparison.
-
-        Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -525,9 +434,7 @@ struct Tuple[*element_types: Movable](
         return self._compare(other) >= 0
 
     @always_inline("nodebug")
-    def reverse(
-        deinit self, out result: Tuple[*Variadic.reverse[*Self.element_types]]
-    ):
+    def reverse(deinit self, out result: Tuple[*Self.element_types.reverse()]):
         """Return a new tuple with the elements in reverse order.
 
         Returns:
@@ -549,9 +456,7 @@ struct Tuple[*element_types: Movable](
         comptime for i in range(type_of(result).__len__()):
             UnsafePointer(to=result[i]).init_pointee_move_from(
                 rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
-                    UnsafePointer(
-                        to=self[Variadic.size_types[Self.element_types] - 1 - i]
-                    )
+                    UnsafePointer(to=self[Self.element_types.size - 1 - i])
                 )
             )
 
@@ -562,7 +467,9 @@ struct Tuple[*element_types: Movable](
         deinit self,
         deinit other: Tuple[*other_element_types],
         out result: Tuple[
-            *Variadic.concat_types[Self.element_types, other_element_types]
+            *TypeList._concat[
+                Self.element_types.values, other_element_types.values
+            ]()
         ],
     ):
         """Return a new tuple that concatenates this tuple with another.
@@ -578,7 +485,7 @@ struct Tuple[*element_types: Movable](
 
         Usage:
 
-        ```
+        ```mojo
         var rgb = Tuple[Int, Int, Int](0xFF, 0xF0, 0x0)
         var rgba = rgb.concat(Tuple[Int](0xFF)) # Adds alpha channel
         print(rgba[0], rgba[1], rgba[2], rgba[3]) # 255 240 0 255

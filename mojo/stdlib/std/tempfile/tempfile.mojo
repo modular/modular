@@ -30,6 +30,7 @@ import std.os
 from std.format._utils import _WriteBufferStack
 from std.pathlib import Path
 from std.sys import CompilationTarget
+from std.random import random_ui64
 
 from std.memory import Span
 
@@ -42,7 +43,7 @@ def _get_random_name(size: Int = 8) -> String:
     var name = String(capacity=size)
     for _ in range(size):
         var rand_index = Int(
-            random.random_ui64(0, UInt64(characters.byte_length() - 1))
+            random_ui64(0, UInt64(characters.byte_length() - 1))
         )
         name += characters[rand_index]
     return name^
@@ -165,11 +166,11 @@ def mkdtemp(
 
     ```mojo
     from std.tempfile import mkdtemp
-    from import os import rmdir
+    from std.os import rmdir
 
     var temp_dir = mkdtemp()
     print(temp_dir)
-    os.rmdir(temp_dir)
+    rmdir(temp_dir)
     ```
     """
     var final_dir = Path(dir.value()) if dir else Path(_get_default_tempdir())
@@ -208,8 +209,8 @@ def _rmtree(path: String, ignore_errors: Bool = False) raises:
     Example:
 
     ```mojo
-    from std.tempfile import mkdtemp, _rmtree
-    import std.os
+    from std.tempfile import mkdtemp
+    from std.tempfile.tempfile import _rmtree
 
     var dir_path = mkdtemp()
 
@@ -256,10 +257,10 @@ struct TemporaryDirectory:
         var temp_path: String
         with TemporaryDirectory() as tmpdir:
             temp_path = tmpdir
-            print(os.path.exists(tmpdir))  # True
+            print(std.os.path.exists(tmpdir))  # True
             # Use tmpdir for temporary work
 
-        print(os.path.exists(temp_path))  # False - cleaned up
+        print(std.os.path.exists(temp_path))  # False - cleaned up
     ```
 
     The directory and all its contents are removed on exit, even if an error occurs.

@@ -41,7 +41,7 @@ def test_profiling() -> None:
 def test_profiling_disabled() -> None:
     with unittest.mock.patch(
         "max.profiler.tracing.is_profiling_enabled", return_value=False
-    ) as m:
+    ):
         test_profiling()
 
 

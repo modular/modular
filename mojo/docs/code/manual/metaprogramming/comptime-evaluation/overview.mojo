@@ -21,7 +21,7 @@ def get_array_size() -> Int:
     return 32
 
 
-def main() raises:
+def main():
     comptime for i in range(4):
         print(i)
 

@@ -13,11 +13,14 @@
 
 from std.math import align_down, ceildiv
 
+from std.memory import ThinAllocation, alloc, dealloc
+from std.memory.alloc import Layout as AllocLayout
 from std.sys import align_of, simd_width_of
 
 from _cudnn.cnn_infer import (
     cudnnConvolutionBackwardData,
     cudnnConvolutionMode_t,
+    cudnnGetConvolutionBackwardDataWorkspaceSize,
     cudnnSetConvolution2dDescriptor,
 )
 from _cudnn.infer import (
@@ -43,6 +46,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
+from layout.tensor_storage import TensorStorage
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from nn.conv.conv import _get_cudnn_meta, check_cudnn_error
@@ -375,12 +379,12 @@ def get_partition(
 
 @fieldwise_init
 struct ConvTransposedPacked[
-    input_element_size: Int,
     input_linear_idx_type: DType,
-    filter_element_size: Int,
+    input_storage: TensorStorage,
     filter_linear_idx_type: DType,
-    output_element_size: Int,
+    filter_storage: TensorStorage,
     output_linear_idx_type: DType,
+    output_storage: TensorStorage,
     InputLayoutType: TensorLayout,
     FilterLayoutType: TensorLayout,
     OutputLayoutType: TensorLayout,
@@ -399,21 +403,21 @@ struct ConvTransposedPacked[
         Self.output_type,
         Self.OutputLayoutType,
         Self.output_origin,
-        element_size=Self.output_element_size,
+        Storage=Self.output_storage,
         linear_idx_type=Self.output_linear_idx_type,
     ]
     var input: TileTensor[
         Self.input_type,
         Self.InputLayoutType,
         Self.input_origin,
-        element_size=Self.input_element_size,
+        Storage=Self.input_storage,
         linear_idx_type=Self.input_linear_idx_type,
     ]
     var filter: TileTensor[
         Self.filter_type,
         Self.FilterLayoutType,
         Self.filter_origin,
-        element_size=Self.filter_element_size,
+        Storage=Self.filter_storage,
         linear_idx_type=Self.filter_linear_idx_type,
     ]
 
@@ -433,7 +437,7 @@ struct ConvTransposedPacked[
             Self.output_type,
             Self.OutputLayoutType,
             Self.output_origin,
-            element_size=Self.output_element_size,
+            Storage=Self.output_storage,
             linear_idx_type=Self.output_linear_idx_type,
             address_space=AddressSpace.GENERIC,
             ...,
@@ -442,7 +446,7 @@ struct ConvTransposedPacked[
             Self.input_type,
             Self.InputLayoutType,
             Self.input_origin,
-            element_size=Self.input_element_size,
+            Storage=Self.input_storage,
             linear_idx_type=Self.input_linear_idx_type,
             address_space=AddressSpace.GENERIC,
             ...,
@@ -451,12 +455,13 @@ struct ConvTransposedPacked[
             Self.filter_type,
             Self.FilterLayoutType,
             Self.filter_origin,
-            element_size=Self.filter_element_size,
+            Storage=Self.filter_storage,
             linear_idx_type=Self.filter_linear_idx_type,
             address_space=AddressSpace.GENERIC,
             ...,
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
+        ctx: Optional[DeviceContext] = None,
     ) raises:
         comptime assert input.rank - 2 == Self.conv_attr_rank
         comptime simd_size = simd_width_of[Self.output_type]()
@@ -483,7 +488,7 @@ struct ConvTransposedPacked[
             ), "Don't support grouped transposed conv for now."
 
         # Number of partitions in n, ho_wo, c, f dimensions.
-        var num_threads = parallelism_level()
+        var num_threads = parallelism_level(ctx)
         var num_partitions = get_num_partitions[
             micro_kernel_height, micro_kernel_f_size
         ](num_threads, conv_shape)
@@ -526,7 +531,7 @@ struct ConvTransposedPacked[
             )
             instance._batch_group_loop()
 
-        sync_parallelize[task_func](num_tasks)
+        sync_parallelize[task_func](num_tasks, ctx)
 
     @always_inline
     def _zero_output(self, n: Int, g: Int):
@@ -544,7 +549,7 @@ struct ConvTransposedPacked[
         for _ in range(num_rows):
 
             @always_inline
-            def zero[width: Int](offset: Int) unified {mut}:
+            def zero[width: Int](offset: Int) {output_ptr, mut}:
                 output_ptr.store(offset, SIMD[Self.output_type, width](0))
 
             vectorize[simd_size](self.partition.f_size, zero)
@@ -681,13 +686,13 @@ struct ConvTransposedPacked[
 
         # Filter pointer to the current cf tile offset location.
         var filter_ptr: UnsafePointer[
-            Scalar[Self.filter_type], ImmutExternalOrigin
+            Scalar[Self.filter_type], ImmutUntrackedOrigin
         ]
 
         # Move the pointer to the current group's start.
         filter_ptr = _get_group_filter_base(
             self.filter.as_immut(), g, self.conv_shape.f_per_group()
-        ).unsafe_origin_cast[ImmutExternalOrigin]()
+        ).unsafe_origin_cast[ImmutUntrackedOrigin]()
         # Move the pointer to (c_tile_offset, f_tile_offset) mapped in
         # current group.
         filter_ptr = filter_ptr + (
@@ -734,7 +739,7 @@ struct ConvTransposedPacked[
                 has_residual,
                 last_c_tile,
             ](
-                output_ptr.as_any_origin(),  # FIXME: Why is this needed?
+                output_ptr.as_unsafe_any_origin(),  # FIXME: Why is this needed?
                 input_ptr,
                 filter_ptr,
                 n,
@@ -753,7 +758,7 @@ struct ConvTransposedPacked[
                 has_residual,
                 last_c_tile,
             ](
-                output_ptr.as_any_origin(),  # FIXME: Why is this needed?
+                output_ptr.as_unsafe_any_origin(),  # FIXME: Why is this needed?
                 input_ptr,
                 filter_ptr,
                 n,
@@ -991,8 +996,8 @@ def update_w_tile_2d[
     filter_dt: DType,
 ](
     output: UnsafePointer[mut=True, Scalar[output_dt], _],
-    input: UnsafePointer[Scalar[input_dt], _],
-    filter: UnsafePointer[Scalar[filter_dt], _],
+    input: UnsafePointer[mut=False, Scalar[input_dt], _],
+    filter: UnsafePointer[mut=False, Scalar[filter_dt], _],
     _init_output: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -1173,9 +1178,9 @@ def accumulate_wo_tile[
     c_tile_size: Int,
     output: UnsafePointer[mut=True, Scalar[output_dt], _],
     output_stride: Int,
-    input: UnsafePointer[Scalar[input_dt], _],
+    input: UnsafePointer[mut=False, Scalar[input_dt], _],
     input_stride: Int,
-    filter: UnsafePointer[Scalar[filter_dt], _],
+    filter: UnsafePointer[mut=False, Scalar[filter_dt], _],
     filter_stride: Int,
     partial_load_size: Int,
 ):
@@ -1376,10 +1381,8 @@ def pack_filter(
 def conv_transposed_cpu[
     filter_packed: Bool,
     filter_is_cfrs: Bool,
-    lambdas_have_fusion: Bool,
-    elementwise_lambda: def[dtype: DType, rank: Int, width: Int](
-        IndexList[rank], SIMD[dtype, width]
-    ) capturing -> None,
+    has_epilogue_fusion: Bool,
+    elementwise_lambda: elementwise_simd_epilogue_type,
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
@@ -1389,6 +1392,7 @@ def conv_transposed_cpu[
     pad_d: IndexList[2],
     pad_h: IndexList[2],
     pad_w: IndexList[2],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     @always_inline
     @parameter
@@ -1414,7 +1418,9 @@ def conv_transposed_cpu[
     ):
         comptime packed_filter_rank = filter.rank if filter_packed else filter.rank + 1
 
-        var packed_filter_ptr = filter.ptr.as_any_origin()
+        var packed_filter_ptr = filter.ptr.unsafe_origin_cast[
+            MutUntrackedOrigin
+        ]()
         var packed_filter_shape: IndexList[packed_filter_rank]
 
         # If filter is not packed, we have to pack it before the kernel.
@@ -1423,14 +1429,17 @@ def conv_transposed_cpu[
             packed_filter_shape = rebind[IndexList[packed_filter_rank]](
                 pack_filter_shape(filter, 1)
             )
-            packed_filter_ptr = alloc[Scalar[filter.dtype]](
-                packed_filter_shape.flattened_length()
-            )
         else:
             packed_filter_shape = IndexList[packed_filter_rank]()
 
             comptime for i in range(packed_filter_rank):
-                packed_filter_shape[i] = filter.layout.shape[i]().value()
+                packed_filter_shape[i] = Int(filter.layout.shape[i]().value())
+
+        var packed_filter_alloc_layout = AllocLayout[Scalar[filter.dtype]](
+            count=packed_filter_shape.flattened_length()
+        )
+        comptime if not filter_packed:
+            packed_filter_ptr = alloc(packed_filter_alloc_layout).unsafe_leak()
 
         var packed_filter = TileTensor(
             packed_filter_ptr,
@@ -1464,14 +1473,14 @@ def conv_transposed_cpu[
             comptime input_rank = input.rank
 
             @always_inline
-            def body[width: Int](idx: Int) unified {mut}:
+            def body[width: Int](idx: Int) {coords, output, mut}:
                 # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input_rank]](coords)
                 curr_coords[input_rank - 1] += idx
 
                 var output_idx = output.layout(Coord(curr_coords))
 
-                var vec = output.ptr.load[width=width](output_idx)
+                var vec = output.raw_load[width=width](output_idx)
                 elementwise_lambda(curr_coords, vec)
 
             vectorize[simd_size](f_size, body)
@@ -1486,11 +1495,15 @@ def conv_transposed_cpu[
             conv_attr,
             Optional[elementwise_epilogue_type](
                 elementwise_epilogue
-            ) if lambdas_have_fusion else None,
-        ].run(output, input, packed_filter, conv_shape)
+            ) if has_epilogue_fusion else None,
+        ].run(output, input, packed_filter, conv_shape, ctx)
 
         comptime if not filter_packed:
-            packed_filter_ptr.free()
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=packed_filter_ptr
+                ).unsafe_with_layout(packed_filter_alloc_layout)
+            )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1510,9 +1523,11 @@ def conv_transposed_gpu[
         address_space=AddressSpace.GENERIC,
         ...,
     ],
-    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
     filter: TileTensor[
-        mut=True, filter_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
     ],
     stride: IndexList[input.rank - 2],
     dilation: IndexList[input.rank - 2],
@@ -1538,20 +1553,18 @@ def conv_transposed_gpu[
             ctx,
         )
 
-        @parameter
-        @__copy_capture(output_tmp)
         @always_inline
         def epilogue_wrapper[
-            _width: Int, _rank: Int, alignment: Int = 1
-        ](coords: IndexList[_rank]):
+            _width: Int, alignment: Int = 1
+        ](coords: Coord) {var}:
             comptime align = align_of[SIMD[output_type, _width]]()
-            var idx = output_tmp.layout((Coord(coords)))
-            vec = output_tmp.ptr.load[width=_width, alignment=align](idx)
-            epilogue(coords, vec)
+            var idx = output_tmp.layout(coords)
+            vec = output_tmp.raw_load[width=_width, alignment=align](idx)
+            epilogue(coord_to_index_list(coords), vec)
 
-        elementwise[
-            epilogue_wrapper, simd_width_of[output_type](), target="gpu"
-        ](coord_to_index_list(output.layout.shape_coord()), ctx)
+        elementwise[simd_width_of[output_type](), target="gpu"](
+            epilogue_wrapper, output.layout.shape_coord(), ctx
+        )
 
         _ = output_tmp_data^
 
@@ -1572,8 +1585,12 @@ def _conv_transposed_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
-    filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    filter: TileTensor[
+        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
+    ],
     output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
@@ -1642,25 +1659,29 @@ def _conv_transposed_cudnn[
     # ---------------- Algorithm & workspace -------------------------------
     var algo = cudnnConvolutionBwdDataAlgo_t.CUDNN_CONVOLUTION_BWD_DATA_ALGO_0
 
-    # For now, use no workspace since UnsafePointer.alloc() only allocates host memory,
-    var workspace_ptr = UnsafePointer[Int8, MutExternalOrigin](_unsafe_null=())
+    # ALGO_0 is the implicit deconv formulation; cuDNN may still require a
+    # workspace for larger shapes. Query the exact size and allocate a
+    # per-call device buffer so we don't trip CUDNN_STATUS_NOT_SUPPORTED.
+    var workspace_size: Int = 0
+    check_cudnn_error(
+        cudnnGetConvolutionBackwardDataWorkspaceSize(
+            cudnn_handle[].ptr_handle,
+            cudnn_handle[].ptr_filter_desc,
+            cudnn_handle[].ptr_input_desc,
+            cudnn_handle[].ptr_conv_desc,
+            cudnn_handle[].ptr_output_desc,
+            algo,
+            UnsafePointer(to=workspace_size),
+        )
+    )
+
+    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
+        workspace_size
+    )
 
     var alpha = Float32(1.0)
     var beta = Float32(0.0)
 
-    # handle: UnsafePointer[cudnnContext],
-    # alpha: OpaquePointer,
-    # w_desc: UnsafePointer[cudnnFilterStruct],
-    # w: OpaquePointer,
-    # dy_desc: UnsafePointer[cudnnTensorStruct],
-    # dy: OpaquePointer,
-    # conv_desc: UnsafePointer[cudnnConvolutionStruct],
-    # algo: cudnnConvolutionBwdDataAlgo_t,
-    # work_space: OpaquePointer,
-    # work_space_size_in_bytes: Int,
-    # beta: OpaquePointer,
-    # dx_desc: UnsafePointer[cudnnTensorStruct],
-    # dx: OpaquePointer,
     check_cudnn_error(
         cudnnConvolutionBackwardData(
             cudnn_handle[].ptr_handle,
@@ -1671,17 +1692,16 @@ def _conv_transposed_cudnn[
             input.ptr.bitcast[NoneType](),
             cudnn_handle[].ptr_conv_desc,
             algo,
-            OpaquePointer[ExternalOrigin[mut=True]](_unsafe_null=()),
-            0,
+            workspace_buffer.unsafe_ptr()
+            .bitcast[NoneType]()
+            .as_unsafe_any_origin(),
+            workspace_size,
             UnsafePointer(to=beta).bitcast[NoneType](),
             cudnn_handle[].ptr_output_desc,
             output.ptr.bitcast[NoneType](),
         )
     )
-
-    # ---------------- Cleanup ---------------------------------------------
-    if workspace_ptr._is_not_null():
-        workspace_ptr.free()
+    _ = workspace_buffer^
 
 
 def conv_transposed_cudnn[
@@ -1689,8 +1709,12 @@ def conv_transposed_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
-    filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    filter: TileTensor[
+        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
+    ],
     output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     stride: IndexList[2],
     dilation: IndexList[2],

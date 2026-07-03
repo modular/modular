@@ -17,16 +17,13 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-from max.driver import Device, load_devices, scan_available_devices
+from max.driver import Buffer, Device, load_devices, scan_available_devices
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs
-from max.pipelines.architectures.llama3.model import (
-    Llama3Inputs,
-    Llama3Model,
-)
+from max.pipelines.architectures.llama3.model import Llama3Inputs, Llama3Model
 from max.pipelines.lib import ModelOutputs
 from test_common.mocks import DummyPipelineConfig
 
@@ -34,7 +31,7 @@ from test_common.mocks import DummyPipelineConfig
 def test_build_compile_and_execute_tp_llama3_graph(
     weights: SafetensorWeights,
     make_pipeline_config: Callable[..., DummyPipelineConfig],
-    make_kv_inputs: Callable[..., KVCacheInputs],
+    make_kv_inputs: Callable[..., KVCacheInputs[Buffer, Buffer]],
     make_inputs: Callable[..., Llama3Inputs],
     assert_model_outputs: Callable[
         [ModelOutputs, Llama3Inputs, list[Device]], None

@@ -10,28 +10,28 @@ GPU_TEST_ENV = {
 }
 
 RUNTIME_SANITIZER_DATA = select({
-    "@//:asan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so"],
-    "@//:asan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so"],
+    "@@//:asan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/22/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so"],
+    "@@//:asan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/22/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so"],
     "//conditions:default": [],
 }) + select({
-    "@//:asan": ["@//bazel/internal:lsan-suppressions.txt"],
+    "@@//:asan": ["@@//bazel/internal:lsan-suppressions.txt"],
     "//conditions:default": [],
 })
 
 def runtime_sanitizer_env(*, preload = True, location_specifier = "location"):
     env = select({
-        "@//:asan": {
-            "LSAN_OPTIONS": "suppressions=$({} @//bazel/internal:lsan-suppressions.txt)".format(location_specifier),
+        "@@//:asan": {
+            "LSAN_OPTIONS": "suppressions=$({} @@//bazel/internal:lsan-suppressions.txt)".format(location_specifier),
         },
         "//conditions:default": {},
     })
     if preload:
         env |= select({
-            "@//:asan_linux_x86_64": {
-                "LD_PRELOAD": "$({} @clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
+            "@@//:asan_linux_x86_64": {
+                "LD_PRELOAD": "$({} @clang-linux-x86_64//:lib/clang/22/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
             },
-            "@//:asan_linux_aarch64": {
-                "LD_PRELOAD": "$({} @clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
+            "@@//:asan_linux_aarch64": {
+                "LD_PRELOAD": "$({} @clang-linux-aarch64//:lib/clang/22/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
             },
             "//conditions:default": {},
         })
@@ -133,7 +133,7 @@ def get_default_test_env(exec_properties):
         fail("GPU memory limit must be at least 1 GiB, got: {}".format(gpu_memory_limit))
 
     return select({
-        "@//:has_gpu": {
+        "@@//:has_gpu": {
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "true",
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "{}".format(int(adjusted_gpu_memory_limit * 1073741824.0)),
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "100",
@@ -145,6 +145,18 @@ def get_default_test_env(exec_properties):
         # allow fallthrough to direct device allocation.
         "@platforms//os:macos": {
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
+        },
+        "//conditions:default": {},
+    }) | select({
+        # Sanitizer mode (`--//:gpu_disable_memory_manager`): disable the caching
+        # allocator so each `enqueue_create_buffer` is a 1:1 device allocation
+        # and compute-sanitizer memcheck/initcheck see true per-buffer bounds.
+        # `memory_manager_size=0` + `memory_manager_only=false` routes allocation
+        # straight to the device driver (see MemoryManager.cpp onDevice/allocate).
+        # Right-biased `|` lets this override the pooled values set above.
+        "@@//:gpu_memory_manager_disabled": {
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "0",
         },
         "//conditions:default": {},
     })

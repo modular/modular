@@ -139,7 +139,10 @@ Example: Epilogue Warp (context manager)
 from layout.tma_async import SharedMemBarrier
 from std.utils.index import IndexList
 from .config import OutputPipelineConfig
-from structured_kernels.pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import (
+    ProducerConsumerPipeline,
+    SM100_PIPELINE_WAIT_TICKS,
+)
 from .tmem import TmemAllocation, TmemStage
 
 # SMemArray for barriers (non-tile arrays), SMemPtr for pointers
@@ -476,7 +479,10 @@ struct InputTilePipeline[
     @always_inline
     def _acquire_producer(mut self) -> Tuple[UInt32, MbarPtr]:
         """Wait for slot availability and return (stage, barrier)."""
-        self.pipeline.wait_consumer()
+        # SM100 warp-specialized matmul: hardware-suspend the producer warp
+        # while blocked instead of busy-spinning the wait loop (BRA/SYNCS).
+        # See SM100_PIPELINE_WAIT_TICKS.
+        self.pipeline.wait_consumer[ticks=SM100_PIPELINE_WAIT_TICKS]()
         var stage = self.pipeline.producer_stage()
         return (stage, self.pipeline.producer_mbar(stage))
 
@@ -488,7 +494,10 @@ struct InputTilePipeline[
     @always_inline
     def _acquire_consumer(mut self) -> Tuple[UInt32, MbarPtr]:
         """Wait for data availability and return (stage, barrier)."""
-        self.pipeline.wait_producer()
+        # SM100 warp-specialized matmul: hardware-suspend the consumer warp
+        # while blocked instead of busy-spinning the wait loop (BRA/SYNCS).
+        # See SM100_PIPELINE_WAIT_TICKS.
+        self.pipeline.wait_producer[ticks=SM100_PIPELINE_WAIT_TICKS]()
         var stage = self.pipeline.consumer_stage()
         return (stage, self.pipeline.consumer_mbar(stage))
 
@@ -1437,10 +1446,14 @@ struct OutputProducer[
         self.pipeline_ptr = pipeline_ptr
         # Placeholder stage - set properly in __enter__
         var placeholder_tmem = Self.Stage.Tmem(0, 0)
+        # SAFETY: Placeholder pipeline; replaced by acquire_for_mma() in
+        # __enter__ before any method accesses the mbar pointer.
         self.stage = Self.Stage(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_stages](MbarPtr(_unsafe_null=())),
+            ProducerConsumerPipeline[Self.num_stages](
+                MbarPtr.unsafe_dangling()
+            ),
         )
 
     @always_inline
@@ -1708,10 +1721,14 @@ struct MmaKStage[
         self.pipeline_ptr = pipeline_ptr
         # Placeholder stage - set properly in __enter__
         var placeholder_tmem = Self.Stage.Tmem(0, 0)
+        # SAFETY: Placeholder pipeline; replaced by acquire_for_mma() in
+        # __enter__ before any method accesses the mbar pointer.
         self.stage = Self.Stage(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_stages](MbarPtr(_unsafe_null=())),
+            ProducerConsumerPipeline[Self.num_stages](
+                MbarPtr.unsafe_dangling()
+            ),
         )
 
     @always_inline
@@ -1754,10 +1771,14 @@ struct PerKConsumerStage[
         self.pipeline_ptr = pipeline_ptr
         # Placeholder stage - set properly in __enter__
         var placeholder_tmem = Self.Stage.Tmem(0, 0)
+        # SAFETY: Placeholder pipeline; replaced by acquire_for_epilogue() in
+        # __enter__ before any method accesses the mbar pointer.
         self.stage = Self.Stage(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_stages](MbarPtr(_unsafe_null=())),
+            ProducerConsumerPipeline[Self.num_stages](
+                MbarPtr.unsafe_dangling()
+            ),
         )
 
     @always_inline
@@ -1884,11 +1905,13 @@ struct EpilogueKContext[
         self.input_stage_index = 0
         # Placeholder stage - set properly in __enter__
         var placeholder_tmem = Self.OutputStageType.Tmem(0, 0)
+        # SAFETY: Placeholder pipeline; replaced by acquire_for_epilogue() in
+        # __enter__ before any method accesses the mbar pointer.
         self.output_stage = Self.OutputStageType(
             0,
             placeholder_tmem,
             ProducerConsumerPipeline[Self.num_output_stages](
-                MbarPtr(_unsafe_null=())
+                MbarPtr.unsafe_dangling()
             ),
         )
 

@@ -20,7 +20,7 @@ from max.experimental.nn import Embedding, Linear, Module
 from max.experimental.nn.norm import LayerNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.graph import ShapeLike, TensorType
+from max.graph import Dim, ShapeLike, TensorType
 
 from .model_config import ClipConfig
 
@@ -371,7 +371,8 @@ class CLIPTextTransformer(Module[..., tuple[Tensor, Tensor]]):
         Returns:
             Causal mask tensor.
         """
-        _, seq_length = input_shape
+        _, seq_length_raw = input_shape
+        seq_length = Dim(seq_length_raw)
 
         rows = F.arange(0, seq_length, step=1, dtype=DType.int32, device=device)
         rows = F.unsqueeze(rows, 1)

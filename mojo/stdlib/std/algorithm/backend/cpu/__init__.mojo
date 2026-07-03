@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements CPU algorithm backend utilities including reduction, tiling, and parallelization."""
 
 from .elementwise import _elementwise_impl_cpu
 from .map import map

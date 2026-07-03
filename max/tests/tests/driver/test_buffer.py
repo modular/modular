@@ -45,7 +45,7 @@ def test_tensor() -> None:
 
 @pytest.mark.parametrize("dtype", list(DType))
 def test_allocate(dtype: DType) -> None:
-    buffer = Buffer(shape=[2], dtype=dtype, device=CPU())
+    Buffer(shape=[2], dtype=dtype, device=CPU())
 
 
 def test_get_and_set() -> None:
@@ -282,7 +282,9 @@ def test_host_to_self() -> None:
 def test_host_host_copy() -> None:
     # We should be able to freely copy tensors between host and host.
     host_tensor = Buffer.from_numpy(np.array([1, 2, 3], dtype=np.int32))
-    tensor = host_tensor.copy(CPU())
+    cpu = CPU()
+    tensor = host_tensor.copy(cpu)
+    cpu.synchronize()
 
     assert tensor.shape == host_tensor.shape
     assert tensor.dtype == host_tensor.dtype
@@ -291,7 +293,8 @@ def test_host_host_copy() -> None:
     assert tensor[1].item() == 2
     assert tensor[2].item() == 3
 
-    tensor2 = host_tensor.copy(CPU())
+    tensor2 = host_tensor.copy(cpu)
+    cpu.synchronize()
     assert tensor2[0].item() == 0
     assert tensor2[1].item() == 2
     assert tensor2[2].item() == 3
@@ -659,7 +662,7 @@ def test_from_dlpack_noncontiguous() -> None:
         ValueError,
         match=r"from_dlpack only accepts contiguous arrays. First call np.ascontiguousarray",
     ):
-        tensor = Buffer.from_dlpack(array)
+        Buffer.from_dlpack(array)
 
 
 def test_from_dlpack_torch_noncontiguous() -> None:
@@ -671,7 +674,7 @@ def test_from_dlpack_torch_noncontiguous() -> None:
     with pytest.raises(
         ValueError, match="from_dlpack only accepts contiguous tensors"
     ):
-        max_tensor = Buffer.from_dlpack(torch_tensor)
+        Buffer.from_dlpack(torch_tensor)
 
 
 def test_item_success() -> None:
@@ -709,6 +712,7 @@ def test_aligned() -> None:
 
 def test_unaligned_tensor_copy() -> None:
     """Tests tensor copying and viewing with unaligned memory."""
+    cpu = CPU()
     expected = np.array([1005, 2510, 1325], np.int32)
 
     # Construct a uint8 tensor so that when converted to int32, it becomes the
@@ -722,6 +726,7 @@ def test_unaligned_tensor_copy() -> None:
 
     # Copy operation now works correctly (fixed by GEX-2576).
     tensor8_copy = tensor8[1:].copy()
+    cpu.synchronize()
     # Should correctly preserve element values after copy
     assert tensor8_copy[0].item() == tensor8[1].item()
 
@@ -734,6 +739,7 @@ def test_unaligned_tensor_copy() -> None:
     assert tensor32[0].item() == 1005
 
     tensor32_copy = tensor32.copy()
+    cpu.synchronize()
     assert tensor32_copy._aligned()
     # This now passes because the source view has correct data
     np.testing.assert_array_equal(tensor32_copy.to_numpy(), expected)
@@ -794,6 +800,48 @@ def test_inplace_copy_from_tensor_view() -> None:
         ]
     )
     assert np.array_equal(dst.to_numpy(), expected)
+
+
+def test_inplace_copy_from_cross_dtype_view() -> None:
+    """Regression test: inplace_copy_from on slices of a view'd buffer.
+
+    When a buffer is view'd from one dtype to another (e.g. int16 -> uint8),
+    the underlying storage retains the original dtype. Slicing the view'd
+    buffer and calling inplace_copy_from must correctly compute byte offsets
+    using the view's dtype, not the storage's dtype.
+    """
+    num_rows = 4
+    cols_i16 = 3
+    cols_u8 = cols_i16 * 2
+
+    # Create source data as int16, fill with a known pattern
+    src_data = np.zeros((num_rows, cols_i16), dtype=np.int16)
+    for i in range(num_rows):
+        for j in range(cols_i16):
+            src_data[i, j] = i * 10 + j
+    src_buf = Buffer.from_numpy(src_data)
+
+    # View as uint8 (same total bytes, different element count)
+    src_u8 = src_buf.view(DType.uint8, [num_rows, cols_u8])
+
+    # Create a destination buffer of the same uint8 shape, filled with 0xFF
+    dst_data = np.full((num_rows, cols_u8), 0xFF, dtype=np.uint8)
+    dst_buf = Buffer.from_numpy(dst_data)
+
+    # Copy slices from the LAST row of source to the FIRST row of destination.
+    # This exercises a large startOffset that would fail if byte offset
+    # computation used the wrong dtype.
+    dst_buf[0, :].inplace_copy_from(src_u8[num_rows - 1, :])
+
+    result = dst_buf.to_numpy()
+    expected_row = src_u8.to_numpy()[num_rows - 1]
+    np.testing.assert_array_equal(result[0], expected_row)
+
+    # Other rows should be unchanged
+    for i in range(1, num_rows):
+        np.testing.assert_array_equal(
+            result[i], np.full(cols_u8, 0xFF, dtype=np.uint8)
+        )
 
 
 def test_GEX_2088() -> None:

@@ -8,20 +8,11 @@ READMEs for usage instructions.
 
 We moved the Mojo examples to [/mojo/examples](../../mojo/examples/)
 
-## [Basic MAX graph](max-graph/)
+## [Modules](modules/)
 
-The [MAX Python API](https://docs.modular.com/max/api/python/) provides a
-PyTorch-like interface for building neural network components that compile to
-highly optimized graphs. This is a simple example of how to build a graph in
-Python, before moving on to more complex custom ops using Mojo.
-
-## [Custom MAX graph module](custom-graph-module/)
-
-This example shows how to create a reusable, modular component for a MAX graph,
-using the `nn.Module` class. It include custom layers, blocks, and
-architectural patterns that showcase the flexibility of MAX's Python API for
-deep learning development, from simple MLP blocks to more complex neural
-network architectures.
+This example shows how to build model graphs using MAX's `nn.Module` class. It
+demonstrates composing built-in modules, writing custom modules with explicit
+weights, loading checkpoint data, and constructing a graph from the result.
 
 ## [Custom GPU and CPU graph ops in Mojo](custom_ops/)
 
@@ -36,11 +27,6 @@ multiplication, fused attention, and more.
 PyTorch custom operations can be defined in Mojo to try out new algorithms on
 GPUs. These examples show how to extend PyTorch layers using custom operations
 written in Mojo.
-
-## [Offline inference](offline-inference/)
-
-A simple example showing how to directly send inference to an LLMs using the
-MAX Python API, without starting a webserver (without an endpoint).
 
 ## [Custom MAX models](custom-models/)
 
@@ -68,7 +54,7 @@ modular_py_binary(
     srcs = ["addition.py"],
     imports = ["."],
     deps = [
-        "//max/python/max",
+        "//max/python/max/graph",
         requirement("numpy"),
     ],
 )
@@ -143,8 +129,7 @@ environment might have different package versions.)
 
 To make every example easy to use, they should already have a `pixi.toml` file
 that specifies the code's dependencies. To add a test, just add a task named
-`test` to the code's local `pixi.toml` file that executes the code. For
-[example](https://github.com/modular/modular/blob/8d0650d/examples/offline-inference/pixi.toml):
+`test` to the code's local `pixi.toml` file that executes the code:
 
 ```toml
 [tasks]

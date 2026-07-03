@@ -13,7 +13,8 @@
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import Coord, Idx, Layout, TensorLayout, TileTensor, row_major
+from std.math import align_up, ceildiv
 from layout.tma_async import SharedMemBarrier, PipelineState
 from std.utils.static_tuple import StaticTuple
 from structured_kernels.tile_types import (
@@ -21,16 +22,12 @@ from structured_kernels.tile_types import (
     _StridedLayout,
     _strided_layout,
 )
-from std.gpu import (
-    grid_dim_uint as grid_dim,
-    lane_id_int as lane_id,
-    NamedBarrierSemaphore,
-    WARP_SIZE,
-)
+from std.gpu import WARP_SIZE, grid_dim, lane_id, NamedBarrierSemaphore
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.compute.arch.tcgen05 import *
 from std.bit import prev_power_of_two
 from std.math.uutils import ufloordiv, umod
+from std.utils.index import Index, IndexList
 
 from linalg.structuring import SMemPtr
 from .tmem import TmemAddress, TmemTensor
@@ -299,6 +296,7 @@ struct TileScheduler[
     comptime ClcBarrierArray = Self.UnderlyingScheduler.ClcBarrierArray
     comptime ThrottleBarrierArray = Self.UnderlyingScheduler.ThrottleBarrierArray
 
+    @__allow_legacy_any_origin_fields
     var locks_ptr: UnsafePointer[Int32, MutAnyOrigin]
     var scheduler: Self.UnderlyingScheduler
     var total_k_tiles: UInt32
@@ -478,7 +476,7 @@ struct TileScheduler[
     ) -> TileTensor[accum_type, Self.WorkspaceTileLayout, MutAnyOrigin]:
         var offset = reduction_tile_idx * UInt32(Self.BM) * UInt32(Self.MMA_N)
         return TileTensor[accum_type, Self.WorkspaceTileLayout, MutAnyOrigin](
-            UnsafePointer(to=reduction_workspace.ptr[Int(offset)]),
+            reduction_workspace.ptr + Int(offset),
             row_major[Self.BM, Self.MMA_N](),
         )
 
@@ -552,7 +550,7 @@ struct TileScheduler[
             ],
             MutAnyOrigin,
         ](
-            UnsafePointer(to=tensor.ptr[current_width]),
+            tensor.ptr + current_width,
             _strided_layout[
                 tile_layout.static_shape[0],
                 widths[curr_stage],
@@ -604,13 +602,13 @@ struct TileScheduler[
         var warp_id_y = 0 if Self.BM == 128 else ufloordiv(local_warp_id, 2)
 
         var reduction_frag = workspace_tile.tile[REDUCTION_BM, REDUCTION_BN](
-            Coord(Idx(warp_id_x), Idx(warp_id_y))
+            Coord(warp_id_x, warp_id_y)
         )
         var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](
-            Coord(Idx(0), Idx(0))
+            Coord(Idx[0], Idx[0])
         )
         var reduction_lower = reduction_frag.tile[16, REDUCTION_BN](
-            Coord(Idx(1), Idx(0))
+            Coord(Idx[1], Idx[0])
         )
         var stage_addr = tmem  # Track address for iteration
 

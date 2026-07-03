@@ -34,7 +34,7 @@ from std.gpu.primitives.grid_controls import (
 )
 from layout import TensorLayout, TileTensor
 from std.random import Random
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList
@@ -55,17 +55,17 @@ def _rms_norm_fused_residual_cpu_2d[
     residual_input_fn: def[width: Int](Int, Int) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, alignment: Int](
+    output_fn: def[width: SIMDSize, alignment: Int](
         Int, Int, SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: def[width: Int, alignment: Int](
+    output_residual_fn: def[width: SIMDSize, alignment: Int](
         Int, Int, SIMD[dtype, width]
     ) capturing -> None,
     residual_read_fn: def[width: Int](Int, Int) capturing -> SIMD[dtype, width],
     multiply_before_cast: Bool = True,
 ](
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
@@ -152,13 +152,13 @@ def _rms_norm_fused_residual_cpu_2d[
         var norm_factor = rsqrt(mean_val + epsilon.cast[intermediate_type]())
 
         # Second pass: apply normalization
-        def _normalize[sw: Int](col: Int) unified {mut}:
+        def _normalize[sw: Int](col: Int) {gamma, weight_offset, mut}:
             # Read the pre-computed sum values (input + residual) from first pass
             var sum_vals = residual_read_fn[sw](row, col).cast[
                 intermediate_type
             ]()
 
-            var gamma_val = gamma.ptr.load[width=sw](col)
+            var gamma_val = gamma.raw_load[width=sw](col)
             var norm_val: SIMD[dtype, sw]
 
             if multiply_before_cast:
@@ -184,10 +184,10 @@ def rms_norm_fused_residual_cpu[
     residual_input_fn: def[width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
-    output_fn: def[width: Int, alignment: Int](
+    output_fn: def[width: SIMDSize, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: def[width: Int, alignment: Int](
+    output_residual_fn: def[width: SIMDSize, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
     residual_read_fn: def[width: Int, rank: Int](
@@ -198,7 +198,7 @@ def rms_norm_fused_residual_cpu[
 ](
     shape: IndexList[rank],
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
@@ -235,7 +235,7 @@ def rms_norm_fused_residual_cpu[
     @parameter
     @always_inline
     def output_fn_2d[
-        simd_width: Int, alignment: Int
+        simd_width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
@@ -244,7 +244,7 @@ def rms_norm_fused_residual_cpu[
     @parameter
     @always_inline
     def output_residual_fn_2d[
-        simd_width: Int, alignment: Int
+        simd_width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
@@ -280,6 +280,9 @@ def rms_norm_fused_residual_cpu[
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(
+    t"rms_norm_fused_residual_gpu_block_{dtype}_{multiply_before_cast}",
+)
 def rms_norm_fused_residual_gpu_block[
     dtype: DType,
     GammaLayout: TensorLayout,
@@ -292,16 +295,16 @@ def rms_norm_fused_residual_gpu_block[
     residual_input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, alignment: Int](
+    output_fn: def[width: SIMDSize, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: def[width: Int, alignment: Int](
+    output_residual_fn: def[width: SIMDSize, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
     gamma: TileTensor[dtype, GammaLayout, MutAnyOrigin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     num_cols: Int,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
@@ -396,17 +399,17 @@ def rms_norm_fused_residual_gpu[
     residual_input_fn: def[width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
-    output_residual_fn: def[width: Int, alignment: Int](
+    output_residual_fn: def[width: SIMDSize, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
-    output_fn: def[width: Int, alignment: Int](
+    output_fn: def[width: SIMDSize, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
     shape: IndexList[rank, ...],
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
@@ -428,7 +431,7 @@ def rms_norm_fused_residual_gpu[
     @parameter
     @always_inline
     def output_fn_2d[
-        simd_width: Int, alignment: Int
+        simd_width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
@@ -437,7 +440,7 @@ def rms_norm_fused_residual_gpu[
     @parameter
     @always_inline
     def output_residual_fn_2d[
-        simd_width: Int, alignment: Int
+        simd_width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
@@ -484,7 +487,7 @@ def rms_norm_fused_residual_gpu[
         output_residual_fn_2d,
         multiply_before_cast=multiply_before_cast,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         gamma,
         epsilon,
         weight_offset,
@@ -493,7 +496,7 @@ def rms_norm_fused_residual_gpu[
         seed,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        attributes=pdl_launch_attributes(PDLLevel(1)),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
         shared_mem_bytes=shared_mem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(
@@ -512,10 +515,10 @@ def _rms_norm_fused_residual_impl[
     input_1_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, alignment: Int](
+    output_fn: def[width: SIMDSize, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: def[width: Int, alignment: Int](
+    output_residual_fn: def[width: SIMDSize, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     /,
@@ -524,9 +527,9 @@ def _rms_norm_fused_residual_impl[
 ](
     shape: IndexList[rank],
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
@@ -558,7 +561,7 @@ def _rms_norm_fused_residual_impl[
             gamma,
             epsilon,
             weight_offset,
-            ctx.get_device_context(),
+            ctx,
             dropout_p,
             seed,
         )
@@ -630,10 +633,10 @@ def rms_norm_fused_residual[
     input_1_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_0_fn: def[width: Int, rank: Int, alignment: Int](
+    output_0_fn: def[width: SIMDSize, rank: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: def[width: Int, rank: Int, alignment: Int](
+    output_residual_fn: def[width: SIMDSize, rank: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
     /,
@@ -642,9 +645,9 @@ def rms_norm_fused_residual[
 ](
     shape: IndexList[rank],
     gamma: TileTensor[dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
@@ -653,14 +656,14 @@ def rms_norm_fused_residual[
     @always_inline
     @parameter
     def output_fn_wrapper[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_0_fn[width, rank, alignment](idx, val)
 
     @always_inline
     @parameter
     def output_residual_fn_wrapper[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_residual_fn[width, rank, alignment](idx, val)
 
@@ -672,7 +675,7 @@ def rms_norm_fused_residual[
     with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_residual",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.get_device_context().id()),
+        task_id=Int(ctx.id()),
     ):
         _rms_norm_fused_residual_impl[
             dtype,

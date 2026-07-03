@@ -14,12 +14,15 @@
 import json
 
 from click.testing import CliRunner
+from hf_repo_lock import load_db
 from smoke_tests import smoke_test, smoke_test_github_matrix
 
 
-def test_model_keys_are_lowercase() -> None:
-    bad = [k for k in smoke_test_github_matrix.MODELS if k != k.lower()]
-    assert not bad, f"Model keys must be lowercase: {bad}"
+def test_all_models_in_hf_repo_lock() -> None:
+    """Every smoke test model must have a pinned revision in hf-repo-lock.tsv."""
+    lock = load_db()
+    missing = [m for m in smoke_test_github_matrix.HF_MODELS if m not in lock]
+    assert not missing, f"Models missing from hf-repo-lock.tsv: {missing}"
 
 
 def test_custom_model_keys_have_dunder() -> None:
@@ -34,11 +37,23 @@ def test_custom_models_defined_in_model_aliases() -> None:
     missing = [
         k
         for k in smoke_test_github_matrix.CUSTOM_MODELS
-        if k not in smoke_test.MODEL_ALIASES
+        if k not in smoke_test.MODEL_RECIPES
     ]
     assert not missing, (
         f"CUSTOM_MODELS keys must have a corresponding entry in "
-        f"smoke_test.MODEL_ALIASES: {missing}"
+        f"smoke_test.MODEL_RECIPES: {missing}"
+    )
+
+
+def test_model_aliases_in_custom_models() -> None:
+    missing = [
+        k
+        for k in smoke_test.MODEL_RECIPES
+        if "__" in k and k not in smoke_test_github_matrix.CUSTOM_MODELS
+    ]
+    assert not missing, (
+        f"Custom MODEL_RECIPES keys must have a corresponding entry in "
+        f"smoke_test_github_matrix.CUSTOM_MODELS: {missing}"
     )
 
 

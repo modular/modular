@@ -102,19 +102,19 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     var output_shape = IndexList[rank](d0, d1, d2, d3, 4)
 
     var input_0_dyn = TileTensor(
-        input_0_device_buffer.unsafe_ptr(), row_major(Coord(input_shape))
+        input_0_device_buffer, row_major(Coord(input_shape))
     )
     var input_1_dyn = TileTensor(
-        input_1_device_buffer.unsafe_ptr(), row_major(Coord(input_shape))
+        input_1_device_buffer, row_major(Coord(input_shape))
     )
     var input_2_dyn = TileTensor(
-        input_2_device_buffer.unsafe_ptr(), row_major(Coord(input_shape))
+        input_2_device_buffer, row_major(Coord(input_shape))
     )
     var input_3_dyn = TileTensor(
-        input_3_device_buffer.unsafe_ptr(), row_major(Coord(input_shape))
+        input_3_device_buffer, row_major(Coord(input_shape))
     )
     var output_dyn = TileTensor(
-        output_device_buffer.unsafe_ptr(), row_major(Coord(output_shape))
+        output_device_buffer, row_major(Coord(output_shape))
     )
 
     comptime B_SIZE = 32
@@ -123,7 +123,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(output_dyn)
     def epilogue_plus_one[
-        c_type: DType, _rank: Int, width: Int, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDSize, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output_dyn.flat_rank >= coord.flat_rank
@@ -155,16 +155,16 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     )
     @parameter
     def run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
-        ctx.enqueue_function[kernel, kernel](
-            output_dyn.as_any_origin(),
+        ctx.enqueue_function[kernel](
+            output_dyn.as_unsafe_any_origin(),
             StaticTuple[
                 TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
                 4,
             ](
-                input_0_dyn.as_any_origin().as_immut(),
-                input_1_dyn.as_any_origin().as_immut(),
-                input_2_dyn.as_any_origin().as_immut(),
-                input_3_dyn.as_any_origin().as_immut(),
+                input_0_dyn.as_unsafe_any_origin().as_immut(),
+                input_1_dyn.as_unsafe_any_origin().as_immut(),
+                input_2_dyn.as_unsafe_any_origin().as_immut(),
+                input_3_dyn.as_unsafe_any_origin().as_immut(),
             ),
             grid_dim=(d0 * d1 * d2 * d3 * d4 // B_SIZE),
             block_dim=(B_SIZE),
@@ -190,7 +190,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     ctx.enqueue_copy(output_host_buffer, output_device_buffer)
     ctx.synchronize()
 
-    def validate_results() raises unified {read}:
+    def validate_results() raises {read}:
         for i in range(d0):
             for j in range(d1):
                 for k in range(d2):
@@ -237,16 +237,16 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
                 epilogue_plus_one
             ) if test_epilogue else None
         ](
-            output_dyn.as_any_origin(),
+            output_dyn.as_unsafe_any_origin(),
             4,
             StaticTuple[
                 TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
                 4,
             ](
-                input_0_dyn.as_any_origin().as_immut(),
-                input_1_dyn.as_any_origin().as_immut(),
-                input_2_dyn.as_any_origin().as_immut(),
-                input_3_dyn.as_any_origin().as_immut(),
+                input_0_dyn.as_unsafe_any_origin().as_immut(),
+                input_1_dyn.as_unsafe_any_origin().as_immut(),
+                input_2_dyn.as_unsafe_any_origin().as_immut(),
+                input_3_dyn.as_unsafe_any_origin().as_immut(),
             ),
             ctx,
         )

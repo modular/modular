@@ -20,10 +20,15 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import kv_cache_ragged_2m_iadd
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.pipelines.core import TextContext
+from max.nn.kv_cache import (
+    KVCacheBuffer,
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 
@@ -72,11 +77,15 @@ def dump_kv_cache_to_torch(
     device_id: int = 0,
 ) -> list[torch.Tensor]:
     """Extract K or V cache contents for each sequence in batch."""
-    torch_dtype = max_dtype_to_torch(cache.params.dtype)
-    device_buffer = cache.get_device_buffer(replica_idx=0).values[device_id]
+    kv_params = cache.params
+    assert isinstance(kv_params, KVCacheParams)
+    torch_dtype = max_dtype_to_torch(kv_params.dtype)
+    kv_buffer = cache.get_device_buffer(replica_idx=0)
+    assert isinstance(kv_buffer, KVCacheBuffer)
+    device_buffer = kv_buffer.values[device_id]
     device_buffer_torch = from_dlpack(device_buffer).to(torch_dtype).cpu()
     device_buffer_torch = device_buffer_torch[:, key_or_value, :, :, :, :]
-    page_size = cache.params.page_size
+    page_size = kv_params.page_size
 
     results = []
     for ctx in batch:
@@ -85,8 +94,8 @@ def dump_kv_cache_to_torch(
 
         result = torch.empty(
             seq_len,
-            cache.params.n_kv_heads_per_device,
-            cache.params.head_dim,
+            kv_params.n_kv_heads_per_device,
+            kv_params.head_dim,
             dtype=torch_dtype,
         )
 
@@ -133,7 +142,7 @@ def run_kv_cache_2m_iadd(
     total_seq_len = sum(prompt_lens)
     kv_dim = n_kv_heads * head_dim
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DTYPE,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -153,16 +162,18 @@ def run_kv_cache_2m_iadd(
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
 
     # Zero the KV cache before iadd test (since iadd adds to existing values)
-    cache_tensor = kv_manager.get_device_buffer(replica_idx=0).values[0]
+    kv_buffer = kv_manager.get_device_buffer(replica_idx=0)
+    assert isinstance(kv_buffer, KVCacheBuffer)
+    cache_tensor = kv_buffer.values[0]
     cache_tensor.inplace_copy_from(
         Buffer.zeros(cache_tensor.shape, dtype=DTYPE, device=device)
     )
 
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    kv_symbolic_inputs = kv_params.flattened_kv_inputs()
 
     with Graph(
         "kv_cache_2m_iadd_test",
@@ -181,7 +192,8 @@ def run_kv_cache_2m_iadd(
             kv_blocks=kv_inputs[0].buffer,
             cache_lengths=kv_inputs[1].tensor,
             lookup_table=kv_inputs[2].tensor,
-            max_lengths=kv_inputs[3].tensor,
+            max_prompt_length=kv_inputs[3].tensor,
+            max_cache_length=kv_inputs[4].tensor,
         )
 
         kv_cache_ragged_2m_iadd(
@@ -208,14 +220,14 @@ def run_kv_cache_2m_iadd(
 
     batch_seq_len_arr = np.array([total_seq_len], dtype=np.int64)
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])
 
     compiled.execute(
         to_max_tensor(kv_lora_output, device),
         Buffer.from_numpy(input_row_offsets).to(device),
         Buffer.from_numpy(lora_end_idx_arr),
         Buffer.from_numpy(batch_seq_len_arr),
-        *kv_runtime_inputs,
+        *kv_runtime_inputs.flatten(),
     )
 
     for ctx in batch:

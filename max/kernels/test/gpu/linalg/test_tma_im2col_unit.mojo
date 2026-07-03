@@ -55,8 +55,8 @@ def im2col_load_kernel[
 ](
     act_tma_op: TMATensorTileIm2col[dtype, tile_rank, tile_shape, desc_shape],
     output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    k_coord: UInt,
-    m_coord: UInt,
+    k_coord: Int,
+    m_coord: Int,
 ):
     """Kernel that loads one tile using im2col TMA and copies to global memory.
     """
@@ -261,7 +261,7 @@ def run_im2col_test[
 
     # Allocate input tensor
     comptime input_size = batch * in_height * in_width * in_channels
-    var input_host = alloc[Scalar[dtype]](input_size)
+    var input_host = ctx.enqueue_create_host_buffer[dtype](input_size)
 
     # Initialize with sequential pattern
     for i in range(input_size):
@@ -315,14 +315,14 @@ def run_im2col_test[
 
     # Allocate output buffer
     comptime tile_size = BM * BK
-    var output_host = alloc[Scalar[dtype]](tile_size)
+    var output_host = ctx.enqueue_create_host_buffer[dtype](tile_size)
     var output_device = ctx.enqueue_create_buffer[dtype](tile_size)
-    var ref_host = alloc[Scalar[dtype]](tile_size)
+    var ref_host = ctx.enqueue_create_host_buffer[dtype](tile_size)
 
     # Compute reference on CPU for tile at (k=0, m=0)
     im2col_reference[dtype](
-        ref_host,
-        input_host,
+        ref_host.unsafe_ptr(),
+        input_host.unsafe_ptr(),
         batch,
         in_height,
         in_width,
@@ -353,11 +353,11 @@ def run_im2col_test[
         BK,
     ]
 
-    ctx.enqueue_function_unchecked[kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, dump_asm=False](
         act_tma,
         output_device,
-        UInt(0),  # k_coord
-        UInt(0),  # m_coord
+        0,  # k_coord
+        0,  # m_coord
         grid_dim=(1, 1, 1),
         block_dim=128,
         shared_mem_bytes=smem_bytes,
@@ -417,9 +417,6 @@ def run_im2col_test[
         print()
 
     # Cleanup
-    input_host.free()
-    output_host.free()
-    ref_host.free()
     _ = input_device
     _ = output_device
 

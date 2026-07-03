@@ -147,13 +147,13 @@ def bench_conv2d[
     )
 
     # Allocate host memory
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var filter_nchw_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
 
     # Initialize with random data
-    rand(input_host_ptr, input_size)
-    rand(filter_host_ptr, filter_size)
+    rand(input_host_ptr)
+    rand(filter_host_ptr)
 
     # Convert filter KRSC -> NCHW for cuDNN
     for k in range(out_channels):
@@ -189,17 +189,17 @@ def bench_conv2d[
 
     # Create TileTensor views for conv2d_fprop
     var input_tt = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(),
+        filter_dev,
         row_major(
             Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
         ),
     )
     var output_sm100_tt = TileTensor(
-        output_sm100_dev.unsafe_ptr(),
+        output_sm100_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
@@ -207,17 +207,17 @@ def bench_conv2d[
 
     # Create TileTensor views for cuDNN
     var input_dev_tensor = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_nchw_dev_tensor = TileTensor(
-        filter_nchw_dev.unsafe_ptr(),
+        filter_nchw_dev,
         row_major(
             Coord(IndexList[4](out_channels, in_channels, filter_h, filter_w))
         ),
     )
     var output_cudnn_dev_tensor = TileTensor(
-        output_cudnn_dev.unsafe_ptr(),
+        output_cudnn_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
@@ -270,8 +270,8 @@ def bench_conv2d[
     var cudnn_tflops = Float64(flops) / (cudnn_time_ms / 1000) / 1e12
 
     # Verify outputs match
-    var output_sm100_host_ptr = alloc[Scalar[dtype]](output_size)
-    var output_cudnn_host_ptr = alloc[Scalar[dtype]](output_size)
+    var output_sm100_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    var output_cudnn_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
     ctx.enqueue_copy(output_sm100_host_ptr, output_sm100_dev)
     ctx.enqueue_copy(output_cudnn_host_ptr, output_cudnn_dev)
     ctx.synchronize()
@@ -284,9 +284,6 @@ def bench_conv2d[
         )
         if diff > max_diff:
             max_diff = diff
-
-    output_sm100_host_ptr.free()
-    output_cudnn_host_ptr.free()
 
     # Report
     var ratio = cudnn_time_ms / sm100_time_ms
@@ -316,16 +313,16 @@ def bench_conv2d[
     print("  Correctness: max_diff=", max_diff, sep="")
     print()
 
-    # Cleanup
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    filter_nchw_host_ptr.free()
-
     _ = input_dev^
     _ = filter_dev^
     _ = filter_nchw_dev^
     _ = output_sm100_dev^
     _ = output_cudnn_dev^
+    _ = filter_nchw_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
+    _ = output_cudnn_host_ptr^
+    _ = output_sm100_host_ptr^
 
 
 def bench_all_configs[
@@ -389,12 +386,12 @@ def bench_all_configs[
     )
 
     # Allocate host memory
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var filter_nchw_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
 
-    rand(input_host_ptr, input_size)
-    rand(filter_host_ptr, filter_size)
+    rand(input_host_ptr)
+    rand(filter_host_ptr)
 
     # Convert filter KRSC -> NCHW for cuDNN
     for k in range(out_channels):
@@ -429,23 +426,23 @@ def bench_all_configs[
     ctx.synchronize()
 
     var input_tt = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(),
+        filter_dev,
         row_major(
             Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
         ),
     )
     var output_1sm_tt = TileTensor(
-        output_1sm_dev.unsafe_ptr(),
+        output_1sm_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
     )
     var output_2sm_tt = TileTensor(
-        output_2sm_dev.unsafe_ptr(),
+        output_2sm_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
@@ -453,17 +450,17 @@ def bench_all_configs[
 
     # Create TileTensor views for cuDNN
     var input_dev_tensor = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_nchw_dev_tensor = TileTensor(
-        filter_nchw_dev.unsafe_ptr(),
+        filter_nchw_dev,
         row_major(
             Coord(IndexList[4](out_channels, in_channels, filter_h, filter_w))
         ),
     )
     var output_cudnn_dev_tensor = TileTensor(
-        output_cudnn_dev.unsafe_ptr(),
+        output_cudnn_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
@@ -569,16 +566,15 @@ def bench_all_configs[
     )
     print()
 
-    # Cleanup
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    filter_nchw_host_ptr.free()
     _ = input_dev^
     _ = filter_dev^
     _ = filter_nchw_dev^
     _ = output_1sm_dev^
     _ = output_2sm_dev^
     _ = output_cudnn_dev^
+    _ = filter_nchw_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
 
 
 def bench_residual[
@@ -643,12 +639,12 @@ def bench_residual[
     )
 
     # Allocate
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var source_host_ptr = alloc[Scalar[dtype]](output_size)
-    rand(input_host_ptr, input_size)
-    rand(filter_host_ptr, filter_size)
-    rand(source_host_ptr, output_size)
+    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var source_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    rand(input_host_ptr)
+    rand(filter_host_ptr)
+    rand(source_host_ptr)
 
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -662,29 +658,29 @@ def bench_residual[
     ctx.synchronize()
 
     var input_tt = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(),
+        filter_dev,
         row_major(
             Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
         ),
     )
     var output_tt = TileTensor(
-        output_dev.unsafe_ptr(),
+        output_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
     )
     var output_res_tt = TileTensor(
-        output_res_dev.unsafe_ptr(),
+        output_res_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
     )
     var source_tt = TileTensor(
-        source_dev.unsafe_ptr(),
+        source_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
@@ -765,15 +761,14 @@ def bench_residual[
     )
     print()
 
-    # Cleanup
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    source_host_ptr.free()
     _ = input_dev^
     _ = filter_dev^
     _ = output_dev^
     _ = output_res_dev^
     _ = source_dev^
+    _ = source_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
 
 
 def main() raises:

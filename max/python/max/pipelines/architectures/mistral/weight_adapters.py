@@ -18,6 +18,7 @@ from max.graph.weights import WeightData, Weights
 # Maps from Safetensor to MAX weight names.
 MISTRAL_SAFETENSOR_MAP = {
     "model.": "",  # Removes the "model" prefix.
+    # Remap unfused Q/K/V projections into StackedLinear namespace.
 }
 
 

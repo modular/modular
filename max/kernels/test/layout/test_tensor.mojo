@@ -798,7 +798,6 @@ def test_distribute_vectorized():
     tensor_4x16x64 = LayoutTensor[
         DType.float32,
         Layout(IntTuple(IntTuple(16, 16), 4), IntTuple(IntTuple(32, 2), 512)),
-        MutAnyOrigin,
         element_layout=Layout(2),
     ](ptr)
 
@@ -1255,7 +1254,7 @@ def test_split():
 #            ](tile_4x4)
 #            print(tile_4x4_cache)
 #
-#            for th_id in range(UInt(4)):
+#            for th_id in range(4):
 #                print("----fragments-data[", th_id, "]----")
 #                var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](
 #                    th_id

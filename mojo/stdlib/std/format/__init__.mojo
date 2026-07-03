@@ -73,14 +73,9 @@ print(repr(p)) # Point: x=1.5, y=2.7
 ```
 """
 
-from std.builtin.constrained import _constrained_field_conforms_to
+from std.builtin.constrained import _field_conforms_to_error
 from std.memory import Span
-from std.reflection import (
-    struct_field_names,
-    struct_field_types,
-    struct_field_count,
-    get_type_name,
-)
+from std.reflection import reflect
 from std.reflection.type_info import _unqualified_type_name
 
 from .repr import repr
@@ -90,7 +85,7 @@ from .repr import repr
 # ===-----------------------------------------------------------------------===#
 
 
-trait Writer(ImplicitlyDestructible):
+trait Writer:
     """A destination for formatted text output.
 
     `Writer` is implemented by types that can accept UTF-8 formatted text, such
@@ -104,6 +99,7 @@ trait Writer(ImplicitlyDestructible):
     Example:
 
     ```mojo
+    @fieldwise_init
     struct StringBuilder(Writer):
         var s: String
 
@@ -144,7 +140,7 @@ trait Writer(ImplicitlyDestructible):
 # ===-----------------------------------------------------------------------===#
 
 
-trait Writable(ImplicitlyDestructible):
+trait Writable:
     """A trait for types that can format themselves as text.
 
     The `Writable` trait provides a simple, straightforward interface for types
@@ -207,18 +203,24 @@ trait Writable(ImplicitlyDestructible):
         Args:
             writer: The destination for formatted output.
 
-        ## Example
+        **Example:**
 
         ```mojo
-        def write_to(self, mut writer: Some[Writer]):
-            writer.write("(", self.x, ", ", self.y, ")")
+        @fieldwise_init
+        struct Point(Writable):
+            var x: Float64
+            var y: Float64
+
+            def write_to(self, mut writer: Some[Writer]):
+                writer.write("(", self.x, ", ", self.y, ")")
         ```
         """
+        comptime WriterType = type_of(writer)
 
         @always_inline
         def call_write_to[
             FieldType: Writable
-        ](field: FieldType, mut writer: type_of(writer)):
+        ](field: FieldType, mut writer: WriterType):
             field.write_to(writer)
 
         _reflection_write_to[f=call_write_to](self, writer)
@@ -237,11 +239,16 @@ trait Writable(ImplicitlyDestructible):
         Args:
             writer: The destination for formatted output.
 
-        ## Example
+        **Example:**
 
         ```mojo
-        def write_repr_to(self, mut writer: Some[Writer]):
-            writer.write("Point: x=", self.x, ", y=", self.y)
+        @fieldwise_init
+        struct Point(Writable):
+            var x: Float64
+            var y: Float64
+
+            def write_repr_to(self, mut writer: Some[Writer]):
+                writer.write("Point: x=", self.x, ", y=", self.y)
         ```
 
         Notes:
@@ -250,10 +257,12 @@ trait Writable(ImplicitlyDestructible):
             (`\\'`).
         """
 
+        comptime WriterType = type_of(writer)
+
         @always_inline
         def call_write_repr_to[
             FieldType: Writable
-        ](field: FieldType, mut writer: type_of(writer)):
+        ](field: FieldType, mut writer: WriterType):
             field.write_repr_to(writer)
 
         _reflection_write_to[f=call_write_repr_to](self, writer)
@@ -264,18 +273,20 @@ def _reflection_write_to[
     T: Writable,
     W: Writer,
     //,
-    f: def[FieldType: Writable](field: FieldType, mut writer: W),
+    f: def[FieldType: Writable](field: FieldType, mut writer: W) thin,
 ](this: T, mut writer: W,):
-    comptime names = struct_field_names[T]()
-    comptime types = struct_field_types[T]()
+    comptime r = reflect[T]
+    comptime names = r.field_names()
+    comptime types = r.field_types()
     comptime type_name = _unqualified_type_name[T]()
     writer.write_string(type_name)
     writer.write_string("(")
 
     comptime for i in range(names.size):
         comptime FieldType = types[i]
-        _constrained_field_conforms_to[
-            conforms_to(FieldType, Writable),
+        comptime assert conforms_to(
+            FieldType, Writable
+        ), _field_conforms_to_error[
             Parent=T,
             FieldIndex=i,
             ParentConformsTo="Writable",
@@ -286,7 +297,7 @@ def _reflection_write_to[
         writer.write_string(materialize[names[i]]())
         writer.write_string("=")
 
-        ref field = trait_downcast[Writable](__struct_field_ref(i, this))
+        ref field = r.field_ref[i](this)
         f(field, writer)
 
     writer.write_string(")")

@@ -166,9 +166,9 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
 
             # Tokenize the prompts and completions.
             prompt = dataset[i][0]
-            prompt_token_ids = tokenizer(prompt).input_ids
+            prompt_token_ids = tokenizer.encode(prompt)
             completion = dataset[i][1]
-            completion_token_ids = tokenizer(completion).input_ids
+            completion_token_ids = tokenizer.encode(completion)
             prompt_len = len(prompt_token_ids)
             output_len = (
                 len(completion_token_ids)

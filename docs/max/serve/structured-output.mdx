@@ -3,7 +3,6 @@ title: Structured output
 description: Enable structured output with your GenAI deployments for predictable responses
 ---
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -29,21 +28,21 @@ serving your model with the [`max` CLI](/max/cli).
 
 ```bash
 max serve \
-  --model "google/gemma-3-27b-it" \
+  --model "google/gemma-4-31B-it" \
   --enable-structured-output
 ```
 
 :::note
 
 The examples on this page use image input with a multimodal model. For
-environment setup and additional image input options (including local files),
-see [Image to text](/max/inference/image-to-text).
+environment setup and additional image and video input options (including local
+files), see [Image and video to text](/max/inference/image-to-text).
 
 :::
 
 Both the
-[`/chat/completions`](/max/api/serve#operation/createChatCompletion) and
-[`/completions`](/max/api/serve#operation/createCompletion) API endpoints are
+[`/chat/completions`](/max/rest-api/#POST/v1/chat/completions) and
+[`/completions`](/max/rest-api/#POST/v1/completions) API endpoints are
 compatible with structured output.
 
 You can define your structured output response format in two ways:
@@ -77,7 +76,7 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
 
 response = client.chat.completions.create(
-    model="google/gemma-3-27b-it",
+    model="google/gemma-4-31B-it",
     messages=[
         {
             "role": "system",
@@ -99,7 +98,7 @@ response = client.chat.completions.create(
             ]
         }
     ],
-    max_tokens=300,
+    max_completion_tokens=300,
     response_format={
         "type": "json_schema",
         "json_schema": {
@@ -136,7 +135,7 @@ print(response.choices[0].message.content)
  curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "google/gemma-3-27b-it",
+    "model": "google/gemma-4-31B-it",
     "messages": [
       {
         "role": "system",
@@ -158,7 +157,7 @@ print(response.choices[0].message.content)
         ]
       }
     ],
-    "max_tokens": 300,
+    "max_completion_tokens": 300,
     "response_format": {
       "type": "json_schema",
       "json_schema": {
@@ -188,6 +187,15 @@ print(response.choices[0].message.content)
 
 </TabItem>
 </Tabs>
+
+:::note Schema root type
+
+The root of a `json_schema` must resolve to an object. If the root omits `type`,
+MAX treats it as `type: object`. MAX also accepts root-level type unions that
+include `object`, such as `["object", "array", "string"]`. MAX rejects schemas
+whose root is constrained to a single non-object type (for example, `{"type": "string"}`).
+
+:::
 
 Instead of a typical text response from the model, the `response_format` schema
 defined above results in a JSON-formatted structured output such as the
@@ -243,7 +251,7 @@ class ImageAnalysis(BaseModel):
     mood: str
 
 completion = client.chat.completions.parse(
-    model="google/gemma-3-27b-it",
+    model="google/gemma-4-31B-it",
     messages=[
         {
             "role": "system",
@@ -265,7 +273,7 @@ completion = client.chat.completions.parse(
             ]
         }
     ],
-    max_tokens=300,
+    max_completion_tokens=300,
     response_format=ImageAnalysis,
 )
 
@@ -285,13 +293,10 @@ deployments.
 
 ## Next steps
 
-Next, try processing local image files, running batch inference offline, or
-deploying to the cloud.
+Next, try processing local image files or deploying to the cloud.
 
-export const docs = [
-  '../../inference/image-to-text.mdx',
-  '../../serve/offline-inference.mdx',
-  '../../deploy/local-to-cloud.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Image and video to text](/max/inference/image-to-text): Use the MAX chat
+  completions endpoint with image or video input to generate descriptions and
+  answer questions about visual content.
+- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+  Learn how to deploy MAX pipelines to cloud.

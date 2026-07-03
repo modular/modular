@@ -20,12 +20,7 @@ SF_VECTOR_SIZE (32) consecutive elements.
 """
 
 from std.math import ceildiv
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    grid_dim_uint as grid_dim,
-    block_dim_uint as block_dim,
-)
+from std.gpu import block_idx, thread_idx, grid_dim, block_dim
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import GPUInfo
 from std.sys.info import _accelerator_arch
@@ -41,6 +36,7 @@ from layout.coord import Coord, Idx
 from layout.tile_layout import TensorLayout
 from .fp4_utils import cast_uint_to_fp4e2m1, MXFP4_SF_VECTOR_SIZE
 from std.algorithm.functional import elementwise
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import Index, IndexList
 from std.sys.info import simd_width_of
 
@@ -48,6 +44,7 @@ from std.sys.info import simd_width_of
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(512))
 )
+@__name(t"dequant_mxfp4_to_fp8_{out_dtype}_{scales_dtype}_{in_dtype}")
 def _dequant_mxfp4_to_fp8_kernel[
     out_dtype: DType,
     scales_dtype: DType,
@@ -76,13 +73,11 @@ def _dequant_mxfp4_to_fp8_kernel[
     comptime BYTES_PER_THREAD = ELEMENTS_PER_THREAD // 2
 
     with PDL():
-        for global_row_idx in range(
-            Int(block_idx.x), num_rows, Int(grid_dim.x)
-        ):
+        for global_row_idx in range(block_idx.x, num_rows, grid_dim.x):
             for col_thread_idx in range(
-                Int(thread_idx.x),
+                thread_idx.x,
                 ceildiv(num_cols, ELEMENTS_PER_THREAD),
-                Int(block_dim.x),
+                block_dim.x,
             ):
                 var global_col_idx = col_thread_idx * ELEMENTS_PER_THREAD
 
@@ -92,7 +87,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 # Load packed uint8 bytes
                 var packed_byte_col = global_col_idx // 2
                 var packed_bytes = input.load[BYTES_PER_THREAD](
-                    Coord(Idx(global_row_idx), Idx(packed_byte_col))
+                    Coord(global_row_idx, packed_byte_col)
                 )
 
                 # Unpack to float32 via E2M1 lookup table.
@@ -106,7 +101,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 # Load the E8M0 scale from 2D layout
                 var scale_col = global_col_idx // SF_VECTOR_SIZE
                 var scale_e8m0 = rebind[Scalar[scales_dtype]](
-                    scales.load(Coord(Idx(global_row_idx), Idx(scale_col)))
+                    scales.load(Coord(global_row_idx, scale_col))
                 )
 
                 # Convert E8M0 to float32 using stdlib SIMD cast.
@@ -121,7 +116,7 @@ def _dequant_mxfp4_to_fp8_kernel[
 
                 # Store output
                 output.store[width=ELEMENTS_PER_THREAD](
-                    Coord(Idx(global_row_idx), Idx(global_col_idx)),
+                    Coord(global_row_idx, global_col_idx),
                     out_values,
                 )
 
@@ -215,7 +210,7 @@ def dequant_mxfp4[
         ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output,
         input_tt,
         scales_tt,
@@ -235,28 +230,22 @@ def _cast_bf16_to_fp8(
     num_cols: Int,
 ) raises:
     """Cast BF16 tensor to FP8 using elementwise kernel."""
-    var out_tt = output.as_any_origin()
-    var in_tt = input.as_any_origin()
+    var out_tt = output.as_unsafe_any_origin()
+    var in_tt = input.as_unsafe_any_origin()
     comptime assert out_tt.flat_rank == 2, "output must be rank 2"
     comptime assert in_tt.flat_rank == 2, "input must be rank 2"
     comptime assert out_tt.mut, "output must be mutable"
 
     @always_inline
-    @__copy_capture(out_tt, in_tt)
-    @parameter
-    def cast_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank],):
-        comptime assert rank == 2, "cast_fn only supports rank-2 tensors"
-        var idx = rebind[IndexList[2]](idx_arg)
-        var coord = Coord(idx)
-        comptime assert in_tt.flat_rank >= coord.flat_rank
-        comptime assert out_tt.flat_rank >= coord.flat_rank
+    def cast_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        comptime assert idx.rank == 2, "cast_fn only supports rank-2 tensors"
         out_tt.store[width=width](
-            coord,
-            in_tt.load[width=width](coord).cast[out_tt.dtype](),
+            idx,
+            in_tt.load[width=width](idx).cast[out_tt.dtype](),
         )
 
-    elementwise[cast_fn, simd_width_of[input.dtype](), target="gpu"](
-        Index(num_rows, num_cols), ctx
-    )
+    elementwise[
+        simd_width_of[input.dtype](),
+        target="gpu",
+        _trace_description="mxfp4_dequant_cast",
+    ](cast_fn, (num_rows, num_cols), ctx)

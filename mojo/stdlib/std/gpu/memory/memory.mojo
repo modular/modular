@@ -52,7 +52,7 @@ from std.sys.info import (
 from std.sys.intrinsics import _RegisterPackType
 
 from std.builtin.dtype import _uint_type_of_width
-from std.memory.pointer import AddressSpace, GPUAddressSpace
+from std.memory.pointer import AddressSpace
 from std.memory.unsafe import bitcast
 
 from std.utils import IndexList, StaticTuple
@@ -626,9 +626,6 @@ def async_copy[
         not fill or size_of[dtype]() <= size_of[Int32]()
     ), "if the fill value is specified, then the dtype must be 32bit or less"
     comptime assert size in (4, 8, 16)
-    comptime assert not (
-        l2_prefetch.__bool__() == bypass_L1_16B == True
-    ), "both enable l2 prefetching and l1 bypass cannot be True"
     comptime assert not l2_prefetch or l2_prefetch.value() in (
         64,
         128,
@@ -689,6 +686,7 @@ def async_copy[
         ), "Non zero filling is supported only for 16B access."
 
         # Pack filling values into 4B registers.
+        @parameter
         @always_inline
         def _i32_repr[fill: Scalar[dtype]]() -> Int32:
             comptime if size_of[dtype]() == 1:
@@ -847,7 +845,7 @@ def external_memory[
     address_space: AddressSpace,
     alignment: Int,
     name: StaticString = "extern_ptr_syml",
-]() -> UnsafePointer[dtype, MutAnyOrigin, address_space=address_space]:
+]() -> UnsafePointer[dtype, MutUntrackedOrigin, address_space=address_space]:
     """Gets a pointer to dynamically allocated external memory.
 
     This function returns a pointer to external memory that can be used for dynamic
@@ -872,17 +870,14 @@ def external_memory[
     - The pointer is only valid within the GPU kernel execution context.
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
-    var extern_ptr_symbol = UnsafePointer[
-        StaticTuple[dtype, 0], MutAnyOrigin, address_space=address_space
-    ](
+    comptime PtrTy = UnsafePointer[
+        StaticTuple[dtype, 0], MutUntrackedOrigin, address_space=address_space
+    ]
+    var extern_ptr_symbol = PtrTy(
         __mlir_op.`pop.extern_ptr_symbol`[
-            _type=UnsafePointer[
-                StaticTuple[dtype, 0],
-                MutAnyOrigin,
-                address_space=address_space,
-            ]._mlir_type,
+            _type=PtrTy._mlir_type,
             name=_get_kgen_string[name](),
-            alignment=alignment._mlir_value,
+            alignment=alignment.__mlir_index__(),
         ]()
     )
     return extern_ptr_symbol.bitcast[dtype]()
@@ -982,7 +977,7 @@ def fence_mbarrier_init():
 
 
 @always_inline("nodebug")
-def cp_async_bulk_shared_cta_global[
+def cp_async_bulk_shared_cluster_global[
     dst_type: AnyType,
     src_type: AnyType,
     mbr_type: AnyType,
@@ -1007,7 +1002,7 @@ def cp_async_bulk_shared_cta_global[
     via the mbarrier specified by `mem_bar`.
 
     Both `dst_mem` and `src_mem` must be 16-byte aligned, and `size` must be a
-    multiple of 16. Requires sm_90 or higher.
+    multiple of 16. Requires sm_100 or higher.
 
     Parameters:
         dst_type: The element type of the destination shared memory.
@@ -1076,7 +1071,7 @@ def cp_async_bulk_global_shared_cta[
     `cp_async_bulk_wait_group` from `std.gpu.sync` to synchronize.
 
     Both `dst_mem` and `src_mem` must be 16-byte aligned, and `size` must be a
-    multiple of 16. Requires sm_90 or higher.
+    multiple of 16. Requires sm_100 or higher.
 
     Parameters:
         dst_type: The element type of the destination global memory.
@@ -1134,7 +1129,7 @@ def cp_async_bulk_prefetch[
     guarantee the data will be in cache when accessed.
 
     `src_mem` must be 16-byte aligned and `size` must be a multiple of 16.
-    Requires sm_90 or higher.
+    Requires sm_100 or higher.
 
     Parameters:
         src_type: The element type of the source global memory.
@@ -1167,6 +1162,96 @@ def cp_async_bulk_prefetch[
             to_llvm_global_mem_ptr(src_global),
             to_i32(size),
         )
+
+
+@always_inline("nodebug")
+def cp_async_bulk_reduce_global_shared_cta[
+    dtype: DType,
+    /,
+    *,
+    reduction_kind: ReduceOp,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](
+    dst_mem: UnsafePointer[mut=True, Scalar[dtype], ...],
+    src_mem: UnsafePointer[Scalar[dtype], _, address_space=AddressSpace.SHARED],
+    size: Int32,
+):
+    """Initiates an asynchronous bulk reduction from shared CTA memory into
+    global memory.
+
+    Performs a non-blocking element-wise reduction of `size` bytes of shared
+    memory into the matching locations in global memory, using the PTX
+    `cp.reduce.async.bulk` instruction with the `.bulk_group` completion
+    mechanism. Use `cp_async_bulk_commit_group` and `cp_async_bulk_wait_group`
+    from `std.gpu.sync` to synchronize.
+
+    Both `dst_mem` and `src_mem` must be 16-byte aligned, and `size` must be a
+    multiple of 16. Requires sm_100 or higher.
+
+    Parameters:
+        dtype: Element data type of the reduction. Supported floating-point
+            types are `float16`, `bfloat16`, `float32`, and `float64`.
+        reduction_kind: The reduction operation to apply. Currently only `ADD` is supported.
+        eviction_policy: Cache eviction policy for the L2 cache.
+            Defaults to `EVICT_NORMAL`.
+
+    Args:
+        dst_mem: Destination pointer in global or generic memory (16-byte
+            aligned).
+        src_mem: Source pointer in shared CTA memory (16-byte aligned).
+        size: Number of bytes to reduce (must be a multiple of 16).
+    """
+    comptime assert (
+        _is_sm_100x_or_newer()
+    ), "1D TMA copies are currently only supported on SM100+ GPUs"
+    comptime assert dst_mem.address_space in (
+        AddressSpace.GLOBAL,
+        AddressSpace.GENERIC,
+    ), "dst_mem must be in GLOBAL or GENERIC address space"
+    comptime assert dtype in (
+        DType.float16,
+        DType.bfloat16,
+        DType.float32,
+        DType.float64,
+    ), (
+        "cp_async_bulk_reduce_global_shared_cta currently supports float16,"
+        " bfloat16, float32, and float64"
+    )
+    comptime assert (
+        reduction_kind == ReduceOp.ADD
+    ), "cp_async_bulk_reduce_global_shared_cta currently supports ADD only"
+
+    var dst_global = dst_mem.address_space_cast[AddressSpace.GLOBAL]()
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+
+    comptime cache_hint_mnemonic = ".L2::cache_hint" if cache_hint else ""
+    comptime asm_body = (
+        "cp.reduce.async.bulk.global.shared::cta.bulk_group"
+        + cache_hint_mnemonic
+        + "."
+        + reduction_kind.mnemonic()
+        + "."
+        + _get_type_mnemonic[dtype]()
+    )
+
+    comptime if cache_hint:
+        var cache_policy = _mark_eviction[eviction_policy]()
+        inlined_assembly[
+            asm_body + " [$0], [$1], $2, $3;",
+            NoneType,
+            constraints="l,r,r,l",
+        ](
+            Int64(Int(dst_global)),
+            Int32(Int(src_mem)),
+            size,
+            cache_policy,
+        )
+    else:
+        inlined_assembly[
+            asm_body + " [$0], [$1], $2;",
+            NoneType,
+            constraints="l,r,r",
+        ](Int64(Int(dst_global)), Int32(Int(src_mem)), size)
 
 
 @always_inline("nodebug")
@@ -1373,6 +1458,237 @@ def cp_async_bulk_tensor_shared_cluster_global[
                 Int32(coords[2]),
                 Int32(coords[3]),
                 Int32(coords[4]),
+            )
+
+
+@always_inline("nodebug")
+def cp_async_bulk_tensor_shared_cluster_global_elect[
+    dst_type: AnyType,
+    mbr_type: AnyType,
+    rank: Int,
+    /,
+    *,
+    cta_group: Int = 1,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](
+    dst_mem: UnsafePointer[
+        mut=True, dst_type, _, address_space=AddressSpace.SHARED
+    ],
+    tma_descriptor: OpaquePointer[mut=False, _],
+    mem_bar: UnsafePointer[
+        mut=False, mbr_type, _, address_space=AddressSpace.SHARED
+    ],
+    coords: IndexList[rank],
+    elect: Int32,
+):
+    """Elect-predicated variant of `cp_async_bulk_tensor_shared_cluster_global`.
+
+    Behaves exactly like `cp_async_bulk_tensor_shared_cluster_global` except
+    that the TMA instruction is guarded by a PTX predicate derived from
+    `elect`: the instruction is issued only when `elect != 0`. All lanes
+    follow the same PTX control flow, so there is no Mojo-level branch and
+    no warp-divergent `if elect != 0:` wrapper at the call site.
+
+    Parameters:
+        dst_type: The data type of the destination memory.
+        mbr_type: The data type of the memory barrier.
+        rank: The dimensionality of the tensor (1, 2, 3, 4, or 5).
+        cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
+        eviction_policy: Optional cache eviction policy. Defaults to
+            `EVICT_NORMAL`.
+
+    Args:
+        dst_mem: Pointer to the destination in shared memory.
+        tma_descriptor: Pointer to the TMA descriptor.
+        mem_bar: Pointer to the cluster-shared memory barrier.
+        coords: Coordinates specifying which tile to copy.
+        elect: `0` on non-elected lanes (skip the TMA), non-zero on the
+            single elected lane (issue the TMA). Typically the `Int32`
+            returned by `elect()` from `nn.attention.gpu.nvidia.sm100.attention_utils`.
+    """
+    comptime assert (
+        rank <= 5
+    ), "Expecting rank-1, rank-2, rank-3, rank-4, or rank-5 tensors"
+
+    comptime assert cta_group in (1, 2), "cta_group must be 1 or 2"
+    comptime assert cta_group == 1 or _is_sm_100x_or_newer()
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+    comptime assert not cache_hint or cta_group == 1
+    comptime tma_asm = String(
+        "cp.async.bulk.tensor.",
+        rank,
+        "d.cta_group::2" if cta_group == 2 else "d",
+        ".shared::cluster.global.tile.mbarrier::complete_tx::bytes",
+        ".L2::cache_hint" if cache_hint else "",
+    )
+
+    # `elect` is appended as the last operand; compute its operand index
+    # (0-based) so the `setp` in the predicate prologue references it.
+    # With cache_hint: operands are [dst, desc, mbar, coords..., hint, elect].
+    # Without cache_hint: operands are [dst, desc, mbar, coords..., elect].
+    comptime elect_idx: Int = (rank + 4) if cache_hint else (rank + 3)
+    comptime pred_prefix = String(
+        "{ .reg .pred %p_el; setp.eq.s32 %p_el, $",
+        elect_idx,
+        ", 0; @!%p_el ",
+    )
+
+    comptime if cache_hint:
+        comptime if rank == 3:
+            inlined_assembly[
+                pred_prefix
+                + tma_asm
+                + " [$0], [$1, {$3, $4, $5}], [$2], $6; }",
+                NoneType,
+                constraints="r,l,r,r,r,r,l,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int64(eviction_policy._value),
+                elect,
+            )
+        elif rank == 2:
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0], [$1, {$3, $4}], [$2], $5; }",
+                NoneType,
+                constraints="r,l,r,r,r,l,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int64(eviction_policy._value),
+                elect,
+            )
+        elif rank == 1:
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0], [$1, {$3}], [$2], $4; }",
+                NoneType,
+                constraints="r,l,r,r,l,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int64(eviction_policy._value),
+                elect,
+            )
+        elif rank == 4:
+            inlined_assembly[
+                pred_prefix
+                + tma_asm
+                + " [$0], [$1, {$3, $4, $5, $6}], [$2], $7; }",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,l,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int64(eviction_policy._value),
+                elect,
+            )
+        else:  # rank == 5
+            inlined_assembly[
+                pred_prefix
+                + tma_asm
+                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2], $8; }",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,r,l,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int32(coords[4]),
+                Int64(eviction_policy._value),
+                elect,
+            )
+    else:
+        comptime if rank == 3:
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0], [$1, {$3, $4, $5}], [$2]; }",
+                NoneType,
+                constraints="r,l,r,r,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                elect,
+            )
+        elif rank == 2:
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0], [$1, {$3, $4}], [$2]; }",
+                NoneType,
+                constraints="r,l,r,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                elect,
+            )
+        elif rank == 1:
+            inlined_assembly[
+                pred_prefix + tma_asm + " [$0], [$1, {$3}], [$2]; }",
+                NoneType,
+                constraints="r,l,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                elect,
+            )
+        elif rank == 4:
+            inlined_assembly[
+                pred_prefix
+                + tma_asm
+                + " [$0], [$1, {$3, $4, $5, $6}], [$2]; }",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                elect,
+            )
+        else:  # rank == 5
+            inlined_assembly[
+                pred_prefix
+                + tma_asm
+                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2]; }",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int32(coords[4]),
+                elect,
             )
 
 
@@ -1909,7 +2225,8 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
         1,
         2,
         3,
-    ), "Expecting rank-1, rank-2, or rank-3 tensors"
+        4,
+    ), "Expecting rank-1, rank-2, rank-3, or rank-4 tensors"
 
     comptime assert cta_group in (1, 2), "cta_group must be 1 or 2"
     comptime tma_asm = String(
@@ -1921,7 +2238,40 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
         ".shared::cluster.global.mbarrier::complete_tx::bytes.multicast::cluster",
     )
 
-    comptime if rank == 3:
+    comptime if rank == 4:
+        comptime if cta_group == 1:
+            var dst_mem_cluster = dst_mem.address_space_cast[
+                AddressSpace.SHARED_CLUSTER
+            ]()
+            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+                _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,4,1,0,1,0,0>}`
+            ](
+                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
+                to_llvm_ptr(tma_descriptor),
+                to_i32(Int32(coords[0])),
+                to_i32(Int32(coords[1])),
+                to_i32(Int32(coords[2])),
+                to_i32(Int32(coords[3])),
+                to_llvm_shared_mem_ptr(mem_bar),
+                to_i16(multicast_mask),
+            )
+        else:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$4, $5, $6, $7}], [$2], $3;",
+                NoneType,
+                constraints="r,l,r,h,r,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                multicast_mask,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+            )
+
+    elif rank == 3:
         comptime if cta_group == 1:
             var dst_mem_cluster = dst_mem.address_space_cast[
                 AddressSpace.SHARED_CLUSTER
@@ -2113,7 +2463,7 @@ def cp_async_bulk_tensor_global_shared_cta[
 
 
 @always_inline
-def cp_async_bulk_tensor_reduce[
+def cp_async_bulk_tensor_reduce_global_shared_cta[
     src_type: AnyType,
     rank: Int,
     /,
@@ -2158,10 +2508,29 @@ def cp_async_bulk_tensor_reduce[
     - The TMA descriptor must be properly initialized before use.
     - The reduction operation is performed atomically to ensure correctness.
     """
-    comptime assert rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"
+    comptime assert rank in (
+        1,
+        2,
+        3,
+    ), "Expecting rank-1, rank-2, or rank-3 tensors"
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
-    comptime if rank == 2:
+    comptime if rank == 3:
+        llvm_intrinsic[
+            "llvm.nvvm.cp.async.bulk.tensor.reduce."
+            + reduction_kind.mnemonic()
+            + ".tile.3d",
+            NoneType,
+        ](
+            src_mem,
+            tma_descriptor,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+            UInt64(eviction_policy._value),
+            cache_hint,
+        )
+    elif rank == 2:
         llvm_intrinsic[
             "llvm.nvvm.cp.async.bulk.tensor.reduce."
             + reduction_kind.mnemonic()
@@ -2824,16 +3193,21 @@ def multimem_st[
     Example:
 
     ```mojo
-    from std.gpu.memory.memory import *
+    from std.gpu.memory.memory import multimem_st, Consistency
+    from std.gpu.intrinsics import Scope
+    from std.utils import StaticTuple
+    var addr = UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.GLOBAL].unsafe_dangling()
+    %# val1, val2 = Float32(0), Float32(0)
+    %# vec1, vec2, vec3, vec4 = Float16(0), Float16(0), Float16(0), Float16(0)
 
     # Store 2 float32 values to multimem address.
-    multimem_st[DType.float32, count=2, scope=Scope.CTA, consistency=Consistency.RELAXED](
-        addr, StaticTuple[DType.float32, 2](val1, val2)
+    multimem_st[DType.float32, count=2, scope=Scope.BLOCK, consistency=Consistency.RELAXED](
+        addr, StaticTuple[Float32, 2](val1, val2)
     )
 
     # Vector store of 4 float16x2 values.
-    multimem_st[DType.float16, count=4, scope=Scope.CLUSTER, consistency=Consistency.RELEASE, width=2](
-        addr, StaticTuple[DType.float16, 4](vec1, vec2, vec3, vec4)
+    multimem_st[DType.float16, count=4, scope=Scope.CLUSTER, consistency=Consistency.RELEASE](
+        addr.bitcast[Float16](), StaticTuple[Float16, 4](vec1, vec2, vec3, vec4)
     )
     ```
 

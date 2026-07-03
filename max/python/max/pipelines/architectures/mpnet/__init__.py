@@ -10,7 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""MPNet sentence transformer architecture for embeddings generation."""
 
 from .arch import mpnet_arch
+from .model import MPNetInputs, MPNetPipelineModel
+from .model_config import MPNetConfig
 
-__all__ = ["mpnet_arch"]
+__all__ = [
+    "MPNetConfig",
+    "MPNetInputs",
+    "MPNetPipelineModel",
+    "mpnet_arch",
+]

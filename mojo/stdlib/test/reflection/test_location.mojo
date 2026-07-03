@@ -236,7 +236,7 @@ def source_loc_with_debug() -> SourceLocation:
     var col: __mlir_type.index
     var file_name: __mlir_type.`!kgen.string`
     line, col, file_name = __mlir_op.`kgen.source_loc`[
-        inlineCount=Int(0)._mlir_value,
+        inlineCount=Int(0).__mlir_index__(),
         _type=Tuple[
             __mlir_type.index,
             __mlir_type.index,
@@ -245,8 +245,8 @@ def source_loc_with_debug() -> SourceLocation:
     ]()
 
     return SourceLocation(
-        Int(mlir_value=line),
-        Int(mlir_value=col),
+        SIMDSize(mlir_value=line),
+        SIMDSize(mlir_value=col),
         StaticString(file_name),
     )
 

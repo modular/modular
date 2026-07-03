@@ -16,9 +16,10 @@ from std.gpu import (
     block_idx,
     thread_idx,
 )
-from layout import Layout, LayoutTensor, TensorLayout, TileTensor
+from layout import TensorLayout, TileTensor
 from std.utils.index import IndexList
 from std.algorithm import sync_parallelize
+from std.gpu.host import DeviceContext
 import std.math
 from std.math import ceildiv, exp, exp2, rsqrt
 from state_space.causal_conv1d import silu
@@ -84,17 +85,17 @@ def selective_scan_fwd_gpu[
     seqlen: Int,
     group_size: Int,
     delta_softplus: Int8,
-    output: TileTensor[kernel_dtype, output_LT, MutExternalOrigin],
-    x: TileTensor[kernel_dtype, x_LT, MutExternalOrigin],
-    out_z: TileTensor[kernel_dtype, out_z_LT, MutExternalOrigin],
-    u: TileTensor[kernel_dtype, u_LT, MutExternalOrigin],
-    delta: TileTensor[kernel_dtype, delta_LT, MutExternalOrigin],
-    A: TileTensor[kernel_dtype, A_LT, MutExternalOrigin],
-    B: TileTensor[kernel_dtype, B_LT, MutExternalOrigin],
-    C: TileTensor[kernel_dtype, C_LT, MutExternalOrigin],
-    D: TileTensor[kernel_dtype, D_LT, MutExternalOrigin],
-    z: TileTensor[kernel_dtype, z_LT, MutExternalOrigin],
-    delta_bias: TileTensor[kernel_dtype, delta_bias_LT, MutExternalOrigin],
+    output: TileTensor[kernel_dtype, output_LT, MutUntrackedOrigin],
+    x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin],
+    out_z: TileTensor[kernel_dtype, out_z_LT, MutUntrackedOrigin],
+    u: TileTensor[kernel_dtype, u_LT, MutUntrackedOrigin],
+    delta: TileTensor[kernel_dtype, delta_LT, MutUntrackedOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin],
+    B: TileTensor[kernel_dtype, B_LT, MutUntrackedOrigin],
+    C: TileTensor[kernel_dtype, C_LT, MutUntrackedOrigin],
+    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin],
+    z: TileTensor[kernel_dtype, z_LT, MutUntrackedOrigin],
+    delta_bias: TileTensor[kernel_dtype, delta_bias_LT, MutUntrackedOrigin],
     output_strides: Strides3D,
     x_strides: Strides4D,
     out_z_strides: Strides3D,
@@ -138,15 +139,15 @@ def selective_scan_fwd_gpu[
     var delta_bias_val = Float32(0.0)
     if has_delta_bias:
         var bias_offset = UInt32(d * delta_bias_strides[0])
-        delta_bias_val = Scalar[kernel_dtype](delta_bias.ptr[bias_offset]).cast[
-            DType.float32
-        ]()
+        delta_bias_val = Scalar[kernel_dtype](
+            delta_bias.raw_load(bias_offset)
+        ).cast[DType.float32]()
 
     var has_D = Int(D.dim[0]()) > 0
     var D_val = Float32(0.0)
     if has_D:
         var D_offset = UInt32(d * D_strides[0])
-        D_val = Scalar[kernel_dtype](D.ptr[D_offset]).cast[DType.float32]()
+        D_val = Scalar[kernel_dtype](D.raw_load(D_offset)).cast[DType.float32]()
 
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
     var has_z = Int(z.dim[0]()) > 0
@@ -156,7 +157,8 @@ def selective_scan_fwd_gpu[
     comptime for n in range(DSTATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
-            Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]() * LOG2E
+            Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
+            * LOG2E
         )
 
     var chunk_size = 2048
@@ -192,18 +194,18 @@ def selective_scan_fwd_gpu[
         # Always use strided access for u tensor to handle different layouts
         # from causal_conv1d_fn and other operations
         for i in range(TILE_SIZE):
-            u_vec[i] = u.ptr[curr_u_offset + UInt32(i * u_strides[2])]
+            u_vec[i] = u.raw_load(curr_u_offset + UInt32(i * u_strides[2]))
 
         # Always use strided access for delta tensor to handle different layouts
         for i in range(TILE_SIZE):
-            delta_vec[i] = delta.ptr[
+            delta_vec[i] = delta.raw_load(
                 curr_delta_offset + UInt32(i * delta_strides[2])
-            ]
+            )
 
         if has_z:
             # Always use strided access for z tensor to handle different layouts
             for i in range(TILE_SIZE):
-                z_vec[i] = z.ptr[curr_z_offset + UInt32(i * z_strides[2])]
+                z_vec[i] = z.raw_load(curr_z_offset + UInt32(i * z_strides[2]))
 
         # PRE-LOAD B/C TILES: Load B[n, t:t+TILE] and C[n, t:t+TILE] for all n
         # This avoids redundant address calculations inside the inner loop
@@ -220,7 +222,7 @@ def selective_scan_fwd_gpu[
 
             comptime for n in range(DSTATE):
                 B_tiles[n][i] = Scalar[kernel_dtype](
-                    B.ptr[b_base + UInt32(n * B_strides[2])]
+                    B.raw_load(b_base + UInt32(n * B_strides[2]))
                 ).cast[DType.float32]()
 
         # Load C tiles - always use scalar loads to handle different layouts from slicing/reshaping
@@ -229,7 +231,7 @@ def selective_scan_fwd_gpu[
 
             comptime for n in range(DSTATE):
                 C_tiles[n][i] = Scalar[kernel_dtype](
-                    C.ptr[c_base + UInt32(n * C_strides[2])]
+                    C.raw_load(c_base + UInt32(n * C_strides[2]))
                 ).cast[DType.float32]()
 
         # Buffer for output values to enable vector stores
@@ -299,11 +301,13 @@ def selective_scan_fwd_gpu[
                         + chunk_idx * x_strides[2]
                         + (n * 2 + 1) * x_strides[3]
                     )
-                    x.ptr[x_offset_a] = Scalar[kernel_dtype](
-                        cum_a[n].cast[kernel_dtype]()
+                    x.raw_store(
+                        x_offset_a,
+                        Scalar[kernel_dtype](cum_a[n].cast[kernel_dtype]()),
                     )
-                    x.ptr[x_offset_b] = Scalar[kernel_dtype](
-                        cum_b[n].cast[kernel_dtype]()
+                    x.raw_store(
+                        x_offset_b,
+                        Scalar[kernel_dtype](cum_b[n].cast[kernel_dtype]()),
                     )
                     cum_a[n] = 1.0
                     cum_b[n] = 0.0
@@ -315,22 +319,28 @@ def selective_scan_fwd_gpu[
         # Vector store outputs if contiguous
         if output_contiguous:
             for i in range(TILE_SIZE):
-                output.ptr[curr_output_offset + UInt32(i)] = output_buffer[i]
+                output.raw_store(
+                    curr_output_offset + UInt32(i), output_buffer[i]
+                )
         else:
             for i in range(TILE_SIZE):
-                output.ptr[
-                    curr_output_offset + UInt32(i * output_strides[2])
-                ] = output_buffer[i]
+                output.raw_store(
+                    curr_output_offset + UInt32(i * output_strides[2]),
+                    output_buffer[i],
+                )
 
         if has_z and has_out_z:
             if out_z_strides[2] == 1:
                 for i in range(TILE_SIZE):
-                    out_z.ptr[curr_out_z_offset + UInt32(i)] = out_z_buffer[i]
+                    out_z.raw_store(
+                        curr_out_z_offset + UInt32(i), out_z_buffer[i]
+                    )
             else:
                 for i in range(TILE_SIZE):
-                    out_z.ptr[
-                        curr_out_z_offset + UInt32(i * out_z_strides[2])
-                    ] = out_z_buffer[i]
+                    out_z.raw_store(
+                        curr_out_z_offset + UInt32(i * out_z_strides[2]),
+                        out_z_buffer[i],
+                    )
 
         # Advance global offsets by TILE_SIZE
         curr_u_offset += UInt32(u_strides[2] * TILE_SIZE)
@@ -346,12 +356,12 @@ def selective_scan_fwd_gpu[
     # Tail loop (scalar)
     while t < seqlen:
         t_in_chunk += 1
-        var u_val = Scalar[kernel_dtype](u.ptr[curr_u_offset]).cast[
+        var u_val = Scalar[kernel_dtype](u.raw_load(curr_u_offset)).cast[
             DType.float32
         ]()
-        var delta_val = Scalar[kernel_dtype](delta.ptr[curr_delta_offset]).cast[
-            DType.float32
-        ]()
+        var delta_val = Scalar[kernel_dtype](
+            delta.raw_load(curr_delta_offset)
+        ).cast[DType.float32]()
         if has_delta_bias:
             delta_val += delta_bias_val
         if delta_softplus_bool:
@@ -362,10 +372,10 @@ def selective_scan_fwd_gpu[
 
         comptime for n in range(DSTATE):
             B_vals[n] = Scalar[kernel_dtype](
-                B.ptr[curr_B_offset + UInt32(n * B_strides[2])]
+                B.raw_load(curr_B_offset + UInt32(n * B_strides[2]))
             ).cast[DType.float32]()
             C_vals[n] = Scalar[kernel_dtype](
-                C.ptr[curr_C_offset + UInt32(n * C_strides[2])]
+                C.raw_load(curr_C_offset + UInt32(n * C_strides[2]))
             ).cast[DType.float32]()
         var a_t = exp2(A_vals * delta_val)
         var b_t = B_vals * delta_u
@@ -375,17 +385,19 @@ def selective_scan_fwd_gpu[
         cum_a = cum_a * a_t
         if has_D:
             output_val += D_val * u_val
-        output.ptr[curr_output_offset] = Scalar[kernel_dtype](
-            output_val.cast[kernel_dtype]()
+        output.raw_store(
+            curr_output_offset,
+            Scalar[kernel_dtype](output_val.cast[kernel_dtype]()),
         )
         if has_z:
-            var z_val = Scalar[kernel_dtype](z.ptr[curr_z_offset]).cast[
+            var z_val = Scalar[kernel_dtype](z.raw_load(curr_z_offset)).cast[
                 DType.float32
             ]()
             var out_z_val = output_val * silu(z_val)
             if has_out_z:
-                out_z.ptr[curr_out_z_offset] = Scalar[kernel_dtype](
-                    out_z_val.cast[kernel_dtype]()
+                out_z.raw_store(
+                    curr_out_z_offset,
+                    Scalar[kernel_dtype](out_z_val.cast[kernel_dtype]()),
                 )
 
         curr_u_offset += UInt32(u_strides[2])
@@ -412,11 +424,13 @@ def selective_scan_fwd_gpu[
                     + chunk_idx * x_strides[2]
                     + (n * 2 + 1) * x_strides[3]
                 )
-                x.ptr[x_offset_a] = Scalar[kernel_dtype](
-                    cum_a[n].cast[kernel_dtype]()
+                x.raw_store(
+                    x_offset_a,
+                    Scalar[kernel_dtype](cum_a[n].cast[kernel_dtype]()),
                 )
-                x.ptr[x_offset_b] = Scalar[kernel_dtype](
-                    cum_b[n].cast[kernel_dtype]()
+                x.raw_store(
+                    x_offset_b,
+                    Scalar[kernel_dtype](cum_b[n].cast[kernel_dtype]()),
                 )
                 cum_a[n] = 1.0
                 cum_b[n] = 0.0
@@ -443,13 +457,13 @@ def selective_scan_fwd_gpu_minimal[
     seqlen: Int,
     group_size: Int,
     delta_softplus: Int8,
-    output: TileTensor[kernel_dtype, output_LT, MutExternalOrigin],
-    x: TileTensor[kernel_dtype, x_LT, MutExternalOrigin],
-    u: TileTensor[kernel_dtype, u_LT, MutExternalOrigin],
-    delta: TileTensor[kernel_dtype, delta_LT, MutExternalOrigin],
-    A: TileTensor[kernel_dtype, A_LT, MutExternalOrigin],
-    B: TileTensor[kernel_dtype, B_LT, MutExternalOrigin],
-    C: TileTensor[kernel_dtype, C_LT, MutExternalOrigin],
+    output: TileTensor[kernel_dtype, output_LT, MutUntrackedOrigin],
+    x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin],
+    u: TileTensor[kernel_dtype, u_LT, MutUntrackedOrigin],
+    delta: TileTensor[kernel_dtype, delta_LT, MutUntrackedOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin],
+    B: TileTensor[kernel_dtype, B_LT, MutUntrackedOrigin],
+    C: TileTensor[kernel_dtype, C_LT, MutUntrackedOrigin],
     output_strides: Strides3D,
     x_strides: Strides4D,
     u_strides: Strides3D,
@@ -481,7 +495,8 @@ def selective_scan_fwd_gpu_minimal[
     comptime for n in range(DSTATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
-            Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]() * LOG2E
+            Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
+            * LOG2E
         )
 
     var chunk_size = 2048
@@ -500,12 +515,12 @@ def selective_scan_fwd_gpu_minimal[
     for t in range(seqlen):
         t_in_chunk += 1
 
-        var u_val = Scalar[kernel_dtype](u.ptr[curr_u_offset]).cast[
+        var u_val = Scalar[kernel_dtype](u.raw_load(curr_u_offset)).cast[
             DType.float32
         ]()
-        var delta_val = Scalar[kernel_dtype](delta.ptr[curr_delta_offset]).cast[
-            DType.float32
-        ]()
+        var delta_val = Scalar[kernel_dtype](
+            delta.raw_load(curr_delta_offset)
+        ).cast[DType.float32]()
         if delta_softplus_bool:
             delta_val = softplus(delta_val)
         var delta_u = delta_val * u_val
@@ -515,10 +530,10 @@ def selective_scan_fwd_gpu_minimal[
 
         comptime for n in range(DSTATE):
             B_vals[n] = Scalar[kernel_dtype](
-                B.ptr[curr_B_offset + UInt32(n * B_strides[2])]
+                B.raw_load(curr_B_offset + UInt32(n * B_strides[2]))
             ).cast[DType.float32]()
             C_vals[n] = Scalar[kernel_dtype](
-                C.ptr[curr_C_offset + UInt32(n * C_strides[2])]
+                C.raw_load(curr_C_offset + UInt32(n * C_strides[2]))
             ).cast[DType.float32]()
 
         var a_t = exp2(A_vals * delta_val)
@@ -528,8 +543,9 @@ def selective_scan_fwd_gpu_minimal[
         cum_b = cum_b * a_t + b_t
         cum_a = cum_a * a_t
         # No D skip connection in minimal version
-        output.ptr[curr_output_offset] = Scalar[kernel_dtype](
-            output_val.cast[kernel_dtype]()
+        output.raw_store(
+            curr_output_offset,
+            Scalar[kernel_dtype](output_val.cast[kernel_dtype]()),
         )
         # No z gating in minimal version
 
@@ -555,11 +571,13 @@ def selective_scan_fwd_gpu_minimal[
                     + chunk_idx * x_strides[2]
                     + (n * 2 + 1) * x_strides[3]
                 )
-                x.ptr[x_offset_a] = Scalar[kernel_dtype](
-                    cum_a[n].cast[kernel_dtype]()
+                x.raw_store(
+                    x_offset_a,
+                    Scalar[kernel_dtype](cum_a[n].cast[kernel_dtype]()),
                 )
-                x.ptr[x_offset_b] = Scalar[kernel_dtype](
-                    cum_b[n].cast[kernel_dtype]()
+                x.raw_store(
+                    x_offset_b,
+                    Scalar[kernel_dtype](cum_b[n].cast[kernel_dtype]()),
                 )
                 cum_a[n] = 1.0
                 cum_b[n] = 0.0
@@ -608,17 +626,17 @@ def selective_scan_update_gpu[
     dim: Int,
     group_size: Int,
     delta_softplus: Int8,
-    state_out: TileTensor[kernel_dtype, state_out_LT, MutExternalOrigin],
-    output: TileTensor[kernel_dtype, output_LT, MutExternalOrigin],
-    state_in: TileTensor[kernel_dtype, state_in_LT, MutExternalOrigin],
-    x: TileTensor[kernel_dtype, x_LT, MutExternalOrigin],
-    dt: TileTensor[kernel_dtype, dt_LT, MutExternalOrigin],
-    A: TileTensor[kernel_dtype, A_LT, MutExternalOrigin],
-    B: TileTensor[kernel_dtype, B_LT, MutExternalOrigin],
-    C: TileTensor[kernel_dtype, C_LT, MutExternalOrigin],
-    D: TileTensor[kernel_dtype, D_LT, MutExternalOrigin],
-    z: TileTensor[kernel_dtype, z_LT, MutExternalOrigin],
-    dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutExternalOrigin],
+    state_out: TileTensor[kernel_dtype, state_out_LT, MutUntrackedOrigin],
+    output: TileTensor[kernel_dtype, output_LT, MutUntrackedOrigin],
+    state_in: TileTensor[kernel_dtype, state_in_LT, MutUntrackedOrigin],
+    x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin],
+    dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin],
+    B: TileTensor[kernel_dtype, B_LT, MutUntrackedOrigin],
+    C: TileTensor[kernel_dtype, C_LT, MutUntrackedOrigin],
+    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin],
+    z: TileTensor[kernel_dtype, z_LT, MutUntrackedOrigin],
+    dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutUntrackedOrigin],
     state_out_strides: Strides3D,
     output_strides: Strides2D,
     state_in_strides: Strides3D,
@@ -652,13 +670,15 @@ def selective_scan_update_gpu[
 
     # Load dt value
     var dt_offset = UInt32(b * dt_strides[0] + d * dt_strides[1])
-    var dt_val = Scalar[kernel_dtype](dt.ptr[dt_offset]).cast[DType.float32]()
+    var dt_val = Scalar[kernel_dtype](dt.raw_load(dt_offset)).cast[
+        DType.float32
+    ]()
 
     # Apply dt_bias if present
     var has_dt_bias = Int(dt_bias.dim[0]()) > 0
     if has_dt_bias:
         var bias_offset = UInt32(d * dt_bias_strides[0])
-        var bias_val = Scalar[kernel_dtype](dt_bias.ptr[bias_offset]).cast[
+        var bias_val = Scalar[kernel_dtype](dt_bias.raw_load(bias_offset)).cast[
             DType.float32
         ]()
         dt_val += bias_val
@@ -670,7 +690,7 @@ def selective_scan_update_gpu[
 
     # Load x value
     var x_offset = UInt32(b * x_strides[0] + d * x_strides[1])
-    var x_val = Scalar[kernel_dtype](x.ptr[x_offset]).cast[DType.float32]()
+    var x_val = Scalar[kernel_dtype](x.raw_load(x_offset)).cast[DType.float32]()
 
     # Load A values for this dim and pre-multiply by LOG2E for faster exp2
     var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
@@ -678,7 +698,8 @@ def selective_scan_update_gpu[
     comptime for n in range(DSTATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
-            Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]() * LOG2E
+            Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
+            * LOG2E
         )
 
     # Compute dA = exp2(A * LOG2E * dt) = exp(A * dt)
@@ -691,7 +712,9 @@ def selective_scan_update_gpu[
         var B_offset = UInt32(
             b * B_strides[0] + group_id * B_strides[1] + n * B_strides[2]
         )
-        B_vals[n] = Scalar[kernel_dtype](B.ptr[B_offset]).cast[DType.float32]()
+        B_vals[n] = Scalar[kernel_dtype](B.raw_load(B_offset)).cast[
+            DType.float32
+        ]()
 
     # Compute dB = B * dt
     var dB = B_vals * dt_val
@@ -705,9 +728,9 @@ def selective_scan_update_gpu[
             + d * state_in_strides[1]
             + n * state_in_strides[2]
         )
-        state_vals[n] = Scalar[kernel_dtype](state_in.ptr[state_offset]).cast[
-            DType.float32
-        ]()
+        state_vals[n] = Scalar[kernel_dtype](
+            state_in.raw_load(state_offset)
+        ).cast[DType.float32]()
 
     # Update state: state = state * dA + dB * x
     state_vals = state_vals * dA + dB * x_val
@@ -719,8 +742,9 @@ def selective_scan_update_gpu[
             + d * state_out_strides[1]
             + n * state_out_strides[2]
         )
-        state_out.ptr[state_offset] = Scalar[kernel_dtype](
-            state_vals[n].cast[kernel_dtype]()
+        state_out.raw_store(
+            state_offset,
+            Scalar[kernel_dtype](state_vals[n].cast[kernel_dtype]()),
         )
     # Load C values using group_id
     var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
@@ -729,7 +753,9 @@ def selective_scan_update_gpu[
         var C_offset = UInt32(
             b * C_strides[0] + group_id * C_strides[1] + n * C_strides[2]
         )
-        C_vals[n] = Scalar[kernel_dtype](C.ptr[C_offset]).cast[DType.float32]()
+        C_vals[n] = Scalar[kernel_dtype](C.raw_load(C_offset)).cast[
+            DType.float32
+        ]()
 
     # Compute output: out = sum(state * C, axis=-1)
     var out_val = (state_vals * C_vals).reduce_add()
@@ -738,21 +764,27 @@ def selective_scan_update_gpu[
     var has_D = Int(D.dim[0]()) > 0
     if has_D:
         var D_offset = UInt32(d * D_strides[0])
-        var D_val = Scalar[kernel_dtype](D.ptr[D_offset]).cast[DType.float32]()
+        var D_val = Scalar[kernel_dtype](D.raw_load(D_offset)).cast[
+            DType.float32
+        ]()
         out_val += x_val * D_val
 
     # Apply gating if z is present
     var has_z = Int(z.dim[0]()) > 0
     if has_z:
         var z_offset = UInt32(b * z_strides[0] + d * z_strides[1])
-        var z_val = Scalar[kernel_dtype](z.ptr[z_offset]).cast[DType.float32]()
+        var z_val = Scalar[kernel_dtype](z.raw_load(z_offset)).cast[
+            DType.float32
+        ]()
         out_val *= z_val * sigmoid(
             z_val
         )  # z * sigmoid(z) = silu(z) but formulated differently
 
     # Store output
     var out_offset = UInt32(b * output_strides[0] + d * output_strides[1])
-    output.ptr[out_offset] = Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
+    output.raw_store(
+        out_offset, Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
+    )
 
 
 def selective_scan_update_cpu[
@@ -765,15 +797,15 @@ def selective_scan_update_cpu[
     delta_softplus: Int8,
     state_out: TileTensor[mut=True, kernel_dtype, ...],
     output: TileTensor[mut=True, kernel_dtype, ...],
-    state_in: TileTensor[kernel_dtype, ...],
-    x: TileTensor[kernel_dtype, ...],
-    dt: TileTensor[kernel_dtype, ...],
-    A: TileTensor[kernel_dtype, ...],
-    B: TileTensor[kernel_dtype, ...],
-    C: TileTensor[kernel_dtype, ...],
-    D: TileTensor[kernel_dtype, ...],
-    z: TileTensor[kernel_dtype, ...],
-    dt_bias: TileTensor[kernel_dtype, ...],
+    state_in: TileTensor[mut=False, kernel_dtype, ...],
+    x: TileTensor[mut=False, kernel_dtype, ...],
+    dt: TileTensor[mut=False, kernel_dtype, ...],
+    A: TileTensor[mut=False, kernel_dtype, ...],
+    B: TileTensor[mut=False, kernel_dtype, ...],
+    C: TileTensor[mut=False, kernel_dtype, ...],
+    D: TileTensor[mut=False, kernel_dtype, ...],
+    z: TileTensor[mut=False, kernel_dtype, ...],
+    dt_bias: TileTensor[mut=False, kernel_dtype, ...],
     state_out_strides: Strides3D,
     output_strides: Strides2D,
     state_in_strides: Strides3D,
@@ -785,6 +817,7 @@ def selective_scan_update_cpu[
     D_strides: Strides1D,
     z_strides: Strides2D,
     dt_bias_strides: Strides1D,
+    ctx: Optional[DeviceContext] = None,
 ):
     """CPU kernel for selective scan update (single step)."""
     var has_dt_bias = Int(dt_bias.dim[0]()) > 0
@@ -801,16 +834,16 @@ def selective_scan_update_cpu[
 
         # Load dt value
         var dt_offset = UInt32(b * dt_strides[0] + d * dt_strides[1])
-        var dt_val = Scalar[kernel_dtype](dt.ptr[dt_offset]).cast[
+        var dt_val = Scalar[kernel_dtype](dt.raw_load(dt_offset)).cast[
             DType.float32
         ]()
 
         # Apply dt_bias if present
         if has_dt_bias:
             var bias_offset = UInt32(d * dt_bias_strides[0])
-            var bias_val = Scalar[kernel_dtype](dt_bias.ptr[bias_offset]).cast[
-                DType.float32
-            ]()
+            var bias_val = Scalar[kernel_dtype](
+                dt_bias.raw_load(bias_offset)
+            ).cast[DType.float32]()
             dt_val += bias_val
 
         # Apply softplus if requested
@@ -819,7 +852,9 @@ def selective_scan_update_cpu[
 
         # Load x value
         var x_offset = UInt32(b * x_strides[0] + d * x_strides[1])
-        var x_val = Scalar[kernel_dtype](x.ptr[x_offset]).cast[DType.float32]()
+        var x_val = Scalar[kernel_dtype](x.raw_load(x_offset)).cast[
+            DType.float32
+        ]()
 
         # Load A values and pre-multiply by LOG2E
         var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
@@ -827,7 +862,7 @@ def selective_scan_update_cpu[
         comptime for n in range(DSTATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
-                Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]()
+                Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
                 * LOG2E
             )
 
@@ -841,7 +876,7 @@ def selective_scan_update_cpu[
             var B_offset = UInt32(
                 b * B_strides[0] + group_id * B_strides[1] + n * B_strides[2]
             )
-            B_vals[n] = Scalar[kernel_dtype](B.ptr[B_offset]).cast[
+            B_vals[n] = Scalar[kernel_dtype](B.raw_load(B_offset)).cast[
                 DType.float32
             ]()
 
@@ -858,7 +893,7 @@ def selective_scan_update_cpu[
                 + n * state_in_strides[2]
             )
             state_vals[n] = Scalar[kernel_dtype](
-                state_in.ptr[state_offset]
+                state_in.raw_load(state_offset)
             ).cast[DType.float32]()
 
         # Update state
@@ -871,8 +906,9 @@ def selective_scan_update_cpu[
                 + d * state_out_strides[1]
                 + n * state_out_strides[2]
             )
-            state_out.ptr[state_offset] = Scalar[kernel_dtype](
-                state_vals[n].cast[kernel_dtype]()
+            state_out.raw_store(
+                state_offset,
+                Scalar[kernel_dtype](state_vals[n].cast[kernel_dtype]()),
             )
 
         # Load C values using group_id
@@ -882,7 +918,7 @@ def selective_scan_update_cpu[
             var C_offset = UInt32(
                 b * C_strides[0] + group_id * C_strides[1] + n * C_strides[2]
             )
-            C_vals[n] = Scalar[kernel_dtype](C.ptr[C_offset]).cast[
+            C_vals[n] = Scalar[kernel_dtype](C.raw_load(C_offset)).cast[
                 DType.float32
             ]()
         # Compute output
@@ -891,7 +927,7 @@ def selective_scan_update_cpu[
         # Add skip connection
         if has_D:
             var D_offset = UInt32(d * D_strides[0])
-            var D_val = Scalar[kernel_dtype](D.ptr[D_offset]).cast[
+            var D_val = Scalar[kernel_dtype](D.raw_load(D_offset)).cast[
                 DType.float32
             ]()
             out_val += x_val * D_val
@@ -899,18 +935,18 @@ def selective_scan_update_cpu[
         # Apply gating
         if has_z:
             var z_offset = UInt32(b * z_strides[0] + d * z_strides[1])
-            var z_val = Scalar[kernel_dtype](z.ptr[z_offset]).cast[
+            var z_val = Scalar[kernel_dtype](z.raw_load(z_offset)).cast[
                 DType.float32
             ]()
             out_val *= z_val * sigmoid(z_val)
 
         # Store output
         var out_offset = UInt32(b * output_strides[0] + d * output_strides[1])
-        output.ptr[out_offset] = Scalar[kernel_dtype](
-            out_val.cast[kernel_dtype]()
+        output.raw_store(
+            out_offset, Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
         )
 
-    sync_parallelize[worker](batch * dim)
+    sync_parallelize[worker](batch * dim, ctx)
 
 
 def selective_scan_fwd_cpu[
@@ -925,14 +961,14 @@ def selective_scan_fwd_cpu[
     output: TileTensor[mut=True, kernel_dtype, ...],
     x: TileTensor[mut=True, kernel_dtype, ...],
     out_z: TileTensor[mut=True, kernel_dtype, ...],
-    u: TileTensor[kernel_dtype, ...],
-    delta: TileTensor[kernel_dtype, ...],
-    A: TileTensor[kernel_dtype, ...],
-    B: TileTensor[kernel_dtype, ...],
-    C: TileTensor[kernel_dtype, ...],
-    D: TileTensor[kernel_dtype, ...],
-    z: TileTensor[kernel_dtype, ...],
-    delta_bias: TileTensor[kernel_dtype, ...],
+    u: TileTensor[mut=False, kernel_dtype, ...],
+    delta: TileTensor[mut=False, kernel_dtype, ...],
+    A: TileTensor[mut=False, kernel_dtype, ...],
+    B: TileTensor[mut=False, kernel_dtype, ...],
+    C: TileTensor[mut=False, kernel_dtype, ...],
+    D: TileTensor[mut=False, kernel_dtype, ...],
+    z: TileTensor[mut=False, kernel_dtype, ...],
+    delta_bias: TileTensor[mut=False, kernel_dtype, ...],
     output_strides: Strides3D,
     x_strides: Strides4D,
     out_z_strides: Strides3D,
@@ -944,6 +980,7 @@ def selective_scan_fwd_cpu[
     D_strides: Strides1D,
     z_strides: Strides3D,
     delta_bias_strides: Strides1D,
+    ctx: Optional[DeviceContext] = None,
 ):
     """CPU kernel for selective scan forward pass."""
 
@@ -969,14 +1006,16 @@ def selective_scan_fwd_cpu[
         if has_delta_bias:
             var bias_offset = UInt32(d * delta_bias_strides[0])
             delta_bias_val = Scalar[kernel_dtype](
-                delta_bias.ptr[bias_offset]
+                delta_bias.raw_load(bias_offset)
             ).cast[DType.float32]()
 
         var has_D = Int(D.dim[0]()) > 0
         var D_val = Float32(0.0)
         if has_D:
             var D_offset = UInt32(d * D_strides[0])
-            D_val = Scalar[kernel_dtype](D.ptr[D_offset]).cast[DType.float32]()
+            D_val = Scalar[kernel_dtype](D.raw_load(D_offset)).cast[
+                DType.float32
+            ]()
 
         var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
         var has_z = Int(z.dim[0]()) > 0
@@ -985,7 +1024,7 @@ def selective_scan_fwd_cpu[
         comptime for n in range(DSTATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
-                Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]()
+                Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
                 * LOG2E
             )
 
@@ -1016,27 +1055,29 @@ def selective_scan_fwd_cpu[
             var z_vec = SIMD[kernel_dtype, TILE_SIZE](0.0)
 
             if u_strides[2] == 1:
-                u_vec = u.ptr.load[width=TILE_SIZE](curr_u_offset)
+                u_vec = u.raw_load[width=TILE_SIZE](curr_u_offset)
             else:
                 for i in range(TILE_SIZE):
-                    u_vec[i] = u.ptr[curr_u_offset + UInt32(i * u_strides[2])]
+                    u_vec[i] = u.raw_load(
+                        curr_u_offset + UInt32(i * u_strides[2])
+                    )
 
             if delta_strides[2] == 1:
-                delta_vec = delta.ptr.load[width=TILE_SIZE](curr_delta_offset)
+                delta_vec = delta.raw_load[width=TILE_SIZE](curr_delta_offset)
             else:
                 for i in range(TILE_SIZE):
-                    delta_vec[i] = delta.ptr[
+                    delta_vec[i] = delta.raw_load(
                         curr_delta_offset + UInt32(i * delta_strides[2])
-                    ]
+                    )
 
             if has_z:
                 if z_strides[2] == 1:
-                    z_vec = z.ptr.load[width=TILE_SIZE](curr_z_offset)
+                    z_vec = z.raw_load[width=TILE_SIZE](curr_z_offset)
                 else:
                     for i in range(TILE_SIZE):
-                        z_vec[i] = z.ptr[
+                        z_vec[i] = z.raw_load(
                             curr_z_offset + UInt32(i * z_strides[2])
-                        ]
+                        )
 
             for i in range(TILE_SIZE):
                 t_in_chunk += 1
@@ -1067,10 +1108,10 @@ def selective_scan_fwd_cpu[
                         + UInt32(n * C_strides[2])
                     )
 
-                    B_vals[n] = Scalar[kernel_dtype](B.ptr[b_off]).cast[
+                    B_vals[n] = Scalar[kernel_dtype](B.raw_load(b_off)).cast[
                         DType.float32
                     ]()
-                    C_vals[n] = Scalar[kernel_dtype](C.ptr[c_off]).cast[
+                    C_vals[n] = Scalar[kernel_dtype](C.raw_load(c_off)).cast[
                         DType.float32
                     ]()
 
@@ -1094,11 +1135,14 @@ def selective_scan_fwd_cpu[
                         var out_z_off = curr_out_z_offset + UInt32(
                             i * out_z_strides[2]
                         )
-                        out_z.ptr[out_z_off] = Scalar[kernel_dtype](
-                            out_z_val.cast[kernel_dtype]()
+                        out_z.raw_store(
+                            out_z_off,
+                            Scalar[kernel_dtype](
+                                out_z_val.cast[kernel_dtype]()
+                            ),
                         )
                 var out_off = curr_output_offset + UInt32(i * output_strides[2])
-                output.ptr[out_off] = Scalar[kernel_dtype](final_val)
+                output.raw_store(out_off, Scalar[kernel_dtype](final_val))
                 var is_chunk_boundary = t_in_chunk == chunk_size
                 var current_t = t + i
                 var is_last_step = current_t == seqlen - 1
@@ -1117,11 +1161,13 @@ def selective_scan_fwd_cpu[
                             + chunk_idx * x_strides[2]
                             + (n * 2 + 1) * x_strides[3]
                         )
-                        x.ptr[x_offset_a] = Scalar[kernel_dtype](
-                            cum_a[n].cast[kernel_dtype]()
+                        x.raw_store(
+                            x_offset_a,
+                            Scalar[kernel_dtype](cum_a[n].cast[kernel_dtype]()),
                         )
-                        x.ptr[x_offset_b] = Scalar[kernel_dtype](
-                            cum_b[n].cast[kernel_dtype]()
+                        x.raw_store(
+                            x_offset_b,
+                            Scalar[kernel_dtype](cum_b[n].cast[kernel_dtype]()),
                         )
                         cum_a[n] = 1.0
                         cum_b[n] = 0.0
@@ -1142,11 +1188,11 @@ def selective_scan_fwd_cpu[
 
         while t < seqlen:
             t_in_chunk += 1
-            var u_val = Scalar[kernel_dtype](u.ptr[curr_u_offset]).cast[
+            var u_val = Scalar[kernel_dtype](u.raw_load(curr_u_offset)).cast[
                 DType.float32
             ]()
             var delta_val = Scalar[kernel_dtype](
-                delta.ptr[curr_delta_offset]
+                delta.raw_load(curr_delta_offset)
             ).cast[DType.float32]()
             if has_delta_bias:
                 delta_val += delta_bias_val
@@ -1158,10 +1204,10 @@ def selective_scan_fwd_cpu[
 
             comptime for n in range(DSTATE):
                 B_vals[n] = Scalar[kernel_dtype](
-                    B.ptr[curr_B_offset + UInt32(n * B_strides[2])]
+                    B.raw_load(curr_B_offset + UInt32(n * B_strides[2]))
                 ).cast[DType.float32]()
                 C_vals[n] = Scalar[kernel_dtype](
-                    C.ptr[curr_C_offset + UInt32(n * C_strides[2])]
+                    C.raw_load(curr_C_offset + UInt32(n * C_strides[2]))
                 ).cast[DType.float32]()
             var a_t = exp2(A_vals * delta_val)
             var b_t = B_vals * delta_u
@@ -1171,17 +1217,19 @@ def selective_scan_fwd_cpu[
             cum_a = cum_a * a_t
             if has_D:
                 output_val += D_val * u_val
-            output.ptr[curr_output_offset] = Scalar[kernel_dtype](
-                output_val.cast[kernel_dtype]()
+            output.raw_store(
+                curr_output_offset,
+                Scalar[kernel_dtype](output_val.cast[kernel_dtype]()),
             )
             if has_z:
-                var z_val = Scalar[kernel_dtype](z.ptr[curr_z_offset]).cast[
-                    DType.float32
-                ]()
+                var z_val = Scalar[kernel_dtype](
+                    z.raw_load(curr_z_offset)
+                ).cast[DType.float32]()
                 var out_z_val = output_val * silu(z_val)
                 if has_out_z:
-                    out_z.ptr[curr_out_z_offset] = Scalar[kernel_dtype](
-                        out_z_val.cast[kernel_dtype]()
+                    out_z.raw_store(
+                        curr_out_z_offset,
+                        Scalar[kernel_dtype](out_z_val.cast[kernel_dtype]()),
                     )
 
             curr_u_offset += UInt32(u_strides[2])
@@ -1208,11 +1256,13 @@ def selective_scan_fwd_cpu[
                         + chunk_idx * x_strides[2]
                         + (n * 2 + 1) * x_strides[3]
                     )
-                    x.ptr[x_offset_a] = Scalar[kernel_dtype](
-                        cum_a[n].cast[kernel_dtype]()
+                    x.raw_store(
+                        x_offset_a,
+                        Scalar[kernel_dtype](cum_a[n].cast[kernel_dtype]()),
                     )
-                    x.ptr[x_offset_b] = Scalar[kernel_dtype](
-                        cum_b[n].cast[kernel_dtype]()
+                    x.raw_store(
+                        x_offset_b,
+                        Scalar[kernel_dtype](cum_b[n].cast[kernel_dtype]()),
                     )
                     cum_a[n] = 1.0
                     cum_b[n] = 0.0
@@ -1221,7 +1271,7 @@ def selective_scan_fwd_cpu[
                     t_in_chunk = 0
             t += 1
 
-    sync_parallelize[worker](batch * dim)
+    sync_parallelize[worker](batch * dim, ctx)
 
 
 def selective_scan_fwd_cpu_minimal[
@@ -1235,11 +1285,11 @@ def selective_scan_fwd_cpu_minimal[
     delta_softplus: Int8,
     output: TileTensor[mut=True, kernel_dtype, ...],
     x: TileTensor[mut=True, kernel_dtype, ...],
-    u: TileTensor[kernel_dtype, ...],
-    delta: TileTensor[kernel_dtype, ...],
-    A: TileTensor[kernel_dtype, ...],
-    B: TileTensor[kernel_dtype, ...],
-    C: TileTensor[kernel_dtype, ...],
+    u: TileTensor[mut=False, kernel_dtype, ...],
+    delta: TileTensor[mut=False, kernel_dtype, ...],
+    A: TileTensor[mut=False, kernel_dtype, ...],
+    B: TileTensor[mut=False, kernel_dtype, ...],
+    C: TileTensor[mut=False, kernel_dtype, ...],
     output_strides: Strides3D,
     x_strides: Strides4D,
     u_strides: Strides3D,
@@ -1247,6 +1297,7 @@ def selective_scan_fwd_cpu_minimal[
     A_strides: Strides2D,
     B_strides: Strides4D,
     C_strides: Strides4D,
+    ctx: Optional[DeviceContext] = None,
 ):
     """Minimal CPU kernel for selective scan forward - no D, z, or delta_bias.
     """
@@ -1270,7 +1321,7 @@ def selective_scan_fwd_cpu_minimal[
         comptime for n in range(DSTATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
-                Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]()
+                Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
                 * LOG2E
             )
 
@@ -1291,11 +1342,11 @@ def selective_scan_fwd_cpu_minimal[
         for t in range(seqlen):
             t_in_chunk += 1
 
-            var u_val = Scalar[kernel_dtype](u.ptr[curr_u_offset]).cast[
+            var u_val = Scalar[kernel_dtype](u.raw_load(curr_u_offset)).cast[
                 DType.float32
             ]()
             var delta_val = Scalar[kernel_dtype](
-                delta.ptr[curr_delta_offset]
+                delta.raw_load(curr_delta_offset)
             ).cast[DType.float32]()
             if delta_softplus_bool:
                 delta_val = softplus(delta_val)
@@ -1306,10 +1357,10 @@ def selective_scan_fwd_cpu_minimal[
 
             comptime for n in range(DSTATE):
                 B_vals[n] = Scalar[kernel_dtype](
-                    B.ptr[curr_B_offset + UInt32(n * B_strides[2])]
+                    B.raw_load(curr_B_offset + UInt32(n * B_strides[2]))
                 ).cast[DType.float32]()
                 C_vals[n] = Scalar[kernel_dtype](
-                    C.ptr[curr_C_offset + UInt32(n * C_strides[2])]
+                    C.raw_load(curr_C_offset + UInt32(n * C_strides[2]))
                 ).cast[DType.float32]()
 
             var a_t = exp2(A_vals * delta_val)
@@ -1319,8 +1370,9 @@ def selective_scan_fwd_cpu_minimal[
             cum_b = cum_b * a_t + b_t
             cum_a = cum_a * a_t
             # No D skip connection
-            output.ptr[curr_output_offset] = Scalar[kernel_dtype](
-                output_val.cast[kernel_dtype]()
+            output.raw_store(
+                curr_output_offset,
+                Scalar[kernel_dtype](output_val.cast[kernel_dtype]()),
             )
             # No z gating
 
@@ -1346,11 +1398,13 @@ def selective_scan_fwd_cpu_minimal[
                         + chunk_idx * x_strides[2]
                         + (n * 2 + 1) * x_strides[3]
                     )
-                    x.ptr[x_offset_a] = Scalar[kernel_dtype](
-                        cum_a[n].cast[kernel_dtype]()
+                    x.raw_store(
+                        x_offset_a,
+                        Scalar[kernel_dtype](cum_a[n].cast[kernel_dtype]()),
                     )
-                    x.ptr[x_offset_b] = Scalar[kernel_dtype](
-                        cum_b[n].cast[kernel_dtype]()
+                    x.raw_store(
+                        x_offset_b,
+                        Scalar[kernel_dtype](cum_b[n].cast[kernel_dtype]()),
                     )
                     cum_a[n] = 1.0
                     cum_b[n] = 0.0
@@ -1358,7 +1412,7 @@ def selective_scan_fwd_cpu_minimal[
                     chunk_idx += 1
                     t_in_chunk = 0
 
-    sync_parallelize[worker](batch * dim)
+    sync_parallelize[worker](batch * dim, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1368,27 +1422,27 @@ def selective_scan_fwd_cpu_minimal[
 # It performs: norm(residual + selective_scan(input))
 # This is a fused operation for better performance in Mamba blocks.
 # ===----------------------------------------------------------------------=== #
-# TODO(MSTDL-2472): Migrate ssd_combined and mamba_split_conv1d_scan_combined
-# functions below from LayoutTensor to TileTensor. These are called only from
-# test files (no ops wrapper), so they can use TileTensor autoparams directly.
+# The ssd_combined and mamba_split_conv1d_scan_combined functions below use
+# TileTensor params (TensorLayout-parameterized). They are called only from test
+# files (no ops wrapper), so callers construct TileTensors directly.
 
 
 def ssd_combined_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
-    output_layout: Layout,
-    x_layout: Layout,
-    out_z_layout: Layout,
-    residual_layout: Layout,
-    u_layout: Layout,
-    delta_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    delta_bias_layout: Layout,
-    gamma_layout: Layout,
+    output_LT: TensorLayout,
+    x_LT: TensorLayout,
+    out_z_LT: TensorLayout,
+    residual_LT: TensorLayout,
+    u_LT: TensorLayout,
+    delta_LT: TensorLayout,
+    A_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
+    D_LT: TensorLayout,
+    z_LT: TensorLayout,
+    delta_bias_LT: TensorLayout,
+    gamma_LT: TensorLayout,
 ](
     total_batch_dim: Int,
     batch: Int,
@@ -1396,19 +1450,19 @@ def ssd_combined_gpu[
     seqlen: Int,
     group_size: Int,
     delta_softplus: Int8,
-    output: LayoutTensor[kernel_dtype, output_layout, MutAnyOrigin],
-    x: LayoutTensor[kernel_dtype, x_layout, MutAnyOrigin],
-    out_z: LayoutTensor[kernel_dtype, out_z_layout, MutAnyOrigin],
-    residual: LayoutTensor[kernel_dtype, residual_layout, MutAnyOrigin],
-    u: LayoutTensor[kernel_dtype, u_layout, MutAnyOrigin],
-    delta: LayoutTensor[kernel_dtype, delta_layout, MutAnyOrigin],
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],
-    B: LayoutTensor[kernel_dtype, B_layout, MutAnyOrigin],
-    C: LayoutTensor[kernel_dtype, C_layout, MutAnyOrigin],
-    D: LayoutTensor[kernel_dtype, D_layout, MutAnyOrigin],
-    z: LayoutTensor[kernel_dtype, z_layout, MutAnyOrigin],
-    delta_bias: LayoutTensor[kernel_dtype, delta_bias_layout, MutAnyOrigin],
-    gamma: LayoutTensor[kernel_dtype, gamma_layout, MutAnyOrigin],
+    output: TileTensor[kernel_dtype, output_LT, MutAnyOrigin],
+    x: TileTensor[kernel_dtype, x_LT, MutAnyOrigin],
+    out_z: TileTensor[kernel_dtype, out_z_LT, MutAnyOrigin],
+    residual: TileTensor[kernel_dtype, residual_LT, MutAnyOrigin],
+    u: TileTensor[kernel_dtype, u_LT, MutAnyOrigin],
+    delta: TileTensor[kernel_dtype, delta_LT, MutAnyOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutAnyOrigin],
+    B: TileTensor[kernel_dtype, B_LT, MutAnyOrigin],
+    C: TileTensor[kernel_dtype, C_LT, MutAnyOrigin],
+    D: TileTensor[kernel_dtype, D_LT, MutAnyOrigin],
+    z: TileTensor[kernel_dtype, z_LT, MutAnyOrigin],
+    delta_bias: TileTensor[kernel_dtype, delta_bias_LT, MutAnyOrigin],
+    gamma: TileTensor[kernel_dtype, gamma_LT, MutAnyOrigin],
     epsilon: Scalar[kernel_dtype],
     weight_offset: Scalar[kernel_dtype],
 ):
@@ -1793,40 +1847,41 @@ def ssd_combined_gpu[
 def ssd_combined_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
-    output_layout: Layout,
-    x_layout: Layout,
-    out_z_layout: Layout,
-    residual_layout: Layout,
-    u_layout: Layout,
-    delta_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    delta_bias_layout: Layout,
-    gamma_layout: Layout,
+    output_LT: TensorLayout,
+    x_LT: TensorLayout,
+    out_z_LT: TensorLayout,
+    residual_LT: TensorLayout,
+    u_LT: TensorLayout,
+    delta_LT: TensorLayout,
+    A_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
+    D_LT: TensorLayout,
+    z_LT: TensorLayout,
+    delta_bias_LT: TensorLayout,
+    gamma_LT: TensorLayout,
 ](
     batch: Int,
     dim: Int,
     seqlen: Int,
     group_size: Int,
     delta_softplus: Int8,
-    output: LayoutTensor[kernel_dtype, output_layout, MutAnyOrigin],
-    x: LayoutTensor[kernel_dtype, x_layout, MutAnyOrigin],
-    out_z: LayoutTensor[kernel_dtype, out_z_layout, MutAnyOrigin],
-    residual: LayoutTensor[kernel_dtype, residual_layout, MutAnyOrigin],
-    u: LayoutTensor[kernel_dtype, u_layout, MutAnyOrigin],
-    delta: LayoutTensor[kernel_dtype, delta_layout, MutAnyOrigin],
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],
-    B: LayoutTensor[kernel_dtype, B_layout, MutAnyOrigin],
-    C: LayoutTensor[kernel_dtype, C_layout, MutAnyOrigin],
-    D: LayoutTensor[kernel_dtype, D_layout, MutAnyOrigin],
-    z: LayoutTensor[kernel_dtype, z_layout, MutAnyOrigin],
-    delta_bias: LayoutTensor[kernel_dtype, delta_bias_layout, MutAnyOrigin],
-    gamma: LayoutTensor[kernel_dtype, gamma_layout, MutAnyOrigin],
+    output: TileTensor[kernel_dtype, output_LT, MutAnyOrigin],
+    x: TileTensor[kernel_dtype, x_LT, MutAnyOrigin],
+    out_z: TileTensor[kernel_dtype, out_z_LT, MutAnyOrigin],
+    residual: TileTensor[kernel_dtype, residual_LT, MutAnyOrigin],
+    u: TileTensor[kernel_dtype, u_LT, MutAnyOrigin],
+    delta: TileTensor[kernel_dtype, delta_LT, MutAnyOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutAnyOrigin],
+    B: TileTensor[kernel_dtype, B_LT, MutAnyOrigin],
+    C: TileTensor[kernel_dtype, C_LT, MutAnyOrigin],
+    D: TileTensor[kernel_dtype, D_LT, MutAnyOrigin],
+    z: TileTensor[kernel_dtype, z_LT, MutAnyOrigin],
+    delta_bias: TileTensor[kernel_dtype, delta_bias_LT, MutAnyOrigin],
+    gamma: TileTensor[kernel_dtype, gamma_LT, MutAnyOrigin],
     epsilon: Scalar[kernel_dtype],
     weight_offset: Scalar[kernel_dtype],
+    ctx: Optional[DeviceContext] = None,
 ):
     """CPU kernel for SSD combined operation."""
     # Compute row-major strides from dimensions
@@ -2186,7 +2241,7 @@ def ssd_combined_cpu[
                     t_in_chunk = 0
             t += 1
 
-    sync_parallelize[worker](batch * dim)
+    sync_parallelize[worker](batch * dim, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2205,22 +2260,22 @@ def ssd_combined_cpu[
 def mamba_split_conv1d_scan_combined_cpu[
     kernel_dtype: DType,
     DSTATE: Int,
-    zxbcdt_layout: Layout,
-    conv_weight_layout: Layout,
-    conv_bias_layout: Layout,
-    output_layout: Layout,
-    x_layout: Layout,
-    out_z_layout: Layout,
-    dt_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    delta_bias_layout: Layout,
-    rmsnorm_weight_layout: Layout,
-    outproj_weight_layout: Layout,
-    outproj_bias_layout: Layout,
+    zxbcdt_layout: TensorLayout,
+    conv_weight_layout: TensorLayout,
+    conv_bias_layout: TensorLayout,
+    output_layout: TensorLayout,
+    x_layout: TensorLayout,
+    out_z_layout: TensorLayout,
+    dt_layout: TensorLayout,
+    A_layout: TensorLayout,
+    B_layout: TensorLayout,
+    C_layout: TensorLayout,
+    D_layout: TensorLayout,
+    z_layout: TensorLayout,
+    delta_bias_layout: TensorLayout,
+    rmsnorm_weight_layout: TensorLayout,
+    outproj_weight_layout: TensorLayout,
+    outproj_bias_layout: TensorLayout,
 ](
     batch: Int,
     seqlen: Int,
@@ -2234,53 +2289,52 @@ def mamba_split_conv1d_scan_combined_cpu[
     norm_before_gate: Int8,
     has_rmsnorm: Int8,
     has_outproj: Int8,
-    zxbcdt: LayoutTensor[
+    zxbcdt: TileTensor[
         kernel_dtype, zxbcdt_layout, MutAnyOrigin
     ],  # (batch, seqlen, 2*dim + 2*ngroups*dstate + nheads)
-    conv_weight: LayoutTensor[
+    conv_weight: TileTensor[
         kernel_dtype, conv_weight_layout, MutAnyOrigin
     ],  # (dim + 2*ngroups*dstate, width)
-    conv_bias: LayoutTensor[
+    conv_bias: TileTensor[
         kernel_dtype, conv_bias_layout, MutAnyOrigin
     ],  # (dim + 2*ngroups*dstate,)
-    dt_bias: LayoutTensor[
+    dt_bias: TileTensor[
         kernel_dtype, delta_bias_layout, MutAnyOrigin
     ],  # (nheads,)
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],  # (nheads,)
-    D: LayoutTensor[
+    A: TileTensor[kernel_dtype, A_layout, MutAnyOrigin],  # (nheads,)
+    D: TileTensor[
         kernel_dtype, D_layout, MutAnyOrigin
     ],  # (nheads, headdim) or (nheads,)
-    x: LayoutTensor[
+    x: TileTensor[
         kernel_dtype, x_layout, MutAnyOrigin
     ],  # (batch, dim, num_chunks, 2*dstate)
-    out_z: LayoutTensor[
+    out_z: TileTensor[
         kernel_dtype, out_z_layout, MutAnyOrigin
     ],  # (batch, dim, seqlen)
-    dt: LayoutTensor[
+    dt: TileTensor[
         kernel_dtype, dt_layout, MutAnyOrigin
     ],  # (batch, nheads, seqlen)
-    B: LayoutTensor[
+    B: TileTensor[
         kernel_dtype, B_layout, MutAnyOrigin
     ],  # (batch, ngroups, dstate, seqlen)
-    C: LayoutTensor[
+    C: TileTensor[
         kernel_dtype, C_layout, MutAnyOrigin
     ],  # (batch, ngroups, dstate, seqlen)
-    z: LayoutTensor[
-        kernel_dtype, z_layout, MutAnyOrigin
-    ],  # (batch, dim, seqlen)
-    rmsnorm_weight: LayoutTensor[
+    z: TileTensor[kernel_dtype, z_layout, MutAnyOrigin],  # (batch, dim, seqlen)
+    rmsnorm_weight: TileTensor[
         kernel_dtype, rmsnorm_weight_layout, MutAnyOrigin
     ],  # (dim,)
-    outproj_weight: LayoutTensor[
+    outproj_weight: TileTensor[
         kernel_dtype, outproj_weight_layout, MutAnyOrigin
     ],  # (out_dim, dim)
-    outproj_bias: LayoutTensor[
+    outproj_bias: TileTensor[
         kernel_dtype, outproj_bias_layout, MutAnyOrigin
     ],  # (out_dim,)
-    output: LayoutTensor[
+    output: TileTensor[
         kernel_dtype, output_layout, MutAnyOrigin
     ],  # (batch, seqlen, dim) or (batch, seqlen, out_dim)
     epsilon: Scalar[kernel_dtype],
+    ctx: Optional[DeviceContext] = None,
 ):
     """CPU kernel for mamba_split_conv1d_scan_combined operation.
 
@@ -2308,7 +2362,7 @@ def mamba_split_conv1d_scan_combined_cpu[
     # conv_bias: (channels,)
     var conv_bias_stride = UInt32(1)
     # output: (batch, seqlen, out_dim)
-    var output_b_stride = UInt32(seqlen * out_dim)
+    var output_b_stride = UInt32(seqlen * Int(out_dim))
     var output_s_stride = UInt32(out_dim)
     var output_c_stride = UInt32(1)
     # x: (batch, dim, n_chunks, 2*dstate)
@@ -2704,28 +2758,28 @@ def mamba_split_conv1d_scan_combined_cpu[
                     chunk_idx += 1
                     t_in_chunk = 0
 
-    sync_parallelize[worker](batch * dim)
+    sync_parallelize[worker](batch * dim, ctx)
 
 
 def mamba_split_conv1d_scan_combined_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
-    zxbcdt_layout: Layout,
-    conv_weight_layout: Layout,
-    conv_bias_layout: Layout,
-    output_layout: Layout,
-    x_layout: Layout,
-    out_z_layout: Layout,
-    dt_layout: Layout,
-    A_layout: Layout,
-    B_layout: Layout,
-    C_layout: Layout,
-    D_layout: Layout,
-    z_layout: Layout,
-    delta_bias_layout: Layout,
-    rmsnorm_weight_layout: Layout,
-    outproj_weight_layout: Layout,
-    outproj_bias_layout: Layout,
+    zxbcdt_layout: TensorLayout,
+    conv_weight_layout: TensorLayout,
+    conv_bias_layout: TensorLayout,
+    output_layout: TensorLayout,
+    x_layout: TensorLayout,
+    out_z_layout: TensorLayout,
+    dt_layout: TensorLayout,
+    A_layout: TensorLayout,
+    B_layout: TensorLayout,
+    C_layout: TensorLayout,
+    D_layout: TensorLayout,
+    z_layout: TensorLayout,
+    delta_bias_layout: TensorLayout,
+    rmsnorm_weight_layout: TensorLayout,
+    outproj_weight_layout: TensorLayout,
+    outproj_bias_layout: TensorLayout,
 ](
     total_batch_dim: Int,
     batch: Int,
@@ -2740,26 +2794,26 @@ def mamba_split_conv1d_scan_combined_gpu[
     norm_before_gate: Int8,
     has_rmsnorm: Int8,
     has_outproj: Int8,
-    zxbcdt: LayoutTensor[kernel_dtype, zxbcdt_layout, MutAnyOrigin],
-    conv_weight: LayoutTensor[kernel_dtype, conv_weight_layout, MutAnyOrigin],
-    conv_bias: LayoutTensor[kernel_dtype, conv_bias_layout, MutAnyOrigin],
-    dt_bias: LayoutTensor[kernel_dtype, delta_bias_layout, MutAnyOrigin],
-    A: LayoutTensor[kernel_dtype, A_layout, MutAnyOrigin],
-    D: LayoutTensor[kernel_dtype, D_layout, MutAnyOrigin],
-    x: LayoutTensor[kernel_dtype, x_layout, MutAnyOrigin],
-    out_z: LayoutTensor[kernel_dtype, out_z_layout, MutAnyOrigin],
-    dt: LayoutTensor[kernel_dtype, dt_layout, MutAnyOrigin],
-    B: LayoutTensor[kernel_dtype, B_layout, MutAnyOrigin],
-    C: LayoutTensor[kernel_dtype, C_layout, MutAnyOrigin],
-    z: LayoutTensor[kernel_dtype, z_layout, MutAnyOrigin],
-    rmsnorm_weight: LayoutTensor[
+    zxbcdt: TileTensor[kernel_dtype, zxbcdt_layout, MutAnyOrigin],
+    conv_weight: TileTensor[kernel_dtype, conv_weight_layout, MutAnyOrigin],
+    conv_bias: TileTensor[kernel_dtype, conv_bias_layout, MutAnyOrigin],
+    dt_bias: TileTensor[kernel_dtype, delta_bias_layout, MutAnyOrigin],
+    A: TileTensor[kernel_dtype, A_layout, MutAnyOrigin],
+    D: TileTensor[kernel_dtype, D_layout, MutAnyOrigin],
+    x: TileTensor[kernel_dtype, x_layout, MutAnyOrigin],
+    out_z: TileTensor[kernel_dtype, out_z_layout, MutAnyOrigin],
+    dt: TileTensor[kernel_dtype, dt_layout, MutAnyOrigin],
+    B: TileTensor[kernel_dtype, B_layout, MutAnyOrigin],
+    C: TileTensor[kernel_dtype, C_layout, MutAnyOrigin],
+    z: TileTensor[kernel_dtype, z_layout, MutAnyOrigin],
+    rmsnorm_weight: TileTensor[
         kernel_dtype, rmsnorm_weight_layout, MutAnyOrigin
     ],
-    outproj_weight: LayoutTensor[
+    outproj_weight: TileTensor[
         kernel_dtype, outproj_weight_layout, MutAnyOrigin
     ],
-    outproj_bias: LayoutTensor[kernel_dtype, outproj_bias_layout, MutAnyOrigin],
-    output: LayoutTensor[kernel_dtype, output_layout, MutAnyOrigin],
+    outproj_bias: TileTensor[kernel_dtype, outproj_bias_layout, MutAnyOrigin],
+    output: TileTensor[kernel_dtype, output_layout, MutAnyOrigin],
     epsilon: Scalar[kernel_dtype],
 ):
     """GPU kernel for mamba_split_conv1d_scan_combined operation."""
@@ -2777,7 +2831,7 @@ def mamba_split_conv1d_scan_combined_gpu[
     # conv_bias: (channels,)
     var conv_bias_stride = UInt32(1)
     # output: (batch, seqlen, out_dim)
-    var output_b_stride = UInt32(seqlen * out_dim)
+    var output_b_stride = UInt32(seqlen * Int(out_dim))
     var output_s_stride = UInt32(out_dim)
     var output_c_stride = UInt32(1)
     # x: (batch, dim, n_chunks, 2*dstate)

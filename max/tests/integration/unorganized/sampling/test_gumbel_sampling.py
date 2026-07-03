@@ -58,6 +58,10 @@ def gumbel_sampler(session: InferenceSession) -> Model:
         top_k_input = graph.inputs[3].tensor
         max_k_input = graph.inputs[4].tensor
         temperature_input = graph.inputs[5].tensor
+        min_p_zeros = ops.broadcast_to(
+            ops.constant(0.0, dtype=DType.float32, device=device_ref),
+            logits_input.shape[:1],
+        )
 
         # We need to manually create the custom op since topk_fused_sampling
         # doesn't accept seed as tensor
@@ -71,6 +75,7 @@ def gumbel_sampler(session: InferenceSession) -> Model:
                 top_p_input,
                 # min_top_p must be a scalar; set to 1.0 to match top_p default
                 ops.constant(1.0, dtype=DType.float32, device=DeviceRef.CPU()),
+                min_p_zeros,
                 seed_input,
                 logits_input,
             ],

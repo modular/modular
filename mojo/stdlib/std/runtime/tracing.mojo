@@ -28,32 +28,12 @@ from std.gpu.host._tracing import _is_enabled as _gpu_is_enabled
 from std.gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
 from std.gpu.host._tracing import _mark as _mark_gpu
 from std.gpu.host._tracing import _start_range as _start_gpu_range
-from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils import IndexList, Variant
 from std.os import abort
 
-comptime log = logger.Logger[logger.Level.INFO](fd=sys.stderr, prefix="[OP] ")
+comptime log = logger.Logger[logger.Level.INFO](fd=stderr, prefix="[OP] ")
 """Logger instance for operation tracing with INFO level and [OP] prefix."""
-
-
-def get_safe_task_id(ctx: DeviceContextPtr) -> OptionalReg[Int]:
-    """Safely extract task_id from DeviceContextPtr, returning None if null/invalid.
-
-    Args:
-        ctx: The device context pointer to extract the task ID from.
-
-    Returns:
-        An OptionalReg containing the task ID if valid, None otherwise.
-    """
-    # Check if the underlying handle is null
-    if not ctx._handle:
-        return None
-    # If not null, still need try/except as these operations can fail for other reasons
-    try:
-        return OptionalReg(Int(ctx.get_device_context().id()))
-    except:
-        return None
 
 
 def get_safe_task_id(ctx: DeviceContext) -> OptionalReg[Int]:
@@ -65,7 +45,26 @@ def get_safe_task_id(ctx: DeviceContext) -> OptionalReg[Int]:
     Returns:
         An OptionalReg containing the task ID if valid, None otherwise.
     """
-    return get_safe_task_id(DeviceContextPtr(ctx))
+    try:
+        return OptionalReg(Int(ctx.id()))
+    except:
+        return None
+
+
+def get_safe_task_id(ctx: Optional[DeviceContext]) -> OptionalReg[Int]:
+    """Safely extract task_id from an optional `DeviceContext`, returning
+    `None` if the context is absent or invalid.
+
+    Args:
+        ctx: The optional device context to extract the task ID from.
+
+    Returns:
+        An `OptionalReg` containing the task ID if `ctx` is set and the
+        underlying handle is valid, `None` otherwise.
+    """
+    if not ctx:
+        return None
+    return get_safe_task_id(ctx.value())
 
 
 def _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
@@ -581,7 +580,7 @@ struct Trace[
             color_val = UInt32(Int(self.color.value())) if self.color else 0
             self._tracy_ctx = external_call[
                 "KGEN_CompilerRT_TracyZoneBegin", UInt64
-            ](name_str.unsafe_ptr(), len(name_str), color_val)
+            ](name_str.unsafe_ptr(), name_str.byte_length(), color_val)
             return
 
         comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():
@@ -619,7 +618,7 @@ struct Trace[
         # names, `self._name_value` must be `StaticString` when
         # `is_profiling_enabled()` is set.
         var name_str_ptr = self._name_value[StaticString].unsafe_ptr()
-        var name_str_len = len(self._name_value[StaticString])
+        var name_str_len = self._name_value[StaticString].byte_length()
 
         if self.detail:
             # 1. If there is a detail string we must heap allocate the string
@@ -634,7 +633,7 @@ struct Trace[
                 name_str_ptr,
                 name_str_len,
                 self.detail.unsafe_ptr(),
-                len(self.detail),
+                self.detail.byte_length(),
                 self.parent_id,
             )
         elif self.int_payload:

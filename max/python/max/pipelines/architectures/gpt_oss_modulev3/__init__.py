@@ -10,8 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""GPT-OSS mixture-of-experts architecture for text generation."""
 
 from .arch import gpt_oss_modulev3_arch
+from .model import GptOssInputs, GptOssModel
+from .model_config import GptOssConfig
 
-__all__ = ["gpt_oss_modulev3_arch"]
+__all__ = [
+    "GptOssConfig",
+    "GptOssInputs",
+    "GptOssModel",
+    "gpt_oss_modulev3_arch",
+]

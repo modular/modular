@@ -116,9 +116,9 @@ addition of each element in two vectors. Here's how it works in our
 
     ```mojo
     def vector_addition(
-        lhs_tensor: LayoutTensor[mut=True, float_dtype, layout],
-        rhs_tensor: LayoutTensor[mut=True, float_dtype, layout],
-        out_tensor: LayoutTensor[mut=True, float_dtype, layout],
+        lhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+        rhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+        out_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
     ):
         tid = thread_idx.x
         out_tensor[tid] = lhs_tensor[tid] + rhs_tensor[tid]
@@ -181,7 +181,7 @@ addition of each element in two vectors. Here's how it works in our
 
     ```mojo
     with out_buffer.map_to_host() as host_buffer:
-        host_tensor = LayoutTensor[float_dtype, layout](host_buffer)
+        host_tensor = TileTensor(host_buffer, layout)
         print("Resulting vector:", host_tensor)
     ```
 
@@ -213,8 +213,8 @@ And here is the per-thread function to perform this on the GPU:
 
 ```mojo
 def color_to_grayscale(
-    rgb_tensor: LayoutTensor[mut=True, int_dtype, rgb_layout],
-    gray_tensor: LayoutTensor[mut=True, int_dtype, gray_layout],
+    rgb_tensor: TileTensor[int_dtype, type_of(rgb_layout), MutAnyOrigin],
+    gray_tensor: TileTensor[int_dtype, type_of(gray_layout), MutAnyOrigin],
 ):
     row = global_idx.y
     col = global_idx.x
@@ -264,16 +264,16 @@ The GPU function for this looks like the following:
 
 ```mojo
 def naive_matrix_multiplication(
-    m: LayoutTensor[mut=True, float_dtype, m_layout],
-    n: LayoutTensor[mut=True, float_dtype, n_layout],
-    p: LayoutTensor[mut=True, float_dtype, p_layout],
+    m: TileTensor[float_dtype, type_of(m_layout), MutAnyOrigin],
+    n: TileTensor[float_dtype, type_of(n_layout), MutAnyOrigin],
+    p: TileTensor[float_dtype, type_of(p_layout), MutAnyOrigin],
 ):
     row = global_idx.y
     col = global_idx.x
 
-    m_dim = p.dim(0)
-    n_dim = p.dim(1)
-    k_dim = m.dim(1)
+    m_dim = Int(p.dim[0]())
+    n_dim = Int(p.dim[1]())
+    k_dim = Int(m.dim[1]())
 
     if row < m_dim and col < n_dim:
         for j_index in range(k_dim):
@@ -306,7 +306,7 @@ The per-thread GPU function for this is as follows:
 
 ```mojo
 def mandelbrot(
-    tensor: LayoutTensor[mut=True, int_dtype, layout],
+    tensor: TileTensor[int_dtype, type_of(layout), MutAnyOrigin],
 ):
     row = global_idx.y
     col = global_idx.x

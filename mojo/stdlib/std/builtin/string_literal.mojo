@@ -19,12 +19,11 @@ from std.collections.string.format import _FormatUtils
 from std.collections.string.string_slice import (
     CodepointSliceIter,
     CodepointsIter,
+    GraphemeSliceIter,
     StaticString,
 )
 from std.os import PathLike
 from std.ffi import c_char, CStringSlice
-
-from std.python import ConvertibleToPython, PythonObject
 
 # ===-----------------------------------------------------------------------===#
 # StringLiteral
@@ -34,13 +33,11 @@ from std.python import ConvertibleToPython, PythonObject
 @__nonmaterializable(String)
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
-    ConvertibleToPython,
     Defaultable,
     FloatableRaising,
     ImplicitlyCopyable,
     IntableRaising,
     PathLike,
-    Sized,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -67,7 +64,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     def __add__(
         self, rhs: StringLiteral
     ) -> StringLiteral[
@@ -176,29 +173,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the Python runtime is not initialized or conversion fails.
-        """
-        return PythonObject(self)
-
-    @always_inline("nodebug")
-    def __len__(self) -> Int:
-        """Get the string length.
-
-        Returns:
-            The length of this value.
-        """
-        # TODO(MSTDL-160):
-        #   Properly count Unicode codepoints instead of returning this length
-        #   in bytes.
-        return self.byte_length()
-
     @always_inline("nodebug")
     def __bool__(self) -> Bool:
         """Convert the string to a bool value.
@@ -206,7 +180,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             True if the string is not empty.
         """
-        return len(self) != 0
+        return self.byte_length() != 0
 
     @always_inline
     def __int__(self) raises -> Int:
@@ -240,23 +214,33 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return String(self)
 
-    @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
-    def __iter__(self) -> CodepointSliceIter[StaticConstantOrigin]:
-        """Return an iterator over the string literal.
+    def __iter__(self) -> GraphemeSliceIter[StaticConstantOrigin]:
+        """Iterate over the grapheme clusters in the string literal.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen, such as a base letter together with
+        any combining marks. See `graphemes()` for the precise definition.
+
+        To iterate by Unicode codepoint or by byte instead, use
+        `codepoints()`/`codepoint_slices()` or `as_bytes()`.
 
         Returns:
-            An iterator over the string.
+            An iterator yielding each grapheme cluster as a `StringSlice`.
         """
-        return self.codepoint_slices()
+        return self.graphemes()
 
-    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
-    def __reversed__(self) -> CodepointSliceIter[StaticConstantOrigin, False]:
-        """Iterate backwards over the string, returning immutable references.
+    def __reversed__(self) -> GraphemeSliceIter[StaticConstantOrigin, False]:
+        """Iterate backwards over the grapheme clusters in the string literal.
+
+        See `graphemes()` for the definition of a grapheme cluster. Reverse
+        iteration is more expensive per element than forward iteration; see
+        `graphemes_reversed()` for details.
 
         Returns:
-            A reversed iterator over the string.
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
         """
-        return self.codepoint_slices_reversed()
+        return self.graphemes_reversed()
 
     def __getitem__[I: Indexer, //](self, idx: I) -> StaticString:
         """Gets the character at the specified position.
@@ -270,24 +254,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A StringSlice view containing the character at the specified position.
         """
-        return StaticString(ptr=self.unsafe_ptr() + idx, length=1)
-
-    # TODO(MSTDL-1327): Reduce pain when string literals can't be
-    # nonmaterializable by making them merge into StaticString.  They should
-    # eventually merge into String through nonmaterialization.
-    @always_inline("nodebug")
-    def __merge_with__[
-        other_type: type_of(StringLiteral[_]),
-    ](self) -> StaticString:
-        """Returns a StaticString after merging with another string literal.
-
-        Parameters:
-            other_type: The type of the string literal to merge with.
-
-        Returns:
-            A StaticString after merging with the specified `other_type`.
-        """
-        return self
+        return StaticString(
+            unsafe_from_utf8=Span(ptr=self.unsafe_ptr() + idx, length=1)
+        )
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -303,7 +272,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Notes:
             This does not include the trailing null terminator in the count.
         """
-        return Int(mlir_value=__mlir_op.`pop.string.size`(self.value))
+        return Int(SIMDSize(mlir_value=__mlir_op.`pop.string.size`(self.value)))
 
     @always_inline
     def count_codepoints(self) -> Int:
@@ -321,7 +290,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             Query the length of a string, in bytes and Unicode codepoints:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("ನಮಸ್ಕಾರ")
             assert_equal(s.count_codepoints(), 7)
@@ -332,7 +301,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             Unicode codepoint length:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("abc")
             assert_equal(s.count_codepoints(), 3)
@@ -343,7 +312,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             the length in Unicode codepoints, not grapheme clusters:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("á")
             assert_equal(s.count_codepoints(), 2)
@@ -398,8 +367,10 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         #   Enforce UTF-8 encoding in StringLiteral so this is actually
         #   guaranteed to be valid.
         return StaticString(
-            ptr=self.unsafe_ptr(),
-            length=self.byte_length(),
+            unsafe_from_utf8=Span(
+                ptr=self.unsafe_ptr(),
+                length=self.byte_length(),
+            )
         )
 
     @always_inline("nodebug")
@@ -596,11 +567,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         Args:
             prefix: The prefix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start byte offset from which to check.
+            end: The end byte offset from which to check.
 
         Returns:
-            True if the `self[start:end]` is prefixed by the input prefix.
+            True if the `self[byte=start:end]` is prefixed by the input prefix.
         """
         return StringSlice(self).startswith(prefix, start, end)
 
@@ -612,11 +583,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         Args:
             suffix: The suffix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start byte offset from which to check.
+            end: The end byte offset from which to check.
 
         Returns:
-            True if the `self[start:end]` is suffixed by the input suffix.
+            True if the `self[byte=start:end]` is suffixed by the input suffix.
         """
         return StringSlice(self).endswith(suffix, start, end)
 
@@ -751,6 +722,31 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return StringSlice(self).codepoints()
 
+    def graphemes(self) -> GraphemeSliceIter[StaticConstantOrigin]:
+        """Return an iterator over the grapheme clusters in this string.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen.
+
+        Returns:
+            An iterator yielding each grapheme cluster as a `StringSlice`.
+        """
+        return StringSlice(self).graphemes()
+
+    def graphemes_reversed(
+        self,
+    ) -> GraphemeSliceIter[StaticConstantOrigin, False]:
+        """Return an iterator over the grapheme clusters in this string,
+        yielding them in reverse order.
+
+        See `graphemes()` for the definition of a grapheme cluster.
+
+        Returns:
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
+        """
+        return StringSlice(self).graphemes_reversed()
+
     def format[*Ts: Writable](self, *args: *Ts) -> String:
         """Produce a formatted string using the current string as a template.
 
@@ -760,7 +756,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         representations of the `args` arguments.
 
         For more information, see the discussion in the
-        [`format` module](/mojo/std/collections/string/format/).
+        [`format` module](/docs/std/collections/string/format/).
 
         Parameters:
             Ts: The types of substitution values that implement `Writable`.

@@ -16,7 +16,7 @@ import time
 
 import python.runfiles
 from click.testing import CliRunner
-from max.entrypoints import pipelines
+from max._entrypoints import pipelines
 
 
 def test_main_help() -> None:
@@ -46,7 +46,7 @@ def test_help_performance() -> None:
 
     runfiles = python.runfiles.Create()
     assert runfiles is not None, "Unable to find runfiles tree"
-    loc = runfiles.Rlocation("_main/max/python/max/entrypoints/pipelines")
+    loc = runfiles.Rlocation("_main/max/python/max/_entrypoints/pipelines")
     assert loc is not None, "Unable to find pipelines entrypoint"
 
     start_time = time.time()
@@ -66,14 +66,11 @@ def test_help_performance() -> None:
     print(f"`pipelines --help` executed in {execution_time:.1f} milliseconds")
 
 
-def test_benchmark_subcommand_help() -> None:
-    """Test that the benchmark help message works."""
+def test_serve_no_device_graph_capture_flag() -> None:
+    # Regression for #83943: changing the field type of `device_graph_capture`
+    # from `bool` to `bool | None` silently dropped the `--no-device-graph-capture`
+    # form, breaking smoke tests and dataset eval configs that rely on it.
     runner = CliRunner()
-    result = runner.invoke(pipelines.main, ["benchmark", "--help"])
+    result = runner.invoke(pipelines.main, ["serve", "--help"])
     assert result.exit_code == 0
-
-    # Check if some benchmark specific options are present.
-    assert "--dataset-name" in result.output
-    assert "--dataset-path" in result.output
-    assert "--num-prompts" in result.output
-    assert "--seed" in result.output
+    assert "--no-device-graph-capture" in result.output

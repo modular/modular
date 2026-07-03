@@ -21,6 +21,7 @@ from std.sys import PrefetchLocality
 
 import std.math
 from std.collections.string.string_slice import _get_kgen_string
+from std.memory._poison import _check_not_poison_masked
 from std.sys.info import _is_sm_9x_or_newer, is_gpu
 
 
@@ -60,11 +61,11 @@ def llvm_intrinsic[
 
     comptime intrin_kgen_string = _get_kgen_string[intrin]()
 
-    comptime if _type_is_eq[type, NoneType]():
+    comptime if type == NoneType:
         __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=None,
-            hasSideEffects=has_side_effect._mlir_value,
+            hasSideEffects=has_side_effect.__mlir_i1__(),
         ](loaded_pack)
         return rebind[type](None)
 
@@ -72,7 +73,7 @@ def llvm_intrinsic[
         return __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=type,
-            hasSideEffects=has_side_effect._mlir_value,
+            hasSideEffects=has_side_effect.__mlir_i1__(),
         ](loaded_pack)
 
 
@@ -84,7 +85,7 @@ def llvm_intrinsic[
 @always_inline("nodebug")
 def gather[
     dtype: DType,
-    size: Int,
+    size: SIMDSize,
     //,
     *,
     invariant: Bool = False,
@@ -107,7 +108,9 @@ def gather[
     In general, for some vector of pointers `base`, mask `mask`, and passthrough
     `passthrough` a call of the form:
 
-    ```mojo
+    ```text
+    from std.sys.intrinsics import gather
+
     result = gather(base, mask, passthrough)
     ```
 
@@ -137,17 +140,21 @@ def gather[
     """
 
     comptime if size == 1:
-        return UnsafePointer[Scalar[dtype], MutExternalOrigin](
+        return UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
             unsafe_from_address=Int(base[0])
-        ).load[invariant=invariant]() if mask else passthrough[0]
+        ).load[invariant=invariant]() if mask else SIMD[dtype, size](
+            passthrough[0]
+        )
 
     comptime if is_gpu() and invariant:
         var result = SIMD[dtype, size]()
 
         comptime for i in range(size):
-            result[i] = UnsafePointer[Scalar[dtype], MutExternalOrigin](
+            result[i] = UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(base[i])
-            ).load[invariant=invariant]() if mask[i] else passthrough[i]
+            ).load[invariant=invariant]() if mask[i] else Scalar[dtype](
+                passthrough[i]
+            )
         return result
 
     var result = llvm_intrinsic[
@@ -155,14 +162,17 @@ def gather[
         SIMD[dtype, size]._mlir_type,
     ](
         UnsafePointer(to=base).bitcast[
-            __mlir_type[`!pop.simd<`, size._mlir_value, `, address>`],
+            __mlir_type[`!kgen.simd<`, size._mlir_value, `, address>`],
         ]()[],
         Int32(alignment),
         mask,
         passthrough,
     )
     _ = base
-    return SIMD(mlir_value=result)
+    var loaded = SIMD[dtype, size](mlir_value=result)
+    comptime if dtype.is_floating_point():
+        _check_not_poison_masked[dtype, size](loaded, mask)
+    return loaded
 
 
 # ===-----------------------------------------------------------------------===#
@@ -173,7 +183,7 @@ def gather[
 @always_inline("nodebug")
 def scatter[
     dtype: DType,
-    size: Int,
+    size: SIMDSize,
     //,
     alignment: Int = 0,
 ](
@@ -203,7 +213,9 @@ def scatter[
     In general, for some vector `value`, vector of pointers `base`, and mask
     `mask` a call of the form:
 
-    ```mojo
+    ```text
+    from std.sys.intrinsics import scatter
+
     scatter(value, base, mask)
     ```
 
@@ -230,7 +242,7 @@ def scatter[
 
     comptime if size == 1:
         if mask:
-            var ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
+            var ptr = UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(base[0])
             )
             ptr.store(value[0])
@@ -238,7 +250,7 @@ def scatter[
     llvm_intrinsic["llvm.masked.scatter", NoneType](
         value,
         UnsafePointer(to=base).bitcast[
-            __mlir_type[`!pop.simd<`, size._mlir_value, `, address>`],
+            __mlir_type[`!kgen.simd<`, size._mlir_value, `, address>`],
         ]()[],
         Int32(alignment),
         mask,
@@ -512,7 +524,7 @@ def prefetch[
 def masked_load[
     dtype: DType,
     //,
-    size: Int,
+    size: SIMDSize,
     alignment: Int = 1,
 ](
     addr: UnsafePointer[mut=False, Scalar[dtype], ...],
@@ -538,19 +550,18 @@ def masked_load[
     Returns:
       The loaded memory stored in a vector of type SIMD[dtype, size].
     """
-    assert (
-        addr._is_not_null()
-    ), "masked_load requires a valid (non-null) pointer"
-
     comptime if size == 1:
-        return addr.load() if mask else passthrough[0]
+        return addr.load() if mask else SIMD[dtype, size](passthrough[0])
 
-    return llvm_intrinsic["llvm.masked.load", SIMD[dtype, size]](
+    var result = llvm_intrinsic["llvm.masked.load", SIMD[dtype, size]](
         addr.bitcast[NoneType]().address,
         Int32(alignment),
         mask,
         passthrough,
     )
+    comptime if dtype.is_floating_point():
+        _check_not_poison_masked[dtype, size](result, mask)
+    return result
 
 
 # ===-----------------------------------------------------------------------===#
@@ -560,7 +571,7 @@ def masked_load[
 
 @always_inline("nodebug")
 def masked_store[
-    size: Int,
+    size: SIMDSize,
     alignment: Int = 1,
 ](
     value: SIMD,
@@ -580,10 +591,6 @@ def masked_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    assert (
-        addr._is_not_null()
-    ), "masked_store requires a valid (non-null) pointer"
-
     comptime if size == 1:
         if mask:
             addr.store(value[0])
@@ -604,7 +611,7 @@ def masked_store[
 
 @always_inline("nodebug")
 def compressed_store[
-    dtype: DType, size: Int
+    dtype: DType, size: SIMDSize
 ](
     value: SIMD[dtype, size],
     addr: UnsafePointer[mut=True, Scalar[dtype], ...],
@@ -623,10 +630,6 @@ def compressed_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    assert (
-        addr._is_not_null()
-    ), "compressed_store requires a valid (non-null) pointer"
-
     comptime if size == 1:
         if mask:
             addr.store(value[0])
@@ -646,7 +649,7 @@ def compressed_store[
 
 @always_inline("nodebug")
 def strided_load[
-    dtype: DType, //, simd_width: Int, *, invariant: Bool = False
+    dtype: DType, //, simd_width: SIMDSize, *, invariant: Bool = False
 ](
     addr: UnsafePointer[mut=False, Scalar[dtype], ...],
     stride: Int,
@@ -670,12 +673,18 @@ def strided_load[
     Returns:
       A vector containing the loaded data.
     """
-    assert (
-        addr._is_not_null()
-    ), "strided_load requires a valid (non-null) pointer"
-
     comptime if simd_width == 1:
         return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
+
+    comptime if is_apple_gpu():
+        # The `gather` path below would erase address space via
+        # `Int(addr)`; on Apple AIR the resulting GENERIC load silently
+        # reads zero (MOCO-3762).
+        var result = SIMD[dtype, simd_width]()
+        comptime for i in range(simd_width):
+            if mask[i]:
+                result[i] = (addr + i * stride).load[invariant=invariant]()
+        return result
 
     var offset = (
         SIMD[DType.int, simd_width](Int(addr))
@@ -693,7 +702,7 @@ def strided_load[
 
 @always_inline("nodebug")
 def strided_store[
-    dtype: DType, //, simd_width: Int
+    dtype: DType, //, simd_width: SIMDSize
 ](
     value: SIMD[dtype, simd_width],
     addr: UnsafePointer[mut=True, Scalar[dtype], ...],
@@ -715,10 +724,6 @@ def strided_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    assert (
-        addr._is_not_null()
-    ), "strided_store requires a valid (non-null) pointer"
-
     comptime if simd_width == 1:
         if mask:
             addr.store(value[0])
@@ -732,65 +737,15 @@ def strided_store[
     scatter(value, offset, mask)
 
 
-# ===-------------------------------------------------------------------===#
-# _type_is_eq
-# ===-------------------------------------------------------------------===#
-
-
-def _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
-    """Compares the two type for equality.
-
-    Parameters:
-        t1: The LHS of the type comparison.
-        t2: The RHS of the type comparison.
-
-    Returns:
-        Returns True if t1 and t2 are the same type and False otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        `#kgen.type<`,
-        +t1,
-        `> : !kgen.type`,
-        `,`,
-        `#kgen.type<`,
-        +t2,
-        `> : !kgen.type`,
-        `> : i1`,
-    ]
-
-
-@always_inline("builtin")
-def _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
-    """Compares the two type for equality at parse-time.
-
-    Parameters:
-        t1: The LHS of the type comparison.
-        t2: The RHS of the type comparison.
-
-    Returns:
-        Returns True if t1 and t2 are the same type and False otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        `#kgen.type<`,
-        +t1,
-        `> : !kgen.type`,
-        `,`,
-        `#kgen.type<`,
-        +t2,
-        `> : !kgen.type`,
-        `> : i1`,
-    ]
-
-
 # ===----------------------------------------------------------------------=== #
 # Transitional type used for llvm_intrinsic
 # ===----------------------------------------------------------------------=== #
 
 
 struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
-    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.a, `>`]
+    comptime _mlir_type = __mlir_type[
+        `!kgen.struct<`, ~Self.a.values, ` isParamPack>`
+    ]
 
     var _mlir_value: Self._mlir_type
 
@@ -804,7 +759,7 @@ struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
         Returns:
             The tuple element at the requested index.
         """
-        return __mlir_op.`kgen.pack.extract`[index=i.__mlir_index__()](
+        return __mlir_op.`kgen.struct.extract`[index=i.__mlir_index__()](
             self._mlir_value
         )
 
@@ -903,7 +858,7 @@ def assume(val: Bool):
 @always_inline
 def implicitarg_ptr(
     out result: UnsafePointer[
-        UInt8, MutExternalOrigin, address_space=AddressSpace.CONSTANT
+        UInt8, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]
 ):
     """
@@ -922,21 +877,6 @@ def implicitarg_ptr(
 # ===-----------------------------------------------------------------------===#
 # readfirstlane
 # ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-def readfirstlane(value: Int32) -> Int32:
-    """
-    Get the value in the lowest active lane of the input operand.
-
-    Args:
-        value: The input value.
-
-    Returns:
-        The value in the lowest active lane of the input operand.
-    """
-    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
-    return llvm_intrinsic["llvm.amdgcn.readfirstlane.i32", Int32, Int32](value)
 
 
 @always_inline
@@ -970,6 +910,31 @@ def readfirstlane(value: Int) -> type_of(value):
     comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
     return llvm_intrinsic[
         "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
+    ](value)
+
+
+@always_inline
+def readfirstlane[dtype: DType](value: Scalar[dtype]) -> Scalar[dtype]:
+    """Gets the value in the lowest active lane of the input operand.
+
+    Constraints:
+        The scalar type must be 2, 4, or 8 bytes wide.
+
+    Parameters:
+        dtype: The element type.
+
+    Args:
+        value: The input scalar value.
+
+    Returns:
+        The value in the lowest active lane of the input operand.
+    """
+    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
+    comptime assert (
+        size_of[Scalar[dtype]]() >= 2
+    ), "readfirstlane requires a scalar type of at least 16 bits"
+    return llvm_intrinsic[
+        "llvm.amdgcn.readfirstlane", Scalar[dtype], Scalar[dtype]
     ](value)
 
 

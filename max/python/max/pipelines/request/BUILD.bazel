@@ -1,0 +1,14 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "request",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        requirement("httpx"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("pydantic"),
+    ],
+)

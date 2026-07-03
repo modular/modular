@@ -55,7 +55,7 @@ def handle_file_error(e: FileError):
         print("Access denied:", e[PermissionError])
 
 
-def main() raises:
+def main():
     try:
         print(open_file("/data"))
     except e:

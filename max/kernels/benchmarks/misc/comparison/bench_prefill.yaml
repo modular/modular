@@ -15,16 +15,31 @@ name: bench_prefill_subgraph
 file: $BUILD_WORKSPACE_DIRECTORY/max/kernels/benchmarks/misc/comparison/bench_blackwell_prefill.py
 
 deepseek-v2-commons: &deepseek-v2-commons
-  $num_heads: 32
+  $num_q_heads: 32
+  $num_kv_heads: 4
   $head_dim: 128
-  $causal: [True]
-  # $causal: [True, False]
+  $causal: [1]
+  # $causal: [1, 0]
   # $dtype: [bfloat16]
-  $engine: ["tridao", "modular_max"]
-  # $engine: ["flashinfer", "tridao", "modular_max"]
+  # $engine: ["tridao", "modular_max"]
+  $engine: ["flashinfer", "tridao", "modular_max"]
   model: "deepseek-v2"
 
 params:
+# Full causal attention. window_size=-1 disables the sliding window.
 - <<: *deepseek-v2-commons
   $batch_size: [2]
-  $qkv_len: [2048, 4096, 8192]
+  $q_len: [2048]
+  # kv_len = cache_len + q_len; cache_len=0 is pure prefill.
+  $cache_len: [0, 2048, 4096, 8192]
+  $window_size: [-1]
+# Causal sliding window attention (SlidingWindowCausalMask). window_size is the
+# number of keys each query attends to, itself included. FlashInfer's SM100
+# cutlass backend does not support SWA (window_left is dropped), so only tridao
+# and MAX are compared here.
+- <<: *deepseek-v2-commons
+  $engine: ["tridao", "modular_max"]
+  $batch_size: [2]
+  $q_len: [2048]
+  $cache_len: [0, 2048, 4096, 8192]
+  $window_size: [1024, 4096]

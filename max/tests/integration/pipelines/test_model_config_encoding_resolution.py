@@ -28,7 +28,7 @@ from unittest.mock import patch
 import pytest
 from max.driver import DeviceSpec
 from max.pipelines.lib import MAXModelConfig
-from max.pipelines.lib.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 GPU_DEVICE_SPEC = DeviceSpec(id=0, device_type="gpu")
 CPU_DEVICE_SPEC = DeviceSpec(id=0, device_type="cpu")
@@ -124,7 +124,7 @@ def _resolve_mocks(
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=weight_path_return,
         ),
-        patch("max.pipelines.lib.hf_utils.validate_hf_repo_access"),
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
     ):
         yield
 
@@ -262,6 +262,42 @@ class TestMixedEncodingInference:
             with _resolve_mocks():
                 config.resolve()
             assert config.quantization_encoding is None
+
+    def test_sharded_fp8_with_bf16_first_shard(self) -> None:
+        """FP8 must be detected even when first shard is BF16-only norms."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                {
+                    # Shard 3: norms/embeddings only (BF16) - may sort first
+                    "model-00003-of-00003.safetensors": {
+                        "model.norm.weight": "BF16",
+                    },
+                    # Shard 1: FP8 quantized weights
+                    "model-00001-of-00003.safetensors": {
+                        "model.layers.0.self_attn.q_proj.weight": "F8_E4M3",
+                        "model.layers.0.input_layernorm.weight": "BF16",
+                    },
+                    # Shard 2: more FP8 weights
+                    "model-00002-of-00003.safetensors": {
+                        "model.layers.1.self_attn.q_proj.weight": "F8_E4M3",
+                    },
+                },
+            )
+            config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
+            with _resolve_mocks():
+                config.resolve()
+            assert config.quantization_encoding == "float8_e4m3fn"
+
+    def test_gptq_detected_from_local_config_json(self) -> None:
+        """gptq should be detected from config.json for local repos."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(tmpdir, {"model.safetensors": {"w": "U8"}})
+            config_path = os.path.join(tmpdir, "config.json")
+            with open(config_path, "w") as f:
+                json.dump({"quantization_config": {"quant_method": "gptq"}}, f)
+            repo = HuggingFaceRepo(repo_id=tmpdir)
+            assert "gptq" in repo.supported_encodings
 
 
 # ---------------------------------------------------------------------------

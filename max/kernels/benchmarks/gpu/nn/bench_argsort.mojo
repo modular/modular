@@ -31,7 +31,7 @@ def bench_argsort[
     dtype: DType
 ](ctx: DeviceContext, mut m: Bench, N: Int) raises:
     # Allocate and fill host data with random values.
-    var input_host_ptr = alloc[Scalar[dtype]](N)
+    var input_host_ptr = List(length=N, fill=Scalar[dtype](0))
     for i in range(N):
         input_host_ptr[i] = Scalar[dtype](
             random_float64(-1e6, 1e6).cast[dtype]()
@@ -43,12 +43,12 @@ def bench_argsort[
     ctx.enqueue_copy(device_input, input_host_ptr)
 
     var device_input_tensor = TileTensor(
-        device_input.unsafe_ptr(),
-        row_major(Idx(N)),
+        device_input,
+        row_major(N),
     )
     var device_indices_tensor = TileTensor(
-        device_indices.unsafe_ptr(),
-        row_major(Idx(N)),
+        device_indices,
+        row_major(N),
     )
 
     # Warm up and verify.
@@ -80,9 +80,9 @@ def bench_argsort[
 
     ctx.synchronize()
 
-    input_host_ptr.free()
     _ = device_input^
     _ = device_indices^
+    _ = input_host_ptr^
 
 
 def main() raises:

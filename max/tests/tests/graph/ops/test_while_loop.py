@@ -72,7 +72,7 @@ def test_while_loop_multiple_args() -> None:
 
 def test_while_loop_empty_init() -> None:
     """Test while loop with empty initial values raises error."""
-    with Graph("while_loop_empty_init", input_types=()) as graph:
+    with Graph("while_loop_empty_init", input_types=()):
         try:
             ops.while_loop([], lambda: True, lambda: [])  # type: ignore
         except ValueError as e:
@@ -112,7 +112,7 @@ def test_while_loop_with_raising() -> None:
         input_types=[TensorType(DType.int32, [], device=DeviceRef.CPU())],
     ) as graph:
         x = graph.inputs[0]
-        chain = graph._current_chain
+        chain = graph.device_chains[DeviceRef.CPU()]
 
         def pred(x: TensorValue) -> TensorValue:
             return x < 10
@@ -125,7 +125,7 @@ def test_while_loop_with_raising() -> None:
         except Exception as e:
             assert "raising" in str(e)
 
-        assert graph._current_chain == chain
+        assert graph.device_chains[DeviceRef.CPU()] == chain
         graph.output()
     graph._mlir_op.verify()
 

@@ -52,7 +52,7 @@ from std.gpu.memory import (
     AddressSpace,
     cp_async_bulk_global_shared_cta,
     cp_async_bulk_prefetch,
-    cp_async_bulk_shared_cta_global,
+    cp_async_bulk_shared_cluster_global,
     external_memory,
     fence_mbarrier_init,
 )
@@ -70,10 +70,10 @@ from layout.tma_async import SharedMemBarrier
 def _smem_ptr[
     BYTES_PER_COPY: Int, S: Int
 ](
-    base: UnsafePointer[UInt8, MutAnyOrigin, address_space=AddressSpace.SHARED],
+    base: UnsafePointer[UInt8, _, address_space=AddressSpace.SHARED],
     warp: Int,
     slot: Int,
-) -> UnsafePointer[UInt8, MutAnyOrigin, address_space=AddressSpace.SHARED]:
+) -> type_of(base):
     return base + (warp * S + slot) * BYTES_PER_COPY
 
 
@@ -81,14 +81,10 @@ def _smem_ptr[
 def _mbar_ref[
     S: Int
 ](
-    base: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ],
+    base: UnsafePointer[SharedMemBarrier, _, address_space=AddressSpace.SHARED],
     warp: Int,
     slot: Int,
-) -> UnsafePointer[
-    SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
-]:
+) -> type_of(base):
     return base + warp * S + slot
 
 
@@ -143,7 +139,7 @@ def bulk_memcpy_kernel[
                 )
 
         mbar[].expect_bytes(Int32(BYTES_PER_COPY))
-        cp_async_bulk_shared_cta_global(
+        cp_async_bulk_shared_cluster_global(
             smem,
             src_g + (first + i * stride) * BYTES_PER_COPY,
             Int32(BYTES_PER_COPY),
@@ -169,7 +165,7 @@ def bulk_memcpy_kernel[
         var smem_new = _smem_ptr[BYTES_PER_COPY, S](smem_base, w, new_slot)
         var mbar_new = _mbar_ref[S](mbar_base, w, new_slot)
         mbar_new[].expect_bytes(Int32(BYTES_PER_COPY))
-        cp_async_bulk_shared_cta_global(
+        cp_async_bulk_shared_cluster_global(
             smem_new,
             src_g + (first + i * stride) * BYTES_PER_COPY,
             Int32(BYTES_PER_COPY),
@@ -239,7 +235,7 @@ def main() raises:
             @parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises:
-                ctx.enqueue_function_experimental[
+                ctx.enqueue_function[
                     bulk_memcpy_kernel[NUM_THREADS, BYTES_PER_COPY, S, PREFETCH]
                 ](
                     src_dev,

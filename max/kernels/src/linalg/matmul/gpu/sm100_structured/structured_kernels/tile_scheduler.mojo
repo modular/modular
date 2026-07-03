@@ -18,11 +18,7 @@ from std.gpu.primitives.cluster import (
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
-from std.gpu import (
-    block_id_in_cluster,
-    block_idx_uint as block_idx,
-    lane_id_int as lane_id,
-)
+from std.gpu import block_id_in_cluster, block_idx, lane_id
 from std.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
@@ -490,11 +486,11 @@ struct TileScheduler[
         return WorkInfo(
             m=UInt32(
                 Int(new_m_global) * Self.cluster_shape[0]
-                + Int(block_id_in_cluster.x)
+                + block_id_in_cluster.x
             ),
             n=UInt32(
                 Int(new_n_global) * Self.cluster_shape[1]
-                + Int(block_id_in_cluster.y)
+                + block_id_in_cluster.y
             ),
             k_start=work_info.k_start,
             is_valid_tile=work_info.is_valid_tile,

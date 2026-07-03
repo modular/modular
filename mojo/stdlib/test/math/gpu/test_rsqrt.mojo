@@ -20,13 +20,14 @@ from std.gpu.host import DeviceContext, HostBuffer, get_gpu_target
 from std.testing import *
 
 from std.utils import IndexList
+from std.utils.coord import Coord
 
 
 def run_elementwise[
     dtype: DType,
-    kernel_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) raises -> SIMD[
-        dtype, width
-    ],
+    kernel_fn: def[dtype: DType, width: SIMDSize](
+        SIMD[dtype, width]
+    ) thin raises -> SIMD[dtype, width],
 ](ctx: DeviceContext) raises where dtype.is_floating_point():
     comptime length = 256
 
@@ -41,26 +42,21 @@ def run_elementwise[
             in_host2[i] = 0.001 * abs(Scalar[dtype](i) - length // 2)
         in_host = in_host2^
 
-    var in_buffer = Span[Scalar[dtype]](
-        ptr=in_device.unsafe_ptr(), length=length
-    )
-    var out_buffer = Span[Scalar[dtype]](
-        ptr=out_device.unsafe_ptr(), length=length
-    )
+    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=length)
+    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=length)
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[1]](idx0)
-
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
         out_buffer.unsafe_ptr().store[width=simd_width](
-            idx[0], rsqrt(in_buffer.unsafe_ptr().load[width=simd_width](idx[0]))
+            idx[0].value(),
+            rsqrt(
+                in_buffer.unsafe_ptr().load[width=simd_width](idx[0].value())
+            ),
         )
 
-    elementwise[func, pack_size, target="gpu"](IndexList[1](length), ctx)
+    elementwise[func, pack_size, target="gpu"](Coord(length), ctx)
 
     with out_device.map_to_host() as out_host:
         for i in range(length):

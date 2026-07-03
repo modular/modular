@@ -13,6 +13,7 @@
 
 
 from std.algorithm import elementwise
+from std.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.slice import slice_as_copy, slice_as_view
 
@@ -20,21 +21,18 @@ from std.utils.index import Index, IndexList
 
 
 def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
-    var shape = coord_to_index_list(tensor.layout.shape_coord())
+    var shape = tensor.layout.shape_coord()
     var stride = coord_to_index_list(tensor.layout.stride_coord())
-    print("New shape:", shape)
+    print("New shape:", coord_to_index_list(shape))
     print("New strides:", stride)
 
     @always_inline
-    @parameter
     def print_elements_lambda[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](coords: IndexList[rank]):
-        var index = rebind[IndexList[tensor.rank]](coords)
-        var idx = tensor.layout(Coord(index))
-        print(tensor.ptr[idx])
+        simd_width: Int, alignment: Int = 1
+    ](coords: Coord) {var}:
+        print(tensor.load(coords))
 
-    elementwise[print_elements_lambda, 1](shape)
+    elementwise[1](print_elements_lambda, shape, DeviceContext(api="cpu"))
 
 
 # slice_dim
@@ -55,7 +53,7 @@ def test_slice[
 
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = TileTensor(
-        memory1.unsafe_ptr(),
+        memory1,
         row_major(Coord(dims)),
     )
 
@@ -68,7 +66,7 @@ def test_slice[
         uninitialized=True
     )
     var start_tensor = TileTensor(
-        start_tensor_mem.unsafe_ptr(),
+        start_tensor_mem,
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
@@ -76,7 +74,7 @@ def test_slice[
         uninitialized=True
     )
     var end_tensor = TileTensor(
-        end_tensor_mem.unsafe_ptr(),
+        end_tensor_mem,
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
@@ -84,7 +82,7 @@ def test_slice[
         uninitialized=True
     )
     var step_tensor = TileTensor(
-        step_tensor_mem.unsafe_ptr(),
+        step_tensor_mem,
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
@@ -94,7 +92,7 @@ def test_slice[
         step_tensor[dim] = Scalar[DType.int](steps[dim])
 
     for i in range(numelems):
-        in_tensor.ptr[i] = Scalar[dtype](i)
+        in_tensor.raw_store(i, Scalar[dtype](i))
 
     # Perform the slice even if we are testing the copy so we get the target size.
     var sliced = slice_as_view(
@@ -111,7 +109,7 @@ def test_slice[
 
         var sliced_shape = coord_to_index_list(sliced.layout.shape_coord())
         var output_buffer = TileTensor(
-            output_mem.unsafe_ptr(),
+            output_mem,
             row_major(Coord(sliced_shape)),
         )
 
@@ -121,6 +119,7 @@ def test_slice[
             start_tensor,
             end_tensor,
             step_tensor,
+            DeviceContext(api="cpu"),
         )
 
         print_elements(output_buffer)

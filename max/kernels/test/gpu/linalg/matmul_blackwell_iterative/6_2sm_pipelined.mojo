@@ -13,7 +13,7 @@
 
 from std.hashlib import default_comp_time_hasher
 from std.math import align_up
-from std.math.uutils import umod, ufloordiv
+from std.math.uutils import umod, ufloordiv, udivmod
 from std.memory import bitcast
 from std.sys import argv, size_of
 
@@ -132,7 +132,7 @@ def load_AB[
     b_desc_shape: IndexList[b_tma_rank],
     a_smem_layout: Layout,
     b_smem_layout: Layout,
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     /,
     *,
     block_tile_shape: IndexList[3],
@@ -163,12 +163,12 @@ def load_AB[
     tma_mbar: UnsafePointer[
         mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
     ],
-    producer_phase: PipelineState[Int(num_pipeline_stages)],
-    peer_cta_coord: Tuple[UInt, UInt, UInt],
+    producer_phase: PipelineState[num_pipeline_stages],
+    peer_cta_coord: Tuple[Int, Int, Int],
     work_tile_coord: Tuple[Int, Int],
     a_multicast_mask: UInt16,
     b_multicast_mask: UInt16,
-    iter_idx: UInt,
+    iter_idx: Int,
     elect_one_cta: Bool,
 ):
     comptime BM = block_tile_shape[0]
@@ -196,11 +196,11 @@ def load_AB[
         tma_mbar[stage].expect_bytes(Int32(expected_bytes))
 
     var a_gmem_slice_coord = (
-        Int(peer_cta_coord[2]) * a_tma_rows + work_tile_coord[0] * BM
+        peer_cta_coord[2] * a_tma_rows + work_tile_coord[0] * BM
     )
     var b_gmem_slice_coord = (
-        Int(peer_cta_coord[1]) * b_tma_rows
-        + Int(peer_cta_coord[0]) * BN
+        peer_cta_coord[1] * b_tma_rows
+        + peer_cta_coord[0] * BN
         + work_tile_coord[1] * MMA_N
     )
 
@@ -208,23 +208,23 @@ def load_AB[
     var b_smem_tile = b_smem.next(stage)[]
 
     var a_smem_slice = type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
+        a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
     )
     var b_smem_slice = type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
+        b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
     )
 
     a_tma_op.async_multicast_load[cta_group](
         a_smem_slice,
         tma_mbar[stage],
-        (Int(iter_idx) * BK, a_gmem_slice_coord),
+        (iter_idx * BK, a_gmem_slice_coord),
         a_multicast_mask,
     )
 
     b_tma_op.async_multicast_load[cta_group](
         b_smem_slice,
         tma_mbar[stage],
-        (Int(iter_idx) * BK, b_gmem_slice_coord),
+        (iter_idx * BK, b_gmem_slice_coord),
         b_multicast_mask,
     )
 
@@ -286,7 +286,7 @@ def consumer_main_loop[
         transpose_b=transpose_b,
     ],
     elect_one_warp: Bool,
-    iter_idx: UInt,
+    iter_idx: Int,
 ):
     var stage = consumer_phase.index()
     var phase = consumer_phase.phase()
@@ -325,8 +325,8 @@ def store_C[
     mma_shape: IndexList[3],
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
-    num_output_warps: UInt = 4,
-    max_tmem_cols: UInt = 512,
+    num_output_warps: Int = 4,
+    max_tmem_cols: Int = 512,
 ](
     c_smem_tile: LayoutTensor[
         c_type,
@@ -581,7 +581,7 @@ def store_C[
                     d_reg_lower_packed,
                 )
 
-    named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+    named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
     # SMEM -> GMEM: Direct TMA store
     # UMMA (tensor memory) → registers → shared memory → global memory
@@ -631,7 +631,7 @@ def kernel_6[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
-    num_pipeline_stages: UInt,
+    num_pipeline_stages: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -678,7 +678,7 @@ def kernel_6[
     comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
@@ -687,7 +687,7 @@ def kernel_6[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
-            ExternalOrigin[mut=True],
+            UntrackedOrigin[mut=True],
         ]
     ](
         external_memory[
@@ -702,35 +702,33 @@ def kernel_6[
     comptime c_smem_size = c_smem_layout.size()
 
     var a_smem_base = base_ptr_smem  # need space for 4096 (64 x 64) elements by 2 bytes or 8192 total, which is 0x2000
-    var b_smem_base = (
-        a_smem_base + a_smem_size * Int(num_pipeline_stages)
-    ).bitcast[Scalar[b_type]]()
-    var c_smem_base = (
-        b_smem_base + b_smem_size * Int(num_pipeline_stages)
-    ).bitcast[Scalar[c_type]]()
+    var b_smem_base = (a_smem_base + a_smem_size * num_pipeline_stages).bitcast[
+        Scalar[b_type]
+    ]()
+    var c_smem_base = (b_smem_base + b_smem_size * num_pipeline_stages).bitcast[
+        Scalar[c_type]
+    ]()
 
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
         a_smem_base,
-        a_smem_size * Int(num_pipeline_stages),
+        a_smem_size * num_pipeline_stages,
     )
 
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
         b_smem_base,
-        b_smem_size * Int(num_pipeline_stages),
+        b_smem_size * num_pipeline_stages,
     )
 
     var c_smem_tile = c_smem_tile_t(c_smem_base)
@@ -742,8 +740,8 @@ def kernel_6[
     # adding 8 bytes for ptr_tmem_addr (smem poll is 8 byte casted)
     var tma_mbar_ptr = smem_pool
     # + num_pipeline_stages is 1 * num_pipeline_stage so 8 bytes for each barrier at each stage
-    var mma_mbar_ptr = tma_mbar_ptr + (num_pipeline_stages)
-    var compute_barrier_base = mma_mbar_ptr + (num_pipeline_stages)
+    var mma_mbar_ptr = tma_mbar_ptr + num_pipeline_stages
+    var compute_barrier_base = mma_mbar_ptr + num_pipeline_stages
     var ptr_tmem_addr = (compute_barrier_base + 1).bitcast[UInt32]()
 
     tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
@@ -778,8 +776,8 @@ def kernel_6[
 
     cluster_sync()
 
-    var consumer_phase = PipelineState[Int(num_pipeline_stages)]()
-    var producer_phase = PipelineState[Int(num_pipeline_stages)](0, 1, 0)
+    var consumer_phase = PipelineState[num_pipeline_stages]()
+    var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
 
     tmem_addr = ptr_tmem_addr[0]
 
@@ -803,7 +801,7 @@ def kernel_6[
     var rank_n = block_id_in_cluster.y
 
     # (peer_id, mma_coord_m, mma_coord_n)
-    var peer_cta_quot, peer_cta_rem = divmod(rank_m, UInt(cta_group))
+    var peer_cta_quot, peer_cta_rem = udivmod(rank_m, cta_group)
     var peer_cta_coord = (
         peer_cta_rem,
         peer_cta_quot,
@@ -822,7 +820,7 @@ def kernel_6[
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
-    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
+    b_multicast_mask <<= UInt16(rank_n * CLUSTER_M)
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -847,7 +845,7 @@ def kernel_6[
                     (block_idx.x, block_idx.y),
                     a_multicast_mask,
                     b_multicast_mask,
-                    UInt(i),
+                    i,
                     elect_one_cta,
                 )
                 producer_phase.step()
@@ -870,7 +868,7 @@ def kernel_6[
                 consumer_phase,
                 mma_op,
                 elect_one_warp,
-                UInt(i),
+                i,
             )
             consumer_phase.step()
 
@@ -916,9 +914,9 @@ def blackwell_kernel_6[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutUntrackedOrigin],
+    a: LayoutTensor[a_type, a_layout, MutUntrackedOrigin],
+    b: LayoutTensor[b_type, b_layout, MutUntrackedOrigin],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()
@@ -1001,10 +999,10 @@ def blackwell_kernel_6[
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
         cta_group=cta_group,
-        num_pipeline_stages=UInt(max_pipeline_stages),
+        num_pipeline_stages=max_pipeline_stages,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -1061,9 +1059,9 @@ def test_blackwell_kernel_6[
     comptime c_layout = Layout.row_major(M, N)
 
     # Host memory allocation
-    var a_host_ptr = alloc[Scalar[a_type]](M * K)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = alloc[Scalar[b_type]](N * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host_managed = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host = c_host_managed.tensor[update=False]()
@@ -1184,9 +1182,6 @@ def test_blackwell_kernel_6[
             rtol=rtol,
         )
         print("\n=== TEST PASSED ===\n")
-
-    a_host_ptr.free()
-    b_host_ptr.free()
 
 
 def get_dic_of_shapes(

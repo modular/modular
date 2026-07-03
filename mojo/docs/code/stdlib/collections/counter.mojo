@@ -30,7 +30,7 @@ def fromkeys() raises:
     assert_true(counter["a"] == 1)
 
 
-def string() raises:
+def string():
     from std.collections import Counter
 
     var c = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")

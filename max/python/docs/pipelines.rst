@@ -11,6 +11,29 @@ max.pipelines
 
 .. currentmodule:: max.pipelines
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   pipelines.architectures
+   pipelines.context
+   pipelines.diffusion
+   pipelines.kv_cache
+   pipelines.lib
+   pipelines.lib.interfaces
+   pipelines.lib.log_probabilities
+   pipelines.lib.registry
+   pipelines.logging_utils
+   pipelines.modeling.base
+   pipelines.modeling.dataprocessing
+   pipelines.modeling.types
+   pipelines.weights
+   pipelines.lora
+   pipelines.request
+   pipelines.sampling
+   pipelines.speculative
 
 Configuration
 -------------
@@ -20,9 +43,7 @@ Configuration
    :toctree: generated
    :template: autosummary/class.rst
 
-   AudioGenerationConfig
    KVCacheConfig
-   LoRAConfig
    MAXModelConfig
    PipelineConfig
    ProfilingConfig
@@ -39,7 +60,6 @@ Pipelines
 
    EmbeddingsPipeline
    PixelGenerationPipeline
-   SpeechTokenGenerationPipeline
    TextGenerationPipeline
    TextGenerationPipelineInterface
 
@@ -57,19 +77,6 @@ Model interface
    ModelOutputs
    PipelineModel
 
-Context
--------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   PixelContext
-   TextAndVisionContext
-   TextContext
-   TTSContext
-
 Tokenizers
 ----------
 
@@ -79,7 +86,6 @@ Tokenizers
    :template: autosummary/class.rst
 
    IdentityPipelineTokenizer
-   PreTrainedPipelineTokenizer
    TextAndVisionTokenizer
    TextTokenizer
 
@@ -103,13 +109,6 @@ Utilities
 .. autosummary::
    :nosignatures:
    :toctree: generated
-   :template: autosummary/class.rst
-
-   PrependPromptSpeechTokens
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
    :template: autosummary/function.rst
 
    download_weight_files
@@ -121,14 +120,10 @@ Utilities
    supported_encoding_supported_on
    upper_bounded_default
 
-Submodules
-----------
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
 
-.. toctree::
-   :maxdepth: 1
+   ADAPTER_CONFIG_FILE
 
-   pipelines.core
-   pipelines.lib
-   pipelines.lib.interfaces
-   pipelines.lib.log_probabilities
-   pipelines.lib.registry

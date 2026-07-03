@@ -54,7 +54,7 @@ def main() raises:
 
 from std.memory import UnsafeMaybeUninit
 from std.utils._nicheable import UnsafeSingleNicheable
-from .struct_fields import offset_of
+from .reflect import reflect
 
 
 struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
@@ -162,7 +162,7 @@ struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
         writer.write(self._file_name, ":", self._line, ":", self._col)
 
     comptime _LineNiche = -1
-    comptime _LineByteOffset = offset_of[Self, name="_line"]()
+    comptime _LineByteOffset = reflect[Self].field_offset[name="_line"]()
 
     @staticmethod
     @always_inline
@@ -208,7 +208,7 @@ def source_location() -> SourceLocation:
     ```
     """
     var line, col, file_name = __mlir_op.`kgen.source_loc`[
-        inlineCount=Int(0)._mlir_value,
+        inlineCount=Int(0).__mlir_index__(),
         _type=Tuple[
             __mlir_type.index,
             __mlir_type.index,
@@ -217,8 +217,8 @@ def source_location() -> SourceLocation:
     ]()
 
     return SourceLocation(
-        Int(mlir_value=line),
-        Int(mlir_value=col),
+        Int(SIMDSize(mlir_value=line)),
+        Int(SIMDSize(mlir_value=col)),
         StaticString(file_name),
     )
 
@@ -272,7 +272,7 @@ def call_location[*, inline_count: Int = 1]() -> SourceLocation:
     ```
     """
     var line, col, file_name = __mlir_op.`kgen.source_loc`[
-        inlineCount=inline_count._mlir_value,
+        inlineCount=inline_count.__mlir_index__(),
         _type=Tuple[
             __mlir_type.index,
             __mlir_type.index,
@@ -281,7 +281,7 @@ def call_location[*, inline_count: Int = 1]() -> SourceLocation:
     ]()
 
     return SourceLocation(
-        Int(mlir_value=line),
-        Int(mlir_value=col),
+        Int(SIMDSize(mlir_value=line)),
+        Int(SIMDSize(mlir_value=col)),
         StaticString(file_name),
     )

@@ -13,7 +13,7 @@
 
 
 def slice[
-    dtype: DType, size: Int, //
+    dtype: DType, size: SIMDSize, //
 ](x: SIMD[dtype, size], offset: Int) -> SIMD[dtype, size // 2]:
     comptime new_size = size // 2
     var result = SIMD[dtype, new_size]()
@@ -35,7 +35,7 @@ def reduce_add(x: SIMD) -> Int:
     return reduce_add(lhs + rhs)
 
 
-def main() raises:
+def main():
     var x = SIMD[DType.int, 4](1, 2, 3, 4)
     print(x)
     print("Elements sum:", reduce_add(x))

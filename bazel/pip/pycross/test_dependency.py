@@ -167,6 +167,26 @@ def test_amd_only_constraints() -> None:
     ]
 
 
+def test_nvidia_sglang_constraints() -> None:
+    blob = {
+        "name": "example_package",
+        "marker": "platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-nvidia-sglang'",
+    }
+    all_versions = {"example_package": "1.0.0"}
+    dependency = Dependency(blob, all_versions)
+
+    constraints, gpu_constraints = dependency.constraints()
+    assert not constraints
+    assert gpu_constraints == [
+        ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu",
+        ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu",
+        ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu",
+        ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu",
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu",
+        ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu",
+    ]
+
+
 def test_multi_gpu_constraints() -> None:
     blob = {
         "name": "example_package",

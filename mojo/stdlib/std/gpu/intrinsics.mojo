@@ -25,9 +25,9 @@ directly to hardware instructions and require understanding of the
 underlying GPU architecture.
 """
 
-from std.collections.string.string_slice import get_static_string
-from std.os.atomic import Consistency
+from std.atomic import Ordering
 from std.ffi import external_call
+from std.gpu._utils import to_i32
 from std.sys import (
     is_amd_gpu,
     is_gpu,
@@ -55,7 +55,7 @@ from std.math.uutils import ufloordiv, umod
 
 from std.memory.unsafe import bitcast
 
-from .memory.memory import CacheOperation, _int_to_str
+from .memory.memory import CacheOperation
 
 # ===-----------------------------------------------------------------------===#
 # ldg
@@ -678,22 +678,6 @@ def threadfence[scope: Scope = Scope.GPU]():
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_type_suffix[dtype: DType]() -> StaticString:
-    comptime str = get_static_string[
-        "u", _int_to_str[bit_width_of[dtype]()]()
-    ]()
-    return str
-
-
-def _get_air_atomic_suffix[dtype: DType]() -> StaticString:
-    comptime if dtype == DType.float32:
-        return "f32"
-    elif dtype in (DType.int32, DType.uint32):
-        return "i32"
-    else:
-        comptime assert False, "unsupported dtype for air atomic intrinsics"
-
-
 def _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
     comptime assert is_nvidia_gpu(), (
         "the _get_nvtx_register_constraint function is currently restricted"
@@ -717,382 +701,6 @@ def _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
         return "d"
 
     return "<<unknown_register_constraint>>"
-
-
-def _get_nvtx_pointer_constraint() -> StaticString:
-    comptime assert is_nvidia_gpu(), (
-        "the _get_nvtx_pointer_constraint function is currently restricted"
-        " to only be defined on NVIDIA GPUs"
-    )
-    return _get_nvtx_register_constraint[DType.int]()
-
-
-struct _AirMemFlags:
-    """AIR memory domain flags used by Apple/Metal intrinsics.
-    These values select **which address space's visibility** a fence operates on.
-    """
-
-    comptime Device = Int32(1)
-    comptime ThreadGroup = Int32(2)
-
-
-struct _AirScope:
-    """AIR synchronization scope for ordering and visibility.
-    The scope determines **which set of threads** participates in the ordering
-    established by a fence or an atomic op with scope.
-    """
-
-    comptime Workgroup = Int32(1)
-    comptime Device = Int32(2)
-    comptime SIMDGroup = Int32(4)
-
-
-struct _AirMemOrder:
-    """AIR memory ordering semantics for atomic operations and fences."""
-
-    comptime Relaxed = Int32(0)
-    comptime SeqCst = Int32(5)
-
-
-@always_inline
-def store_release[
-    dtype: DType,
-    //,
-    scope: Scope = Scope.SYSTEM,
-    memory: Bool = True,
-    alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], value: Scalar[dtype]):
-    """Performs an atomic store with release memory ordering semantics.
-
-    This function provides a memory barrier that ensures all previous memory operations
-    from the calling thread are visible to other threads before this store is performed.
-
-    Parameters:
-        dtype: The data type to store.
-        scope: Memory scope for the operation (default: Scope.SYSTEM).
-        memory: Whether to include memory side effects in constraints (default: True).
-        alignment: The alignment of the data.
-
-    Args:
-        ptr: Pointer to the memory location to store to.
-        value: Value to store.
-
-    Note:
-        - Only supported on GPUs.
-        - Maps directly to PTX st.release instruction on NVIDIA, LLVM atomic
-          store on AMDGPU.
-        - Ensures all previous memory operations complete before this store.
-        - Critical for implementing synchronization primitives.
-    """
-    comptime assert is_gpu(), "atomic store only supported on GPU"
-
-    comptime if is_nvidia_gpu():
-        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-        comptime constraints = _get_nvtx_register_constraint[
-            dtype
-        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-        comptime scope_str = scope.mnemonic()
-        inlined_assembly[
-            "st.release."
-            + ((scope_str + ".") if scope_str else "")
-            + "global."
-            + _get_type_suffix[dtype]()
-            + " [$1], $0;",
-            NoneType,
-            constraints=constraints,
-        ](value, ptr)
-    elif is_amd_gpu():
-        __mlir_op.`pop.store`[
-            alignment=alignment._mlir_value,
-            ordering=Consistency.RELEASE.__mlir_attr(),
-        ](value, ptr.address)
-    elif is_apple_gpu():
-        comptime mem_flags = _AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else _AirMemFlags.Device
-        comptime air_scope = _AirScope.Workgroup if scope == Scope.BLOCK else _AirScope.Device
-        external_call["air.atomic.fence", NoneType](
-            mem_flags,
-            _AirMemOrder.SeqCst,
-            air_scope,
-        )
-        comptime addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
-        comptime store_intrin_base = "air.atomic.local.store" if addr_space == AddressSpace.SHARED else "air.atomic.global.store"
-        comptime store_intrin = store_intrin_base + "." + _get_air_atomic_suffix[
-            dtype
-        ]()
-        external_call[store_intrin, NoneType](
-            ptr.address_space_cast[addr_space](),
-            value,
-            _AirMemOrder.Relaxed,
-            air_scope,
-            True,
-        )
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name()
-        ]()
-
-
-@always_inline
-def store_relaxed[
-    dtype: DType,
-    //,
-    *,
-    scope: Scope = Scope.SYSTEM,
-    memory: Bool = True,
-    alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], value: Scalar[dtype]):
-    """Performs an atomic store with relaxed memory ordering semantics.
-
-    On NVIDIA, maps to PTX st.relaxed; on AMD, maps to POP atomic store with MONOTONIC ordering.
-
-    Parameters:
-        dtype: Data type of the value to store.
-        scope: Memory scope for the atomic operation.
-        memory: Whether to add memory clobber constraint.
-        alignment: Alignment requirement for the pointer.
-
-    Args:
-        ptr: Pointer to the memory location.
-        value: Value to store.
-    """
-    comptime assert is_gpu(), "atomic store only supported on GPU"
-
-    comptime if is_nvidia_gpu():
-        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-        comptime constraints = _get_nvtx_register_constraint[
-            dtype
-        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-        comptime scope_str = scope.mnemonic()
-        inlined_assembly[
-            "st.relaxed."
-            + ((scope_str + ".") if scope_str else "")
-            + "global."
-            + _get_type_suffix[dtype]()
-            + " [$1], $0;",
-            NoneType,
-            constraints=constraints,
-        ](value, ptr)
-    elif is_amd_gpu():
-        __mlir_op.`pop.store`[
-            alignment=alignment._mlir_value,
-            ordering=Consistency.MONOTONIC.__mlir_attr(),
-        ](value, ptr.address)
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name()
-        ]()
-
-
-@always_inline
-def load_acquire[
-    dtype: DType,
-    //,
-    *,
-    scope: Scope = Scope.SYSTEM,
-    memory: Bool = True,
-    alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...]) -> Scalar[dtype]:
-    """Performs an atomic load operation with acquire memory ordering semantics.
-
-    This function provides a memory barrier that ensures no subsequent memory operations
-    from the calling thread are executed until after this load completes.
-
-    Parameters:
-        dtype: The data type to load.
-        scope: Memory scope for the operation (default: Scope.SYSTEM).
-        memory: Whether to include memory side effects in constraints (default: True).
-        alignment: The alignment of the pointer.
-
-    Args:
-        ptr: Pointer to the memory location to load from.
-
-    Returns:
-        The loaded value.
-
-    Note:
-        - Only supported on GPUs.
-        - Maps directly to PTX ld.acquire instruction on NVIDIA, LLVM atomic
-          load on AMDGPU.
-        - Ensures subsequent memory operations don't execute until after load.
-        - Critical for implementing synchronization primitives.
-    """
-    comptime assert is_gpu(), "atomic load only supported on GPU"
-
-    comptime if is_nvidia_gpu():
-        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-        comptime constraints = "=" + _get_nvtx_register_constraint[
-            dtype
-        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-        comptime scope_str = scope.mnemonic()
-        return inlined_assembly[
-            "ld.acquire."
-            + ((scope_str + ".") if scope_str else "")
-            + "global."
-            + _get_type_suffix[dtype]()
-            + " $0, [$1];",
-            Scalar[dtype],
-            constraints=constraints,
-        ](ptr.address_space_cast[AddressSpace.GENERIC]())
-    elif is_amd_gpu():
-        return __mlir_op.`pop.load`[
-            alignment=alignment._mlir_value,
-            ordering=Consistency.ACQUIRE.__mlir_attr(),
-        ](ptr.address)
-    elif is_apple_gpu():
-        comptime addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
-        comptime mem_flags = _AirMemFlags.ThreadGroup if addr_space == AddressSpace.SHARED else _AirMemFlags.Device
-        comptime air_scope = _AirScope.Workgroup if scope == Scope.BLOCK else _AirScope.Device
-        comptime load_intrin_base = "air.atomic.local.load" if addr_space == AddressSpace.SHARED else "air.atomic.global.load"
-        comptime load_intrin = load_intrin_base + "." + _get_air_atomic_suffix[
-            dtype
-        ]()
-        var value = external_call[load_intrin, Scalar[dtype]](
-            ptr.address_space_cast[addr_space](),
-            _AirMemOrder.Relaxed,
-            air_scope,
-            True,
-        )
-        external_call["air.atomic.fence", NoneType](
-            mem_flags,
-            _AirMemOrder.SeqCst,
-            air_scope,
-        )
-        return value
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name(),
-        ]()
-
-
-@always_inline
-def load_relaxed[
-    dtype: DType,
-    //,
-    *,
-    scope: Scope = Scope.SYSTEM,
-    memory: Bool = True,
-    alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...]) -> Scalar[dtype]:
-    """Performs an atomic load with relaxed memory ordering semantics.
-
-    On NVIDIA, maps to PTX ld.relaxed; on AMD, maps to POP atomic load with MONOTONIC ordering.
-
-    Parameters:
-        dtype: Data type of the value to load.
-        scope: Memory scope for the atomic operation.
-        memory: Whether to add memory clobber constraint.
-        alignment: Alignment requirement for the pointer.
-
-    Args:
-        ptr: Pointer to the memory location.
-
-    Returns:
-        The loaded value.
-    """
-    comptime assert is_gpu(), "atomic load only supported on GPU"
-
-    comptime if is_nvidia_gpu():
-        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-        comptime constraints = "=" + _get_nvtx_register_constraint[
-            dtype
-        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-        comptime scope_str = scope.mnemonic()
-        return inlined_assembly[
-            "ld.relaxed."
-            + ((scope_str + ".") if scope_str else "")
-            + "global."
-            + _get_type_suffix[dtype]()
-            + " $0, [$1];",
-            Scalar[dtype],
-            constraints=constraints,
-        ](ptr.address_space_cast[AddressSpace.GENERIC]())
-    elif is_amd_gpu():
-        return __mlir_op.`pop.load`[
-            alignment=alignment._mlir_value,
-            ordering=Consistency.MONOTONIC.__mlir_attr(),
-        ](ptr.address)
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name(),
-        ]()
-
-
-@always_inline
-def store_volatile[
-    dtype: DType, //, memory: Bool = True
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], value: Scalar[dtype]):
-    """Performs a volatile store operation that cannot be optimized away.
-
-    This function guarantees that the store operation will be performed exactly as
-    specified, without being reordered or optimized away by the compiler.
-
-    Parameters:
-        dtype: The data type to store.
-        memory: Whether to include memory side effects in constraints (default: True).
-
-    Args:
-        ptr: Pointer to the memory location to store to.
-        value: Value to store.
-
-    Note:
-        - Only supported on NVIDIA GPUs.
-        - Maps directly to PTX st.volatile instruction.
-        - Prevents compiler optimization of the store operation.
-        - Useful for memory-mapped I/O or synchronization primitives.
-        - May have performance implications compared to regular stores.
-    """
-    comptime assert (
-        is_nvidia_gpu()
-    ), "store_volatile is not currently supported on AMD GPUs"
-    comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-    comptime constraints = _get_nvtx_register_constraint[
-        dtype
-    ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-    inlined_assembly[
-        "st.volatile.global." + _get_type_suffix[dtype]() + " [$1], $0;",
-        NoneType,
-        constraints=constraints,
-    ](value, ptr.address_space_cast[AddressSpace.GENERIC]())
-
-
-@always_inline
-def load_volatile[
-    dtype: DType, //, memory: Bool = True
-](ptr: UnsafePointer[mut=False, Scalar[dtype], ...]) -> Scalar[dtype]:
-    """Performs a volatile load operation that cannot be optimized away.
-
-    This function guarantees that the load operation will be performed exactly as
-    specified, without being reordered or optimized away by the compiler.
-
-    Parameters:
-        dtype: The data type to load.
-        memory: Whether to include memory side effects in constraints (default: True).
-
-    Args:
-        ptr: Pointer to the memory location to load from.
-
-    Returns:
-        The loaded value.
-
-    Note:
-        - Only supported on NVIDIA GPUs.
-        - Maps directly to PTX ld.volatile instruction.
-        - Prevents compiler optimization of the load operation.
-        - Useful for memory-mapped I/O or synchronization primitives.
-        - May have performance implications compared to regular loads.
-    """
-    comptime assert (
-        is_nvidia_gpu()
-    ), "load_volatile is not currently supported on AMD GPUs"
-    comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-    comptime constraints = "=" + _get_nvtx_register_constraint[
-        dtype
-    ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-    return inlined_assembly[
-        "ld.volatile.global." + _get_type_suffix[dtype]() + " $0, [$1];",
-        Scalar[dtype],
-        constraints=constraints,
-    ](ptr.address_space_cast[AddressSpace.GENERIC]())
 
 
 struct AMDBufferResource(TrivialRegisterPassable):
@@ -1226,6 +834,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         *,
         width: Int = 1,
         cache_policy: CacheOperation = CacheOperation.ALWAYS,
+        async_copies: Bool = False,
     ](
         self,
         vector_offset: Int32,
@@ -1240,10 +849,35 @@ struct AMDBufferResource(TrivialRegisterPassable):
         Copies from global memory to shared memory (aka LDS) bypassing storing to
         register.
 
+        Uses the `.ptr.` form (descriptor as `ptr addrspace(8)`) over the
+        legacy `<4 x i32>` form. Both lower to the same MUBUF
+        `buffer_load_*_lds` instruction on gfx9x/CDNA, but the `.ptr.`
+        form exposes the descriptor as a typed pointer so
+        `ScopedNoAliasAA` / `SIInsertWaitcnts` can reason about it. The
+        legacy form produced a 0.76-abs MLA decode regression at
+        output[0,0,0,0] when used from attention DMAs — the `.ptr.`
+        form is MLA-safe.
+
         Parameters:
             dtype: The dtype of the data to be loaded.
             width: The SIMD vector width.
             cache_policy: Cache operation policy controlling cache behavior at all levels.
+            async_copies: If True, attach the `amdgpu.AsyncCopies` alias
+                scope to the load — unlocks `ScopedNoAliasAA`-driven
+                optimizations (LICM, CSE, reordering) and, on AMDGPU,
+                the vmcnt relaxation in `SIInsertWaitcnts` (LLVM
+                PR #74537): a later `ds_read` tagged `noalias` against
+                the same scope can skip `s_waitcnt vmcnt(0)`. Only set
+                True when (a) every LDS read of this data carries the
+                matching `noalias` tag, AND (b) the kernel maintains an
+                explicit runtime fence (`s_waitcnt vmcnt(0)` +
+                `s_barrier`) — scheduling hints like
+                `s_sched_group_barrier` do NOT qualify. Defaults to
+                False (safe for all callers). Future extension: the
+                backend can bucket up to 8 distinct scopes independently
+                (LDSDMAStores slots), so more scope variants could be
+                added here if a kernel wants multiple independent DMA
+                streams.
 
         Args:
             vector_offset: Vector memory offset in elements (per thread).
@@ -1260,22 +894,62 @@ struct AMDBufferResource(TrivialRegisterPassable):
         var vector_offset_bytes = vector_offset * Int32(size_of[dtype]())
         var scalar_offset_bytes = scalar_offset * Int32(size_of[dtype]())
 
-        llvm_intrinsic[
-            "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
-        ](
-            self.desc,
-            shared_ptr,
-            Int32(bytes),
-            vector_offset_bytes,
-            scalar_offset_bytes,
-            Int32(0),
-            aux,
-        )
+        # Convert the SIMD[uint32, 4] descriptor to a `ptr addrspace(8)`
+        # so the `.ptr.` form of the intrinsic accepts it.
+        var desc_ptr = UnsafePointer[
+            Scalar[DType.bfloat16],
+            MutAnyOrigin,
+            address_space=AddressSpace.BUFFER_RESOURCE,
+        ].unsafe_dangling()
+        var ptr_to_ptr = UnsafePointer(to=desc_ptr)
+        var ptr_to_simd = UnsafePointer(to=self.desc)
+        ptr_to_ptr[0] = ptr_to_simd.bitcast[
+            UnsafePointer[
+                Scalar[DType.bfloat16],
+                MutAnyOrigin,
+                address_space=AddressSpace.BUFFER_RESOURCE,
+            ]
+        ]()[0]
+
+        comptime if not async_copies:
+            # No alias-scope metadata — clean `llvm_intrinsic` call path.
+            llvm_intrinsic[
+                "llvm.amdgcn.raw.ptr.buffer.load.lds",
+                NoneType,
+                has_side_effect=True,
+            ](
+                desc_ptr,
+                shared_ptr,
+                Int32(bytes),
+                vector_offset_bytes,
+                scalar_offset_bytes,
+                Int32(0),
+                aux,
+            )
+        else:
+            # Attach `amdgpu.AsyncCopies` alias scope via the
+            # `rocdl.raw.ptr.buffer.load.lds` MLIR op (the `llvm_intrinsic`
+            # wrapper can't attach arbitrary attrs).
+            var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
+                _type=__mlir_type.`!llvm.ptr<8>`
+            ](desc_ptr)
+            var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
+                _type=__mlir_type.`!llvm.ptr<3>`
+            ](shared_ptr)
+            comptime async_copies_scope = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
+            _raw_ptr_buffer_load_lds[async_copies_scope, Int(aux)](
+                desc_ptr_llvm,
+                shared_ptr3,
+                to_i32(Int32(bytes)),
+                to_i32(vector_offset_bytes),
+                to_i32(scalar_offset_bytes),
+                to_i32(Int32(0)),
+            )
 
     @always_inline("nodebug")
     def store[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         cache_policy: CacheOperation = CacheOperation.ALWAYS,
     ](
@@ -1367,6 +1041,41 @@ def _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
     # CacheOperation.VOLATILE_STREAMING -> 0x13 (SC=11, NT=1) - Volatile + streaming
 
 
+@always_inline("nodebug")
+def _raw_ptr_buffer_load_lds[
+    scopes: __mlir_type.`!kgen.deferred`, aux: Int
+](
+    desc_ptr_llvm: __mlir_type.`!llvm.ptr<8>`,
+    shared_ptr3: __mlir_type.`!llvm.ptr<3>`,
+    size: __mlir_type.i32,
+    voffset: __mlir_type.i32,
+    soffset: __mlir_type.i32,
+    offset: __mlir_type.i32,
+):
+    # The cache-policy `aux` slot is an `I32Attr`, i.e. a plain signless
+    # builtin `i32` IntegerAttr literal (`N : i32`). It cannot be fed a value
+    # expression (`to_i32(...)`) nor an `int_literal_convert` /
+    # `cast_to_builtin` attribute — both produce non-builtin attrs the
+    # `non-atomic AMDGPU buffer cache policy` verifier rejects. Splicing the
+    # comptime-constant `aux` with a builtin type annotation
+    # (`__mlir_attr[..., `: i32`]`) folds to the same builtin `N : i32`
+    # IntegerAttr literal the verifier accepts. `scopes` (the `alias_scopes`
+    # attribute) is threaded through unchanged so its identity is preserved.
+    comptime assert aux in (
+        0x00,
+        0x02,
+        0x03,
+        0x10,
+        0x11,
+        0x12,
+    ), "unsupported AMD buffer cache-policy aux bitmask"
+    __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
+        alias_scopes=scopes,
+        aux=__mlir_attr[aux.__mlir_index__(), `: i32`],
+        _type=None,
+    ](desc_ptr_llvm, shared_ptr3, size, voffset, soffset, offset)
+
+
 def _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
     comptime if bytes == 1:
         return DType.uint8
@@ -1430,6 +1139,113 @@ def ds_read_tr16_b64[
     ](shared_ptr)
 
 
+@always_inline
+def ds_read_tr8_b64[
+    dtype: DType,
+    //,
+](
+    shared_ptr: UnsafePointer[
+        mut=False, Scalar[dtype], _, address_space=AddressSpace.SHARED
+    ]
+) -> SIMD[dtype, 8]:
+    """Reads a 64-bit LDS transpose block using TR8 layout and returns SIMD[dtype, 8] of 8-bit types.
+
+    Each 16-lane row reads 16x8 bytes from LDS and performs two interleaved
+    8x8 byte transposes, producing 8 transposed bytes per lane.
+
+    Parameters:
+        dtype: Data type of the elements (must be 8-bit type).
+
+    Args:
+        shared_ptr: Pointer to the LDS transpose block.
+
+    Returns:
+        SIMD[dtype, 8] of 8-bit types.
+
+    Notes:
+        - Only supported on AMD GPUs (CDNA4+).
+        - Maps directly to llvm.amdgcn.ds.read.tr8.b64 intrinsic.
+        - Return type must use v2i32 intermediate to avoid LLVM type legalizer crash.
+    """
+
+    comptime assert (
+        is_amd_gpu()
+    ), "The ds_read_tr8_b64 function is only applicable on AMDGPU hardware."
+
+    comptime assert (
+        size_of[dtype]() == 1
+    ), "ds_read_tr8_b64 supports 8-bit dtypes."
+
+    comptime assert (
+        _cdna_4_or_newer()
+    ), "ds_read_tr8_b64 is only supported on CDNA4+"
+
+    # Must use v2i32 return type; v8i8 crashes LLVM type legalizer.
+    var raw = llvm_intrinsic[
+        "llvm.amdgcn.ds.read.tr8.b64",
+        SIMD[DType.uint32, 2],
+        has_side_effect=True,
+    ](shared_ptr)
+    return bitcast[dtype, 8](raw)
+
+
+# ===-----------------------------------------------------------------------===#
+# AMD f32 -> fp8 raw packed conversion (no clamp / NaN scrub)
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def cvt_pk_fp8_f32_raw[
+    dtype: DType,
+](src: SIMD[DType.float32, 4]) -> SIMD[dtype, 4]:
+    """Packs 4 f32 into 4 fp8 via 2 chained `v_cvt_pk_fp8_f32` ops.
+
+    Unlike `SIMD.cast[fp8]()`, this bypasses the compiler's clamp + NaN
+    scrub wrapper (`v_med3_f32` + `v_cmp_u_f32` + `v_cndmask_b32`) that the
+    `pop.cast` lowering emits on AMDGPU. The caller is responsible for
+    ensuring inputs are in the FP8 representable range; finite
+    out-of-range values are NOT saturated by the hardware instruction.
+    NaN/Inf inputs produce implementation-defined FP8 outputs.
+
+    Parameters:
+        dtype: The FP8 destination type, `float8_e4m3fn` or `float8_e5m2`.
+
+    Args:
+        src: Four f32 values to pack.
+
+    Returns:
+        SIMD of 4 fp8 values, bitcast from the packed i32 result.
+
+    Notes:
+        - Only supported on AMD CDNA4+ GPUs.
+        - Maps to two `v_cvt_pk_fp8_f32` (or `.pk.bf8.f32`) instructions.
+        - Use only when input domain is provably bounded (e.g. softmax
+          output, where values are in (0, 1]).
+    """
+    comptime assert (
+        is_amd_gpu()
+    ), "cvt_pk_fp8_f32_raw is only supported on AMDGPU hardware."
+    comptime assert (
+        _cdna_4_or_newer()
+    ), "cvt_pk_fp8_f32_raw is only supported on CDNA4+"
+    comptime assert (
+        dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2
+    ), "cvt_pk_fp8_f32_raw requires E4M3FN or E5M2 destination dtype."
+
+    comptime intrinsic_name = (
+        "llvm.amdgcn.cvt.pk.fp8.f32" if dtype
+        == DType.float8_e4m3fn else "llvm.amdgcn.cvt.pk.bf8.f32"
+    )
+
+    var lo = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False](
+        src[0], src[1], UInt32(0), False
+    )
+    var packed = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False](
+        src[2], src[3], lo, True
+    )
+    return bitcast[dtype, 4](packed)
+
+
 # ===-----------------------------------------------------------------------===#
 # AMD permlane shuffle
 # ===-----------------------------------------------------------------------===#
@@ -1478,7 +1294,7 @@ def permlane_swap[
 
 
 def permlane_shuffle[
-    dtype: DType, simd_width: Int, //, stride: Int
+    dtype: DType, simd_width: SIMDSize, //, stride: Int
 ](val: SIMD[dtype, simd_width], out res: type_of(val)):
     """Shuffles SIMD values across lanes using AMD permlane operations.
 

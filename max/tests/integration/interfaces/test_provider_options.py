@@ -15,10 +15,11 @@
 import json
 
 import pytest
-from max.interfaces.provider_options import (
+from max.pipelines.request.provider_options import (
     ImageProviderOptions,
     MaxProviderOptions,
     ProviderOptions,
+    VideoProviderOptions,
 )
 from pydantic import ValidationError
 
@@ -73,6 +74,47 @@ def test_image_provider_options_frozen() -> None:
 
     with pytest.raises(ValidationError):
         opts.width = 1024  # type: ignore[misc]
+
+
+def test_video_provider_options_guidance_scale() -> None:
+    """VideoProviderOptions exposes guidance_scale inherited from the base."""
+    # Inherits the modality-shared default (3.5) from PixelProviderOptionsBase.
+    opts = VideoProviderOptions()
+    assert opts.guidance_scale == 3.5
+
+    # Accepts explicit values.
+    opts = VideoProviderOptions(guidance_scale=5.0)
+    assert opts.guidance_scale == 5.0
+
+    # Negative values are rejected (ge=0.0).
+    with pytest.raises(ValidationError):
+        VideoProviderOptions(guidance_scale=-1.0)
+
+
+def test_video_provider_options_flow_shift() -> None:
+    """VideoProviderOptions exposes flow_shift inherited from the base."""
+    # Default is None (defer to the pipeline's per-model default).
+    opts = VideoProviderOptions()
+    assert opts.flow_shift is None
+
+    # Accepts explicit positive values.
+    opts = VideoProviderOptions(flow_shift=5.0)
+    assert opts.flow_shift == 5.0
+
+    # gt=0.0: zero and negative values are rejected.
+    with pytest.raises(ValidationError):
+        VideoProviderOptions(flow_shift=0.0)
+    with pytest.raises(ValidationError):
+        VideoProviderOptions(flow_shift=-1.0)
+
+
+def test_image_provider_options_flow_shift_inherited() -> None:
+    """flow_shift is exposed on ImageProviderOptions via the shared base."""
+    opts = ImageProviderOptions()
+    assert opts.flow_shift is None
+
+    opts = ImageProviderOptions(flow_shift=3.0)
+    assert opts.flow_shift == 3.0
 
 
 def test_provider_options_empty() -> None:
@@ -200,7 +242,13 @@ def test_provider_options_nested_validation() -> None:
 
 
 class TestImageDimensionValidation:
-    """Tests for height/width validation on ImageProviderOptions."""
+    """Tests for height/width validation on ImageProviderOptions.
+
+    Pixel-area limits are enforced per-architecture via context validators
+    (see ``max.pipelines.context.pixel_context_validators``); the schema only
+    enforces a minimum size and multiple-of-8 (the VAE spatial scale factor).
+    Per-model tokenizers handle any further patchification-related rounding.
+    """
 
     def test_dimensions_none_is_valid(self) -> None:
         opts = ImageProviderOptions()
@@ -229,29 +277,30 @@ class TestImageDimensionValidation:
         ):
             ImageProviderOptions(width=512, height=64)
 
-    def test_width_not_multiple_of_16(self) -> None:
-        with pytest.raises(ValidationError, match="must be a multiple of 16"):
+    def test_width_not_multiple_of_8(self) -> None:
+        with pytest.raises(ValidationError, match="must be a multiple of 8"):
             ImageProviderOptions(width=130, height=512)
 
-    def test_height_not_multiple_of_16(self) -> None:
-        with pytest.raises(ValidationError, match="must be a multiple of 16"):
+    def test_height_not_multiple_of_8(self) -> None:
+        with pytest.raises(ValidationError, match="must be a multiple of 8"):
             ImageProviderOptions(width=512, height=130)
 
-    def test_pixel_area_exceeds_max(self) -> None:
-        with pytest.raises(
-            ValidationError, match="exceeds the maximum pixel area"
-        ):
-            ImageProviderOptions(width=2048, height=1024)
+    def test_height_1080_accepted(self) -> None:
+        # 1080 is a multiple of 8 but not 16; the API must accept it so that
+        # callers can request 1080p workloads (e.g., for Wan video benchmarks).
+        # Per-model tokenizers round to the nearest patchification-compatible
+        # size as needed.
+        opts = ImageProviderOptions(width=1920, height=1080)
+        assert opts.width == 1920
+        assert opts.height == 1080
 
-    def test_pixel_area_at_max(self) -> None:
-        opts = ImageProviderOptions(width=1024, height=1024)
-        assert opts.width == 1024
-        assert opts.height == 1024
+    def test_multiple_of_8_but_not_16_accepted(self) -> None:
+        # 1080 = 8 * 135 is allowed; 1088 = 16 * 68 is also allowed.
+        opts = ImageProviderOptions(width=1080, height=1080)
+        assert opts.width == 1080
+        assert opts.height == 1080
 
-    def test_only_width_set_skips_area_check(self) -> None:
-        opts = ImageProviderOptions(width=2048)
-        assert opts.width == 2048
-
-    def test_only_height_set_skips_area_check(self) -> None:
-        opts = ImageProviderOptions(height=2048)
-        assert opts.height == 2048
+    def test_large_dimensions_accepted_at_schema_layer(self) -> None:
+        opts = ImageProviderOptions(width=4096, height=4096)
+        assert opts.width == 4096
+        assert opts.height == 4096

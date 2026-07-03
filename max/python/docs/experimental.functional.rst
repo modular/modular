@@ -13,4 +13,8 @@ max.experimental.functional
 .. automodule:: max.experimental.functional
    :members:
    :undoc-members:
+   :imported-members:
    :show-inheritance:
+   :exclude-members: Tensor, DType, Device, DeviceRef, Graph, TensorType,
+       Type, ops, MLIRThreadPoolExecutor, Any, Coroutine, Mapping, Sequence,
+       Path, TypeVar

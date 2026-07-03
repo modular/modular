@@ -47,7 +47,7 @@ def test_squeeze__fails_on_non_static_1(
     assume(input_type.shape[axis] != 1)
     with Graph("reshape", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            out = ops.squeeze(graph.inputs[0].tensor, axis)
+            ops.squeeze(graph.inputs[0].tensor, axis)
 
 
 @given(input_type=tensor_types(), axis=st.integers())
@@ -57,4 +57,4 @@ def test_squeeze__fails_on_axis_out_of_bounds(
     assume(not -input_type.rank <= axis < input_type.rank)
     with Graph("reshape", input_types=[input_type]) as graph:
         with pytest.raises(IndexError):
-            out = ops.squeeze(graph.inputs[0].tensor, axis)
+            ops.squeeze(graph.inputs[0].tensor, axis)

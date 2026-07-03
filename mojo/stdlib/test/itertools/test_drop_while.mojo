@@ -204,5 +204,16 @@ def test_drop_while_only_yields_once_triggered() raises:
         _ = next(it)
 
 
+def test_drop_while_owned() raises:
+    var l: List[Int] = [1, 2, 3, 4, 5, 6, 1, 2]
+    var it = drop_while[less_than_5](l^)
+    assert_equal(next(it), 5)
+    assert_equal(next(it), 6)
+    assert_equal(next(it), 1)
+    assert_equal(next(it), 2)
+    with assert_raises(contains="StopIteration"):
+        _ = next(it)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

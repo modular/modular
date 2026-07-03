@@ -69,7 +69,7 @@ def tma_ragged_store_kernel[
         alignment=128,
     ].stack_allocation()
 
-    var seq_idx = UInt(block_idx.x)
+    var seq_idx = block_idx.x
     var sequence_length = sequence_lengths[seq_idx]
 
     if thread_idx.x == 0:
@@ -285,7 +285,7 @@ def test_tma_ragged_store[
         using_max_descriptor_size,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         ragged_tensor_map,
         sequence_lengths,
         grid_dim=(rank),
@@ -298,21 +298,19 @@ def test_tma_ragged_store[
         comptime for i in range(rank):
             comptime sequence_length = sequence_lengths[i]
 
-            var adjusted_ptr = host_buffer.unsafe_ptr() + (
-                running_sequence * depth
-            )
+            var adjusted = host_buffer.as_span()[running_sequence * depth :]
             var global_host_tensor = GlobalTensorType[sequence_length](
-                adjusted_ptr
+                adjusted.unsafe_ptr()
             )
 
             comptime if swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE:
                 for i in range(global_host_tensor.size()):
-                    assert_equal(adjusted_ptr[i], Scalar[dtype](i))
+                    assert_equal(adjusted[i], Scalar[dtype](i))
             else:
                 comptime swizzle = make_swizzle[dtype, swizzle_mode]()
                 for i in range(global_host_tensor.size()):
                     var swz_offset = swizzle(i)
-                    assert_equal(adjusted_ptr[swz_offset], Scalar[dtype](i))
+                    assert_equal(adjusted[swz_offset], Scalar[dtype](i))
 
 
 def test_tma_load_row_major[
@@ -352,7 +350,7 @@ def test_tma_load_row_major[
             type_of(tma_tensor).tile_shape,  # tile shape
             __thread_layout,  # thread layout
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             dst.device_tensor(),
             tma_tensor,
             grid_dim=(1, M_roundup // tileM),
@@ -366,7 +364,7 @@ def test_tma_load_row_major[
             type_of(tma_tensor).tile_shape,  # tile shape
             __thread_layout,  # thread layout
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             dst.device_tensor(),
             tma_tensor,
             grid_dim=(N_roundup // tileN, M_roundup // tileM),
@@ -504,7 +502,7 @@ def test_tma_async_store[
             __thread_layout,
             src_layout,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(1, src_M // tileM),
@@ -519,7 +517,7 @@ def test_tma_async_store[
             __thread_layout,
             src_layout,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(src_N // tileN, src_M // tileM),
@@ -655,7 +653,7 @@ def test_tma_async_reduce[
             __reduce_thread_layout,
             src_layout,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(1, src_M // tileM),
@@ -669,7 +667,7 @@ def test_tma_async_reduce[
             __reduce_thread_layout,
             src_layout,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             tma_tensor,
             src.device_tensor(),
             grid_dim=(src_N // tileN, src_M // tileM),
@@ -824,7 +822,7 @@ def test_tma_load_two_buffers_row_major[
         Layout.row_major(__a_tileM, __a_tileN),  # thread layout
         Layout.row_major(__b_tileM, __b_tileN),  # thread layout
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_dst.device_tensor(),
         b_dst.device_tensor(),
         a_tma_tensor,
@@ -1022,7 +1020,7 @@ def test_tma_load_and_store_two_buffers_row_major[
         a_layout=dst_layout,  # dst layout
         b_layout=dst_layout,  # dst layout
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_dst_tensor,
         b_tma_dst_tensor,
         a_tma_src_tensor,

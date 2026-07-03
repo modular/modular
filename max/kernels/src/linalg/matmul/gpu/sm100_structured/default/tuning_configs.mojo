@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from ...tile_scheduler import RasterOrder
+from linalg.gemv import GEMVAlgorithm
 from internal_utils import TuningConfig
+from std.utils.index import Index, IndexList
 
 
 struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
@@ -34,7 +36,10 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
     var num_accum_pipeline_stages: Int
     var num_clc_pipeline_stages: Int
     var num_split_k: Int
+    var num_pipeline_stages: Int  # 0 = auto-compute
     var is_small_bn: Bool
+
+    var batch_size: Int
 
     def __init__(
         out self,
@@ -52,7 +57,9 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         num_accum_pipeline_stages: Int = 2,
         num_clc_pipeline_stages: Int = 2,
         num_split_k: Int = 1,
+        num_pipeline_stages: Int = 0,
         is_small_bn: Bool = False,
+        batch_size: Int = 1,
     ):
         self.M = M
         self.M_end = M + 1
@@ -69,7 +76,9 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         self.num_accum_pipeline_stages = num_accum_pipeline_stages
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_split_k = num_split_k
-        self.is_small_bn = is_small_bn  # only used for block-scaled matmul
+        self.num_pipeline_stages = num_pipeline_stages
+        self.is_small_bn = is_small_bn
+        self.batch_size = batch_size
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes the tuning config as a string.
@@ -77,7 +86,17 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         Args:
             writer: The writer to write to.
         """
-        writer.write("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
+        writer.write(
+            "config: ",
+            "m:",
+            self.M,
+            "/n:",
+            self.N,
+            "/k:",
+            self.K,
+            "/b:",
+            self.batch_size,
+        )
 
     def __init__(
         out self,
@@ -95,7 +114,9 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         num_accum_pipeline_stages: Int = 2,
         num_clc_pipeline_stages: Int = 2,
         num_split_k: Int = 1,
-        is_small_bn: Bool = False,  # only used for block-scaled matmul
+        num_pipeline_stages: Int = 0,
+        is_small_bn: Bool = False,
+        batch_size: Int = 1,
     ):
         self.M = M
         self.M_end = M_end
@@ -116,7 +137,72 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         self.num_accum_pipeline_stages = num_accum_pipeline_stages
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_split_k = num_split_k
+        self.num_pipeline_stages = num_pipeline_stages
         self.is_small_bn = is_small_bn
+        self.batch_size = batch_size
+
+
+struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
+    var M: Int
+    var M_end: Int
+    var N: Int
+    var K: Int
+    var kernel_kind: GEMVAlgorithm
+    var tile_m: Int
+    var tile_n: Int
+    var num_threads: Int
+    var unroll_factor: Int
+    var tile_k: Int
+    var swapAB: Bool
+
+    def __init__(
+        out self,
+        M: Int,
+        M_end: Int,
+        N: Int,
+        K: Int,
+        tile_m: Int,
+        tile_n: Int,
+        num_threads: Int,
+        kernel_kind: GEMVAlgorithm,
+        unroll_factor: Int = 1,
+        tile_k: Int = 128,
+        swapAB: Bool = False,
+    ):
+        self.M = M
+        self.M_end = M_end
+        self.N = N
+        self.K = K
+        self.kernel_kind = kernel_kind
+        self.tile_m = tile_m
+        self.tile_n = tile_n
+        self.num_threads = num_threads
+        self.unroll_factor = unroll_factor
+        self.tile_k = tile_k
+        self.swapAB = swapAB
+
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write(
+            "small_mn_config: ",
+            "kernel:",
+            self.kernel_kind,
+            "/m:",
+            self.M,
+            "-",
+            self.M_end,
+            "/n:",
+            self.N,
+            "/k:",
+            self.K,
+            "/tile_m:",
+            self.tile_m,
+            "/tile_n:",
+            self.tile_n,
+            "/threads:",
+            self.num_threads,
+            "/swapAB:",
+            self.swapAB,
+        )
 
 
 # codegen template
@@ -260,17 +346,18 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
         ),
         TuningConfigSM100(
             M=32,
-            M_end=128 + 64,
+            M_end=32 + 1,
             N=1536,
             K=1536,
-            mma_shape=Index(256, 32, 16),
-            cta_group=2,
+            mma_shape=Index(64, 8, 16),
+            cta_group=1,
             cluster_shape=Index(4, 2, 1),
             block_swizzle_size=0,
             swapAB=True,
             rasterize_order=RasterOrder(0),
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
+            k_group_size=4,
         ),
         TuningConfigSM100(
             M=2048,
@@ -517,7 +604,27 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
         ),
+        TuningConfigSM100(
+            M=12,
+            M_end=64 + 1,
+            N=20480,
+            K=7168,
+            mma_shape=Index(128, 160, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+        ),
     ]
+
+
+# ===----------------------------------------------------------------------=== #
+# FP32 Shapes
+# ===----------------------------------------------------------------------=== #
+
+
+def _get_tuning_list_sm100_fp32() -> List[TuningConfigSM100]:
+    return List[TuningConfigSM100]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1745,38 +1852,6 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             is_small_bn=True,
         ),
         TuningConfigSM100(
-            M=1,
-            M_end=16 + 1,
-            N=36864,
-            K=7168,
-            mma_shape=Index(256, 16, 32),
-            cta_group=2,
-            cluster_shape=Index(2, 1, 1),
-            block_swizzle_size=8,
-            rasterize_order=RasterOrder(1),
-            swapAB=True,
-            k_group_size=2,
-            num_accum_pipeline_stages=1,
-            num_clc_pipeline_stages=0,
-            is_small_bn=True,
-        ),
-        TuningConfigSM100(
-            M=17,
-            M_end=32 + 1,
-            N=36864,
-            K=7168,
-            mma_shape=Index(256, 32, 32),
-            cta_group=2,
-            cluster_shape=Index(2, 1, 1),
-            block_swizzle_size=8,
-            rasterize_order=RasterOrder(1),
-            swapAB=True,
-            k_group_size=2,
-            num_accum_pipeline_stages=1,
-            num_clc_pipeline_stages=0,
-            is_small_bn=True,
-        ),
-        TuningConfigSM100(
             M=32,
             M_end=129,
             N=4096,
@@ -1832,6 +1907,106 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=0,
         ),
+        TuningConfigSM100(
+            M=1,
+            M_end=9,
+            N=36864,
+            K=7168,
+            mma_shape=Index(128, 8, 32),
+            cta_group=1,
+            cluster_shape=Index(1, 1, 1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_pipeline_stages=8,
+            is_small_bn=True,
+            k_group_size=2,
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        TuningConfigSM100(
+            M=9,
+            M_end=17,
+            N=36864,
+            K=7168,
+            mma_shape=Index(128, 16, 32),
+            cta_group=1,
+            cluster_shape=Index(1, 1, 1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_pipeline_stages=8,
+            is_small_bn=True,
+            k_group_size=2,
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        TuningConfigSM100(
+            M=17,
+            M_end=25,
+            N=36864,
+            K=7168,
+            mma_shape=Index(128, 24, 32),
+            cta_group=1,
+            cluster_shape=Index(1, 1, 1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_pipeline_stages=8,
+            is_small_bn=True,
+            k_group_size=2,
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        TuningConfigSM100(
+            M=25,
+            M_end=33,
+            N=36864,
+            K=7168,
+            mma_shape=Index(128, 32, 32),
+            cta_group=1,
+            cluster_shape=Index(1, 1, 1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=2,
+            num_pipeline_stages=8,
+            is_small_bn=True,
+            k_group_size=2,
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        TuningConfigSM100(
+            M=33,
+            M_end=65,
+            N=18432,
+            K=7168,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+            is_small_bn=True,
+            k_group_size=2,
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        TuningConfigSM100(
+            M=65,
+            M_end=69,
+            N=18432,
+            K=7168,
+            mma_shape=Index(256, 96, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+            is_small_bn=True,
+            k_group_size=2,
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
     ]
 
     return materialize[config_list]()
@@ -1879,3 +2054,149 @@ def _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
     ]
 
     return materialize[config_list]()
+
+
+def _get_tuning_list_sm100_batched_bf16() -> List[TuningConfigSM100]:
+    comptime config_list = [
+        TuningConfigSM100(
+            batch_size=64,
+            M=1,
+            M_end=16 + 1,
+            N=128,
+            K=512,
+            mma_shape=Index(128, 16, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+            k_group_size=4,
+        ),
+    ]
+
+    return materialize[config_list]()
+
+
+def _get_tuning_list_sm100_batched_fp8() -> List[TuningConfigSM100]:
+    comptime config_list = [
+        TuningConfigSM100(
+            batch_size=64,
+            M=1,
+            M_end=16 + 1,
+            N=128,
+            K=512,
+            mma_shape=Index(128, 16, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+            k_group_size=4,
+        ),
+    ]
+
+    return materialize[config_list]()
+
+
+# ===----------------------------------------------------------------------=== #
+# Batched FP32 Shapes
+# ===----------------------------------------------------------------------=== #
+
+
+def _get_tuning_list_sm100_batched_fp32() -> List[TuningConfigSM100]:
+    return List[TuningConfigSM100]()
+
+
+# ===----------------------------------------------------------------------=== #
+# GEMV tuning configs for small-N shapes
+# ===----------------------------------------------------------------------=== #
+
+
+def _get_tuning_list_small_MN_gemms_bf16() -> List[TuningConfigSmallMNGemms]:
+    return [
+        TuningConfigSmallMNGemms(
+            M=2,
+            M_end=5,
+            N=384,
+            K=7168,
+            tile_m=1,
+            tile_n=2,
+            num_threads=256,
+            kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
+        ),
+        TuningConfigSmallMNGemms(
+            M=5,
+            M_end=9,
+            N=384,
+            K=7168,
+            tile_m=2,
+            tile_n=2,
+            num_threads=128,
+            unroll_factor=2,
+            kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
+        ),
+        TuningConfigSmallMNGemms(
+            M=9,
+            M_end=13,
+            N=384,
+            K=7168,
+            tile_m=2,
+            tile_n=2,
+            num_threads=128,
+            kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
+            unroll_factor=2,
+        ),
+        TuningConfigSmallMNGemms(
+            M=13,
+            M_end=17,
+            N=384,
+            K=7168,
+            tile_m=2,
+            tile_n=2,
+            num_threads=128,
+            kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
+        ),
+        TuningConfigSmallMNGemms(
+            M=17,
+            M_end=25,
+            N=384,
+            K=7168,
+            tile_m=4,
+            tile_n=2,
+            num_threads=128,
+            kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
+            unroll_factor=2,
+        ),
+        TuningConfigSmallMNGemms(
+            M=25,
+            M_end=33,
+            N=384,
+            K=7168,
+            tile_m=16,
+            tile_n=8,
+            num_threads=256,
+            kernel_kind=GEMVAlgorithm.GEMM_MMA_CPASYNC,
+            tile_k=256,
+        ),
+        # Kimi-style decode: small-M `act @ weight^T` with the weight as the
+        # large free-streaming operand. swapAB feeds the weight to the A slot
+        # and transposes the store, so the N=2112 weight load streams under any
+        # PDL-attached producer (e.g. Lamport AR+RMSNorm) while the output
+        # stays row-major [M, N]. Covers the M in [1, 17) range used by decode.
+        TuningConfigSmallMNGemms(
+            M=1,
+            M_end=17,
+            N=2112,
+            K=7168,
+            tile_m=16,
+            tile_n=8,
+            num_threads=128,
+            kernel_kind=GEMVAlgorithm.GEMM_MMA_CPASYNC,
+            tile_k=128,
+            swapAB=True,
+        ),
+    ]

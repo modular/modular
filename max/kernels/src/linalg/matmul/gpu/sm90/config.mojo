@@ -15,6 +15,8 @@ from std.hashlib.hasher import Hasher
 
 from std.collections.set import Set
 from std.math.uutils import ualign_down, ualign_up, ufloordiv, uceildiv
+from std.math import ceildiv
+from std.sys import size_of
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host.info import H100
 from std.utils.index import Index, IndexList
@@ -230,12 +232,12 @@ struct MatmulConfig[
             block_tile_shape=self.block_tile_shape,
             mma_shape=self.mma_shape,
             cluster_shape=self.cluster_shape,
-            num_pipeline_stages=UInt(self.num_pipeline_stages),
-            num_k_partitions=UInt(self.num_k_partitions),
-            num_consumer=UInt(self.num_consumer),
+            num_pipeline_stages=self.num_pipeline_stages,
+            num_k_partitions=self.num_k_partitions,
+            num_consumer=self.num_consumer,
             partitioned_multicast=self.partitioned_multicast,
             pdl_level=self._pdl_level,
-            k_group_size=UInt(self.k_group_size),
+            k_group_size=self.k_group_size,
         )
 
     def __eq__(self, other: Self) -> Bool:
@@ -557,17 +559,21 @@ def build_configs_generic[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool,
-    //,
     M_start: Int,
     M_end: Int,
-    config_fn: def(Int) capturing[_] -> MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ],
+    ConfigFnType: ImplicitlyCopyable
+    & def(Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b],
+    config_fn: ConfigFnType,
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
     var set = Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]()
 
     for m in range(M_start, M_end):
-        var config = config_fn(m)
+        var config = config_fn.__call__[
+            _a_type=a_type,
+            _b_type=b_type,
+            _c_type=c_type,
+            _transpose_b=transpose_b,
+        ](m)
         if config not in set:
             set.add(config)
 

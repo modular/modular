@@ -17,6 +17,7 @@ from std.gpu import *
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.testing import *
 from std.utils import Index, IndexList
+from std.utils.coord import Coord
 
 
 @parameter
@@ -32,27 +33,21 @@ def run_exp_approx_test[simd_width: Int](ctx: DeviceContext) raises:
         for i in range(length):
             in_host[i] = 0.001 * (Scalar[dtype](i) - length // 2)
 
-    var in_buffer = Span[Scalar[dtype]](
-        ptr=in_device.unsafe_ptr(), length=length
-    )
-    var out_buffer = Span[Scalar[dtype]](
-        ptr=out_device.unsafe_ptr(), length=length
-    )
+    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=length)
+    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=length)
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[1]](idx0)
-        var v = in_buffer.unsafe_ptr().load[width=simd_width](idx[0])
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+        var idx = Int(idx0[0].value())
+        var v = in_buffer.unsafe_ptr().load[width=simd_width](idx)
         out_buffer.unsafe_ptr().store[width=simd_width](
-            idx[0], exp_approx_f32[simd_width](v)
+            idx, exp_approx_f32[simd_width](v)
         )
 
     # Launch elementwise kernel on GPU (width is compile-time parameter)
-    elementwise[func, simd_width, target="gpu"](IndexList[1](length), ctx)
+    elementwise[func, simd_width, target="gpu"](Coord(length), ctx)
 
     # Validate results
     with in_device.map_to_host() as in_host, out_device.map_to_host() as out_host:

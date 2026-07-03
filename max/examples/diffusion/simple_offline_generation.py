@@ -42,6 +42,7 @@ import argparse
 import asyncio
 import base64
 import json
+import logging
 import os
 import time
 from io import BytesIO
@@ -50,40 +51,39 @@ from typing import Any, cast
 
 from max.driver import DeviceSpec
 from max.examples.diffusion.profiler import profile_execute
-from max.interfaces import (
+from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
+from max.pipelines.context import PixelContext
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.diffusion.interface import DiffusionPipeline
+from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
+from max.pipelines.lib import PixelGenerationTokenizer
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.pipeline_executor import PipelineExecutor
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.modeling.types import (
     PipelineTask,
     PixelGenerationInputs,
     RequestID,
 )
-from max.interfaces.provider_options import (
-    ImageProviderOptions,
-    ProviderOptions,
-)
-from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import (
+from max.pipelines.request import OpenResponsesRequest
+from max.pipelines.request.open_responses import (
+    InputFileContent,
     InputImageContent,
     InputTextContent,
+    InputVideoContent,
     OpenResponsesRequestBody,
     OutputImageContent,
     UserMessage,
 )
-from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
-from max.pipelines.core import PixelContext
-from max.pipelines.lib import PixelGenerationTokenizer
-from max.pipelines.lib.interfaces import DiffusionPipeline
-from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.pipelines.lib.pipeline_variants.pixel_generation import (
-    PixelGenerationPipeline,
+from max.pipelines.request.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
 )
 from PIL import Image
 
 _FLUX2_ARCH_NAMES = {
     "Flux2Pipeline",
     "Flux2KleinPipeline",
-    "Flux2Pipeline_ModuleV3",
-    "Flux2KleinPipeline_ModuleV3",
 }
 QWEN_IMAGE_ARCH_NAMES = {
     "QwenImagePipeline",
@@ -291,27 +291,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Taylor expansion order: 1=linear, 2=quadratic (model default if unset).",
     )
     parser.add_argument(
-        "--teacache",
-        action="store_true",
-        help="Enable TeaCache optimization for the FLUX.2 transformer.",
-    )
-    parser.add_argument(
-        "--teacache-rel-l1-thresh",
-        type=float,
-        default=None,
-        help="Relative-L1 threshold for TeaCache (model default if unset).",
-    )
-    parser.add_argument(
-        "--teacache-coefficients",
-        type=float,
-        action="append",
-        default=None,
-        help=(
-            "TeaCache polynomial coefficients. Repeat this flag once per "
-            "coefficient to override the model defaults (5 for FLUX)."
-        ),
-    )
-    parser.add_argument(
         "--prefer-module-v3",
         action="store_true",
         help="Prefer the ModuleV3 implementation when the selected model provides one.",
@@ -495,6 +474,8 @@ async def generate_image(args: argparse.Namespace) -> None:
             prefer_module_v3=args.prefer_module_v3,
         ),
     )
+    # Resolve the manifest (encodings + weight paths) before use.
+    config.models.resolve()
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         config.models.main_architecture_name,
         prefer_module_v3=config.runtime.prefer_module_v3,
@@ -543,7 +524,8 @@ async def generate_image(args: argparse.Namespace) -> None:
             f"Using secondary max length: {secondary_max_length} for tokenizer_2"
         )
 
-    tokenizer = PixelGenerationTokenizer(
+    tokenizer_cls = cast(type[PixelGenerationTokenizer], arch.tokenizer_cls)
+    tokenizer = tokenizer_cls(
         model_path=args.model,
         pipeline_config=config,
         subfolder="tokenizer",  # Tokenizer is in a subfolder for diffusion models
@@ -553,29 +535,32 @@ async def generate_image(args: argparse.Namespace) -> None:
     )
 
     # Step 3: Initialize the pipeline
-    # The pipeline executes the diffusion model
+    # The pipeline executes the diffusion model. PixelGenerationPipeline
+    # accepts either a DiffusionPipeline (ModuleV3) or a PipelineExecutor
+    # (ModuleV2) subclass, so the type check here mirrors that.
     if msg := getattr(arch.pipeline_model, "not_implemented_message", None):
         raise NotImplementedError(msg)
-    if not issubclass(arch.pipeline_model, DiffusionPipeline):
+    if not issubclass(
+        arch.pipeline_model, (DiffusionPipeline, PipelineExecutor)
+    ):
         raise TypeError(
-            "Selected architecture does not implement DiffusionPipeline: "
-            f"{arch.pipeline_model}"
+            "Selected architecture does not implement DiffusionPipeline or "
+            f"PipelineExecutor: {arch.pipeline_model}"
         )
-    pipeline_model = cast(type[DiffusionPipeline], arch.pipeline_model)
-    cache_config = DenoisingCacheConfig(
+    pipeline_model = cast(
+        "type[DiffusionPipeline] | type[PipelineExecutor[Any, Any, Any]]",
+        arch.pipeline_model,
+    )
+    config.runtime.denoising_cache = DenoisingCacheConfig(
         first_block_caching=args.first_block_caching,
         taylorseer=args.taylorseer,
         taylorseer_cache_interval=args.taylorseer_cache_interval,
         taylorseer_warmup_steps=args.taylorseer_warmup_steps,
         taylorseer_max_order=args.taylorseer_max_order,
-        teacache=args.teacache,
-        teacache_rel_l1_thresh=args.teacache_rel_l1_thresh,
-        teacache_coefficients=args.teacache_coefficients,
     )
     pipeline = PixelGenerationPipeline[PixelContext](
         pipeline_config=config,
         pipeline_model=pipeline_model,
-        cache_config=cache_config,
     )
 
     print(f"Generating image for prompt: '{args.prompt}'")
@@ -605,8 +590,13 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     # Create request with structured message if images are provided
     if input_image_data_uris:
-        # Image-to-image: Use structured message with InputImageContent + InputTextContent
-        image_content_items: list[InputImageContent | InputTextContent] = [
+        # Image-to-image: Use structured message with InputImageContent + InputTextContent.
+        image_content_items: list[
+            InputTextContent
+            | InputImageContent
+            | InputFileContent
+            | InputVideoContent
+        ] = [
             InputImageContent(
                 type="input_image",
                 image_url=uri,
@@ -706,18 +696,6 @@ async def generate_image(args: argparse.Namespace) -> None:
         print(
             f"TaylorSeer enabled: {order_info}, {interval_info}, {warmup_info}."
         )
-    if args.teacache:
-        thresh_info = (
-            f"rel_l1_thresh={args.teacache_rel_l1_thresh}"
-            if args.teacache_rel_l1_thresh is not None
-            else "rel_l1_thresh=model-default"
-        )
-        coeff_info = (
-            "coefficients=user-specified"
-            if args.teacache_coefficients is not None
-            else "coefficients=model-default"
-        )
-        print(f"TeaCache enabled: {thresh_info}, {coeff_info}.")
 
     # Step 6: Prepare inputs for the pipeline
     # Create a batch with a single context
@@ -832,6 +810,10 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Process exit code. 0 indicates success.
     """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s: %(message)s",
+    )
     args = parse_args(argv)
 
     try:

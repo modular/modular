@@ -19,7 +19,9 @@ from std.memory import Pointer
 ```
 """
 
+from std._plugin import CurrentPlugin
 from std.format._utils import FormatStruct, Named, TypeNames
+from std.builtin.simd_size import SIMDSize
 from std.memory import UnsafeMaybeUninit
 from std.utils._nicheable import UnsafeSingleNicheable, NicheIndex
 
@@ -43,16 +45,20 @@ struct AddressSpace(
     performance characteristics.
     """
 
-    var _value: Int
+    var _value: SIMDSize
 
     # CPU address space
-    comptime GENERIC = AddressSpace(0)
+    comptime GENERIC = AddressSpace(
+        __mlir_attr[`#lit.struct<{_mlir_value = 0}> : `, SIMDSize]
+    )
     """Generic address space. Used for CPU memory and default GPU memory."""
 
     # GPU address spaces
     # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
     # And https://llvm.org/docs/AMDGPUUsage.html#address-spaces
-    comptime GLOBAL = AddressSpace(1)
+    comptime GLOBAL = AddressSpace(
+        __mlir_attr[`#lit.struct<{_mlir_value = 1}> : `, SIMDSize]
+    )
     """Global GPU memory address space."""
     comptime SHARED = AddressSpace(3)
     """Shared GPU memory address space (per thread block/workgroup)."""
@@ -65,8 +71,35 @@ struct AddressSpace(
     comptime BUFFER_RESOURCE = AddressSpace(8)
     """Buffer resource GPU memory address space (AMD-specific)."""
 
+    @always_inline("nodebug")
+    @staticmethod
+    def __getattr_param__[name: StaticString]() -> AddressSpace:
+        """Resolves a target-specific named address space.
+
+        The address spaces above (`GENERIC`, `GLOBAL`, `SHARED`, ...) are the
+        built-in GPU set. Accessing any *other* name as `AddressSpace.<NAME>`
+        routes here, which consults the active `PluginHooks` backend. This
+        keeps the set of valid names open and target-extensible — for example
+        an accelerator backend can provide scratchpad-style spaces that do not
+        exist on GPUs — instead of a fixed portable enum.
+
+        Parameters:
+            name: The address-space name being accessed.
+
+        Returns:
+            The `AddressSpace` the active backend defines for `name`.
+
+        Constraints:
+            `name` must be defined by the active `PluginHooks` backend;
+            otherwise this is a compile-time error.
+        """
+        comptime if CurrentPlugin.address_space_fn[name]:
+            return CurrentPlugin.address_space_fn[name].value()
+        else:
+            comptime assert False, "unknown address space: '" + name + "'"
+
     @always_inline("builtin")
-    def __init__(out self, value: Int):
+    def __init__(out self, value: SIMDSize):
         """Initializes the address space from the underlying integral value.
 
         Args:
@@ -75,7 +108,7 @@ struct AddressSpace(
         self._value = value
 
     @always_inline("builtin")
-    def value(self) -> Int:
+    def value(self) -> SIMDSize:
         """The integral value of the address space.
 
         Returns:
@@ -90,7 +123,7 @@ struct AddressSpace(
         Returns:
           The integral value of the address space.
         """
-        return self._value
+        return Int(self._value)
 
     @always_inline("builtin")
     def __eq__(self, other: Self) -> Bool:
@@ -124,7 +157,7 @@ struct AddressSpace(
         elif self == AddressSpace.SHARED_CLUSTER:
             writer.write("AddressSpace.SHARED_CLUSTER")
         else:
-            writer.write("AddressSpace(", self.value(), ")")
+            writer.write("AddressSpace(", Int(self.value()), ")")
 
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write the string representation of the AddressSpace.
@@ -133,19 +166,6 @@ struct AddressSpace(
             writer: The object to write to.
         """
         self.write_to(writer)
-
-
-# ===-----------------------------------------------------------------------===#
-# Deprecated aliases for backward compatibility
-# ===-----------------------------------------------------------------------===#
-
-comptime _GPUAddressSpace = AddressSpace
-"""Deprecated: Use `AddressSpace` instead. This alias is provided for backward
-compatibility and will be removed in a future release."""
-
-comptime GPUAddressSpace = AddressSpace
-"""Deprecated: Use `AddressSpace` instead. This alias is provided for backward
-compatibility and will be removed in a future release."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -197,7 +217,7 @@ struct Pointer[
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
-    pointers](/mojo/manual/pointers/) in the Mojo Manual.
+    pointers](/docs/manual/pointers/) in the Mojo Manual.
 
     Parameters:
         mut: Whether the pointee data may be mutated through this.
@@ -245,6 +265,23 @@ struct Pointer[
             other: The `Pointer` to cast.
         """
         self = {_mlir_value = other._value}
+
+    @doc_hidden
+    @implicit
+    @always_inline("nodebug")
+    def __init__(
+        out self, other: Pointer[address_space=Self.address_space, ...]
+    ) where Self.origin.contains[other.origin]:
+        """Implicitly cast a pointer with one origin to a another origin when
+        the result origin is a superset.
+
+        Args:
+            other: The `Pointer` to cast.
+
+        Returns:
+            A new Pointer with the same target as self and an ImmutOrigin.
+        """
+        self._value = rebind[Self._mlir_type](other._value)
 
     @doc_hidden
     @always_inline("nodebug")
@@ -351,7 +388,6 @@ struct Pointer[
     ](
         self,
         out result: Pointer[
-            mut=Self.mut & other_type.origin.mut,
             type=Self.type,
             origin=origin_of(Self.origin, other_type.origin),
             address_space=Self.address_space,
@@ -371,8 +407,10 @@ struct Pointer[
     # UnsafeNicheable
     # ===------------------------------------------------------------------===#
 
-    comptime _NullPointerType = UnsafePointer[
-        Self.type, MutAnyOrigin, address_space=Self.address_space
+    comptime _NonNull = UnsafePointer[
+        Self.type,
+        UntrackedOrigin[mut=Self.mut],
+        address_space=Self.address_space,
     ]
 
     @staticmethod
@@ -381,8 +419,8 @@ struct Pointer[
     def write_niche(
         memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
     ):
-        memory.bitcast[Self._NullPointerType]().init_pointee_move(
-            Self._NullPointerType(_unsafe_null=())
+        Self._NonNull.write_niche(
+            memory.bitcast[UnsafeMaybeUninit[Self._NonNull]]()
         )
 
     @staticmethod
@@ -391,4 +429,6 @@ struct Pointer[
     def isa_niche(
         memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
     ) -> Bool:
-        return not memory.bitcast[Self._NullPointerType]()[]._is_not_null()
+        return Self._NonNull.isa_niche(
+            memory.bitcast[UnsafeMaybeUninit[Self._NonNull]]()
+        )

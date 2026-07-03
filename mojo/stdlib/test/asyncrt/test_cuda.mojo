@@ -29,19 +29,15 @@ def _run_cuda_context(ctx: DeviceContext) raises:
 
     with ctx.push_context() as cur_ctx:
         # cur_ctx is still equivalent to the ctx passed in.
-        assert_equal(CUDA(ctx)._is_not_null(), CUDA(cur_ctx)._is_not_null())
+        assert_equal(Bool(CUDA(ctx)), Bool(CUDA(cur_ctx)))
         assert_equal(
-            CUDA(ctx.stream())._is_not_null(),
-            CUDA(cur_ctx.stream())._is_not_null(),
+            Bool(CUDA(ctx.stream())),
+            Bool(CUDA(cur_ctx.stream())),
         )
         # Make sure that the current CUcontext matches the pushed CUcontext
-        assert_equal(
-            cuda_ctx._is_not_null(), CUDA_get_current_context()._is_not_null()
-        )
+        assert_equal(Bool(cuda_ctx), Bool(CUDA_get_current_context()))
 
-    assert_equal(
-        initial_ctx._is_not_null(), CUDA_get_current_context()._is_not_null()
-    )
+    assert_equal(Bool(initial_ctx), Bool(CUDA_get_current_context()))
     print("initial CUcontext:", initial_ctx)
     print("CUcontext:", cuda_ctx)
 
@@ -55,40 +51,32 @@ def _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
 
     with ctx0.push_context() as cur_ctx0:
         # cur_ctx is still equivalent to the ctx passed in.
-        assert_equal(CUDA(ctx0)._is_not_null(), CUDA(cur_ctx0)._is_not_null())
+        assert_equal(Bool(CUDA(ctx0)), Bool(CUDA(cur_ctx0)))
         assert_equal(
-            CUDA(ctx0.stream())._is_not_null(),
-            CUDA(cur_ctx0.stream())._is_not_null(),
+            Bool(CUDA(ctx0.stream())),
+            Bool(CUDA(cur_ctx0.stream())),
         )
         # Make sure that the current CUcontext matches the pushed CUcontext
-        assert_equal(
-            cuda_ctx0._is_not_null(), CUDA_get_current_context()._is_not_null()
-        )
+        assert_equal(Bool(cuda_ctx0), Bool(CUDA_get_current_context()))
 
         # Nested context pushes save, push and restore
         with ctx1.push_context() as cur_ctx1:
             # cur_ctx is still equivalent to the ctx passed in.
+            assert_equal(Bool(CUDA(ctx1)), Bool(CUDA(cur_ctx1)))
             assert_equal(
-                CUDA(ctx1)._is_not_null(), CUDA(cur_ctx1)._is_not_null()
-            )
-            assert_equal(
-                CUDA(ctx1.stream())._is_not_null(),
-                CUDA(cur_ctx1.stream())._is_not_null(),
+                Bool(CUDA(ctx1.stream())),
+                Bool(CUDA(cur_ctx1.stream())),
             )
             # Make sure that the current CUcontext matches the pushed CUcontext
             assert_equal(
-                cuda_ctx1._is_not_null(),
-                CUDA_get_current_context()._is_not_null(),
+                Bool(cuda_ctx1),
+                Bool(CUDA_get_current_context()),
             )
 
         # Make sure that the previously pushed CUcontext has been restored.
-        assert_equal(
-            cuda_ctx0._is_not_null(), CUDA_get_current_context()._is_not_null()
-        )
+        assert_equal(Bool(cuda_ctx0), Bool(CUDA_get_current_context()))
 
-    assert_equal(
-        initial_ctx._is_not_null(), CUDA_get_current_context()._is_not_null()
-    )
+    assert_equal(Bool(initial_ctx), Bool(CUDA_get_current_context()))
     print("initial CUcontext:", initial_ctx)
     print("CUcontext(id: 0):", cuda_ctx0)
     print("CUcontext(id: 1):", cuda_ctx1)
@@ -208,6 +196,126 @@ $L__BB0_2:
                 raise Error("Bad value out[", i, "] is ", out[i])
 
 
+def _run_cuda_external_function_distinct_entry_points(
+    ctx: DeviceContext,
+) raises:
+    """Two entry points in one PTX blob must not collide.
+
+    `load_function` supplies no module name, so before the fix the runtime
+    function cache keyed on the blob bytes alone and the second load aliased
+    the first — `kernel_b` would silently run `kernel_a`. Load both from the
+    same blob and confirm each writes its own constant (1.0 vs 2.0).
+    """
+    print("-")
+    print("_run_cuda_external_function_distinct_entry_points()")
+
+    def kernel_sig(
+        output: UnsafePointer[Float32, MutAnyOrigin],
+        len: Int,
+    ):
+        pass
+
+    # One module, two entry points. Generated with `nvcc -arch=sm_75 -ptx`.
+    var ptx = """
+.version 8.8
+.target sm_75
+.address_size 64
+
+.visible .entry kernel_a(
+	.param .u64 kernel_a_param_0,
+	.param .u64 kernel_a_param_1
+)
+{
+	.reg .pred 	%p<2>;
+	.reg .b32 	%r<5>;
+	.reg .b64 	%rd<9>;
+
+	ld.param.u64 	%rd2, [kernel_a_param_0];
+	ld.param.u64 	%rd3, [kernel_a_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	mov.u32 	%r2, %ntid.x;
+	mul.wide.u32 	%rd4, %r1, %r2;
+	mov.u32 	%r3, %tid.x;
+	cvt.u64.u32 	%rd5, %r3;
+	add.s64 	%rd1, %rd4, %rd5;
+	setp.ge.s64 	%p1, %rd1, %rd3;
+	@%p1 bra 	$L__BB0_2;
+
+	cvta.to.global.u64 	%rd6, %rd2;
+	shl.b64 	%rd7, %rd1, 2;
+	add.s64 	%rd8, %rd6, %rd7;
+	mov.u32 	%r4, 1065353216;
+	st.global.u32 	[%rd8], %r4;
+
+$L__BB0_2:
+	ret;
+}
+
+.visible .entry kernel_b(
+	.param .u64 kernel_b_param_0,
+	.param .u64 kernel_b_param_1
+)
+{
+	.reg .pred 	%p<2>;
+	.reg .b32 	%r<5>;
+	.reg .b64 	%rd<9>;
+
+	ld.param.u64 	%rd2, [kernel_b_param_0];
+	ld.param.u64 	%rd3, [kernel_b_param_1];
+	mov.u32 	%r1, %ctaid.x;
+	mov.u32 	%r2, %ntid.x;
+	mul.wide.u32 	%rd4, %r1, %r2;
+	mov.u32 	%r3, %tid.x;
+	cvt.u64.u32 	%rd5, %r3;
+	add.s64 	%rd1, %rd4, %rd5;
+	setp.ge.s64 	%p1, %rd1, %rd3;
+	@%p1 bra 	$L__BB1_2;
+
+	cvta.to.global.u64 	%rd6, %rd2;
+	shl.b64 	%rd7, %rd1, 2;
+	add.s64 	%rd8, %rd6, %rd7;
+	mov.u32 	%r4, 1073741824;
+	st.global.u32 	[%rd8], %r4;
+
+$L__BB1_2:
+	ret;
+}
+"""
+
+    comptime LEN = 256
+    comptime BLOCK_DIM = 32
+
+    var func_a = ctx.load_function[kernel_sig](
+        function_name="kernel_a", asm=ptx
+    )
+    var func_b = ctx.load_function[kernel_sig](
+        function_name="kernel_b", asm=ptx
+    )
+
+    var out_a = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var out_b = ctx.enqueue_create_buffer[DType.float32](LEN)
+
+    ctx.enqueue_function(
+        func_a,
+        out_a,
+        LEN,
+        grid_dim=Dim(LEN // BLOCK_DIM),
+        block_dim=Dim(BLOCK_DIM),
+    )
+    ctx.enqueue_function(
+        func_b,
+        out_b,
+        LEN,
+        grid_dim=Dim(LEN // BLOCK_DIM),
+        block_dim=Dim(BLOCK_DIM),
+    )
+
+    with out_a.map_to_host() as host_a, out_b.map_to_host() as host_b:
+        for i in range(LEN):
+            assert_equal(host_a[i], 1.0)
+            assert_equal(host_b[i], 2.0)
+
+
 def test_cuda_context() raises:
     var ctx = create_test_device_context()
     _run_cuda_context(ctx)
@@ -221,6 +329,11 @@ def test_cuda_stream() raises:
 def test_cuda_external_function() raises:
     var ctx = create_test_device_context()
     _run_cuda_external_function(ctx)
+
+
+def test_cuda_external_function_distinct_entry_points() raises:
+    var ctx = create_test_device_context()
+    _run_cuda_external_function_distinct_entry_points(ctx)
 
 
 def test_cuda_multi_context() raises:

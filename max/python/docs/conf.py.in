@@ -98,6 +98,48 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "_templates"]
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
+_PYDANTIC_INIT_MARKERS = (
+    "Create a new model by parsing and validating input data",
+    "self is explicitly positional-only to allow self as a field name",
+    "[ValidationError][pydantic_core.ValidationError]",
+)
+
+
+def strip_pydantic_init_docstring(app, what, name, obj, options, lines):
+    """Strip inherited Pydantic BaseModel.__init__ boilerplate from class docs.
+
+    When ``autoclass_content = "both"``, Sphinx appends the ``__init__``
+    docstring to the class docstring.  For Pydantic ``BaseModel`` subclasses
+    that don't override ``__init__``, this pulls in boilerplate about
+    ``ValidationError`` and positional-only ``self``.  This hook detects
+    and removes that boilerplate.
+    """
+    if what != "class":
+        return
+    try:
+        from pydantic import BaseModel
+    except ImportError:
+        return
+    if not (inspect.isclass(obj) and issubclass(obj, BaseModel)):
+        return
+
+    # Find the first line that matches a Pydantic __init__ marker.
+    cut_from = None
+    for i, line in enumerate(lines):
+        if any(marker in line for marker in _PYDANTIC_INIT_MARKERS):
+            cut_from = i
+            break
+
+    if cut_from is None:
+        return
+
+    # Walk backward past any blank separator lines.
+    while cut_from > 0 and lines[cut_from - 1].strip() == "":
+        cut_from -= 1
+
+    del lines[cut_from:]
+
+
 def process_links(app, what, name, obj, options, lines):
     """This is a callback from Sphinx that lets us preprocess docstrings
     (registered below with connect()). Here we just prepare `np` references
@@ -622,8 +664,23 @@ def setup(app):
 
     AttributeDocumenter.get_attribute_comment = _get_attr_comment_with_pyi
 
+    def process_bases(app, name, obj, options, bases):
+        """Strip type parameters from Module generic aliases for cleaner display.
+
+        Converts ``Module[(<class 'max.experimental.tensor.Tensor'>,), Tensor]``
+        to ``Module`` so that type-checking generics don't leak into the docs.
+        Scoped to Module only to avoid stripping meaningful type parameters
+        from other generic base classes.
+        """
+        for i, base in enumerate(bases):
+            origin = getattr(base, '__origin__', None)
+            if origin is not None and getattr(origin, '__name__', None) == 'Module':
+                bases[i] = origin
+
+    app.connect("autodoc-process-docstring", strip_pydantic_init_docstring)
     app.connect("autodoc-process-docstring", process_links)
     app.connect("autodoc-process-signature", process_signature)
+    app.connect("autodoc-process-bases", process_bases)
     app.connect("autodoc-skip-member", skip_imported_for_modules)
     app.connect("missing-reference", resolve_type_alias_references)
     app.add_role('code_link', code_link_role)

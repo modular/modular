@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import simd_width_of, size_of
+from std.os import abort
 
 from std.memory import (
     destroy_n,
@@ -22,6 +23,7 @@ from std.memory import (
     memset_zero,
     uninit_copy_n,
     uninit_move_n,
+    forget_deinit,
 )
 from std.testing import TestSuite
 from std.testing import (
@@ -31,6 +33,7 @@ from std.testing import (
     assert_true,
 )
 from test_utils import (
+    AbortOnDel,
     CopyCounter,
     DelCounter,
     MoveCounter,
@@ -40,7 +43,7 @@ from test_utils import (
 from std.utils.numerics import nan
 
 comptime void = __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
-comptime int8_pop = __mlir_type.`!pop.scalar<si8>`
+comptime int8_pop = __mlir_type.`!kgen.scalar<si8>`
 
 
 @fieldwise_init
@@ -601,9 +604,6 @@ def test_memset() raises:
 
 
 def test_pointer_string() raises:
-    var nullptr = UnsafePointer[Int, MutAnyOrigin](_unsafe_null=())
-    assert_equal(String(nullptr), "0x0")
-
     var ptr = alloc[Int](1)
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
@@ -611,9 +611,6 @@ def test_pointer_string() raises:
 
 
 def test_dtypepointer_string() raises:
-    var nullptr = UnsafePointer[Float32, MutAnyOrigin](_unsafe_null=())
-    assert_equal(String(nullptr), "0x0")
-
     var ptr = alloc[Float32](1)
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
@@ -666,7 +663,7 @@ def test_dtypepointer_gather() raises:
 
     @parameter
     def _test_gather[
-        width: Int
+        width: SIMDSize
     ](offset: SIMD[_, width], desired: SIMD[ptr.type.dtype, width]) raises:
         var actual = ptr.gather(offset)
         assert_almost_equal(
@@ -675,7 +672,7 @@ def test_dtypepointer_gather() raises:
 
     @parameter
     def _test_masked_gather[
-        width: Int
+        width: SIMDSize
     ](
         offset: SIMD[_, width],
         mask: SIMD[DType.bool, width],
@@ -713,7 +710,7 @@ def test_dtypepointer_scatter() raises:
 
     @parameter
     def _test_scatter[
-        width: Int
+        width: SIMDSize
     ](
         offset: SIMD[_, width],
         val: SIMD[ptr.type.dtype, width],
@@ -727,7 +724,7 @@ def test_dtypepointer_scatter() raises:
 
     @parameter
     def _test_masked_scatter[
-        width: Int
+        width: SIMDSize
     ](
         offset: SIMD[_, width],
         val: SIMD[ptr.type.dtype, width],
@@ -799,7 +796,10 @@ def test_memmove_overlapping_regions() raises:
     var list = [1, 2, 3, 4, 5, 6, 7]
     # shift all values down by 1
     memmove(
-        dest=list.unsafe_ptr(), src=list.unsafe_ptr() + 1, count=len(list) - 1
+        # NOTE: need `as_unsafe_any_origin` to avoid exclusivity violations
+        dest=list.unsafe_ptr().as_unsafe_any_origin(),
+        src=list.unsafe_ptr().as_unsafe_any_origin() + 1,
+        count=len(list) - 1,
     )
     assert_equal(list, [2, 3, 4, 5, 6, 7, 7])
 
@@ -1025,6 +1025,30 @@ def test_destroy_n_zero_count() raises:
     # Cleanup/free the memory
     destroy_n(ptr, count=1)
     ptr.free()
+
+
+@fieldwise_init
+struct Parent:
+    var child: Child
+
+    def __del__(deinit self):
+        abort("@ Parent.__del__ should not have run")
+
+
+@fieldwise_init
+struct Child(Movable):
+    def __del__(deinit self):
+        abort("@ Child.__del__ should not have run")
+
+
+def test_forget_deinit() raises:
+    # Test that simple case skips destructors
+    var abort_on_del = AbortOnDel(0)
+    forget_deinit(abort_on_del^)
+
+    # Test that field destructors are skipped as well
+    var parent = Parent(Child())
+    forget_deinit(parent^)
 
 
 def main() raises:

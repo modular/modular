@@ -10,8 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Qwen-Image diffusion architecture for image generation."""
 
-from .arch import qwen_image_arch
+from .arch import QwenImageArchConfig, qwen_image_arch
 from .model import QwenImageTransformerModel
+from .model_config import QwenImageConfig, QwenImageConfigBase
 
-__all__ = ["QwenImageTransformerModel", "qwen_image_arch"]
+__all__ = [
+    "QwenImageArchConfig",
+    "QwenImageConfig",
+    "QwenImageConfigBase",
+    "QwenImageTransformerModel",
+    "qwen_image_arch",
+]

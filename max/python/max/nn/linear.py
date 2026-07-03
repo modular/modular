@@ -23,6 +23,7 @@ from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    Dim,
     ShardingStrategy,
     TensorValue,
     TensorValueLike,
@@ -30,11 +31,8 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.nn.quant_config import (
-    QuantConfig,
-    ScaleGranularity,
-    fp4_packed_k,
-)
+from max.graph.weight import Segment
+from max.nn.quant_config import QuantConfig, ScaleGranularity, fp4_packed_k
 from max.nn.quant_ops import quantized_matmul
 from max.support.math import ceildiv
 
@@ -129,10 +127,17 @@ class Linear(Module, Shardable):
         self.clip_weight = clip_weight
         self.quant_config = quant_config
 
+        # Packed FP4 weights are stored as uint8 (two values per byte).
+        weight_dtype = (
+            DType.uint8
+            if quant_config is not None and quant_config.is_fp4
+            else dtype
+        )
+
         if not is_sharding:
             self.weight = Weight(
                 name=f"{name}.weight" if name else "weight",
-                dtype=dtype,
+                dtype=weight_dtype,
                 shape=(out_dim, fp4_packed_k(in_dim, quant_config)),
                 device=device,
                 quantization_encoding=quantization_encoding,
@@ -209,13 +214,16 @@ class Linear(Module, Shardable):
             weight_scale_shape = ()
         elif weight_scale.is_block:
             assert quant_config.weight_scale.block_size is not None
+            k_dim = int(self.weight.shape[1])
+            if quant_config.is_fp4:
+                k_dim *= 2  # FP4 weights are packed 2x as uint8
             weight_scale_shape = (
                 ceildiv(
                     int(self.weight.shape[0]),
                     quant_config.weight_scale.block_size[0],
                 ),
                 ceildiv(
-                    int(self.weight.shape[1]),
+                    k_dim,
                     quant_config.weight_scale.block_size[1],
                 ),
             )
@@ -324,6 +332,47 @@ class Linear(Module, Shardable):
                         self.weight_scale.sharding_strategy = (
                             ShardingStrategy.columnwise(strategy.num_devices)
                         )
+                elif strategy.is_segmented and strategy.sharded_axis == 1:
+                    # Segmented sharding along K: weight_scale's K is reduced
+                    # by block_size_k, so each segment's size shrinks by the
+                    # same factor. Head-aware segments shrink their head_dim;
+                    # even segments shrink their total size.
+                    assert self.quant_config.weight_scale.block_size is not None
+                    block_size_k = self.quant_config.weight_scale.block_size[1]
+                    assert isinstance(strategy.shard, partial)
+                    segments = strategy.shard.keywords["segments"]
+                    scale_segments: list[Segment] = []
+                    for seg in segments:
+                        if seg.size % block_size_k != 0:
+                            raise ValueError(
+                                f"Segmented sharding: segment size {seg.size} "
+                                f"is not divisible by block_size_k "
+                                f"({block_size_k}) for block-wise scaling."
+                            )
+                        if seg.num_heads is not None:
+                            head_dim = seg.size // seg.num_heads
+                            if head_dim % block_size_k != 0:
+                                raise ValueError(
+                                    f"Segmented sharding: head_dim {head_dim} "
+                                    f"is not divisible by block_size_k "
+                                    f"({block_size_k}) for block-wise scaling."
+                                )
+                            scale_segments.append(
+                                Segment.head_aware(
+                                    seg.num_heads, head_dim // block_size_k
+                                )
+                            )
+                        else:
+                            scale_segments.append(
+                                Segment.even(seg.size // block_size_k)
+                            )
+                    self.weight_scale.sharding_strategy = (
+                        ShardingStrategy.segmented(
+                            strategy.num_devices,
+                            axis=1,
+                            segments=scale_segments,
+                        )
+                    )
                 else:
                     self.weight_scale.sharding_strategy = strategy
             else:
@@ -331,18 +380,14 @@ class Linear(Module, Shardable):
                 self.weight_scale.sharding_strategy = strategy
 
         if self.bias:
-            # Only truly shard the bias across devices when the weight sharding
-            # is rowwise or stacked_qkv (output dimension is split per device).
-            # Otherwise, when the weight sharding is columnwise, set the bias to
-            # replicate so that it is complete on device 0.
-            # Linear.shard handles setting bias to None on devices >= 1 to
-            # prevent bias duplication, which would be incorrect.
-            if strategy.is_rowwise:
+            # When the weight is sharded along axis 0 the output dim is split
+            # per device, so the bias (1D, indexed by output dim) is sharded
+            # by the same strategy. Otherwise the output dim is unchanged, so
+            # replicate the bias. Linear.shard handles setting bias to None
+            # on devices >= 1 to prevent bias duplication, which would be
+            # incorrect.
+            if strategy.sharded_axis == 0:
                 self.bias.sharding_strategy = strategy
-            elif strategy.is_stacked_qkv:
-                self.bias.sharding_strategy = ShardingStrategy.rowwise(
-                    strategy.num_devices
-                )
             else:
                 self.bias.sharding_strategy = ShardingStrategy.replicate(
                     strategy.num_devices
@@ -362,9 +407,13 @@ class Linear(Module, Shardable):
                 "Linear layer cannot be sharded because no sharding strategy was provided."
             )
 
-        # Calculate sharded dimensions.
+        # Calculate sharded dimensions. The placeholder Linear constructed
+        # below has its weight overwritten with the true sharded weight, so
+        # this only needs to be a reasonable approximation of the per-device
+        # output dim — for uneven distributions the actual shape comes from
+        # ``weight_shard``.
         strategy = self.weight.sharding_strategy
-        if strategy.is_rowwise or strategy.is_stacked_qkv:
+        if strategy.sharded_axis == 0:
             out_dim = int(self.weight.shape[0]) // strategy.num_devices
         else:
             out_dim = int(self.weight.shape[0])
@@ -405,13 +454,19 @@ class Linear(Module, Shardable):
 
             # Handle bias sharding
             if self.bias is not None:
-                # For columnwise sharding with allreduce.sum, only add bias on device 0
-                # to avoid adding it multiple times.
-                is_colwise = (
+                # When the K axis is sharded (axis=1 of [N, K]) the per-device
+                # outputs are partial sums summed by allreduce, so the bias
+                # must only be added once — on device 0 — to avoid being
+                # multiplied by num_devices.
+                k_sharded = (
                     self.weight.sharding_strategy.is_colwise
                     or self.weight.sharding_strategy.is_head_aware_colwise
+                    or (
+                        self.weight.sharding_strategy.is_segmented
+                        and self.weight.sharding_strategy.sharded_axis == 1
+                    )
                 )
-                if is_colwise and (shard_idx > 0):
+                if k_sharded and (shard_idx > 0):
                     sharded.bias = None
                 else:
                     sharded.bias = sharded_biases[shard_idx]
@@ -492,7 +547,20 @@ def linear(
         return ops.qmatmul(quantization_encoding, None, x, weight)
     elif quant_config:
         assert weight_scale is not None
-        return quantized_matmul(
+
+        # The FP4 and static-scaled FP8 matmul kernels require rank-2
+        # inputs. Flatten leading dims before the call and restore them
+        # afterward. (LLM callers already pass rank-2 ragged activations;
+        # this only engages for batched rank-3+ inputs such as the Wan DiT.)
+        leading_dims: list[Dim] | None = None
+        if x.rank > 2:
+            leading_dims = list(x.shape[:-1])
+            m_dim: Dim = Dim(1)
+            for d in leading_dims:
+                m_dim = m_dim * d
+            x = ops.reshape(x, [m_dim, x.shape[-1]])
+
+        res = quantized_matmul(
             x,
             weight,
             weight_scale,
@@ -500,6 +568,11 @@ def linear(
             quant_config,
             weight_scale_2,
         )
+
+        if leading_dims is not None:
+            res = ops.reshape(res, [*leading_dims, res.shape[-1]])
+
+        return res
     else:
         return x @ weight.T
 
@@ -768,6 +841,7 @@ class MLP(Module, Shardable):
         has_bias: bool = False,
         activation_function: str = "silu",
         quant_config: QuantConfig | None = None,
+        swiglu_limit: float = 0.0,
         is_sharding: bool = False,
     ) -> None:
         """Initializes the MLP layer.
@@ -830,6 +904,7 @@ class MLP(Module, Shardable):
 
         self.quantization_encoding = quantization_encoding
         self.quant_config = quant_config
+        self.swiglu_limit = swiglu_limit
         self._activation_function_name = activation_function
         self.activation_function = activation_function_from_name(
             activation_function
@@ -882,6 +957,7 @@ class MLP(Module, Shardable):
         if (
             self.quant_config is not None
             and self.quant_config.weight_scale.is_tensor
+            and not self.quant_config.is_static
         ):
             ffl = self.gate_proj.weight.shape[0]
             gate_row_scale = ops.broadcast_to(
@@ -928,10 +1004,8 @@ class MLP(Module, Shardable):
             The transformed tensor after applying the MLP layers.
         """
         if not self._can_used_fused_mlp():
-            return self.down_proj(
-                self.activation_function(self.gate_proj(TensorValue(x)))
-                * self.up_proj(TensorValue(x))
-            )
+            gate_out = self.activation_function(self.gate_proj(TensorValue(x)))
+            up_out = self.up_proj(TensorValue(x))
         else:
             # Optimization to compute a single matmul by merging the
             # gate and up projection weights.
@@ -955,8 +1029,19 @@ class MLP(Module, Shardable):
                 output, [feed_forward_length, feed_forward_length], axis=1
             )
 
-            hidden = self.activation_function(gate_out) * up_out
-            return self.down_proj(hidden)
+            gate_out = self.activation_function(gate_out)
+
+        if self.swiglu_limit > 0:
+            lim = ops.constant(
+                self.swiglu_limit, gate_out.dtype, device=gate_out.device
+            )
+            neg_lim = ops.constant(
+                -self.swiglu_limit, up_out.dtype, device=up_out.device
+            )
+            gate_out = ops.min(gate_out, lim)
+            up_out = ops.min(ops.max(up_out, neg_lim), lim)
+
+        return self.down_proj(gate_out * up_out)
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -1025,6 +1110,7 @@ class MLP(Module, Shardable):
                 has_bias=self.gate_proj.bias is not None,
                 activation_function=self._activation_function_name,
                 quant_config=self.quant_config,
+                swiglu_limit=self.swiglu_limit,
                 is_sharding=True,
             )
 

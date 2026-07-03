@@ -17,7 +17,9 @@ from test_utils import (
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
+    ExplicitDestroy,
     MoveCounter,
+    MoveOnly,
     Observable,
     TriviallyCopyableMoveCounter,
     check_write_to,
@@ -35,7 +37,6 @@ from std.testing.prop import PropTest
 # TODO(MOCO-522): Figure out desired behavior for importing files with only
 # extensions in them.
 from std.testing.prop.strategy import SIMD, List
-from std.sys.intrinsics import _type_is_eq
 
 
 def test_mojo_issue_698() raises:
@@ -64,23 +65,23 @@ def test_list() raises:
     assert_equal(3, list[3])
     assert_equal(4, list[4])
 
-    assert_equal(0, list[-5])
-    assert_equal(3, list[-2])
-    assert_equal(4, list[-1])
+    assert_equal(0, list[len(list) - 5])
+    assert_equal(3, list[len(list) - 2])
+    assert_equal(4, list[len(list) - 1])
 
     list[2] = -2
     assert_equal(-2, list[2])
 
-    list[-5] = 5
-    assert_equal(5, list[-5])
-    list[-2] = 3
-    assert_equal(3, list[-2])
-    list[-1] = 7
-    assert_equal(7, list[-1])
+    list[len(list) - 5] = 5
+    assert_equal(5, list[len(list) - 5])
+    list[len(list) - 2] = 3
+    assert_equal(3, list[len(list) - 2])
+    list[len(list) - 1] = 7
+    assert_equal(7, list[len(list) - 1])
 
 
 struct WeirdList[T: AnyType]:
-    def __init__(out self, var *values: Self.T, __list_literal__: ()):
+    def __init__(out self, var *values: Self.T, __list_literal__: NoneType):
         pass
 
 
@@ -95,7 +96,7 @@ def test_list_literal() raises:
     assert_equal(2, list[1])
     assert_equal(3, list[2])
 
-    var list2 = [1, 2.5]
+    var list2 = [1.0, 2.5]
     assert_equal(2, len(list2))
     assert_equal(1.0, list2[0])
     assert_equal(2.5, list2[1])
@@ -182,9 +183,9 @@ def test_list_pop() raises:
     assert_equal(1, list[1])
     assert_equal(2, list[2])
 
-    # Test pop with negative index
+    # Test pop with index 0 (first element)
     for i in range(0, 2):
-        assert_equal(i, list.pop(-len(list)))
+        assert_equal(i, list.pop(0))
 
     # test default index as well
     assert_equal(2, list.pop())
@@ -762,6 +763,18 @@ def test_list_iter_owned_destroys_elements_if_partially_consumed() raises:
     assert_equal(dels, 2)
 
 
+def test_list_iter_owned_move_only() raises:
+    # Consuming iteration only requires `Movable & ImplicitlyDeletable`, not
+    # `Copyable`: each element is moved out of the list, not copied.
+    var list = [MoveOnly[Int](0), MoveOnly[Int](1), MoveOnly[Int](2)]
+
+    var total = 0
+    for elem in list^:
+        total += elem.data
+
+    assert_equal(total, 3)
+
+
 def test_list_iter_owned_bounds() raises:
     var iter = iter([1, 2, 3])
     for i in range(3, 0, -1):
@@ -769,16 +782,18 @@ def test_list_iter_owned_bounds() raises:
         _ = iter.__next__()
 
 
-def _test_list_iter_bounds[I: Iterator](var list_iter: I, list_len: Int) raises:
+def _test_list_iter_bounds[
+    I: Iterator
+](var list_iter: I, list_len: Int) raises where conforms_to(
+    I.Element, ImplicitlyDeletable
+):
     var iter = list_iter^
 
     for i in range(list_len):
         var lower, upper = iter.bounds()
         assert_equal(list_len - i, lower)
         assert_equal(list_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()
-        )
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -1013,6 +1028,16 @@ def test_list_conditional_conformances() raises:
     assert_true(conforms_to(List[Int], Writable))
     assert_false(conforms_to(List[NonEquatable], Writable))
 
+    # Owned iteration requires `Movable & ImplicitlyDeletable` elements, but
+    # not `Copyable`: a consuming iterator moves elements out rather than
+    # copying them.
+    assert_true(conforms_to(List[Int], IterableOwned))
+    # `MoveOnly[Int]` is movable and implicitly deletable but not copyable.
+    assert_true(conforms_to(List[MoveOnly[Int]], IterableOwned))
+    # `ExplicitDestroy` is not implicitly deletable, so the consuming iterator
+    # cannot destroy any unconsumed elements.
+    assert_false(conforms_to(List[ExplicitDestroy], IterableOwned))
+
 
 def test_list_init_span() raises:
     var l = [String("a"), "bb", "cc", "def"]
@@ -1072,10 +1097,16 @@ def test_destructor_trivial_elements() raises:
 
 def test_list_write_repr_to() raises:
     check_write_to(
-        [1, 2, 3], expected="List[Int]([Int(1), Int(2), Int(3)])", is_repr=True
+        [1, 2, 3],
+        expected="List[SIMD[DType.int, 1]]([Int(1), Int(2), Int(3)])",
+        is_repr=True,
     )
-    check_write_to([1], expected="List[Int]([Int(1)])", is_repr=True)
-    check_write_to(List[Int](), expected="List[Int]([])", is_repr=True)
+    check_write_to(
+        [1], expected="List[SIMD[DType.int, 1]]([Int(1)])", is_repr=True
+    )
+    check_write_to(
+        List[Int](), expected="List[SIMD[DType.int, 1]]([])", is_repr=True
+    )
 
 
 def test_list_fill_constructor() raises:
@@ -1156,7 +1187,7 @@ def test_list_comprehension() raises:
 def test_list_can_infer_iterable_element_type() raises:
     var string = "Mojo🔥"
     var l = List(string.codepoints())
-    assert_true(_type_is_eq[type_of(l), List[Codepoint]]())
+    assert_true(type_of(l) == List[Codepoint])
     assert_equal(
         l,
         [
@@ -1183,6 +1214,74 @@ def test_list_hash() raises:
     # Hashable conformance is conditional.
     assert_true(conforms_to(List[Int], Hashable))
     assert_true(conforms_to(List[String], Hashable))
+
+
+def test_list_move_only() raises:
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `List[T: Movable]`.
+    assert_false(conforms_to(List[MoveOnly[Int]], Copyable))
+
+    var l = [MoveOnly[Int](0), MoveOnly[Int](1)]
+    assert_equal(l[0], MoveOnly[Int](0))
+    assert_equal(l[1], MoveOnly[Int](1))
+
+    l.append(MoveOnly[Int](2))
+    assert_equal(l[2], MoveOnly[Int](2))
+
+    # Methods that don't require `Copyable` still work on a move-only element.
+    var popped = l.pop()
+    assert_equal(popped, MoveOnly[Int](2))
+    assert_equal(len(l), 2)
+
+    l.insert(0, MoveOnly[Int](-1))
+    assert_equal(l[0], MoveOnly[Int](-1))
+    assert_equal(len(l), 3)
+
+    l.clear()
+    assert_equal(len(l), 0)
+
+
+def test_list_with_explicit_destroy_type() raises:
+    var list = [ExplicitDestroy(0), ExplicitDestroy(1)]
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    list^.destroy_with(destroy_closure)
+
+    assert_equal(destroyed, [0, 1])
+
+
+def test_empty_list_with_explicit_destroy_type() raises:
+    var list = List[ExplicitDestroy]()
+
+    var destroyed = 0
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed += 1
+        e^.destroy()
+
+    list^.destroy_with(destroy_closure)
+
+    assert_equal(destroyed, 0)
+
+
+def test_extend_list_with_explicit_destroy_type() raises:
+    var list1 = [ExplicitDestroy(0)]
+    var list2 = [ExplicitDestroy(1), ExplicitDestroy(2)]
+    list1.extend(list2^)
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    list1^.destroy_with(destroy_closure)
+    assert_equal(destroyed, [0, 1, 2])
 
 
 # ===-------------------------------------------------------------------===#

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import udivmod
 from std.random import random_ui64, seed
 
 from std.gpu.host import DeviceBuffer, DeviceContext
@@ -85,7 +86,10 @@ def _initialize_ragged_inputs[
     # Initialize ragged hidden state.
     comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
     var ragged_size = total_length * hidden_size
-    var hidden_state_ragged_host_ptr = alloc[Scalar[dtype]](ragged_size)
+    var hidden_state_ragged_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        ragged_size
+    )
+    ctx.synchronize()
     var hidden_state_ragged_host = LayoutTensor[dtype, hidden_state_layout](
         hidden_state_ragged_host_ptr,
         RuntimeLayout[hidden_state_layout].row_major(
@@ -101,7 +105,10 @@ def _initialize_ragged_inputs[
 
     # Initialize padded hidden state.
     var padded_size = batch_size * max_seq_length_batch * hidden_size
-    var hidden_state_padded_host_ptr = alloc[Scalar[dtype]](padded_size)
+    var hidden_state_padded_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        padded_size
+    )
+    ctx.synchronize()
 
     # Copy over the ragged values to the padded tensor.
     # Don't worry about padded values, we won't read them.
@@ -110,11 +117,11 @@ def _initialize_ragged_inputs[
         var ragged_start_idx = Int(input_row_offsets_host_ptr[bs])
         for s in range(unpadded_seq_len):
             var padded_ptr = (
-                hidden_state_padded_host_ptr
+                hidden_state_padded_host_ptr.unsafe_ptr()
                 + (bs * max_seq_length_batch + s) * hidden_size
             )
             var ragged_ptr = (
-                hidden_state_ragged_host_ptr
+                hidden_state_ragged_host_ptr.unsafe_ptr()
                 + (ragged_start_idx + s) * hidden_size
             )
             memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
@@ -126,9 +133,6 @@ def _initialize_ragged_inputs[
 
     # Sync here so that HtoD transfers complete prior to host buffer dtor.
     ctx.synchronize()
-
-    hidden_state_ragged_host_ptr.free()
-    hidden_state_padded_host_ptr.free()
 
     return (
         input_row_offsets_device,
@@ -160,20 +164,20 @@ def execute_matmul_k_cache_ragged_scale[
     This test follows the same pattern as execute_matmul_k_cache_ragged but
     includes input_scale and weight_scale parameters for scaled FP8 operations.
     """
-    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime hidden_size = num_q_heads * kv_params.head_size
     comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
 
     comptime num_paged_blocks = 32
     comptime page_size = 512
     comptime CollectionType = PagedKVCacheCollection[
-        dtype, kv_params, page_size
+        dtype, kv_params, page_size, ...
     ]
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     comptime kv_block_layout = Layout.row_major[6]()
     comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
-    comptime weight_layout = Layout.row_major(Int(kv_hidden_size), hidden_size)
+    comptime weight_layout = Layout.row_major(kv_hidden_size, hidden_size)
     comptime input_scale_rows = ceildiv(hidden_size, block_scale)
-    comptime weight_scale_rows = Int(ceildiv(kv_hidden_size, block_scale))
+    comptime weight_scale_rows: Int = ceildiv(kv_hidden_size, block_scale)
     comptime weight_scale_cols = ceildiv(hidden_size, block_scale)
     comptime input_scale_layout = Layout.row_major(
         input_scale_rows, UNKNOWN_VALUE
@@ -181,9 +185,7 @@ def execute_matmul_k_cache_ragged_scale[
     comptime weight_scale_layout = Layout.row_major(
         weight_scale_rows, weight_scale_cols
     )
-    comptime ref_output_layout = Layout.row_major(
-        UNKNOWN_VALUE, Int(kv_hidden_size)
-    )
+    comptime ref_output_layout = Layout.row_major(UNKNOWN_VALUE, kv_hidden_size)
 
     var batch_size = len(prompt_lens)
 
@@ -196,16 +198,16 @@ def execute_matmul_k_cache_ragged_scale[
         * 2
         * num_layers
         * page_size
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
     var kv_block_shape = IndexList[6](
         num_paged_blocks,
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block = ManagedLayoutTensor[dtype, kv_block_layout](
         RuntimeLayout[kv_block_layout].row_major(kv_block_shape),
@@ -244,9 +246,12 @@ def execute_matmul_k_cache_ragged_scale[
     var k_cache_host = kv_collection_host.get_key_cache(layer_idx)
 
     # Initialize input row offsets and hidden states.
-    var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
+    var input_row_offsets_host_ptr = ctx.enqueue_create_host_buffer[
+        DType.uint32
+    ](batch_size + 1)
+    ctx.synchronize()
     var init_result = _initialize_ragged_inputs[weight_dtype, hidden_size](
-        input_row_offsets_host_ptr, batch_size, prompt_lens, ctx
+        input_row_offsets_host_ptr.unsafe_ptr(), batch_size, prompt_lens, ctx
     )
     var input_row_offsets_device = init_result[0]
     var hidden_state_ragged_device = init_result[1]
@@ -255,9 +260,12 @@ def execute_matmul_k_cache_ragged_scale[
     var init_max_seq_length_batch = init_result[4]
 
     # Initialize the weights.
-    var weight_size = Int(kv_hidden_size) * hidden_size
-    var weight_shape = IndexList[2](Int(kv_hidden_size), hidden_size)
-    var weight_host_ptr = alloc[Scalar[weight_dtype]](weight_size)
+    var weight_size = kv_hidden_size * hidden_size
+    var weight_shape = IndexList[2](kv_hidden_size, hidden_size)
+    var weight_host_ptr = ctx.enqueue_create_host_buffer[weight_dtype](
+        weight_size
+    )
+    ctx.synchronize()
     var weight_host = LayoutTensor[weight_dtype, weight_layout](
         weight_host_ptr,
         RuntimeLayout[weight_layout].row_major(weight_shape),
@@ -285,10 +293,8 @@ def execute_matmul_k_cache_ragged_scale[
     random(weight_scale_host)
 
     # Initialize reference output.
-    var ref_output_size = ragged_total_length * Int(kv_hidden_size)
-    var ref_output_shape = IndexList[2](
-        ragged_total_length, Int(kv_hidden_size)
-    )
+    var ref_output_size = ragged_total_length * kv_hidden_size
+    var ref_output_shape = IndexList[2](ragged_total_length, kv_hidden_size)
     var ref_output = ManagedLayoutTensor[dtype, ref_output_layout](
         RuntimeLayout[ref_output_layout].row_major(ref_output_shape),
         ctx,
@@ -297,33 +303,38 @@ def execute_matmul_k_cache_ragged_scale[
 
     # Create device LayoutTensors for kernel calls
     var hidden_state_ragged_tensor = LayoutTensor[
-        weight_dtype, hidden_state_layout, MutAnyOrigin
+        weight_dtype, hidden_state_layout
     ](
-        hidden_state_ragged_device.unsafe_ptr(),
+        hidden_state_ragged_device,
         RuntimeLayout[hidden_state_layout].row_major(
             IndexList[2](ragged_total_length, hidden_size)
         ),
     )
     var input_row_offsets_tensor = LayoutTensor[
-        DType.uint32, layout_1d, ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        layout_1d,
     ](
-        input_row_offsets_device.unsafe_ptr(),
+        input_row_offsets_device,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
     var weight_device_tensor = LayoutTensor[
-        weight_dtype, weight_layout, MutAnyOrigin
+        weight_dtype,
+        weight_layout,
     ](
-        weight_device.unsafe_ptr(),
+        weight_device,
         RuntimeLayout[weight_layout].row_major(weight_shape),
     )
     var input_scale_device_tensor = LayoutTensor[
-        scale_dtype, input_scale_layout, MutAnyOrigin
+        scale_dtype,
+        input_scale_layout,
     ](
         input_scale.device_tensor().ptr,
         input_scale.device_tensor().runtime_layout,
     )
     var weight_scale_device_tensor = LayoutTensor[
-        scale_dtype, weight_scale_layout, MutAnyOrigin
+        scale_dtype,
+        weight_scale_layout,
     ](
         weight_scale.device_tensor().ptr,
     )
@@ -346,25 +357,23 @@ def execute_matmul_k_cache_ragged_scale[
     # Create TileTensors for naive_blockwise_scaled_fp8_matmul
     var ref_output_tt = TileTensor(
         ref_output.device_tensor[update=False]().ptr,
-        row_major(
-            Coord(Idx(Int(ragged_total_length)), Idx[Int(kv_hidden_size)]())
-        ),
+        row_major(Coord(Int(ragged_total_length), Idx[kv_hidden_size])),
     )
     var hidden_state_ragged_tt = TileTensor(
-        hidden_state_ragged_device.unsafe_ptr(),
-        row_major(Coord(Idx(Int(ragged_total_length)), Idx[hidden_size]())),
+        hidden_state_ragged_device,
+        row_major(Coord(Int(ragged_total_length), Idx[hidden_size])),
     )
     var weight_ref_tt = TileTensor(
-        weight_device.unsafe_ptr(),
-        row_major(Coord(Idx[Int(kv_hidden_size)](), Idx[hidden_size]())),
+        weight_device,
+        row_major(Coord(Idx[kv_hidden_size], Idx[hidden_size])),
     )
     var ref_input_scale_tt = TileTensor(
         input_scale.device_tensor[update=False]().ptr,
-        row_major(Coord(Idx[input_scale_rows](), Idx(Int(input_scale_cols)))),
+        row_major(Coord(Idx[input_scale_rows], Int(input_scale_cols))),
     )
     var ref_weight_scale_tt = TileTensor(
         weight_scale.device_tensor[update=False]().ptr,
-        row_major(Coord(Idx[weight_scale_rows](), Idx[weight_scale_cols]())),
+        row_major(Coord(Idx[weight_scale_rows], Idx[weight_scale_cols])),
     )
 
     # Use naive blockwise scaled matmul as reference
@@ -391,19 +400,15 @@ def execute_matmul_k_cache_ragged_scale[
             for k_dim in range(kv_hidden_size):
                 var head_idx, head_dim_idx = divmod(k_dim, kv_params.head_size)
                 var a = ref_output_host[
-                    Int(input_row_offsets_host_ptr[bs]) + s, Int(k_dim)
+                    Int(input_row_offsets_host_ptr[bs]) + s, k_dim
                 ]
                 var b = k_cache_host.load[width=1](
                     bs,
-                    Int(head_idx),
+                    head_idx,
                     cache_sizes[bs] + s,
-                    Int(head_dim_idx),
+                    head_dim_idx,
                 )
                 assert_almost_equal(a, b, atol=atol, rtol=rtol)
-
-    # Cleanup host memory
-    input_row_offsets_host_ptr.free()
-    weight_host_ptr.free()
 
     # Cleanup device buffers
     _ = hidden_state_ragged_device^

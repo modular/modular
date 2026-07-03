@@ -28,8 +28,8 @@ from std.sys.info import (
 )
 
 from std.gpu._utils import (
+    _get_llvm_struct_fields,
     array_to_llvm_struct,
-    dtype_to_llvm_type,
     llvm_struct_to_array,
     llvm_struct_to_simd,
     simd_to_llvm_struct,
@@ -86,10 +86,10 @@ def _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # fmt: off
     comptime assert False, String(
         "no valid implementation of mma for a=",
-        a.size, "x",  a.dtype,
-        ", b=",  b.size, "x",  b.dtype,
-        ", c=",  c.size, "x",  c.dtype,
-        ", and d=", d.size, "x", d.dtype,
+        Int(a.size), "x",  a.dtype,
+        ", b=",  Int(b.size), "x",  b.dtype,
+        ", c=",  Int(c.size), "x",  c.dtype,
+        ", and d=", Int(d.size), "x", d.dtype,
     )
     # fmt: on
 
@@ -162,11 +162,11 @@ def _dtype_to_nvvm_wgmma_type[
 def _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
     return __mlir_deferred_attr[
         `#nvvm.shape<m =`,
-        +m._mlir_value,
+        +m.__mlir_index__(),
         `, n =`,
-        +n._mlir_value,
+        +n.__mlir_index__(),
         `, k =`,
-        +k._mlir_value,
+        +k.__mlir_index__(),
         `>`,
     ]
 
@@ -271,12 +271,19 @@ def ld_matrix[
 
         ```mojo
         from std.gpu.compute.mma import ld_matrix
+        from std.memory import alloc, dealloc, Layout
+
+        var layout = Layout[Scalar[DType.float16]](count=8)
+        var allocation = alloc(layout)
+        var ptr = allocation.unsafe_ptr()
 
         # Load 8x8 matrix of float16 values
-        var data = ld_matrix[DType.float16, 8](ptr)
+        var data = ld_matrix[simd_width=8](ptr)
 
         # Load transposed matrix
-        var transposed = ld_matrix[DType.float16, 8, transpose=True](ptr)
+        var transposed = ld_matrix[simd_width=8, transpose=True](ptr)
+
+        dealloc(allocation^)
         ```
     """
 
@@ -390,7 +397,11 @@ def st_matrix[
         must execute this instruction to avoid deadlock.
     """
 
-    comptime assert dtype in (DType.bfloat16, DType.float32), ""
+    comptime assert dtype in (
+        DType.bfloat16,
+        DType.float16,
+        DType.float32,
+    ), ""
 
     comptime num_matrices = simd_width
 
@@ -735,15 +746,9 @@ def wgmma_async[
         scaleB=_to_nvvm_scale_in[scale_b](),
         layoutA=_to_nvvm_layout[layout_a](),
         layoutB=_to_nvvm_layout[layout_b](),
-        _type=__mlir_type[
+        _type=__mlir_deferred_type[
             `!llvm.struct<(`,
-            __mlir_type[
-                `!kgen.param_list_splat<`,
-                dtype_to_llvm_type[c_dtype],
-                `, `,
-                width._mlir_value,
-                `>`,
-            ],
+            +_get_kgen_string[_get_llvm_struct_fields[width, c_dtype]()](),
             `)>`,
         ],
     ](llvmst, desc_a_value, desc_b_value)
@@ -757,7 +762,7 @@ def wgmma_async[
     n: Int,
     k: Int,
     c_dtype: DType,
-    width: Int,
+    width: SIMDSize,
     /,
     *,
     a_type: DType,
@@ -811,7 +816,7 @@ def wgmma_async[
         c_dtype
     ](), String(
         "Number of output registers ",
-        String(width),
+        String(Int(width)),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
     )
@@ -862,15 +867,9 @@ def wgmma_async[
         scaleB=_to_nvvm_scale_in[scale_b](),
         layoutA=_to_nvvm_layout[layout_a](),
         layoutB=_to_nvvm_layout[layout_b](),
-        _type=__mlir_type[
+        _type=__mlir_deferred_type[
             `!llvm.struct<(`,
-            __mlir_type[
-                `!kgen.param_list_splat<`,
-                dtype_to_llvm_type[c_dtype],
-                `, `,
-                width._mlir_value,
-                `>`,
-            ],
+            +_get_kgen_string[_get_llvm_struct_fields[width, c_dtype]()](),
             `)>`,
         ],
     ](llvmst, desc_a_value, desc_b_value)
@@ -885,8 +884,8 @@ def wgmma_async[
     k: Int,
     a_dtype: DType,
     c_dtype: DType,
-    frag_a_width: Int,
-    frag_c_width: Int,
+    frag_a_width: SIMDSize,
+    frag_c_width: SIMDSize,
     /,
     *,
     a_type: DType,
@@ -940,7 +939,7 @@ def wgmma_async[
         accum_type
     ]() == frag_c_width * size_of[c_dtype](), String(
         "Number of output registers ",
-        String(frag_c_width),
+        String(Int(frag_c_width)),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
     )
@@ -949,7 +948,7 @@ def wgmma_async[
         a_type
     ]() == frag_a_width * size_of[a_dtype](), String(
         "Number of input a registers ",
-        String(frag_a_width),
+        String(Int(frag_a_width)),
         " don't match the instruction shape ",
         String(Index(m, n, k)),
     )

@@ -26,11 +26,13 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import (
+    Coord,
     Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     TileTensor,
+    lt_to_tt,
     row_major,
     UNKNOWN_VALUE,
 )
@@ -164,12 +166,8 @@ def mha_operand_copy[
     comptime head_size = kv_params.head_size
 
     # Create TMA tiles
-    src_tma = src.create_tma_tile[
-        swizzle_mode, BN=tile_m, depth=Int(head_size)
-    ](ctx)
-    dst_tma = dst.create_tma_tile[
-        swizzle_mode, BN=tile_m, depth=Int(head_size)
-    ](ctx)
+    src_tma = src.create_tma_tile[swizzle_mode, BN=tile_m, depth=head_size](ctx)
+    dst_tma = dst.create_tma_tile[swizzle_mode, BN=tile_m, depth=head_size](ctx)
 
     # Calculate grid dimensions
     # NOTE: In context encoding, we would have grid_x = ceildiv(max_prompt_len, BM)
@@ -186,11 +184,11 @@ def mha_operand_copy[
         Layout.row_major(type_of(src_tma).tile_shape),
         kv_t,
         swizzle_mode,
-        Int(head_size),
+        head_size,
     ]
 
     # Launch kernel with block_dim=32
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         src_tma,
         dst_tma,
         src,
@@ -209,13 +207,13 @@ def test_mha_host_operand[
     kv_params: KVCacheStaticParams,
 ](src: kv_t, dst: kv_t, batch_size: Int) raises:
     """Test function that compares two MHAOperands using block_paged_ptr."""
-    comptime kv_row_stride = Int(kv_params.head_size * kv_params.num_heads)
+    comptime kv_row_stride = kv_params.head_size * kv_params.num_heads
     # Iterate over all batch entries and tokens
     for b in range(batch_size):
         seq_len = src.cache_length(b)
         for s in range(0, seq_len, tile_m):
             actual_tokens = min(tile_m, seq_len - s)
-            for h in range(Int(kv_params.num_heads)):
+            for h in range(kv_params.num_heads):
                 # Get pointers using block_paged_ptr
                 src_ptr = src.block_paged_ptr[tile_m](
                     UInt32(b), UInt32(s), UInt32(h), UInt32(0)
@@ -226,7 +224,7 @@ def test_mha_host_operand[
 
                 # Compare values for the actual number of tokens
                 for tok in range(actual_tokens):
-                    for hd in range(Int(kv_params.head_size)):
+                    for hd in range(kv_params.head_size):
                         offset = tok * kv_row_stride + hd
                         src_val = src_ptr[offset]
                         dst_val = dst_ptr[offset]
@@ -254,8 +252,8 @@ def test_continuous_kv_cache[
         2,  # key and value
         num_layers,
         max_seq_len,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
 
     comptime kv_block_layout = Layout.row_major[6]()
@@ -370,18 +368,18 @@ def test_continuous_kv_cache[
                     var src_host_collection = ContinuousBatchingKVCacheCollection[
                         dtype, kv_params
                     ](
-                        src_host_tensor.as_any_origin(),
-                        cache_lengths_host_tensor.as_any_origin().get_immutable(),
-                        lookup_host_tensor.as_any_origin().get_immutable(),
+                        src_host_tensor.as_unsafe_any_origin(),
+                        cache_lengths_host_tensor.as_unsafe_any_origin().get_immutable(),
+                        lookup_host_tensor.as_unsafe_any_origin().get_immutable(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )
                     var dst_host_collection = ContinuousBatchingKVCacheCollection[
                         dtype, kv_params
                     ](
-                        dst_host_tensor.as_any_origin(),
-                        cache_lengths_host_tensor.as_any_origin().get_immutable(),
-                        lookup_host_tensor.as_any_origin().get_immutable(),
+                        dst_host_tensor.as_unsafe_any_origin(),
+                        cache_lengths_host_tensor.as_unsafe_any_origin().get_immutable(),
+                        lookup_host_tensor.as_unsafe_any_origin().get_immutable(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )
@@ -423,8 +421,8 @@ def test_paged_kv_cache[
         2,  # key and value
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
 
     comptime kv_block_layout = Layout.row_major[6]()
@@ -553,18 +551,18 @@ def test_paged_kv_cache[
                     var src_host_collection = PagedKVCacheCollection[
                         dtype, kv_params, page_size
                     ](
-                        src_host_tensor.as_any_origin(),
-                        cache_lengths_host_tensor.as_any_origin().get_immutable(),
-                        paged_lut_host_tensor.as_any_origin().get_immutable(),
+                        src_host_tensor.as_unsafe_any_origin(),
+                        cache_lengths_host_tensor.as_unsafe_any_origin().get_immutable(),
+                        paged_lut_host_tensor.as_unsafe_any_origin().get_immutable(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )
                     var dst_host_collection = PagedKVCacheCollection[
                         dtype, kv_params, page_size
                     ](
-                        dst_host_tensor.as_any_origin(),
-                        cache_lengths_host_tensor.as_any_origin().get_immutable(),
-                        paged_lut_host_tensor.as_any_origin().get_immutable(),
+                        dst_host_tensor.as_unsafe_any_origin(),
+                        cache_lengths_host_tensor.as_unsafe_any_origin().get_immutable(),
+                        paged_lut_host_tensor.as_unsafe_any_origin().get_immutable(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )
@@ -594,8 +592,8 @@ def test_layout_tensor[
     print(msg)
 
     # Create source and destination buffers with BSHD layout
-    comptime num_heads = Int(kv_params.num_heads)
-    comptime head_size = Int(kv_params.head_size)
+    comptime num_heads = kv_params.num_heads
+    comptime head_size = kv_params.head_size
     total_elems = batch_size * max_seq_len * num_heads * head_size
 
     # Create device buffer for source
@@ -607,10 +605,10 @@ def test_layout_tensor[
             src_host,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(max_seq_len),
-                    Idx[num_heads](),
-                    Idx[head_size](),
+                    batch_size,
+                    max_seq_len,
+                    Idx[num_heads],
+                    Idx[head_size],
                 )
             ),
         )
@@ -621,15 +619,15 @@ def test_layout_tensor[
         src_device,
         row_major(
             (
-                Idx(batch_size),
-                Idx(max_seq_len),
-                Idx[num_heads](),
-                Idx[head_size](),
+                batch_size,
+                max_seq_len,
+                Idx[num_heads],
+                Idx[head_size],
             )
         ),
     )
     src_operand = LayoutTensorMHAOperand(
-        src_tt.to_layout_tensor().as_any_origin()
+        src_tt.as_immut().as_unsafe_any_origin()
     )
 
     for is_k_major in range(2):
@@ -645,15 +643,15 @@ def test_layout_tensor[
             dst_device,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(max_seq_len),
-                    Idx[num_heads](),
-                    Idx[head_size](),
+                    batch_size,
+                    max_seq_len,
+                    Idx[num_heads],
+                    Idx[head_size],
                 )
             ),
         )
         dst_operand = LayoutTensorMHAOperand(
-            dst_tt.to_layout_tensor().as_any_origin()
+            dst_tt.as_immut().as_unsafe_any_origin()
         )
 
         mha_operand_copy[tile_m, kv_params](
@@ -671,10 +669,10 @@ def test_layout_tensor[
                     src_host,
                     row_major(
                         (
-                            Idx(batch_size),
-                            Idx(max_seq_len),
-                            Idx[num_heads](),
-                            Idx[head_size](),
+                            batch_size,
+                            max_seq_len,
+                            Idx[num_heads],
+                            Idx[head_size],
                         )
                     ),
                 )
@@ -682,19 +680,23 @@ def test_layout_tensor[
                     dst_host,
                     row_major(
                         (
-                            Idx(batch_size),
-                            Idx(max_seq_len),
-                            Idx[num_heads](),
-                            Idx[head_size](),
+                            batch_size,
+                            max_seq_len,
+                            Idx[num_heads],
+                            Idx[head_size],
                         )
                     ),
                 )
 
                 src_host_operand = LayoutTensorMHAOperand(
-                    src_host_tt.to_layout_tensor().as_any_origin()
+                    lt_to_tt(
+                        src_host_tt.to_layout_tensor().as_unsafe_any_origin()
+                    )
                 )
                 dst_host_operand = LayoutTensorMHAOperand(
-                    dst_host_tt.to_layout_tensor().as_any_origin()
+                    lt_to_tt(
+                        dst_host_tt.to_layout_tensor().as_unsafe_any_origin()
+                    )
                 )
 
                 test_mha_host_operand[tile_m, kv_params](
@@ -716,12 +718,6 @@ def test_ragged[
     total_tokens = 0
 
     # Create cache row offsets
-    comptime offsets_layout = Layout(UNKNOWN_VALUE)
-    var offsets_shape = IndexList[1](batch_size + 1)
-    var offsets_runtime_layout = RuntimeLayout[offsets_layout].row_major(
-        offsets_shape
-    )
-
     var cache_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
     )
@@ -742,8 +738,8 @@ def test_ragged[
         offsets_host[batch_size] = UInt32(offset)
 
     # Create ragged buffers
-    comptime num_heads = Int(kv_params.num_heads)
-    comptime head_size = Int(kv_params.head_size)
+    comptime num_heads = kv_params.num_heads
+    comptime head_size = kv_params.head_size
     total_elems = total_tokens * num_heads * head_size
 
     # Create device buffer for source
@@ -755,9 +751,9 @@ def test_ragged[
             src_host,
             row_major(
                 (
-                    Idx(total_tokens),
-                    Idx[num_heads](),
-                    Idx[head_size](),
+                    total_tokens,
+                    Idx[num_heads],
+                    Idx[head_size],
                 )
             ),
         )
@@ -768,17 +764,18 @@ def test_ragged[
         src_device,
         row_major(
             (
-                Idx(total_tokens),
-                Idx[num_heads](),
-                Idx[head_size](),
+                total_tokens,
+                Idx[num_heads],
+                Idx[head_size],
             )
         ),
     )
+    var cro_tt = TileTensor(
+        cache_row_offsets_device, row_major(Coord(batch_size + 1))
+    )
     src_operand = RaggedMHAOperand(
-        src_tt.to_layout_tensor().as_any_origin(),
-        LayoutTensor[DType.uint32, offsets_layout, MutAnyOrigin](
-            cache_row_offsets_device, offsets_runtime_layout
-        ),
+        src_tt.as_unsafe_any_origin(),
+        cro_tt.as_unsafe_any_origin(),
     )
 
     # Find max sequence length for grid calculation
@@ -798,17 +795,15 @@ def test_ragged[
         dst_device,
         row_major(
             (
-                Idx(total_tokens),
-                Idx[num_heads](),
-                Idx[head_size](),
+                total_tokens,
+                Idx[num_heads],
+                Idx[head_size],
             )
         ),
     )
     dst_operand = RaggedMHAOperand(
-        dst_tt.to_layout_tensor().as_any_origin(),
-        LayoutTensor[DType.uint32, offsets_layout, MutAnyOrigin](
-            cache_row_offsets_device, offsets_runtime_layout
-        ),
+        dst_tt.as_unsafe_any_origin(),
+        cro_tt.as_unsafe_any_origin(),
     )
 
     mha_operand_copy[tile_m, kv_params](
@@ -827,9 +822,9 @@ def test_ragged[
                     src_host,
                     row_major(
                         (
-                            Idx(total_tokens),
-                            Idx[num_heads](),
-                            Idx[head_size](),
+                            total_tokens,
+                            Idx[num_heads],
+                            Idx[head_size],
                         )
                     ),
                 )
@@ -837,23 +832,23 @@ def test_ragged[
                     dst_host,
                     row_major(
                         (
-                            Idx(total_tokens),
-                            Idx[num_heads](),
-                            Idx[head_size](),
+                            total_tokens,
+                            Idx[num_heads],
+                            Idx[head_size],
                         )
                     ),
                 )
-                var offsets_host_tensor = LayoutTensor[
-                    DType.uint32, offsets_layout
-                ](offsets_host, offsets_runtime_layout)
+                var offsets_host_tt = TileTensor(
+                    offsets_host, row_major(Coord(batch_size + 1))
+                )
 
                 src_host_operand = RaggedMHAOperand(
-                    src_host_tt.to_layout_tensor().as_any_origin(),
-                    offsets_host_tensor.as_any_origin(),
+                    src_host_tt.as_unsafe_any_origin(),
+                    offsets_host_tt.as_unsafe_any_origin(),
                 )
                 dst_host_operand = RaggedMHAOperand(
-                    dst_host_tt.to_layout_tensor().as_any_origin(),
-                    offsets_host_tensor.as_any_origin(),
+                    dst_host_tt.as_unsafe_any_origin(),
+                    offsets_host_tt.as_unsafe_any_origin(),
                 )
 
                 test_mha_host_operand[tile_m, kv_params](
@@ -877,7 +872,7 @@ def main() raises:
         comptime for i in range(6, 9):
             comptime head_size = 1 << i  # 64, 128, 256
             comptime kv_params = KVCacheStaticParams(
-                num_heads=8, head_size=UInt(head_size)
+                num_heads=8, head_size=head_size
             )
 
             comptime for j in range(6, 15 - i):

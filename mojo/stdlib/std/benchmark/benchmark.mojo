@@ -15,18 +15,21 @@
 You can import these APIs from the `benchmark` package. For example:
 
 ```mojo
-import std.benchmark
+from std.benchmark import run, Unit
 from std.time import sleep
 ```
 
-You can pass any `fn` as a parameter into `benchmark.run[...]()`, it will return
+You can pass any `fn` as a parameter into `run[...]()`, it will return
 a `Report` where you can get the mean, duration, max, and more:
 
 ```mojo
+from std.benchmark import run
+from std.time import sleep
+
 def sleeper():
     sleep(.01)
 
-var report = benchmark.run[sleeper]()
+var report = run[func2=sleeper]()
 print(report.mean())
 ```
 
@@ -37,6 +40,13 @@ print(report.mean())
 You can print a full report:
 
 ```mojo
+from std.benchmark import run
+from std.time import sleep
+
+def sleeper():
+    sleep(.01)
+
+var report = run[func2=sleeper]()
 report.print()
 ```
 
@@ -56,6 +66,13 @@ Slowest Mean: 0.012321428571428572
 Or all the batch runs:
 
 ```mojo
+from std.benchmark import run
+from std.time import sleep
+
+def sleeper():
+    sleep(.01)
+
+var report = run[func2=sleeper]()
 report.print_full()
 ```
 
@@ -90,8 +107,13 @@ If you want to use a different time unit you can bring in the Unit and pass
 it in as an argument:
 
 ```mojo
-from std.benchmark import Unit
+from std.benchmark import run, Unit
+from std.time import sleep
 
+def sleeper():
+    sleep(.01)
+
+var report = run[func2=sleeper]()
 report.print(Unit.ms)
 ```
 
@@ -110,6 +132,13 @@ Slowest Mean: 0.012421204081632654
 The unit's are just aliases for string constants, so you can for example:
 
 ```mojo
+from std.benchmark import run
+from std.time import sleep
+
+def sleeper():
+    sleep(.01)
+
+var report = run[func2=sleeper]()
 print(report.mean("ms"))
 ```
 
@@ -121,7 +150,13 @@ Benchmark.run takes four arguments to change the behaviour, to set warmup
 iterations to 5:
 
 ```mojo
-r = benchmark.run[sleeper](5)
+from std.benchmark import run
+from std.time import sleep
+
+def sleeper():
+    sleep(.01)
+
+var r = run[func2=sleeper](5)
 ```
 
 ```output
@@ -132,7 +167,13 @@ To set 1 warmup iteration, 2 max iterations, a min total time of 3 sec, and a
 max total time of 4 s:
 
 ```mojo
-r = benchmark.run[sleeper](1, 2, 3, 4)
+from std.benchmark import run
+from std.time import sleep
+
+def sleeper():
+    sleep(.01)
+
+var r = run[func2=sleeper](1, 2, 3, 4)
 ```
 
 Note that benchmarking continues until `min_runtime_secs` has
@@ -436,7 +477,7 @@ struct _RunOptions[timing_fn: def(num_iters: Int) raises capturing[_] -> Int](
 
 @always_inline
 def run[
-    *, func1: def() raises -> None
+    *, func1: def() thin raises -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -471,7 +512,7 @@ def run[
     @always_inline
     def benchmark_fn(num_iters: Int) raises -> Int:
         @always_inline
-        def iter_fn() raises unified {read num_iters}:
+        def iter_fn() raises {read num_iters}:
             for _ in range(num_iters):
                 func1()
 
@@ -490,7 +531,7 @@ def run[
 
 @always_inline
 def run[
-    *, func2: def() -> None
+    *, func2: def() thin -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -571,7 +612,7 @@ def run[
     @always_inline
     def benchmark_fn(num_iters: Int) raises -> Int:
         @always_inline
-        def iter_fn() raises unified {read num_iters}:
+        def iter_fn() raises {read num_iters}:
             for _ in range(num_iters):
                 func3()
 
@@ -644,9 +685,9 @@ def _run_impl(opts: _RunOptions) raises -> Report:
     report.warmup_duration = 0
     var num_warmup_iters = opts.num_warmup_iters
     if num_warmup_iters:
-        prev_dur += opts.timing_fn(num_warmup_iters)
-        prev_iters += num_warmup_iters
-        report.warmup_duration += prev_dur
+        prev_dur = opts.timing_fn(num_warmup_iters)
+        prev_iters = num_warmup_iters
+        report.warmup_duration = prev_dur
 
     var total_iters: Int = 0
     var time_elapsed: Int = 0
@@ -663,12 +704,13 @@ def _run_impl(opts: _RunOptions) raises -> Report:
     while time_elapsed < max_time_ns:
         var n = Float64(opts.max_batch_size)
         if opts.max_batch_size == 0:
-            # We now count the next batchSize. A user might run the benchmark
-            # with no warmup phase, so we need to make sure the divisor is not
-            # zero.
+            # We now compute the next batch size. A user might run the
+            # benchmark with no warmup phase, so we need to make sure the
+            # divisor is not zero.
             if prev_dur > 0:
-                # Propose batch size which lasts at least min_time_ns or opts.max_iters
-                n = Float64(opts.max_iters)
+                # Propose a batch size that lasts at least min_time_ns. With
+                # min_time_ns == 0, fall back to opts.max_iters and let the
+                # 10x growth cap below ramp us up gradually.
                 if min_time_ns > 0:
                     n = (
                         1.2
@@ -676,17 +718,21 @@ def _run_impl(opts: _RunOptions) raises -> Report:
                         * Float64(prev_iters)
                         / Float64(prev_dur)
                     )
+                else:
+                    n = Float64(opts.max_iters)
 
             # We should not grow too fast, so we cap it to only 10x the growth
             # from the prior iteration. Fast growth can happen when the function
             # is too fast.
             n = min(n, Float64(10 * prev_iters))
-            # We have to increase the batchSize each time. So, we make sure we
+            # We have to increase the batch size each time. So, we make sure we
             # advance the number of iterations regardless of the prior logic.
             n = max(n, Float64(prev_iters + 1))
             # The batch size should not be larger than 1.0e9.
             n = min(n, 1.0e9)
-            # Process at least one batch. i.e. Ensure n does not exceed opts.max_iters on the first iteration
+            # On the first iteration, clamp n to opts.max_iters: the max_iters
+            # check below only fires once min_time_ns has elapsed, so without
+            # this clamp a single first batch could overshoot max_iters.
             if total_iters == 0:
                 n = min(n, Float64(opts.max_iters))
 

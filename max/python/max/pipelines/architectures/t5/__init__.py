@@ -10,5 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""T5 text encoder architecture for diffusion conditioning."""
 
 from .model import T5Model

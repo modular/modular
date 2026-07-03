@@ -12,21 +12,23 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.ffi import _CPointer
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext, DeviceStream
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
+from std.memory.unsafe_pointer import unsafe_cast
 from std.sys.info import has_nvidia_gpu_accelerator
 from std.testing import assert_equal
 
 
 def native_stream_ptr(
     stream: DeviceStream,
-) raises -> OpaquePointer[MutAnyOrigin]:
+) raises -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
     comptime if has_nvidia_gpu_accelerator():
-        return CUDA(stream).bitcast[NoneType]()
+        return unsafe_cast[Type=NoneType](CUDA(stream))
     else:
-        return HIP(stream).bitcast[NoneType]()
+        return unsafe_cast[Type=NoneType](HIP(stream))
 
 
 def scale_kernel(
@@ -68,7 +70,7 @@ def main() raises:
         # Run a kernel on this new stream
         # Note: DeviceStream currently only runs pre-compiled kernels, so the
         # compilation step here is needed.
-        var func = ctx.compile_function[scale_kernel, scale_kernel]()
+        var func = ctx.compile_function[scale_kernel]()
         stream.enqueue_function(
             func,
             dev_in,

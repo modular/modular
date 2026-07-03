@@ -21,33 +21,33 @@ import numpy as np
 import pytest
 import requests
 from max.driver import DeviceSpec, accelerator_count
-from max.interfaces import (
-    ImageContentPart,
-    MessageContent,
-    RequestID,
-    SamplingParams,
-    TextContentPart,
-    TextGenerationRequest,
-    TextGenerationRequestFunction,
-    TextGenerationRequestMessage,
-    TextGenerationRequestTool,
-    TextGenerationResponseFormat,
-    TokenBuffer,
-)
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
     TextAndVisionTokenizer,
     TextTokenizer,
 )
-from max.pipelines.core import (
+from max.pipelines.context import (
+    SamplingParams,
     TextAndVisionContext,
     TextContext,
+    TextGenerationResponseFormat,
+    TokenBuffer,
     validate_only_one_image,
 )
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, SamplingConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.modeling.types import (
+    ImageContentPart,
+    MessageContent,
+    RequestID,
+    TextContentPart,
+    TextGenerationRequest,
+    TextGenerationRequestFunction,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+)
 from test_common.mocks import mock_estimate_memory_footprint
 from transformers import AutoConfig
 
@@ -92,7 +92,7 @@ def test_text_and_vision_tokenizer() -> None:
 
     VALID_REPOS = {
         # This is not currently working for pixtral.
-        "mistral-community/pixtral-12b": "[IMG]",
+        "mistral-experimental/pixtral-12b": "[IMG]",
     }
     img_url = "https://picsum.photos/id/237/200/300"
     img = convert_image_url_to_base64(img_url)
@@ -226,6 +226,43 @@ def test_tokenizer__with_prompt_as_list_of_int(
     )
     context = asyncio.run(tokenizer.new_context(request))
     assert np.array_equal(context.tokens.all, np.array([0, 1, 2, 3, 4, 5]))
+
+
+def test_tokenizer__propagates_cache_salt(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    """`tokenizer.new_context` must forward `request.cache_salt` to
+    `context.cache_salt` (Step 6.5 plumbing). Without this the
+    multi-tenant prefix-cache isolation feature is silently inert."""
+
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+    )
+
+    request_with_salt = TextGenerationRequest(
+        request_id=RequestID(),
+        model_name=llama_3_1_8b_instruct_local_path,
+        prompt="Hello world!",
+        cache_salt="tenant-abc",
+    )
+
+    context_with_salt = asyncio.run(tokenizer.new_context(request_with_salt))
+    assert context_with_salt.cache_salt == "tenant-abc"
+
+    request_without_salt = TextGenerationRequest(
+        request_id=RequestID(),
+        model_name=llama_3_1_8b_instruct_local_path,
+        prompt="Hello world!",
+    )
+
+    context_without_salt = asyncio.run(
+        tokenizer.new_context(request_without_salt)
+    )
+    assert context_without_salt.cache_salt is None
 
 
 def test_tokenizer__with_context_validation(
@@ -387,6 +424,7 @@ def test_text_tokenizer_with_constrained_decoding(
         ],
         response_format=TextGenerationResponseFormat(
             type="json_schema",
+            grammar=None,
             json_schema={
                 "title": "Person",
                 "type": "object",
@@ -400,6 +438,8 @@ def test_text_tokenizer_with_constrained_decoding(
                 },
                 "required": ["name", "age"],
             },
+            grammar_enforced=True,
+            tools_forced=False,
         ),
     )
 
@@ -590,6 +630,36 @@ async def test_tokenizer__apply_chat_template_dict_list_vs_str_content(
         "I'm doing well, thank you!<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
     )
     assert prompt_text == expected_prompt_text
+
+
+@pytest.mark.asyncio
+async def test_tokenizer__apply_chat_template_preserves_default_options(
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
+) -> None:
+    """Caller-provided chat_template_options must not drop the implicit
+    add_generation_prompt=True default. Regression test: OpenRouter-style
+    callers send `chat_template_kwargs: {"thinking": true}` and expect the
+    assistant turn prefix to still be appended."""
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        model_path=llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+    )
+    messages = [
+        TextGenerationRequestMessage(role="user", content="Hi"),
+    ]
+
+    prompt_text = tokenizer.apply_chat_template(
+        messages,
+        tools=None,
+        chat_template_options={"date_string": "26 Jul 2024"},
+    )
+
+    assert prompt_text.endswith(
+        "<|start_header_id|>assistant<|end_header_id|>\n\n"
+    )
 
 
 @pytest.mark.asyncio

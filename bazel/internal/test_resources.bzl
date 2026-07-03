@@ -4,9 +4,6 @@ TEST_RESOURCES = {
         "cpu": 2,
         "memory": 1464,
     },
-    "//max/examples/custom-graph-module:main_test": {
-        "cpu": 7,
-    },
     "//max/examples/custom_ops:addition.example-test": {
         "cpu": 2,
         "memory": 1409,
@@ -34,10 +31,6 @@ TEST_RESOURCES = {
     "//max/examples/custom_ops:vector_addition.example-test": {
         "cpu": 2,
         "memory": 1261,
-    },
-    "//max/examples/max-graph:addition_test": {
-        "cpu": 2,
-        "memory": 1199,
     },
     "//max/examples/pytorch_custom_ops:addition.example-test": {
         "cpu": 2,
@@ -352,9 +345,6 @@ TEST_RESOURCES = {
     "//max/tests/integration/accuracy:test_pipelines_lm_eval": {
         "cpu": 2,
         "memory": 8350,
-    },
-    "//max/tests/integration/serve/kvcache_agent:tests": {
-        "cpu": 4,
     },
     "//max/tests/integration/serve:test_sagemaker_cpu": {
         "cpu": 2,

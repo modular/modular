@@ -19,7 +19,7 @@ from std.gpu.primitives.id import lane_id, warp_id
 from std.gpu.primitives.warp import shuffle_up
 
 from std.math import abs
-from std.os import Atomic
+from std.atomic import Atomic
 from std.utils import StaticTuple
 
 # ========================== CONFIGURATION ==========================
@@ -239,8 +239,8 @@ def scan_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_scan(
-    input: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[mut=False, Float32, _],
+    output: UnsafePointer[mut=True, Float32, _],
     N: UInt32,
 ):
     """CPU reference scan implementation.
@@ -303,7 +303,7 @@ def main() raises:
         h_flags.free()
 
         # Launch kernel
-        ctx.enqueue_function_experimental[scan_kernel](
+        ctx.enqueue_function[scan_kernel](
             d_input,
             d_output,
             d_block_counter,

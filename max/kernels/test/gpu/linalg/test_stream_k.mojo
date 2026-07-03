@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import umod
 
 from std.gpu import Semaphore, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
@@ -158,24 +159,26 @@ def first_wave_kernel[
     total_partial_tiles_streamk: Int,
     iters_per_tile: Int,
 ):
-    var pid = UInt(block_idx.x)
+    var pid = block_idx.x
 
-    var start_iter = pid * UInt(total_full_tiles_streamk) + (
-        pid if pid
-        < UInt(total_partial_tiles_streamk) else UInt(
-            total_partial_tiles_streamk
+    var start_iter = Int(
+        pid * total_full_tiles_streamk
+        + (
+            pid if pid
+            < total_partial_tiles_streamk else total_partial_tiles_streamk
         )
     )
-    var last_iter = (pid + 1) * UInt(total_full_tiles_streamk) + (
-        (pid + 1) if (pid + 1)
-        < UInt(total_partial_tiles_streamk) else UInt(
-            total_partial_tiles_streamk
+    var last_iter = Int(
+        (pid + 1) * total_full_tiles_streamk
+        + (
+            (pid + 1) if (pid + 1)
+            < total_partial_tiles_streamk else total_partial_tiles_streamk
         )
     )
 
     while start_iter < last_iter:
-        var remainder = iters_per_tile - Int(start_iter % UInt(iters_per_tile))
-        var boundary = start_iter + UInt(remainder)
+        var remainder = iters_per_tile - umod(start_iter, iters_per_tile)
+        var boundary = start_iter + remainder
         var end_iter = boundary if (boundary < last_iter) else last_iter
         mac_loop(
             C,
@@ -192,8 +195,8 @@ def first_wave_kernel[
             stride_cm,
             stride_cn,
             iters_per_tile,
-            Int(start_iter),
-            Int(end_iter),
+            start_iter,
+            end_iter,
             BLOCK_M,
             BLOCK_N,
             BLOCK_K,
@@ -370,7 +373,7 @@ def matmul_stream_k[
             GROUP_M,
         ]
 
-        ctx.enqueue_function_experimental[first_wave](
+        ctx.enqueue_function[first_wave](
             c_buffer,
             a_buffer,
             b_buffer,
@@ -402,7 +405,7 @@ def matmul_stream_k[
             BLK_K,
             GROUP_M,
         ]
-        ctx.enqueue_function_experimental[full_tiles](
+        ctx.enqueue_function[full_tiles](
             c_buffer,
             a_buffer,
             b_buffer,
@@ -483,7 +486,7 @@ def run_matmul_stream_k[
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
 
     var c_buf_n = TileTensor(c_device_n, row_major[M, N]())
@@ -498,7 +501,7 @@ def run_matmul_stream_k[
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_buf_n,
         a_buf.as_immut(),
         b_buf.as_immut(),

@@ -19,6 +19,7 @@ Model inference
    :toctree: generated
    :template: autosummary/class.rst
 
+   CompiledModel
    InferenceSession
    Model
 
@@ -30,6 +31,7 @@ Configuration
    :toctree: generated
    :template: autosummary/class.rst
 
+   DebugConfig
    GPUProfilingMode
    LogLevel
    TensorSpec

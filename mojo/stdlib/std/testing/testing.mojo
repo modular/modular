@@ -32,11 +32,10 @@ def main() raises:
 """
 
 from std.math import isclose
-from std.reflection.traits import AllWritable
 
 from std.reflection import call_location, SourceLocation
 from std.memory import memcmp
-from std.python import PythonObject, ConvertibleToPython
+from std.python import PythonObject
 from std.utils._ansi import Color, Text
 
 # ===----------------------------------------------------------------------=== #
@@ -212,56 +211,15 @@ def assert_equal(
 
 
 @always_inline
-def assert_equal[
-    lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
-    rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
-](
-    lhs: Tuple[*lhs_types],
-    rhs: Tuple[*rhs_types],
-    msg: String = "",
-    *,
-    location: Optional[SourceLocation] = None,
-) raises where (AllWritable[*lhs_types] and AllWritable[*rhs_types]):
-    """Asserts that two tuples are equal. If not, an Error is raised.
-
-    Parameters:
-        lhs_types: The types of the elements in the left tuple.
-        rhs_types: The types of the elements in the right tuple.
-
-    Args:
-        lhs: The left-hand side tuple.
-        rhs: The right-hand side tuple.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if lhs != rhs:
-        raise _assert_cmp_error["`left == right` comparison"](
-            repr(lhs),
-            repr(rhs),
-            msg=msg,
-            loc=location.or_else(call_location()),
-        )
-
-
-@always_inline
-def assert_equal_pyobj[
-    LHS: ConvertibleToPython & Copyable, RHS: ConvertibleToPython & Copyable
-](
-    lhs: LHS,
-    rhs: RHS,
+def assert_equal_pyobj(
+    lhs: PythonObject,
+    rhs: PythonObject,
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
 ) raises:
     """Asserts that the `PythonObject`s are equal. If it is not then an Error
     is raised.
-
-    Parameters:
-        LHS: Argument type that can be converted to `PythonObject`.
-        RHS: Argument type that can be converted to `PythonObject`.
 
     Args:
         lhs: The lhs of the equality.
@@ -272,48 +230,10 @@ def assert_equal_pyobj[
     Raises:
         An Error with the provided message if assert fails.
     """
-    var lhs_obj = lhs.copy().to_python_object()
-    var rhs_obj = rhs.copy().to_python_object()
-
-    if lhs_obj != rhs_obj:
+    if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
-            String(lhs_obj),
-            String(rhs_obj),
-            msg=msg,
-            loc=location.or_else(call_location()),
-        )
-
-
-@always_inline
-def assert_not_equal[
-    lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
-    rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
-](
-    lhs: Tuple[*lhs_types],
-    rhs: Tuple[*rhs_types],
-    msg: String = "",
-    *,
-    location: Optional[SourceLocation] = None,
-) raises where (AllWritable[*lhs_types] and AllWritable[*rhs_types]):
-    """Asserts that two tuples are not equal. If they are, an Error is raised.
-
-    Parameters:
-        lhs_types: The types of the elements in the left tuple.
-        rhs_types: The types of the elements in the right tuple.
-
-    Args:
-        lhs: The left-hand side tuple.
-        rhs: The right-hand side tuple.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if lhs == rhs:
-        raise _assert_cmp_error["`left != right` comparison"](
-            repr(lhs),
-            repr(rhs),
+            String(lhs),
+            String(rhs),
             msg=msg,
             loc=location.or_else(call_location()),
         )
@@ -356,7 +276,7 @@ def assert_not_equal[
 
 @always_inline
 def assert_almost_equal[
-    dtype: DType, size: Int
+    dtype: DType, size: SIMDSize
 ](
     lhs: SIMD[dtype, size],
     rhs: SIMD[dtype, size],
@@ -545,7 +465,8 @@ struct assert_raises:
     """Context manager that asserts that the block raises an exception.
 
     You can use this to test expected error cases, and to test that the correct
-    errors are raised. For instance:
+    errors are raised. Works with `Error` and any custom `Writable` error type.
+    For instance:
 
     ```mojo
     from std.testing import assert_raises
@@ -613,18 +534,30 @@ struct assert_raises:
         """
         raise Error("AssertionError: Didn't raise at ", self.call_location)
 
-    def __exit__(self, error: Error) raises -> Bool:
+    def __exit__[E: AnyType](self, error: E) raises -> Bool:
         """Exit the context manager with an error.
+
+        Works with `Error` and any custom `Writable` error type. When
+        `contains` is specified, the error type must be `Writable` so
+        it can be converted to a string for matching.
+
+        Parameters:
+            E: The error type.
 
         Args:
             error: The error raised.
 
         Raises:
-            Error: If the error raised doesn't include the expected string.
+            Error: If `contains` is set and the error message doesn't
+                include the expected string, or if `contains` is set
+                but the error type is not `Writable`.
 
         Returns:
-            True if the error message contained the expected string.
+            True if the error was successfully caught and matched.
         """
         if self.message_contains:
-            return self.message_contains.value() in String(error)
+            comptime assert conforms_to(
+                E, Writable
+            ), "assert_raises(contains=...) requires a Writable error type"
+            return self.message_contains.value() in String.write(error)
         return True

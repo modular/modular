@@ -13,12 +13,9 @@
 
 
 from std.time.time import global_perf_counter_ns
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    WARP_SIZE,
-)
+from std.gpu import WARP_SIZE, block_idx, thread_idx
 from std.gpu.host import DeviceContext
+from std.gpu.host.info import B200
 from std.gpu import sm_id
 
 
@@ -118,18 +115,18 @@ struct BlackwellWarpProfilingWorkspaceManager[
         var device_buffer = ctx.enqueue_create_buffer[DType.uint64](length)
         device_buffer.enqueue_fill(0)
         return Span[UInt64, MutAnyOrigin](
-            ptr=device_buffer.unsafe_ptr(),
+            ptr=device_buffer.unsafe_ptr().as_unsafe_any_origin(),
             length=length,
         )
 
     @staticmethod
     @always_inline
     def write_to_workspace[
-        warp_role: UInt32
+        workspace_origin: MutOrigin, //, warp_role: UInt32
     ](
         sm_idx: UInt32,
         entry_idx: UInt32,
-        workspace: Span[UInt64, MutAnyOrigin],
+        workspace: Span[UInt64, workspace_origin],
         timeline: Tuple[UInt64, UInt64],
     ):
         comptime total_threads = UInt32(WARP_SIZE) * Self._get_warp_count[
@@ -180,6 +177,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
 
 
 struct BlackwellProfileWarp[
+    workspace_origin: MutOrigin,
     load_warps: UInt32,
     mma_warps: UInt32,
     scheduler_warps: UInt32,
@@ -203,7 +201,7 @@ struct BlackwellProfileWarp[
     comptime enable_profiling = Self.max_entries_per_warp > 0
 
     var timeline: Tuple[UInt64, UInt64]
-    var workspace: Span[UInt64, MutAnyOrigin]
+    var workspace: Span[UInt64, Self.workspace_origin]
 
     # which entry is going to be written to the workspace for this warp
     var entry_idx: UInt32
@@ -211,7 +209,7 @@ struct BlackwellProfileWarp[
     @always_inline
     def __init__(
         out self,
-        workspace: Span[UInt64, MutAnyOrigin],
+        workspace: Span[UInt64, Self.workspace_origin],
         entry_idx: UInt32,
     ):
         self.timeline = (0, 0)

@@ -182,10 +182,10 @@ def run_evaluator_with_crash_detection(
     evaluator_cmd: list[str],
     sitter: PipelineSitter,
     *,
-    poll_interval: float = 10,
+    poll_interval: float = 60,
     health_probe_url: str | None = None,
-    health_probe_timeout: float = 10.0,
-    health_probe_max_consecutive_failures: int = 3,
+    health_probe_timeout: float = 60.0,
+    health_probe_max_consecutive_failures: int = 5,
 ) -> int:
     """Run an evaluator subprocess, aborting if the server crashes or hangs.
 
@@ -329,7 +329,7 @@ def main(
         pipelines_program = [
             _must_rlocation_str(
                 runfiles,
-                "_main/max/python/max/entrypoints/pipelines",
+                "_main/max/python/max/_entrypoints/pipelines",
             )
         ]
     else:
@@ -337,7 +337,7 @@ def main(
         pipelines_program = [
             "/opt/venv/bin/python",
             "-m",
-            "max.entrypoints.pipelines",
+            "max._entrypoints.pipelines",
         ]
 
     if override_lm_eval is not None:

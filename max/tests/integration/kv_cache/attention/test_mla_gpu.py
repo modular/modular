@@ -19,9 +19,9 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import flare_mla_decompress_k_cache, flare_mla_prefill_plan
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import MHAKVCacheParams, MLAKVCacheParams
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 
@@ -33,13 +33,11 @@ def test_mla_prefill_plan() -> None:
     session = InferenceSession(devices=[device0])
 
     page_size = 128
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=DType.bfloat16,
-        n_kv_heads=8,
         head_dim=128,
         num_layers=1,
         page_size=page_size,
-        is_mla=True,
         num_q_heads=8,
         devices=[DeviceRef.GPU()],
     )
@@ -64,15 +62,17 @@ def test_mla_prefill_plan() -> None:
             "call_mla_prefill_plan",
             input_types=[
                 input_row_offsets_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.flattened_kv_inputs(),
             ],
         ) as g:
             input_row_offsets = g.inputs[0].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = unflatten_ragged_attention_inputs(
-                g.inputs[1:], n_devices=1
-            )[0]
+            kv_collection = (
+                kv_params.get_symbolic_inputs()
+                .unflatten(iter(g.inputs[1:]))
+                .inputs[0]
+            )
 
             results = flare_mla_prefill_plan(
                 kv_params,
@@ -95,7 +95,7 @@ def test_mla_prefill_plan() -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.
@@ -106,9 +106,9 @@ def test_mla_prefill_plan() -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
 
-    results = model.execute(input_row_offsets.to(device0), *kv_inputs)
+    results = model.execute(input_row_offsets.to(device0), *kv_inputs.flatten())
 
     # Hardcoded reference for:
     # page_size = 128, buffer_tok_size = 256, prompt_lens = [160, 200]
@@ -141,13 +141,11 @@ def test_mla_decompress_k_cache() -> None:
     session = InferenceSession(devices=[device0])
 
     page_size = 128
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=DType.float32,
-        n_kv_heads=1,
         head_dim=576,
         num_layers=1,
         page_size=page_size,
-        is_mla=True,
         num_q_heads=128,
         devices=[DeviceRef.GPU()],
     )
@@ -177,16 +175,18 @@ def test_mla_decompress_k_cache() -> None:
             input_types=[
                 input_row_offsets_type,
                 weight_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.flattened_kv_inputs(),
             ],
         ) as g:
             input_row_offsets = g.inputs[0].tensor
             weight = g.inputs[1].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = unflatten_ragged_attention_inputs(
-                g.inputs[2:], n_devices=1
-            )[0]
+            kv_collection = (
+                kv_params.get_symbolic_inputs()
+                .unflatten(iter(g.inputs[2:]))
+                .inputs[0]
+            )
 
             # Allocate a page-aligned buffer to hold decompressed KV cache.
             buffer_tok_size = 256
@@ -227,7 +227,7 @@ def test_mla_decompress_k_cache() -> None:
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.
@@ -238,13 +238,13 @@ def test_mla_decompress_k_cache() -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch])
+    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch])
 
     new_blocks = torch.randn(
-        size=kv_runtime_inputs.inputs[0].blocks.shape, dtype=torch.float32
+        size=kv_runtime_inputs.inputs[0].kv_blocks.shape, dtype=torch.float32
     )
 
-    kv_runtime_inputs.inputs[0].blocks = Buffer.from_numpy(
+    kv_runtime_inputs.inputs[0].kv_blocks = Buffer.from_numpy(
         new_blocks.numpy()
     ).to(device0)
 
@@ -258,7 +258,7 @@ def test_mla_decompress_k_cache() -> None:
     results = model.execute(
         input_row_offsets.to(device0),
         Buffer.from_numpy(weight.numpy()).to(device0),
-        *kv_runtime_inputs,
+        *kv_runtime_inputs.flatten(),
     )
 
     # With page-aligned spans and 256-token chunks, chunk 0 covers request 0 and 1.
@@ -289,13 +289,12 @@ def test_mla_decompress_k_cache_only_k() -> None:
     session = InferenceSession(devices=[device0])
 
     page_size = 128
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=1,
         head_dim=576,
         num_layers=1,
         page_size=page_size,
-        is_mla=False,  # intentionally false, which is incorrect
         devices=[DeviceRef.GPU()],
     )
 
@@ -315,16 +314,18 @@ def test_mla_decompress_k_cache_only_k() -> None:
             input_types=[
                 input_row_offsets_type,
                 weight_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.flattened_kv_inputs(),
             ],
         ) as g:
             input_row_offsets = g.inputs[0].tensor
             weight = g.inputs[1].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = unflatten_ragged_attention_inputs(
-                g.inputs[2:], n_devices=1
-            )[0]
+            kv_collection = (
+                kv_params.get_symbolic_inputs()
+                .unflatten(iter(g.inputs[2:]))
+                .inputs[0]
+            )
 
             # Allocate a buffer to hold KV cache for 60 decompressed tokens
             buffer_tok_size = 60

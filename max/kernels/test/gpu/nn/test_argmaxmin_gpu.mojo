@@ -56,13 +56,15 @@ def test_argmaxmin_gpu[
         out_size *= out_shape[i]
 
     # Allocate host memory
-    var in_host_ptr = alloc[Scalar[dtype]](in_size)
+    var in_host_ptr = ctx.enqueue_create_host_buffer[dtype](in_size)
     var in_host = TileTensor(
         in_host_ptr,
         row_major(Coord(in_shape)),
     )
-    var out_idxs_host_ptr = alloc[Scalar[output_type]](out_size)
-    var out_idxs_host = TileTensor(
+    var out_idxs_host_ptr = ctx.enqueue_create_host_buffer[output_type](
+        out_size
+    )
+    var _out_idxs_host = TileTensor(
         out_idxs_host_ptr,
         row_major(Coord(out_shape)),
     )
@@ -78,11 +80,11 @@ def test_argmaxmin_gpu[
 
     # Create device TileTensors
     var device_in_tensor = TileTensor(
-        device_in.unsafe_ptr(),
+        device_in,
         row_major(Coord(in_shape)),
     )
     var device_out_tensor = TileTensor(
-        device_out_idxs.unsafe_ptr(),
+        device_out_idxs,
         row_major(Coord(out_shape)),
     )
 
@@ -103,7 +105,7 @@ def test_argmaxmin_gpu[
     ctx.synchronize()
 
     # Test for correctness against CPU reference
-    var out_idxs_cpu_ptr = alloc[Scalar[DType.int64]](out_size)
+    var out_idxs_cpu_ptr = ctx.enqueue_create_host_buffer[DType.int64](out_size)
     var out_idxs_cpu = TileTensor(
         out_idxs_cpu_ptr,
         row_major(Coord(out_shape)),
@@ -127,11 +129,6 @@ def test_argmaxmin_gpu[
             out_idxs_host_ptr[i],
             out_idxs_cpu_ptr[i].cast[output_type](),
         )
-
-    # Cleanup host memory
-    in_host_ptr.free()
-    out_idxs_host_ptr.free()
-    out_idxs_cpu_ptr.free()
 
     # Cleanup device buffers
     _ = device_in^
@@ -179,7 +176,7 @@ def main() raises:
         var total_elements = buffer.num_elements()
         for i in range(total_elements):
             var random_value = random_float64(min_val, max_val)
-            buffer.ptr[i] = random_value.cast[dtype]()
+            buffer.raw_store(i, random_value.cast[dtype]())
 
     with DeviceContext() as ctx:  # argmax tests
         # index

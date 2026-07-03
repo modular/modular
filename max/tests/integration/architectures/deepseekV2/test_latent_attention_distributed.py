@@ -21,19 +21,15 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-    unflatten_ragged_attention_inputs,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, MLAKVCacheParams
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from torch_reference.configuration_deepseek import DeepseekV2Config
@@ -73,14 +69,12 @@ def _single_gpu_baseline(
         scaling_params=scaling_params,
     )
 
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=DType.bfloat16,
         num_layers=config.num_hidden_layers,
-        n_kv_heads=1,
         head_dim=576,
         devices=[DeviceRef.GPU()],
         page_size=128,
-        is_mla=True,
         num_q_heads=config.num_attention_heads,
     )
 
@@ -121,15 +115,14 @@ def _single_gpu_baseline(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.flattened_kv_inputs(),
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = unflatten_ragged_attention_inputs(
-                graph.inputs[2:],
-                n_devices=1,
-            )[0]
+            kv_collection = kv_params.unflatten_kv_inputs(
+                iter(graph.inputs[2:])
+            ).inputs[0]
             out_list = attn(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 xs=[hidden_states],
@@ -152,7 +145,7 @@ def _single_gpu_baseline(
     batch = []
     ctx = create_text_context(np.empty(prompt_lens[0]))
     kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+    kv_manager.alloc(ctx, replica_idx=0)
     batch.append(ctx)
 
     # Row offsets on host to avoid GPU __setitem__
@@ -174,7 +167,7 @@ def _single_gpu_baseline(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=0)
         kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
         tok = (
             Buffer.from_numpy(
@@ -218,15 +211,13 @@ def _build_scaling_and_rope(
 
 
 def _build_kv_params(config: DeepseekV2Config, dp_degree: int) -> KVCacheParams:
-    return KVCacheParams(
+    return MLAKVCacheParams(
         dtype=DType.bfloat16,
-        n_kv_heads=1,
         head_dim=576,
         num_layers=config.num_hidden_layers,
         devices=[DeviceRef.GPU(i) for i in range(dp_degree)],
         page_size=128,
         data_parallel_degree=dp_degree,
-        is_mla=True,
         num_q_heads=config.num_attention_heads,
     )
 
@@ -298,8 +289,10 @@ def _build_graph_and_compile(
                 input_row_offsets_list.append(graph.inputs[idx + 1].tensor)
                 idx += 2
 
-            kv_collections = unflatten_ragged_attention_inputs(
-                graph.inputs[2 * n :], n_devices=n
+            kv_collections = (
+                kv_manager.params.get_symbolic_inputs()
+                .unflatten(iter(graph.inputs[2 * n :]))
+                .inputs[0]
             )
 
             outs = attn(
@@ -372,7 +365,7 @@ def _run_distributed_dp(
     for replica_idx in range(dp_degree):
         ctx = create_text_context(np.empty(seq_len))
         kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
-        kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
+        kv_manager.alloc(ctx, replica_idx=replica_idx)
         batch.append(ctx)
     batches_by_replica = [[ctx] for ctx in batch]
 
@@ -404,7 +397,7 @@ def _run_distributed_dp(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=replica_idx)
         fetch_list = kv_manager.runtime_inputs(batches_by_replica)
         kv_args = _flatten_kv_kv_inputs(fetch_list)
 

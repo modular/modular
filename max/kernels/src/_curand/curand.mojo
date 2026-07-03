@@ -79,6 +79,7 @@ comptime curandDistributionShift_t = UnsafePointer[
 
 struct curandDistributionShift_st(TrivialRegisterPassable):
     var probability: curandDistribution_t
+
     var host_probability: curandDistribution_t
     var shift: UInt32
     var length: UInt32
@@ -87,6 +88,7 @@ struct curandDistributionShift_st(TrivialRegisterPassable):
 
 struct curandDistributionM2Shift_st(TrivialRegisterPassable):
     var histogram: curandHistogramM2_t
+
     var host_histogram: curandHistogramM2_t
     var shift: UInt32
     var length: UInt32
@@ -95,18 +97,23 @@ struct curandDistributionM2Shift_st(TrivialRegisterPassable):
 
 struct curandHistogramM2_st(TrivialRegisterPassable):
     var V: curandHistogramM2V_t
+
     var host_V: curandHistogramM2V_t
+
     var K: curandHistogramM2V_t
+
     var host_K: curandHistogramM2V_t
     var host_gen: UInt32
 
 
-comptime curandDistribution_t = UnsafePointer[Float64, MutAnyOrigin]
+comptime curandDistribution_t = UnsafePointer[Float64, MutUntrackedOrigin]
 
 
 struct curandDiscreteDistribution_st(TrivialRegisterPassable):
     var self_host_ptr: curandDiscreteDistribution_t
+
     var M2: curandDistributionM2Shift_t
+
     var host_M2: curandDistributionM2Shift_t
     var stddev: Float64
     var mean: Float64
@@ -125,7 +132,7 @@ def curandGeneratePoissonMethod(
         "curandGeneratePoissonMethod",
         def(
             curandGenerator_t, type_of(output_ptr), Int, Float64, curandMethod
-        ) -> curandStatus,
+        ) thin -> curandStatus,
     ]()(generator, output_ptr, n, func, method)
 
 
@@ -159,7 +166,7 @@ def curandGenerateLongLong(
     ."""
     return _get_dylib_function[
         "curandGenerateLongLong",
-        def(curandGenerator_t, type_of(output_ptr), Int) -> curandStatus,
+        def(curandGenerator_t, type_of(output_ptr), Int) thin -> curandStatus,
     ]()(generator, output_ptr, num)
 
 
@@ -189,7 +196,7 @@ def curandGetProperty(
     ."""
     return _get_dylib_function[
         "curandGetProperty",
-        def(libraryPropertyType_t, type_of(value)) -> curandStatus,
+        def(libraryPropertyType_t, type_of(value)) thin -> curandStatus,
     ]()(type, value)
 
 
@@ -279,7 +286,7 @@ def curandDestroyGenerator(generator: curandGenerator_t) raises -> curandStatus:
         If the dynamic library cannot be found.
     ."""
     return _get_dylib_function[
-        "curandDestroyGenerator", def(curandGenerator_t) -> curandStatus
+        "curandDestroyGenerator", def(curandGenerator_t) thin -> curandStatus
     ]()(generator)
 
 
@@ -303,16 +310,16 @@ def curandGetScrambleConstants64(
     ."""
     return _get_dylib_function[
         "curandGetScrambleConstants64",
-        def(type_of(constants)) -> curandStatus,
+        def(type_of(constants)) thin -> curandStatus,
     ]()(constants)
 
 
-comptime curandHistogramM2V_t = UnsafePointer[Float64, MutAnyOrigin]
+comptime curandHistogramM2V_t = UnsafePointer[Float64, MutUntrackedOrigin]
 
 comptime curandHistogramM2V_st = curandDistribution_st
 
 comptime curandDiscreteDistribution_t = UnsafePointer[
-    curandDiscreteDistribution_st, MutAnyOrigin
+    curandDiscreteDistribution_st, MutUntrackedOrigin
 ]
 
 
@@ -340,7 +347,7 @@ def curandGenerateSeeds(generator: curandGenerator_t) raises -> curandStatus:
         If the dynamic library cannot be found.
     ."""
     return _get_dylib_function[
-        "curandGenerateSeeds", def(curandGenerator_t) -> curandStatus
+        "curandGenerateSeeds", def(curandGenerator_t) thin -> curandStatus
     ]()(generator)
 
 
@@ -355,7 +362,7 @@ def curandGenerateBinomial(
         "curandGenerateBinomial",
         def(
             curandGenerator_t, type_of(output_ptr), Int, Int16, Float64
-        ) -> curandStatus,
+        ) thin -> curandStatus,
     ]()(generator, output_ptr, num, n, p)
 
 
@@ -415,7 +422,7 @@ def curandGenerateLogNormalDouble(
         "curandGenerateLogNormalDouble",
         def(
             curandGenerator_t, type_of(output_ptr), Int, Float64, Float64
-        ) -> curandStatus,
+        ) thin -> curandStatus,
     ]()(generator, output_ptr, n, mean, stddev)
 
 
@@ -473,7 +480,7 @@ def curandGenerateNormal(
         "curandGenerateNormal",
         def(
             curandGenerator_t, type_of(output_ptr), Int, Float32, Float32
-        ) -> curandStatus,
+        ) thin -> curandStatus,
     ]()(generator, output_ptr, n, mean, stddev)
 
 
@@ -532,7 +539,7 @@ def curandGenerateLogNormal(
         "curandGenerateLogNormal",
         def(
             curandGenerator_t, type_of(output_ptr), Int, Float32, Float32
-        ) -> curandStatus,
+        ) thin -> curandStatus,
     ]()(generator, output_ptr, n, mean, stddev)
 
 
@@ -633,7 +640,7 @@ def curandSetGeneratorOffset(
     ."""
     return _get_dylib_function[
         "curandSetGeneratorOffset",
-        def(curandGenerator_t, Int64) -> curandStatus,
+        def(curandGenerator_t, Int64) thin -> curandStatus,
     ]()(generator, offset)
 
 
@@ -659,7 +666,7 @@ def curandSetQuasiRandomGeneratorDimensions(
     ."""
     return _get_dylib_function[
         "curandSetQuasiRandomGeneratorDimensions",
-        def(curandGenerator_t, Int16) -> curandStatus,
+        def(curandGenerator_t, Int16) thin -> curandStatus,
     ]()(generator, num_dimensions)
 
 
@@ -669,7 +676,7 @@ def curandSetQuasiRandomGeneratorDimensions(
 #
 # \\cond UNHIDE_TYPEDEFS .
 comptime curandDistributionM2Shift_t = UnsafePointer[
-    curandDistributionM2Shift_st, MutAnyOrigin
+    curandDistributionM2Shift_st, MutUntrackedOrigin
 ]
 
 
@@ -691,7 +698,7 @@ def curandGetVersion(version: UnsafePointer[Int16, _]) raises -> curandStatus:
         If the dynamic library cannot be found.
     ."""
     return _get_dylib_function[
-        "curandGetVersion", def(type_of(version)) -> curandStatus
+        "curandGetVersion", def(type_of(version)) thin -> curandStatus
     ]()(version)
 
 
@@ -850,7 +857,7 @@ def curandGenerateUniform(
     ."""
     return _get_dylib_function[
         "curandGenerateUniform",
-        def(curandGenerator_t, type_of(output_ptr), Int) -> curandStatus,
+        def(curandGenerator_t, type_of(output_ptr), Int) thin -> curandStatus,
     ]()(generator, output_ptr, num)
 
 
@@ -871,7 +878,7 @@ def curandGenerateBinomialMethod(
             Int16,
             Float64,
             curandMethod,
-        ) -> curandStatus,
+        ) thin -> curandStatus,
     ]()(generator, output_ptr, num, n, p, method)
 
 
@@ -902,7 +909,7 @@ def curandCreatePoissonDistribution(
     ."""
     return _get_dylib_function[
         "curandCreatePoissonDistribution",
-        def(Float64, type_of(discrete_distribution)) -> curandStatus,
+        def(Float64, type_of(discrete_distribution)) thin -> curandStatus,
     ]()(func, discrete_distribution)
 
 
@@ -996,7 +1003,7 @@ def curandCreateGenerator(
     ."""
     return _get_dylib_function[
         "curandCreateGenerator",
-        def(type_of(generator), curandRngType) -> curandStatus,
+        def(type_of(generator), curandRngType) thin -> curandStatus,
     ]()(generator, rng_type)
 
 
@@ -1027,7 +1034,7 @@ def curandSetGeneratorOrdering(
     ."""
     return _get_dylib_function[
         "curandSetGeneratorOrdering",
-        def(curandGenerator_t, curandOrdering) -> curandStatus,
+        def(curandGenerator_t, curandOrdering) thin -> curandStatus,
     ]()(generator, order)
 
 
@@ -1078,7 +1085,7 @@ def curandGenerateUniformDouble(
     ."""
     return _get_dylib_function[
         "curandGenerateUniformDouble",
-        def(curandGenerator_t, type_of(output_ptr), Int) -> curandStatus,
+        def(curandGenerator_t, type_of(output_ptr), Int) thin -> curandStatus,
     ]()(generator, output_ptr, num)
 
 
@@ -1137,7 +1144,7 @@ def curandGenerateNormalDouble(
         "curandGenerateNormalDouble",
         def(
             curandGenerator_t, type_of(output_ptr), Int, Float64, Float64
-        ) -> curandStatus,
+        ) thin -> curandStatus,
     ]()(generator, output_ptr, n, mean, stddev)
 
 
@@ -1167,7 +1174,7 @@ def curandGetDirectionVectors32(
     ."""
     return _get_dylib_function[
         "curandGetDirectionVectors32",
-        def(type_of(vectors), curandDirectionVectorSet) -> curandStatus,
+        def(type_of(vectors), curandDirectionVectorSet) thin -> curandStatus,
     ]()(vectors, set)
 
 
@@ -1187,7 +1194,7 @@ def curandDestroyDistribution(
     ."""
     return _get_dylib_function[
         "curandDestroyDistribution",
-        def(curandDiscreteDistribution_t) -> curandStatus,
+        def(curandDiscreteDistribution_t) thin -> curandStatus,
     ]()(discrete_distribution)
 
 
@@ -1223,11 +1230,13 @@ def curandGenerate(
     ."""
     return _get_dylib_function[
         "curandGenerate",
-        def(curandGenerator_t, type_of(output_ptr), Int) -> curandStatus,
+        def(curandGenerator_t, type_of(output_ptr), Int) thin -> curandStatus,
     ]()(generator, output_ptr, num)
 
 
-comptime curandHistogramM2_t = UnsafePointer[curandHistogramM2_st, MutAnyOrigin]
+comptime curandHistogramM2_t = UnsafePointer[
+    curandHistogramM2_st, MutUntrackedOrigin
+]
 
 #
 #  CURAND array of 64-bit direction vectors
@@ -1306,7 +1315,7 @@ def curandSetPseudoRandomGeneratorSeed(
     ."""
     return _get_dylib_function[
         "curandSetPseudoRandomGeneratorSeed",
-        def(curandGenerator_t, Int64) -> curandStatus,
+        def(curandGenerator_t, Int64) thin -> curandStatus,
     ]()(generator, seed)
 
 
@@ -1327,7 +1336,7 @@ def curandSetStream(
     - CURAND_STATUS_SUCCESS if stream was set successfully \\n
     ."""
     return _get_dylib_function[
-        "curandSetStream", def(curandGenerator_t, CUstream) -> curandStatus
+        "curandSetStream", def(curandGenerator_t, CUstream) thin -> curandStatus
     ]()(generator, stream)
 
 
@@ -1416,7 +1425,7 @@ def curandCreateGeneratorHost(
     ."""
     return _get_dylib_function[
         "curandCreateGeneratorHost",
-        def(type_of(generator), curandRngType) -> curandStatus,
+        def(type_of(generator), curandRngType) thin -> curandStatus,
     ]()(generator, rng_type)
 
 
@@ -1462,7 +1471,7 @@ def curandGeneratePoisson(
         "curandGeneratePoisson",
         def(
             curandGenerator_t, type_of(output_ptr), Int, Float64
-        ) -> curandStatus,
+        ) thin -> curandStatus,
     ]()(generator, output_ptr, n, func)
 
 
@@ -1493,7 +1502,7 @@ def curandGetScrambleConstants32(
     ."""
     return _get_dylib_function[
         "curandGetScrambleConstants32",
-        def(type_of(constants)) -> curandStatus,
+        def(type_of(constants)) thin -> curandStatus,
     ]()(constants)
 
 
@@ -1523,5 +1532,5 @@ def curandGetDirectionVectors64(
     ."""
     return _get_dylib_function[
         "curandGetDirectionVectors64",
-        def(type_of(vectors), curandDirectionVectorSet) -> curandStatus,
+        def(type_of(vectors), curandDirectionVectorSet) thin -> curandStatus,
     ]()(vectors, set)

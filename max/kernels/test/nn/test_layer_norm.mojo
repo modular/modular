@@ -28,10 +28,10 @@ def run_layer_norm_cpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var input_ptr = alloc[Scalar[dtype]](rows * cols)
-    var output_ptr = alloc[Scalar[dtype]](rows * cols)
-    var gamma_ptr = alloc[Scalar[dtype]](cols)
-    var beta_ptr = alloc[Scalar[dtype]](cols)
+    var input_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var output_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_ptr = List(length=cols, fill=Scalar[dtype](0))
+    var beta_ptr = List(length=cols, fill=Scalar[dtype](0))
 
     for i in range(rows * cols):
         var val = Scalar[dtype](i)
@@ -47,34 +47,36 @@ def run_layer_norm_cpu[
     var output_buf = TileTensor(output_ptr, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_ptr, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_ptr, row_major(Coord(param_shape)))
-    var epsilon = Scalar[dtype](0.0001)
+    var epsilon = Float32(0.0001)
 
     @__copy_capture(input_buf)
     @always_inline
     @parameter
     def input_fn[
-        width: Int, _rank: Int
+        width: Int,
+        _rank: Int,
+        alignment: Int,
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = input_buf.layout(Coord(coords))
-        return input_buf.ptr.load[width=width](idx)
+        return input_buf.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     def gamma_fn[
-        width: Int, rank: Int
+        width: Int, rank: Int, alignment: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Idx(coords[0]))
-        return gamma.ptr.load[width=width](idx)
+        var idx = gamma.layout(coords[0])
+        return gamma.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(output_buf)
     @always_inline
     @parameter
     def output_fn[
-        width: Int, _rank: Int, alignment: Int
+        width: SIMDSize, _rank: Int, alignment: Int
     ](coords: IndexList[_rank], val: SIMD[dtype, width]):
         var idx = output_buf.layout(Coord(coords))
-        output_buf.ptr.store[width=width, alignment=alignment](
+        output_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
 
@@ -82,22 +84,17 @@ def run_layer_norm_cpu[
 
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
-            input_ptr + r * cols,
-            row_major(Idx(cols)),
+            input_ptr.unsafe_ptr() + r * cols,
+            row_major(cols),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = rsqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon.cast[dtype]())
         var idx = r * cols + c
         var val = ((input_ptr[idx] - mean_ref) * norm_factor_ref) * gamma_ptr[
             c
         ] + beta_ptr[c]
         assert_almost_equal(val, output_ptr[idx], rtol=rtol)
-
-    input_ptr.free()
-    output_ptr.free()
-    gamma_ptr.free()
-    beta_ptr.free()
 
 
 def main() raises:

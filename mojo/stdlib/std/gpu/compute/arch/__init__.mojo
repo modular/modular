@@ -37,8 +37,7 @@ appropriate architecture-specific implementation at compile time:
 ```mojo
 from std.gpu.compute import mma
 
-# Automatically dispatches to the correct architecture
-result = mma(a, b, c)
+# Usage: var result = mma.mma(a, b, c)
 ```
 
 ## Internal Implementation Details
@@ -46,14 +45,14 @@ result = mma(a, b, c)
 The main `gpu.compute.mma` module imports these implementations:
 
 ```mojo
-from .arch.mma_nvidia import _mma_nvidia
-from .arch.mma_amd import _mma_amd
-from .arch.mma_apple import _mma_apple
+from std.gpu.compute.arch.mma_nvidia import _mma_nvidia
+from std.gpu.compute.arch.mma_amd import _mma_amd
+from std.gpu.compute.arch.mma_apple import _mma_apple
 ```
 
 And dispatches based on compile-time architecture detection:
 
-```mojo
+```text
 comptime if is_nvidia_gpu():
     _mma_nvidia(d, a, b, c)
 elif is_amd_gpu():

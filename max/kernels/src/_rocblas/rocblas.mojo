@@ -13,6 +13,7 @@
 #
 
 from std.complex import ComplexFloat32, ComplexFloat64
+from std.ffi import _CPointer
 from std.gpu.host._amdgpu_hip import hipStream_t
 
 from .types import (
@@ -33,14 +34,14 @@ from .utils import _get_dylib_function
 def rocblas_create_handle(handle: UnsafePointer[Handle, _]) raises -> Status:
     return _get_dylib_function[
         "rocblas_create_handle",
-        def(type_of(handle)) -> Status,
+        def(type_of(handle)) thin -> Status,
     ]()(handle)
 
 
 def rocblas_destroy_handle(handle: Handle) raises -> Status:
     return _get_dylib_function[
         "rocblas_destroy_handle",
-        def(Handle) -> Status,
+        def(Handle) thin -> Status,
     ]()(handle)
 
 
@@ -50,7 +51,7 @@ def rocblas_ctpsv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat32, _],
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int64,
 ) raises -> Status:
@@ -65,7 +66,7 @@ def rocblas_ctpsv_64(
             type_of(_ap),
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
@@ -76,7 +77,7 @@ def rocblas_ctbsv_strided_batched(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -100,7 +101,7 @@ def rocblas_ctbsv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -123,10 +124,10 @@ def rocblas_sdgmm_strided_batched(
     side: Side,
     m: Int32,
     n: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stride_x: Int64,
     _c: UnsafePointer[Float32, _],
@@ -209,7 +210,7 @@ def rocblas_sdgmm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -235,7 +236,7 @@ def rocblas_dtbsv_strided_batched(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[Float64, _],
@@ -259,7 +260,7 @@ def rocblas_dtbsv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -282,12 +283,12 @@ def rocblas_chbmv(
     uplo: Fill,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
@@ -379,7 +380,7 @@ def rocblas_chbmv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -389,7 +390,9 @@ def rocblas_ctpmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[UnsafePointer[ComplexFloat32, MutAnyOrigin], _],
+    _a: UnsafePointer[
+        mut=False, UnsafePointer[ComplexFloat32, MutAnyOrigin], _
+    ],
     x: UnsafePointer[UnsafePointer[ComplexFloat32, MutAnyOrigin], _],
     incx: Int32,
     batch_count: Int32,
@@ -406,7 +409,7 @@ def rocblas_ctpmv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
@@ -415,7 +418,7 @@ def rocblas_ctrtri_strided_batched(
     uplo: Fill,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride_a: Int64,
     inv_a: UnsafePointer[ComplexFloat32, _],
@@ -437,7 +440,7 @@ def rocblas_ctrtri_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -457,7 +460,7 @@ def rocblas_cher_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int32,
     _a: OpaquePointer[_],
@@ -525,16 +528,16 @@ def rocblas_cher_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
 def rocblas_bfdot_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[BFloat16, _],
+    x: UnsafePointer[mut=False, BFloat16, _],
     incx: Int64,
-    y: UnsafePointer[BFloat16, _],
+    y: UnsafePointer[mut=False, BFloat16, _],
     incy: Int64,
     result: UnsafePointer[BFloat16, _],
 ) raises -> Status:
@@ -548,7 +551,7 @@ def rocblas_bfdot_64(
             type_of(y),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -557,12 +560,12 @@ def rocblas_tstgemv_batched(
     trans: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -583,7 +586,7 @@ def rocblas_tstgemv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -592,9 +595,9 @@ def rocblas_tstgemv_batched(
 def rocblas_sdot(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
-    y: UnsafePointer[Float32, _],
+    y: UnsafePointer[mut=False, Float32, _],
     incy: Int32,
     result: UnsafePointer[Float32, _],
 ) raises -> Status:
@@ -642,7 +645,7 @@ def rocblas_sdot(
             type_of(y),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -653,12 +656,12 @@ def rocblas_zgbmv_64(
     n: Int64,
     kl: Int64,
     ku: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
@@ -679,14 +682,14 @@ def rocblas_zgbmv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
 def rocblas_sscal_strided_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: UnsafePointer[Float32, _],
     incx: Int32,
     stride_x: Int64,
@@ -734,7 +737,7 @@ def rocblas_sscal_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
@@ -747,7 +750,7 @@ def rocblas_srotm_strided_batched(
     y: UnsafePointer[Float32, _],
     incy: Int32,
     stride_y: Int64,
-    param: UnsafePointer[Float32, _],
+    param: UnsafePointer[mut=False, Float32, _],
     stride_param: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -820,7 +823,7 @@ def rocblas_srotm_strided_batched(
             type_of(param),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -842,12 +845,12 @@ def rocblas_csyr2k_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -869,7 +872,7 @@ def rocblas_csyr2k_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -907,7 +910,7 @@ def rocblas_scopy_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
@@ -915,7 +918,7 @@ def rocblas_dsyr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int64,
     _a: OpaquePointer[_],
@@ -934,7 +937,7 @@ def rocblas_dsyr_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
@@ -945,7 +948,7 @@ def rocblas_stbmv_strided_batched_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[Float32, _],
@@ -969,7 +972,7 @@ def rocblas_stbmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -991,11 +994,11 @@ def rocblas_dsyr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float64, _],
+    y: UnsafePointer[mut=False, Float64, _],
     incy: Int64,
     stridey: Int64,
     _a: UnsafePointer[Float64, _],
@@ -1020,7 +1023,7 @@ def rocblas_dsyr2_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -1043,8 +1046,8 @@ def rocblas_ssyr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     _a: UnsafePointer[Float32, _],
     lda: Int64,
@@ -1060,16 +1063,16 @@ def rocblas_ssyr_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
 def rocblas_zdotu(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int32,
     result: UnsafePointer[ComplexFloat64, _],
 ) raises -> Status:
@@ -1083,7 +1086,7 @@ def rocblas_zdotu(
             type_of(y),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -1161,7 +1164,7 @@ def rocblas_nrm2_batched_ex(
             type_of(results),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -1202,7 +1205,7 @@ def rocblas_cdgmm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc, batch_count)
 
 
@@ -1233,7 +1236,7 @@ def rocblas_dotc_ex(
             type_of(result),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -1255,14 +1258,14 @@ def rocblas_csyr2k_strided_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
@@ -1288,7 +1291,7 @@ def rocblas_csyr2k_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -1313,10 +1316,10 @@ def rocblas_csyr2k_strided_batched(
 def rocblas_hdot_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float16, _],
+    x: UnsafePointer[mut=False, Float16, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float16, _],
+    y: UnsafePointer[mut=False, Float16, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -1335,7 +1338,7 @@ def rocblas_hdot_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
@@ -1346,8 +1349,8 @@ def rocblas_zrot_batched_64(
     incx: Int64,
     y: OpaquePointer[_],
     incy: Int64,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[ComplexFloat64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, ComplexFloat64, _],
     batch_count: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -1362,7 +1365,7 @@ def rocblas_zrot_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
@@ -1385,7 +1388,7 @@ def rocblas_srotmg_batched_64(
             type_of(y1),
             type_of(param),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, d1, d2, x1, y1, param, batch_count)
 
 
@@ -1397,8 +1400,8 @@ def rocblas_strsm_64(
     diag: Diagonal,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     _b: UnsafePointer[Float32, _],
     ldb: Int64,
@@ -1418,7 +1421,7 @@ def rocblas_strsm_64(
             Int64,
             type_of(_b),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -1439,14 +1442,14 @@ def rocblas_dzasum_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
 def rocblas_snrm2(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     result: UnsafePointer[Float32, _],
 ) raises -> Status:
@@ -1478,7 +1481,7 @@ def rocblas_snrm2(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_snrm2",
-        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -1488,11 +1491,11 @@ def rocblas_dsyrk_strided_batched(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride__a: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
     stride__c: Int64,
@@ -1515,7 +1518,7 @@ def rocblas_dsyrk_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -1542,7 +1545,7 @@ def rocblas_dtrsm_batched_64(
     diag: Diagonal,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int64,
     _b: OpaquePointer[_],
@@ -1565,7 +1568,7 @@ def rocblas_dtrsm_batched_64(
             type_of(_b),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -1586,7 +1589,7 @@ def rocblas_dtrsm_batched_64(
 def rocblas_zscal_strided_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
@@ -1602,7 +1605,7 @@ def rocblas_zscal_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
@@ -1610,8 +1613,8 @@ def rocblas_cher_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     _a: UnsafePointer[ComplexFloat32, _],
     lda: Int64,
@@ -1627,16 +1630,16 @@ def rocblas_cher_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
 def rocblas_cdotu(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int32,
     result: UnsafePointer[ComplexFloat32, _],
 ) raises -> Status:
@@ -1650,7 +1653,7 @@ def rocblas_cdotu(
             type_of(y),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -1699,7 +1702,7 @@ def rocblas_sasum_batched(
             Int32,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -1709,7 +1712,7 @@ def rocblas_dtpmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[UnsafePointer[Float64, MutAnyOrigin], _],
+    _a: UnsafePointer[mut=False, UnsafePointer[Float64, MutAnyOrigin], _],
     x: UnsafePointer[UnsafePointer[Float64, MutAnyOrigin], _],
     incx: Int64,
     batch_count: Int64,
@@ -1726,7 +1729,7 @@ def rocblas_dtpmv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
@@ -1737,7 +1740,7 @@ def rocblas_dtbmv_strided_batched(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[Float64, _],
@@ -1761,7 +1764,7 @@ def rocblas_dtbmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -1783,7 +1786,7 @@ def rocblas_sspr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int32,
     _ap: OpaquePointer[_],
@@ -1864,7 +1867,7 @@ def rocblas_sspr_batched(
             Int32,
             type_of(_ap),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
@@ -1875,7 +1878,7 @@ def rocblas_ztbsv_strided_batched_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -1899,7 +1902,7 @@ def rocblas_ztbsv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -1921,11 +1924,11 @@ def rocblas_cher2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
     _a: UnsafePointer[ComplexFloat32, _],
@@ -2013,7 +2016,7 @@ def rocblas_cher2_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -2041,8 +2044,8 @@ def rocblas_srot_strided_batched_64(
     y: UnsafePointer[Float32, _],
     incy: Int64,
     stride_y: Int64,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, Float32, _],
     batch_count: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -2059,7 +2062,7 @@ def rocblas_srot_strided_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
@@ -2071,7 +2074,7 @@ def rocblas_ctrsm_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
@@ -2094,7 +2097,7 @@ def rocblas_ctrsm_batched(
             type_of(_b),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -2115,7 +2118,7 @@ def rocblas_ctrsm_batched(
 def rocblas_sscal(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: UnsafePointer[Float32, _],
     incx: Int32,
 ) raises -> Status:
@@ -2144,7 +2147,7 @@ def rocblas_sscal(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sscal",
-        def(Handle, Int32, type_of(alpha), type_of(x), Int32) -> Status,
+        def(Handle, Int32, type_of(alpha), type_of(x), Int32) thin -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -2155,7 +2158,7 @@ def rocblas_ztbmv_strided_batched(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -2179,7 +2182,7 @@ def rocblas_ztbmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -2220,7 +2223,7 @@ def rocblas_dswap_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -2228,12 +2231,12 @@ def rocblas_dsymv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int32,
 ) raises -> Status:
@@ -2251,20 +2254,20 @@ def rocblas_dsymv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
 def rocblas_dnrm2_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     result: UnsafePointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_64",
-        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -2274,10 +2277,10 @@ def rocblas_ssyrk(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -2366,7 +2369,7 @@ def rocblas_ssyrk(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
@@ -2375,7 +2378,7 @@ def rocblas_strtri_strided_batched(
     uplo: Fill,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride_a: Int64,
     inv_a: UnsafePointer[Float32, _],
@@ -2446,7 +2449,7 @@ def rocblas_strtri_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -2466,8 +2469,8 @@ def rocblas_chpr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
     _ap: UnsafePointer[ComplexFloat32, _],
@@ -2487,14 +2490,14 @@ def rocblas_chpr_strided_batched_64(
             type_of(_ap),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
 def rocblas_izamax_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -2510,7 +2513,7 @@ def rocblas_izamax_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
@@ -2537,7 +2540,7 @@ def rocblas_ztpsv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
@@ -2546,14 +2549,14 @@ def rocblas_zhbmv_strided_batched(
     uplo: Fill,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
@@ -2578,7 +2581,7 @@ def rocblas_zhbmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -2603,8 +2606,8 @@ def rocblas_dspr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     _ap: UnsafePointer[Float64, _],
 ) raises -> Status:
@@ -2618,7 +2621,7 @@ def rocblas_dspr(
             type_of(x),
             Int32,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -2626,7 +2629,7 @@ def rocblas_zspr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int64,
     _ap: OpaquePointer[_],
@@ -2643,7 +2646,7 @@ def rocblas_zspr_batched_64(
             Int64,
             type_of(_ap),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
@@ -2653,10 +2656,10 @@ def rocblas_ssyrk_batched(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -2750,7 +2753,7 @@ def rocblas_ssyrk_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc, batch_count)
 
 
@@ -2760,10 +2763,10 @@ def rocblas_zherk_batched(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -2783,7 +2786,7 @@ def rocblas_zherk_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc, batch_count)
 
 
@@ -2791,7 +2794,7 @@ def rocblas_dspr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int32,
     _ap: OpaquePointer[_],
@@ -2808,7 +2811,7 @@ def rocblas_dspr_batched(
             Int32,
             type_of(_ap),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
@@ -2839,14 +2842,14 @@ def rocblas_dtbmv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
 def rocblas_dzasum(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     result: UnsafePointer[Float64, _],
 ) raises -> Status:
@@ -2858,7 +2861,7 @@ def rocblas_dzasum(
             type_of(x),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -2879,7 +2882,7 @@ def rocblas_crotg_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s, batch_count)
 
 
@@ -2890,12 +2893,12 @@ def rocblas_cgemm_batched(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -2918,7 +2921,7 @@ def rocblas_cgemm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -2965,7 +2968,7 @@ def rocblas_ztbmv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
@@ -2977,7 +2980,7 @@ def rocblas_srotmg_strided_batched(
     stride_d2: Int64,
     x1: UnsafePointer[Float32, _],
     stride_x1: Int64,
-    y1: UnsafePointer[Float32, _],
+    y1: UnsafePointer[mut=False, Float32, _],
     stride_y1: Int64,
     param: UnsafePointer[Float32, _],
     stride_param: Int64,
@@ -3057,7 +3060,7 @@ def rocblas_srotmg_strided_batched(
             type_of(param),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         d1,
@@ -3077,8 +3080,8 @@ def rocblas_srotmg_strided_batched(
 def rocblas_zaxpy_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
@@ -3093,7 +3096,7 @@ def rocblas_zaxpy_64(
             Int64,
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -3103,7 +3106,9 @@ def rocblas_ctrmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[UnsafePointer[ComplexFloat32, MutAnyOrigin], _],
+    _a: UnsafePointer[
+        mut=False, UnsafePointer[ComplexFloat32, MutAnyOrigin], _
+    ],
     lda: Int64,
     x: UnsafePointer[UnsafePointer[ComplexFloat32, MutAnyOrigin], _],
     incx: Int64,
@@ -3122,7 +3127,7 @@ def rocblas_ctrmv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
@@ -3130,8 +3135,8 @@ def rocblas_zgeru_strided_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat64, _],
@@ -3159,7 +3164,7 @@ def rocblas_zgeru_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         m,
@@ -3209,7 +3214,7 @@ def rocblas_rot_batched_ex_64(
             DataType,
             Int64,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -3233,11 +3238,11 @@ def rocblas_zsyrk_strided_batched(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
@@ -3260,7 +3265,7 @@ def rocblas_zsyrk_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -3355,7 +3360,7 @@ def rocblas_sdgmm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc, batch_count)
 
 
@@ -3363,12 +3368,12 @@ def rocblas_chemv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -3444,7 +3449,7 @@ def rocblas_chemv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -3455,7 +3460,7 @@ def rocblas_ztbmv(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int32,
@@ -3473,7 +3478,7 @@ def rocblas_ztbmv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -3483,7 +3488,7 @@ def rocblas_ztrsv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int32,
@@ -3500,7 +3505,7 @@ def rocblas_ztrsv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
@@ -3508,12 +3513,12 @@ def rocblas_zsymv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
@@ -3531,7 +3536,7 @@ def rocblas_zsymv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -3541,7 +3546,7 @@ def rocblas_dtrsv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     x: UnsafePointer[Float64, _],
     incx: Int32,
@@ -3558,7 +3563,7 @@ def rocblas_dtrsv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
@@ -3589,7 +3594,7 @@ def rocblas_zdgmm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc, batch_count)
 
 
@@ -3599,7 +3604,7 @@ def rocblas_stpmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[UnsafePointer[Float32, MutAnyOrigin], _],
+    _a: UnsafePointer[mut=False, UnsafePointer[Float32, MutAnyOrigin], _],
     x: UnsafePointer[UnsafePointer[Float32, MutAnyOrigin], _],
     incx: Int32,
     batch_count: Int32,
@@ -3668,14 +3673,14 @@ def rocblas_stpmv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
 def rocblas_icamax_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -3691,7 +3696,7 @@ def rocblas_icamax_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
@@ -3701,10 +3706,10 @@ def rocblas_dgeam_batched(
     trans_b: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _b: OpaquePointer[_],
     ldb: Int32,
     _c: OpaquePointer[_],
@@ -3728,7 +3733,7 @@ def rocblas_dgeam_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -3751,8 +3756,8 @@ def rocblas_zsyr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     _a: UnsafePointer[ComplexFloat64, _],
     lda: Int32,
@@ -3768,17 +3773,17 @@ def rocblas_zsyr(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
 def rocblas_cdotc_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -3797,14 +3802,14 @@ def rocblas_cdotc_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
 def rocblas_dzasum_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -3820,7 +3825,7 @@ def rocblas_dzasum_strided_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -3828,8 +3833,8 @@ def rocblas_cher_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
     _a: UnsafePointer[ComplexFloat32, _],
@@ -3851,7 +3856,7 @@ def rocblas_cher_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -3871,11 +3876,11 @@ def rocblas_zhpmv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _ap: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
@@ -3892,7 +3897,7 @@ def rocblas_zhpmv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
@@ -3901,12 +3906,12 @@ def rocblas_zhbmv_64(
     uplo: Fill,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
@@ -3925,7 +3930,7 @@ def rocblas_zhbmv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -4024,7 +4029,7 @@ def rocblas_rot_ex(
             type_of(s),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -4048,12 +4053,12 @@ def rocblas_zgemm_batched(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -4076,7 +4081,7 @@ def rocblas_zgemm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -4123,7 +4128,7 @@ def rocblas_ctbsv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
@@ -4133,14 +4138,14 @@ def rocblas_cher2k_strided_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
@@ -4261,7 +4266,7 @@ def rocblas_cher2k_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -4286,7 +4291,7 @@ def rocblas_cher2k_strided_batched(
 def rocblas_sscal_strided_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: UnsafePointer[Float32, _],
     incx: Int64,
     stride_x: Int64,
@@ -4302,7 +4307,7 @@ def rocblas_sscal_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
@@ -4312,11 +4317,11 @@ def rocblas_zherk_strided_batched(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
@@ -4339,7 +4344,7 @@ def rocblas_zherk_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -4429,7 +4434,7 @@ def rocblas_scal_ex(
             DataType,
             Int32,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, alpha_type, x, x_type, incx, execution_type)
 
 
@@ -4441,8 +4446,8 @@ def rocblas_dtrsm(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     _b: UnsafePointer[Float64, _],
     ldb: Int32,
@@ -4462,14 +4467,14 @@ def rocblas_dtrsm(
             Int32,
             type_of(_b),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
 def rocblas_isamax_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -4514,14 +4519,14 @@ def rocblas_isamax_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
 def rocblas_caxpy_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -4539,7 +4544,7 @@ def rocblas_caxpy_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
@@ -4548,12 +4553,12 @@ def rocblas_dgemv_batched_64(
     trans: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -4574,7 +4579,7 @@ def rocblas_dgemv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -4584,10 +4589,10 @@ def rocblas_zhpr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int32,
     _ap: UnsafePointer[ComplexFloat64, _],
 ) raises -> Status:
@@ -4603,7 +4608,7 @@ def rocblas_zhpr2(
             type_of(y),
             Int32,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -4614,12 +4619,12 @@ def rocblas_hgemm_batched(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float16, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float16, _],
+    beta: UnsafePointer[mut=False, Float16, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -4642,7 +4647,7 @@ def rocblas_hgemm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -4670,8 +4675,8 @@ def rocblas_strsm(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     _b: UnsafePointer[Float32, _],
     ldb: Int32,
@@ -4781,7 +4786,7 @@ def rocblas_strsm(
             Int32,
             type_of(_b),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -4791,7 +4796,7 @@ def rocblas_stpsv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _ap: UnsafePointer[Float32, _],
+    _ap: UnsafePointer[mut=False, Float32, _],
     stride__a: Int64,
     x: UnsafePointer[Float32, _],
     incx: Int32,
@@ -4873,7 +4878,7 @@ def rocblas_stpsv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -4895,7 +4900,7 @@ def rocblas_dtrsv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[Float64, _],
@@ -4918,7 +4923,7 @@ def rocblas_dtrsv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -4938,7 +4943,7 @@ def rocblas_dtrsv_strided_batched_64(
 def rocblas_zcopy_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat64, _],
@@ -4958,7 +4963,7 @@ def rocblas_zcopy_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -4987,7 +4992,7 @@ def rocblas_crotg_strided_batched_64(
             type_of(s),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
@@ -4998,12 +5003,12 @@ def rocblas_zgbmv_batched(
     n: Int32,
     kl: Int32,
     ku: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -5026,7 +5031,7 @@ def rocblas_zgbmv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -5049,7 +5054,7 @@ def rocblas_zgbmv_batched(
 def rocblas_dcopy_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[Float64, _],
@@ -5069,7 +5074,7 @@ def rocblas_dcopy_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -5088,7 +5093,7 @@ def rocblas_zrotg_64(
             type_of(b),
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s)
 
 
@@ -5113,15 +5118,15 @@ def rocblas_cdotu_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
 def rocblas_saxpy_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     y: UnsafePointer[Float32, _],
     incy: Int64,
@@ -5136,7 +5141,7 @@ def rocblas_saxpy_64(
             Int64,
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -5144,11 +5149,11 @@ def rocblas_chpmv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _ap: OpaquePointer[_],
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -5238,7 +5243,7 @@ def rocblas_chpmv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy, batch_count)
 
 
@@ -5306,7 +5311,7 @@ def rocblas_srotmg_batched(
             type_of(y1),
             type_of(param),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, d1, d2, x1, y1, param, batch_count)
 
 
@@ -5314,12 +5319,12 @@ def rocblas_ssymv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -5339,7 +5344,7 @@ def rocblas_ssymv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -5348,7 +5353,7 @@ def rocblas_drotmg(
     d1: UnsafePointer[Float64, _],
     d2: UnsafePointer[Float64, _],
     x1: UnsafePointer[Float64, _],
-    y1: UnsafePointer[Float64, _],
+    y1: UnsafePointer[mut=False, Float64, _],
     param: UnsafePointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
@@ -5360,15 +5365,15 @@ def rocblas_drotmg(
             type_of(x1),
             type_of(y1),
             type_of(param),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, d1, d2, x1, y1, param)
 
 
 def rocblas_daxpy_strided_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[Float64, _],
@@ -5389,7 +5394,7 @@ def rocblas_daxpy_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -5418,7 +5423,7 @@ def rocblas_scal_strided_batched_ex_64(
             Int64,
             Int64,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -5466,7 +5471,7 @@ def rocblas_dotc_strided_batched_ex_64(
             type_of(result),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -5488,8 +5493,8 @@ def rocblas_dotc_strided_batched_ex_64(
 def rocblas_caxpy_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
@@ -5504,7 +5509,7 @@ def rocblas_caxpy_64(
             Int64,
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -5515,14 +5520,14 @@ def rocblas_dgemm_strided_batched(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
     stride_b: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
     stride_c: Int64,
@@ -5549,7 +5554,7 @@ def rocblas_dgemm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -5575,10 +5580,10 @@ def rocblas_dgemm_strided_batched(
 def rocblas_cdotu_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -5597,7 +5602,7 @@ def rocblas_cdotu_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
@@ -5624,7 +5629,7 @@ def rocblas_ctpsv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
@@ -5634,12 +5639,12 @@ def rocblas_zherkx_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -5661,7 +5666,7 @@ def rocblas_zherkx_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -5683,8 +5688,8 @@ def rocblas_zherkx_batched(
 def rocblas_haxpy(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float16, _],
-    x: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float16, _],
+    x: UnsafePointer[mut=False, Float16, _],
     incx: Int32,
     y: UnsafePointer[Float16, _],
     incy: Int32,
@@ -5727,7 +5732,7 @@ def rocblas_haxpy(
             Int32,
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -5735,10 +5740,10 @@ def rocblas_dsyr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
-    y: UnsafePointer[Float64, _],
+    y: UnsafePointer[mut=False, Float64, _],
     incy: Int32,
     _a: UnsafePointer[Float64, _],
     lda: Int32,
@@ -5756,7 +5761,7 @@ def rocblas_dsyr2(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -5766,7 +5771,7 @@ def rocblas_dtpmv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     x: UnsafePointer[Float64, _],
     incx: Int32,
 ) raises -> Status:
@@ -5781,7 +5786,7 @@ def rocblas_dtpmv(
             type_of(_a),
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
@@ -5808,7 +5813,7 @@ def rocblas_nrm2_batched_ex_64(
             type_of(results),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -5825,10 +5830,10 @@ def rocblas_nrm2_batched_ex_64(
 def rocblas_zdotc_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -5847,7 +5852,7 @@ def rocblas_zdotc_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
@@ -5855,8 +5860,8 @@ def rocblas_ssyr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
     _a: UnsafePointer[Float32, _],
@@ -5878,7 +5883,7 @@ def rocblas_ssyr_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, uplo, n, alpha, x, incx, stridex, _a, lda, stride_a, batch_count
     )
@@ -5887,7 +5892,7 @@ def rocblas_ssyr_strided_batched_64(
 def rocblas_idamax_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -5903,7 +5908,7 @@ def rocblas_idamax_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
@@ -5915,10 +5920,10 @@ def rocblas_ztrmm(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
@@ -5940,7 +5945,7 @@ def rocblas_ztrmm(
             Int32,
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -5965,11 +5970,11 @@ def rocblas_csyrk_strided_batched(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
@@ -5992,7 +5997,7 @@ def rocblas_csyrk_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -6018,8 +6023,8 @@ def rocblas_csrot_64(
     incx: Int64,
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_64",
@@ -6032,7 +6037,7 @@ def rocblas_csrot_64(
             Int64,
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -6044,7 +6049,7 @@ def rocblas_dtrsm_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
@@ -6067,7 +6072,7 @@ def rocblas_dtrsm_batched(
             type_of(_b),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -6106,7 +6111,7 @@ def rocblas_hdot_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
@@ -6115,12 +6120,12 @@ def rocblas_ssbmv(
     uplo: Fill,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int32,
 ) raises -> Status:
@@ -6184,7 +6189,7 @@ def rocblas_ssbmv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -6195,7 +6200,7 @@ def rocblas_drotm(
     incx: Int32,
     y: UnsafePointer[Float64, _],
     incy: Int32,
-    param: UnsafePointer[Float64, _],
+    param: UnsafePointer[mut=False, Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm",
@@ -6207,7 +6212,7 @@ def rocblas_drotm(
             type_of(y),
             Int32,
             type_of(param),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, param)
 
 
@@ -6215,12 +6220,12 @@ def rocblas_chemv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -6240,7 +6245,7 @@ def rocblas_chemv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -6248,8 +6253,8 @@ def rocblas_zgerc_strided_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat64, _],
@@ -6277,7 +6282,7 @@ def rocblas_zgerc_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         m,
@@ -6302,7 +6307,7 @@ def rocblas_strmv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[Float32, _],
@@ -6325,7 +6330,7 @@ def rocblas_strmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -6346,8 +6351,8 @@ def rocblas_cspr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
     _ap: UnsafePointer[ComplexFloat32, _],
@@ -6367,7 +6372,7 @@ def rocblas_cspr_strided_batched_64(
             type_of(_ap),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
@@ -6376,12 +6381,12 @@ def rocblas_sgemv_64(
     trans: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int64,
 ) raises -> Status:
@@ -6400,14 +6405,14 @@ def rocblas_sgemv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
 def rocblas_csscal_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
@@ -6421,7 +6426,7 @@ def rocblas_csscal_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
@@ -6430,14 +6435,14 @@ def rocblas_dsbmv_strided_batched_64(
     uplo: Fill,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int64,
     stridey: Int64,
@@ -6462,7 +6467,7 @@ def rocblas_dsbmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -6488,9 +6493,9 @@ def rocblas_sdgmm(
     side: Side,
     m: Int32,
     n: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
@@ -6551,7 +6556,7 @@ def rocblas_sdgmm(
             Int32,
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc)
 
 
@@ -6562,7 +6567,7 @@ def rocblas_dtbsv_strided_batched_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[Float64, _],
@@ -6586,7 +6591,7 @@ def rocblas_dtbsv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -6608,7 +6613,7 @@ def rocblas_chpr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int64,
     _ap: OpaquePointer[_],
@@ -6625,7 +6630,7 @@ def rocblas_chpr_batched_64(
             Int64,
             type_of(_ap),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
@@ -6636,12 +6641,12 @@ def rocblas_cgbmv(
     n: Int32,
     kl: Int32,
     ku: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
@@ -6662,7 +6667,7 @@ def rocblas_cgbmv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -6687,7 +6692,7 @@ def rocblas_cdotu_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
@@ -6757,7 +6762,7 @@ def rocblas_srotm_batched(
             Int32,
             type_of(param),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, param, batch_count)
 
 
@@ -6767,11 +6772,11 @@ def rocblas_zgeam(
     trans_b: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
-    _b: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
@@ -6792,7 +6797,7 @@ def rocblas_zgeam(
             Int32,
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans_a, trans_b, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
@@ -6802,7 +6807,7 @@ def rocblas_ctrsv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int32,
@@ -6819,7 +6824,7 @@ def rocblas_ctrsv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
@@ -6828,14 +6833,14 @@ def rocblas_zgemv_strided_batched_64(
     trans_a: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
     stridey: Int64,
@@ -6860,7 +6865,7 @@ def rocblas_zgemv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -6886,12 +6891,12 @@ def rocblas_zhbmv_batched_64(
     uplo: Fill,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -6912,7 +6917,7 @@ def rocblas_zhbmv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -6923,12 +6928,12 @@ def rocblas_zgemm(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -6949,7 +6954,7 @@ def rocblas_zgemm(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -6972,7 +6977,7 @@ def rocblas_cspr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int32,
     _ap: OpaquePointer[_],
@@ -6989,7 +6994,7 @@ def rocblas_cspr_batched(
             Int32,
             type_of(_ap),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
@@ -6997,12 +7002,12 @@ def rocblas_zhemv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -7022,7 +7027,7 @@ def rocblas_zhemv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -7031,12 +7036,12 @@ def rocblas_cgemv_64(
     trans: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
@@ -7055,7 +7060,7 @@ def rocblas_cgemv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -7065,7 +7070,7 @@ def rocblas_dtrmv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[Float64, _],
@@ -7088,7 +7093,7 @@ def rocblas_dtrmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -7113,7 +7118,7 @@ def rocblas_drotmg_strided_batched(
     stride_d2: Int64,
     x1: UnsafePointer[Float64, _],
     stride_x1: Int64,
-    y1: UnsafePointer[Float64, _],
+    y1: UnsafePointer[mut=False, Float64, _],
     stride_y1: Int64,
     param: UnsafePointer[Float64, _],
     stride_param: Int64,
@@ -7134,7 +7139,7 @@ def rocblas_drotmg_strided_batched(
             type_of(param),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         d1,
@@ -7155,7 +7160,7 @@ def rocblas_zgeru_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -7178,15 +7183,15 @@ def rocblas_zgeru_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
 def rocblas_daxpy_strided_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[Float64, _],
@@ -7207,7 +7212,7 @@ def rocblas_daxpy_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -7218,8 +7223,8 @@ def rocblas_crot(
     incx: Int32,
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[ComplexFloat32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot",
@@ -7232,7 +7237,7 @@ def rocblas_crot(
             Int32,
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -7240,10 +7245,10 @@ def rocblas_zhpr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int64,
     _ap: UnsafePointer[ComplexFloat64, _],
 ) raises -> Status:
@@ -7259,7 +7264,7 @@ def rocblas_zhpr2_64(
             type_of(y),
             Int64,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -7275,7 +7280,7 @@ def rocblas_initialize() raises:
     Raises:
         If the dynamic library cannot be found.
     """
-    _get_dylib_function["rocblas_initialize", def() -> NoneType]()()
+    _get_dylib_function["rocblas_initialize", def() thin -> NoneType]()()
 
 
 def rocblas_drotm_strided_batched(
@@ -7287,7 +7292,7 @@ def rocblas_drotm_strided_batched(
     y: UnsafePointer[Float64, _],
     incy: Int32,
     stride_y: Int64,
-    param: UnsafePointer[Float64, _],
+    param: UnsafePointer[mut=False, Float64, _],
     stride_param: Int64,
     batch_count: Int32,
 ) raises -> Status:
@@ -7305,7 +7310,7 @@ def rocblas_drotm_strided_batched(
             type_of(param),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -7328,14 +7333,14 @@ def rocblas_sgemmt_strided_batched(
     trans_b: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
     stride_b: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
     stride_c: Int64,
@@ -7438,7 +7443,7 @@ def rocblas_sgemmt_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -7467,7 +7472,7 @@ def rocblas_dtpmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[UnsafePointer[Float64, MutAnyOrigin], _],
+    _a: UnsafePointer[mut=False, UnsafePointer[Float64, MutAnyOrigin], _],
     x: UnsafePointer[UnsafePointer[Float64, MutAnyOrigin], _],
     incx: Int32,
     batch_count: Int32,
@@ -7484,20 +7489,20 @@ def rocblas_dtpmv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
 def rocblas_dasum(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     result: UnsafePointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum",
-        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -7505,8 +7510,8 @@ def rocblas_csyr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     _a: UnsafePointer[ComplexFloat32, _],
     lda: Int64,
@@ -7522,7 +7527,7 @@ def rocblas_csyr_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -7543,7 +7548,7 @@ def rocblas_dasum_batched(
             Int32,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -7570,7 +7575,7 @@ def rocblas_sswap_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -7580,12 +7585,12 @@ def rocblas_zherkx(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -7605,7 +7610,7 @@ def rocblas_zherkx(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -7613,7 +7618,7 @@ def rocblas_cgeru_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -7636,7 +7641,7 @@ def rocblas_cgeru_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -7646,7 +7651,7 @@ def rocblas_strmv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     x: UnsafePointer[Float32, _],
     incx: Int64,
@@ -7663,14 +7668,14 @@ def rocblas_strmv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
 def rocblas_haxpy_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float16, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -7717,7 +7722,7 @@ def rocblas_haxpy_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
@@ -7738,7 +7743,7 @@ def rocblas_idamin_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -7747,14 +7752,14 @@ def rocblas_tssgemv_strided_batched_64(
     trans_a: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[BFloat16, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, BFloat16, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[BFloat16, _],
+    x: UnsafePointer[mut=False, BFloat16, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int64,
     stridey: Int64,
@@ -7779,7 +7784,7 @@ def rocblas_tssgemv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -7804,13 +7809,13 @@ def rocblas_chpmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _ap: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat32, _],
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
@@ -7913,7 +7918,7 @@ def rocblas_chpmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -7938,12 +7943,12 @@ def rocblas_zsyr2k(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -7963,7 +7968,7 @@ def rocblas_zsyr2k(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -8162,7 +8167,7 @@ def rocblas_gemm_strided_batched_ex(
             Algorithm,
             Int32,
             UInt32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -8201,7 +8206,7 @@ def rocblas_ztrtri(
     uplo: Fill,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     inv_a: UnsafePointer[ComplexFloat64, _],
     ldinv_a: Int32,
@@ -8217,7 +8222,7 @@ def rocblas_ztrtri(
             Int32,
             type_of(inv_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a)
 
 
@@ -8227,7 +8232,7 @@ def rocblas_ctrmv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int32,
@@ -8244,7 +8249,7 @@ def rocblas_ctrmv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
@@ -8254,7 +8259,7 @@ def rocblas_dtrmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[UnsafePointer[Float64, MutAnyOrigin], _],
+    _a: UnsafePointer[mut=False, UnsafePointer[Float64, MutAnyOrigin], _],
     lda: Int64,
     x: UnsafePointer[UnsafePointer[Float64, MutAnyOrigin], _],
     incx: Int64,
@@ -8273,7 +8278,7 @@ def rocblas_dtrmv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
@@ -8281,8 +8286,8 @@ def rocblas_sger_strided_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[Float32, _],
@@ -8310,7 +8315,7 @@ def rocblas_sger_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         m,
@@ -8352,7 +8357,7 @@ def rocblas_dtpsv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
@@ -8377,7 +8382,7 @@ def rocblas_sdot_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
@@ -8398,7 +8403,7 @@ def rocblas_dznrm2_batched(
             Int32,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -8429,7 +8434,7 @@ def rocblas_ddgmm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc, batch_count)
 
 
@@ -8458,7 +8463,7 @@ def rocblas_srotg_strided_batched_64(
             type_of(s),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
@@ -8469,12 +8474,12 @@ def rocblas_dgbmv_64(
     n: Int64,
     kl: Int64,
     ku: Int64,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int64,
 ) raises -> Status:
@@ -8495,7 +8500,7 @@ def rocblas_dgbmv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -8516,7 +8521,7 @@ def rocblas_sasum_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -8524,13 +8529,13 @@ def rocblas_dspmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     stride_a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int32,
     stridey: Int64,
@@ -8553,7 +8558,7 @@ def rocblas_dspmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -8577,14 +8582,14 @@ def rocblas_chbmv_strided_batched_64(
     uplo: Fill,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
@@ -8609,7 +8614,7 @@ def rocblas_chbmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -8649,7 +8654,7 @@ def rocblas_zswap_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
@@ -8658,14 +8663,14 @@ def rocblas_sgemv_strided_batched(
     trans_a: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int32,
     stridey: Int64,
@@ -8752,7 +8757,7 @@ def rocblas_sgemv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -8780,8 +8785,8 @@ def rocblas_csrot_batched_64(
     incx: Int64,
     y: OpaquePointer[_],
     incy: Int64,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, Float32, _],
     batch_count: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -8796,7 +8801,7 @@ def rocblas_csrot_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
@@ -8817,7 +8822,7 @@ def rocblas_idamin_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -8838,7 +8843,7 @@ def rocblas_zswap_64(
             Int64,
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -8925,7 +8930,7 @@ def rocblas_strsv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
@@ -8934,12 +8939,12 @@ def rocblas_zhbmv(
     uplo: Fill,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
@@ -8958,7 +8963,7 @@ def rocblas_zhbmv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -8971,8 +8976,8 @@ def rocblas_zrot_strided_batched_64(
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[ComplexFloat64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, ComplexFloat64, _],
     batch_count: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -8989,7 +8994,7 @@ def rocblas_zrot_strided_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
@@ -8997,8 +9002,8 @@ def rocblas_zher_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
     _a: UnsafePointer[ComplexFloat64, _],
@@ -9020,7 +9025,7 @@ def rocblas_zher_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -9061,7 +9066,7 @@ def rocblas_ztrsv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
@@ -9071,7 +9076,7 @@ def rocblas_dtrmv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     x: UnsafePointer[Float64, _],
     incx: Int64,
@@ -9088,7 +9093,7 @@ def rocblas_dtrmv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
@@ -9107,7 +9112,7 @@ def rocblas_crotg(
             type_of(b),
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s)
 
 
@@ -9138,7 +9143,7 @@ def rocblas_dtbsv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
@@ -9161,7 +9166,7 @@ def rocblas_cswap_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
@@ -9169,7 +9174,7 @@ def rocblas_zsyr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -9192,15 +9197,15 @@ def rocblas_zsyr2_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
 def rocblas_caxpy_strided_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat32, _],
@@ -9221,7 +9226,7 @@ def rocblas_caxpy_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -9242,7 +9247,7 @@ def rocblas_izamin_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -9269,7 +9274,7 @@ def rocblas_dtpsv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
@@ -9277,7 +9282,7 @@ def rocblas_ssyr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -9300,16 +9305,16 @@ def rocblas_ssyr2_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
 def rocblas_cdotc(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int32,
     result: UnsafePointer[ComplexFloat32, _],
 ) raises -> Status:
@@ -9323,7 +9328,7 @@ def rocblas_cdotc(
             type_of(y),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -9331,7 +9336,7 @@ def rocblas_sspr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int64,
     _ap: OpaquePointer[_],
@@ -9348,7 +9353,7 @@ def rocblas_sspr_batched_64(
             Int64,
             type_of(_ap),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
@@ -9361,8 +9366,8 @@ def rocblas_csrot_strided_batched(
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, Float32, _],
     batch_count: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -9379,7 +9384,7 @@ def rocblas_csrot_strided_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
@@ -9387,7 +9392,7 @@ def rocblas_zher2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -9410,7 +9415,7 @@ def rocblas_zher2_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -9433,7 +9438,7 @@ def rocblas_zcopy_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
@@ -9441,12 +9446,12 @@ def rocblas_zsymv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -9466,14 +9471,14 @@ def rocblas_zsymv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
 def rocblas_sasum_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -9489,20 +9494,20 @@ def rocblas_sasum_strided_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
 def rocblas_isamin_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     result: UnsafePointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamin_64",
-        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -9510,8 +9515,8 @@ def rocblas_dsyr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     _a: UnsafePointer[Float64, _],
     lda: Int32,
@@ -9527,7 +9532,7 @@ def rocblas_dsyr(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -9536,12 +9541,12 @@ def rocblas_sgemv_batched(
     trans: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -9611,7 +9616,7 @@ def rocblas_sgemv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -9623,7 +9628,9 @@ def rocblas_ctpmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[UnsafePointer[ComplexFloat32, MutAnyOrigin], _],
+    _a: UnsafePointer[
+        mut=False, UnsafePointer[ComplexFloat32, MutAnyOrigin], _
+    ],
     x: UnsafePointer[UnsafePointer[ComplexFloat32, MutAnyOrigin], _],
     incx: Int64,
     batch_count: Int64,
@@ -9640,7 +9647,7 @@ def rocblas_ctpmv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
@@ -9653,7 +9660,7 @@ def rocblas_device_malloc_ptr(
         def(
             type_of(ptr),
             type_of(res),
-        ) -> Status,
+        ) thin -> Status,
     ]()(ptr, res)
 
 
@@ -9661,8 +9668,8 @@ def rocblas_sger_strided_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[Float32, _],
@@ -9747,7 +9754,7 @@ def rocblas_sger_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         m,
@@ -9769,8 +9776,8 @@ def rocblas_sger_strided_batched(
 def rocblas_daxpy(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     y: UnsafePointer[Float64, _],
     incy: Int32,
@@ -9785,7 +9792,7 @@ def rocblas_daxpy(
             Int32,
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -9806,7 +9813,7 @@ def rocblas_icamin_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -9814,11 +9821,11 @@ def rocblas_ssyr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float32, _],
+    y: UnsafePointer[mut=False, Float32, _],
     incy: Int32,
     stridey: Int64,
     _a: UnsafePointer[Float32, _],
@@ -9896,7 +9903,7 @@ def rocblas_ssyr2_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -9920,14 +9927,14 @@ def rocblas_hssgemv_strided_batched(
     trans_a: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float16, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[Float16, _],
+    x: UnsafePointer[mut=False, Float16, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int32,
     stridey: Int64,
@@ -9952,7 +9959,7 @@ def rocblas_hssgemv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -9977,7 +9984,7 @@ def rocblas_cgeru_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -10000,7 +10007,7 @@ def rocblas_cgeru_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -10010,7 +10017,7 @@ def rocblas_ctrmv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -10033,7 +10040,7 @@ def rocblas_ctrmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -10054,11 +10061,11 @@ def rocblas_chpmv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _ap: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
@@ -10075,7 +10082,7 @@ def rocblas_chpmv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
@@ -10108,7 +10115,7 @@ def rocblas_dotc_batched_ex(
             type_of(result),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -10131,12 +10138,12 @@ def rocblas_dgeam_strided_batched(
     trans_b: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride__a: Int64,
-    beta: UnsafePointer[Float64, _],
-    _b: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
     stride__b: Int64,
     _c: UnsafePointer[Float64, _],
@@ -10164,7 +10171,7 @@ def rocblas_dgeam_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -10193,14 +10200,14 @@ def rocblas_dgbmv_strided_batched(
     n: Int32,
     kl: Int32,
     ku: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stride_x: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int32,
     stride_y: Int64,
@@ -10227,7 +10234,7 @@ def rocblas_dgbmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -10254,12 +10261,12 @@ def rocblas_ssymv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int32,
 ) raises -> Status:
@@ -10322,7 +10329,7 @@ def rocblas_ssymv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -10331,14 +10338,14 @@ def rocblas_ssbmv_strided_batched_64(
     uplo: Fill,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int64,
     stridey: Int64,
@@ -10363,7 +10370,7 @@ def rocblas_ssbmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -10388,7 +10395,7 @@ def rocblas_sger_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -10455,7 +10462,7 @@ def rocblas_sger_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -10476,7 +10483,7 @@ def rocblas_izamax_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -10487,14 +10494,14 @@ def rocblas_cgbmv_strided_batched_64(
     n: Int64,
     kl: Int64,
     ku: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
@@ -10521,7 +10528,7 @@ def rocblas_cgbmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -10547,7 +10554,7 @@ def rocblas_cgbmv_strided_batched_64(
 def rocblas_csscal_strided_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
@@ -10563,7 +10570,7 @@ def rocblas_csscal_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
@@ -10571,7 +10578,7 @@ def rocblas_cgerc_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -10594,7 +10601,7 @@ def rocblas_cgerc_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -10602,10 +10609,10 @@ def rocblas_dspr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
-    y: UnsafePointer[Float64, _],
+    y: UnsafePointer[mut=False, Float64, _],
     incy: Int32,
     _ap: UnsafePointer[Float64, _],
 ) raises -> Status:
@@ -10621,7 +10628,7 @@ def rocblas_dspr2(
             type_of(y),
             Int32,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -10629,8 +10636,8 @@ def rocblas_zspr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
     _ap: UnsafePointer[ComplexFloat64, _],
@@ -10650,14 +10657,14 @@ def rocblas_zspr_strided_batched_64(
             type_of(_ap),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
 def rocblas_scnrm2_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -10673,7 +10680,7 @@ def rocblas_scnrm2_strided_batched(
             Int64,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -10684,12 +10691,12 @@ def rocblas_zgemmt_batched(
     trans_b: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -10712,7 +10719,7 @@ def rocblas_zgemmt_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -10738,14 +10745,14 @@ def rocblas_csymm_strided_batched(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
@@ -10771,7 +10778,7 @@ def rocblas_csymm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -10797,7 +10804,7 @@ def rocblas_csyr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int32,
     _a: OpaquePointer[_],
@@ -10816,7 +10823,7 @@ def rocblas_csyr_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
@@ -10826,10 +10833,10 @@ def rocblas_zsyrk_batched(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -10849,7 +10856,7 @@ def rocblas_zsyrk_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc, batch_count)
 
 
@@ -10859,11 +10866,11 @@ def rocblas_sgeam(
     trans_b: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
-    beta: UnsafePointer[Float32, _],
-    _b: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
@@ -10937,14 +10944,14 @@ def rocblas_sgeam(
             Int32,
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans_a, trans_b, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
 def rocblas_dznrm2_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -10960,7 +10967,7 @@ def rocblas_dznrm2_strided_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -10968,11 +10975,11 @@ def rocblas_zhpmv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _ap: OpaquePointer[_],
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -10991,7 +10998,7 @@ def rocblas_zhpmv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy, batch_count)
 
 
@@ -11003,8 +11010,8 @@ def rocblas_strsm_strided_batched_64(
     diag: Diagonal,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     stride_a: Int64,
     _b: UnsafePointer[Float32, _],
@@ -11030,7 +11037,7 @@ def rocblas_strsm_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -11077,7 +11084,7 @@ def rocblas_ztbsv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
@@ -11087,10 +11094,10 @@ def rocblas_csyrk(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -11108,7 +11115,7 @@ def rocblas_csyrk(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
@@ -11195,7 +11202,7 @@ def rocblas_axpy_ex(
             DataType,
             Int32,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -11228,7 +11235,7 @@ def rocblas_zrotg_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s, batch_count)
 
 
@@ -11249,7 +11256,7 @@ def rocblas_get_version_string(
     ****************************************************************************.
     """
     return _get_dylib_function[
-        "rocblas_get_version_string", def(type_of(buf), Int) -> Status
+        "rocblas_get_version_string", def(type_of(buf), Int) thin -> Status
     ]()(buf, len)
 
 
@@ -11257,11 +11264,11 @@ def rocblas_csyr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int64,
     stridey: Int64,
     _a: UnsafePointer[ComplexFloat32, _],
@@ -11286,7 +11293,7 @@ def rocblas_csyr2_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -11309,8 +11316,8 @@ def rocblas_dsyr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
     _a: UnsafePointer[Float64, _],
@@ -11332,7 +11339,7 @@ def rocblas_dsyr_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, uplo, n, alpha, x, incx, stridex, _a, lda, stride_a, batch_count
     )
@@ -11344,14 +11351,14 @@ def rocblas_ssymm_strided_batched(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
     stride__c: Int64,
@@ -11464,7 +11471,7 @@ def rocblas_ssymm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -11489,7 +11496,7 @@ def rocblas_ssymm_strided_batched(
 def rocblas_idamax_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -11505,7 +11512,7 @@ def rocblas_idamax_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
@@ -11544,7 +11551,7 @@ def rocblas_rot_strided_batched_ex_64(
             DataType,
             Int64,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -11583,7 +11590,7 @@ def rocblas_sswap_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
@@ -11592,12 +11599,12 @@ def rocblas_chbmv_batched_64(
     uplo: Fill,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -11618,7 +11625,7 @@ def rocblas_chbmv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -11682,7 +11689,7 @@ def rocblas_sdot_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
@@ -11694,8 +11701,8 @@ def rocblas_dtrsm_strided_batched_64(
     diag: Diagonal,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     stride_a: Int64,
     _b: UnsafePointer[Float64, _],
@@ -11721,7 +11728,7 @@ def rocblas_dtrsm_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -11744,7 +11751,7 @@ def rocblas_dtrsm_strided_batched_64(
 def rocblas_isamin_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -11789,7 +11796,7 @@ def rocblas_isamin_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
@@ -11799,12 +11806,12 @@ def rocblas_cgeam_strided_batched(
     trans_b: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
-    _b: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
     stride__b: Int64,
     _c: UnsafePointer[ComplexFloat32, _],
@@ -11832,7 +11839,7 @@ def rocblas_cgeam_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -11873,7 +11880,7 @@ def rocblas_ccopy_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
@@ -11884,12 +11891,12 @@ def rocblas_sgbmv_64(
     n: Int64,
     kl: Int64,
     ku: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int64,
 ) raises -> Status:
@@ -11910,7 +11917,7 @@ def rocblas_sgbmv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -11919,7 +11926,7 @@ def rocblas_device_malloc_success(
 ) raises -> Bool:
     return _get_dylib_function[
         "rocblas_device_malloc_success",
-        def(type_of(ptr)) -> Bool,
+        def(type_of(ptr)) thin -> Bool,
     ]()(ptr)
 
 
@@ -11927,8 +11934,8 @@ def rocblas_chpr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     _ap: UnsafePointer[ComplexFloat32, _],
 ) raises -> Status:
@@ -11942,7 +11949,7 @@ def rocblas_chpr_64(
             type_of(x),
             Int64,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -11952,7 +11959,7 @@ def rocblas_stpsv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _ap: UnsafePointer[Float32, _],
+    _ap: UnsafePointer[mut=False, Float32, _],
     x: UnsafePointer[Float32, _],
     incx: Int32,
 ) raises -> Status:
@@ -12017,7 +12024,7 @@ def rocblas_stpsv(
             type_of(_ap),
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
@@ -12027,14 +12034,14 @@ def rocblas_csyrkx_strided_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
@@ -12060,7 +12067,7 @@ def rocblas_csyrkx_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -12086,8 +12093,8 @@ def rocblas_dger_strided_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[Float64, _],
@@ -12115,7 +12122,7 @@ def rocblas_dger_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         m,
@@ -12140,7 +12147,7 @@ def rocblas_ctrmv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -12163,7 +12170,7 @@ def rocblas_ctrmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -12189,8 +12196,8 @@ def rocblas_zrot_strided_batched(
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[ComplexFloat64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, ComplexFloat64, _],
     batch_count: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -12207,7 +12214,7 @@ def rocblas_zrot_strided_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
@@ -12218,14 +12225,14 @@ def rocblas_hgemm_kernel_name(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float16, _],
-    _a: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float16, _],
+    _a: UnsafePointer[mut=False, Float16, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[Float16, _],
+    _b: UnsafePointer[mut=False, Float16, _],
     ldb: Int32,
     stride_b: Int64,
-    beta: UnsafePointer[Float16, _],
+    beta: UnsafePointer[mut=False, Float16, _],
     _c: UnsafePointer[Float16, _],
     ldc: Int32,
     stride_c: Int64,
@@ -12252,7 +12259,7 @@ def rocblas_hgemm_kernel_name(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -12278,7 +12285,7 @@ def rocblas_hgemm_kernel_name(
 def rocblas_scopy_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[Float32, _],
@@ -12298,14 +12305,14 @@ def rocblas_scopy_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
 def rocblas_icamax_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -12321,7 +12328,7 @@ def rocblas_icamax_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
@@ -12329,8 +12336,8 @@ def rocblas_zhpr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
     _ap: UnsafePointer[ComplexFloat64, _],
@@ -12350,7 +12357,7 @@ def rocblas_zhpr_strided_batched_64(
             type_of(_ap),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
@@ -12362,8 +12369,8 @@ def rocblas_ztrsm_64(
     diag: Diagonal,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     _b: UnsafePointer[ComplexFloat64, _],
     ldb: Int64,
@@ -12383,7 +12390,7 @@ def rocblas_ztrsm_64(
             Int64,
             type_of(_b),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -12393,7 +12400,7 @@ def rocblas_stpsv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _ap: UnsafePointer[Float32, _],
+    _ap: UnsafePointer[mut=False, Float32, _],
     stride__a: Int64,
     x: UnsafePointer[Float32, _],
     incx: Int64,
@@ -12414,7 +12421,7 @@ def rocblas_stpsv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -12434,7 +12441,7 @@ def rocblas_csyr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int64,
     _a: OpaquePointer[_],
@@ -12453,7 +12460,7 @@ def rocblas_csyr_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
@@ -12463,7 +12470,7 @@ def rocblas_ctpmv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int64,
 ) raises -> Status:
@@ -12478,7 +12485,7 @@ def rocblas_ctpmv_64(
             type_of(_a),
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
@@ -12490,7 +12497,7 @@ def rocblas_strmm_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
@@ -12644,7 +12651,7 @@ def rocblas_strmm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -12672,8 +12679,8 @@ def rocblas_ztrsm(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     _b: UnsafePointer[ComplexFloat64, _],
     ldb: Int32,
@@ -12693,7 +12700,7 @@ def rocblas_ztrsm(
             Int32,
             type_of(_b),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -12702,10 +12709,10 @@ def rocblas_zdgmm_strided_batched(
     side: Side,
     m: Int32,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
     _c: UnsafePointer[ComplexFloat64, _],
@@ -12730,7 +12737,7 @@ def rocblas_zdgmm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -12752,7 +12759,7 @@ def rocblas_zdgmm_strided_batched(
 def rocblas_icamin_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     result: UnsafePointer[Int64, _],
 ) raises -> Status:
@@ -12764,7 +12771,7 @@ def rocblas_icamin_64(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -12774,12 +12781,12 @@ def rocblas_dsyr2k(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
-    _b: UnsafePointer[Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -12799,7 +12806,7 @@ def rocblas_dsyr2k(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -12820,7 +12827,7 @@ def rocblas_zrotg_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s, batch_count)
 
 
@@ -12832,11 +12839,11 @@ def rocblas_dtrmm_strided_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
     stride__b: Int64,
     _c: UnsafePointer[Float64, _],
@@ -12865,7 +12872,7 @@ def rocblas_dtrmm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -12895,8 +12902,8 @@ def rocblas_drot_batched(
     incx: Int32,
     y: OpaquePointer[_],
     incy: Int32,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, Float64, _],
     batch_count: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -12911,7 +12918,7 @@ def rocblas_drot_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
@@ -12920,14 +12927,14 @@ def rocblas_zgemv_strided_batched(
     trans_a: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
     stridey: Int64,
@@ -12952,7 +12959,7 @@ def rocblas_zgemv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -12996,7 +13003,7 @@ def rocblas_dtrtri_batched(
             type_of(inv_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a, batch_count)
 
 
@@ -13005,12 +13012,12 @@ def rocblas_cgemv_batched_64(
     trans: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -13031,7 +13038,7 @@ def rocblas_cgemv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -13043,7 +13050,7 @@ def rocblas_strmv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[Float32, _],
@@ -13132,7 +13139,7 @@ def rocblas_strmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -13152,7 +13159,7 @@ def rocblas_strmv_strided_batched(
 def rocblas_dznrm2_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     result: UnsafePointer[Float64, _],
 ) raises -> Status:
@@ -13164,14 +13171,14 @@ def rocblas_dznrm2_64(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
 def rocblas_zdscal_strided_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
@@ -13187,14 +13194,14 @@ def rocblas_zdscal_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
 def rocblas_daxpy_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -13212,7 +13219,7 @@ def rocblas_daxpy_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
@@ -13220,7 +13227,7 @@ def rocblas_chpr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int32,
     _ap: OpaquePointer[_],
@@ -13301,14 +13308,14 @@ def rocblas_chpr_batched(
             Int32,
             type_of(_ap),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
 def rocblas_dcopy_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[Float64, _],
@@ -13328,14 +13335,14 @@ def rocblas_dcopy_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
 def rocblas_zcopy_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat64, _],
@@ -13355,7 +13362,7 @@ def rocblas_zcopy_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -13365,12 +13372,12 @@ def rocblas_ssyr2k(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
-    _b: UnsafePointer[Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -13471,7 +13478,7 @@ def rocblas_ssyr2k(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -13494,7 +13501,7 @@ def rocblas_dswap_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
@@ -13548,14 +13555,14 @@ def rocblas_scopy_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
 def rocblas_izamin(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     result: UnsafePointer[Int32, _],
 ) raises -> Status:
@@ -13567,7 +13574,7 @@ def rocblas_izamin(
             type_of(x),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -13575,8 +13582,8 @@ def rocblas_sspr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stride_x: Int64,
     _ap: UnsafePointer[Float32, _],
@@ -13596,14 +13603,14 @@ def rocblas_sspr_strided_batched_64(
             type_of(_ap),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
 def rocblas_dzasum_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -13619,14 +13626,14 @@ def rocblas_dzasum_strided_batched(
             Int64,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
 def rocblas_icamax(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     result: UnsafePointer[Int32, _],
 ) raises -> Status:
@@ -13638,7 +13645,7 @@ def rocblas_icamax(
             type_of(x),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -13646,7 +13653,7 @@ def rocblas_dsyr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -13669,7 +13676,7 @@ def rocblas_dsyr2_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -13681,7 +13688,7 @@ def rocblas_strsm_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
@@ -13784,7 +13791,7 @@ def rocblas_strsm_batched(
             type_of(_b),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -13806,13 +13813,13 @@ def rocblas_zhpmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _ap: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat64, _],
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
@@ -13835,7 +13842,7 @@ def rocblas_zhpmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -13858,8 +13865,8 @@ def rocblas_dspr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     _ap: UnsafePointer[Float64, _],
 ) raises -> Status:
@@ -13873,7 +13880,7 @@ def rocblas_dspr_64(
             type_of(x),
             Int64,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -13883,14 +13890,14 @@ def rocblas_ssyr2k_strided_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
     stride__c: Int64,
@@ -14013,7 +14020,7 @@ def rocblas_ssyr2k_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -14041,7 +14048,7 @@ def rocblas_stpsv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _ap: UnsafePointer[Float32, _],
+    _ap: UnsafePointer[mut=False, Float32, _],
     x: UnsafePointer[Float32, _],
     incx: Int64,
 ) raises -> Status:
@@ -14056,7 +14063,7 @@ def rocblas_stpsv_64(
             type_of(_ap),
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
@@ -14077,7 +14084,7 @@ def rocblas_scasum_batched(
             Int32,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -14087,7 +14094,7 @@ def rocblas_ztpsv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat64, _],
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int64,
@@ -14108,7 +14115,7 @@ def rocblas_ztpsv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -14141,14 +14148,14 @@ def rocblas_zswap(
             Int32,
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
 def rocblas_scnrm2_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     result: UnsafePointer[Float32, _],
 ) raises -> Status:
@@ -14160,7 +14167,7 @@ def rocblas_scnrm2_64(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -14170,7 +14177,7 @@ def rocblas_strsv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[Float32, _],
@@ -14193,7 +14200,7 @@ def rocblas_strsv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -14213,7 +14220,7 @@ def rocblas_strsv_strided_batched_64(
 def rocblas_dcopy(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     y: UnsafePointer[Float64, _],
     incy: Int32,
@@ -14227,7 +14234,7 @@ def rocblas_dcopy(
             Int32,
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -14252,7 +14259,7 @@ def rocblas_zdotu_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
@@ -14277,7 +14284,7 @@ def rocblas_bfdot_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
@@ -14288,7 +14295,7 @@ def rocblas_stbmv_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     x: UnsafePointer[Float32, _],
     incx: Int64,
@@ -14306,14 +14313,14 @@ def rocblas_stbmv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
 def rocblas_saxpy_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -14331,7 +14338,7 @@ def rocblas_saxpy_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
@@ -14339,7 +14346,7 @@ def rocblas_zher_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int64,
     _a: OpaquePointer[_],
@@ -14358,7 +14365,7 @@ def rocblas_zher_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
@@ -14379,7 +14386,7 @@ def rocblas_icamin_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -14389,7 +14396,7 @@ def rocblas_ztrmv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int32,
@@ -14406,7 +14413,7 @@ def rocblas_ztrmv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
@@ -14416,12 +14423,12 @@ def rocblas_cher2k(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -14520,7 +14527,7 @@ def rocblas_cher2k(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -14528,8 +14535,8 @@ def rocblas_zspr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     _ap: UnsafePointer[ComplexFloat64, _],
 ) raises -> Status:
@@ -14543,7 +14550,7 @@ def rocblas_zspr_64(
             type_of(x),
             Int64,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -14551,8 +14558,8 @@ def rocblas_cgeru_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
@@ -14572,7 +14579,7 @@ def rocblas_cgeru_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -14580,7 +14587,7 @@ def rocblas_zhpr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -14601,14 +14608,14 @@ def rocblas_zhpr2_batched_64(
             Int64,
             type_of(_ap),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
 def rocblas_caxpy_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -14626,7 +14633,7 @@ def rocblas_caxpy_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
@@ -14636,12 +14643,12 @@ def rocblas_zsyrkx(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -14661,7 +14668,7 @@ def rocblas_zsyrkx(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -14670,9 +14677,9 @@ def rocblas_ddgmm(
     side: Side,
     m: Int32,
     n: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
@@ -14690,7 +14697,7 @@ def rocblas_ddgmm(
             Int32,
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc)
 
 
@@ -14701,12 +14708,12 @@ def rocblas_cgemmt_batched(
     trans_b: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -14729,7 +14736,7 @@ def rocblas_cgemmt_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -14753,11 +14760,11 @@ def rocblas_sspmv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int32,
 ) raises -> Status:
@@ -14813,7 +14820,7 @@ def rocblas_sspmv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy)
 
 
@@ -14824,7 +14831,7 @@ def rocblas_ctbmv_strided_batched(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -14848,7 +14855,7 @@ def rocblas_ctbmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -14872,14 +14879,14 @@ def rocblas_chemm_strided_batched(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
@@ -14997,7 +15004,7 @@ def rocblas_chemm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -15026,7 +15033,7 @@ def rocblas_dtbsv_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     x: UnsafePointer[Float64, _],
     incx: Int64,
@@ -15044,7 +15051,7 @@ def rocblas_dtbsv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
@@ -15055,7 +15062,7 @@ def rocblas_ztbmv_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int64,
@@ -15073,7 +15080,7 @@ def rocblas_ztbmv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -15081,14 +15088,14 @@ def rocblas_chemv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
@@ -15177,7 +15184,7 @@ def rocblas_chemv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -15202,12 +15209,12 @@ def rocblas_zgemv_batched_64(
     trans: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -15228,7 +15235,7 @@ def rocblas_zgemv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -15241,12 +15248,12 @@ def rocblas_zgemmt(
     trans_b: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -15267,7 +15274,7 @@ def rocblas_zgemmt(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -15289,13 +15296,13 @@ def rocblas_zgemmt(
 def rocblas_idamin(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     result: UnsafePointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin",
-        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -15306,7 +15313,7 @@ def rocblas_drotm_64(
     incx: Int64,
     y: UnsafePointer[Float64, _],
     incy: Int64,
-    param: UnsafePointer[Float64, _],
+    param: UnsafePointer[mut=False, Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_64",
@@ -15318,14 +15325,14 @@ def rocblas_drotm_64(
             type_of(y),
             Int64,
             type_of(param),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, param)
 
 
 def rocblas_cscal_strided_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
@@ -15341,7 +15348,7 @@ def rocblas_cscal_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
@@ -15351,10 +15358,10 @@ def rocblas_zsyrk(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -15372,7 +15379,7 @@ def rocblas_zsyrk(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
@@ -15380,10 +15387,10 @@ def rocblas_dspr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: UnsafePointer[mut=False, Float64, _],
     incy: Int64,
     _ap: UnsafePointer[Float64, _],
 ) raises -> Status:
@@ -15399,14 +15406,14 @@ def rocblas_dspr2_64(
             type_of(y),
             Int64,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
 def rocblas_icamin_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -15422,7 +15429,7 @@ def rocblas_icamin_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
@@ -15430,10 +15437,10 @@ def rocblas_dsyr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: UnsafePointer[mut=False, Float64, _],
     incy: Int64,
     _a: UnsafePointer[Float64, _],
     lda: Int64,
@@ -15451,7 +15458,7 @@ def rocblas_dsyr2_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -15459,8 +15466,8 @@ def rocblas_cgerc(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
@@ -15480,7 +15487,7 @@ def rocblas_cgerc(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -15490,14 +15497,14 @@ def rocblas_zsyrkx_strided_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
@@ -15523,7 +15530,7 @@ def rocblas_zsyrkx_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -15552,14 +15559,14 @@ def rocblas_cgemmt_strided_batched(
     trans_b: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
     stride_b: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
     stride_c: Int64,
@@ -15586,7 +15593,7 @@ def rocblas_cgemmt_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -15615,7 +15622,7 @@ def rocblas_dtrmv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[Float64, _],
@@ -15638,7 +15645,7 @@ def rocblas_dtrmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -15662,12 +15669,12 @@ def rocblas_cgbmv_batched(
     n: Int32,
     kl: Int32,
     ku: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -15690,7 +15697,7 @@ def rocblas_cgbmv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -15714,10 +15721,10 @@ def rocblas_sspr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: UnsafePointer[mut=False, Float32, _],
     incy: Int64,
     _ap: UnsafePointer[Float32, _],
 ) raises -> Status:
@@ -15733,7 +15740,7 @@ def rocblas_sspr2_64(
             type_of(y),
             Int64,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -15741,10 +15748,10 @@ def rocblas_zher2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int64,
     _a: UnsafePointer[ComplexFloat64, _],
     lda: Int64,
@@ -15762,7 +15769,7 @@ def rocblas_zher2_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -15770,12 +15777,12 @@ def rocblas_dsymv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -15795,7 +15802,7 @@ def rocblas_dsymv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -15805,12 +15812,12 @@ def rocblas_cher2k_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -15912,7 +15919,7 @@ def rocblas_cher2k_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -15954,7 +15961,7 @@ def rocblas_ztrtri_batched(
             type_of(inv_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a, batch_count)
 
 
@@ -15964,7 +15971,7 @@ def rocblas_ztpmv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int64,
@@ -15985,7 +15992,7 @@ def rocblas_ztpmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -16005,11 +16012,11 @@ def rocblas_zsyr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int32,
     stridey: Int64,
     _a: UnsafePointer[ComplexFloat64, _],
@@ -16034,7 +16041,7 @@ def rocblas_zsyr2_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -16057,10 +16064,10 @@ def rocblas_zsyr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int64,
     _a: UnsafePointer[ComplexFloat64, _],
     lda: Int64,
@@ -16078,7 +16085,7 @@ def rocblas_zsyr2_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -16087,7 +16094,7 @@ def rocblas_device_malloc_free(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_free",
-        def(type_of(ptr)) -> Status,
+        def(type_of(ptr)) thin -> Status,
     ]()(ptr)
 
 
@@ -16095,11 +16102,11 @@ def rocblas_zhpr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
     _ap: UnsafePointer[ComplexFloat64, _],
@@ -16122,7 +16129,7 @@ def rocblas_zhpr2_strided_batched_64(
             type_of(_ap),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -16143,7 +16150,7 @@ def rocblas_zhpr2_strided_batched_64(
 def rocblas_icamin_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -16159,20 +16166,20 @@ def rocblas_icamin_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
 def rocblas_idamax(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     result: UnsafePointer[Int32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax",
-        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -16201,15 +16208,15 @@ def rocblas_ctrsv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
 def rocblas_zaxpy_strided_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat64, _],
@@ -16230,7 +16237,7 @@ def rocblas_zaxpy_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -16241,12 +16248,12 @@ def rocblas_cgemm(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -16267,7 +16274,7 @@ def rocblas_cgemm(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -16301,7 +16308,7 @@ def rocblas_crotg_64(
             type_of(b),
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s)
 
 
@@ -16314,8 +16321,8 @@ def rocblas_srot_strided_batched(
     y: UnsafePointer[Float32, _],
     incy: Int32,
     stride_y: Int64,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, Float32, _],
     batch_count: Int32,
 ) raises -> Status:
     """
@@ -16370,7 +16377,7 @@ def rocblas_srot_strided_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
@@ -16381,8 +16388,8 @@ def rocblas_srot(
     incx: Int32,
     y: UnsafePointer[Float32, _],
     incy: Int32,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -16424,17 +16431,17 @@ def rocblas_srot(
             Int32,
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
 def rocblas_zdotc_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -16453,7 +16460,7 @@ def rocblas_zdotc_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
@@ -16542,7 +16549,7 @@ def rocblas_scal_strided_batched_ex(
             Int64,
             Int32,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -16560,7 +16567,7 @@ def rocblas_scal_strided_batched_ex(
 def rocblas_cscal_strided_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
@@ -16576,7 +16583,7 @@ def rocblas_cscal_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
@@ -16584,11 +16591,11 @@ def rocblas_dspr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[Float64, _],
+    y: UnsafePointer[mut=False, Float64, _],
     incy: Int32,
     stride_y: Int64,
     _ap: UnsafePointer[Float64, _],
@@ -16611,7 +16618,7 @@ def rocblas_dspr2_strided_batched(
             type_of(_ap),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -16646,7 +16653,7 @@ def rocblas_dnrm2_batched(
             Int32,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -16671,20 +16678,20 @@ def rocblas_ddot_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
 def rocblas_idamax_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     result: UnsafePointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_64",
-        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -16692,11 +16699,11 @@ def rocblas_csyr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int32,
     stridey: Int64,
     _a: UnsafePointer[ComplexFloat32, _],
@@ -16721,7 +16728,7 @@ def rocblas_csyr2_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -16743,10 +16750,10 @@ def rocblas_csyr2_strided_batched(
 def rocblas_cdotu_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -16765,7 +16772,7 @@ def rocblas_cdotu_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
@@ -16776,14 +16783,14 @@ def rocblas_hgemm_strided_batched(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float16, _],
-    _a: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float16, _],
+    _a: UnsafePointer[mut=False, Float16, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[Float16, _],
+    _b: UnsafePointer[mut=False, Float16, _],
     ldb: Int32,
     stride_b: Int64,
-    beta: UnsafePointer[Float16, _],
+    beta: UnsafePointer[mut=False, Float16, _],
     _c: UnsafePointer[Float16, _],
     ldc: Int32,
     stride_c: Int64,
@@ -16810,7 +16817,7 @@ def rocblas_hgemm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -16939,7 +16946,7 @@ def rocblas_dot_strided_batched_ex(
             type_of(result),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -16963,14 +16970,14 @@ def rocblas_ssbmv_strided_batched(
     uplo: Fill,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int32,
     stridey: Int64,
@@ -17059,7 +17066,7 @@ def rocblas_ssbmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -17086,12 +17093,12 @@ def rocblas_zsymm(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -17111,7 +17118,7 @@ def rocblas_zsymm(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -17121,7 +17128,7 @@ def rocblas_dtpmv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     stride__a: Int64,
     x: UnsafePointer[Float64, _],
     incx: Int32,
@@ -17142,7 +17149,7 @@ def rocblas_dtpmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -17161,7 +17168,7 @@ def rocblas_dtpmv_strided_batched(
 def rocblas_zdscal_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
@@ -17175,7 +17182,7 @@ def rocblas_zdscal_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
@@ -17196,7 +17203,7 @@ def rocblas_izamax_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -17205,12 +17212,12 @@ def rocblas_tssgemv_batched_64(
     trans: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -17231,7 +17238,7 @@ def rocblas_tssgemv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -17241,8 +17248,8 @@ def rocblas_cgerc_strided_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat32, _],
@@ -17270,7 +17277,7 @@ def rocblas_cgerc_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         m,
@@ -17294,14 +17301,14 @@ def rocblas_dgemv_strided_batched_64(
     trans_a: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int64,
     stridey: Int64,
@@ -17326,7 +17333,7 @@ def rocblas_dgemv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -17354,12 +17361,12 @@ def rocblas_dgemm(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
-    _b: UnsafePointer[Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -17380,7 +17387,7 @@ def rocblas_dgemm(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -17402,7 +17409,7 @@ def rocblas_dgemm(
 def rocblas_zscal_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int64,
 ) raises -> Status:
@@ -17414,7 +17421,7 @@ def rocblas_zscal_64(
             type_of(alpha),
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -17422,8 +17429,8 @@ def rocblas_csyr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     _a: UnsafePointer[ComplexFloat32, _],
     lda: Int32,
@@ -17439,7 +17446,7 @@ def rocblas_csyr(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -17451,8 +17458,8 @@ def rocblas_ztrsm_strided_batched_64(
     diag: Diagonal,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     stride_a: Int64,
     _b: UnsafePointer[ComplexFloat64, _],
@@ -17478,7 +17485,7 @@ def rocblas_ztrsm_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -17503,12 +17510,12 @@ def rocblas_dsbmv(
     uplo: Fill,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int32,
 ) raises -> Status:
@@ -17527,7 +17534,7 @@ def rocblas_dsbmv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -17535,8 +17542,8 @@ def rocblas_dger_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     y: UnsafePointer[Float64, _],
     incy: Int64,
@@ -17556,7 +17563,7 @@ def rocblas_dger_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -17566,12 +17573,12 @@ def rocblas_ssymm_batched(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -17671,7 +17678,7 @@ def rocblas_ssymm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -17693,9 +17700,9 @@ def rocblas_ssymm_batched(
 def rocblas_cdotc_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int64,
     result: UnsafePointer[ComplexFloat32, _],
 ) raises -> Status:
@@ -17709,7 +17716,7 @@ def rocblas_cdotc_64(
             type_of(y),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -17740,7 +17747,7 @@ def rocblas_stbsv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
@@ -17760,7 +17767,7 @@ def rocblas_start_device_memory_size_query(handle: Handle) raises -> Status:
         If the dynamic library cannot be found.
     """
     return _get_dylib_function[
-        "rocblas_start_device_memory_size_query", def(Handle) -> Status
+        "rocblas_start_device_memory_size_query", def(Handle) thin -> Status
     ]()(handle)
 
 
@@ -17768,10 +17775,10 @@ def rocblas_zher2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int32,
     _a: UnsafePointer[ComplexFloat64, _],
     lda: Int32,
@@ -17789,7 +17796,7 @@ def rocblas_zher2(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -17810,7 +17817,7 @@ def rocblas_dswap_64(
             Int64,
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -17820,10 +17827,10 @@ def rocblas_dsyrk(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -17841,7 +17848,7 @@ def rocblas_dsyrk(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
@@ -17854,8 +17861,8 @@ def rocblas_csrot_strided_batched_64(
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, Float32, _],
     batch_count: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -17872,7 +17879,7 @@ def rocblas_csrot_strided_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
@@ -17893,15 +17900,15 @@ def rocblas_sswap_64(
             Int64,
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
 def rocblas_saxpy_strided_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[Float32, _],
@@ -17922,7 +17929,7 @@ def rocblas_saxpy_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -17975,7 +17982,7 @@ def rocblas_sswap_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
@@ -17986,7 +17993,7 @@ def rocblas_ctbsv(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int32,
@@ -18004,7 +18011,7 @@ def rocblas_ctbsv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
@@ -18024,7 +18031,7 @@ def rocblas_stop_device_memory_size_query(
     """
     return _get_dylib_function[
         "rocblas_stop_device_memory_size_query",
-        def(Handle, type_of(size)) -> Status,
+        def(Handle, type_of(size)) thin -> Status,
     ]()(handle, size)
 
 
@@ -18032,7 +18039,7 @@ def rocblas_zgerc_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -18055,14 +18062,14 @@ def rocblas_zgerc_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
 def rocblas_daxpy_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -18080,7 +18087,7 @@ def rocblas_daxpy_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
@@ -18101,7 +18108,7 @@ def rocblas_dswap(
             Int32,
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -18111,12 +18118,12 @@ def rocblas_chemm_batched(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -18217,7 +18224,7 @@ def rocblas_chemm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -18242,7 +18249,7 @@ def rocblas_stpmv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     stride__a: Int64,
     x: UnsafePointer[Float32, _],
     incx: Int64,
@@ -18263,7 +18270,7 @@ def rocblas_stpmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -18284,7 +18291,7 @@ def rocblas_ztrtri_strided_batched(
     uplo: Fill,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride_a: Int64,
     inv_a: UnsafePointer[ComplexFloat64, _],
@@ -18306,7 +18313,7 @@ def rocblas_ztrtri_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -18326,7 +18333,7 @@ def rocblas_dspr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int64,
     _ap: OpaquePointer[_],
@@ -18343,20 +18350,20 @@ def rocblas_dspr_batched_64(
             Int64,
             type_of(_ap),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
 def rocblas_idamin_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     result: UnsafePointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_64",
-        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -18381,7 +18388,7 @@ def rocblas_scal_ex_64(
             DataType,
             Int64,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, alpha_type, x, x_type, incx, execution_type)
 
 
@@ -18392,7 +18399,7 @@ def rocblas_ztbsv_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int64,
@@ -18410,7 +18417,7 @@ def rocblas_ztbsv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
@@ -18517,7 +18524,7 @@ def rocblas_axpy_strided_batched_ex(
             Int64,
             Int32,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -18540,8 +18547,8 @@ def rocblas_cspr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     _ap: UnsafePointer[ComplexFloat32, _],
 ) raises -> Status:
@@ -18555,7 +18562,7 @@ def rocblas_cspr(
             type_of(x),
             Int32,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -18565,7 +18572,7 @@ def rocblas_ztrsv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int64,
@@ -18582,7 +18589,7 @@ def rocblas_ztrsv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
@@ -18590,13 +18597,13 @@ def rocblas_chpmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _ap: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat32, _],
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
@@ -18619,7 +18626,7 @@ def rocblas_chpmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -18642,11 +18649,11 @@ def rocblas_chpr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
     _ap: UnsafePointer[ComplexFloat32, _],
@@ -18747,7 +18754,7 @@ def rocblas_chpr2_strided_batched(
             type_of(_ap),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -18770,12 +18777,12 @@ def rocblas_dsbmv_64(
     uplo: Fill,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int64,
 ) raises -> Status:
@@ -18794,7 +18801,7 @@ def rocblas_dsbmv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -18815,14 +18822,14 @@ def rocblas_dasum_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
 def rocblas_zscal(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int32,
 ) raises -> Status:
@@ -18834,7 +18841,7 @@ def rocblas_zscal(
             type_of(alpha),
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -18844,7 +18851,7 @@ def rocblas_ztpsv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat64, _],
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int32,
 ) raises -> Status:
@@ -18859,7 +18866,7 @@ def rocblas_ztpsv(
             type_of(_ap),
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
@@ -18867,7 +18874,7 @@ def rocblas_chpr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -18957,7 +18964,7 @@ def rocblas_chpr2_batched(
             Int32,
             type_of(_ap),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
@@ -18965,7 +18972,7 @@ def rocblas_csyr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -18988,7 +18995,7 @@ def rocblas_csyr2_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -18998,7 +19005,7 @@ def rocblas_ctrmv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int64,
@@ -19015,7 +19022,7 @@ def rocblas_ctrmv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
@@ -19024,14 +19031,14 @@ def rocblas_zhbmv_strided_batched_64(
     uplo: Fill,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
@@ -19056,7 +19063,7 @@ def rocblas_zhbmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -19083,12 +19090,12 @@ def rocblas_csyr2k(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -19108,14 +19115,14 @@ def rocblas_csyr2k(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
 def rocblas_izamin_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -19131,7 +19138,7 @@ def rocblas_izamin_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
@@ -19141,7 +19148,7 @@ def rocblas_ctrsv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -19164,7 +19171,7 @@ def rocblas_ctrsv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -19185,7 +19192,7 @@ def rocblas_ssyr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int64,
     _a: OpaquePointer[_],
@@ -19204,7 +19211,7 @@ def rocblas_ssyr_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
@@ -19212,10 +19219,10 @@ def rocblas_zsyr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int32,
     _a: UnsafePointer[ComplexFloat64, _],
     lda: Int32,
@@ -19233,7 +19240,7 @@ def rocblas_zsyr2(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -19244,7 +19251,7 @@ def rocblas_dtbmv_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     x: UnsafePointer[Float64, _],
     incx: Int64,
@@ -19262,7 +19269,7 @@ def rocblas_dtbmv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -19273,12 +19280,12 @@ def rocblas_sgbmv(
     n: Int32,
     kl: Int32,
     ku: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int32,
 ) raises -> Status:
@@ -19367,7 +19374,7 @@ def rocblas_sgbmv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -19376,7 +19383,7 @@ def rocblas_ctrtri(
     uplo: Fill,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     inv_a: UnsafePointer[ComplexFloat32, _],
     ldinv_a: Int32,
@@ -19392,7 +19399,7 @@ def rocblas_ctrtri(
             Int32,
             type_of(inv_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a)
 
 
@@ -19413,7 +19420,7 @@ def rocblas_scnrm2_batched(
             Int32,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -19424,12 +19431,12 @@ def rocblas_sgbmv_batched_64(
     n: Int64,
     kl: Int64,
     ku: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -19452,7 +19459,7 @@ def rocblas_sgbmv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -19499,14 +19506,14 @@ def rocblas_stbmv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
 def rocblas_cscal_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int64,
 ) raises -> Status:
@@ -19518,7 +19525,7 @@ def rocblas_cscal_64(
             type_of(alpha),
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -19545,7 +19552,7 @@ def rocblas_cswap_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -19553,11 +19560,11 @@ def rocblas_cher2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
     _a: UnsafePointer[ComplexFloat32, _],
@@ -19582,7 +19589,7 @@ def rocblas_cher2_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -19690,7 +19697,7 @@ def rocblas_axpy_batched_ex(
             Int32,
             Int32,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -19713,7 +19720,7 @@ def rocblas_ztrmv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -19736,7 +19743,7 @@ def rocblas_ztrmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -19759,7 +19766,9 @@ def rocblas_ztpmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[UnsafePointer[ComplexFloat64, MutAnyOrigin], _],
+    _a: UnsafePointer[
+        mut=False, UnsafePointer[ComplexFloat64, MutAnyOrigin], _
+    ],
     x: UnsafePointer[UnsafePointer[ComplexFloat64, MutAnyOrigin], _],
     incx: Int32,
     batch_count: Int32,
@@ -19776,7 +19785,7 @@ def rocblas_ztpmv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
@@ -19784,11 +19793,11 @@ def rocblas_dspmv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -19807,7 +19816,7 @@ def rocblas_dspmv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy, batch_count)
 
 
@@ -19819,10 +19828,10 @@ def rocblas_strmm(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
-    _b: UnsafePointer[Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
@@ -19968,7 +19977,7 @@ def rocblas_strmm(
             Int32,
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -20004,7 +20013,7 @@ def rocblas_isamin_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -20013,12 +20022,12 @@ def rocblas_hshgemv_batched(
     trans: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -20039,7 +20048,7 @@ def rocblas_hshgemv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -20048,7 +20057,7 @@ def rocblas_hshgemv_batched(
 def rocblas_scasum_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     result: UnsafePointer[Float32, _],
 ) raises -> Status:
@@ -20060,7 +20069,7 @@ def rocblas_scasum_64(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -20070,10 +20079,10 @@ def rocblas_dsyrk_batched(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -20093,7 +20102,7 @@ def rocblas_dsyrk_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc, batch_count)
 
 
@@ -20103,11 +20112,11 @@ def rocblas_ssyrk_strided_batched(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride__a: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
     stride__c: Int64,
@@ -20213,7 +20222,7 @@ def rocblas_ssyrk_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -20235,7 +20244,7 @@ def rocblas_ssyrk_strided_batched(
 def rocblas_dscal_strided_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: UnsafePointer[Float64, _],
     incx: Int64,
     stride_x: Int64,
@@ -20251,7 +20260,7 @@ def rocblas_dscal_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
@@ -20259,14 +20268,14 @@ def rocblas_dsymv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int64,
     stridey: Int64,
@@ -20290,7 +20299,7 @@ def rocblas_dsymv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -20315,12 +20324,12 @@ def rocblas_dgemv_batched(
     trans: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -20341,7 +20350,7 @@ def rocblas_dgemv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -20372,7 +20381,7 @@ def rocblas_crotg_strided_batched(
             type_of(s),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
@@ -20541,7 +20550,7 @@ def rocblas_trsm_batched_ex(
             type_of(inv_a),
             Int32,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -20585,7 +20594,7 @@ def rocblas_dswap_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -20596,8 +20605,8 @@ def rocblas_zrot_64(
     incx: Int64,
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[ComplexFloat64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_64",
@@ -20610,14 +20619,14 @@ def rocblas_zrot_64(
             Int64,
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
 def rocblas_scnrm2(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     result: UnsafePointer[Float32, _],
 ) raises -> Status:
@@ -20629,7 +20638,7 @@ def rocblas_scnrm2(
             type_of(x),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -20654,14 +20663,14 @@ def rocblas_zdotc_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
 def rocblas_csscal_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int64,
 ) raises -> Status:
@@ -20673,7 +20682,7 @@ def rocblas_csscal_64(
             type_of(alpha),
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -20721,7 +20730,7 @@ def rocblas_sswap(
             Int32,
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -20731,7 +20740,7 @@ def rocblas_dtpsv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _ap: UnsafePointer[Float64, _],
+    _ap: UnsafePointer[mut=False, Float64, _],
     x: UnsafePointer[Float64, _],
     incx: Int64,
 ) raises -> Status:
@@ -20746,14 +20755,14 @@ def rocblas_dtpsv_64(
             type_of(_ap),
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
 def rocblas_icamax_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     result: UnsafePointer[Int64, _],
 ) raises -> Status:
@@ -20765,7 +20774,7 @@ def rocblas_icamax_64(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -20774,12 +20783,12 @@ def rocblas_sgemv_batched_64(
     trans: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -20800,7 +20809,7 @@ def rocblas_sgemv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -20809,10 +20818,10 @@ def rocblas_sgemv_batched_64(
 def rocblas_sdot_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float32, _],
+    y: UnsafePointer[mut=False, Float32, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -20876,7 +20885,7 @@ def rocblas_sdot_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
@@ -20887,12 +20896,12 @@ def rocblas_dgbmv(
     n: Int32,
     kl: Int32,
     ku: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int32,
 ) raises -> Status:
@@ -20913,7 +20922,7 @@ def rocblas_dgbmv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -20923,7 +20932,7 @@ def rocblas_stpmv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     stride__a: Int64,
     x: UnsafePointer[Float32, _],
     incx: Int32,
@@ -21005,7 +21014,7 @@ def rocblas_stpmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -21025,14 +21034,14 @@ def rocblas_dsymv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int32,
     stridey: Int64,
@@ -21056,7 +21065,7 @@ def rocblas_dsymv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -21105,7 +21114,7 @@ def rocblas_dotc_batched_ex_64(
             type_of(result),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -21127,9 +21136,9 @@ def rocblas_cdgmm(
     side: Side,
     m: Int32,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
@@ -21147,14 +21156,14 @@ def rocblas_cdgmm(
             Int32,
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc)
 
 
 def rocblas_haxpy_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float16, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -21172,7 +21181,7 @@ def rocblas_haxpy_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
@@ -21183,14 +21192,14 @@ def rocblas_dgbmv_strided_batched_64(
     n: Int64,
     kl: Int64,
     ku: Int64,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stride_x: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int64,
     stride_y: Int64,
@@ -21217,7 +21226,7 @@ def rocblas_dgbmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -21244,7 +21253,7 @@ def rocblas_zsyr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int64,
     _a: OpaquePointer[_],
@@ -21263,16 +21272,16 @@ def rocblas_zsyr_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
 def rocblas_sdot_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: UnsafePointer[mut=False, Float32, _],
     incy: Int64,
     result: UnsafePointer[Float32, _],
 ) raises -> Status:
@@ -21286,7 +21295,7 @@ def rocblas_sdot_64(
             type_of(y),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -21390,7 +21399,7 @@ def rocblas_rot_batched_ex(
             DataType,
             Int32,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -21413,14 +21422,14 @@ def rocblas_tstgemv_strided_batched_64(
     trans_a: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[BFloat16, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, BFloat16, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[BFloat16, _],
+    x: UnsafePointer[mut=False, BFloat16, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[BFloat16, _],
     incy: Int64,
     stridey: Int64,
@@ -21445,7 +21454,7 @@ def rocblas_tstgemv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -21475,7 +21484,7 @@ def rocblas_srotm_strided_batched_64(
     y: UnsafePointer[Float32, _],
     incy: Int64,
     stride_y: Int64,
-    param: UnsafePointer[Float32, _],
+    param: UnsafePointer[mut=False, Float32, _],
     stride_param: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -21493,7 +21502,7 @@ def rocblas_srotm_strided_batched_64(
             type_of(param),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -21528,7 +21537,7 @@ def rocblas_zswap_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
@@ -21538,12 +21547,12 @@ def rocblas_dsyrkx(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
-    _b: UnsafePointer[Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -21563,7 +21572,7 @@ def rocblas_dsyrkx(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -21590,7 +21599,7 @@ def rocblas_zswap_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -21627,7 +21636,7 @@ def rocblas_axpy_strided_batched_ex_64(
             Int64,
             Int64,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -21650,8 +21659,8 @@ def rocblas_cgeru_strided_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat32, _],
@@ -21679,7 +21688,7 @@ def rocblas_cgeru_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         m,
@@ -21703,9 +21712,9 @@ def rocblas_zdgmm(
     side: Side,
     m: Int32,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
@@ -21723,7 +21732,7 @@ def rocblas_zdgmm(
             Int32,
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, m, n, _a, lda, x, incx, _c, ldc)
 
 
@@ -21733,12 +21742,12 @@ def rocblas_ssyrkx_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -21848,7 +21857,7 @@ def rocblas_ssyrkx_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -21871,12 +21880,12 @@ def rocblas_chemv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
@@ -21947,7 +21956,7 @@ def rocblas_chemv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -21957,7 +21966,7 @@ def rocblas_ztrsv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -21980,7 +21989,7 @@ def rocblas_ztrsv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -22003,12 +22012,12 @@ def rocblas_ssyr2k_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -22110,7 +22119,7 @@ def rocblas_ssyr2k_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -22144,14 +22153,14 @@ def rocblas_srotg_64(
             type_of(b),
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s)
 
 
 def rocblas_snrm2_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -22167,7 +22176,7 @@ def rocblas_snrm2_strided_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -22217,7 +22226,7 @@ def rocblas_snrm2_batched(
             Int32,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -22225,8 +22234,8 @@ def rocblas_zhpr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
     _ap: UnsafePointer[ComplexFloat64, _],
@@ -22246,15 +22255,15 @@ def rocblas_zhpr_strided_batched(
             type_of(_ap),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
 def rocblas_caxpy_strided_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat32, _],
@@ -22275,7 +22284,7 @@ def rocblas_caxpy_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -22286,7 +22295,7 @@ def rocblas_srotm(
     incx: Int32,
     y: UnsafePointer[Float32, _],
     incy: Int32,
-    param: UnsafePointer[Float32, _],
+    param: UnsafePointer[mut=False, Float32, _],
 ) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
@@ -22340,7 +22349,7 @@ def rocblas_srotm(
             type_of(y),
             Int32,
             type_of(param),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, param)
 
 
@@ -22351,12 +22360,12 @@ def rocblas_dgbmv_batched_64(
     n: Int64,
     kl: Int64,
     ku: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -22379,7 +22388,7 @@ def rocblas_dgbmv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -22402,10 +22411,10 @@ def rocblas_dgbmv_batched_64(
 def rocblas_ddot_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float64, _],
+    y: UnsafePointer[mut=False, Float64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -22424,7 +22433,7 @@ def rocblas_ddot_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
@@ -22432,12 +22441,12 @@ def rocblas_zhemv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -22457,7 +22466,7 @@ def rocblas_zhemv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -22465,8 +22474,8 @@ def rocblas_dger(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     y: UnsafePointer[Float64, _],
     incy: Int32,
@@ -22486,7 +22495,7 @@ def rocblas_dger(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -22494,7 +22503,7 @@ def rocblas_chpr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -22515,14 +22524,14 @@ def rocblas_chpr2_batched_64(
             Int64,
             type_of(_ap),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
 def rocblas_zaxpy_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -22540,7 +22549,7 @@ def rocblas_zaxpy_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
@@ -22550,7 +22559,9 @@ def rocblas_ztrmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[UnsafePointer[ComplexFloat64, MutAnyOrigin], _],
+    _a: UnsafePointer[
+        mut=False, UnsafePointer[ComplexFloat64, MutAnyOrigin], _
+    ],
     lda: Int64,
     x: UnsafePointer[UnsafePointer[ComplexFloat64, MutAnyOrigin], _],
     incx: Int64,
@@ -22569,20 +22580,20 @@ def rocblas_ztrmv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
 def rocblas_sscal_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: UnsafePointer[Float32, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sscal_64",
-        def(Handle, Int64, type_of(alpha), type_of(x), Int64) -> Status,
+        def(Handle, Int64, type_of(alpha), type_of(x), Int64) thin -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -22592,10 +22603,10 @@ def rocblas_zgeam_batched(
     trans_b: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _b: OpaquePointer[_],
     ldb: Int32,
     _c: OpaquePointer[_],
@@ -22619,7 +22630,7 @@ def rocblas_zgeam_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -22663,7 +22674,7 @@ def rocblas_ctrsv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
@@ -22673,10 +22684,10 @@ def rocblas_csyrk_batched(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -22696,7 +22707,7 @@ def rocblas_csyrk_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc, batch_count)
 
 
@@ -22704,7 +22715,7 @@ def rocblas_zhpr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -22725,14 +22736,14 @@ def rocblas_zhpr2_batched(
             Int32,
             type_of(_ap),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
 def rocblas_saxpy_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -22750,7 +22761,7 @@ def rocblas_saxpy_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
@@ -22758,12 +22769,12 @@ def rocblas_ssymv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -22832,7 +22843,7 @@ def rocblas_ssymv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -22843,7 +22854,7 @@ def rocblas_dtbmv_strided_batched_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[Float64, _],
@@ -22867,7 +22878,7 @@ def rocblas_dtbmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -22890,12 +22901,12 @@ def rocblas_dgemv(
     trans: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int32,
 ) raises -> Status:
@@ -22914,7 +22925,7 @@ def rocblas_dgemv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -22922,11 +22933,11 @@ def rocblas_chpmv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _ap: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
@@ -23010,7 +23021,7 @@ def rocblas_chpmv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
@@ -23020,11 +23031,11 @@ def rocblas_dgeam(
     trans_b: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
-    beta: UnsafePointer[Float64, _],
-    _b: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
@@ -23045,7 +23056,7 @@ def rocblas_dgeam(
             Int32,
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans_a, trans_b, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
@@ -23053,12 +23064,12 @@ def rocblas_zhemv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
@@ -23076,7 +23087,7 @@ def rocblas_zhemv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -23084,11 +23095,11 @@ def rocblas_sspr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[Float32, _],
+    y: UnsafePointer[mut=False, Float32, _],
     incy: Int64,
     stride_y: Int64,
     _ap: UnsafePointer[Float32, _],
@@ -23111,7 +23122,7 @@ def rocblas_sspr2_strided_batched_64(
             type_of(_ap),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -23134,7 +23145,7 @@ def rocblas_srotmg_64(
     d1: UnsafePointer[Float32, _],
     d2: UnsafePointer[Float32, _],
     x1: UnsafePointer[Float32, _],
-    y1: UnsafePointer[Float32, _],
+    y1: UnsafePointer[mut=False, Float32, _],
     param: UnsafePointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
@@ -23146,7 +23157,7 @@ def rocblas_srotmg_64(
             type_of(x1),
             type_of(y1),
             type_of(param),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, d1, d2, x1, y1, param)
 
 
@@ -23154,11 +23165,11 @@ def rocblas_zsyr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int64,
     stridey: Int64,
     _a: UnsafePointer[ComplexFloat64, _],
@@ -23183,7 +23194,7 @@ def rocblas_zsyr2_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -23206,8 +23217,8 @@ def rocblas_zgerc_strided_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat64, _],
@@ -23235,7 +23246,7 @@ def rocblas_zgerc_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         m,
@@ -23257,7 +23268,7 @@ def rocblas_zgerc_strided_batched(
 def rocblas_izamin_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -23273,16 +23284,16 @@ def rocblas_izamin_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
 def rocblas_bfdot(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[BFloat16, _],
+    x: UnsafePointer[mut=False, BFloat16, _],
     incx: Int32,
-    y: UnsafePointer[BFloat16, _],
+    y: UnsafePointer[mut=False, BFloat16, _],
     incy: Int32,
     result: UnsafePointer[BFloat16, _],
 ) raises -> Status:
@@ -23296,7 +23307,7 @@ def rocblas_bfdot(
             type_of(y),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -23317,7 +23328,7 @@ def rocblas_drotg_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s, batch_count)
 
 
@@ -23327,14 +23338,14 @@ def rocblas_ssyrkx_strided_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
     stride__c: Int64,
@@ -23460,7 +23471,7 @@ def rocblas_ssyrkx_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -23488,7 +23499,7 @@ def rocblas_stpmv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     x: UnsafePointer[Float32, _],
     incx: Int32,
 ) raises -> Status:
@@ -23566,7 +23577,7 @@ def rocblas_stpmv(
             type_of(_a),
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
@@ -23574,8 +23585,8 @@ def rocblas_cgeru(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
@@ -23595,7 +23606,7 @@ def rocblas_cgeru(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -23607,8 +23618,8 @@ def rocblas_dtrsm_strided_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride_a: Int64,
     _b: UnsafePointer[Float64, _],
@@ -23634,7 +23645,7 @@ def rocblas_dtrsm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -23675,7 +23686,7 @@ def rocblas_ddot_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
@@ -23686,8 +23697,8 @@ def rocblas_zdrot_64(
     incx: Int64,
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_64",
@@ -23700,7 +23711,7 @@ def rocblas_zdrot_64(
             Int64,
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -23710,7 +23721,7 @@ def rocblas_ztpsv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat64, _],
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int32,
@@ -23731,7 +23742,7 @@ def rocblas_ztpsv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -23751,8 +23762,8 @@ def rocblas_cspr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     _ap: UnsafePointer[ComplexFloat32, _],
 ) raises -> Status:
@@ -23766,7 +23777,7 @@ def rocblas_cspr_64(
             type_of(x),
             Int64,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -23778,8 +23789,8 @@ def rocblas_dtrsm_64(
     diag: Diagonal,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     _b: UnsafePointer[Float64, _],
     ldb: Int64,
@@ -23799,7 +23810,7 @@ def rocblas_dtrsm_64(
             Int64,
             type_of(_b),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -23808,14 +23819,14 @@ def rocblas_dgemv_strided_batched(
     trans_a: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int32,
     stridey: Int64,
@@ -23840,7 +23851,7 @@ def rocblas_dgemv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -23864,7 +23875,7 @@ def rocblas_dgemv_strided_batched(
 def rocblas_izamax_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     result: UnsafePointer[Int64, _],
 ) raises -> Status:
@@ -23876,7 +23887,7 @@ def rocblas_izamax_64(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -23884,11 +23895,11 @@ def rocblas_sspr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[Float32, _],
+    y: UnsafePointer[mut=False, Float32, _],
     incy: Int32,
     stride_y: Int64,
     _ap: UnsafePointer[Float32, _],
@@ -23989,7 +24000,7 @@ def rocblas_sspr2_strided_batched(
             type_of(_ap),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -24014,8 +24025,8 @@ def rocblas_zdrot(
     incx: Int32,
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot",
@@ -24028,14 +24039,14 @@ def rocblas_zdrot(
             Int32,
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
 def rocblas_zdscal(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int32,
 ) raises -> Status:
@@ -24047,7 +24058,7 @@ def rocblas_zdscal(
             type_of(alpha),
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -24058,12 +24069,12 @@ def rocblas_sgemm_batched(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -24148,7 +24159,7 @@ def rocblas_sgemm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -24276,7 +24287,7 @@ def rocblas_stbmv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
@@ -24284,8 +24295,8 @@ def rocblas_csyr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
     _a: UnsafePointer[ComplexFloat32, _],
@@ -24307,7 +24318,7 @@ def rocblas_csyr_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, uplo, n, alpha, x, incx, stridex, _a, lda, stride_a, batch_count
     )
@@ -24319,14 +24330,14 @@ def rocblas_dsyr2k_strided_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
     stride__c: Int64,
@@ -24352,7 +24363,7 @@ def rocblas_dsyr2k_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -24380,7 +24391,7 @@ def rocblas_dtpmv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     x: UnsafePointer[Float64, _],
     incx: Int64,
 ) raises -> Status:
@@ -24395,7 +24406,7 @@ def rocblas_dtpmv_64(
             type_of(_a),
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
@@ -24406,14 +24417,14 @@ def rocblas_dgemmt_strided_batched(
     trans_b: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
     stride_b: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
     stride_c: Int64,
@@ -24440,7 +24451,7 @@ def rocblas_dgemmt_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -24469,7 +24480,7 @@ def rocblas_dtpmv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     stride__a: Int64,
     x: UnsafePointer[Float64, _],
     incx: Int64,
@@ -24490,7 +24501,7 @@ def rocblas_dtpmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -24510,13 +24521,13 @@ def rocblas_sspmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     stride_a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int64,
     stridey: Int64,
@@ -24539,7 +24550,7 @@ def rocblas_sspmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -24563,12 +24574,12 @@ def rocblas_dgemv_64(
     trans: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int64,
 ) raises -> Status:
@@ -24587,7 +24598,7 @@ def rocblas_dgemv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -24595,11 +24606,11 @@ def rocblas_zher2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
     _a: UnsafePointer[ComplexFloat64, _],
@@ -24624,7 +24635,7 @@ def rocblas_zher2_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -24649,7 +24660,7 @@ def rocblas_strsv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     x: UnsafePointer[Float32, _],
     incx: Int32,
@@ -24720,17 +24731,17 @@ def rocblas_strsv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
 def rocblas_hdot_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float16, _],
+    x: UnsafePointer[mut=False, Float16, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float16, _],
+    y: UnsafePointer[mut=False, Float16, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -24749,7 +24760,7 @@ def rocblas_hdot_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
@@ -24759,7 +24770,7 @@ def rocblas_ctpsv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat32, _],
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int64,
@@ -24780,7 +24791,7 @@ def rocblas_ctpsv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -24799,8 +24810,8 @@ def rocblas_ctpsv_strided_batched_64(
 def rocblas_daxpy_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     y: UnsafePointer[Float64, _],
     incy: Int64,
@@ -24815,14 +24826,14 @@ def rocblas_daxpy_64(
             Int64,
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
 def rocblas_dcopy_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     y: UnsafePointer[Float64, _],
     incy: Int64,
@@ -24836,7 +24847,7 @@ def rocblas_dcopy_64(
             Int64,
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -24859,7 +24870,7 @@ def rocblas_ccopy_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
@@ -24888,7 +24899,7 @@ def rocblas_zrotg_strided_batched_64(
             type_of(s),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
@@ -24909,7 +24920,7 @@ def rocblas_dznrm2_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -24930,7 +24941,7 @@ def rocblas_dzasum_batched(
             Int32,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -24957,7 +24968,7 @@ def rocblas_ztpsv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
@@ -24965,11 +24976,11 @@ def rocblas_sspmv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int64,
 ) raises -> Status:
@@ -24986,7 +24997,7 @@ def rocblas_sspmv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy)
 
 
@@ -24997,14 +25008,14 @@ def rocblas_dgemm_kernel_name(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
     stride_b: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
     stride_c: Int64,
@@ -25031,7 +25042,7 @@ def rocblas_dgemm_kernel_name(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -25059,12 +25070,12 @@ def rocblas_tssgemv_batched(
     trans: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -25085,7 +25096,7 @@ def rocblas_tssgemv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -25201,7 +25212,7 @@ def rocblas_rot_strided_batched_ex(
             DataType,
             Int32,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -25227,12 +25238,12 @@ def rocblas_csyrkx_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -25254,7 +25265,7 @@ def rocblas_csyrkx_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -25279,12 +25290,12 @@ def rocblas_zhemm(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -25304,7 +25315,7 @@ def rocblas_zhemm(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -25312,7 +25323,7 @@ def rocblas_csyr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -25335,7 +25346,7 @@ def rocblas_csyr2_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -25345,14 +25356,14 @@ def rocblas_zsymm_strided_batched(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
@@ -25378,7 +25389,7 @@ def rocblas_zsymm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -25407,7 +25418,7 @@ def rocblas_stbsv_strided_batched(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[Float32, _],
@@ -25502,7 +25513,7 @@ def rocblas_stbsv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -25597,14 +25608,14 @@ def rocblas_stpsv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
 def rocblas_dasum_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -25620,7 +25631,7 @@ def rocblas_dasum_strided_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -25631,14 +25642,14 @@ def rocblas_sgbmv_strided_batched(
     n: Int32,
     kl: Int32,
     ku: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stride_x: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int32,
     stride_y: Int64,
@@ -25747,7 +25758,7 @@ def rocblas_sgbmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -25791,7 +25802,7 @@ def rocblas_cdotc_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
@@ -25799,10 +25810,10 @@ def rocblas_chpr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int64,
     _ap: UnsafePointer[ComplexFloat32, _],
 ) raises -> Status:
@@ -25818,7 +25829,7 @@ def rocblas_chpr2_64(
             type_of(y),
             Int64,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -25829,8 +25840,8 @@ def rocblas_drot_batched_64(
     incx: Int64,
     y: OpaquePointer[_],
     incy: Int64,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, Float64, _],
     batch_count: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -25845,7 +25856,7 @@ def rocblas_drot_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
@@ -25855,7 +25866,7 @@ def rocblas_dtpsv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _ap: UnsafePointer[Float64, _],
+    _ap: UnsafePointer[mut=False, Float64, _],
     stride__a: Int64,
     x: UnsafePointer[Float64, _],
     incx: Int64,
@@ -25876,7 +25887,7 @@ def rocblas_dtpsv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -25897,7 +25908,7 @@ def rocblas_strtri(
     uplo: Fill,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     inv_a: UnsafePointer[Float32, _],
     ldinv_a: Int32,
@@ -25955,7 +25966,7 @@ def rocblas_strtri(
             Int32,
             type_of(inv_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a)
 
 
@@ -26055,7 +26066,7 @@ def rocblas_dot_batched_ex(
             type_of(result),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -26086,33 +26097,33 @@ def rocblas_get_version_string_size(
     ****************************************************************************.
     """
     return _get_dylib_function[
-        "rocblas_get_version_string_size", def(type_of(len)) -> Status
+        "rocblas_get_version_string_size", def(type_of(len)) thin -> Status
     ]()(len)
 
 
 def rocblas_dnrm2(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     result: UnsafePointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2",
-        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
 def rocblas_dscal_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: UnsafePointer[Float64, _],
     incx: Int64,
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_64",
-        def(Handle, Int64, type_of(alpha), type_of(x), Int64) -> Status,
+        def(Handle, Int64, type_of(alpha), type_of(x), Int64) thin -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -26139,7 +26150,7 @@ def rocblas_ctpsv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
@@ -26160,7 +26171,7 @@ def rocblas_isamax_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -26168,10 +26179,10 @@ def rocblas_csyr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int64,
     _a: UnsafePointer[ComplexFloat32, _],
     lda: Int64,
@@ -26189,7 +26200,7 @@ def rocblas_csyr2_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -26200,8 +26211,8 @@ def rocblas_zdrot_batched_64(
     incx: Int64,
     y: OpaquePointer[_],
     incy: Int64,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, Float64, _],
     batch_count: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -26216,7 +26227,7 @@ def rocblas_zdrot_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
@@ -26247,7 +26258,7 @@ def rocblas_dot_ex_64(
             type_of(result),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -26267,8 +26278,8 @@ def rocblas_cgerc_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
@@ -26288,7 +26299,7 @@ def rocblas_cgerc_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -26297,14 +26308,14 @@ def rocblas_tstgemv_strided_batched(
     trans_a: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[BFloat16, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, BFloat16, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[BFloat16, _],
+    x: UnsafePointer[mut=False, BFloat16, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[BFloat16, _],
     incy: Int32,
     stridey: Int64,
@@ -26329,7 +26340,7 @@ def rocblas_tstgemv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -26354,13 +26365,13 @@ def rocblas_dspmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     stride_a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int64,
     stridey: Int64,
@@ -26383,7 +26394,7 @@ def rocblas_dspmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -26411,7 +26422,7 @@ def rocblas_drotm_strided_batched_64(
     y: UnsafePointer[Float64, _],
     incy: Int64,
     stride_y: Int64,
-    param: UnsafePointer[Float64, _],
+    param: UnsafePointer[mut=False, Float64, _],
     stride_param: Int64,
     batch_count: Int64,
 ) raises -> Status:
@@ -26429,7 +26440,7 @@ def rocblas_drotm_strided_batched_64(
             type_of(param),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -26451,7 +26462,7 @@ def rocblas_ztrsv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -26474,7 +26485,7 @@ def rocblas_ztrsv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -26495,14 +26506,14 @@ def rocblas_ssymv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int32,
     stridey: Int64,
@@ -26588,7 +26599,7 @@ def rocblas_ssymv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -26635,7 +26646,7 @@ def rocblas_axpy_ex_64(
             DataType,
             Int64,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -26656,7 +26667,7 @@ def rocblas_drotmg_64(
     d1: UnsafePointer[Float64, _],
     d2: UnsafePointer[Float64, _],
     x1: UnsafePointer[Float64, _],
-    y1: UnsafePointer[Float64, _],
+    y1: UnsafePointer[mut=False, Float64, _],
     param: UnsafePointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
@@ -26668,7 +26679,7 @@ def rocblas_drotmg_64(
             type_of(x1),
             type_of(y1),
             type_of(param),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, d1, d2, x1, y1, param)
 
 
@@ -26676,8 +26687,8 @@ def rocblas_csyr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
     _a: UnsafePointer[ComplexFloat32, _],
@@ -26699,7 +26710,7 @@ def rocblas_csyr_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, uplo, n, alpha, x, incx, stridex, _a, lda, stride_a, batch_count
     )
@@ -26711,12 +26722,12 @@ def rocblas_dsyrkx_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -26738,7 +26749,7 @@ def rocblas_dsyrkx_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -26761,14 +26772,14 @@ def rocblas_zhemv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
@@ -26792,7 +26803,7 @@ def rocblas_zhemv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -26820,7 +26831,7 @@ def rocblas_ctrsm_batched_64(
     diag: Diagonal,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     _b: OpaquePointer[_],
@@ -26843,7 +26854,7 @@ def rocblas_ctrsm_batched_64(
             type_of(_b),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -26886,16 +26897,16 @@ def rocblas_dtrsv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
 def rocblas_hdot(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float16, _],
+    x: UnsafePointer[mut=False, Float16, _],
     incx: Int32,
-    y: UnsafePointer[Float16, _],
+    y: UnsafePointer[mut=False, Float16, _],
     incy: Int32,
     result: UnsafePointer[Float16, _],
 ) raises -> Status:
@@ -26909,7 +26920,7 @@ def rocblas_hdot(
             type_of(y),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -26920,8 +26931,8 @@ def rocblas_srot_batched(
     incx: Int32,
     y: OpaquePointer[_],
     incy: Int32,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, Float32, _],
     batch_count: Int32,
 ) raises -> Status:
     """
@@ -26968,7 +26979,7 @@ def rocblas_srot_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
@@ -26976,11 +26987,11 @@ def rocblas_zher2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
     _a: UnsafePointer[ComplexFloat64, _],
@@ -27005,7 +27016,7 @@ def rocblas_zher2_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -27028,12 +27039,12 @@ def rocblas_zsymv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -27053,7 +27064,7 @@ def rocblas_zsymv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -27062,12 +27073,12 @@ def rocblas_dsbmv_batched(
     uplo: Fill,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -27088,7 +27099,7 @@ def rocblas_dsbmv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -27097,14 +27108,14 @@ def rocblas_sgemv_strided_batched_64(
     trans_a: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int64,
     stridey: Int64,
@@ -27129,7 +27140,7 @@ def rocblas_sgemv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -27153,7 +27164,7 @@ def rocblas_sgemv_strided_batched_64(
 def rocblas_scopy(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     y: UnsafePointer[Float32, _],
     incy: Int32,
@@ -27193,7 +27204,7 @@ def rocblas_scopy(
             Int32,
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -27203,7 +27214,7 @@ def rocblas_ctrsv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int64,
@@ -27220,16 +27231,16 @@ def rocblas_ctrsv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
 def rocblas_zdotc_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int64,
     result: UnsafePointer[ComplexFloat64, _],
 ) raises -> Status:
@@ -27243,7 +27254,7 @@ def rocblas_zdotc_64(
             type_of(y),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -27254,8 +27265,8 @@ def rocblas_drot_64(
     incx: Int64,
     y: UnsafePointer[Float64, _],
     incy: Int64,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_64",
@@ -27268,7 +27279,7 @@ def rocblas_drot_64(
             Int64,
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -27279,14 +27290,14 @@ def rocblas_zgemmt_strided_batched(
     trans_b: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
     stride_b: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
     stride_c: Int64,
@@ -27313,7 +27324,7 @@ def rocblas_zgemmt_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -27345,8 +27356,8 @@ def rocblas_drot_strided_batched_64(
     y: UnsafePointer[Float64, _],
     incy: Int64,
     stride_y: Int64,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, Float64, _],
     batch_count: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -27363,7 +27374,7 @@ def rocblas_drot_strided_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
@@ -27371,10 +27382,10 @@ def rocblas_cher2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int32,
     _a: UnsafePointer[ComplexFloat32, _],
     lda: Int32,
@@ -27443,7 +27454,7 @@ def rocblas_cher2(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -27454,7 +27465,7 @@ def rocblas_ctbsv_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int64,
@@ -27472,7 +27483,7 @@ def rocblas_ctbsv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
@@ -27480,11 +27491,11 @@ def rocblas_dspr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[Float64, _],
+    y: UnsafePointer[mut=False, Float64, _],
     incy: Int64,
     stride_y: Int64,
     _ap: UnsafePointer[Float64, _],
@@ -27507,7 +27518,7 @@ def rocblas_dspr2_strided_batched_64(
             type_of(_ap),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -27548,7 +27559,7 @@ def rocblas_cswap_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -27556,14 +27567,14 @@ def rocblas_chemv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
@@ -27587,7 +27598,7 @@ def rocblas_chemv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -27611,7 +27622,7 @@ def rocblas_zgerc_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -27634,7 +27645,7 @@ def rocblas_zgerc_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -27644,14 +27655,14 @@ def rocblas_zsyr2k_strided_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
@@ -27677,7 +27688,7 @@ def rocblas_zsyr2k_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -27703,8 +27714,8 @@ def rocblas_zher_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     _a: UnsafePointer[ComplexFloat64, _],
     lda: Int64,
@@ -27720,14 +27731,14 @@ def rocblas_zher_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
 def rocblas_icamin(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     result: UnsafePointer[Int32, _],
 ) raises -> Status:
@@ -27739,14 +27750,14 @@ def rocblas_icamin(
             type_of(x),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
 def rocblas_sasum(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     result: UnsafePointer[Float32, _],
 ) raises -> Status:
@@ -27776,7 +27787,7 @@ def rocblas_sasum(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sasum",
-        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -27787,12 +27798,12 @@ def rocblas_dgemmt(
     trans_b: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
-    _b: UnsafePointer[Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -27813,7 +27824,7 @@ def rocblas_dgemmt(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -27875,7 +27886,7 @@ def rocblas_isamin_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -27887,7 +27898,7 @@ def rocblas_drotmg_strided_batched_64(
     stride_d2: Int64,
     x1: UnsafePointer[Float64, _],
     stride_x1: Int64,
-    y1: UnsafePointer[Float64, _],
+    y1: UnsafePointer[mut=False, Float64, _],
     stride_y1: Int64,
     param: UnsafePointer[Float64, _],
     stride_param: Int64,
@@ -27908,7 +27919,7 @@ def rocblas_drotmg_strided_batched_64(
             type_of(param),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         d1,
@@ -27933,8 +27944,8 @@ def rocblas_ztrsm_strided_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride_a: Int64,
     _b: UnsafePointer[ComplexFloat64, _],
@@ -27960,7 +27971,7 @@ def rocblas_ztrsm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -27983,7 +27994,7 @@ def rocblas_ztrsm_strided_batched(
 def rocblas_dasum_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -27999,7 +28010,7 @@ def rocblas_dasum_strided_batched(
             Int64,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -28008,14 +28019,14 @@ def rocblas_hshgemv_strided_batched_64(
     trans_a: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float16, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[Float16, _],
+    x: UnsafePointer[mut=False, Float16, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float16, _],
     incy: Int64,
     stridey: Int64,
@@ -28040,7 +28051,7 @@ def rocblas_hshgemv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -28065,7 +28076,7 @@ def rocblas_zher2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -28088,7 +28099,7 @@ def rocblas_zher2_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -28099,8 +28110,8 @@ def rocblas_srot_64(
     incx: Int64,
     y: UnsafePointer[Float32, _],
     incy: Int64,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srot_64",
@@ -28113,7 +28124,7 @@ def rocblas_srot_64(
             Int64,
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -28122,14 +28133,14 @@ def rocblas_hshgemv_strided_batched(
     trans_a: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float16, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[Float16, _],
+    x: UnsafePointer[mut=False, Float16, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float16, _],
     incy: Int32,
     stridey: Int64,
@@ -28154,7 +28165,7 @@ def rocblas_hshgemv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -28178,10 +28189,10 @@ def rocblas_hshgemv_strided_batched(
 def rocblas_ddot_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float64, _],
+    y: UnsafePointer[mut=False, Float64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -28200,14 +28211,14 @@ def rocblas_ddot_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
 def rocblas_izamax_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -28223,7 +28234,7 @@ def rocblas_izamax_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
@@ -28236,8 +28247,8 @@ def rocblas_crot_strided_batched_64(
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[ComplexFloat32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, ComplexFloat32, _],
     batch_count: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -28254,7 +28265,7 @@ def rocblas_crot_strided_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
@@ -28264,7 +28275,9 @@ def rocblas_ztpmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[UnsafePointer[ComplexFloat64, MutAnyOrigin], _],
+    _a: UnsafePointer[
+        mut=False, UnsafePointer[ComplexFloat64, MutAnyOrigin], _
+    ],
     x: UnsafePointer[UnsafePointer[ComplexFloat64, MutAnyOrigin], _],
     incx: Int64,
     batch_count: Int64,
@@ -28281,7 +28294,7 @@ def rocblas_ztpmv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
@@ -28289,8 +28302,8 @@ def rocblas_dsyr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     _a: UnsafePointer[Float64, _],
     lda: Int64,
@@ -28306,7 +28319,7 @@ def rocblas_dsyr_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -28314,11 +28327,11 @@ def rocblas_sspmv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -28382,7 +28395,7 @@ def rocblas_sspmv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy, batch_count)
 
 
@@ -28390,8 +28403,8 @@ def rocblas_ssyr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     _a: UnsafePointer[Float32, _],
     lda: Int32,
@@ -28444,7 +28457,7 @@ def rocblas_ssyr(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -28463,7 +28476,7 @@ def rocblas_drotg(
             type_of(b),
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s)
 
 
@@ -28478,7 +28491,7 @@ def rocblas_device_malloc_alloc(
             Handle,
             type_of(res),
             Int,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, res, count)
 
 
@@ -28488,7 +28501,9 @@ def rocblas_ztrmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[UnsafePointer[ComplexFloat64, MutAnyOrigin], _],
+    _a: UnsafePointer[
+        mut=False, UnsafePointer[ComplexFloat64, MutAnyOrigin], _
+    ],
     lda: Int32,
     x: UnsafePointer[UnsafePointer[ComplexFloat64, MutAnyOrigin], _],
     incx: Int32,
@@ -28507,7 +28522,7 @@ def rocblas_ztrmv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
@@ -28515,8 +28530,8 @@ def rocblas_zgerc_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
@@ -28536,7 +28551,7 @@ def rocblas_zgerc_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -28546,12 +28561,12 @@ def rocblas_csymm(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -28571,7 +28586,7 @@ def rocblas_csymm(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -28604,7 +28619,7 @@ def rocblas_rot_ex_64(
             type_of(s),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -28622,7 +28637,7 @@ def rocblas_rot_ex_64(
 
 
 def rocblas_abort() raises:
-    _get_dylib_function["rocblas_abort", def() -> NoneType]()()
+    _get_dylib_function["rocblas_abort", def() thin -> NoneType]()()
 
 
 def rocblas_dtrmv(
@@ -28631,7 +28646,7 @@ def rocblas_dtrmv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     x: UnsafePointer[Float64, _],
     incx: Int32,
@@ -28648,7 +28663,7 @@ def rocblas_dtrmv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
@@ -28657,14 +28672,14 @@ def rocblas_hssgemv_strided_batched_64(
     trans_a: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float16, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[Float16, _],
+    x: UnsafePointer[mut=False, Float16, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int64,
     stridey: Int64,
@@ -28689,7 +28704,7 @@ def rocblas_hssgemv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -28716,12 +28731,12 @@ def rocblas_cherkx_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -28828,7 +28843,7 @@ def rocblas_cherkx_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -28850,10 +28865,10 @@ def rocblas_cherkx_batched(
 def rocblas_cdotc_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -28872,7 +28887,7 @@ def rocblas_cdotc_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
@@ -28939,7 +28954,7 @@ def rocblas_sswap_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -28949,14 +28964,14 @@ def rocblas_dsymm_strided_batched(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
     stride__c: Int64,
@@ -28982,7 +28997,7 @@ def rocblas_dsymm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -29007,7 +29022,7 @@ def rocblas_dsymm_strided_batched(
 def rocblas_scasum_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -29023,7 +29038,7 @@ def rocblas_scasum_strided_batched(
             Int64,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -29031,7 +29046,7 @@ def rocblas_ssyr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int32,
     _a: OpaquePointer[_],
@@ -29089,7 +29104,7 @@ def rocblas_ssyr_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
@@ -29120,7 +29135,7 @@ def rocblas_dtbmv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
@@ -29132,11 +29147,11 @@ def rocblas_ctrmm_strided_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
     stride__b: Int64,
     _c: UnsafePointer[ComplexFloat32, _],
@@ -29165,7 +29180,7 @@ def rocblas_ctrmm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -29209,7 +29224,7 @@ def rocblas_cdotc_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
@@ -29219,12 +29234,12 @@ def rocblas_zgeam_strided_batched(
     trans_b: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
-    _b: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
     stride__b: Int64,
     _c: UnsafePointer[ComplexFloat64, _],
@@ -29252,7 +29267,7 @@ def rocblas_zgeam_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -29277,7 +29292,7 @@ def rocblas_zgeam_strided_batched(
 def rocblas_ccopy_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat32, _],
@@ -29297,7 +29312,7 @@ def rocblas_ccopy_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -29307,7 +29322,7 @@ def rocblas_ztrmv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -29330,7 +29345,7 @@ def rocblas_ztrmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -29352,7 +29367,7 @@ def rocblas_dtrtri_strided_batched(
     uplo: Fill,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride_a: Int64,
     inv_a: UnsafePointer[Float64, _],
@@ -29374,7 +29389,7 @@ def rocblas_dtrtri_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -29538,7 +29553,7 @@ def rocblas_geam_ex(
             Int32,
             DataType,
             GEAMExOp,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -29572,7 +29587,7 @@ def rocblas_ctbmv(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int32,
@@ -29590,7 +29605,7 @@ def rocblas_ctbmv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -29607,7 +29622,7 @@ def rocblas_is_user_managing_device_memory(handle: Handle) raises -> Bool:
         If the dynamic library cannot be found.
     """
     return _get_dylib_function[
-        "rocblas_is_user_managing_device_memory", def(Handle) -> Bool
+        "rocblas_is_user_managing_device_memory", def(Handle) thin -> Bool
     ]()(handle)
 
 
@@ -29636,7 +29651,7 @@ def rocblas_dtrsv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
@@ -29659,14 +29674,14 @@ def rocblas_cswap_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
 def rocblas_dnrm2_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -29682,7 +29697,7 @@ def rocblas_dnrm2_strided_batched(
             Int64,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -29715,7 +29730,7 @@ def rocblas_axpy_batched_ex_64(
             Int64,
             Int64,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -29736,14 +29751,14 @@ def rocblas_csymv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
     stridey: Int64,
@@ -29767,7 +29782,7 @@ def rocblas_csymv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -29795,10 +29810,10 @@ def rocblas_dtrmm(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
-    _b: UnsafePointer[Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
@@ -29820,7 +29835,7 @@ def rocblas_dtrmm(
             Int32,
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -29843,8 +29858,8 @@ def rocblas_chpr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
     _ap: UnsafePointer[ComplexFloat32, _],
@@ -29934,7 +29949,7 @@ def rocblas_chpr_strided_batched(
             type_of(_ap),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
@@ -29944,7 +29959,7 @@ def rocblas_strmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[UnsafePointer[Float32, MutAnyOrigin], _],
+    _a: UnsafePointer[mut=False, UnsafePointer[Float32, MutAnyOrigin], _],
     lda: Int64,
     x: UnsafePointer[UnsafePointer[Float32, MutAnyOrigin], _],
     incx: Int64,
@@ -29963,7 +29978,7 @@ def rocblas_strmv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
@@ -29971,12 +29986,12 @@ def rocblas_csymv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -29996,7 +30011,7 @@ def rocblas_csymv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -30006,12 +30021,12 @@ def rocblas_chemm(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -30106,14 +30121,14 @@ def rocblas_chemm(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
 def rocblas_izamin_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     result: UnsafePointer[Int64, _],
 ) raises -> Status:
@@ -30125,7 +30140,7 @@ def rocblas_izamin_64(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -30133,11 +30148,11 @@ def rocblas_chpr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int64,
     stride_y: Int64,
     _ap: UnsafePointer[ComplexFloat32, _],
@@ -30160,7 +30175,7 @@ def rocblas_chpr2_strided_batched_64(
             type_of(_ap),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -30184,7 +30199,7 @@ def rocblas_ctpmv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int32,
@@ -30205,7 +30220,7 @@ def rocblas_ctpmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -30275,7 +30290,7 @@ def rocblas_srotg(
             type_of(b),
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s)
 
 
@@ -30287,8 +30302,8 @@ def rocblas_strsm_strided_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride_a: Int64,
     _b: UnsafePointer[Float32, _],
@@ -30400,7 +30415,7 @@ def rocblas_strsm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -30427,14 +30442,14 @@ def rocblas_sgemm_kernel_name(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
     stride_b: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
     stride_c: Int64,
@@ -30461,7 +30476,7 @@ def rocblas_sgemm_kernel_name(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -30490,14 +30505,14 @@ def rocblas_zherkx_strided_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
@@ -30523,7 +30538,7 @@ def rocblas_zherkx_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -30548,7 +30563,7 @@ def rocblas_zherkx_strided_batched(
 def rocblas_ccopy(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
@@ -30562,7 +30577,7 @@ def rocblas_ccopy(
             Int32,
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -30570,8 +30585,8 @@ def rocblas_cgerc_strided_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat32, _],
@@ -30599,7 +30614,7 @@ def rocblas_cgerc_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         m,
@@ -30622,7 +30637,7 @@ def rocblas_sspr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -30712,14 +30727,14 @@ def rocblas_sspr2_batched(
             Int32,
             type_of(_ap),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
 def rocblas_ccopy_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat32, _],
@@ -30739,7 +30754,7 @@ def rocblas_ccopy_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -30749,10 +30764,10 @@ def rocblas_zherk(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -30770,7 +30785,7 @@ def rocblas_zherk(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
@@ -30782,11 +30797,11 @@ def rocblas_strmm_strided_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
     stride__b: Int64,
     _c: UnsafePointer[Float32, _],
@@ -30956,7 +30971,7 @@ def rocblas_strmm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -30983,11 +30998,11 @@ def rocblas_ssyr2_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float32, _],
+    y: UnsafePointer[mut=False, Float32, _],
     incy: Int64,
     stridey: Int64,
     _a: UnsafePointer[Float32, _],
@@ -31012,7 +31027,7 @@ def rocblas_ssyr2_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -31034,8 +31049,8 @@ def rocblas_ssyr2_strided_batched_64(
 def rocblas_zaxpy_strided_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat64, _],
@@ -31056,7 +31071,7 @@ def rocblas_zaxpy_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -31068,7 +31083,7 @@ def rocblas_dtrmm_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
@@ -31095,7 +31110,7 @@ def rocblas_dtrmm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -31122,12 +31137,12 @@ def rocblas_zgbmv(
     n: Int32,
     kl: Int32,
     ku: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
@@ -31148,7 +31163,7 @@ def rocblas_zgbmv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -31322,7 +31337,7 @@ def rocblas_gemm_batched_ex(
             Algorithm,
             Int32,
             UInt32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -31373,17 +31388,17 @@ def rocblas_bfdot_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
 def rocblas_sdot_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[Float32, _],
+    y: UnsafePointer[mut=False, Float32, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -31402,14 +31417,14 @@ def rocblas_sdot_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
 def rocblas_cscal_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
@@ -31423,7 +31438,7 @@ def rocblas_cscal_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
@@ -31491,7 +31506,7 @@ def rocblas_strtri_batched(
             type_of(inv_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a, batch_count)
 
 
@@ -31499,8 +31514,8 @@ def rocblas_zher(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     _a: UnsafePointer[ComplexFloat64, _],
     lda: Int32,
@@ -31516,7 +31531,7 @@ def rocblas_zher(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -31526,12 +31541,12 @@ def rocblas_zher2k(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -31551,7 +31566,7 @@ def rocblas_zher2k(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -31560,12 +31575,12 @@ def rocblas_hssgemv_batched(
     trans: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -31586,7 +31601,7 @@ def rocblas_hssgemv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -31753,7 +31768,7 @@ def rocblas_trsm_ex(
             type_of(inv_a),
             Int32,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -31777,7 +31792,7 @@ def rocblas_zgeru_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -31800,7 +31815,7 @@ def rocblas_zgeru_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -31821,7 +31836,7 @@ def rocblas_snrm2_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -31829,12 +31844,12 @@ def rocblas_chemv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
@@ -31852,7 +31867,7 @@ def rocblas_chemv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -31864,8 +31879,8 @@ def rocblas_ctrsm_64(
     diag: Diagonal,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     _b: UnsafePointer[ComplexFloat32, _],
     ldb: Int64,
@@ -31885,7 +31900,7 @@ def rocblas_ctrsm_64(
             Int64,
             type_of(_b),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -31893,7 +31908,7 @@ def rocblas_zsyr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int32,
     _a: OpaquePointer[_],
@@ -31912,7 +31927,7 @@ def rocblas_zsyr_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
@@ -31923,12 +31938,12 @@ def rocblas_cgbmv_64(
     n: Int64,
     kl: Int64,
     ku: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
@@ -31949,7 +31964,7 @@ def rocblas_cgbmv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -31959,12 +31974,12 @@ def rocblas_cherkx(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -32064,16 +32079,16 @@ def rocblas_cherkx(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
 def rocblas_zdotu_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int64,
     result: UnsafePointer[ComplexFloat64, _],
 ) raises -> Status:
@@ -32087,7 +32102,7 @@ def rocblas_zdotu_64(
             type_of(y),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -32095,8 +32110,8 @@ def rocblas_zsyr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
     _a: UnsafePointer[ComplexFloat64, _],
@@ -32118,7 +32133,7 @@ def rocblas_zsyr_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, uplo, n, alpha, x, incx, stridex, _a, lda, stride_a, batch_count
     )
@@ -32128,7 +32143,7 @@ def rocblas_dger_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -32151,7 +32166,7 @@ def rocblas_dger_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -32159,10 +32174,10 @@ def rocblas_csyr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int32,
     _a: UnsafePointer[ComplexFloat32, _],
     lda: Int32,
@@ -32180,7 +32195,7 @@ def rocblas_csyr2(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -32189,14 +32204,14 @@ def rocblas_dsbmv_strided_batched(
     uplo: Fill,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int32,
     stridey: Int64,
@@ -32221,7 +32236,7 @@ def rocblas_dsbmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -32247,12 +32262,12 @@ def rocblas_zhbmv_batched(
     uplo: Fill,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -32273,14 +32288,14 @@ def rocblas_zhbmv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
 def rocblas_zscal_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
@@ -32294,7 +32309,7 @@ def rocblas_zscal_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
@@ -32315,14 +32330,14 @@ def rocblas_icamax_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
 def rocblas_idamin_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -32338,7 +32353,7 @@ def rocblas_idamin_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
@@ -32348,12 +32363,12 @@ def rocblas_zsyr2k_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -32375,7 +32390,7 @@ def rocblas_zsyr2k_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -32397,8 +32412,8 @@ def rocblas_zsyr2k_batched(
 def rocblas_haxpy_strided_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float16, _],
-    x: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float16, _],
+    x: UnsafePointer[mut=False, Float16, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[Float16, _],
@@ -32454,7 +32469,7 @@ def rocblas_haxpy_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -32465,8 +32480,8 @@ def rocblas_zdrot_batched(
     incx: Int32,
     y: OpaquePointer[_],
     incy: Int32,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, Float64, _],
     batch_count: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -32481,7 +32496,7 @@ def rocblas_zdrot_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
@@ -32492,12 +32507,12 @@ def rocblas_sgemmt_batched(
     trans_b: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -32587,7 +32602,7 @@ def rocblas_sgemmt_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -32610,7 +32625,7 @@ def rocblas_sgemmt_batched(
 def rocblas_scasum_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -32626,7 +32641,7 @@ def rocblas_scasum_strided_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -32637,14 +32652,14 @@ def rocblas_cgemm_strided_batched(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
     stride_b: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
     stride_c: Int64,
@@ -32671,7 +32686,7 @@ def rocblas_cgemm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -32697,7 +32712,7 @@ def rocblas_cgemm_strided_batched(
 def rocblas_dscal_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
@@ -32711,7 +32726,7 @@ def rocblas_dscal_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
@@ -32722,12 +32737,12 @@ def rocblas_dgbmv_batched(
     n: Int32,
     kl: Int32,
     ku: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -32750,7 +32765,7 @@ def rocblas_dgbmv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -32776,7 +32791,7 @@ def rocblas_strsv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[Float32, _],
@@ -32864,7 +32879,7 @@ def rocblas_strsv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -32888,7 +32903,7 @@ def rocblas_ztbmv_strided_batched_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -32912,7 +32927,7 @@ def rocblas_ztbmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -32937,12 +32952,12 @@ def rocblas_cgbmv_batched_64(
     n: Int64,
     kl: Int64,
     ku: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -32965,7 +32980,7 @@ def rocblas_cgbmv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -32989,7 +33004,7 @@ def rocblas_sspr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -33010,7 +33025,7 @@ def rocblas_sspr2_batched_64(
             Int64,
             type_of(_ap),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
@@ -33018,14 +33033,14 @@ def rocblas_zhemv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
@@ -33049,7 +33064,7 @@ def rocblas_zhemv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -33072,7 +33087,7 @@ def rocblas_zhemv_strided_batched(
 def rocblas_sscal_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
@@ -33113,14 +33128,14 @@ def rocblas_sscal_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
 def rocblas_sasum_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -33169,7 +33184,7 @@ def rocblas_sasum_strided_batched(
             Int64,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -33180,7 +33195,7 @@ def rocblas_dtbmv(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     x: UnsafePointer[Float64, _],
     incx: Int32,
@@ -33198,7 +33213,7 @@ def rocblas_dtbmv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -33209,7 +33224,7 @@ def rocblas_ctbmv_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int64,
@@ -33227,14 +33242,14 @@ def rocblas_ctbmv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
 def rocblas_dznrm2_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -33250,7 +33265,7 @@ def rocblas_dznrm2_strided_batched(
             Int64,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -33258,11 +33273,11 @@ def rocblas_chpmv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _ap: OpaquePointer[_],
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -33281,7 +33296,7 @@ def rocblas_chpmv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy, batch_count)
 
 
@@ -33289,10 +33304,10 @@ def rocblas_ssyr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
-    y: UnsafePointer[Float32, _],
+    y: UnsafePointer[mut=False, Float32, _],
     incy: Int32,
     _a: UnsafePointer[Float32, _],
     lda: Int32,
@@ -33352,7 +33367,7 @@ def rocblas_ssyr2(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -33360,8 +33375,8 @@ def rocblas_zsyr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     _a: UnsafePointer[ComplexFloat64, _],
     lda: Int64,
@@ -33377,7 +33392,7 @@ def rocblas_zsyr_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -33389,8 +33404,8 @@ def rocblas_ctrsm_strided_batched_64(
     diag: Diagonal,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     stride_a: Int64,
     _b: UnsafePointer[ComplexFloat32, _],
@@ -33416,7 +33431,7 @@ def rocblas_ctrsm_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -33442,12 +33457,12 @@ def rocblas_sgeam_strided_batched(
     trans_b: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride__a: Int64,
-    beta: UnsafePointer[Float32, _],
-    _b: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
     stride__b: Int64,
     _c: UnsafePointer[Float32, _],
@@ -33560,7 +33575,7 @@ def rocblas_sgeam_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -33590,11 +33605,11 @@ def rocblas_ztrmm_strided_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
     stride__b: Int64,
     _c: UnsafePointer[ComplexFloat64, _],
@@ -33623,7 +33638,7 @@ def rocblas_ztrmm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -33651,16 +33666,16 @@ def rocblas_set_optimal_device_memory_size_impl(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_set_optimal_device_memory_size_impl",
-        def(Handle, Int) -> Status,
+        def(Handle, Int) thin -> Status,
     ]()(handle, count)
 
 
 def rocblas_zdotc(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int32,
     result: UnsafePointer[ComplexFloat64, _],
 ) raises -> Status:
@@ -33674,7 +33689,7 @@ def rocblas_zdotc(
             type_of(y),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -33682,7 +33697,7 @@ def rocblas_dsyr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int32,
     _a: OpaquePointer[_],
@@ -33701,7 +33716,7 @@ def rocblas_dsyr_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
@@ -33732,7 +33747,7 @@ def rocblas_ctbmv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
@@ -33769,7 +33784,7 @@ def rocblas_dotc_strided_batched_ex(
             type_of(result),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -33805,7 +33820,7 @@ def rocblas_cswap(
             Int32,
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -33897,7 +33912,7 @@ def rocblas_dot_ex(
             type_of(result),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -33917,7 +33932,7 @@ def rocblas_cspr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int64,
     _ap: OpaquePointer[_],
@@ -33934,7 +33949,7 @@ def rocblas_cspr_batched_64(
             Int64,
             type_of(_ap),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
@@ -33957,7 +33972,7 @@ def rocblas_dswap_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
@@ -33968,8 +33983,8 @@ def rocblas_crot_64(
     incx: Int64,
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[ComplexFloat32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, ComplexFloat32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_64",
@@ -33982,7 +33997,7 @@ def rocblas_crot_64(
             Int64,
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -34029,7 +34044,7 @@ def rocblas_isamax_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -34048,14 +34063,14 @@ def rocblas_drotg_64(
             type_of(b),
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s)
 
 
 def rocblas_zaxpy_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -34073,7 +34088,7 @@ def rocblas_zaxpy_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy, batch_count)
 
 
@@ -34083,11 +34098,11 @@ def rocblas_cgeam(
     trans_b: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
-    _b: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
@@ -34108,7 +34123,7 @@ def rocblas_cgeam(
             Int32,
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans_a, trans_b, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
@@ -34139,7 +34154,7 @@ def rocblas_ztbsv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
@@ -34176,7 +34191,7 @@ def rocblas_dot_strided_batched_ex_64(
             type_of(result),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -34202,7 +34217,7 @@ def rocblas_stbmv(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     x: UnsafePointer[Float32, _],
     incx: Int32,
@@ -34297,7 +34312,7 @@ def rocblas_stbmv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -34322,14 +34337,14 @@ def rocblas_set_workspace(
     """
     return _get_dylib_function[
         "rocblas_set_workspace",
-        def(Handle, type_of(addr), Int) -> Status,
+        def(Handle, type_of(addr), Int) thin -> Status,
     ]()(handle, addr, size)
 
 
 def rocblas_dscal_strided_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: UnsafePointer[Float64, _],
     incx: Int32,
     stride_x: Int64,
@@ -34345,7 +34360,7 @@ def rocblas_dscal_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
@@ -34355,12 +34370,12 @@ def rocblas_dsyr2k_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -34382,7 +34397,7 @@ def rocblas_dsyr2k_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -34405,8 +34420,8 @@ def rocblas_cher_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
     _a: UnsafePointer[ComplexFloat32, _],
@@ -34483,7 +34498,7 @@ def rocblas_cher_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -34505,12 +34520,12 @@ def rocblas_zsymm_batched(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -34532,7 +34547,7 @@ def rocblas_zsymm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -34554,13 +34569,13 @@ def rocblas_zsymm_batched(
 def rocblas_dasum_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     result: UnsafePointer[Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_64",
-        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -34570,7 +34585,7 @@ def rocblas_strmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[UnsafePointer[Float32, MutAnyOrigin], _],
+    _a: UnsafePointer[mut=False, UnsafePointer[Float32, MutAnyOrigin], _],
     lda: Int32,
     x: UnsafePointer[UnsafePointer[Float32, MutAnyOrigin], _],
     incx: Int32,
@@ -34645,7 +34660,7 @@ def rocblas_strmv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
@@ -34653,12 +34668,12 @@ def rocblas_ssymv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int64,
 ) raises -> Status:
@@ -34676,7 +34691,7 @@ def rocblas_ssymv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -34684,8 +34699,8 @@ def rocblas_zgerc(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
@@ -34705,7 +34720,7 @@ def rocblas_zgerc(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -34734,7 +34749,7 @@ def rocblas_drotg_strided_batched(
             type_of(s),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
@@ -34745,7 +34760,7 @@ def rocblas_stbsv_strided_batched_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[Float32, _],
@@ -34769,7 +34784,7 @@ def rocblas_stbsv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -34793,12 +34808,12 @@ def rocblas_zsyrkx_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -34820,7 +34835,7 @@ def rocblas_zsyrkx_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -34845,7 +34860,7 @@ def rocblas_dtpsv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _ap: UnsafePointer[Float64, _],
+    _ap: UnsafePointer[mut=False, Float64, _],
     x: UnsafePointer[Float64, _],
     incx: Int32,
 ) raises -> Status:
@@ -34860,7 +34875,7 @@ def rocblas_dtpsv(
             type_of(_ap),
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
@@ -34869,12 +34884,12 @@ def rocblas_zgemv(
     trans: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
@@ -34893,7 +34908,7 @@ def rocblas_zgemv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -34901,8 +34916,8 @@ def rocblas_sspr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stride_x: Int64,
     _ap: UnsafePointer[Float32, _],
@@ -34992,14 +35007,14 @@ def rocblas_sspr_strided_batched(
             type_of(_ap),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
 def rocblas_zscal_strided_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
@@ -35015,7 +35030,7 @@ def rocblas_zscal_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
@@ -35026,7 +35041,7 @@ def rocblas_dtbsv(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     x: UnsafePointer[Float64, _],
     incx: Int32,
@@ -35044,7 +35059,7 @@ def rocblas_dtbsv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
@@ -35067,7 +35082,7 @@ def rocblas_drotmg_batched_64(
             type_of(y1),
             type_of(param),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, d1, d2, x1, y1, param, batch_count)
 
 
@@ -35088,7 +35103,7 @@ def rocblas_icamax_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -35096,8 +35111,8 @@ def rocblas_sger_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     y: UnsafePointer[Float32, _],
     incy: Int64,
@@ -35117,14 +35132,14 @@ def rocblas_sger_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
 def rocblas_izamax(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     result: UnsafePointer[Int32, _],
 ) raises -> Status:
@@ -35136,7 +35151,7 @@ def rocblas_izamax(
             type_of(x),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -35144,8 +35159,8 @@ def rocblas_zhpr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     _ap: UnsafePointer[ComplexFloat64, _],
 ) raises -> Status:
@@ -35159,7 +35174,7 @@ def rocblas_zhpr(
             type_of(x),
             Int32,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -35169,12 +35184,12 @@ def rocblas_dsymm_batched(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -35196,7 +35211,7 @@ def rocblas_dsymm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -35220,12 +35235,12 @@ def rocblas_cgemv(
     trans: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
@@ -35244,7 +35259,7 @@ def rocblas_cgemv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -35255,8 +35270,8 @@ def rocblas_zrot_batched(
     incx: Int32,
     y: OpaquePointer[_],
     incy: Int32,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[ComplexFloat64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, ComplexFloat64, _],
     batch_count: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -35271,7 +35286,7 @@ def rocblas_zrot_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
@@ -35282,12 +35297,12 @@ def rocblas_sgemm(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
-    _b: UnsafePointer[Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -35367,7 +35382,7 @@ def rocblas_sgemm(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -35415,7 +35430,7 @@ def rocblas_dot_batched_ex_64(
             type_of(result),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -35438,7 +35453,7 @@ def rocblas_strsv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     x: UnsafePointer[Float32, _],
     incx: Int64,
@@ -35455,7 +35470,7 @@ def rocblas_strsv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
@@ -35463,7 +35478,7 @@ def rocblas_dspr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -35484,14 +35499,14 @@ def rocblas_dspr2_batched_64(
             Int64,
             type_of(_ap),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
 def rocblas_dzasum_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     result: UnsafePointer[Float64, _],
 ) raises -> Status:
@@ -35503,16 +35518,16 @@ def rocblas_dzasum_64(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
 def rocblas_ddot(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
-    y: UnsafePointer[Float64, _],
+    y: UnsafePointer[mut=False, Float64, _],
     incy: Int32,
     result: UnsafePointer[Float64, _],
 ) raises -> Status:
@@ -35526,7 +35541,7 @@ def rocblas_ddot(
             type_of(y),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -35534,10 +35549,10 @@ def rocblas_cher2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int64,
     _a: UnsafePointer[ComplexFloat32, _],
     lda: Int64,
@@ -35555,14 +35570,14 @@ def rocblas_cher2_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
 def rocblas_csscal_strided_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int64,
     stride_x: Int64,
@@ -35578,7 +35593,7 @@ def rocblas_csscal_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
@@ -35586,7 +35601,7 @@ def rocblas_cgerc_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -35609,7 +35624,7 @@ def rocblas_cgerc_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -35618,12 +35633,12 @@ def rocblas_tstgemv_batched_64(
     trans: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -35644,7 +35659,7 @@ def rocblas_tstgemv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -35653,9 +35668,9 @@ def rocblas_tstgemv_batched_64(
 def rocblas_hdot_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float16, _],
+    x: UnsafePointer[mut=False, Float16, _],
     incx: Int64,
-    y: UnsafePointer[Float16, _],
+    y: UnsafePointer[mut=False, Float16, _],
     incy: Int64,
     result: UnsafePointer[Float16, _],
 ) raises -> Status:
@@ -35669,7 +35684,7 @@ def rocblas_hdot_64(
             type_of(y),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -35679,10 +35694,10 @@ def rocblas_sgeam_batched(
     trans_b: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _b: OpaquePointer[_],
     ldb: Int32,
     _c: OpaquePointer[_],
@@ -35767,7 +35782,7 @@ def rocblas_sgeam_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -35789,7 +35804,7 @@ def rocblas_sgeam_batched(
 def rocblas_zdscal_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
@@ -35803,7 +35818,7 @@ def rocblas_zdscal_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
@@ -35813,7 +35828,9 @@ def rocblas_ctrmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[UnsafePointer[ComplexFloat32, MutAnyOrigin], _],
+    _a: UnsafePointer[
+        mut=False, UnsafePointer[ComplexFloat32, MutAnyOrigin], _
+    ],
     lda: Int32,
     x: UnsafePointer[UnsafePointer[ComplexFloat32, MutAnyOrigin], _],
     incx: Int32,
@@ -35832,7 +35849,7 @@ def rocblas_ctrmv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
@@ -35842,11 +35859,11 @@ def rocblas_cherk_strided_batched(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
@@ -35950,7 +35967,7 @@ def rocblas_cherk_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -35976,12 +35993,12 @@ def rocblas_hgemm(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float16, _],
-    _a: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float16, _],
+    _a: UnsafePointer[mut=False, Float16, _],
     lda: Int32,
-    _b: UnsafePointer[Float16, _],
+    _b: UnsafePointer[mut=False, Float16, _],
     ldb: Int32,
-    beta: UnsafePointer[Float16, _],
+    beta: UnsafePointer[mut=False, Float16, _],
     _c: UnsafePointer[Float16, _],
     ldc: Int32,
 ) raises -> Status:
@@ -36002,7 +36019,7 @@ def rocblas_hgemm(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -36036,7 +36053,7 @@ def rocblas_zrotg(
             type_of(b),
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s)
 
 
@@ -36044,8 +36061,8 @@ def rocblas_cspr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
     _ap: UnsafePointer[ComplexFloat32, _],
@@ -36065,7 +36082,7 @@ def rocblas_cspr_strided_batched(
             type_of(_ap),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
@@ -36092,16 +36109,16 @@ def rocblas_stpsv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx, batch_count)
 
 
 def rocblas_ddot_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
-    y: UnsafePointer[Float64, _],
+    y: UnsafePointer[mut=False, Float64, _],
     incy: Int64,
     result: UnsafePointer[Float64, _],
 ) raises -> Status:
@@ -36115,7 +36132,7 @@ def rocblas_ddot_64(
             type_of(y),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -36136,7 +36153,7 @@ def rocblas_idamax_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -36167,7 +36184,7 @@ def rocblas_dotc_ex_64(
             type_of(result),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -36187,8 +36204,8 @@ def rocblas_dger_strided_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[Float64, _],
@@ -36216,7 +36233,7 @@ def rocblas_dger_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         m,
@@ -36241,7 +36258,7 @@ def rocblas_ztrmv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int64,
@@ -36258,7 +36275,7 @@ def rocblas_ztrmv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
@@ -36270,10 +36287,10 @@ def rocblas_ctrmm(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
@@ -36295,7 +36312,7 @@ def rocblas_ctrmm(
             Int32,
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -36318,10 +36335,10 @@ def rocblas_chpr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int32,
     _ap: UnsafePointer[ComplexFloat32, _],
 ) raises -> Status:
@@ -36403,14 +36420,14 @@ def rocblas_chpr2(
             type_of(y),
             Int32,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
 def rocblas_zcopy_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
@@ -36424,14 +36441,14 @@ def rocblas_zcopy_64(
             Int64,
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
 def rocblas_scopy_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[Float32, _],
@@ -36493,20 +36510,20 @@ def rocblas_scopy_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
 def rocblas_sasum_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     result: UnsafePointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sasum_64",
-        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -36515,14 +36532,14 @@ def rocblas_cgemv_strided_batched(
     trans_a: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
     stridey: Int64,
@@ -36547,7 +36564,7 @@ def rocblas_cgemv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -36575,14 +36592,14 @@ def rocblas_zgbmv_strided_batched_64(
     n: Int64,
     kl: Int64,
     ku: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
@@ -36609,7 +36626,7 @@ def rocblas_zgbmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -36637,7 +36654,7 @@ def rocblas_srotmg(
     d1: UnsafePointer[Float32, _],
     d2: UnsafePointer[Float32, _],
     x1: UnsafePointer[Float32, _],
-    y1: UnsafePointer[Float32, _],
+    y1: UnsafePointer[mut=False, Float32, _],
     param: UnsafePointer[Float32, _],
 ) raises -> Status:
     """
@@ -36687,7 +36704,7 @@ def rocblas_srotmg(
             type_of(x1),
             type_of(y1),
             type_of(param),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, d1, d2, x1, y1, param)
 
 
@@ -36697,14 +36714,14 @@ def rocblas_zher2k_strided_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
@@ -36730,7 +36747,7 @@ def rocblas_zher2k_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -36756,8 +36773,8 @@ def rocblas_sspr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     _ap: UnsafePointer[Float32, _],
 ) raises -> Status:
@@ -36832,7 +36849,7 @@ def rocblas_sspr(
             type_of(x),
             Int32,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -36843,12 +36860,12 @@ def rocblas_zgbmv_batched_64(
     n: Int64,
     kl: Int64,
     ku: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -36871,7 +36888,7 @@ def rocblas_zgbmv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -36908,7 +36925,7 @@ def rocblas_idamax_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -36916,12 +36933,12 @@ def rocblas_zhemv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
@@ -36939,7 +36956,7 @@ def rocblas_zhemv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -36947,12 +36964,12 @@ def rocblas_csymv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
@@ -36970,7 +36987,7 @@ def rocblas_csymv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -36993,27 +37010,27 @@ def rocblas_dcopy_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
 def rocblas_snrm2_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     result: UnsafePointer[Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_snrm2_64",
-        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
 def rocblas_zdscal_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int64,
 ) raises -> Status:
@@ -37025,7 +37042,7 @@ def rocblas_zdscal_64(
             type_of(alpha),
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -37034,12 +37051,12 @@ def rocblas_hssgemv_batched_64(
     trans: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -37060,7 +37077,7 @@ def rocblas_hssgemv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -37069,7 +37086,7 @@ def rocblas_hssgemv_batched_64(
 def rocblas_zscal_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
@@ -37083,7 +37100,7 @@ def rocblas_zscal_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
@@ -37091,7 +37108,7 @@ def rocblas_zhpr_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int64,
     _ap: OpaquePointer[_],
@@ -37108,7 +37125,7 @@ def rocblas_zhpr_batched_64(
             Int64,
             type_of(_ap),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
@@ -37131,7 +37148,7 @@ def rocblas_dcopy_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
@@ -37142,12 +37159,12 @@ def rocblas_sgemmt(
     trans_b: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
-    _b: UnsafePointer[Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -37229,7 +37246,7 @@ def rocblas_sgemmt(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -37252,11 +37269,11 @@ def rocblas_zhpmv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _ap: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
@@ -37273,7 +37290,7 @@ def rocblas_zhpmv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
@@ -37296,7 +37313,7 @@ def rocblas_drotmg_batched(
             type_of(y1),
             type_of(param),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, d1, d2, x1, y1, param, batch_count)
 
 
@@ -37307,7 +37324,7 @@ def rocblas_ctbsv_strided_batched_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -37331,7 +37348,7 @@ def rocblas_ctbsv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -37353,8 +37370,8 @@ def rocblas_zgeru_strided_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat64, _],
@@ -37382,7 +37399,7 @@ def rocblas_zgeru_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         m,
@@ -37409,7 +37426,7 @@ def rocblas_strsm_batched_64(
     diag: Diagonal,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     _b: OpaquePointer[_],
@@ -37432,7 +37449,7 @@ def rocblas_strsm_batched_64(
             type_of(_b),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -37453,7 +37470,7 @@ def rocblas_strsm_batched_64(
 def rocblas_zdscal_strided_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
@@ -37469,7 +37486,7 @@ def rocblas_zdscal_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stride_x, batch_count)
 
 
@@ -37479,10 +37496,10 @@ def rocblas_cherk(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -37568,7 +37585,7 @@ def rocblas_cherk(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
@@ -37576,11 +37593,11 @@ def rocblas_dsyr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[Float64, _],
+    y: UnsafePointer[mut=False, Float64, _],
     incy: Int32,
     stridey: Int64,
     _a: UnsafePointer[Float64, _],
@@ -37605,7 +37622,7 @@ def rocblas_dsyr2_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -37651,7 +37668,7 @@ def rocblas_dtbsv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
@@ -37662,14 +37679,14 @@ def rocblas_cgbmv_strided_batched(
     n: Int32,
     kl: Int32,
     ku: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
@@ -37696,7 +37713,7 @@ def rocblas_cgbmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -37724,12 +37741,12 @@ def rocblas_chbmv_batched(
     uplo: Fill,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -37826,7 +37843,7 @@ def rocblas_chbmv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -37834,11 +37851,11 @@ def rocblas_dspmv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int64,
 ) raises -> Status:
@@ -37855,7 +37872,7 @@ def rocblas_dspmv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy)
 
 
@@ -37867,7 +37884,7 @@ def rocblas_ztrsm_batched_64(
     diag: Diagonal,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int64,
     _b: OpaquePointer[_],
@@ -37890,7 +37907,7 @@ def rocblas_ztrsm_batched_64(
             type_of(_b),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -37911,7 +37928,7 @@ def rocblas_ztrsm_batched_64(
 def rocblas_snrm2_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
     batch_count: Int32,
@@ -37961,7 +37978,7 @@ def rocblas_snrm2_strided_batched(
             Int64,
             Int32,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -38058,14 +38075,14 @@ def rocblas_stbsv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
 def rocblas_ccopy_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
@@ -38079,7 +38096,7 @@ def rocblas_ccopy_64(
             Int64,
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -38087,7 +38104,7 @@ def rocblas_sger_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -38110,7 +38127,7 @@ def rocblas_sger_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -38120,7 +38137,7 @@ def rocblas_ctpmv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int32,
 ) raises -> Status:
@@ -38135,7 +38152,7 @@ def rocblas_ctpmv(
             type_of(_a),
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
@@ -38148,8 +38165,8 @@ def rocblas_drot_strided_batched(
     y: UnsafePointer[Float64, _],
     incy: Int32,
     stride_y: Int64,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, Float64, _],
     batch_count: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -38166,7 +38183,7 @@ def rocblas_drot_strided_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
@@ -38174,7 +38191,7 @@ def rocblas_cher2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -38197,20 +38214,20 @@ def rocblas_cher2_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
 def rocblas_isamax_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     result: UnsafePointer[Int64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamax_64",
-        def(Handle, Int64, type_of(x), Int64, type_of(result)) -> Status,
+        def(Handle, Int64, type_of(x), Int64, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -38218,8 +38235,8 @@ def rocblas_zsyr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
     _a: UnsafePointer[ComplexFloat64, _],
@@ -38241,7 +38258,7 @@ def rocblas_zsyr_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, uplo, n, alpha, x, incx, stridex, _a, lda, stride_a, batch_count
     )
@@ -38252,12 +38269,12 @@ def rocblas_cgemv_batched(
     trans: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -38278,7 +38295,7 @@ def rocblas_cgemv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -38301,7 +38318,7 @@ def rocblas_scasum_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -38309,7 +38326,7 @@ def rocblas_dsyr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -38332,7 +38349,7 @@ def rocblas_dsyr2_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -38340,8 +38357,8 @@ def rocblas_ssyr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
     _a: UnsafePointer[Float32, _],
@@ -38408,7 +38425,7 @@ def rocblas_ssyr_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, uplo, n, alpha, x, incx, stridex, _a, lda, stride_a, batch_count
     )
@@ -38421,12 +38438,12 @@ def rocblas_sgbmv_batched(
     n: Int32,
     kl: Int32,
     ku: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -38522,7 +38539,7 @@ def rocblas_sgbmv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -38548,7 +38565,7 @@ def rocblas_ztpsv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _ap: UnsafePointer[ComplexFloat64, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat64, _],
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int64,
 ) raises -> Status:
@@ -38563,7 +38580,7 @@ def rocblas_ztpsv_64(
             type_of(_ap),
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
@@ -38571,8 +38588,8 @@ def rocblas_zspr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     _ap: UnsafePointer[ComplexFloat64, _],
 ) raises -> Status:
@@ -38586,7 +38603,7 @@ def rocblas_zspr(
             type_of(x),
             Int32,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -38595,12 +38612,12 @@ def rocblas_sgemv(
     trans: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int32,
 ) raises -> Status:
@@ -38664,7 +38681,7 @@ def rocblas_sgemv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -38674,7 +38691,7 @@ def rocblas_dtrsv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
     x: UnsafePointer[Float64, _],
     incx: Int64,
@@ -38691,7 +38708,7 @@ def rocblas_dtrsv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
@@ -38714,7 +38731,7 @@ def rocblas_zcopy_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count)
 
 
@@ -38722,14 +38739,14 @@ def rocblas_ssymv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int64,
     stridey: Int64,
@@ -38753,7 +38770,7 @@ def rocblas_ssymv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -38778,12 +38795,12 @@ def rocblas_dsbmv_batched_64(
     uplo: Fill,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -38804,7 +38821,7 @@ def rocblas_dsbmv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -38814,7 +38831,7 @@ def rocblas_ztpmv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int32,
@@ -38835,7 +38852,7 @@ def rocblas_ztpmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -38858,12 +38875,12 @@ def rocblas_dgemm_batched(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -38886,7 +38903,7 @@ def rocblas_dgemm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -38909,7 +38926,7 @@ def rocblas_dgemm_batched(
 def rocblas_cscal(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int32,
 ) raises -> Status:
@@ -38921,7 +38938,7 @@ def rocblas_cscal(
             type_of(alpha),
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -38931,14 +38948,14 @@ def rocblas_cherkx_strided_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
     stride__c: Int64,
@@ -39061,7 +39078,7 @@ def rocblas_cherkx_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -39104,7 +39121,7 @@ def rocblas_drotm_batched_64(
             Int64,
             type_of(param),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, param, batch_count)
 
 
@@ -39115,14 +39132,14 @@ def rocblas_zgbmv_strided_batched(
     n: Int32,
     kl: Int32,
     ku: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
@@ -39149,7 +39166,7 @@ def rocblas_zgbmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -39175,7 +39192,7 @@ def rocblas_zgbmv_strided_batched(
 def rocblas_csscal_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
@@ -39189,7 +39206,7 @@ def rocblas_csscal_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
@@ -39200,8 +39217,8 @@ def rocblas_crot_batched_64(
     incx: Int64,
     y: OpaquePointer[_],
     incy: Int64,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[ComplexFloat32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, ComplexFloat32, _],
     batch_count: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -39216,7 +39233,7 @@ def rocblas_crot_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
@@ -39224,8 +39241,8 @@ def rocblas_dsyr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
     _a: UnsafePointer[Float64, _],
@@ -39247,7 +39264,7 @@ def rocblas_dsyr_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, uplo, n, alpha, x, incx, stridex, _a, lda, stride_a, batch_count
     )
@@ -39259,12 +39276,12 @@ def rocblas_csymm_batched(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -39286,7 +39303,7 @@ def rocblas_csymm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -39309,8 +39326,8 @@ def rocblas_zspr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
     _ap: UnsafePointer[ComplexFloat64, _],
@@ -39330,7 +39347,7 @@ def rocblas_zspr_strided_batched(
             type_of(_ap),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
@@ -39341,7 +39358,7 @@ def rocblas_ztbsv(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int32,
@@ -39359,14 +39376,14 @@ def rocblas_ztbsv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
 def rocblas_isamin(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     result: UnsafePointer[Int32, _],
 ) raises -> Status:
@@ -39395,7 +39412,7 @@ def rocblas_isamin(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamin",
-        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -39404,7 +39421,7 @@ def rocblas_dtrtri(
     uplo: Fill,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     inv_a: UnsafePointer[Float64, _],
     ldinv_a: Int32,
@@ -39420,7 +39437,7 @@ def rocblas_dtrtri(
             Int32,
             type_of(inv_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a)
 
 
@@ -39428,8 +39445,8 @@ def rocblas_cher(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     _a: UnsafePointer[ComplexFloat32, _],
     lda: Int32,
@@ -39491,7 +39508,7 @@ def rocblas_cher(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -39499,13 +39516,13 @@ def rocblas_zhpmv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _ap: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat64, _],
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
@@ -39528,7 +39545,7 @@ def rocblas_zhpmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -39554,7 +39571,7 @@ def rocblas_srotm_64(
     incx: Int64,
     y: UnsafePointer[Float32, _],
     incy: Int64,
-    param: UnsafePointer[Float32, _],
+    param: UnsafePointer[mut=False, Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotm_64",
@@ -39566,20 +39583,20 @@ def rocblas_srotm_64(
             type_of(y),
             Int64,
             type_of(param),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, param)
 
 
 def rocblas_dscal(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: UnsafePointer[Float64, _],
     incx: Int32,
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal",
-        def(Handle, Int32, type_of(alpha), type_of(x), Int32) -> Status,
+        def(Handle, Int32, type_of(alpha), type_of(x), Int32) thin -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -39587,7 +39604,7 @@ def rocblas_zhpr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int32,
     _ap: OpaquePointer[_],
@@ -39604,7 +39621,7 @@ def rocblas_zhpr_batched(
             Int32,
             type_of(_ap),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
@@ -39612,14 +39629,14 @@ def rocblas_csymv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
     stridey: Int64,
@@ -39643,7 +39660,7 @@ def rocblas_csymv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -39669,7 +39686,7 @@ def rocblas_ctpsv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat32, _],
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int32,
 ) raises -> Status:
@@ -39684,7 +39701,7 @@ def rocblas_ctpsv(
             type_of(_ap),
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _ap, x, incx)
 
 
@@ -39748,7 +39765,7 @@ def rocblas_srotg_strided_batched(
             type_of(s),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
@@ -39757,12 +39774,12 @@ def rocblas_ssbmv_64(
     uplo: Fill,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int64,
 ) raises -> Status:
@@ -39781,14 +39798,14 @@ def rocblas_ssbmv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
 def rocblas_sscal_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
@@ -39802,7 +39819,7 @@ def rocblas_sscal_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
@@ -39813,7 +39830,7 @@ def rocblas_stbsv(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     x: UnsafePointer[Float32, _],
     incx: Int32,
@@ -39891,7 +39908,7 @@ def rocblas_stbsv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
@@ -39900,10 +39917,10 @@ def rocblas_ddgmm_strided_batched(
     side: Side,
     m: Int32,
     n: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stride_x: Int64,
     _c: UnsafePointer[Float64, _],
@@ -39928,7 +39945,7 @@ def rocblas_ddgmm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -39951,11 +39968,11 @@ def rocblas_dspmv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int32,
 ) raises -> Status:
@@ -39972,7 +39989,7 @@ def rocblas_dspmv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy)
 
 
@@ -39980,11 +39997,11 @@ def rocblas_sspmv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -40003,7 +40020,7 @@ def rocblas_sspmv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy, batch_count)
 
 
@@ -40013,12 +40030,12 @@ def rocblas_zher2k_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -40040,7 +40057,7 @@ def rocblas_zher2k_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -40065,12 +40082,12 @@ def rocblas_csyrkx(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -40090,7 +40107,7 @@ def rocblas_csyrkx(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -40100,7 +40117,7 @@ def rocblas_strmv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     x: UnsafePointer[Float32, _],
     incx: Int32,
@@ -40167,7 +40184,7 @@ def rocblas_strmv(
             Int32,
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx)
 
 
@@ -40175,7 +40192,7 @@ def rocblas_zher_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int32,
     _a: OpaquePointer[_],
@@ -40194,7 +40211,7 @@ def rocblas_zher_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
@@ -40205,8 +40222,8 @@ def rocblas_csrot_batched(
     incx: Int32,
     y: OpaquePointer[_],
     incy: Int32,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, Float32, _],
     batch_count: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -40221,7 +40238,7 @@ def rocblas_csrot_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
@@ -40229,8 +40246,8 @@ def rocblas_cgeru_strided_batched(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[ComplexFloat32, _],
@@ -40258,7 +40275,7 @@ def rocblas_cgeru_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         m,
@@ -40283,12 +40300,12 @@ def rocblas_zhemm_batched(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -40310,7 +40327,7 @@ def rocblas_zhemm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -40354,7 +40371,7 @@ def rocblas_nrm2_strided_batched_ex_64(
             type_of(results),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -40382,7 +40399,7 @@ def rocblas_is_managing_device_memory(handle: Handle) raises -> Bool:
         If the dynamic library cannot be found.
     """
     return _get_dylib_function[
-        "rocblas_is_managing_device_memory", def(Handle) -> Bool
+        "rocblas_is_managing_device_memory", def(Handle) thin -> Bool
     ]()(handle)
 
 
@@ -40404,7 +40421,7 @@ def rocblas_set_device_memory_size(handle: Handle, size: Int) raises -> Status:
         If the dynamic library cannot be found.
     """
     return _get_dylib_function[
-        "rocblas_set_device_memory_size", def(Handle, Int) -> Status
+        "rocblas_set_device_memory_size", def(Handle, Int) thin -> Status
     ]()(handle, size)
 
 
@@ -40413,10 +40430,10 @@ def rocblas_cdgmm_strided_batched(
     side: Side,
     m: Int32,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
     _c: UnsafePointer[ComplexFloat32, _],
@@ -40441,7 +40458,7 @@ def rocblas_cdgmm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -40464,8 +40481,8 @@ def rocblas_chpr(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     _ap: UnsafePointer[ComplexFloat32, _],
 ) raises -> Status:
@@ -40540,7 +40557,7 @@ def rocblas_chpr(
             type_of(x),
             Int32,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -40551,7 +40568,7 @@ def rocblas_stbmv_strided_batched(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[Float32, _],
@@ -40662,7 +40679,7 @@ def rocblas_stbmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -40689,8 +40706,8 @@ def rocblas_crot_strided_batched(
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[ComplexFloat32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, ComplexFloat32, _],
     batch_count: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -40707,7 +40724,7 @@ def rocblas_crot_strided_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
@@ -40717,7 +40734,7 @@ def rocblas_ztpmv(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int32,
 ) raises -> Status:
@@ -40732,7 +40749,7 @@ def rocblas_ztpmv(
             type_of(_a),
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
@@ -40920,7 +40937,7 @@ def rocblas_trsm_strided_batched_ex(
             Int32,
             Int64,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -40971,7 +40988,7 @@ def rocblas_ctbsv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
@@ -40979,7 +40996,7 @@ def rocblas_dspr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -41000,7 +41017,7 @@ def rocblas_dspr2_batched(
             Int32,
             type_of(_ap),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap, batch_count)
 
 
@@ -41008,14 +41025,14 @@ def rocblas_zsymv_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
     stridey: Int64,
@@ -41039,7 +41056,7 @@ def rocblas_zsymv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -41063,12 +41080,12 @@ def rocblas_dsymv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -41088,14 +41105,14 @@ def rocblas_dsymv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
 def rocblas_isamin_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -41111,7 +41128,7 @@ def rocblas_isamin_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
@@ -41136,7 +41153,7 @@ def rocblas_zdotc_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
@@ -41144,10 +41161,10 @@ def rocblas_ssyr2_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
-    y: UnsafePointer[Float32, _],
+    y: UnsafePointer[mut=False, Float32, _],
     incy: Int64,
     _a: UnsafePointer[Float32, _],
     lda: Int64,
@@ -41165,7 +41182,7 @@ def rocblas_ssyr2_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -41175,7 +41192,7 @@ def rocblas_dtrsv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[Float64, _],
@@ -41198,7 +41215,7 @@ def rocblas_dtrsv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -41236,7 +41253,7 @@ def rocblas_drotm_batched(
             Int32,
             type_of(param),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, param, batch_count)
 
 
@@ -41247,14 +41264,14 @@ def rocblas_sgbmv_strided_batched_64(
     n: Int64,
     kl: Int64,
     ku: Int64,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     stride__a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stride_x: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int64,
     stride_y: Int64,
@@ -41281,7 +41298,7 @@ def rocblas_sgbmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans,
@@ -41325,7 +41342,7 @@ def rocblas_hdot_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
@@ -41334,12 +41351,12 @@ def rocblas_chbmv_64(
     uplo: Fill,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
 ) raises -> Status:
@@ -41358,7 +41375,7 @@ def rocblas_chbmv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -41379,7 +41396,7 @@ def rocblas_srotg_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s, batch_count)
 
 
@@ -41389,7 +41406,7 @@ def rocblas_stpmv_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[UnsafePointer[Float32, MutAnyOrigin], _],
+    _a: UnsafePointer[mut=False, UnsafePointer[Float32, MutAnyOrigin], _],
     x: UnsafePointer[UnsafePointer[Float32, MutAnyOrigin], _],
     incx: Int64,
     batch_count: Int64,
@@ -41406,16 +41423,16 @@ def rocblas_stpmv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx, batch_count)
 
 
 def rocblas_cdotu_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
-    y: UnsafePointer[ComplexFloat32, _],
+    y: UnsafePointer[mut=False, ComplexFloat32, _],
     incy: Int64,
     result: UnsafePointer[ComplexFloat32, _],
 ) raises -> Status:
@@ -41429,7 +41446,7 @@ def rocblas_cdotu_64(
             type_of(y),
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -41437,8 +41454,8 @@ def rocblas_dspr_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int32,
     stride_x: Int64,
     _ap: UnsafePointer[Float64, _],
@@ -41458,14 +41475,14 @@ def rocblas_dspr_strided_batched(
             type_of(_ap),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
 def rocblas_scnrm2_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -41481,7 +41498,7 @@ def rocblas_scnrm2_strided_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -41492,8 +41509,8 @@ def rocblas_csrot(
     incx: Int32,
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, Float32, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot",
@@ -41506,7 +41523,7 @@ def rocblas_csrot(
             Int32,
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -41517,12 +41534,12 @@ def rocblas_dgemmt_batched(
     trans_b: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -41545,7 +41562,7 @@ def rocblas_dgemmt_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -41567,7 +41584,8 @@ def rocblas_dgemmt_batched(
 
 def rocblas_device_malloc_set_default_memory_size(size: Int) raises:
     _get_dylib_function[
-        "rocblas_device_malloc_set_default_memory_size", def(Int) -> NoneType
+        "rocblas_device_malloc_set_default_memory_size",
+        def(Int) thin -> NoneType,
     ]()(size)
 
 
@@ -41594,7 +41612,7 @@ def rocblas_zswap_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -41603,12 +41621,12 @@ def rocblas_hshgemv_batched_64(
     trans: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -41629,7 +41647,7 @@ def rocblas_hshgemv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -41640,12 +41658,12 @@ def rocblas_ssbmv_batched_64(
     uplo: Fill,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int64,
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -41666,7 +41684,7 @@ def rocblas_ssbmv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -41697,7 +41715,7 @@ def rocblas_ztbmv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
@@ -41705,8 +41723,8 @@ def rocblas_zgeru_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
@@ -41726,7 +41744,7 @@ def rocblas_zgeru_64(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -41736,7 +41754,7 @@ def rocblas_ctpmv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int64,
@@ -41757,7 +41775,7 @@ def rocblas_ctpmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -41776,8 +41794,8 @@ def rocblas_ctpmv_strided_batched_64(
 def rocblas_caxpy(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    x: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
@@ -41792,7 +41810,7 @@ def rocblas_caxpy(
             Int32,
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -41801,12 +41819,12 @@ def rocblas_zgemv_64(
     trans: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
 ) raises -> Status:
@@ -41825,7 +41843,7 @@ def rocblas_zgemv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -41846,7 +41864,7 @@ def rocblas_drotg_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s, batch_count)
 
 
@@ -41858,7 +41876,7 @@ def rocblas_ztrsm_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
@@ -41881,7 +41899,7 @@ def rocblas_ztrsm_batched(
             type_of(_b),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -41906,12 +41924,12 @@ def rocblas_cgemmt(
     trans_b: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    _b: UnsafePointer[ComplexFloat32, _],
+    _b: UnsafePointer[mut=False, ComplexFloat32, _],
     ldb: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _c: UnsafePointer[ComplexFloat32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -41932,7 +41950,7 @@ def rocblas_cgemmt(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -41968,7 +41986,7 @@ def rocblas_izamin_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, result)
 
 
@@ -41989,15 +42007,15 @@ def rocblas_status_to_string(
     """
     return _get_dylib_function[
         "rocblas_status_to_string",
-        def(Status) -> UnsafePointer[Int8, MutAnyOrigin],
+        def(Status) thin -> UnsafePointer[Int8, MutAnyOrigin],
     ]()(status)
 
 
 def rocblas_saxpy(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     y: UnsafePointer[Float32, _],
     incy: Int32,
@@ -42012,7 +42030,7 @@ def rocblas_saxpy(
             Int32,
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -42020,7 +42038,7 @@ def rocblas_cher2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -42097,7 +42115,7 @@ def rocblas_cher2_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -42107,7 +42125,7 @@ def rocblas_ztpmv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     x: UnsafePointer[ComplexFloat64, _],
     incx: Int64,
 ) raises -> Status:
@@ -42122,7 +42140,7 @@ def rocblas_ztpmv_64(
             type_of(_a),
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
@@ -42130,13 +42148,13 @@ def rocblas_sspmv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     stride_a: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int32,
     stridey: Int64,
@@ -42217,7 +42235,7 @@ def rocblas_sspmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -42243,8 +42261,8 @@ def rocblas_drot(
     incx: Int32,
     y: UnsafePointer[Float64, _],
     incy: Int32,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, Float64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot",
@@ -42257,7 +42275,7 @@ def rocblas_drot(
             Int32,
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -42265,12 +42283,12 @@ def rocblas_zsymv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
 ) raises -> Status:
@@ -42288,14 +42306,14 @@ def rocblas_zsymv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
 def rocblas_csscal(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int32,
 ) raises -> Status:
@@ -42307,7 +42325,7 @@ def rocblas_csscal(
             type_of(alpha),
             type_of(x),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -42318,8 +42336,8 @@ def rocblas_zrot(
     incx: Int32,
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[ComplexFloat64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, ComplexFloat64, _],
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot",
@@ -42332,7 +42350,7 @@ def rocblas_zrot(
             Int32,
             type_of(c),
             type_of(s),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -42343,14 +42361,14 @@ def rocblas_zgemm_strided_batched(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
     stride_b: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
     stride_c: Int64,
@@ -42377,7 +42395,7 @@ def rocblas_zgemm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -42409,8 +42427,8 @@ def rocblas_zdrot_strided_batched(
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, Float64, _],
     batch_count: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -42427,7 +42445,7 @@ def rocblas_zdrot_strided_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
@@ -42439,8 +42457,8 @@ def rocblas_ctrsm(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     _b: UnsafePointer[ComplexFloat32, _],
     ldb: Int32,
@@ -42460,7 +42478,7 @@ def rocblas_ctrsm(
             Int32,
             type_of(_b),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, trans_a, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -42470,7 +42488,7 @@ def rocblas_ctrsv_strided_batched_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -42493,7 +42511,7 @@ def rocblas_ctrsv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -42513,7 +42531,7 @@ def rocblas_ctrsv_strided_batched_64(
 def rocblas_isamax(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     result: UnsafePointer[Int32, _],
 ) raises -> Status:
@@ -42542,7 +42560,7 @@ def rocblas_isamax(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamax",
-        def(Handle, Int32, type_of(x), Int32, type_of(result)) -> Status,
+        def(Handle, Int32, type_of(x), Int32, type_of(result)) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -42571,7 +42589,7 @@ def rocblas_ztrsv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
@@ -42581,12 +42599,12 @@ def rocblas_ssymm(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
-    _b: UnsafePointer[Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -42680,7 +42698,7 @@ def rocblas_ssymm(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -42688,11 +42706,11 @@ def rocblas_dspmv_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     _a: OpaquePointer[_],
     x: OpaquePointer[_],
     incx: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: OpaquePointer[_],
     incy: Int64,
     batch_count: Int64,
@@ -42711,7 +42729,7 @@ def rocblas_dspmv_batched_64(
             type_of(y),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, x, incx, beta, y, incy, batch_count)
 
 
@@ -42719,8 +42737,8 @@ def rocblas_sger(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     y: UnsafePointer[Float32, _],
     incy: Int32,
@@ -42780,7 +42798,7 @@ def rocblas_sger(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -42801,7 +42819,7 @@ def rocblas_crotg_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s, batch_count)
 
 
@@ -42813,7 +42831,7 @@ def rocblas_srotmg_strided_batched_64(
     stride_d2: Int64,
     x1: UnsafePointer[Float32, _],
     stride_x1: Int64,
-    y1: UnsafePointer[Float32, _],
+    y1: UnsafePointer[mut=False, Float32, _],
     stride_y1: Int64,
     param: UnsafePointer[Float32, _],
     stride_param: Int64,
@@ -42834,7 +42852,7 @@ def rocblas_srotmg_strided_batched_64(
             type_of(param),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         d1,
@@ -42862,7 +42880,7 @@ def rocblas_device_malloc_get(
             type_of(ptr),
             Int,
             type_of(res),
-        ) -> Status,
+        ) thin -> Status,
     ]()(ptr, index, res)
 
 
@@ -42872,10 +42890,10 @@ def rocblas_cherk_batched(
     trans_a: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: OpaquePointer[_],
     ldc: Int32,
     batch_count: Int32,
@@ -42966,7 +42984,7 @@ def rocblas_cherk_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, n, k, alpha, _a, lda, beta, _c, ldc, batch_count)
 
 
@@ -42977,8 +42995,8 @@ def rocblas_crot_batched(
     incx: Int32,
     y: OpaquePointer[_],
     incy: Int32,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[ComplexFloat32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, ComplexFloat32, _],
     batch_count: Int32,
 ) raises -> Status:
     return _get_dylib_function[
@@ -42993,15 +43011,15 @@ def rocblas_crot_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
 def rocblas_zaxpy(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
@@ -43016,14 +43034,14 @@ def rocblas_zaxpy(
             Int32,
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
 def rocblas_dnrm2_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -43039,7 +43057,7 @@ def rocblas_dnrm2_strided_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, results)
 
 
@@ -43047,7 +43065,7 @@ def rocblas_ssyr2_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int32,
     y: OpaquePointer[_],
@@ -43114,7 +43132,7 @@ def rocblas_ssyr2_batched(
             type_of(_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -43199,7 +43217,7 @@ def rocblas_nrm2_strided_batched_ex(
             type_of(results),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -43231,7 +43249,7 @@ def rocblas_cswap_64(
             Int64,
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -43239,12 +43257,12 @@ def rocblas_csymv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -43264,7 +43282,7 @@ def rocblas_csymv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
@@ -43289,7 +43307,7 @@ def rocblas_nrm2_ex_64(
             type_of(results),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, x_type, incx, results, result_type, execution_type)
 
 
@@ -43369,7 +43387,7 @@ def rocblas_scal_batched_ex(
             Int32,
             Int32,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -43386,10 +43404,10 @@ def rocblas_scal_batched_ex(
 def rocblas_zdotu_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -43408,14 +43426,14 @@ def rocblas_zdotu_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
 def rocblas_scopy_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     y: UnsafePointer[Float32, _],
     incy: Int64,
@@ -43429,14 +43447,14 @@ def rocblas_scopy_64(
             Int64,
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
 def rocblas_idamin_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -43452,15 +43470,15 @@ def rocblas_idamin_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
 def rocblas_haxpy_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float16, _],
-    x: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float16, _],
+    x: UnsafePointer[mut=False, Float16, _],
     incx: Int64,
     y: UnsafePointer[Float16, _],
     incy: Int64,
@@ -43475,7 +43493,7 @@ def rocblas_haxpy_64(
             Int64,
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -43548,7 +43566,7 @@ def rocblas_nrm2_ex(
             type_of(results),
             DataType,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, x_type, incx, results, result_type, execution_type)
 
 
@@ -43560,7 +43578,7 @@ def rocblas_ztrmm_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
@@ -43587,7 +43605,7 @@ def rocblas_ztrmm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -43611,8 +43629,8 @@ def rocblas_sspr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     _ap: UnsafePointer[Float32, _],
 ) raises -> Status:
@@ -43626,7 +43644,7 @@ def rocblas_sspr_64(
             type_of(x),
             Int64,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -43634,8 +43652,8 @@ def rocblas_zhpr_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int64,
     _ap: UnsafePointer[ComplexFloat64, _],
 ) raises -> Status:
@@ -43649,7 +43667,7 @@ def rocblas_zhpr_64(
             type_of(x),
             Int64,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -43657,12 +43675,12 @@ def rocblas_dsymv_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int64,
-    x: UnsafePointer[Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     y: UnsafePointer[Float64, _],
     incy: Int64,
 ) raises -> Status:
@@ -43680,7 +43698,7 @@ def rocblas_dsymv_64(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -43690,10 +43708,10 @@ def rocblas_cgeam_batched(
     trans_b: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     _b: OpaquePointer[_],
     ldb: Int32,
     _c: OpaquePointer[_],
@@ -43717,7 +43735,7 @@ def rocblas_cgeam_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -43740,10 +43758,10 @@ def rocblas_sspr2(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
-    y: UnsafePointer[Float32, _],
+    y: UnsafePointer[mut=False, Float32, _],
     incy: Int32,
     _ap: UnsafePointer[Float32, _],
 ) raises -> Status:
@@ -43825,7 +43843,7 @@ def rocblas_sspr2(
             type_of(y),
             Int32,
             type_of(_ap),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -43833,7 +43851,7 @@ def rocblas_zsyr2_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -43856,7 +43874,7 @@ def rocblas_zsyr2_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -43883,7 +43901,7 @@ def rocblas_ctrtri_batched(
             type_of(inv_a),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, diag, n, _a, lda, inv_a, ldinv_a, batch_count)
 
 
@@ -43891,7 +43909,7 @@ def rocblas_cher_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     x: OpaquePointer[_],
     incx: Int64,
     _a: OpaquePointer[_],
@@ -43910,7 +43928,7 @@ def rocblas_cher_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda, batch_count)
 
 
@@ -43929,7 +43947,7 @@ def rocblas_get_device_memory_size(
     """
     return _get_dylib_function[
         "rocblas_get_device_memory_size",
-        def(Handle, type_of(size)) -> Status,
+        def(Handle, type_of(size)) thin -> Status,
     ]()(handle, size)
 
 
@@ -43937,7 +43955,7 @@ def rocblas_dger_batched_64(
     handle: Handle,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int64,
     y: OpaquePointer[_],
@@ -43960,7 +43978,7 @@ def rocblas_dger_batched_64(
             type_of(_a),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda, batch_count)
 
 
@@ -43968,11 +43986,11 @@ def rocblas_zhpr2_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int32,
     stride_y: Int64,
     _ap: UnsafePointer[ComplexFloat64, _],
@@ -43995,7 +44013,7 @@ def rocblas_zhpr2_strided_batched(
             type_of(_ap),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -44017,7 +44035,7 @@ def rocblas_zspr_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     x: OpaquePointer[_],
     incx: Int32,
     _ap: OpaquePointer[_],
@@ -44034,7 +44052,7 @@ def rocblas_zspr_batched(
             Int32,
             type_of(_ap),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, _ap, batch_count)
 
 
@@ -44042,12 +44060,12 @@ def rocblas_csymv(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
 ) raises -> Status:
@@ -44065,14 +44083,14 @@ def rocblas_csymv(
             type_of(beta),
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
 def rocblas_dscal_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
     x: OpaquePointer[_],
     incx: Int32,
     batch_count: Int32,
@@ -44086,7 +44104,7 @@ def rocblas_dscal_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
@@ -44095,14 +44113,14 @@ def rocblas_cgemv_strided_batched_64(
     trans_a: Operation,
     m: Int64,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     stride_a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int64,
     stridex: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int64,
     stridey: Int64,
@@ -44127,7 +44145,7 @@ def rocblas_cgemv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -44155,7 +44173,7 @@ def rocblas_stbsv_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int64,
     x: UnsafePointer[Float32, _],
     incx: Int64,
@@ -44173,7 +44191,7 @@ def rocblas_stbsv_64(
             Int64,
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx)
 
 
@@ -44183,14 +44201,14 @@ def rocblas_zhemm_strided_batched(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[ComplexFloat64, _],
+    _b: UnsafePointer[mut=False, ComplexFloat64, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     _c: UnsafePointer[ComplexFloat64, _],
     ldc: Int32,
     stride__c: Int64,
@@ -44216,7 +44234,7 @@ def rocblas_zhemm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -44255,7 +44273,7 @@ def rocblas_dnrm2_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -44263,8 +44281,8 @@ def rocblas_zgeru(
     handle: Handle,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
@@ -44284,14 +44302,14 @@ def rocblas_zgeru(
             Int32,
             type_of(_a),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
 def rocblas_zcopy(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
@@ -44305,7 +44323,7 @@ def rocblas_zcopy(
             Int32,
             type_of(y),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -44315,12 +44333,12 @@ def rocblas_ssyrkx(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
-    _b: UnsafePointer[Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
 ) raises -> Status:
@@ -44424,7 +44442,7 @@ def rocblas_ssyrkx(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -44449,7 +44467,7 @@ def rocblas_zdotu_batched(
             Int32,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, batch_count, result)
 
 
@@ -44459,7 +44477,7 @@ def rocblas_ctpsv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _ap: UnsafePointer[ComplexFloat32, _],
+    _ap: UnsafePointer[mut=False, ComplexFloat32, _],
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat32, _],
     incx: Int32,
@@ -44480,7 +44498,7 @@ def rocblas_ctpsv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -44500,8 +44518,8 @@ def rocblas_zher_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stride_x: Int64,
     _a: UnsafePointer[ComplexFloat64, _],
@@ -44523,7 +44541,7 @@ def rocblas_zher_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -44560,7 +44578,7 @@ def rocblas_srotm_batched_64(
             Int64,
             type_of(param),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, param, batch_count)
 
 
@@ -44569,14 +44587,14 @@ def rocblas_tssgemv_strided_batched(
     trans_a: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[BFloat16, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, BFloat16, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[BFloat16, _],
+    x: UnsafePointer[mut=False, BFloat16, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: UnsafePointer[Float32, _],
     incy: Int32,
     stridey: Int64,
@@ -44601,7 +44619,7 @@ def rocblas_tssgemv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -44625,7 +44643,7 @@ def rocblas_tssgemv_strided_batched(
 def rocblas_isamax_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int64,
     stridex: Int64,
     batch_count: Int64,
@@ -44641,7 +44659,7 @@ def rocblas_isamax_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, batch_count, result)
 
 
@@ -44670,7 +44688,7 @@ def rocblas_drotg_strided_batched_64(
             type_of(s),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
@@ -44691,7 +44709,7 @@ def rocblas_scnrm2_batched_64(
             Int64,
             Int64,
             type_of(results),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, batch_count, results)
 
 
@@ -44704,8 +44722,8 @@ def rocblas_zdrot_strided_batched_64(
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int64,
     stride_y: Int64,
-    c: UnsafePointer[Float64, _],
-    s: UnsafePointer[Float64, _],
+    c: UnsafePointer[mut=False, Float64, _],
+    s: UnsafePointer[mut=False, Float64, _],
     batch_count: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -44722,7 +44740,7 @@ def rocblas_zdrot_strided_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stride_x, y, incy, stride_y, c, s, batch_count)
 
 
@@ -44753,17 +44771,17 @@ def rocblas_ctbmv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx, batch_count)
 
 
 def rocblas_bfdot_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[BFloat16, _],
+    x: UnsafePointer[mut=False, BFloat16, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[BFloat16, _],
+    y: UnsafePointer[mut=False, BFloat16, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -44782,7 +44800,7 @@ def rocblas_bfdot_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
@@ -44791,12 +44809,12 @@ def rocblas_zgemv_batched(
     trans: Operation,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -44817,7 +44835,7 @@ def rocblas_zgemv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy, batch_count
     )
@@ -44829,7 +44847,7 @@ def rocblas_stpmv_64(
     trans_a: Operation,
     diag: Diagonal,
     n: Int64,
-    _a: UnsafePointer[Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     x: UnsafePointer[Float32, _],
     incx: Int64,
 ) raises -> Status:
@@ -44844,7 +44862,7 @@ def rocblas_stpmv_64(
             type_of(_a),
             type_of(x),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, x, incx)
 
 
@@ -44889,14 +44907,14 @@ def rocblas_srotg_batched(
             type_of(c),
             type_of(s),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, b, c, s, batch_count)
 
 
 def rocblas_dznrm2(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     result: UnsafePointer[Float64, _],
 ) raises -> Status:
@@ -44908,7 +44926,7 @@ def rocblas_dznrm2(
             type_of(x),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -44919,7 +44937,7 @@ def rocblas_ctbmv_strided_batched_64(
     diag: Diagonal,
     n: Int64,
     k: Int64,
-    _a: UnsafePointer[ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int64,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat32, _],
@@ -44943,7 +44961,7 @@ def rocblas_ctbmv_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -44968,7 +44986,7 @@ def rocblas_ztbsv_strided_batched(
     diag: Diagonal,
     n: Int32,
     k: Int32,
-    _a: UnsafePointer[ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride__a: Int64,
     x: UnsafePointer[ComplexFloat64, _],
@@ -44992,7 +45010,7 @@ def rocblas_ztbsv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -45014,11 +45032,11 @@ def rocblas_zhpmv_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
     _ap: OpaquePointer[_],
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -45037,7 +45055,7 @@ def rocblas_zhpmv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy, batch_count)
 
 
@@ -45047,7 +45065,7 @@ def rocblas_dtrmv_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _a: UnsafePointer[UnsafePointer[Float64, MutAnyOrigin], _],
+    _a: UnsafePointer[mut=False, UnsafePointer[Float64, MutAnyOrigin], _],
     lda: Int32,
     x: UnsafePointer[UnsafePointer[Float64, MutAnyOrigin], _],
     incx: Int32,
@@ -45066,7 +45084,7 @@ def rocblas_dtrmv_batched(
             type_of(x),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
@@ -45076,7 +45094,7 @@ def rocblas_dtpsv_strided_batched(
     trans_a: Operation,
     diag: Diagonal,
     n: Int32,
-    _ap: UnsafePointer[Float64, _],
+    _ap: UnsafePointer[mut=False, Float64, _],
     stride__a: Int64,
     x: UnsafePointer[Float64, _],
     incx: Int32,
@@ -45097,7 +45115,7 @@ def rocblas_dtpsv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -45117,14 +45135,14 @@ def rocblas_zsymv_strided_batched(
     handle: Handle,
     uplo: Fill,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat64, _],
-    _a: UnsafePointer[ComplexFloat64, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat64, _],
+    _a: UnsafePointer[mut=False, ComplexFloat64, _],
     lda: Int32,
     stride_a: Int64,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
-    beta: UnsafePointer[ComplexFloat64, _],
+    beta: UnsafePointer[mut=False, ComplexFloat64, _],
     y: UnsafePointer[ComplexFloat64, _],
     incy: Int32,
     stridey: Int64,
@@ -45148,7 +45166,7 @@ def rocblas_zsymv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -45193,7 +45211,7 @@ def rocblas_strsv_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, trans_a, diag, n, _a, lda, x, incx, batch_count)
 
 
@@ -45203,14 +45221,14 @@ def rocblas_dsyrkx_strided_batched(
     trans: Operation,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
     stride__a: Int64,
-    _b: UnsafePointer[Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
     stride__b: Int64,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
     stride__c: Int64,
@@ -45236,7 +45254,7 @@ def rocblas_dsyrkx_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -45261,8 +45279,8 @@ def rocblas_dsyrkx_strided_batched(
 def rocblas_haxpy_strided_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[Float16, _],
-    x: UnsafePointer[Float16, _],
+    alpha: UnsafePointer[mut=False, Float16, _],
+    x: UnsafePointer[mut=False, Float16, _],
     incx: Int64,
     stridex: Int64,
     y: UnsafePointer[Float16, _],
@@ -45283,7 +45301,7 @@ def rocblas_haxpy_strided_batched_64(
             Int64,
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -45312,7 +45330,7 @@ def rocblas_zrotg_strided_batched(
             type_of(s),
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 
 
@@ -45323,8 +45341,8 @@ def rocblas_srot_batched_64(
     incx: Int64,
     y: OpaquePointer[_],
     incy: Int64,
-    c: UnsafePointer[Float32, _],
-    s: UnsafePointer[Float32, _],
+    c: UnsafePointer[mut=False, Float32, _],
+    s: UnsafePointer[mut=False, Float32, _],
     batch_count: Int64,
 ) raises -> Status:
     return _get_dylib_function[
@@ -45339,13 +45357,13 @@ def rocblas_srot_batched_64(
             type_of(c),
             type_of(s),
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
 def rocblas_is_device_memory_size_query(handle: Handle) raises -> Bool:
     return _get_dylib_function[
-        "rocblas_is_device_memory_size_query", def(Handle) -> Bool
+        "rocblas_is_device_memory_size_query", def(Handle) thin -> Bool
     ]()(handle)
 
 
@@ -45356,14 +45374,14 @@ def rocblas_sgemm_strided_batched(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
-    _a: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    _a: UnsafePointer[mut=False, Float32, _],
     lda: Int32,
     stride_a: Int64,
-    _b: UnsafePointer[Float32, _],
+    _b: UnsafePointer[mut=False, Float32, _],
     ldb: Int32,
     stride_b: Int64,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     _c: UnsafePointer[Float32, _],
     ldc: Int32,
     stride_c: Int64,
@@ -45461,7 +45479,7 @@ def rocblas_sgemm_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -45487,8 +45505,8 @@ def rocblas_sgemm_strided_batched(
 def rocblas_saxpy_strided_batched(
     handle: Handle,
     n: Int32,
-    alpha: UnsafePointer[Float32, _],
-    x: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
+    x: UnsafePointer[mut=False, Float32, _],
     incx: Int32,
     stridex: Int64,
     y: UnsafePointer[Float32, _],
@@ -45509,7 +45527,7 @@ def rocblas_saxpy_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, stridex, y, incy, stridey, batch_count)
 
 
@@ -45518,14 +45536,14 @@ def rocblas_chbmv_strided_batched(
     uplo: Fill,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
-    _a: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
+    _a: UnsafePointer[mut=False, ComplexFloat32, _],
     lda: Int32,
     stride__a: Int64,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     stride_x: Int64,
-    beta: UnsafePointer[ComplexFloat32, _],
+    beta: UnsafePointer[mut=False, ComplexFloat32, _],
     y: UnsafePointer[ComplexFloat32, _],
     incy: Int32,
     stride_y: Int64,
@@ -45635,7 +45653,7 @@ def rocblas_chbmv_strided_batched(
             Int32,
             Int64,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         uplo,
@@ -45660,8 +45678,8 @@ def rocblas_dspr_strided_batched_64(
     handle: Handle,
     uplo: Fill,
     n: Int64,
-    alpha: UnsafePointer[Float64, _],
-    x: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    x: UnsafePointer[mut=False, Float64, _],
     incx: Int64,
     stride_x: Int64,
     _ap: UnsafePointer[Float64, _],
@@ -45681,14 +45699,14 @@ def rocblas_dspr_strided_batched_64(
             type_of(_ap),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, alpha, x, incx, stride_x, _ap, stride__a, batch_count)
 
 
 def rocblas_scasum(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat32, _],
+    x: UnsafePointer[mut=False, ComplexFloat32, _],
     incx: Int32,
     result: UnsafePointer[Float32, _],
 ) raises -> Status:
@@ -45700,7 +45718,7 @@ def rocblas_scasum(
             type_of(x),
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, result)
 
 
@@ -45709,12 +45727,12 @@ def rocblas_ssbmv_batched(
     uplo: Fill,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[Float32, _],
+    alpha: UnsafePointer[mut=False, Float32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     x: OpaquePointer[_],
     incx: Int32,
-    beta: UnsafePointer[Float32, _],
+    beta: UnsafePointer[mut=False, Float32, _],
     y: OpaquePointer[_],
     incy: Int32,
     batch_count: Int32,
@@ -45786,17 +45804,17 @@ def rocblas_ssbmv_batched(
             type_of(y),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy, batch_count)
 
 
 def rocblas_bfdot_strided_batched_64(
     handle: Handle,
     n: Int64,
-    x: UnsafePointer[BFloat16, _],
+    x: UnsafePointer[mut=False, BFloat16, _],
     incx: Int64,
     stridex: Int64,
-    y: UnsafePointer[BFloat16, _],
+    y: UnsafePointer[mut=False, BFloat16, _],
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
@@ -45815,17 +45833,17 @@ def rocblas_bfdot_strided_batched_64(
             Int64,
             Int64,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
 def rocblas_zdotu_strided_batched(
     handle: Handle,
     n: Int32,
-    x: UnsafePointer[ComplexFloat64, _],
+    x: UnsafePointer[mut=False, ComplexFloat64, _],
     incx: Int32,
     stridex: Int64,
-    y: UnsafePointer[ComplexFloat64, _],
+    y: UnsafePointer[mut=False, ComplexFloat64, _],
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
@@ -45844,7 +45862,7 @@ def rocblas_zdotu_strided_batched(
             Int64,
             Int32,
             type_of(result),
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, x, incx, stridex, y, incy, stridey, batch_count, result)
 
 
@@ -45856,7 +45874,7 @@ def rocblas_ctrmm_batched(
     diag: Diagonal,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     _a: OpaquePointer[_],
     lda: Int32,
     _b: OpaquePointer[_],
@@ -45883,7 +45901,7 @@ def rocblas_ctrmm_batched(
             type_of(_c),
             Int32,
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         side,
@@ -45926,7 +45944,7 @@ def rocblas_scal_batched_ex_64(
             Int64,
             Int64,
             DataType,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         n,
@@ -45946,12 +45964,12 @@ def rocblas_dsymm(
     uplo: Fill,
     m: Int32,
     n: Int32,
-    alpha: UnsafePointer[Float64, _],
-    _a: UnsafePointer[Float64, _],
+    alpha: UnsafePointer[mut=False, Float64, _],
+    _a: UnsafePointer[mut=False, Float64, _],
     lda: Int32,
-    _b: UnsafePointer[Float64, _],
+    _b: UnsafePointer[mut=False, Float64, _],
     ldb: Int32,
-    beta: UnsafePointer[Float64, _],
+    beta: UnsafePointer[mut=False, Float64, _],
     _c: UnsafePointer[Float64, _],
     ldc: Int32,
 ) raises -> Status:
@@ -45971,14 +45989,14 @@ def rocblas_dsymm(
             type_of(beta),
             type_of(_c),
             Int32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
 def rocblas_cscal_batched_64(
     handle: Handle,
     n: Int64,
-    alpha: UnsafePointer[ComplexFloat32, _],
+    alpha: UnsafePointer[mut=False, ComplexFloat32, _],
     x: OpaquePointer[_],
     incx: Int64,
     batch_count: Int64,
@@ -45992,7 +46010,7 @@ def rocblas_cscal_batched_64(
             type_of(x),
             Int64,
             Int64,
-        ) -> Status,
+        ) thin -> Status,
     ]()(handle, n, alpha, x, incx, batch_count)
 
 
@@ -46011,10 +46029,10 @@ def rocblas_gemm_ex(
     b_type: DataType,
     ldb: Int32,
     beta: OpaquePointer[_],
-    c: OpaquePointer[_],
+    c: _CPointer[NoneType, _],
     c_type: DataType,
     ldc: Int32,
-    d: OpaquePointer[_],
+    d: _CPointer[NoneType, _],
     d_type: DataType,
     ldd: Int32,
     compute_type: DataType,
@@ -46167,7 +46185,7 @@ def rocblas_gemm_ex(
             Algorithm,
             Int32,
             UInt32,
-        ) -> Status,
+        ) thin -> Status,
     ]()(
         handle,
         trans_a,
@@ -46198,5 +46216,5 @@ def rocblas_gemm_ex(
 
 def rocblas_set_stream(handle: Handle, stream: hipStream_t) raises -> Status:
     return _get_dylib_function[
-        "rocblas_set_stream", def(Handle, hipStream_t) -> Status
+        "rocblas_set_stream", def(Handle, hipStream_t) thin -> Status
     ]()(handle, stream)

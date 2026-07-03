@@ -48,22 +48,27 @@ struct _CoroutineContext(TrivialRegisterPassable):
     and contain the resume function and a payload pointer."""
 
     # Passed the coroutine being completed and its context's payload.
-    comptime _resume_fn_type = def(AnyCoroutine) -> None
+    comptime _resume_fn_type = def(AnyCoroutine) thin -> None
 
     var _resume_fn: Self._resume_fn_type
     var _parent_hdl: AnyCoroutine
 
 
 @always_inline
-def _coro_get_resume_fn(handle: AnyCoroutine) -> def(AnyCoroutine) -> None:
+def _coro_get_resume_fn(handle: AnyCoroutine) -> def(AnyCoroutine) thin -> None:
     """This function is a generic coroutine resume function."""
-    return __mlir_op.`co.resume`[_type=def(AnyCoroutine) -> None](handle)
+    return __mlir_op.`co.resume`[_type=def(AnyCoroutine) thin -> None](handle)
 
 
 @always_inline
 def _coro_resume_fn(handle: AnyCoroutine):
     """This function is a generic coroutine resume function."""
     _coro_get_resume_fn(handle)(handle)
+
+
+@always_inline
+def _coro_destroy_fn(handle: AnyCoroutine):
+    __mlir_op.`co.destroy`(handle)
 
 
 def _coro_resume_noop_callback(null: AnyCoroutine):
@@ -77,7 +82,7 @@ def _coro_resume_noop_callback(null: AnyCoroutine):
 
 
 @explicit_destroy
-struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet](
+struct Coroutine[type: ImplicitlyDeletable, origins: OriginSet](
     RegisterPassable
 ):
     """Represents a coroutine.
@@ -97,7 +102,7 @@ struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet](
     @always_inline
     def _get_ctx[
         ctx_type: AnyType
-    ](self) -> UnsafePointer[ctx_type, MutExternalOrigin]:
+    ](self) -> UnsafePointer[ctx_type, MutUntrackedOrigin]:
         """Returns the pointer to the coroutine context.
 
         Parameters:
@@ -116,6 +121,17 @@ struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet](
     @always_inline
     def _set_result_slot(self, slot: UnsafePointer[mut=True, Self.type, ...]):
         __mlir_op.`co.set_byref_error_result`(self._handle, slot.address)
+
+    @always_inline
+    def _set_noop_callback(self):
+        """Set the resume function of the coroutine context to a no-op so it
+        doesn't try to resume anything else after executing. This makes
+        coroutines suitable for executing from external code (e.g. AsyncRT)
+        using _coro_resume_fn.
+        """
+        self._get_ctx[
+            _CoroutineContext
+        ]()[]._resume_fn = _coro_resume_noop_callback
 
     @always_inline
     @implicit
@@ -181,7 +197,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](RegisterPassable):
     @always_inline
     def _get_ctx[
         ctx_type: AnyType
-    ](self) -> UnsafePointer[ctx_type, MutExternalOrigin]:
+    ](self) -> UnsafePointer[ctx_type, MutUntrackedOrigin]:
         """Returns the pointer to the coroutine context.
 
         Parameters:
@@ -242,10 +258,13 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](RegisterPassable):
         # Don't you dare copy this code! 😤
         var handle = self^._take_handle()
         var error: Error
-        if __mlir_op.`co.await`[_type=__mlir_type.i1](
-            handle,
-            __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
-            __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(error)),
+        if Bool(
+            # TODO: co.await should return scalar<bool>
+            __mlir_op.`co.await`[_type=__mlir_type.i1](
+                handle,
+                __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
+                __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(error)),
+            )
         ):
             __mlir_op.`lit.ownership.mark_initialized`(
                 __get_mvalue_as_litref(error)

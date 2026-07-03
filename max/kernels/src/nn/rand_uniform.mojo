@@ -12,18 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.algorithm.functional import elementwise
+from std.gpu.host import DeviceContext
 from std.random import Random
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor._indexing import _dot_prod
+from extensibility import _dot_prod
 
 from std.utils import IndexList
+from std.utils.coord import Coord, coord_to_index_list
 
 
 def random_uniform[
     dtype: DType,
     rank: Int,
     //,
-    output_fn: def[width: Int, _rank: Int](
+    output_fn: def[width: SIMDSize, _rank: Int](
         idx: IndexList[_rank], val: SIMD[dtype, width]
     ) capturing[_],
     target: StaticString,
@@ -31,8 +32,8 @@ def random_uniform[
     shape: IndexList[rank],
     lower_bound: Scalar[dtype],
     upper_bound: Scalar[dtype],
-    seed_value: UInt64,
-    ctx: DeviceContextPtr,
+    seed_ptr: UnsafePointer[Scalar[DType.uint64], ImmutAnyOrigin],
+    ctx: DeviceContext,
 ) raises:
     """Call `output_fn` with values generated from a uniform distribution on
     [lower_bound, upper_bound] for floating-point types or
@@ -48,7 +49,8 @@ def random_uniform[
         shape: The shape of the output being stored into by output_fn.
         lower_bound: The lower bound on the uniform range.
         upper_bound: The upper bound on the uniform range.
-        seed_value: Seed value used to initialize the random number generator.
+        seed_ptr: Pointer to a single uint64 in device memory containing
+            the Philox seed.
         ctx: The device context.
     """
 
@@ -58,21 +60,23 @@ def random_uniform[
     var strides = shape.get_row_major_strides()
     var delta = Float32(upper_bound - lower_bound)
 
-    @parameter
     @always_inline
-    @__copy_capture(strides, delta)
-    def generate[
-        width: Int, _rank: Int, alignment: Int = 1
-    ](idx: IndexList[_rank],):
+    def generate[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert width <= 4
 
-        var offset = _dot_prod(rebind[type_of(strides)](idx), strides)
+        var offset = _dot_prod(
+            rebind[type_of(strides)](coord_to_index_list(idx)), strides
+        )
+
+        var seed_value = seed_ptr[0]
 
         var generator = Random(seed=seed_value, offset=UInt64(offset))
 
         var values: SIMD[DType.float32, 4] = generator.step_uniform()
         values = values * delta + Float32(lower_bound)
 
-        output_fn[width=width](idx, values.cast[dtype]().slice[width]())
+        output_fn[width=width](
+            coord_to_index_list(idx), values.cast[dtype]().slice[width]()
+        )
 
-    elementwise[generate, simd_width=4, target=target](shape, ctx)
+    elementwise[simd_width=4, target=target](generate, Coord(shape), ctx)

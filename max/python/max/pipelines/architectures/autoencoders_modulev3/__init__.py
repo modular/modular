@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Variational autoencoder architectures for latent diffusion decoding."""
 
 from .autoencoder_kl import AutoencoderKLModel
 from .autoencoder_kl_flux2 import AutoencoderKLFlux2Model

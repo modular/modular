@@ -15,11 +15,12 @@ from std.math import ceildiv
 from std.sys import simd_width_of
 from std.sys.info import _current_target
 
+from nn.reshape import reshape
 from std.algorithm import elementwise, sync_parallelize
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
 from layout import Coord, Idx, TileTensor, coord_to_index_list
-from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.asyncrt import parallelism_level
 
 from std.utils import IndexList
 
@@ -30,10 +31,9 @@ def index_tensor_shape[
     input_type: DType,
     indices_type: DType,
     batch_dims: Int,
-    single_thread_blocking_override: Bool = True,
 ](
-    input_buf: TileTensor[input_type, ...],
-    indices_buf: TileTensor[indices_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    indices_buf: TileTensor[mut=False, indices_type, ...],
 ) raises -> IndexList[output_rank]:
     """
     Compute the output shape of a `index_tensor` operation, and assert the
@@ -44,8 +44,6 @@ def index_tensor_shape[
         input_type: Type of the input tensor.
         indices_type: Type of the indices tensor.
         batch_dims: Batch dimensions.
-        single_thread_blocking_override: If True, then reduction is run
-          synchronously using a single thread.
 
     Args:
         input_buf: The input tensor.
@@ -70,10 +68,12 @@ def index_tensor_shape[
     var indices_shape = IndexList[combined_indices_rank]()
 
     comptime for i in range(batch_dims):
-        indices_shape[i] = input_buf.layout.shape[i]().value()
+        indices_shape[i] = Int(input_buf.layout.shape[i]().value())
 
     comptime for i in range(indices_buf.rank):
-        indices_shape[batch_dims + i] = indices_buf.layout.shape[i]().value()
+        indices_shape[batch_dims + i] = Int(
+            indices_buf.layout.shape[i]().value()
+        )
 
     var index_size = indices_shape[combined_indices_rank - 1]
     # TODO: Revisit when we generalize (see above TODO).
@@ -143,12 +143,11 @@ def index_tensor[
     indices_type: DType,
     batch_dims: Int,
     target: StaticString = "cpu",
-    single_thread_blocking_override: Bool = False,
 ](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
+    data: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """
     Index_tensor operation; based on modified implementation of gather_nd.
@@ -159,8 +158,6 @@ def index_tensor[
         batch_dims: Number of batch dimensions. The gather of indexing
                     starts from dimension of data[batch_dims:].
         target: The target architecture to execute on.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         data: Tensor of rank data_rank >= 1.
@@ -168,7 +165,7 @@ def index_tensor[
                  to be within bounds [-s, s-1] along axis of size s. It is an
                  error if any of the index values are out of bounds.
         output: Tensor of rank data_rank + indices_rank - indices_shape[-1] - 1 - b.
-        ctx: The DeviceContextPtr as prepared by the graph compiler.
+        ctx: The device context as prepared by the graph compiler.
 
     """
 
@@ -176,14 +173,12 @@ def index_tensor[
         return _index_tensor_1d[
             batch_dims,
             target=target,
-            single_thread_blocking_override=single_thread_blocking_override,
-        ](data, indices, output)
+        ](data, indices, output, Optional[DeviceContext](ctx))
     else:
         return _index_tensor_impl[
             batch_dims,
             target=target,
-            single_thread_blocking_override=single_thread_blocking_override,
-        ](data, indices, output, ctx.get_device_context())
+        ](data, indices, output, ctx)
 
 
 # Note: this is an extremely specialized version of the kernel that only handles
@@ -195,17 +190,16 @@ def _index_tensor_1d[
     //,
     batch_dims: Int,
     target: StaticString = "cpu",
-    single_thread_blocking_override: Bool = False,
 ](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
+    data: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     comptime assert (
         data.flat_rank >= 2 and indices.flat_rank == 2
     ), "Constraint: data_rank >= 2 and indices_rank == 2"
-    # Provide evidence that flat_rank >= 2 for the Coord(Idx(...), Idx(...)) loads below.
+    # Provide evidence that flat_rank >= 2 for the Coord(..., ...) loads below.
     comptime assert indices.flat_rank >= 2
 
     var last_index_dim = Int(indices.dim(indices.rank - 1))
@@ -230,7 +224,7 @@ def _index_tensor_1d[
         reshaped_data_tuple[counter] = data_shape[i]
         counter += 1
 
-    var reshaped_data = reshape.reshape[reshaped_data_rank](
+    var reshaped_data = reshape[reshaped_data_rank](
         data.make_dynamic[DType.int64](),
         reshaped_data_tuple,
     )
@@ -238,7 +232,7 @@ def _index_tensor_1d[
     # TODO: Find a heuristic to replace the magic number
     #       to also take into account the data size per line.
     comptime MIN_LINES = 32
-    var num_threads = parallelism_level()
+    var num_threads = parallelism_level(ctx)
     var num_tasks = min(
         ceildiv(
             batch_volume,
@@ -260,16 +254,15 @@ def _index_tensor_1d[
                 var data_coord = IndexList[reshaped_data_rank]()
                 data_coord[0] = i
                 for k in range(last_index_dim):
-                    data_coord[k + 1] = Int(
-                        indices.load[width=1](Coord(Idx(j), Idx(k)))
-                    )
+                    data_coord[k + 1] = Int(indices.load[width=1](Coord(j, k)))
 
                 var rd_coord = Coord(data_coord)
-                output.ptr[i * Int(indices.dim(0)) + j] = reshaped_data.load[
-                    width=1
-                ](rd_coord)
+                output.raw_store(
+                    i * Int(indices.dim(0)) + j,
+                    reshaped_data.load[width=1](rd_coord),
+                )
 
-    sync_parallelize[calc_batch_dim](num_tasks)
+    sync_parallelize[calc_batch_dim](num_tasks, ctx)
 
 
 def _index_tensor_impl[
@@ -278,10 +271,9 @@ def _index_tensor_impl[
     //,
     batch_dims: Int,
     target: StaticString = "cpu",
-    single_thread_blocking_override: Bool = False,
 ](
-    data: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
+    data: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
@@ -291,11 +283,12 @@ def _index_tensor_impl[
 
     # This is modeled as an elementwise function mapping an index in the
     # output to an index in the input
-    @parameter
     def index_tensor_elementwise_fn[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](output_idx_arg: IndexList[rank]) capturing -> None:
-        var output_idx = rebind[IndexList[output.rank]](output_idx_arg)
+        simd_width: Int, alignment: Int = 1
+    ](output_idx_arg: Coord) {var}:
+        var output_idx = IndexList[output.rank]()
+        comptime for i in range(output.rank):
+            output_idx[i] = Int(output_idx_arg[i].value())
         var data_idx = IndexList[data.rank]()
         var indices_idx = IndexList[indices.rank]()
         var indices_last_dim = Int(indices.dim[indices.rank - 1]())
@@ -350,37 +343,38 @@ def _index_tensor_impl[
     )
 
     comptime if is_cpu[target]():
+        var cpu_ctx = DeviceContext(api="cpu")
         if use_simd:
             elementwise[
-                index_tensor_elementwise_fn,
                 target_simd_width,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()))
+            ](index_tensor_elementwise_fn, output.layout.shape_coord(), cpu_ctx)
         else:
             elementwise[
-                index_tensor_elementwise_fn,
                 1,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()))
+            ](index_tensor_elementwise_fn, output.layout.shape_coord(), cpu_ctx)
     else:
         assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
         if use_simd:
             elementwise[
-                index_tensor_elementwise_fn,
                 target_simd_width,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
+            ](
+                index_tensor_elementwise_fn,
+                output.layout.shape_coord(),
+                cuda_ctx,
+            )
         else:
             elementwise[
-                index_tensor_elementwise_fn,
                 1,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
+            ](
+                index_tensor_elementwise_fn,
+                output.layout.shape_coord(),
+                cuda_ctx,
+            )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -426,7 +420,6 @@ def advanced_indexing_getitem[
     start_axis: Int,
     num_index_tensors: Int,
     target: StaticString,
-    single_thread_blocking_override: Bool,
     trace_description: StaticString,
     input_tensor_fn: def[width: Int](IndexList[input_rank]) capturing -> SIMD[
         input_type, width
@@ -437,7 +430,7 @@ def advanced_indexing_getitem[
 ](
     out_tensor: TileTensor[mut=True, input_type, ...],
     in_tensor_strides: IndexList[input_rank],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Implement basic numpy-style advanced indexing.
 
@@ -476,8 +469,6 @@ def advanced_indexing_getitem[
             consecutive dimensions.
         num_index_tensors: The number of indexing tensors.
         target: The target architecture to operation on.
-        single_thread_blocking_override: If True, then the operation is run
-            synchronously using a single thread.
         trace_description: For profiling, the trace name the operation will
             appear under.
         input_tensor_fn: Fusion lambda for the input tensor.
@@ -486,7 +477,7 @@ def advanced_indexing_getitem[
     Args:
         out_tensor: The output tensor to write to.
         in_tensor_strides: The strides of the input tensor.
-        ctx: The DeviceContextPtr as prepared by the graph compiler.
+        ctx: The device context as prepared by the graph compiler.
 
     TODO(GEX-1951): Support boolean tensor mask support
     TODO(GEX-1952): Support non-contiguous indexing tensor case
@@ -498,38 +489,37 @@ def advanced_indexing_getitem[
         out_tensor.rank == input_rank + index_rank - num_index_tensors
     )
 
-    @parameter
     @always_inline
     def elementwise_fn_wrapper[
         width: Int,
-        out_tensor_rank: Int,
         alignment: Int = 1,
-    ](output_index: IndexList[out_tensor_rank]) capturing:
+    ](output_index: Coord) {var}:
         input_index = IndexList[input_rank]()
 
         # Find the associated output index from input index
         comptime for input_dim in range(input_rank):
             comptime if input_dim < start_axis:
-                input_index[input_dim] = output_index[input_dim]
+                input_index[input_dim] = Int(output_index[input_dim].value())
             elif input_dim >= start_axis + num_index_tensors:
-                input_index[input_dim] = output_index[
-                    input_dim - num_index_tensors + index_rank
-                ]
+                input_index[input_dim] = Int(
+                    output_index[
+                        input_dim - num_index_tensors + index_rank
+                    ].value()
+                )
             else:
                 comptime index_tensor_offset = input_dim - start_axis
                 var index_tensor_indices = IndexList[index_rank]()
 
                 comptime for offset in range(index_rank):
-                    index_tensor_indices[offset] = output_index[
-                        offset + start_axis
-                    ]
+                    index_tensor_indices[offset] = Int(
+                        output_index[offset + start_axis].value()
+                    )
                 input_index[input_dim] = Int(
                     indices_fn[index_tensor_offset](index_tensor_indices)
                 )
 
-        var out_coord = Coord(output_index)
         out_tensor.store[width=width, alignment=1](
-            out_coord,
+            output_index,
             input_tensor_fn[width=width](input_index),
         )
 
@@ -547,20 +537,16 @@ def advanced_indexing_getitem[
     )
     if use_simd:
         elementwise[
-            elementwise_fn_wrapper,
             target_simd_width,
-            use_blocking_impl=single_thread_blocking_override,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(out_tensor.layout.shape_coord()), ctx)
+        ](elementwise_fn_wrapper, out_tensor.layout.shape_coord(), ctx)
     else:
         elementwise[
-            elementwise_fn_wrapper,
             1,
-            use_blocking_impl=single_thread_blocking_override,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(out_tensor.layout.shape_coord()), ctx)
+        ](elementwise_fn_wrapper, out_tensor.layout.shape_coord(), ctx)
 
 
 @always_inline
@@ -612,7 +598,6 @@ def advanced_indexing_setitem_inplace[
     start_axis: Int,
     num_index_tensors: Int,
     target: StaticString,
-    single_thread_blocking_override: Bool,
     trace_description: StaticString,
     updates_tensor_fn: def[width: Int](
         IndexList[updates_rank]
@@ -624,7 +609,7 @@ def advanced_indexing_setitem_inplace[
     input_tensor: TileTensor[mut=True, input_type, ...],
     index_tensor_shape: IndexList[index_rank],
     updates_tensor_strides: IndexList[updates_rank],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Implement basic numpy-style advanced indexing with assignment.
 
@@ -682,8 +667,6 @@ def advanced_indexing_setitem_inplace[
             consecutive dimensions.
         num_index_tensors: The number of indexing tensors.
         target: The target architecture to operation on.
-        single_thread_blocking_override: If True, then the operation is run
-            synchronously using a single thread.
         trace_description: For profiling, the trace name the operation will
             appear under.
         updates_tensor_fn: Fusion lambda for the update tensor.
@@ -693,7 +676,7 @@ def advanced_indexing_setitem_inplace[
         input_tensor: The input tensor being indexed into and modified in-place.
         index_tensor_shape: The shape of each index tensor.
         updates_tensor_strides: The strides of the update tensor.
-        ctx: The DeviceContextPtr as prepared by the graph compiler.
+        ctx: The device context as prepared by the graph compiler.
 
     TODO(GEX-1951): Support boolean tensor mask support
     TODO(GEX-1952): Support non-contiguous indexing tensor case
@@ -710,35 +693,41 @@ def advanced_indexing_setitem_inplace[
     # Find the common iteration space
     comptime for i in range(iteration_rank):
         comptime if i < start_axis:
-            iteration_shape[i] = input_tensor.layout.shape[i]().value()
+            iteration_shape[i] = Int(input_tensor.layout.shape[i]().value())
         elif i >= start_axis + index_rank:
-            iteration_shape[i] = input_tensor.layout.shape[
-                i - index_rank + num_index_tensors
-            ]().value()
+            iteration_shape[i] = Int(
+                input_tensor.layout.shape[
+                    i - index_rank + num_index_tensors
+                ]().value()
+            )
         else:
             iteration_shape[i] = index_tensor_shape[i - start_axis]
 
-    @parameter
     @always_inline
     def elementwise_fn_wrapper[
-        width: Int, iteration_rank: Int, alignment: Int = 1
-    ](iteration_indices: IndexList[iteration_rank]) capturing:
+        width: Int, alignment: Int = 1
+    ](iteration_indices: Coord) {var}:
         var index_tensor_indices = IndexList[index_rank]()
 
         # Find the index into the indexing tensors from the common index
         comptime for i in range(index_rank):
-            index_tensor_indices[i] = iteration_indices[i + start_axis]
+            index_tensor_indices[i] = Int(
+                iteration_indices[i + start_axis].value()
+            )
 
         # Find the index into the inputs from the common index
         var input_tensor_indices = IndexList[input_tensor.rank]()
 
         comptime for i in range(input_tensor.rank):
             comptime if i < start_axis:
-                input_tensor_indices[i] = iteration_indices[i]
+                input_tensor_indices[i] = Int(iteration_indices[i].value())
             elif i >= start_axis + num_index_tensors:
-                input_tensor_indices[i] = iteration_indices[
-                    i - num_index_tensors + index_rank
-                ]
+                input_tensor_indices[i] = Int(
+                    iteration_indices[
+                        i - num_index_tensors + index_rank
+                    ].value()
+                )
+
             else:
                 comptime index_tensor_offset = i - start_axis
                 input_tensor_indices[i] = Int(
@@ -746,11 +735,12 @@ def advanced_indexing_setitem_inplace[
                 )
 
         var input_tensor_coord = Coord(input_tensor_indices)
+        var updates_indices = IndexList[updates_rank]()
+        comptime for i in range(updates_rank):
+            updates_indices[i] = Int(iteration_indices[i].value())
         input_tensor.store[width=width, alignment=1](
             input_tensor_coord,
-            updates_tensor_fn[width=width](
-                rebind[IndexList[updates_rank]](iteration_indices)
-            ),
+            updates_tensor_fn[width=width](updates_indices),
         )
 
     # We can vectorize the assignment only if we are
@@ -770,17 +760,13 @@ def advanced_indexing_setitem_inplace[
     )
     if use_simd:
         elementwise[
-            elementwise_fn_wrapper,
             target_simd_width,
-            use_blocking_impl=single_thread_blocking_override,
             target=target,
             _trace_description=trace_description,
-        ](iteration_shape, ctx)
+        ](elementwise_fn_wrapper, Coord(iteration_shape), ctx)
     else:
         elementwise[
-            elementwise_fn_wrapper,
             1,
-            use_blocking_impl=single_thread_blocking_override,
             target=target,
             _trace_description=trace_description,
-        ](iteration_shape, ctx)
+        ](elementwise_fn_wrapper, Coord(iteration_shape), ctx)

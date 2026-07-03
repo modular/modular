@@ -19,11 +19,11 @@ from collections.abc import Sequence
 
 import numpy as np
 import numpy.typing as npt
+from max.experimental import functional as F
+from max.experimental.sharding.rules import ternary_rule
 from max.graph import TensorValue, ops
-from max.interfaces.pipeline_variants.text_generation import (
-    VLMTextGenerationContext,
-)
 from max.nn.kernels import scatter_nd_skip_oob_indices
+from max.pipelines.context import TextAndVisionContext
 
 
 def merge_multimodal_embeddings(
@@ -68,8 +68,15 @@ def merge_multimodal_embeddings(
     )
 
 
+# TODO(MXF-336): Use @F.functional decorator as the main entrypoint, instead of
+# creating a separate `F_` function, once all models are using ModuleV3.
+F_merge_multimodal_embeddings = F.functional(
+    merge_multimodal_embeddings, rule=ternary_rule
+)
+
+
 def compute_multimodal_merge_indices(
-    batch: Sequence[VLMTextGenerationContext],
+    batch: Sequence[TextAndVisionContext],
 ) -> npt.NDArray[np.int32]:
     """Compute scatter indices for merging vision embeddings into text embeddings.
 

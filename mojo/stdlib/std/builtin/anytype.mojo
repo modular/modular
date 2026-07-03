@@ -18,18 +18,21 @@ managed and destroyed in Mojo:
 - `AnyType`: The most basic trait that all types extend by default.
    Types with this trait have no destructor and no lifetime management.
 
-- `ImplicitlyDestructible`: The base trait for types that require lifetime
+- `ImplicitlyDeletable`: The base trait for types that require lifetime
    management through destructors. Any type that needs cleanup when it goes out
    of scope should implement this trait.
 
 These traits are built into Mojo and do not need to be imported.
 """
 
+from std.builtin.variadics import _MLIR
+
 # ===----------------------------------------------------------------------=== #
 #  AnyType
 # ===----------------------------------------------------------------------=== #
 
 
+@stable(since="1.0")
 trait AnyType:
     """The most basic trait that all Mojo types extend by default.
 
@@ -37,10 +40,10 @@ trait AnyType:
     requirements on the types that conform to it, not even that they provide
     a `__del__()` implicit destructor.
 
-    A type that conforms to `AnyType` but not to `ImplicitlyDestructible` is
+    A type that conforms to `AnyType` but not to `ImplicitlyDeletable` is
     called a linear type, also known as a non-implicitly-destructible type.
 
-    Generic code will commonly want to use `T: ImplicitlyDestructible` instead
+    Generic code will commonly want to use `T: ImplicitlyDeletable` instead
     of `T: AnyType`.
 
     **`AnyType`, Object Destructors, and Linear Types**
@@ -69,7 +72,7 @@ trait AnyType:
 
     * A `__del__()` destructor method that the compiler may call implicitly
       whenever an owned object instances has no further uses. Such types
-      conform to `ImplicitlyDestructible`.
+      conform to `ImplicitlyDeletable`.
 
     * Named destructor methods that type user must choose to call explicitly.
       Failing to explicitly destroy such a type will lead to a compile-time
@@ -94,22 +97,24 @@ trait AnyType:
     a named destructor method:
 
     ```mojo
+    from std.pathlib import Path
+
     @explicit_destroy
     struct FileBuffer:
         def __init__(out self, path: Path):
-            # ... open the file at the specified `path` ...
+            pass  # ... open the file at the specified `path` ...
 
         def write(self, data: Some[Writable]):
-            # ... buffered write of the specified data to this file ...
+            pass  # ... buffered write of the specified data to this file ...
 
         def save_and_close(deinit self):
-            # ... save out the buffered data ...
+            pass  # ... save out the buffered data ...
 
-    # 🔴 ERROR: 'file' abandoned without being explicitly destroyed
-    def write_greeting_to_file(var file: FileBuffer):
-        file.write("Hello there!")
-
-        # 🟢 FIX: add `file^.save_and_close()`
+    # ERROR: 'file' abandoned without being explicitly destroyed
+    # def write_greeting_to_file(var file: FileBuffer):
+    #     file.write("Hello there!")
+    #
+    # FIX: add `file^.save_and_close()`
     ```
 
     In the above example, the user is saved from forgetting to flush any
@@ -126,16 +131,25 @@ trait AnyType:
     pass
 
 
-trait ImplicitlyDestructible:
+@deprecated(use=ImplicitlyDeletable)
+comptime ImplicitlyDestructible = ImplicitlyDeletable
+"""Deprecated: A trait for types that require lifetime management through destructors.
+
+This trait has been renamed to `ImplicitlyDeletable`. This alias will be removed
+in a future version of Mojo."""
+
+
+@stable(since="1.0")
+trait ImplicitlyDeletable:
     """A trait for types that require lifetime management through destructors.
 
-    The `ImplicitlyDestructible` trait is fundamental to Mojo's memory
+    The `ImplicitlyDeletable` trait is fundamental to Mojo's memory
     management system. It indicates that a type has a destructor that needs to
     be called when instances go out of scope. This is essential for types that
     own resources like memory, file handles, or other system resources that need
     proper cleanup.
 
-    By default, all Mojo types implement `ImplicitlyDestructible`, unless they
+    By default, all Mojo types implement `ImplicitlyDeletable`, unless they
     opt-in to explicit named destructor methods using `@explicit_destroy`.
 
     Key aspects:
@@ -149,15 +163,17 @@ trait ImplicitlyDestructible:
     Example:
 
     ```mojo
-    struct ResourceOwner(ImplicitlyDestructible):
-        var ptr: UnsafePointer[Int]
+    from std.memory.alloc import alloc, dealloc, Layout, Allocation
+
+    struct ResourceOwner(ImplicitlyDeletable):
+        var allocation: Allocation[Int]
 
         def __init__(out self, size: Int):
-            self.ptr = UnsafePointer[Int].alloc(size)
+            self.allocation = alloc(Layout[Int](count=size))
 
         def __del__(deinit self):
             # Clean up owned resources
-            self.ptr.free()
+            dealloc(self.allocation^)
     ```
 
     Best practices:
@@ -168,6 +184,7 @@ trait ImplicitlyDestructible:
     - Use composition to automatically handle nested resource cleanup
     """
 
+    @stable(since="1.0")
     def __del__(deinit self, /):
         """Destroys the instance and cleans up any owned resources.
 
@@ -195,6 +212,9 @@ trait ImplicitlyDestructible:
 
 
 comptime __SomeImpl[Trait: type_of(AnyType), T: Trait] = T
+comptime __SomeTypeListImpl[
+    Trait: type_of(AnyType), values: _MLIR.KGENParamListType[Trait]
+] = TypeList[Trait=Trait, values]()
 
 comptime Some[Trait: type_of(AnyType)] = __SomeImpl[Trait, ...]
 """An alias allowing users to tersely express that a function argument is an
@@ -216,4 +236,25 @@ def foo(x: Some[Intable]) -> Int:
 
 Parameters:
     Trait: The trait or trait composition that the argument type must implement.
+"""
+
+comptime SomeTypeList[Trait: type_of(AnyType)] = __SomeTypeListImpl[Trait, ...]
+"""An alias allowing users to tersely express that a function argument is a
+list of types that implement a trait or trait composition. This is particularly
+useful for variadic packs.
+
+For example, instead of writing
+
+```mojo
+def foo[*arg_types: Copyable](*args: *arg_types) -> Int: ...
+```
+
+one can write:
+
+```mojo
+def foo(*args: *SomeTypeList[Copyable]) -> Int: ...
+```
+
+Parameters:
+    Trait: The trait or trait composition that the argument types must implement.
 """

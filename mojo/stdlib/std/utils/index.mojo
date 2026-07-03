@@ -23,9 +23,8 @@ from std.utils import IndexList
 from std.hashlib.hasher import Hasher
 from std.sys import bit_width_of
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.dtype import _int_type_of_width, _uint_type_of_width
-from std.builtin.variadics import Variadic
 import std.format._utils as fmt
 
 from .static_tuple import StaticTuple
@@ -57,7 +56,9 @@ def _reduce_and_fn(a: Bool, b: Bool) -> Bool:
 
 @always_inline
 def _int_tuple_binary_apply[
-    binary_fn: def[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
+    binary_fn: def[dtype: DType](Scalar[dtype], Scalar[dtype]) thin -> Scalar[
+        dtype
+    ],
 ](a: IndexList, b: type_of(a), out c: type_of(a)):
     """Applies a given element binary function to each pair of corresponding
     elements in two tuples.
@@ -88,7 +89,7 @@ def _int_tuple_binary_apply[
 
 @always_inline
 def _int_tuple_compare[
-    comp_fn: def[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Bool,
+    comp_fn: def[dtype: DType](Scalar[dtype], Scalar[dtype]) thin -> Bool,
 ](a: IndexList, b: type_of(a)) -> StaticTuple[Bool, a.size]:
     """Applies a given element compare function to each pair of corresponding
     elements in two tuples and produces a tuple of Bools containing result.
@@ -119,7 +120,7 @@ def _int_tuple_compare[
 
 @always_inline
 def _bool_tuple_reduce[
-    reduce_fn: def(Bool, Bool) -> Bool,
+    reduce_fn: def(Bool, Bool) thin -> Bool,
 ](a: StaticTuple[Bool, _], init: Bool) -> Bool:
     """Reduces the tuple argument with the given reduce function and initial
     value.
@@ -230,7 +231,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    def __init__(out self, *elems: Int, __list_literal__: () = ()):
+    def __init__(out self, *elems: Int, __list_literal__: NoneType = None):
         """Constructs a static int tuple given a set of arguments.
 
         Args:
@@ -324,6 +325,19 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
         comptime for i in range(Self.size):
             res[i] = self.get[i]()
+        return res
+
+    def as_index_tuple(self) -> StaticTuple[SIMDSize, Self.size]:
+        """Converts this IndexList to a static tuple of mlir indexes.
+
+        Returns:
+            The corresponding StaticTuple object.
+        """
+        var res = StaticTuple[SIMDSize, Self.size]()
+
+        comptime for i in range(Self.size):
+            res[i] = self.get[i]()
+
         return res
 
     @always_inline("nodebug")
@@ -680,7 +694,9 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         comptime for i in range(Self.size):
             hasher.update(self.data[i])
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """
         Convert the host type object to a device_type and store it at the
         target address.
@@ -688,7 +704,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         NOTE: This should only be called by `DeviceContext` during invocation
         of accelerator kernels.
         """
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

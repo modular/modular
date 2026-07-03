@@ -24,11 +24,9 @@ Key characteristics:
 """
 
 from std.math import ceildiv
+from std.math.uutils import ufloordiv
 
-from std.gpu import (
-    block_idx_uint as block_idx,
-    grid_dim_uint as grid_dim,
-)
+from std.gpu import block_idx, grid_dim
 from layout import TileTensor
 
 from structured_kernels.tile_types import GMEMLayout1D
@@ -108,46 +106,94 @@ struct GroupedWorkInfo1D1D(TrivialRegisterPassable, Writable):
 # ===----------------------------------------------------------------------=== #
 
 
-@fieldwise_init
 struct GroupedWorkContext1D1D(ImplicitlyCopyable, Movable):
     """Context for current work tile, used with context manager pattern.
 
     Provides access to work tile info and expert scale factor.
     """
 
-    var info: GroupedWorkInfo1D1D
+    var m_coord: UInt32
+    var n_coord: UInt32
+    var group_idx_val: UInt32
+    var expert_id_val: Int32
+    var m_start_coord: UInt32
     var expert_scale: Float32
     var m_end: UInt32  # End offset for bounds checking (exclusive upper bound)
+    var is_valid_tile: Bool
+    var terminate: Bool
+
+    @always_inline
+    def __init__(
+        out self,
+        info: GroupedWorkInfo1D1D,
+        expert_scale: Float32,
+        m_end: UInt32,
+    ):
+        self.m_coord = info.m
+        self.n_coord = info.n
+        self.group_idx_val = info.group_idx
+        self.expert_id_val = info.expert_id
+        self.m_start_coord = info.m_start
+        self.expert_scale = expert_scale
+        self.m_end = m_end
+        self.is_valid_tile = info.is_valid_tile
+        self.terminate = info.terminate
+
+    @always_inline
+    def __init__(
+        out self,
+        m: UInt32,
+        n: UInt32,
+        group_idx: UInt32,
+        expert_id: Int32,
+        m_start: UInt32,
+        expert_scale: Float32,
+        m_end: UInt32,
+    ):
+        self.m_coord = m
+        self.n_coord = n
+        self.group_idx_val = group_idx
+        self.expert_id_val = expert_id
+        self.m_start_coord = m_start
+        self.expert_scale = expert_scale
+        self.m_end = m_end
+        self.is_valid_tile = True
+        self.terminate = False
 
     @always_inline
     def m(self) -> UInt32:
         """M coordinate in contiguous token space."""
-        return self.info.m
+        return self.m_coord
 
     @always_inline
     def m_start(self) -> UInt32:
         """Expert's start token offset in contiguous token space."""
-        return self.info.m_start
+        return self.m_start_coord
 
     @always_inline
     def n(self) -> UInt32:
         """N coordinate in output space."""
-        return self.info.n
+        return self.n_coord
 
     @always_inline
     def group_idx(self) -> UInt32:
         """Index into active experts list."""
-        return self.info.group_idx
+        return self.group_idx_val
 
     @always_inline
     def expert_id(self) -> Int32:
         """Expert ID for B tensor indexing."""
-        return self.info.expert_id
+        return self.expert_id_val
 
     @always_inline
     def is_valid(self) -> Bool:
         """Whether this tile has valid work."""
-        return self.info.is_valid()
+        return self.is_valid_tile
+
+    @always_inline
+    def is_done(self) -> Bool:
+        """Whether the scheduler has no more work."""
+        return self.terminate
 
 
 # ===----------------------------------------------------------------------=== #
@@ -191,8 +237,14 @@ struct GroupedWorkIterator1D1D[
     ]
 
     var num_active_experts: Int
+
+    @__allow_legacy_any_origin_fields
     var group_offsets: Self.OffsetsTile
+
+    @__allow_legacy_any_origin_fields
     var expert_ids: Self.ExpertIdsTile
+
+    @__allow_legacy_any_origin_fields
     var expert_scales: Self.ExpertScalesTile
 
     # Iteration state
@@ -260,9 +312,9 @@ struct GroupedWorkIterator1D1D[
         """
         while True:
             var ctx = self.next()
-            if ctx.info.is_done():
+            if ctx.is_done():
                 raise StopIteration()
-            if ctx.info.is_valid():
+            if ctx.is_valid():
                 return ctx
 
     @always_inline
@@ -271,9 +323,7 @@ struct GroupedWorkIterator1D1D[
         var info, m_end = self._fetch_next_work()
         var expert_scale: Float32 = 1.0
         if info.is_valid():
-            expert_scale = rebind[Scalar[DType.float32]](
-                self.expert_scales[Int(info.expert_id)]
-            )
+            expert_scale = self.expert_scales[Int(info.expert_id)]
         return GroupedWorkContext1D1D(info, expert_scale, m_end)
 
     @always_inline
@@ -283,11 +333,9 @@ struct GroupedWorkIterator1D1D[
         # Normalize by cta_group so all CTAs in a cluster get the same
         # work tile.  For cta_group==1 this is a no-op.
         var next_block_idx = UInt32(self.current_iter) * UInt32(
-            grid_dim.x // Scalar[DType.uint](Self.cta_group)
-        ) + UInt32(block_idx.x // Scalar[DType.uint](Self.cta_group))
-        var start_idx = rebind[Scalar[DType.uint32]](
-            self.group_offsets[Int(self.current_group_idx)]
-        )
+            ufloordiv(grid_dim.x, Self.cta_group)
+        ) + UInt32(ufloordiv(block_idx.x, Self.cta_group))
+        var start_idx = self.group_offsets[Int(self.current_group_idx)]
         var end_idx: UInt32 = 0
         var num_dynamic_dim_blocks: UInt32 = 0
         var current_dynamic_dim: UInt32 = 0
@@ -301,17 +349,13 @@ struct GroupedWorkIterator1D1D[
                     UInt32(0),
                 )
 
-            end_idx = rebind[Scalar[DType.uint32]](
-                self.group_offsets[Int(self.current_group_idx + 1)]
-            )
+            end_idx = self.group_offsets[Int(self.current_group_idx + 1)]
 
             current_dynamic_dim = end_idx - start_idx
 
             # Fast-skip inactive experts (expert_id < 0) and groups with
             # zero tokens.  No A, B, or scale-factor loads should happen.
-            var group_expert_id = rebind[Scalar[DType.int32]](
-                self.expert_ids[Int(self.current_group_idx)]
-            )
+            var group_expert_id = self.expert_ids[Int(self.current_group_idx)]
             if group_expert_id < 0 or current_dynamic_dim <= 0:
                 self.current_group_idx += 1
                 start_idx = end_idx
@@ -350,9 +394,7 @@ struct GroupedWorkIterator1D1D[
             )
 
         # Get expert_id for this group
-        var expert_id = rebind[Scalar[DType.int32]](
-            self.expert_ids[Int(self.current_group_idx)]
-        )
+        var expert_id = self.expert_ids[Int(self.current_group_idx)]
 
         # Compute swizzled block indices
         var num_n_blocks = Self.num_static_dim_blocks

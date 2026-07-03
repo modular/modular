@@ -25,12 +25,13 @@ from max.nn.kernels import (
 )
 from max.nn.kernels import (
     block_scales_interleave,
-    dynamic_block_scaled_matmul_fp4,
-    grouped_dynamic_scaled_nvfp4_matmul,
-    quantize_dynamic_block_scaled_fp4,
+    dynamic_block_scaled_matmul,
+    grouped_matmul_block_scaled,
+    quantize_dynamic_block_scaled,
 )
 from max.nn.kv_cache import (
     KVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 
@@ -59,7 +60,7 @@ class FusedQKVRaggedMatmulScaledFloat4:
         weight_scale: TensorValue,
         weight_scale_2: TensorValue,
     ) -> TensorValue:
-        x, x_scales = quantize_dynamic_block_scaled_fp4(
+        x, x_scales = quantize_dynamic_block_scaled(
             input,
             tensor_sf=1.0 / input_scale,
             scales_type=DType.float8_e4m3fn,
@@ -91,7 +92,7 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
     device = DeviceRef.CPU()
 
     # Create KV cache parameters
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
         head_dim=64,
@@ -130,8 +131,10 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
             TensorType(DType.uint32, shape=(2,), device=device),
             # lookup_table: [batch_size, max_pages]
             TensorType(DType.uint32, shape=(2, 8), device=device),
-            # is_cache_empty: scalar
-            TensorType(DType.uint32, shape=(), device=device),
+            # max_prompt_length: scalar
+            TensorType(DType.uint32, shape=(1,), device=device),
+            # max_cache_length: scalar
+            TensorType(DType.uint32, shape=(1,), device=device),
         ],
     ) as graph:
         (
@@ -146,14 +149,16 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
             blocks,
             cache_lengths,
             lookup_table,
-            is_cache_empty,
+            max_prompt_length,
+            max_cache_length,
         ) = graph.inputs
 
         kv_collection = PagedCacheValues(
             blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
-            is_cache_empty.tensor,
+            max_prompt_length.tensor,
+            max_cache_length.tensor,
         )
 
         tester = FusedQKVRaggedMatmulScaledFloat4(kv_params, kv_collection, 32)
@@ -177,7 +182,7 @@ def test_dynamic_block_scaled_1d1d_matmul_fp4() -> None:
     """Tests dynamic_block_scaled_1d1d_matmul_fp4 with valid inputs."""
     device = DeviceRef.CPU()
     with Graph(
-        "dynamic_block_scaled_matmul_fp4",
+        "dynamic_block_scaled_matmul",
         input_types=[
             # a
             TensorType(DType.uint8, shape=(127, 129), device=device),
@@ -195,7 +200,7 @@ def test_dynamic_block_scaled_1d1d_matmul_fp4() -> None:
     ) as graph:
         a, b, a_scales, b_scales = (inp.tensor for inp in graph.inputs)
 
-        output = dynamic_block_scaled_matmul_fp4(
+        output = dynamic_block_scaled_matmul(
             a,
             b,
             a_scales,
@@ -206,73 +211,134 @@ def test_dynamic_block_scaled_1d1d_matmul_fp4() -> None:
         assert output.dtype == DType.bfloat16
 
 
-def test_quantize_dynamic_block_scaled_fp4() -> None:
-    """Tests quantize_dynamic_block_scaled_fp4 with valid inputs."""
+@pytest.mark.parametrize(
+    "sf_vector_size,scales_type,expected_scales_shape",
+    [
+        (16, DType.float8_e4m3fn, [2, 3, 32, 4, 4]),
+        (32, DType.float8_e8m0fnu, [2, 2, 32, 4, 4]),
+    ],
+    ids=["nvfp4", "mxfp4"],
+)
+def test_quantize_dynamic_block_scaled_fp4(
+    sf_vector_size: int,
+    scales_type: DType,
+    expected_scales_shape: list[int],
+) -> None:
+    """Tests quantize_dynamic_block_scaled with valid FP4 inputs."""
+    from max.nn.kernels import _is_sm10x_gpu
+
     device = DeviceRef.CPU()
     with Graph(
-        "quantize_dynamic_block_scaled_fp4",
+        "quantize_dynamic_block_scaled",
         input_types=[
-            # input
-            TensorType(DType.bfloat16, shape=(129, 136), device=device),
+            TensorType(DType.bfloat16, shape=(129, 192), device=device),
         ],
     ) as graph:
         (input,) = (inp.tensor for inp in graph.inputs)
 
-        quantized_output, scales = quantize_dynamic_block_scaled_fp4(
+        quantized_output, scales = quantize_dynamic_block_scaled(
             input,
             1.0,
+            sf_vector_size=sf_vector_size,
+            scales_type=scales_type,
         )
-        assert quantized_output.shape == [129, 68]
+        assert quantized_output.shape == [129, 96]
         assert quantized_output.dtype == DType.uint8
-        assert scales.shape == [2, 3, 32, 4, 4]
-        assert scales.dtype == DType.float8_e4m3fn
+        assert scales.dtype == scales_type
+        if _is_sm10x_gpu():
+            assert scales.shape == expected_scales_shape
+        else:
+            assert scales.shape == [129, 192 // sf_vector_size]
 
 
-def test_block_scales_interleave() -> None:
+def test_quantize_mxfp4() -> None:
+    """Tests quantize_dynamic_block_scaled with MXFP4 params."""
+    from max.nn.kernels import _is_sm10x_gpu
+
+    device = DeviceRef.CPU()
+    with Graph(
+        "quantize_mxfp4",
+        input_types=[
+            TensorType(DType.bfloat16, shape=(128, 128), device=device),
+        ],
+    ) as graph:
+        (input,) = (inp.tensor for inp in graph.inputs)
+
+        quantized_output, scales = quantize_dynamic_block_scaled(
+            input,
+            1.0,
+            sf_vector_size=32,
+            scales_type=DType.float8_e8m0fnu,
+        )
+        assert quantized_output.shape == [128, 64]
+        assert quantized_output.dtype == DType.uint8
+        assert scales.dtype == DType.float8_e8m0fnu
+        if _is_sm10x_gpu():
+            assert scales.shape == [1, 1, 32, 4, 4]
+        else:
+            assert scales.shape == [128, 4]
+
+
+@pytest.mark.parametrize(
+    "sf_vector_size,scales_dtype,input_shape,expected_output_shape",
+    [
+        (16, DType.float8_e4m3fn, (129, 136), [2, 34, 32, 4, 4]),
+        (32, DType.float8_e8m0fnu, (129, 68), [2, 17, 32, 4, 4]),
+    ],
+    ids=["nvfp4", "mxfp4"],
+)
+def test_block_scales_interleave(
+    sf_vector_size: int,
+    scales_dtype: DType,
+    input_shape: tuple[int, int],
+    expected_output_shape: list[int],
+) -> None:
     """Tests block_scales_interleave with valid inputs."""
     device = DeviceRef.CPU()
     with Graph(
         "block_scales_interleave",
         input_types=[
-            # scales
-            TensorType(DType.float8_e4m3fn, shape=(129, 136), device=device),
+            TensorType(scales_dtype, shape=input_shape, device=device),
         ],
     ) as graph:
         (scales,) = (inp.tensor for inp in graph.inputs)
 
         scales_interleaved = block_scales_interleave(
             scales,
+            sf_vector_size=sf_vector_size,
         )
-        assert scales_interleaved.shape == [2, 34, 32, 4, 4]
-        assert scales_interleaved.dtype == DType.float8_e4m3fn
+        assert scales_interleaved.shape == expected_output_shape
+        assert scales_interleaved.dtype == scales_dtype
 
 
-# NVFP4 scale factor parameters (constants).
+# Block-scaled scale factor layout constants.
 # NOTE: tcgen05 scale factors are stored in a 5D layout:
 # (M // 32 // 4, K // VEC_SIZE // 4, 32, 4, 4).
 # Shape of scale factor MN-group.
 _SF_ATOM_M = (32, 4)
 # Number of scale factors per K-group.
 _SF_ATOM_K = 4
-# Number of elements per scale factor.
-_SF_VECTOR_SIZE = 16
 _SF_MN_GROUP_SIZE = _SF_ATOM_M[0] * _SF_ATOM_M[1]  # 128
-_SF_K_GROUP_SIZE = _SF_ATOM_K * _SF_VECTOR_SIZE  # 64
 
 
-def _get_nvfp4_input_types(
+def _get_fp4_input_types(
     device: DeviceRef,
     num_experts: int = 3,
     total_tokens: int = 99,
     N: int = 256,
     K: int = 512,
     hidden_dtype: DType = DType.uint8,
-    a_scales_dtype: DType = DType.float8_e4m3fn,
+    scales_dtype: DType = DType.float8_e4m3fn,
+    a_scales_dtype: DType | None = None,
+    sf_vector_size: int = 16,
     a_scales_shape: tuple[int, ...] | None = None,
 ) -> list[TensorType | BufferType]:
-    """Returns input types for grouped_dynamic_scaled_nvfp4_matmul tests."""
+    """Returns input types for grouped_matmul_block_scaled tests."""
+    if a_scales_dtype is None:
+        a_scales_dtype = scales_dtype
+    sf_k_group_size = _SF_ATOM_K * sf_vector_size
     num_scale_rows = (total_tokens + _SF_MN_GROUP_SIZE - 1) // _SF_MN_GROUP_SIZE
-    K_groups = (K + _SF_K_GROUP_SIZE - 1) // _SF_K_GROUP_SIZE
+    K_groups = (K + sf_k_group_size - 1) // sf_k_group_size
     N_groups = (N + _SF_MN_GROUP_SIZE - 1) // _SF_MN_GROUP_SIZE
 
     if a_scales_shape is None:
@@ -289,7 +355,7 @@ def _get_nvfp4_input_types(
         TensorType(DType.uint8, shape=(num_experts, N, K // 2), device=device),
         TensorType(a_scales_dtype, shape=a_scales_shape, device=device),
         TensorType(
-            DType.float8_e4m3fn,
+            scales_dtype,
             shape=(
                 num_experts,
                 N_groups,
@@ -318,13 +384,13 @@ def _get_nvfp4_input_types(
     ]
 
 
-def _call_nvfp4_matmul(
+def _call_fp4_matmul(
     input_types: list[TensorType | BufferType],
 ) -> TensorValue:
-    """Builds a graph calling grouped_dynamic_scaled_nvfp4_matmul."""
-    with Graph("test_nvfp4", input_types=input_types) as graph:
+    """Builds a graph calling grouped_matmul_block_scaled."""
+    with Graph("test_fp4", input_types=input_types) as graph:
         inputs = graph.inputs
-        return grouped_dynamic_scaled_nvfp4_matmul(
+        return grouped_matmul_block_scaled(
             inputs[0].tensor,
             inputs[1].tensor,
             inputs[2].tensor,
@@ -337,10 +403,24 @@ def _call_nvfp4_matmul(
         )
 
 
-def test_grouped_dynamic_scaled_nvfp4_matmul_valid() -> None:
-    """Tests grouped_dynamic_scaled_nvfp4_matmul with valid inputs."""
-    input_types = _get_nvfp4_input_types(DeviceRef.CPU())
-    output = _call_nvfp4_matmul(input_types)
+@pytest.mark.parametrize(
+    "sf_vector_size,scales_dtype",
+    [
+        (16, DType.float8_e4m3fn),
+        (32, DType.float8_e8m0fnu),
+    ],
+    ids=["nvfp4", "mxfp4"],
+)
+def test_grouped_matmul_block_scaled_valid(
+    sf_vector_size: int, scales_dtype: DType
+) -> None:
+    """Tests grouped_matmul_block_scaled with valid inputs."""
+    input_types = _get_fp4_input_types(
+        DeviceRef.CPU(),
+        sf_vector_size=sf_vector_size,
+        scales_dtype=scales_dtype,
+    )
+    output = _call_fp4_matmul(input_types)
     assert output.shape == [99, 256]
     assert output.dtype == DType.bfloat16
 
@@ -350,25 +430,46 @@ def test_grouped_dynamic_scaled_nvfp4_matmul_valid() -> None:
     [
         (
             {"hidden_dtype": DType.bfloat16},
-            TypeError,
-            "hidden_states and weight dtypes must be uint8 for NVFP4",
+            ValueError,
+            "expected hidden_states and weight to have the same dtype",
         ),
         (
             {"a_scales_dtype": DType.float32},
+            ValueError,
+            "expected a_scales and b_scales to have the same dtype",
+        ),
+        (
+            {"scales_dtype": DType.float32},
             TypeError,
-            "a_scales and b_scales dtypes must be float8_e4m3fn for NVFP4",
+            "a_scales dtype must be float8_e4m3fn \\(NVFP4\\) or float8_e8m0fnu \\(MXFP4/MXFP8\\)",
         ),
         (
             {"a_scales_shape": (1, 8)},
             ValueError,
-            "expected a_scales of rank 5 and b_scales of rank 6",
+            "expected a_scales to have rank 5, was 2",
         ),
     ],
 )
-def test_grouped_dynamic_scaled_nvfp4_matmul_invalid(
+def test_grouped_matmul_block_scaled_invalid(
     kwargs: dict[str, Any], error_type: type[Exception], error_match: str
 ) -> None:
-    """Tests grouped_dynamic_scaled_nvfp4_matmul rejects invalid inputs."""
-    input_types = _get_nvfp4_input_types(DeviceRef.CPU(), **kwargs)
+    """Tests grouped_matmul_block_scaled rejects invalid inputs."""
+    input_types = _get_fp4_input_types(DeviceRef.CPU(), **kwargs)
     with pytest.raises(error_type, match=error_match):
-        _call_nvfp4_matmul(input_types)
+        _call_fp4_matmul(input_types)
+
+
+def test_grouped_matmul_block_scaled_rejects_misplaced_scales() -> None:
+    """Tests grouped_matmul_block_scaled rejects scales on another device."""
+    input_types = _get_fp4_input_types(DeviceRef.CPU())
+    input_types[2] = TensorType(
+        DType.float8_e4m3fn,
+        shape=(1, 8, _SF_ATOM_M[0], _SF_ATOM_M[1], _SF_ATOM_K),
+        device=DeviceRef.GPU(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="expected hidden_states and a_scales to have the same device",
+    ):
+        _call_fp4_matmul(input_types)

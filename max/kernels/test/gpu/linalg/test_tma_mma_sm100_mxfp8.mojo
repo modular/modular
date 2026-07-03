@@ -209,10 +209,14 @@ def block_scaled_mxfp8_kernel[
         Scalar[b_scales_type]
     ]()
 
-    var a_smem_tile = a_smem_tile_t(a_smem)
-    var b_smem_tile = b_smem_tile_t(b_smem)
-    var a_scales_smem_tile = a_scales_smem_tile_t(a_scales_smem)
-    var b_scales_smem_tile = b_scales_smem_tile_t(b_scales_smem)
+    var a_smem_tile = a_smem_tile_t(a_smem.as_unsafe_any_origin())
+    var b_smem_tile = b_smem_tile_t(b_smem.as_unsafe_any_origin())
+    var a_scales_smem_tile = a_scales_smem_tile_t(
+        a_scales_smem.as_unsafe_any_origin()
+    )
+    var b_scales_smem_tile = b_scales_smem_tile_t(
+        b_scales_smem.as_unsafe_any_origin()
+    )
 
     # Shared memory pointer to hold tensor memory address
     var ptr_tmem_addr = (b_scales_smem + b_scales_size).bitcast[UInt32]()
@@ -500,11 +504,11 @@ def sm100_block_scaled_mxfp8[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
+    c: LayoutTensor[mut=True, c_type, c_layout, _],
+    a: LayoutTensor[mut=True, a_type, a_layout, _],
+    b: LayoutTensor[mut=True, b_type, b_layout, _],
+    a_scales: LayoutTensor[mut=True, a_scales_type, a_scales_layout, _],
+    b_scales: LayoutTensor[mut=True, b_scales_type, b_scales_layout, _],
     ctx: DeviceContext,
 ) raises:
     comptime assert transpose_b, "Only support transposed B"
@@ -563,9 +567,7 @@ def sm100_block_scaled_mxfp8[
     comptime a_scales_4d_layout = scales_4d_layout[a_scales_layout]
     comptime b_scales_4d_layout = scales_4d_layout[b_scales_layout]
 
-    var a_scales_4d = LayoutTensor[
-        a_scales_type, a_scales_4d_layout, MutAnyOrigin
-    ](
+    var a_scales_4d = LayoutTensor[a_scales_type, a_scales_4d_layout](
         a_scales.ptr,
         RuntimeLayout[a_scales_4d_layout].row_major(
             IndexList[4](
@@ -577,7 +579,8 @@ def sm100_block_scaled_mxfp8[
         ),
     )
     var b_scales_4d = LayoutTensor[
-        b_scales_type, b_scales_4d_layout, MutAnyOrigin
+        b_scales_type,
+        b_scales_4d_layout,
     ](
         b_scales.ptr,
         RuntimeLayout[b_scales_4d_layout].row_major(
@@ -644,7 +647,7 @@ def sm100_block_scaled_mxfp8[
         b_swizzle=b_swizzle,
         num_threads=block_dim,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         a_scales_tma_op,
@@ -675,8 +678,8 @@ def test_block_scaled_mxfp8[
 ](ctx: DeviceContext, m: MType, n: NType) raises:
     comptime assert transpose_b, "transpose_b must be true"
 
-    var M = m.value()
-    var N = n.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
     var K = k
 
     comptime BM = block_tile_shape[0]
@@ -696,10 +699,10 @@ def test_block_scaled_mxfp8[
     # Initialize reference scales
     comptime REF_BLOCK_SCALE = 128
 
-    var ref_a_scales_shape = Coord(Idx[ceildiv(k, REF_BLOCK_SCALE)](), m)
+    var ref_a_scales_shape = Coord(Idx[ceildiv(k, REF_BLOCK_SCALE)], m)
     var ref_b_scales_shape = Coord(
-        Idx(ceildiv(N, REF_BLOCK_SCALE)),
-        Idx[ceildiv(k, REF_BLOCK_SCALE)](),
+        ceildiv(N, REF_BLOCK_SCALE),
+        Idx[ceildiv(k, REF_BLOCK_SCALE)],
     )
 
     var ref_a_scales_size = ceildiv(k, REF_BLOCK_SCALE) * M
@@ -707,13 +710,13 @@ def test_block_scaled_mxfp8[
         k, REF_BLOCK_SCALE
     )
 
-    var a_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
+    var a_scales_host_ref_ptr = ctx.enqueue_create_host_buffer[ref_scales_type](
         ref_a_scales_size
     )
     var a_scales_host_ref = TileTensor(
         a_scales_host_ref_ptr, row_major(ref_a_scales_shape)
     )
-    var b_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
+    var b_scales_host_ref_ptr = ctx.enqueue_create_host_buffer[ref_scales_type](
         ref_b_scales_size
     )
     var b_scales_host_ref = TileTensor(
@@ -742,9 +745,9 @@ def test_block_scaled_mxfp8[
 
     for i in range(ceildiv(N, REF_BLOCK_SCALE)):
         for j in range(ceildiv(K, REF_BLOCK_SCALE)):
-            b_scales_host_ref[Coord(Idx(i), Idx(j))] = (
-                1 << random_ui64(0, 3)
-            ).cast[ref_scales_type]()
+            b_scales_host_ref[Coord(i, j)] = (1 << random_ui64(0, 3)).cast[
+                ref_scales_type
+            ]()
 
     ctx.enqueue_copy(a_scales_device_ref, a_scales_host_ref_ptr)
     ctx.enqueue_copy(b_scales_device_ref, b_scales_host_ref_ptr)
@@ -763,8 +766,8 @@ def test_block_scaled_mxfp8[
         + String(umma_shape)
     )
 
-    var a_shape = Coord(m, Idx[k]())
-    var b_shape = Coord(n, Idx[k]())
+    var a_shape = Coord(m, Idx[k])
+    var b_shape = Coord(n, Idx[k])
     var c_shape = Coord(m, n)
 
     comptime SF_VECTOR_SIZE = 32
@@ -773,18 +776,18 @@ def test_block_scaled_mxfp8[
     comptime sf_k = ceildiv(k, SF_VECTOR_SIZE)
 
     var a_scales_shape = Coord(
-        Idx(ceildiv(M, atom_m[0] * atom_m[1])),
-        Idx[ceildiv(sf_k, atom_k)](),
-        Idx[atom_m[0]](),
-        Idx[atom_m[1]](),
-        Idx[atom_k](),
+        ceildiv(M, atom_m[0] * atom_m[1]),
+        Idx[ceildiv(sf_k, atom_k)],
+        Idx[atom_m[0]],
+        Idx[atom_m[1]],
+        Idx[atom_k],
     )
     var b_scales_shape = Coord(
-        Idx(ceildiv(N, atom_m[0] * atom_m[1])),
-        Idx[ceildiv(sf_k, atom_k)](),
-        Idx[atom_m[0]](),
-        Idx[atom_m[1]](),
-        Idx[atom_k](),
+        ceildiv(N, atom_m[0] * atom_m[1]),
+        Idx[ceildiv(sf_k, atom_k)],
+        Idx[atom_m[0]],
+        Idx[atom_m[1]],
+        Idx[atom_k],
     )
 
     var a_scales_total = (
@@ -802,9 +805,13 @@ def test_block_scaled_mxfp8[
         * atom_k
     )
 
-    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_total)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        a_scales_total
+    )
     var a_scales_host = TileTensor(a_scales_host_ptr, row_major(a_scales_shape))
-    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_total)
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        b_scales_total
+    )
     var b_scales_host = TileTensor(b_scales_host_ptr, row_major(b_scales_shape))
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_total)
@@ -814,10 +821,10 @@ def test_block_scaled_mxfp8[
     var b_size = N * k
     var c_size = M * N
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -829,7 +836,7 @@ def test_block_scaled_mxfp8[
     ](
         m,
         n,
-        Idx[k](),
+        Idx[k],
         a_scales_host_ref.to_layout_tensor(),
         b_scales_host_ref.to_layout_tensor(),
         a_scales_host.to_layout_tensor(),
@@ -848,8 +855,8 @@ def test_block_scaled_mxfp8[
             for k in range(K):
                 b_host_tt[n, k] = Float32(1 if n == k else 0).cast[b_type]()
     else:
-        rand(a_host_ptr, a_size)
-        rand(b_host_ptr, b_size)
+        rand(a_host_ptr.unsafe_ptr(), a_size)
+        rand(b_host_ptr.unsafe_ptr(), b_size)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -857,16 +864,12 @@ def test_block_scaled_mxfp8[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
-    var b = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
-    var c = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
-    var a_scales = TileTensor(
-        a_scales_device.unsafe_ptr(), row_major(a_scales_shape)
-    )
-    var b_scales = TileTensor(
-        b_scales_device.unsafe_ptr(), row_major(b_scales_shape)
-    )
-    var c_ref = TileTensor(c_device_ref.unsafe_ptr(), row_major(c_shape))
+    var a = TileTensor(a_device, row_major(a_shape))
+    var b = TileTensor(b_device, row_major(b_shape))
+    var c = TileTensor(c_device, row_major(c_shape))
+    var a_scales = TileTensor(a_scales_device, row_major(a_scales_shape))
+    var b_scales = TileTensor(b_scales_device, row_major(b_scales_shape))
+    var c_ref = TileTensor(c_device_ref, row_major(c_shape))
 
     sm100_block_scaled_mxfp8[
         transpose_b=transpose_b,
@@ -874,7 +877,7 @@ def test_block_scaled_mxfp8[
         block_tile_shape=block_tile_shape,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
     ](
-        c.to_layout_tensor(),
+        c.to_layout_tensor().as_unsafe_any_origin(),
         a.to_layout_tensor(),
         b.to_layout_tensor(),
         a_scales.to_layout_tensor(),
@@ -900,22 +903,12 @@ def test_block_scaled_mxfp8[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host_ptr,
-        c_host_ref_ptr,
+        c_host_ptr.unsafe_ptr(),
+        c_host_ref_ptr.unsafe_ptr(),
         c_size,
         atol=0.0001,
         rtol=rtol,
     )
-
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
-    a_scales_host_ref_ptr.free()
-    b_scales_host_ref_ptr.free()
 
 
 def main() raises:
@@ -934,7 +927,7 @@ def main() raises:
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(256), Idx[256]())
+        ](ctx, Idx[256], Idx[256])
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -943,7 +936,7 @@ def main() raises:
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(256), Idx[256 * 2]())
+        ](ctx, Idx[256], Idx[256 * 2])
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -952,7 +945,7 @@ def main() raises:
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(1000), Idx[256 * 4]())
+        ](ctx, Idx[1000], Idx[256 * 4])
 
         test_block_scaled_mxfp8[
             dtype,
@@ -962,7 +955,7 @@ def main() raises:
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(256), Idx[2 * 128]())
+        ](ctx, Idx[256], Idx[2 * 128])
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -971,7 +964,7 @@ def main() raises:
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 2,
-        ](ctx, Idx(256), Idx[3 * 128]())
+        ](ctx, Idx[256], Idx[3 * 128])
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -980,4 +973,4 @@ def main() raises:
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(1000), Idx[3 * 128]())
+        ](ctx, Idx[1000], Idx[3 * 128])

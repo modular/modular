@@ -63,6 +63,7 @@ SMEM Layout:
   barriers:       (6N+11) fixed + output barriers
 """
 
+from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.constants import log2e
 from std.sys import size_of
@@ -81,9 +82,16 @@ from std.gpu.compute.arch.tcgen05 import (
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout import ComptimeInt, Layout, RowMajorLayout, TileTensor, row_major
+from layout import (
+    ComptimeInt,
+    CoordLike,
+    Layout,
+    RowMajorLayout,
+    TileTensor,
+    row_major,
+)
 from layout.tile_layout import row_major as tt_row_major
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
     KVTMATile,
 )
@@ -151,13 +159,13 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     # Total Q depth: 576 (padded_q_depth = content + rope)
 
     # Content blocks: 512 / 64 = 8
-    comptime NumContentBlocks = Self.config.padded_depth // Self.config.BN
+    comptime NumContentBlocks = Self.config.padded_depth // Self.config.BN_QK
     # Rope blocks: 64 / 64 = 1
-    comptime NumRopeBlocks = Self.config.rope_depth // Self.config.BN
+    comptime NumRopeBlocks = Self.config.rope_depth // Self.config.BN_QK
     # V/O blocks: 512 / 64 = 8 (V is content-only)
-    comptime NumVOBlocks = Self.config.padded_depth // Self.config.BN
+    comptime NumVOBlocks = Self.config.padded_depth // Self.config.BN_QK
     # 64 * 64 = 4096
-    comptime BlockElems = Self.config.BM * Self.config.BN
+    comptime BlockElems = Self.config.BM * Self.config.BN_QK
 
     # FP8: 1 byte per element
     comptime fp8_bytes_per_element = size_of[Self.fp8_type]()
@@ -176,7 +184,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     # P stage element count (FP8): 1 block * 4096 elems = 4096
     comptime PStageElems = Self.BlockElems
 
-    comptime output_tile_width = (Self.config.BN // 2) * (
+    comptime output_tile_width = (Self.config.BN_QK // 2) * (
         4 // size_of[Self.output_type]()
     )
 
@@ -252,6 +260,9 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             Int32(Self.config.num_threads)
         )
     )
+    @__name(
+        t"sm100_mla_decode_qkv_fp8_per_token_scale_rope_aware_{Self.fp8_type}_{Self.bf16_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+    )
     def kernel(
         # Q_nope TMA: FP8, 64×512, SWIZZLE_64B
         q_nope_tma: QOTMATile[
@@ -271,22 +282,23 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         k_content_tma: KVTMATile[
             dtype=Self.fp8_type,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
-            BN=Self.config.BK1,  # 64
+            BN=Self.config.BK_PV,  # 64
             BK=Self.config.padded_depth,  # 512
         ],
         # K_rope TMA: BF16, 64×64, SWIZZLE_128B
         k_rope_tma: KVTMATile[
             dtype=Self.bf16_type,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
-            BN=Self.config.BK1,  # 64
+            BN=Self.config.BK_PV,  # 64
             BK=Self.config.rope_depth,  # 64
         ],
-        # Per-token scales TMA: float32, [1, BN], SWIZZLE_NONE
-        scale_tma: ScalesTMATile[BN=Self.config.BN],
+        # Per-token scales TMA: float32, [1, BN_QK], SWIZZLE_NONE
+        scale_tma: ScalesTMATile[BN_QK=Self.config.BN_QK],
         o_tma: QOTMATile[
             dtype=Self.output_type,
             BM=Self.config.out_rows,
-            BK=Self.config.BN,
+            # Per-warp output stripe (= BN_PV/4), not BN_QK.
+            BK=Self.config.BN_PV // 4,
             swizzle_mode=Self.config.swizzle_mode,
         ],
         kv_lut: Self.KVLUTType,
@@ -299,15 +311,30 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Per-token Q scale pointer: float32 array with one scale per Q token.
         # sigma_Q[q_token_idx] is folded into scale_log2e inside Softmax.
         # Null pointer means no Q scale (sigma_Q = 1.0).
-        q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+        q_scale_ptr: OptionalReg[
+            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+        ],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            DType.int64,
+            RowMajorLayout[ComptimeInt[3]],
+            MutAnyOrigin,
         ],
     ):
+        # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
+        # (MLA_SM100_Decode_QKV_FP8).  Reject it here at comptime.
+        comptime _mask_type_name: String = Self.MaskType.get_type_name()
+        comptime assert (
+            _mask_type_name == "NullMask" or _mask_type_name == "CausalMask"
+        ), (
+            "MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware only supports"
+            " NullMask and CausalMask. Sliding window is supported only by"
+            " MLA_SM100_Decode_QKV_FP8 (native FP8)."
+        )
+
         # Extract scalar launch args from the stable device buffer.
-        var batch_size = Int(scalar_args.ptr[0])
-        var q_max_seq_len = Int(scalar_args.ptr[1])
-        var num_partitions = Int(scalar_args.ptr[2])
+        var batch_size = Int(scalar_args.raw_load(0))
+        var q_max_seq_len = Int(scalar_args.raw_load(1))
+        var num_partitions = Int(scalar_args.raw_load(2))
 
         # Register allocation for 3 WGs (Softmax, Correction, MMA+Load+Store).
         #
@@ -451,8 +478,10 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # ---- Barrier layout (6N+11 fixed for N-stage pipelines) ----
         # bar_q(1) + kv(2N) + s(2N) + p(2N) + o(4) + c(2) + corr_done(4)
         var mbar_base: MBarType = (
-            scale_smem_base + per_token_scales_total_elems
-        ).bitcast[SharedMemBarrier]()
+            (scale_smem_base + per_token_scales_total_elems)
+            .bitcast[SharedMemBarrier]()
+            .as_unsafe_any_origin()
+        )
 
         var mbar_q: MBarType = mbar_base
         var mbar_kv_base: MBarType = mbar_base + 1
@@ -542,10 +571,12 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 ptr_tmem_addr[0],
                 s_bars,
                 p_bars,
-                p_smem.bitcast[Scalar[Self.Common_MLA_Op.q_type]](),
-                max_smem,
-                li_smem,
-                out_smem,
+                p_smem.bitcast[
+                    Scalar[Self.Common_MLA_Op.q_type]
+                ]().as_unsafe_any_origin(),
+                max_smem.as_unsafe_any_origin(),
+                li_smem.as_unsafe_any_origin(),
+                out_smem.as_unsafe_any_origin(),
                 c_bars,
                 corr_done_bars,
                 out_pipeline,
@@ -555,7 +586,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 prompt_idx=UInt32(offset_position.batch_idx),
                 lse_accum_split_ptr=lse_accum_split_ptr,
                 batch_size=batch_size,
-                scale_k_smem=scale_smem_base,
+                scale_k_smem=scale_smem_base.unsafe_origin_cast[MutAnyOrigin](),
                 q_scale_ptr=q_scale_ptr,
             )
         elif warp_idx >= 4 and warp_idx < 8:  # correction warpgroup
@@ -577,22 +608,22 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     k_rope_tma,
                     scale_tma,
                     kv_lut,
-                    q_nope_smem,
-                    q_rope_smem,
-                    kv_content_smem,
-                    kv_rope_smem,
+                    q_nope_smem.as_unsafe_any_origin(),
+                    q_rope_smem.as_unsafe_any_origin(),
+                    kv_content_smem.as_unsafe_any_origin(),
+                    kv_rope_smem.as_unsafe_any_origin(),
                     mbar_q,
                     kv_pipeline,
                     offset_position,
-                    scale_smem_base,
+                    scale_smem_base.as_unsafe_any_origin(),
                 )
             elif warp_idx == 9:
                 Self.mmaQK(
                     ptr_tmem_addr[0],
-                    q_nope_smem,
-                    q_rope_smem,
-                    kv_content_smem,
-                    kv_rope_smem,
+                    q_nope_smem.as_unsafe_any_origin(),
+                    q_rope_smem.as_unsafe_any_origin(),
+                    kv_content_smem.as_unsafe_any_origin(),
+                    kv_rope_smem.as_unsafe_any_origin(),
                     mbar_q,
                     s_bars,
                     kv_pipeline,
@@ -601,8 +632,8 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             elif warp_idx == 10:
                 Self.mmaPV(
                     ptr_tmem_addr[0],
-                    kv_content_smem,
-                    p_smem,
+                    kv_content_smem.as_unsafe_any_origin(),
+                    p_smem.as_unsafe_any_origin(),
                     p_bars,
                     o_bars,
                     kv_pipeline,
@@ -610,7 +641,10 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 )
             elif warp_idx == 11:
                 Self.Common_MLA_Op.store(
-                    out_pipeline, out_smem, o_tma, offset_position
+                    out_pipeline,
+                    out_smem.as_unsafe_any_origin(),
+                    o_tma,
+                    offset_position,
                 )
         barrier()
 
@@ -645,16 +679,16 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         k_content_tma: KVTMATile[
             dtype=Self.fp8_type,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
-            BN=Self.config.BK1,  # 64
+            BN=Self.config.BK_PV,  # 64
             BK=Self.config.padded_depth,  # 512
         ],
         k_rope_tma: KVTMATile[
             dtype=Self.bf16_type,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
-            BN=Self.config.BK1,  # 64
+            BN=Self.config.BK_PV,  # 64
             BK=Self.config.rope_depth,  # 64
         ],
-        scale_tma: ScalesTMATile[BN=Self.config.BN],
+        scale_tma: ScalesTMATile[BN_QK=Self.config.BN_QK],
         kv_lut: Self.KVLUTType,
         q_nope_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         q_rope_smem: SharedMemPointer[Scalar[Self.bf16_type]],
@@ -681,8 +715,13 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             return
 
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
+
+        # Alignment of `kv_row` produced by mask-driven iteration.
+        comptime base_alignment: Int = Self.MaskType.start_column_alignment[
+            Self.config.BM, Self.config.BN_QK, Self.KVLUTType.page_size
+        ]()
 
         # We manage the KV pipeline manually for barrier sync,
         # but compute SMEM pointers ourselves for the split layout.
@@ -691,24 +730,31 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         ](kv_pipeline, kv_content_smem)
         var elect_mask = elect()
         var is_leader = elect_mask != 0
-        var row: UInt = UInt(offset_position.q_row_offset)
+        var row: Int = offset_position.q_row_offset
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-        var kv_gmem_row: UInt32 = kv_lut.row_idx(
+        var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
             UInt32(offset_position.batch_idx), kv_row
         )
+        # For the scale TMA (flat 2D layout), we still need a single
+        # base row index. `paged_rows.rows[0]` matches the old
+        # `kv_lut.row_idx(...)` result. The scale TMA assumes
+        # `page_size >= BN_QK` (tokens within a tile are contiguous in the
+        # global scales array); small pages are not supported in this
+        # kernel.
+        var kv_gmem_row: UInt32 = UInt32(paged_rows.rows[0])
 
         # Q bytes: content FP8 (BM*512*1) + rope BF16 (BM*64*2)
         comptime q_content_bytes = Self.config.BM * Self.config.depth * Self.fp8_bytes_per_element
         comptime q_rope_bytes = Self.config.BM * Self.config.rope_depth * Self.bf16_bytes_per_element
-        # KV bytes per tile: content FP8 (BN*512*1) + rope BF16 (BN*64*2)
-        comptime kv_content_bytes = Self.config.BN * Self.config.depth * Self.fp8_bytes_per_element
-        comptime kv_rope_bytes = Self.config.BN * Self.config.rope_depth * Self.bf16_bytes_per_element
-        # Scale bytes per tile: BN * 1 * sizeof(float32) = 256 bytes
-        comptime scale_bytes = Self.config.BN * 4
-        # Each scale stage holds BN float32 values = 64 elements
-        comptime scale_elems_per_stage = Self.config.BN
+        # KV bytes per tile: content FP8 (BN_QK*512*1) + rope BF16 (BN_QK*64*2)
+        comptime kv_content_bytes = Self.config.BN_QK * Self.config.depth * Self.fp8_bytes_per_element
+        comptime kv_rope_bytes = Self.config.BN_QK * Self.config.rope_depth * Self.bf16_bytes_per_element
+        # Scale bytes per tile: BN_QK * 1 * sizeof(float32) = 256 bytes
+        comptime scale_bytes = Self.config.BN_QK * 4
+        # Each scale stage holds BN_QK float32 values = 64 elements
+        comptime scale_elems_per_stage = Self.config.BN_QK
 
         # TMA only uses .ptr — flat row_major TileTensor is sufficient.
         comptime _smem_tt[dtype: DType, elems: Int] = TileTensor[
@@ -723,12 +769,6 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         comptime q_rope_elems = type_of(q_rope_tma).tile_shape[0] * type_of(
             q_rope_tma
         ).tile_shape[1]
-        comptime content_elems = type_of(k_content_tma).tile_shape[0] * type_of(
-            k_content_tma
-        ).tile_shape[1]
-        comptime rope_elems = type_of(k_rope_tma).tile_shape[0] * type_of(
-            k_rope_tma
-        ).tile_shape[1]
         comptime scale_elems = type_of(scale_tma).tile_shape[0] * type_of(
             scale_tma
         ).tile_shape[1]
@@ -740,16 +780,12 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var q_nope_tensor = _smem_tt[Self.fp8_type, q_nope_elems](
                 q_nope_smem, tt_row_major[q_nope_elems]()
             )
-            q_nope_tma.async_copy(
-                q_nope_tensor, mbar_q[], (Int(UInt(0)), Int(row))
-            )
+            q_nope_tma.async_copy(q_nope_tensor, mbar_q[], (0, row))
             # Q_rope TMA: load BF16 rope Q into q_rope_smem
             var q_rope_tensor = _smem_tt[Self.bf16_type, q_rope_elems](
                 q_rope_smem, tt_row_major[q_rope_elems]()
             )
-            q_rope_tma.async_copy(
-                q_rope_tensor, mbar_q[], (Int(UInt(0)), Int(row))
-            )
+            q_rope_tma.async_copy(q_rope_tensor, mbar_q[], (0, row))
 
         # Load first KV tile: content + rope + scales on the same barrier.
         # All three TMA copies share one expect_bytes call, so the mbar
@@ -768,27 +804,25 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var content_stage_ptr = kv_content_smem + stage0_idx * UInt32(
                 Self.ContentStageElems
             )
-            var content_tensor = _smem_tt[Self.fp8_type, content_elems](
-                content_stage_ptr, tt_row_major[content_elems]()
-            )
-            k_content_tma.async_copy_3d(
-                content_tensor,
+            paged_rows.tma_copy_k[needs_partial=False](
+                k_content_tma,
+                content_stage_ptr,
                 k0_bar[],
-                (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                kv_head_idx=UInt32(0),
+                elect=elect_mask,
             )
             # K_rope TMA: load BF16 rope into kv_rope_smem
             var rope_stage_ptr = kv_rope_smem + stage0_idx * UInt32(
                 Self.RopeStageElems
             )
-            var rope_tensor = _smem_tt[Self.bf16_type, rope_elems](
-                rope_stage_ptr, tt_row_major[rope_elems]()
-            )
-            k_rope_tma.async_copy_3d(
-                rope_tensor,
+            paged_rows.tma_copy_k[needs_partial=False](
+                k_rope_tma,
+                rope_stage_ptr,
                 k0_bar[],
-                (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                kv_head_idx=UInt32(0),
+                elect=elect_mask,
             )
-            # Scale TMA: load BN float32 per-token scales into scale SMEM.
+            # Scale TMA: load BN_QK float32 per-token scales into scale SMEM.
             # The scale TMA treats scales as a flat [1, total_elements] 2D
             # tensor; the column coordinate is the physical row index
             # (kv_gmem_row) which directly indexes the flat scales array.
@@ -802,11 +836,11 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 scale_tma.async_copy(
                     scale_tensor,
                     k0_bar[],
-                    (Int(UInt(kv_gmem_row)), Int(0)),
+                    (Int(kv_gmem_row), 0),
                 )
 
         kv_prod.commit_step()
-        kv_row += UInt32(Self.config.BN)
+        kv_row += UInt32(Self.config.BN_QK)
 
         # Load remaining KV tiles
         var tile_idx: Int = 1
@@ -815,9 +849,10 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var stage_idx = kv_prod.stage_index[qk_stage=0]()
             var k_mbar = kv_prod.producer_mbar[qk_stage=0]()
             kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-            var kv_gmem_row: UInt32 = kv_lut.row_idx(
+            var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
                 UInt32(offset_position.batch_idx), kv_row
             )
+            var kv_gmem_row: UInt32 = UInt32(paged_rows.rows[0])
 
             if is_leader:
                 comptime if Self.has_per_token_scales:
@@ -832,25 +867,23 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 var content_stage_ptr = kv_content_smem + stage_idx * UInt32(
                     Self.ContentStageElems
                 )
-                var content_tensor = _smem_tt[Self.fp8_type, content_elems](
-                    content_stage_ptr, tt_row_major[content_elems]()
-                )
-                k_content_tma.async_copy_3d(
-                    content_tensor,
+                paged_rows.tma_copy_k[needs_partial=False](
+                    k_content_tma,
+                    content_stage_ptr,
                     k_mbar[],
-                    (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                    kv_head_idx=UInt32(0),
+                    elect=elect_mask,
                 )
                 # K_rope TMA
                 var rope_stage_ptr = kv_rope_smem + stage_idx * UInt32(
                     Self.RopeStageElems
                 )
-                var rope_tensor = _smem_tt[Self.bf16_type, rope_elems](
-                    rope_stage_ptr, tt_row_major[rope_elems]()
-                )
-                k_rope_tma.async_copy_3d(
-                    rope_tensor,
+                paged_rows.tma_copy_k[needs_partial=False](
+                    k_rope_tma,
+                    rope_stage_ptr,
                     k_mbar[],
-                    (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                    kv_head_idx=UInt32(0),
+                    elect=elect_mask,
                 )
                 # Scale TMA
                 comptime if Self.has_per_token_scales:
@@ -863,10 +896,10 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     scale_tma.async_copy(
                         scale_tensor,
                         k_mbar[],
-                        (Int(UInt(kv_gmem_row)), Int(0)),
+                        (Int(kv_gmem_row), 0),
                     )
 
-            kv_row += UInt32(Self.config.BN)
+            kv_row += UInt32(Self.config.BN_QK)
             kv_prod.commit_step()
             tile_idx += 1
 
@@ -906,7 +939,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         var elect_mask = elect()
 
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         if num_k_tiles == 0:
@@ -1006,7 +1039,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         if num_k_tiles == 0:
@@ -1024,7 +1057,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         var p_descriptor = Self.UMMAPVSS.descriptor_p_block(p_smem)
         # V descriptor: points to the KV content SMEM (V = content-only, 512 dims)
         var v_descriptor = Self.UMMAPVSS.descriptor_v_block(kv_content_smem)
-        comptime block_step = Self.config.MMA_PV_N // Self.config.BN
+        comptime block_step = Self.config.MMA_PV_N // Self.config.BN_QK
         # Content stage stride in bytes (for V data)
         comptime kv_content_stage_stride_bytes = Self.ContentStageBytes
         # P stage stride in bytes: one rope stage = RopeStageBytes (8192)
@@ -1048,7 +1081,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     b=v_descriptor
                     + v_slot_index * UInt32(kv_content_stage_stride_bytes)
                     + UInt32(block * block_stride_in_bytes),
-                    c=o_tmem + UInt32(block) * UInt32(Self.config.BN // 2),
+                    c=o_tmem + UInt32(block) * UInt32(Self.config.BN_QK // 2),
                     c_scale=c_scale,
                     elect=elect_mask,
                 )

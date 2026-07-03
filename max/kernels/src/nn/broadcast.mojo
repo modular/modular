@@ -24,7 +24,7 @@ from std.memory import memcpy
 def _get_rightmost_broadcast_axis[
     dtype: DType,
 ](
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
 ) -> Int:
     """
@@ -56,7 +56,9 @@ def broadcast[
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
     """
     For each axis of `input`, if the dimension is 1, duplicate the data at
@@ -106,7 +108,9 @@ def broadcast_impl[
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     # using `prev` because otherwise computing `next_input_axis_stride` requires
     # dim[axis+1](), which requires more `comptime assert` to keep in bound
     input_prev_axis_stride: Int,
@@ -168,7 +172,10 @@ def broadcast_impl[
     if Int(input.dim(axis)) != Int(output.dim(axis)):
         var output_tile_start = output.ptr + output_offset
         _tile_1d(
-            output_tile_start + output_axis_stride,  # 1st tile is already there
+            # AnyOrigin needed for exclusivity check
+            (
+                output_tile_start + output_axis_stride
+            ).as_unsafe_any_origin(),  # 1st tile is already there
             output_tile_start,
             output_axis_stride,  # elems_to_copy
             Int(output.dim(axis)) - 1,  # 1st tile is already there
@@ -181,11 +188,13 @@ def _tile_1d[
     init_dst_ptr: UnsafePointer[
         mut=True,
         Scalar[dtype],
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.GENERIC,
     ],
-    src_ptr: ImmutUnsafePointer[
+    src_ptr: UnsafePointer[
+        mut=False,
         Scalar[dtype],
+        _,
         address_space=AddressSpace.GENERIC,
         ...,
     ],

@@ -43,7 +43,7 @@ def test_build_mojo_source_package_path_is_user_specific() -> None:
         f"Expected path to contain '.modular_{uid}', got: {result}"
     )
     assert "/mojo_pkg/" in str(result)
-    assert result.name.endswith(".mojopkg")
+    assert result.name.endswith(".mojoc") or result.name.endswith(".mojopkg")
 
 
 def test_build_mojo_source_package_no_shared_directory_collision() -> None:

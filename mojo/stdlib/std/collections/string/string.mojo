@@ -19,7 +19,10 @@ from std.collections.string._parsing_numbers.parsing_floats import _atof
 from std.collections.string._utf8 import UTF8Chunks, _is_valid_utf8
 from std.collections.string.format import _FormatUtils
 from std.collections.string.string_slice import (
+    BytesIter,
     CodepointSliceIter,
+    GraphemeIndicesIter,
+    GraphemeSliceIter,
     _to_string_list,
     _unsafe_strlen,
 )
@@ -32,14 +35,14 @@ from std.format._utils import (
     _WriteBufferStack,
 )
 from std.os import PathLike, abort
-from std.os.atomic import Atomic, Consistency, fence
+from std.atomic import Atomic, Ordering, fence
 from std.sys import size_of, bit_width_of
 from std.ffi import c_char, CStringSlice
 from std.sys.info import is_32bit
 
 from std.bit import count_leading_zeros
-from std.memory import memcmp, memcpy, memset
-from std.python import ConvertibleFromPython, ConvertibleToPython, PythonObject
+from std.memory import Layout, ThinAllocation, dealloc, memcmp, memcpy, memset
+from std.python import ConvertibleFromPython, PythonObject
 
 # ===----------------------------------------------------------------------=== #
 # String
@@ -50,14 +53,12 @@ struct String(
     Boolable,
     Comparable,
     ConvertibleFromPython,
-    ConvertibleToPython,
     Defaultable,
     FloatableRaising,
     ImplicitlyCopyable,
     IntableRaising,
     KeyElement,
     PathLike,
-    Sized,
     Writable,
     Writer,
 ):
@@ -80,7 +81,7 @@ struct String(
     ```
 
     You can convert many Mojo types to a `String` because it's common to
-    implement the [`Writable`](/mojo/std/format/Writable) trait:
+    implement the [`Writable`](/docs/std/format/Writable/) trait:
 
     ```mojo
     var int : Int = 42
@@ -88,7 +89,7 @@ struct String(
     ```
 
     If you have a custom type you want to convert to a string, you can implement
-    the [`Writable`](/mojo/std/format/Writable) trait like this:
+    the [`Writable`](/docs/std/format/Writable/) trait like this:
 
     ```mojo
     @fieldwise_init
@@ -105,7 +106,7 @@ struct String(
 
     However, `print()` doesn't actually specify `String` as its argument type.
     Instead, it accepts any type that conforms to the
-    [`Writable`](/mojo/std/format/Writable) trait (`String` conforms to
+    [`Writable`](/docs/std/format/Writable/) trait (`String` conforms to
     this trait, which is why you can pass it to `print()`). That means it's
     actually more efficient to pass any type that implements `Writable`
     directly to `print()` (instead of first converting it to `String`).
@@ -119,13 +120,13 @@ struct String(
     Be aware of the following characteristics when working with `String`:
 
     - **UTF-8 encoding**: Strings store UTF-8 encoded text, so byte length may
-      differ from character count. Use `len(string.codepoints())` to get
+      differ from character count. Use `text.count_codepoints()` to get
       the codepoint count:
 
       ```mojo
       var text = "café"                # 4 Unicode characters
-      print(len(text))                 # Prints 5 (é is 2 bytes in UTF-8)
-      print(len(text.codepoints()))    # Prints 4 (correct Unicode count)
+      print(text.byte_length())        # Prints 5 (é is 2 bytes in UTF-8)
+      print(text.count_codepoints())   # Prints 4 (correct Unicode count)
       ```
 
     - **Always mutable**: You can modify strings in-place:
@@ -160,10 +161,10 @@ struct String(
     ```mojo
     var text = "Hello"
 
-    # String properties and slicing
-    print(len(text))     # 5
-    print(text[byte=1:2])     # e (byte slice)
-    print(text[byte=-1:])     # o (last character)
+    # String properties and indexing
+    print(text.byte_length())                 # 5
+    print(text[byte=1])                       # e (byte slice)
+    print(text[byte=text.byte_length() - 1])  # o (last character)
 
     # In-place concatenation
     text += " World"
@@ -191,21 +192,21 @@ struct String(
     Related functions:
 
     - String-to-number conversions:
-      [`atof()`](/mojo/std/collections/string/string/atof),
-      [`atol()`](/mojo/std/collections/string/string/atol)).
+      [`atof()`](/docs/std/collections/string/string/atof/),
+      [`atol()`](/docs/std/collections/string/string/atol/)).
     - Character code conversions:
-      [`chr()`](/mojo/std/collections/string/string/chr),
-      [`ord()`](/mojo/std/collections/string/string/ord)).
+      [`chr()`](/docs/std/collections/string/string/chr/),
+      [`ord()`](/docs/std/collections/string/string/ord/)).
     - String formatting:
-      [`format()`](/mojo/std/collections/string/string/String/#format).
+      [`format()`](/docs/std/collections/string/string/String/#format).
 
     Related types:
 
-    - [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice): A non-owning
+    - [`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/): A non-owning
       view of string data, which can be either mutable or immutable.
-    - [`StaticString`](/mojo/std/collections/string/string_slice/#StaticString): An
+    - [`StaticString`](/docs/std/collections/string/string_slice/#StaticString): An
       alias for an immutable constant `StringSlice`.
-    - [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral/): A
+    - [`StringLiteral`](/docs/std/builtin/string_literal/StringLiteral/): A
       string literal. String literals are compile-time values.
     """
 
@@ -213,7 +214,7 @@ struct String(
     # form when '_capacity_or_data.is_inline()' is true. The inline form
     # clobbers these fields (except the top byte of the capacity field) with
     # the string data.
-    var _ptr_or_data: UnsafePointer[UInt8, MutExternalOrigin]
+    var _ptr_or_data: UnsafePointer[UInt8, MutUntrackedOrigin]
     """The underlying storage for the string data."""
     var _len_or_data: Int
     """The number of bytes in the string data."""
@@ -251,27 +252,27 @@ struct String(
     # This is the number of bytes that can be stored inline in the string value.
     # 'String' is 3 words in size and we use the top byte of the capacity field
     # to store flags.
-    comptime INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
+    comptime INLINE_CAPACITY = bit_width_of[DType.int]() // 8 * 3 - 1
     """Maximum bytes for inline (SSO) string storage."""
 
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
-    comptime FLAG_HAS_NUL_TERMINATOR = 1 << (Int.BITWIDTH - 3)
+    comptime FLAG_HAS_NUL_TERMINATOR = 1 << (bit_width_of[DType.int]() - 3)
     """Flag indicating string has accessible nul terminator."""
 
     # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
     # that may have other references to it.
-    comptime FLAG_IS_REF_COUNTED = 1 << (Int.BITWIDTH - 2)
+    comptime FLAG_IS_REF_COUNTED = 1 << (bit_width_of[DType.int]() - 2)
     """Flag indicating string uses reference-counted storage."""
 
     # When FLAG_IS_INLINE is set, the string is inline or "Short String
     # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
     # data
-    comptime FLAG_IS_INLINE = 1 << (Int.BITWIDTH - 1)
+    comptime FLAG_IS_INLINE = 1 << (bit_width_of[DType.int]() - 1)
     """Flag indicating string uses inline (SSO) storage."""
 
     # gives us 5 bits for the length.
-    comptime INLINE_LENGTH_START = Int.BITWIDTH - 8
+    comptime INLINE_LENGTH_START = bit_width_of[DType.int]() - 8
     """Bit position where inline length field starts."""
 
     comptime INLINE_LENGTH_MASK = 0b1_1111 << Self.INLINE_LENGTH_START
@@ -330,7 +331,7 @@ struct String(
         # the string.
         self._ptr_or_data = data._slice._data.unsafe_mut_cast[
             True
-        ]().unsafe_origin_cast[MutExternalOrigin]()
+        ]().unsafe_origin_cast[MutUntrackedOrigin]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = 0
@@ -344,9 +345,9 @@ struct String(
             data: The static constant string to refer to.
         """
         self._len_or_data = Int(
-            mlir_value=__mlir_op.`pop.string.size`(data.value)
+            SIMDSize(mlir_value=__mlir_op.`pop.string.size`(data.value))
         )
-        self._ptr_or_data = UnsafePointer[_, MutExternalOrigin](
+        self._ptr_or_data = UnsafePointer[_, MutUntrackedOrigin](
             __mlir_op.`pop.string.address`(data.value)
         ).bitcast[Byte]()
         # Always use static constant representation initially, defer inlining
@@ -401,7 +402,7 @@ struct String(
         Examples:
 
         ```mojo
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         # Valid UTF-8 sequence
         var fire_emoji_bytes = [Byte(0xF0), 0x9F, 0x94, 0xA5]
@@ -477,6 +478,8 @@ struct String(
         _ = variadic_pack_to_string(1, ", ", 2.0, ", ", "three")
         ```
         """
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
+
         var total_bytes = _TotalWritableBytes()
         args._write_to(total_bytes, end=end, sep=sep)
 
@@ -506,6 +509,8 @@ struct String(
         Returns:
             A string formed by formatting the argument sequence.
         """
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
+
         var total_bytes = _TotalWritableBytes()
         args._write_to(total_bytes, end=end, sep=sep)
 
@@ -529,6 +534,8 @@ struct String(
         Args:
             args: Sequence of arguments to write to this Writer.
         """
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
+
         var total_bytes = _TotalWritableBytes()
         total_bytes.size += self.byte_length()
         args._write_to(total_bytes, sep="")
@@ -597,7 +604,13 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
+        self = String(
+            StringSlice(
+                unsafe_from_utf8=CStringSlice(
+                    unsafe_from_ptr=unsafe_from_utf8_ptr.bitcast[Int8]()
+                )
+            )
+        )
 
     def __init__(
         out self, *, unsafe_from_utf8_ptr: UnsafePointer[mut=False, UInt8, _]
@@ -612,7 +625,13 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
+        self = String(
+            StringSlice(
+                unsafe_from_utf8=CStringSlice(
+                    unsafe_from_ptr=unsafe_from_utf8_ptr.bitcast[Int8]()
+                )
+            )
+        )
 
     @always_inline("nodebug")
     def __init__(out self, *, copy: Self):
@@ -657,7 +676,10 @@ struct String(
 
     @always_inline("nodebug")
     def _has_nul_terminator(self) -> Bool:
-        return Bool(self._capacity_or_data & Self.FLAG_HAS_NUL_TERMINATOR)
+        return Bool(
+            UInt64(self._capacity_or_data)
+            & UInt64(Self.FLAG_HAS_NUL_TERMINATOR)
+        )
 
     @always_inline("nodebug")
     def _clear_nul_terminator(mut self):
@@ -665,7 +687,9 @@ struct String(
 
     @always_inline("nodebug")
     def _is_inline(self) -> Bool:
-        return Bool(self._capacity_or_data & Self.FLAG_IS_INLINE)
+        return Bool(
+            UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_INLINE)
+        )
 
     @always_inline("nodebug")
     def _set_ref_counted(mut self):
@@ -673,7 +697,9 @@ struct String(
 
     @always_inline("nodebug")
     def _is_ref_counted(self) -> Bool:
-        return Bool(self._capacity_or_data & Self.FLAG_IS_REF_COUNTED)
+        return Bool(
+            UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_REF_COUNTED)
+        )
 
     # ===------------------------------------------------------------------=== #
     # Pointer Field Helpers
@@ -692,8 +718,8 @@ struct String(
     @always_inline("nodebug")
     def _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
-        if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            return self._refcount().load[ordering=Consistency.MONOTONIC]() == 1
+        if UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_REF_COUNTED):
+            return self._refcount().load[ordering=Ordering.RELAXED]() == 1
         else:
             return False
 
@@ -703,7 +729,7 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             # See `ArcPointer`'s refcount implementation for more details on the
             # use of memory orderings.
-            _ = self._refcount().fetch_add[ordering=Consistency.MONOTONIC](1)
+            _ = self._refcount().fetch_add[ordering=Ordering.RELAXED](1)
 
     @always_inline("nodebug")
     def _drop_ref(mut self):
@@ -714,13 +740,23 @@ struct String(
             var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
             var refcount = ptr.bitcast[Atomic[DType.int]]()
             if refcount[].fetch_sub(1) == 1:
-                fence[Consistency.ACQUIRE]()
-                ptr.free()
+                fence[Ordering.ACQUIRE]()
+                dealloc(
+                    ThinAllocation(
+                        unsafe_assume_ownership=ptr
+                    ).unsafe_with_layout(
+                        Layout[Byte](
+                            count=self.capacity() + Self.REF_COUNT_SIZE
+                        )
+                    )
+                )
 
     @staticmethod
-    def _alloc(capacity: Int) -> UnsafePointer[Byte, MutExternalOrigin]:
+    def _alloc(capacity: Int) -> UnsafePointer[Byte, MutUntrackedOrigin]:
         """Allocate space for a new out-of-line string buffer."""
-        var ptr = alloc[Byte](capacity + Self.REF_COUNT_SIZE)
+        var ptr = alloc(
+            Layout[Byte](count=capacity + Self.REF_COUNT_SIZE)
+        ).unsafe_leak()
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
@@ -748,6 +784,46 @@ struct String(
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
+    @doc_hidden
+    @unavailable(
+        "String does not support direct positional indexing like `s[i]`"
+        " because Mojo strings are UTF-8 encoded, and the same position can"
+        " mean three different things. Use one of: `s[byte=i]` for a raw"
+        " UTF-8 byte, `s[codepoint=i]` for a Unicode code point, or"
+        " `s[grapheme=i]` for a user-visible character (grapheme cluster)."
+    )
+    def __getitem__(
+        self, _index: Some[Indexer], /
+    ) -> StringSlice[origin_of(self)]:
+        ...
+
+    @doc_hidden
+    @unavailable(
+        "String does not support direct positional slicing like `s[a:b]`"
+        " because Mojo strings are UTF-8 encoded, and the same range can"
+        " mean different things. Use `s[byte=a:b]` to slice by raw UTF-8"
+        " byte positions, or `s[codepoint=a:b]` to slice by Unicode code"
+        " points."
+    )
+    def __getitem__(
+        self, _slice: ContiguousSlice, /
+    ) -> StringSlice[origin_of(self)]:
+        ...
+
+    @doc_hidden
+    @unavailable(
+        "String does not support `__len__` because Mojo strings are UTF-8"
+        " encoded, so a single length is ambiguous: it could mean the number"
+        " of UTF-8 bytes, the number of Unicode code points, or the number of"
+        " user-visible characters (grapheme clusters). Use `s.byte_length()`"
+        " or `len(s.bytes())` for the number of UTF-8 bytes,"
+        " `len(s.codepoints())` for Unicode code points, or"
+        " `len(s.graphemes())` for grapheme clusters."
+    )
+    def __len__(self) -> Int:
+        ...
+
+    @always_inline
     def __getitem__[
         I: Indexer, //
     ](self, *, byte: I) -> StringSlice[origin_of(self)]:
@@ -762,12 +838,38 @@ struct String(
             I: A type that can be used as an index.
 
         Args:
-            byte: The byte index (0-based). Negative indices count from the end.
+            byte: The byte index (0-based).
 
         Returns:
             A StringSlice containing a single byte at the specified position.
         """
-        return StringSlice(self)[byte=byte]
+        var string_slice = StringSlice(self)
+        var idx = index(byte)
+        string_slice._check_valid_index(idx)
+        return string_slice._unchecked_get_byte(idx)
+
+    @always_inline
+    def __getitem__(self, *, byte: IntLiteral) -> StringSlice[origin_of(self)]:
+        """Gets a single byte at the specified byte index.
+
+        This performs byte-level indexing, not character (codepoint) indexing.
+        For strings containing multi-byte UTF-8 characters `byte` must fall on
+        a codepoint boundary and an entire codepoint will be returned.
+        Aborts if `byte` does not fall on a codepoint boundary.
+
+        Args:
+            byte: The byte index (0-based).
+
+        Returns:
+            A StringSlice containing a single byte at the specified position.
+        """
+        comptime assert IntLiteral[byte.value]() >= 0, (
+            "negative indexing is not supported, use e.g."
+            " `string[byte=string.byte_length() - 1]`"
+        )
+        var string_slice = StringSlice(self)
+        string_slice._check_valid_index(byte)
+        return string_slice._unchecked_get_byte(byte)
 
     def __getitem__(
         self, *, byte: ContiguousSlice
@@ -786,6 +888,53 @@ struct String(
             A StringSlice containing the bytes in the specified range.
         """
         return StringSlice(self)[byte=byte]
+
+    def __getitem__[
+        I: Indexer, //
+    ](self, *, codepoint: I) -> StringSlice[origin_of(self)]:
+        """Gets the character at the specified position.
+
+        Parameters:
+            I: A type that can be used as an index.
+
+        Args:
+            codepoint: The codepoint index.
+
+        Returns:
+            A `StringSlice` view containing the unicode codepoint at the
+            specified position.
+        """
+        return StringSlice(self)[codepoint=codepoint]
+
+    @always_inline
+    def __getitem__(
+        self, *, codepoint: ContiguousSlice
+    ) -> StringSlice[origin_of(self)]:
+        """Gets a substring at the specified codepoint positions.
+
+        Args:
+            codepoint: A slice that specifies codepoint positions of the new
+                substring.
+
+        Returns:
+            A StringSlice containing the codepoints in the specified range.
+        """
+        return StringSlice(self)[codepoint=codepoint]
+
+    @always_inline
+    def __getitem__(
+        self, *, grapheme: Some[Indexer]
+    ) -> StringSlice[origin_of(self)]:
+        """Gets the character at the specified position.
+
+        Args:
+            grapheme: The grapheme index.
+
+        Returns:
+            A `StringSlice` view containing the unicode grapheme at the
+            specified position.
+        """
+        return StringSlice(self)[grapheme=grapheme]
 
     def __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
@@ -927,23 +1076,33 @@ struct String(
         """
         self._iadd(other.as_bytes())
 
-    @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
-    def __iter__(self) -> CodepointSliceIter[origin_of(self)]:
-        """Iterate over the string, returning immutable references.
+    def __iter__(self) -> GraphemeSliceIter[origin_of(self)]:
+        """Iterate over the grapheme clusters in the string.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen. See `graphemes()` for the precise
+        definition.
+
+        To iterate by Unicode codepoint or by byte instead, use
+        `codepoints()`/`codepoint_slices()` or `bytes()`.
 
         Returns:
-            An iterator of references to the string elements.
+            An iterator yielding each grapheme cluster as a `StringSlice`.
         """
-        return self.codepoint_slices()
+        return self.graphemes()
 
-    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
-    def __reversed__(self) -> CodepointSliceIter[origin_of(self), False]:
-        """Iterate backwards over the string, returning immutable references.
+    def __reversed__(self) -> GraphemeSliceIter[origin_of(self), False]:
+        """Iterate backwards over the grapheme clusters in the string.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen. See `graphemes()` for the precise
+        definition.
 
         Returns:
-            A reversed iterator of references to the string elements.
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
         """
-        return self.codepoint_slices_reversed()
+        return self.graphemes_reversed()
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
@@ -958,45 +1117,6 @@ struct String(
         """
         return self.byte_length() > 0
 
-    def __len__(self) -> Int:
-        """Get the string length of in bytes.
-
-        This function returns the number of bytes in the underlying UTF-8
-        representation of the string.
-
-        To get the number of Unicode codepoints in a string, use
-        `len(str.codepoints())`.
-
-        Returns:
-            The string length in bytes.
-
-        Examples:
-
-        Query the length of a string, in bytes and Unicode codepoints:
-
-        ```mojo
-        from std.testing import assert_equal
-
-        var s = "ನಮಸ್ಕಾರ"
-
-        assert_equal(len(s), 21)
-        assert_equal(len(s.codepoints()), 7)
-        ```
-
-        Strings containing only ASCII characters have the same byte and
-        Unicode codepoint length:
-
-        ```mojo
-        from std.testing import assert_equal
-
-        var s = "abc"
-
-        assert_equal(len(s), 3)
-        assert_equal(len(s.codepoints()), 3)
-        ```
-        """
-        return self.byte_length()
-
     @always_inline("nodebug")
     def __fspath__(self) -> String:
         """Return the file system path representation (just the string itself).
@@ -1005,17 +1125,6 @@ struct String(
           The file system path representation as a string.
         """
         return self
-
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the operation fails.
-        """
-        return PythonObject(self)
 
     def __init__(out self, *, py: PythonObject) raises:
         """Construct a `String` from a PythonObject.
@@ -1083,6 +1192,47 @@ struct String(
             instead of the heap.
         """
         return StringSlice(self).join(elems)
+
+    def bytes(self) -> BytesIter[origin_of(self)]:
+        """Returns an iterator over the raw UTF-8 bytes of this string.
+
+        Unlike `codepoints()` and `graphemes()`, this iterator operates at the
+        byte level and yields individual `Byte` values without interpreting
+        multi-byte UTF-8 sequences.
+
+        Returns:
+            An iterator type that returns successive `Byte` values stored in
+            this string.
+
+        Examples:
+
+        Iterate over the bytes of an ASCII string:
+
+        ```mojo
+        from std.testing import assert_equal, assert_raises
+
+        var s = String("abc")
+        var iter = s.bytes()
+        assert_equal(next(iter), Byte(ord("a")))
+        assert_equal(next(iter), Byte(ord("b")))
+        assert_equal(next(iter), Byte(ord("c")))
+        with assert_raises():
+            _ = next(iter) # raises StopIteration
+        ```
+
+        Multi-byte UTF-8 sequences are yielded as individual bytes:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        # "é" is encoded in UTF-8 as two bytes: 0xC3 0xA9.
+        var s = String("é")
+        var iter = s.bytes()
+        assert_equal(next(iter), Byte(0xC3))
+        assert_equal(next(iter), Byte(0xA9))
+        ```
+        """
+        return StringSlice(self).bytes()
 
     def codepoints(self) -> CodepointsIter[origin_of(self)]:
         """Returns an iterator over the `Codepoint`s encoded in this string slice.
@@ -1168,6 +1318,71 @@ struct String(
         """
         return CodepointSliceIter[origin_of(self), forward=False](self)
 
+    def graphemes(self) -> GraphemeSliceIter[origin_of(self)]:
+        """Return an iterator over the grapheme clusters in this string.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen.
+
+        Returns:
+            An iterator yielding each grapheme cluster as a `StringSlice`.
+        """
+        return StringSlice(self).graphemes()
+
+    def graphemes_reversed(
+        self,
+    ) -> GraphemeSliceIter[origin_of(self), False]:
+        """Return an iterator over the grapheme clusters in this string,
+        yielding them in reverse order.
+
+        See `graphemes()` for the definition of a grapheme cluster.
+
+        Returns:
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
+        """
+        return StringSlice(self).graphemes_reversed()
+
+    def grapheme_indices(self) -> GraphemeIndicesIter[origin_of(self)]:
+        """Return an iterator over grapheme clusters paired with their byte
+        offsets.
+
+        Each yielded element is a `Tuple[Int, StringSlice]` where the first
+        element is the byte offset at which the grapheme begins.
+
+        Returns:
+            An iterator yielding `(byte_offset, grapheme)` pairs.
+        """
+        return StringSlice(self).grapheme_indices()
+
+    def split_at_grapheme(
+        self, n: Int
+    ) -> Tuple[
+        StringSlice[ImmutOrigin(origin_of(self))],
+        StringSlice[ImmutOrigin(origin_of(self))],
+    ]:
+        """Split this string at the `n`-th grapheme-cluster boundary.
+
+        Args:
+            n: The grapheme-cluster boundary at which to split. Must be
+                non-negative.
+
+        Returns:
+            A tuple `(prefix, suffix)` of `StringSlice`s. The prefix covers
+            grapheme clusters `[0, n)` and the suffix covers the rest.
+        """
+        return StringSlice(self).split_at_grapheme(n)
+
+    def count_graphemes(self) -> Int:
+        """Count the number of grapheme clusters in this string.
+
+        This is an O(n) operation.
+
+        Returns:
+            The number of grapheme clusters.
+        """
+        return StringSlice(self).count_graphemes()
+
     @always_inline("nodebug")
     def unsafe_ptr(
         self,
@@ -1225,7 +1440,7 @@ struct String(
         """
         # Add a nul terminator, making the string mutable if not already
         if not self._has_nul_terminator():
-            var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
+            var ptr = self.unsafe_ptr_mut(capacity=self.byte_length() + 1)
             var len = self.byte_length()
             ptr[len] = 0
             self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
@@ -1244,13 +1459,17 @@ struct String(
             ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
-    def as_bytes_mut(mut self) -> Span[Byte, origin_of(self)]:
+    def unsafe_as_bytes_mut(mut self) -> Span[Byte, origin_of(self)]:
         """Returns a mutable contiguous slice of the bytes owned by this string.
         This name has a _mut suffix so the as_bytes() method doesn't have to
         guarantee mutability.
 
         Returns:
             A contiguous slice pointing to the bytes owned by this string.
+
+        Safety:
+            - Any mutation of the byte slice must uphold UTF-8 validity of the
+              overall string.
         """
         return Span[Byte, origin_of(self)](
             ptr=self.unsafe_ptr_mut(), length=self.byte_length()
@@ -1272,9 +1491,10 @@ struct String(
             The length of this string in bytes.
         """
         if self._is_inline():
-            return (
-                self._capacity_or_data & Self.INLINE_LENGTH_MASK
-            ) >> Self.INLINE_LENGTH_START
+            return Int(
+                UInt64(self._capacity_or_data & Self.INLINE_LENGTH_MASK)
+                >> UInt64(Self.INLINE_LENGTH_START)
+            )
         else:
             return self._len_or_data
 
@@ -1294,7 +1514,7 @@ struct String(
             Query the length of a string, in bytes and Unicode codepoints:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("ನಮಸ್ಕಾರ")
             assert_equal(s.count_codepoints(), 7)
@@ -1305,7 +1525,7 @@ struct String(
             Unicode codepoint length:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("abc")
             assert_equal(s.count_codepoints(), 3)
@@ -1316,7 +1536,7 @@ struct String(
             the length in Unicode codepoints, not grapheme clusters:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("á")
             assert_equal(s.count_codepoints(), 2)
@@ -1371,29 +1591,31 @@ struct String(
         return substr in StringSlice(self)
 
     def find(self, substr: StringSlice, start: Int = 0) -> Int:
-        """Finds the offset of the first occurrence of `substr` starting at
-        `start`. If not found, returns -1.
+        """Finds the offset in bytes of the first occurrence of `substr`
+        starting at `start`. If not found, returns `-1`.
 
         Args:
           substr: The substring to find.
-          start: The offset from which to find.
+          start: The offset in bytes from which to find.
 
         Returns:
-          The offset of `substr` relative to the beginning of the string.
+          The offset in bytes of `substr` relative to the beginning of the
+          string.
         """
 
         return StringSlice(self).find(substr, start)
 
     def rfind(self, substr: StringSlice, start: Int = 0) -> Int:
-        """Finds the offset of the last occurrence of `substr` starting at
-        `start`. If not found, returns -1.
+        """Finds the offset in bytes of the last occurrence of `substr` starting
+        at `start`. If not found, returns `-1`.
 
         Args:
           substr: The substring to find.
-          start: The offset from which to find.
+          start: The offset in bytes from which to find.
 
         Returns:
-          The offset of `substr` relative to the beginning of the string.
+          The offset in bytes of `substr` relative to the beginning of the
+          string.
         """
 
         return StringSlice(self).rfind(substr, start=start)
@@ -1643,13 +1865,16 @@ struct String(
         """Checks if the string starts with the specified prefix between start
         and end positions. Returns True if found and False otherwise.
 
+        The `start` and `end` positions must be offsets given in bytes, and
+        must be codepoint boundaries.
+
         Args:
             prefix: The prefix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start offset in bytes from which to check.
+            end: The end offset in bytes from which to check.
 
         Returns:
-            True if the `self[start:end]` is prefixed by the input prefix.
+            True if the `self[byte=start:end]` is prefixed by the input prefix.
         """
         return StringSlice(self).startswith(prefix, start, end)
 
@@ -1659,13 +1884,16 @@ struct String(
         """Checks if the string end with the specified suffix between start
         and end positions. Returns True if found and False otherwise.
 
+        The `start` and `end` positions must be offsets given in bytes, and
+        must be codepoint boundaries.
+
         Args:
             suffix: The suffix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start offset in bytes from which to check.
+            end: The end offset in bytes from which to check.
 
         Returns:
-            True if the `self[start:end]` is suffixed by the input suffix.
+            True if the `self[byte=start:end]` is suffixed by the input suffix.
         """
         return StringSlice(self).endswith(suffix, start, end)
 
@@ -1678,8 +1906,8 @@ struct String(
             prefix: The prefix to remove from the string.
 
         Returns:
-            `string[len(prefix):]` if the string starts with the prefix string,
-            or a copy of the original string otherwise.
+            `string[byte=prefix.byte_length():]` if the string starts with
+            the prefix string, or a copy of the original string otherwise.
 
         Examples:
 
@@ -1699,7 +1927,7 @@ struct String(
             suffix: The suffix to remove from the string.
 
         Returns:
-            `string[:-len(suffix)]` if the string ends with the suffix string,
+            `string[byte=:(self.byte_length()-suffix.byte_length())]` if the string ends with the suffix string,
             or a copy of the original string otherwise.
 
         Examples:
@@ -1755,7 +1983,7 @@ struct String(
         representations of the `args` arguments.
 
         For more information, see the discussion in the
-        [`format` module](/mojo/std/collections/string/format/).
+        [`format` module](/docs/std/collections/string/format/).
 
         Args:
             args: The substitution values.
@@ -1988,7 +2216,7 @@ struct String(
 
     # Make a string mutable on the stack.
     def _inline_string(mut self):
-        var length = len(self)
+        var length = self.byte_length()
         var new_string = Self()
         new_string.set_byte_length(length)
         var dst = UnsafePointer(to=new_string).bitcast[Byte]()

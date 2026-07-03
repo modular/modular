@@ -43,8 +43,8 @@ def conv_layer_mm_kernel(
     W: Int,
     K: Int,
     N_batch: Int,
-    F: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    X: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    F: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    X: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     Y: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
 ):
     """Tiled matrix multiplication kernel for convolution.
@@ -214,7 +214,7 @@ def main() raises:
 
     print("Launching MM Kernel with Grid(", grid_x, ",", grid_y, ",", N, ")")
 
-    ctx.enqueue_function_experimental[conv_layer_mm_kernel](
+    ctx.enqueue_function[conv_layer_mm_kernel](
         C,
         M,
         H,

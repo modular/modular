@@ -21,6 +21,7 @@ features like swizzling for bank conflict avoidance, L2 cache promotion hints, a
 support for various data types and memory layouts.
 """
 
+from .. import DeviceBuffer
 from std.ffi import external_call
 from std.sys import size_of
 
@@ -32,7 +33,7 @@ from std.gpu.host.device_context import (
 )
 
 from std.utils import IndexList, StaticTuple
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 @fieldwise_init("implicit")
@@ -78,8 +79,8 @@ struct TensorMapDataType(TrivialRegisterPassable):
 
         Parameters:
             dtype: The Mojo data type to convert. Must be one of `DType.float32`,
-                `DType.float16`, `DType.bfloat16`, `DType.uint8`,
-                `DType.int64`, `DType.uint64`,
+                `DType.float16`, `DType.bfloat16`, `DType.uint8`, `DType.uint16`,
+                `DType.uint32`, `DType.int32`, `DType.int64`, `DType.uint64`,
                 `DType.float8_e4m3fn`, or `DType.float8_e8m0fnu`.
 
         Constraints:
@@ -93,6 +94,9 @@ struct TensorMapDataType(TrivialRegisterPassable):
             DType.float16,
             DType.bfloat16,
             DType.uint8,
+            DType.uint16,
+            DType.uint32,
+            DType.int32,
             DType.int64,
             DType.uint64,
             DType.float8_e4m3fn,
@@ -103,8 +107,14 @@ struct TensorMapDataType(TrivialRegisterPassable):
             return Self.FLOAT32
         elif dtype == DType.float16:
             return Self.FLOAT16
+        elif dtype == DType.uint16:
+            return Self.UINT16
         elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu, DType.uint8):
             return Self.UINT8
+        elif dtype == DType.uint32:
+            return Self.UINT32
+        elif dtype == DType.int32:
+            return Self.INT32
         elif dtype == DType.int64:
             return Self.INT64
         elif dtype == DType.uint64:
@@ -276,8 +286,10 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
     comptime device_type: AnyType = TMADescriptor
     """The device-side type for this TMA descriptor."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -327,6 +339,7 @@ def create_tma_descriptor[
     dtype: DType,
     rank: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
 ](
     global_buf: DeviceBuffer[dtype],
     global_shape: IndexList[rank],
@@ -347,6 +360,7 @@ def create_tma_descriptor[
         dtype: The element data type of the tensor.
         rank: The number of dimensions (1-5).
         swizzle_mode: The swizzle pattern to apply in shared memory.
+        l2_promotion: L2 cache promotion hint for TMA loads. Defaults to NONE.
 
     Args:
         global_buf: Device buffer containing the global memory tensor.
@@ -396,14 +410,18 @@ def create_tma_descriptor[
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
             _CString[],
-            OpaquePointer[MutAnyOrigin],  # tensorMap
+            OpaquePointer[origin_of(tma_descriptor)],  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
             type_of(global_buf._handle),  #  globalAddress
-            UnsafePointer[Int64, MutAnyOrigin],  # globalDim
-            UnsafePointer[Int64, MutAnyOrigin],  # globalStrides
-            UnsafePointer[Int32, MutAnyOrigin],  # boxDim
-            UnsafePointer[Int32, MutAnyOrigin],  # elementStrides
+            UnsafePointer[Int64, origin_of(global_dim_arg)],  # globalDim
+            UnsafePointer[
+                Int64, origin_of(global_strides_arg)
+            ],  # globalStrides
+            UnsafePointer[Int32, origin_of(box_dim_arg)],  # boxDim
+            UnsafePointer[
+                Int32, origin_of(element_stride_arg)
+            ],  # elementStrides
             Int32,  # interleave
             Int32,  # swizzle
             Int32,  # l2Promotion
@@ -420,7 +438,7 @@ def create_tma_descriptor[
             element_stride_arg.unsafe_ptr(),
             TensorMapInterleave.INTERLEAVE_NONE._value,
             swizzle_mode._value,
-            TensorMapL2Promotion.NONE._value,
+            l2_promotion._value,
             TensorMapFloatOOBFill.NONE._value,
         )
     )

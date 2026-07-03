@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.sys import simd_width_of
 from std.memory import memcmp, memcpy
 
 from .constants import CONTAINER_SIZE, MAXIMUM_UINT64_AS_STRING
@@ -69,7 +70,7 @@ def to_integer(
     for i in range(CONTAINER_SIZE):
         if not (Byte(ord("0")) <= std_x_ptr[i] <= Byte(ord("9"))):
             var num_str = StringSlice(
-                ptr=std_x_ptr, length=len(standardized_x)
+                unsafe_from_utf8=Span(ptr=std_x_ptr, length=len(standardized_x))
             ).lstrip("0")
 
             raise Error(
@@ -82,7 +83,7 @@ def to_integer(
     # 24 is not divisible by 16, so we stop at 8. Later on,
     # when we have better compile-time computation, we can
     # change 24 to be adapted to the simd width.
-    comptime simd_width = min(sys.simd_width_of[DType.uint64](), 8)
+    comptime simd_width = min(simd_width_of[DType.uint64](), 8)
 
     var accumulator = SIMD[DType.uint64, simd_width](0)
 
@@ -95,7 +96,7 @@ def to_integer(
     )
     if too_large:
         var num_str = StringSlice(
-            ptr=std_x_ptr, length=len(standardized_x)
+            unsafe_from_utf8=Span(ptr=std_x_ptr, length=len(standardized_x))
         ).lstrip("0")
         raise Error(
             "The string is too large to be converted to an integer: '",
@@ -121,5 +122,5 @@ def get_vector_with_exponents() -> InlineArray[UInt64, CONTAINER_SIZE]:
     """Returns (0, 0, 0, 0, 10**19, 10**18, 10**17, ..., 10, 1)."""
     var result = InlineArray[UInt64, CONTAINER_SIZE](uninitialized=True)
     for i in range(4, CONTAINER_SIZE):
-        result[i] = 10 ** UInt64(CONTAINER_SIZE - i - 1)
+        result[i] = UInt64(10) ** UInt64(CONTAINER_SIZE - i - 1)
     return result^

@@ -37,7 +37,7 @@ def test_some_arg() raises:
     assert_equal(takes_some_arg(Bar[foo=Foo[5](), bar=Foo[7]()]()), 24)
 
 
-def takes_some_param[x: Some[Intable]]() -> Int:
+def takes_some_param[x: Some[Intable & ImplicitlyDeletable]]() -> Int:
     return materialize[x]().__int__()
 
 
@@ -59,7 +59,7 @@ def test_closure() raises:
     def some_closure(x: Some[Intable]) -> Int:
         return x.__int__() * 2
 
-    def takes_some_closure[func: def(Some[Intable]) -> Int]() raises:
+    def takes_some_closure[func: def(Some[Intable]) thin -> Int]() raises:
         assert_equal(func(Int(4)), 8)
 
     takes_some_closure[some_closure]()
