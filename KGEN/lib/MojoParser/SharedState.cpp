@@ -670,6 +670,11 @@ struct SharedState::ModuleState {
   ModuleOp tmpModule;
   /// The optional source path of this module if it was loaded from source.
   std::optional<std::string> sourcePath;
+  /// For a package, the location of the import statement that first pulled it
+  /// in; used for diagnostics. Imported module states are shared across all
+  /// compilation units so we can only meaningfully track one location, even if
+  /// it's imported in multiple places.
+  SMLoc importLoc;
 
   //===--------------------------------------------------------------------===//
   // Package Specific State
@@ -1138,10 +1143,14 @@ void SharedState::registerSourcePackageChildren(ASTDecl &packageDecl) {
     auto fileLoc = createLocation(
         isSourcePackage ? getPackageInitPath(path.string()) : path.string(),
         /*line=*/1, /*column=*/1);
-    if (isSourcePackage)
-      createPackageState(nameAttr, path.string(), *parentState, fileLoc);
-    else
+    if (isSourcePackage) {
+      // Registered by the directory scan so it gets no import location here.
+      // We'll resolve that location if/when it's actually resolved.
+      createPackageState(nameAttr, path.string(), *parentState, fileLoc,
+                         /*importLoc=*/{});
+    } else {
       createDeferredModuleState(nameAttr, path.string(), *parentState, fileLoc);
+    }
   }
 }
 
@@ -1243,10 +1252,18 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
                                    *parentState->decl, message);
   };
 
+  // Root a package's location at the location of its first resolution: the
+  // first reference wins.
+  auto rememberImportLoc = [&](ModuleState *state) -> ModuleState * {
+    if (!state->importLoc.isValid())
+      state->importLoc = loc;
+    return state;
+  };
+
   // Check to see if we've already imported this module.
   if (auto it = parentState->nestedModules.find(declNameAttr);
       it != parentState->nestedModules.end())
-    return it->second;
+    return rememberImportLoc(it->second);
 
   // Resolve the parent's body so that any lazily-materialized children (e.g.
   // from binary packages, or deferred source siblings) are registered in
@@ -1255,7 +1272,7 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
     return notFound("failed to resolve parent package body");
   if (auto it = parentState->nestedModules.find(declNameAttr);
       it != parentState->nestedModules.end())
-    return it->second;
+    return rememberImportLoc(it->second);
 
   // Resolve the path for this module.
   std::optional<std::string> modulePath;
@@ -1271,12 +1288,13 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
   if (!modulePath)
     return notFound("unable to locate module '" + name + "'");
 
-  // If the path was a directory, we're importing a source package.
+  // If the path was a directory, we're importing a source package. Record the
+  // import location so the package's __init__ is opened "included from" here.
   if (std::filesystem::is_directory(*modulePath)) {
     auto fileLoc = createLocation(getPackageInitPath(*modulePath), /*line=*/1,
                                   /*column=*/1);
-    return &createPackageState(declNameAttr, *modulePath, *parentState,
-                               fileLoc);
+    return &createPackageState(declNameAttr, *modulePath, *parentState, fileLoc,
+                               /*importLoc=*/loc);
   }
 
   // Check if the path is a precompiled file or binary package.
@@ -1286,7 +1304,9 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
                                      *parentState);
 
   // Open + lex the module source file.
-  const llvm::MemoryBuffer *moduleBuffer = openModuleFile(pathRef, loc);
+  SMLoc openLoc =
+      parentState->importLoc.isValid() ? parentState->importLoc : loc;
+  const llvm::MemoryBuffer *moduleBuffer = openModuleFile(pathRef, openLoc);
   if (!moduleBuffer)
     return notFound("unable to resolve imported module '" + pathRef + "'");
   auto fileLoc = createLocation(moduleBuffer->getBufferIdentifier(), /*line=*/1,
@@ -1603,9 +1623,11 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
 ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
   auto fileLoc = createLocation(getPackageInitPath(path.str()),
                                 /*line=*/1, /*column=*/1);
+  // Note the importLoc here is empty as this is a top-level package and so
+  // isn't imported from anywhere.
   ModuleState &state =
       createPackageState(StringAttr::get(getContext(), name), path,
-                         *impl->topLevelModuleState, fileLoc);
+                         *impl->topLevelModuleState, fileLoc, /*importLoc=*/{});
   return *state.decl;
 }
 
@@ -1704,7 +1726,8 @@ LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
 
 SharedState::ModuleState &
 SharedState::createPackageState(StringAttr declName, StringRef packagePath,
-                                ModuleState &parentState, FileLineColLoc loc) {
+                                ModuleState &parentState, FileLineColLoc loc,
+                                SMLoc importLoc) {
   // Create a new decl for this module. We use createUnlistedDecl instead of
   // addDecl so the package is NOT added to parentState.decl->declsInScope.
   // This prevents "leaky imports" where importing a sub-module makes the
@@ -1724,6 +1747,7 @@ SharedState::createPackageState(StringAttr declName, StringRef packagePath,
   // Insert the newly created module state.
   ModuleState &moduleState = parentState.insertNestedModule(
       declName, std::make_unique<ModuleState>(&decl, packagePath));
+  moduleState.importLoc = importLoc;
   impl->moduleStates[&decl] = &moduleState;
   impl->packageStates[packageOp] = &moduleState;
 
