@@ -1310,12 +1310,56 @@ def greet_variadic_elements[*Ts: AnyType](*args: *Ts):
         print("variadic-refine:", args[i].greet())
 
 
+def copy_variadic_elements_from_all_copyable[
+    *Ts: ImplicitlyDeletable & Movable
+](*args: *Ts) where Ts.all_conforms_to[Copyable]():
+    comptime for i in range(args.__len__()):
+        # The variadic all_conforms_to() constraint should refine each element.
+        _ = args[i].copy()
+    print("variadic-allcopyable-refine: ok")
+
+
 def copy_variadic_elements_from_conforms_to_param_list[
     *Ts: ImplicitlyDeletable & Movable
 ](*args: *Ts) where conforms_to(Ts.values, Copyable):
     comptime for i in range(args.__len__()):
         _ = args[i].copy()
     print("variadic-conforms-to-param-list-refine: ok")
+
+
+def repr_variadic_tuple_after_all_writable_assert[
+    *Ts: Movable
+](t: Tuple[*Ts]) -> String:
+    comptime assert Ts.all_conforms_to[Writable]()
+    return repr(t)
+
+
+def repr_variadic_tuple_in_all_writable_if[
+    *Ts: Movable
+](t: Tuple[*Ts]) -> String:
+    comptime if Ts.all_conforms_to[Writable]():
+        return repr(t)
+    return "fallback"
+
+
+def copy_variadic_elements_after_all_copyable_assert[
+    *Ts: ImplicitlyDeletable & Movable
+](*args: *Ts):
+    comptime assert Ts.all_conforms_to[Copyable]()
+    comptime for i in range(args.__len__()):
+        _ = args[i].copy()
+    print("variadic-allcopyable-assert-refine: ok")
+
+
+def copy_variadic_elements_in_all_copyable_if[
+    *Ts: ImplicitlyDeletable & Movable
+](*args: *Ts):
+    comptime if Ts.all_conforms_to[Copyable]():
+        comptime for i in range(args.__len__()):
+            _ = args[i].copy()
+        print("variadic-allcopyable-if-refine: ok")
+    else:
+        print("variadic-allcopyable-if-refine: fallback")
 
 
 def test_rebind_refinement():
@@ -1334,11 +1378,28 @@ def test_rebind_refinement():
 
 
 def test_variadic_element_refinement():
+    var t = (1, "hello")
     # CHECK: variadic-refine: Woof! I'm Rex
     # CHECK: variadic-refine: Meow! I'm Luna
     greet_variadic_elements(Dog("Rex"), Cat("Luna"))
+    # CHECK: variadic-allcopyable-refine: ok
+    copy_variadic_elements_from_all_copyable(Dog("Rex"), Cat("Luna"))
     # CHECK: variadic-conforms-to-param-list-refine: ok
     copy_variadic_elements_from_conforms_to_param_list(Dog("Rex"), Cat("Luna"))
+    # CHECK: variadic-allwritable-assert-refine: Tuple[SIMD[DType.int, 1], String](Int(1), 'hello')
+    print(
+        "variadic-allwritable-assert-refine:",
+        repr_variadic_tuple_after_all_writable_assert(t),
+    )
+    # CHECK: variadic-allwritable-if-refine: Tuple[SIMD[DType.int, 1], String](Int(1), 'hello')
+    print(
+        "variadic-allwritable-if-refine:",
+        repr_variadic_tuple_in_all_writable_if(t),
+    )
+    # CHECK: variadic-allcopyable-assert-refine: ok
+    copy_variadic_elements_after_all_copyable_assert(1, "hello")
+    # CHECK: variadic-allcopyable-if-refine: ok
+    copy_variadic_elements_in_all_copyable_if(1, "hello")
 
 
 def main():
