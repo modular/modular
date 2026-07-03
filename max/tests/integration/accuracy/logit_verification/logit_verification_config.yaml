@@ -699,7 +699,7 @@ logit_verification_pipelines:
     pipeline: "kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit"
     compatible_with: [gpu]
     encoding: gptq
-    tags: [nvidia-only]
+    tags: [nvidia-only, manual]  # pending huggingface/transformers#45488
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama-gptq_golden/0/7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef/torch_llama-gptq_golden.tar.gz"
       json_file: "torch_llama-gptq-no-perm-idx_golden.json"
