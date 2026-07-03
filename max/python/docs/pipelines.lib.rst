@@ -11,6 +11,15 @@ max.pipelines.lib
 
 .. currentmodule:: max.pipelines.lib
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   pipelines.lib.interfaces
+   pipelines.lib.log_probabilities
+
 Configuration
 -------------
 
@@ -19,6 +28,8 @@ Configuration
    :toctree: generated
    :template: autosummary/class.rst
 
+   DenoisingCacheConfig
+   KVConnectorConfig
    MAXConfig
    MAXModelConfigBase
    PipelineRuntimeConfig
@@ -33,7 +44,6 @@ Pipelines
 
    EmbeddingsPipelineType
    OverlapTextGenerationPipeline
-   StandaloneSpeculativeDecodingPipeline
 
 Model interface
 ---------------
@@ -45,6 +55,7 @@ Model interface
 
    AlwaysSignalBuffersMixin
    PipelineModelWithKVCache
+   UnifiedEagleOutputs
 
 Tokenizers
 ----------
@@ -65,7 +76,6 @@ LoRA
    :template: autosummary/class.rst
 
    LoRAManager
-   LoRARequestProcessor
 
 Utilities
 ---------
@@ -77,6 +87,7 @@ Utilities
 
    CompilationTimer
    HuggingFaceRepo
+   ModelManifest
    WeightPathParser
 
 Functions
@@ -87,25 +98,16 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
+   build_eos_tracker_for_request
    convert_max_config_value
    deep_merge_max_configs
+   float32_array_to_buffer
    float32_to_bfloat16_as_uint16
    generate_local_model_path
    get_default_max_config_file_section_name
    max_tokens_to_generate
    parse_quant_config
-   rejection_sampler
-   rejection_sampler_with_residuals
    resolve_max_config_inheritance
-   token_sampler
    try_to_load_from_cache
    validate_hf_repo_access
 
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   pipelines.lib.interfaces
-   pipelines.lib.log_probabilities

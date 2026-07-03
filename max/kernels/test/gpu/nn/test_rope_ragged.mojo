@@ -178,7 +178,7 @@ def _test_rope_ragged_gpu_impl[
     @always_inline
     @__copy_capture(q_out_device_tensor)
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
         q_out_device_tensor.store[width=width](Coord(idx), val)
 
@@ -191,11 +191,11 @@ def _test_rope_ragged_gpu_impl[
             target=StaticString("gpu"),
             output_fn=output_fn,
         ](
-            x=q_device_tensor.as_any_origin(),
-            input_row_offsets=input_row_offsets_device_tensor.as_any_origin(),
-            start_pos=start_pos_device_tensor.as_any_origin(),
-            freqs_cis=freqs_cis_device_tensor.as_any_origin(),
-            context=Optional[DeviceContext](ctx),
+            x=q_device_tensor.as_unsafe_any_origin(),
+            input_row_offsets=input_row_offsets_device_tensor.as_unsafe_any_origin(),
+            start_pos=start_pos_device_tensor.as_unsafe_any_origin(),
+            freqs_cis=freqs_cis_device_tensor.as_unsafe_any_origin(),
+            context=ctx,
             position_ids=position_ids_device_tensor,
         )
     else:
@@ -206,11 +206,11 @@ def _test_rope_ragged_gpu_impl[
             target=StaticString("gpu"),
             output_fn=output_fn,
         ](
-            x=q_device_tensor.as_any_origin(),
-            input_row_offsets=input_row_offsets_device_tensor.as_any_origin(),
-            start_pos=start_pos_device_tensor.as_any_origin(),
-            freqs_cis=freqs_cis_device_tensor.as_any_origin(),
-            context=Optional[DeviceContext](ctx),
+            x=q_device_tensor.as_unsafe_any_origin(),
+            input_row_offsets=input_row_offsets_device_tensor.as_unsafe_any_origin(),
+            start_pos=start_pos_device_tensor.as_unsafe_any_origin(),
+            freqs_cis=freqs_cis_device_tensor.as_unsafe_any_origin(),
+            context=ctx,
         )
 
     # Copy results back to host for validation

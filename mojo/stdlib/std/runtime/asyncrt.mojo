@@ -15,7 +15,7 @@
 from std.os import abort
 from std.atomic import Atomic
 from std.ffi import _CPointer, external_call
-from std.gpu.host.device_context import _DeviceContextPtr
+from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
 from std.builtin.coroutine import (
     AnyCoroutine,
@@ -26,7 +26,6 @@ from std.builtin.coroutine import (
 # RaisingCoroutine is a builtin type, available without explicit import.
 from std.gpu.host import DeviceContext
 
-from std.utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # _AsyncContext
@@ -37,7 +36,7 @@ struct _Chain(Boolable, Defaultable, ImplicitlyCopyable, RegisterPassable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
-    var storage: _CPointer[Int, MutExternalOrigin]
+    var storage: _CPointer[Int, MutUntrackedOrigin]
 
     def __init__(out self):
         self.storage = {}
@@ -187,6 +186,64 @@ def create_task(
     _async_execute[handle.type](task._handle._handle, desired_worker_id=-1)
 
 
+@always_inline("nodebug")
+def task_id_for_device(device_id: Int) -> Int:
+    """Maps a device ID to a preferred AsyncRT worker thread ID for CPU affinity.
+
+    Delegates to the shared C++ implementation in DeviceAffinity.cpp which
+    handles explicit MODULAR_RUNTIME_DEVICE_TASK_CPU_IDS config,
+    NUMA-inferred GPU-to-CPU core mapping, and round-robin fallback.
+
+    Intended for use by affinity-aware task launchers such as
+    `_create_task` and `_launch_device_collective`. Pass -1 when no affinity
+    hint is needed.
+
+    Args:
+        device_id: The integer device ID (e.g. the ordinal of a GPU device).
+
+    Returns:
+        An AsyncRT worker thread index to use as `desired_worker_id`, or -1
+        if no affinity mapping is configured.
+    """
+    return Int(
+        external_call["KGEN_CompilerRT_TaskIdForDevice", Int32](
+            Int32(device_id),
+        )
+    )
+
+
+def _create_task(
+    var handle: Coroutine[...],
+    *,
+    desired_worker_id: Int,
+    out task: Task[handle.type, handle.origins],
+):
+    """Run the coroutine as a task on the AsyncRT Runtime with a worker affinity hint.
+
+    Package-private variant of `create_task` that accepts a `desired_worker_id`
+    so that callers can pin the task to a CPU worker with affinity for a
+    particular device. Pass the return value of `task_id_for_device` here;
+    pass -1 to get the same behavior as the public `create_task`.
+
+    This is intentionally not part of the public API. Use `create_task` for
+    unaffinitized launches. Use this function only when you have a concrete
+    reason to pin to a specific worker (e.g. NUMA-aware GPU collective dispatch).
+
+    Args:
+        handle: The coroutine to execute as a task. Ownership is transferred.
+        desired_worker_id: A preferred AsyncRT worker thread index. The runtime
+            may ignore this hint if the requested worker is unavailable.
+
+    Returns:
+        The `task` output parameter is initialized with the created task.
+    """
+    var ctx = handle._get_ctx[_AsyncContext]()
+    _init_asyncrt_chain(_AsyncContext.get_chain(ctx))
+    ctx[].callback = _AsyncContext.complete
+    task = Task(handle^)
+    _async_execute[handle.type](task._handle._handle, desired_worker_id)
+
+
 @always_inline
 def _run(var handle: Coroutine[...], out result: handle.type):
     """Executes a coroutine and waits for its completion.
@@ -213,7 +270,7 @@ def _run(var handle: Coroutine[...], out result: handle.type):
 # ===-----------------------------------------------------------------------===#
 
 
-struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
+struct Task[type: ImplicitlyDeletable, origins: OriginSet]:
     """Represents an asynchronous task that will produce a value of the specified type.
 
     A Task encapsulates a coroutine that is executing asynchronously and will eventually
@@ -357,10 +414,10 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
     var _handle: RaisingCoroutine[Self.type, Self.origins]
     """The underlying raising coroutine."""
 
-    var _result_ptr: UnsafePointer[Self.type, MutExternalOrigin]
+    var _result_alloc: ThinAllocation[Self.type]
     """Heap-allocated storage for the result value."""
 
-    var _error_ptr: UnsafePointer[Error, MutExternalOrigin]
+    var _error_alloc: ThinAllocation[Error]
     """Heap-allocated storage for the error value."""
 
     def __init__(
@@ -372,9 +429,11 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
             handle: The raising coroutine to execute. Ownership is transferred.
         """
         self._handle = handle^
-        self._result_ptr = alloc[Self.type](1)
-        self._error_ptr = alloc[Error](1)
-        self._handle._set_result_slot(self._result_ptr, self._error_ptr)
+        self._result_alloc = alloc(Layout[Self.type].single()).into_thin()
+        self._error_alloc = alloc(Layout[Error].single()).into_thin()
+        self._handle._set_result_slot(
+            self._result_alloc.unsafe_ptr(), self._error_alloc.unsafe_ptr()
+        )
 
     def _has_error(self) -> Bool:
         """Check whether the coroutine raised an error.
@@ -389,13 +448,35 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
             self._handle._handle
         )
 
-    def _release_coro(deinit self):
-        """Release chain and coroutine resources without touching result/error
-        slots (caller handles those).
+    def _into_result(deinit self, out result: Self.type) raises:
+        """Consumes the finished task, returning its result or raising its error.
+
+        Tears down the coroutine and the async-runtime chain, releases the heap
+        storage for both the result and error slots, and then moves the produced
+        value into `result` — or, if the coroutine failed, raises the stored
+        error. The task must already have completed; callers block or suspend
+        (via `wait` or `__await__`) before invoking this.
+
+        Returns:
+            The `result` output parameter receives the task's value on success.
+
+        Raises:
+            The error produced by the coroutine, if it raised.
         """
+        var has_error = self._has_error()
+
         var ctx = self._handle._get_ctx[_AsyncContext]()
         _del_asyncrt_chain(_AsyncContext.get_chain(ctx))
         self._handle^.force_destroy()
+
+        if has_error:
+            var err = self._error_alloc.unsafe_ptr().take_pointee()
+            dealloc(self._error_alloc^.unsafe_with_layout({count = 1}))
+            dealloc(self._result_alloc^.unsafe_with_layout({count = 1}))
+            raise err^
+        result = self._result_alloc.unsafe_ptr().take_pointee()
+        dealloc(self._error_alloc^.unsafe_with_layout({count = 1}))
+        dealloc(self._result_alloc^.unsafe_with_layout({count = 1}))
 
     @always_inline
     def __await__(deinit self, out result: Self.type) raises:
@@ -422,18 +503,7 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
             )
 
         _suspend_async[await_body]()
-        var has_error = self._has_error()
-        var rp = self._result_ptr
-        var ep = self._error_ptr
-        self^._release_coro()
-        if has_error:
-            var err = ep.take_pointee()
-            rp.free()
-            ep.free()
-            raise err^
-        result = rp.take_pointee()
-        ep.free()
-        rp.free()
+        result = self^._into_result()
 
     def wait(deinit self, out result: Self.type) raises:
         """Block until the task completes and return the result or raise.
@@ -450,21 +520,10 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
         _async_wait(
             _AsyncContext.get_chain(self._handle._get_ctx[_AsyncContext]())
         )
-        var has_error = self._has_error()
-        var rp = self._result_ptr
-        var ep = self._error_ptr
-        self^._release_coro()
-        if has_error:
-            var err = ep.take_pointee()
-            rp.free()
-            ep.free()
-            raise err^
-        result = rp.take_pointee()
-        ep.free()
-        rp.free()
+        result = self^._into_result()
 
     # TODO: Add force_destroy() when we have a trait that combines
-    # Movable and ImplicitlyDestructible. Currently, the caller must
+    # Movable and ImplicitlyDeletable. Currently, the caller must
     # call wait() to consume the task.
 
 
@@ -488,7 +547,7 @@ struct TaskGroupContext(TrivialRegisterPassable):
     var callback: Self.tg_callback_fn_type
     """Callback function to be invoked on the TaskGroup when an operation completes."""
 
-    var task_group: UnsafePointer[TaskGroup, MutExternalOrigin]
+    var task_group: UnsafePointer[TaskGroup, MutUntrackedOrigin]
     """Pointer to the TaskGroup that owns or is associated with this context."""
 
 
@@ -498,7 +557,7 @@ struct _TaskGroupBox(Copyable, RegisterPassable):
     var handle: AnyCoroutine
 
     def __init__[
-        type: ImplicitlyDestructible
+        type: ImplicitlyDeletable
     ](out self, var coro: Coroutine[type, ...]):
         self.handle = coro^._take_handle()
 
@@ -542,7 +601,7 @@ struct TaskGroup(Defaultable):
 
     @always_inline
     def _counter_decr(mut self) -> Int:
-        var prev: Int = Int(self.counter.fetch_sub(1)._mlir_value)
+        var prev: Int = self.counter.fetch_sub(1)
         return prev - 1
 
     @staticmethod
@@ -578,7 +637,7 @@ struct TaskGroup(Defaultable):
         self.counter += 1
         task._get_ctx[TaskGroupContext]()[] = TaskGroupContext(
             Self._task_complete_callback,
-            UnsafePointer(to=self).unsafe_origin_cast[MutExternalOrigin](),
+            UnsafePointer(to=self).unsafe_origin_cast[MutUntrackedOrigin](),
         )
         _async_execute[NoneType](task._handle, desired_worker_id)
         self.tasks.append(_TaskGroupBox(task^))
@@ -619,146 +678,3 @@ struct TaskGroup(Defaultable):
         """
         self._task_complete()
         _async_wait(UnsafePointer(to=self.chain))
-
-
-# ===-----------------------------------------------------------------------===#
-# DeviceContext
-# ===-----------------------------------------------------------------------===#
-
-
-struct DeviceContextPtr(Defaultable, ImplicitlyCopyable, RegisterPassable):
-    """Exposes a pointer to a C++ DeviceContext to Mojo.
-
-    Note: When initializing a `DeviceContext` from a pointer, the refcount is not
-    incremented. This is considered safe because `get_device_context()`
-    is only used within kernels and the `DeviceContext` lifetime is managed
-    by the graph compiler.
-    """
-
-    var _handle: Optional[UnsafePointer[NoneType, ExternalOrigin[mut=True]]]
-    """The underlying pointer to the C++ `DeviceContext`."""
-
-    @always_inline
-    def __init__(out self):
-        """Initialize an empty `DeviceContextPtr` with a null pointer.
-
-        This creates a `DeviceContextPtr` that doesn't point to any device context.
-        """
-        self._handle = {}
-
-    def __init__(out self, handle: OpaquePointer[ExternalOrigin[mut=True]]):
-        """Initialize a `DeviceContextPtr` from a raw pointer.
-
-        Args:
-            handle: A raw pointer to a C++ `DeviceContext`.
-        """
-        self._handle = handle
-
-    @doc_hidden
-    def __init__(out self, handle: _DeviceContextPtr[mut=True]):
-        """Initialize a `DeviceContextPtr` from a raw pointer.
-
-        Args:
-            handle: A raw pointer to a C++ `DeviceContext`.
-        """
-        self._handle = UnsafePointer(to=handle).bitcast[
-            type_of(self._handle)
-        ]()[]
-
-    @implicit
-    def __init__(out self, device: DeviceContext):
-        """Initialize a DeviceContextPtr from a `DeviceContext`.
-
-        This constructor allows implicit conversion from `DeviceContext` to `DeviceContextPtr`.
-
-        Args:
-            device: The `DeviceContext` to wrap in this pointer.
-        """
-        self = Self(device._handle)
-
-    def __getitem__(self) -> DeviceContext:
-        """Dereference the pointer to get the `DeviceContext`.
-
-        Returns:
-            The `DeviceContext` that this pointer points to.
-        """
-        return DeviceContext(
-            UnsafePointer(to=self._handle).bitcast[
-                _DeviceContextPtr[mut=True]
-            ]()[]
-        )
-
-    def get_device_context(self) -> DeviceContext:
-        """Get the `DeviceContext` that this pointer points to.
-
-        This is an alias for the dereference operator.
-
-        Returns:
-            The `DeviceContext` that this pointer points to.
-        """
-        return self[]
-
-    def get_optional_device_context(self) -> Optional[DeviceContext]:
-        """Get the `DeviceContext` that this pointer points to if it is non-null,
-        otherwise None.
-
-        Returns:
-            The `DeviceContext` that this pointer points to, or `None`.
-        """
-        return Optional(self[]) if self._handle else None
-
-
-struct DeviceContextPtrList[size: Int](Sized, TrivialRegisterPassable):
-    """A fixed-size collection of `DeviceContextPtr` objects.
-
-    This struct provides a lightweight, register-passable container for a fixed number
-    of `DeviceContextPtr` objects, with array-like access semantics.
-
-    Parameters:
-        size: The fixed number of `DeviceContextPtr` objects in the collection.
-    """
-
-    var ptrs: StaticTuple[DeviceContextPtr, Self.size]
-    """The underlying storage for the device context pointers."""
-
-    @always_inline
-    def __init__(out self, ptrs: StaticTuple[DeviceContextPtr, Self.size]):
-        """Initialize with a InlineArray of `DeviceContextPtr`s.
-
-        Args:
-            ptrs: An InlineArray containing the `DeviceContextPtr`s to store.
-        """
-        self.ptrs = ptrs
-
-    def __getitem_param__[index: Int](self) -> DeviceContext:
-        """Access a `DeviceContext` at a compile-time known index.
-
-        Parameters:
-            index: A compile-time integer index.
-
-        Returns:
-            The `DeviceContext` at the specified index.
-        """
-        return self.ptrs[index][]
-
-    def __getitem__[I: Indexer, //](self, idx: I) -> DeviceContext:
-        """Access a `DeviceContext` using a runtime index value.
-
-        Parameters:
-            I: A type that conforms to the `Indexer` trait.
-
-        Args:
-            idx: A runtime index value that conforms to the Indexer trait.
-
-        Returns:
-            The `DeviceContext` at the specified index.
-        """
-        return self.ptrs[idx][]
-
-    def __len__(self) -> Int:
-        """Get the number of `DeviceContextPtr` objects in the collection.
-
-        Returns:
-            The size of the collection as specified by the size parameter.
-        """
-        return Self.size

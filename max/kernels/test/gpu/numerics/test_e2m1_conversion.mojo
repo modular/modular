@@ -141,7 +141,7 @@ def test_simd_f32_to_e2m1_ptx_path(ctx: DeviceContext) raises:
     )
 
     comptime kernel = test_simd_f32_to_e2m1_ptx_kernel[size,]
-    ctx.enqueue_function_experimental[kernel](f32_simd, grid_dim=1, block_dim=1)
+    ctx.enqueue_function[kernel](f32_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 
@@ -184,9 +184,7 @@ def test_simd_f4e2m1x2_to_fp16x2(ctx: DeviceContext) raises:
     )
 
     comptime kernel = test_simd_f4e2m1x2_to_fp16x2_ptx_kernel[size,]
-    ctx.enqueue_function_experimental[kernel](
-        e4m21_simd, grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function[kernel](e4m21_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 

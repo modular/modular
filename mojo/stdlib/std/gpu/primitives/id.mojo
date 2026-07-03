@@ -38,7 +38,7 @@ from std.memory import AddressSpace
 from std.builtin.int import _FromInt
 
 from ..globals import WARP_SIZE
-import .warp
+from . import warp
 
 
 # ===-----------------------------------------------------------------------===#
@@ -62,7 +62,7 @@ def _get_gcn_idx[offset: Int, dtype: DType]() -> Int:
         "llvm.amdgcn.implicitarg.ptr",
         UnsafePointer[
             Scalar[dtype],
-            MutExternalOrigin,
+            MutUntrackedOrigin,
             address_space=AddressSpace.CONSTANT,
         ],
         has_side_effect=False,

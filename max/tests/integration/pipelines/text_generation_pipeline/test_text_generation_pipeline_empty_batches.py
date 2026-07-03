@@ -16,8 +16,7 @@ from unittest.mock import MagicMock
 import pytest
 from max.driver import Buffer
 from max.dtype import DType
-from max.interfaces import PipelineTask, TextGenerationInputs
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
@@ -28,6 +27,7 @@ from max.pipelines.lib.interfaces import ModelOutputs
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
+from max.pipelines.modeling.types import PipelineTask, TextGenerationInputs
 
 
 @pytest.fixture(scope="module")
@@ -97,7 +97,6 @@ def test_text_generation_pipeline__empty_batches(
     # Generate empty batches for inputs
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[[], []],
-        num_steps=1,
     )
 
     # Execute the pipeline

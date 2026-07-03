@@ -70,7 +70,7 @@ Figure 3: CTA tile loading
 
 Note the redundancy in the memory loads. This is similar to the redundancy we
 noticed at the beginning of the [blog
-series](./matmul-on-blackwell-pt2.md),
+series](./matmul-on-blackwell-part-2.md),
 but this time the redundancy is occurring at tile granularity instead of
 element granularity.
 
@@ -238,7 +238,7 @@ if elect_one_cta:
 The `mma` function above will invoke the `tcgen05.mma.cta_group::2` instruction
 when `cta_group` is 2. We also change the arrive function from `mma_arrive`
 ([last
-blog](./matmul-on-blackwell-part2.md))
+blog](./matmul-on-blackwell-part-2.md))
 to `mma_arrive_multicast` , which takes `cta_group` and signals the leader
 CTA’s memory barrier when `cta_group=2`.
 

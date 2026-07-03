@@ -28,9 +28,11 @@ K and V are extensively sub-staged to fit in SMEM:
 from std.math import align_down
 from std.sys import size_of
 from std.bit import prev_power_of_two
-from std.gpu.globals import WARP_SIZE
+from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
+
+from nn.attention.gpu.nvidia.sm100.attention import SM100_RESERVED_SMEM_BYTES
 
 
 struct Depth512SM100Config[
@@ -49,14 +51,17 @@ struct Depth512SM100Config[
 
     # --- Pair-CTA constants ---
     comptime cta_group: Int = 2
-    comptime num_threads: Int = 384  # 12 warps (3 warp groups of 128)
+    # 3 warp groups (12 warps): softmax (warps 0-3), correction (4-7),
+    # and a mixed support group (warp 8 = MMA, warp 9 = load,
+    # warps 10-11 spare).
+    comptime num_threads: Int = 3 * WARPGROUP_SIZE
 
     # --- Sub-staging ---
     comptime num_pv_stages: Int = 2  # V sub-tiled along BN (reduction)
 
     # --- Hardware limits ---
     comptime sm100_smem_carveout: Int = (
-        B200.shared_memory_per_multiprocessor - 1024
+        B200.shared_memory_per_multiprocessor - SM100_RESERVED_SMEM_BYTES
     )
     comptime sm100_tmem_cols: Int = 512
     comptime mbar_size: Int = size_of[DType.int64]()
@@ -106,7 +111,10 @@ struct Depth512SM100Config[
         self.group = group
         self.qk_depth = qk_depth
         self.ov_depth = ov_depth
-        self.swizzle_mode = swizzle_mode
+        comptime if Self.qkv_dtype.is_float8():
+            self.swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
+        else:
+            self.swizzle_mode = swizzle_mode
 
         # Depth-dependent MMA geometry.
         # depth>256: MMA_M=128, BM=64, split O into O_lo/O_hi (each MMA_N=ov_depth/2)
@@ -188,6 +196,9 @@ struct Depth512SM100Config[
 
         remaining = Self.sm100_smem_carveout - smem_use
         self.num_kv_stages = remaining // bytes_per_slot
+        self.num_kv_stages = min(
+            self.num_kv_stages, (32 - misc_mbars_fixed) // 2
+        )
         smem_use += self.num_kv_stages * bytes_per_slot
 
         self.smem_used = smem_use

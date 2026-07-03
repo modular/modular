@@ -50,13 +50,16 @@ query interval data, particularly for finding overlaps.
 
 
 from std.builtin.string_literal import StaticString
+from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
 import std.format._utils as fmt
 
 from .deque import Deque
 
 
-trait IntervalElement(Comparable, Copyable, Intable, Writable):
+trait IntervalElement(
+    Comparable, Copyable, ImplicitlyDeletable, Intable, Writable
+):
     """The trait denotes a trait composition of the `Copyable`,
     `Writable`, `Intable`, and `Comparable` traits. Which is also subtractable.
     """
@@ -285,7 +288,7 @@ struct Interval[T: IntervalElement](
 
 struct _IntervalNode[
     T: IntervalElement,
-    U: Copyable & Comparable & Writable,
+    U: Copyable & Comparable & ImplicitlyDeletable & Writable,
 ](Copyable, Writable):
     """A node containing an interval and associated data.
 
@@ -297,7 +300,7 @@ struct _IntervalNode[
     """
 
     comptime _OpaquePointer = Optional[
-        UnsafePointer[NoneType, MutExternalOrigin]
+        UnsafePointer[NoneType, MutUntrackedOrigin]
     ]
 
     var interval: Interval[Self.T]
@@ -323,26 +326,26 @@ struct _IntervalNode[
 
     def left(
         ref self,
-    ) -> ref[self._left] Optional[UnsafePointer[Self, MutExternalOrigin]]:
+    ) -> ref[self._left] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the left child pointer."""
         return UnsafePointer(to=self._left).bitcast[
-            Optional[UnsafePointer[Self, MutExternalOrigin]]
+            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
         ]()[]
 
     def right(
         ref self,
-    ) -> ref[self._right] Optional[UnsafePointer[Self, MutExternalOrigin]]:
+    ) -> ref[self._right] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the right child pointer."""
         return UnsafePointer(to=self._right).bitcast[
-            Optional[UnsafePointer[Self, MutExternalOrigin]]
+            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
         ]()[]
 
     def parent(
         ref self,
-    ) -> ref[self._parent] Optional[UnsafePointer[Self, MutExternalOrigin]]:
+    ) -> ref[self._parent] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the parent pointer."""
         return UnsafePointer(to=self._parent).bitcast[
-            Optional[UnsafePointer[Self, MutExternalOrigin]]
+            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
         ]()[]
 
     def __init__(
@@ -452,7 +455,7 @@ struct _IntervalNode[
 
 struct IntervalTree[
     T: IntervalElement,
-    U: Copyable & Comparable & Writable,
+    U: Copyable & Comparable & ImplicitlyDeletable & Writable,
 ](Defaultable, Writable):
     """An interval tree data structure for efficient range queries.
 
@@ -464,7 +467,7 @@ struct IntervalTree[
     """
 
     comptime _IntervalNodePointer = Optional[
-        UnsafePointer[_IntervalNode[Self.T, Self.U], MutExternalOrigin]
+        UnsafePointer[_IntervalNode[Self.T, Self.U], MutUntrackedOrigin]
     ]
 
     var _root: Self._IntervalNodePointer
@@ -485,14 +488,18 @@ struct IntervalTree[
 
     @staticmethod
     def _del_helper(
-        node: UnsafePointer[_IntervalNode[Self.T, Self.U], MutExternalOrigin],
+        node: UnsafePointer[_IntervalNode[Self.T, Self.U], MutUntrackedOrigin],
     ):
         if node[].left():
             Self._del_helper(node[].left().value())
         if node[].right():
             Self._del_helper(node[].right().value())
         node.destroy_pointee()
-        node.free()
+        dealloc(
+            ThinAllocation(unsafe_assume_ownership=node).unsafe_with_layout(
+                {count = 1}
+            )
+        )
 
     def _left_rotate(mut self, rotation_node: Self._IntervalNodePointer):
         """Performs a left rotation around node x in the red-black tree.
@@ -649,7 +656,9 @@ struct IntervalTree[
         """
         # Allocate memory for a new node and initialize it with the interval
         # and data
-        var new_node = alloc[_IntervalNode[Self.T, Self.U]](1)
+        var new_node = alloc(
+            Layout[_IntervalNode[Self.T, Self.U]].single()
+        ).unsafe_leak()
         new_node.init_pointee_move(_IntervalNode(interval, data))
         self._len += 1
 

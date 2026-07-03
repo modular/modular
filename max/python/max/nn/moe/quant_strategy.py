@@ -26,7 +26,8 @@ from ..kernels import (
     grouped_dynamic_scaled_fp8_matmul,
     grouped_dynamic_scaled_mxfp4_matmul,
     grouped_matmul_block_scaled,
-    grouped_quantize_dynamic_block_scaled_fp4,
+    grouped_matmul_blocked_swiglu,
+    grouped_quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
 )
@@ -65,9 +66,10 @@ class QuantStrategy(Protocol):
         weight: TensorValue,
         weight_scales: TensorValue,
         expert_scales: TensorValue | None = None,
-        tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
+        a_scales_preshuffled: bool = False,
+        a_scales_max_padded_m: int = 0,
     ) -> TensorValue:
         """Runs grouped matmul for routed experts."""
         ...
@@ -98,6 +100,7 @@ class QuantStrategy(Protocol):
         gate_up_projs: TensorValue,
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
+        max_padded_M: int = 0,
     ) -> tuple[TensorValue, TensorValue]:
         """Applies gating and quantizes activations for the down proj."""
         ...
@@ -142,11 +145,17 @@ class Fp8Strategy:
         weight: TensorValue,
         weight_scales: TensorValue,
         expert_scales: TensorValue | None = None,
-        tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
+        a_scales_preshuffled: bool = False,
+        a_scales_max_padded_m: int = 0,
     ) -> TensorValue:
-        """Runs grouped FP8 matmul for the routed experts."""
+        """Runs grouped FP8 matmul for the routed experts.
+
+        ``a_scales_preshuffled``/``a_scales_max_padded_m`` are accepted for
+        ``QuantStrategy`` conformance; they only apply to the MXFP4 EP scale
+        fusion and are ignored here.
+        """
         hidden, input_scales, expert_start, expert_ids, usage_stats = (
             expert_inputs
         )
@@ -161,7 +170,6 @@ class Fp8Strategy:
             usage_stats.to(DeviceRef.CPU()),
             self.config.input_scale,
             self.config.weight_scale,
-            tokens_padded_per_expert=tokens_padded_per_expert,
         )
 
     def prepare_weight_scales(
@@ -178,8 +186,13 @@ class Fp8Strategy:
         gate_up_projs: TensorValue,
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
+        max_padded_M: int = 0,
     ) -> tuple[TensorValue, TensorValue]:
-        """Applies fused SiLU gate and returns quantized activations."""
+        """Applies fused SiLU gate and returns quantized activations.
+
+        ``max_padded_M`` is accepted for ``QuantStrategy`` conformance; it only
+        applies to the MXFP4 EP scale fusion and is ignored here.
+        """
         _, _, expert_start_indices, _, _ = expert_inputs
         return fused_silu_quantized(
             gate_up_projs,
@@ -189,12 +202,17 @@ class Fp8Strategy:
         )
 
 
-class Nvfp4Strategy:
-    """NVFP4 quantization for MoE."""
+class NvMxf4f8Strategy:
+    """NVIDIA NVFP4/MXFP4/MXFP8 quantization for MoE."""
 
     def __init__(self, config: QuantConfig, dtype: DType):
         self.config = config
         self.dtype = dtype
+
+    @property
+    def is_nvfp4(self) -> bool:
+        """Whether this strategy is handling NVFP4 rather than MXFP4 or MXFP8."""
+        return self.config.is_nvfp4
 
     def quantize(
         self,
@@ -202,7 +220,7 @@ class Nvfp4Strategy:
         group_size: int,
     ) -> tuple[TensorValue, TensorValue]:
         raise NotImplementedError(
-            "To quantize to NVFP4, use grouped_quantize instead"
+            "To quantize to NVFP4/MXFP4/MXFP8, use grouped_quantize instead"
         )
 
     def grouped_quantize(
@@ -215,16 +233,27 @@ class Nvfp4Strategy:
         expert_ids: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
         """Quantizes activations per-expert with padded scale alignment."""
-        if input_scale is None:
+        if self.is_nvfp4 and input_scale is None:
             raise ValueError("NVFP4 requires input_scale")
-        return grouped_quantize_dynamic_block_scaled_fp4(
+        sf_tensor = (
+            (1.0 / input_scale).to(tensor.device)
+            if input_scale is not None
+            else ops.broadcast_to(
+                ops.constant(1.0, DType.float32, device=tensor.device),
+                expert_ids.shape,
+            )
+        )
+        return grouped_quantize_dynamic_block_scaled(
             tensor,
             row_offsets=expert_start,
             scales_offsets=scales_offset,
             expert_ids=expert_ids,
-            sf_tensor=(1.0 / input_scale).to(tensor.device),
-            scales_type=DType.float8_e4m3fn,
-            out_type=DType.uint8,
+            sf_tensor=sf_tensor,
+            sf_vector_size=16 if self.is_nvfp4 else 32,
+            scales_type=(
+                DType.float8_e4m3fn if self.is_nvfp4 else DType.float8_e8m0fnu
+            ),
+            out_type=self.dtype,
         )
 
     def grouped_matmul(
@@ -232,12 +261,18 @@ class Nvfp4Strategy:
         weight: TensorValue,
         weight_scales: TensorValue,
         expert_scales: TensorValue | None = None,
-        tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
+        a_scales_preshuffled: bool = False,
+        a_scales_max_padded_m: int = 0,
     ) -> TensorValue:
-        """Runs grouped NVFP4 matmul with per-expert scales."""
-        if expert_scales is None:
+        """Runs grouped NVIDIA block-scaled matmul with per-expert scales.
+
+        ``a_scales_preshuffled``/``a_scales_max_padded_m`` are accepted for
+        ``QuantStrategy`` conformance; they only apply to the MXFP4 EP scale
+        fusion and are ignored here.
+        """
+        if self.is_nvfp4 and expert_scales is None:
             raise ValueError("NVFP4 requires expert_scales")
 
         (
@@ -255,6 +290,14 @@ class Nvfp4Strategy:
                 [8192, int(expert_ids.shape[0])],
                 dtype=DType.uint32,
                 device=DeviceRef.CPU(),
+            )
+
+        if expert_scales is None:
+            # Create a dummy expert scales tensor with shape (num_experts,) for
+            # MXFP4 and MXFP8.
+            expert_scales = ops.broadcast_to(
+                ops.constant(1.0, DType.float32, device=hidden.device),
+                expert_ids.shape,
             )
 
         return grouped_matmul_block_scaled(
@@ -276,10 +319,10 @@ class Nvfp4Strategy:
         down: TensorValue,
         device: DeviceRef,
     ) -> tuple[TensorValue, TensorValue]:
-        """Interleaves NVFP4 block scales for kernel layout."""
+        """Interleaves NVIDIA block scales for kernel layout."""
         return (
-            _interleave_nvfp4_scales(gate_up, device),
-            _interleave_nvfp4_scales(down, device),
+            _nv_interleave_block_scales(gate_up, device),
+            _nv_interleave_block_scales(down, device),
         )
 
     def fused_silu_quantize(
@@ -287,8 +330,13 @@ class Nvfp4Strategy:
         gate_up_projs: TensorValue,
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
+        max_padded_M: int = 0,
     ) -> tuple[TensorValue, TensorValue]:
-        """Applies SiLU gate then NVFP4 quantizes the result."""
+        """Applies SiLU gate then quantizes the result.
+
+        ``max_padded_M`` is accepted for ``QuantStrategy`` conformance; it only
+        applies to the MXFP4 EP scale fusion and is ignored here.
+        """
         _, _, expert_start_indices, scales_offsets, _, _ = expert_inputs
         return fused_silu_quantized(
             gate_up_projs,
@@ -299,13 +347,125 @@ class Nvfp4Strategy:
             scales_offsets,
         )
 
+    def grouped_matmul_swiglu(
+        self,
+        weight: TensorValue,
+        weight_scales: TensorValue,
+        *,
+        expert_scales: TensorValue | None = None,
+        input_scales: TensorValue | None = None,
+        expert_inputs: tuple[TensorValue, ...],
+        estimated_total_m: TensorValue | None = None,
+        use_swigluoai: bool = False,
+        swiglu_alpha: float = 0.0,
+        swiglu_limit: float = 0.0,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Runs the fused quantized grouped matmul + SwiGLU + quant kernel.
+
+        Equivalent to ``grouped_matmul`` followed by ``fused_silu_quantize``,
+        but folds both into a single SM100 kernel. The caller must pass a
+        sigma-permuted ``weight`` and ``weight_scales`` (see
+        ``max.nn.kernels.grouped_matmul_blocked_swiglu``); the layout is
+        produced by :meth:`MoE.gate_up_proj` and
+        :meth:`MoEQuantized.gate_up_proj_scales` when
+        ``quant_config.can_use_fused_swiglu`` is set.
+
+        Args:
+            weight: Sigma-permuted gate/up projection weights.
+            weight_scales: Sigma-permuted gate/up projection scales (6D).
+            expert_scales: Per-expert matmul-epilogue scaling factors.
+                Typically ``nvfp4.gate_up_expert``.
+            input_scales: Raw per-expert SiLU-output scale (``nvfp4.down_input``).
+                The fused kernel consumes the inverted scale internally; this
+                method inverts here to match the chained
+                :meth:`fused_silu_quantize` convention.
+            expert_inputs: Same tuple shape as :meth:`grouped_matmul`:
+                ``(hidden, hidden_scales, expert_start, scales_offsets,
+                expert_ids, usage_stats)``.
+            estimated_total_m: Estimated total non-padded token count.
+            use_swigluoai: Whether to use the OAI-style clamped SwiGLU activation
+                function.
+            swiglu_alpha: The alpha value for the clamped SwiGLU activation function.
+            swiglu_limit: The limit value for the clamped SwiGLU activation function.
+
+        Returns:
+            Tuple ``(c_packed, c_swiglu_scales)`` matching the chained
+            reference path byte-for-byte under the kernel's default
+            ``match_bf16=True`` setting.
+        """
+        if self.is_nvfp4 and input_scales is None:
+            raise ValueError("NVFP4 requires input_scales")
+        if self.is_nvfp4 and expert_scales is None:
+            raise ValueError("NVFP4 requires expert_scales")
+
+        (
+            hidden,
+            hidden_scales,
+            expert_start,
+            scales_offsets,
+            expert_ids,
+            usage_stats,
+        ) = expert_inputs
+
+        # Replace gpu usage stats with a dummy cpu usage stats (same as
+        # grouped_matmul above).
+        if usage_stats.device.is_gpu():
+            usage_stats = ops.constant(
+                [8192, int(expert_ids.shape[0])],
+                dtype=DType.uint32,
+                device=DeviceRef.CPU(),
+            )
+
+        c_input_scales = (
+            (1.0 / input_scales).to(hidden.device)
+            if input_scales is not None
+            else None
+        )
+        expert_scales = (
+            expert_scales.to(hidden.device)
+            if expert_scales is not None
+            else None
+        )
+
+        return grouped_matmul_blocked_swiglu(
+            hidden,
+            weight,
+            hidden_scales,
+            weight_scales,
+            expert_start,
+            scales_offsets,
+            expert_ids,
+            usage_stats,
+            expert_scales=expert_scales,
+            c_input_scales=c_input_scales,
+            estimated_total_m=estimated_total_m,
+            clamp_activation=use_swigluoai,
+            swiglu_alpha=swiglu_alpha,
+            swiglu_limit=swiglu_limit,
+        )
+
 
 class Mxfp4Strategy:
-    """MXFP4 quantization for MoE."""
+    """MXFP4 quantization for MoE.
 
-    def __init__(self, config: QuantConfig, dtype: DType):
+    When `preshuffled_b=True`, the MOGG MXFP4 grouped-matmul op dispatches
+    to the preshuffled-B kernel variant (`mxfp4_grouped_matmul_amd_preb`),
+    which expects B in the 5D layout from `Shuffler.preshuffle_b_5d`. The
+    caller is responsible for applying that preshuffle at weight load
+    time (e.g. Kimi K2.5's `weight_adapters.py:_batch_preshuffle_experts`).
+    Models without a preshuffle weight adapter must leave
+    `preshuffled_b=False` so the dense row-major kernel is used.
+    """
+
+    def __init__(
+        self,
+        config: QuantConfig,
+        dtype: DType,
+        preshuffled_b: bool = False,
+    ):
         self.config = config
         self.dtype = dtype
+        self.preshuffled_b = preshuffled_b
 
     def quantize(
         self,
@@ -336,9 +496,10 @@ class Mxfp4Strategy:
         weight: TensorValue,
         weight_scales: TensorValue,
         expert_scales: TensorValue | None = None,
-        tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
+        a_scales_preshuffled: bool = False,
+        a_scales_max_padded_m: int = 0,
     ) -> TensorValue:
         """Runs grouped MXFP4 matmul with per-expert scales."""
         (
@@ -358,6 +519,9 @@ class Mxfp4Strategy:
             expert_ids,
             usage_stats.to(DeviceRef.CPU()),
             estimated_total_m=estimated_total_m,
+            preshuffled_b=self.preshuffled_b,
+            a_scales_preshuffled=a_scales_preshuffled,
+            a_scales_max_padded_m=a_scales_max_padded_m,
         )
 
     def prepare_weight_scales(
@@ -373,6 +537,7 @@ class Mxfp4Strategy:
         gate_up_projs: TensorValue,
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
+        max_padded_M: int = 0,
     ) -> tuple[TensorValue, TensorValue]:
         """Applies SiLU gate then MXFP4 quantizes the result."""
         _, _, expert_start_indices, _, _ = expert_inputs
@@ -382,22 +547,20 @@ class Mxfp4Strategy:
             self.config,
             self.dtype,
             input_scales,
+            max_padded_M=max_padded_M,
         )
 
 
-def silu_gate(gate_up_projs: TensorValue, moe_dim: int) -> TensorValue:
-    """Applies SiLU-gated activation: silu(gate) * up."""
-    return ops.silu(gate_up_projs[:, :moe_dim]) * gate_up_projs[:, moe_dim:]
-
-
-def _interleave_nvfp4_scales(
+def _nv_interleave_block_scales(
     scales: TensorValue, device: DeviceRef
 ) -> TensorValue:
-    """Interleaves NVFP4 block scales for kernel consumption."""
+    """Interleaves rank-3 block scales for SM100 kernel consumption."""
     if scales.rank != 3:
         raise ValueError(
-            f"expected NVFP4 scales of rank 3 but got {scales.rank}"
+            f"expected block scales of rank 3 but got {scales.rank}"
         )
+    # Only NVFP4 uses one FP8_E4M3FN scale per 16 elements,
+    group_size = 16 if scales.dtype == DType.float8_e4m3fn else 32
     num_experts = int(scales.shape[0])
     scales = scales.to(device)
     scale_m = scales.shape[1]
@@ -405,7 +568,7 @@ def _interleave_nvfp4_scales(
     expert_scales = ops.split(scales, [1] * num_experts, axis=0)
     return ops.stack(
         [
-            block_scales_interleave(s.reshape([scale_m, scale_k]))
+            block_scales_interleave(s.reshape([scale_m, scale_k]), group_size)
             for s in expert_scales
         ],
         axis=0,

@@ -60,6 +60,13 @@ VISION_TASK = "chartqa"
 EvalResults = dict[str, Any]
 EvalSamples = list[dict[str, Any]]
 
+# Prometheus field where each framework exposes its generated-token count.
+_COMPLETION_TOKEN_METRICS = (
+    "maxserve_num_output_tokens_total",  # max / max-ci
+    "vllm:generation_tokens_total",  # vllm
+    "sglang:generation_tokens_total",  # sglang
+)
+
 
 def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
@@ -104,16 +111,17 @@ def get_gpu_name_and_count() -> tuple[str, int]:
                     del env[k]
         result = check_output(amd, text=True, stderr=DEVNULL, env=env)
         data = json.loads(result.strip())["gpu_data"]
-        return data[0]["asic"]["market_name"], len(data)
+        name, count = data[0]["asic"]["market_name"], len(data)
     except Exception:
         try:  # Nvidia path
             lines = (
                 check_output(nv, text=True, stderr=DEVNULL).strip().split("\n")
             )
-            return lines[0].strip(), len(lines)
+            name, count = lines[0].strip(), len(lines)
         except Exception:
             logger.warning("nvidia-smi and amd-smi both failed")
             return "N/A", 0
+    return name, count
 
 
 def safe_model_name(model: str) -> str:
@@ -155,10 +163,16 @@ def call_eval(
     max_concurrent: int,
     num_questions: int,
     disable_timeouts: bool,
+    metrics_url: str | None = None,
+    model_alias: str | None = None,
+    lm_eval_metadata: str | None = None,
 ) -> tuple[EvalResults, EvalSamples]:
     extra_gen_kwargs = ""
+    # model_alias carries the original recipe key (e.g. "nvidia/Kimi-K2.5-NVFP4__internal")
+    # when model is a local path that doesn't contain the model name keywords.
+    check_name = (model_alias or model).casefold()
     is_reasoning_model = any(
-        kw in model.casefold()
+        kw in check_name
         for kw in (
             "academic-ds",
             "deepseek-r1",
@@ -167,9 +181,11 @@ def call_eval(
             "gpt-oss",
             "internvl3_5",
             "qwen3",
-            "kimi-k2.5",
+            "kimi-k2",
             "minimax-m2",
+            "minimax-m3",
             "step-3.5",
+            "glm-5",
         )
     )
     # Reasoning models needs extra tokens for .. reasoning
@@ -188,9 +204,8 @@ def call_eval(
         "base_url": url,
         "num_concurrent": str(max_concurrent),
         "max_retries": "1",
+        "timeout": "86400" if disable_timeouts else "600",
     }
-    if disable_timeouts:
-        model_args["timeout"] = "86400"
 
     include_path = str(Path(__file__).parent.resolve() / "tasks")
     with TemporaryDirectory() as tempdir:
@@ -209,9 +224,17 @@ def call_eval(
             "--fewshot_as_multiturn",
         ]
 
+        # Passed verbatim to lm-eval; merged into each task's config metadata to
+        # parameterize it at runtime (e.g. babilong context length).
+        if lm_eval_metadata is not None:
+            eval_cmd.append(f"--metadata={lm_eval_metadata}")
+
         args = [interpreter, "-m", *eval_cmd]
         logger.info(f"Running eval with:\n {' '.join(args)}")
         eval_timeout = None if disable_timeouts else 600
+        tokens_before = (
+            get_num_tokens_generated(metrics_url) if metrics_url else None
+        )
         try:
             check_call(args, timeout=eval_timeout)
         except TimeoutExpired:
@@ -219,8 +242,43 @@ def call_eval(
                 f"Evals did not finish within the expected timeout={eval_timeout}s. "
                 "You can pass --disable-timeouts to opt-out of this."
             ) from None
+        tokens_after = (
+            get_num_tokens_generated(metrics_url) if metrics_url else None
+        )
 
-        return parse_eval_results(Path(tempdir))
+        results, samples = parse_eval_results(Path(tempdir))
+        results["num_tokens_generated"] = (
+            tokens_after - tokens_before
+            if tokens_before is not None and tokens_after is not None
+            else None
+        )
+        return results, samples
+
+
+def get_num_tokens_generated(metrics_url: str) -> int | None:
+    """Reads the generated-token count from Prometheus, or None if missing."""
+    try:
+        r = requests.get(metrics_url, timeout=(5, 30))
+        r.raise_for_status()
+    except requests.RequestException:
+        return None
+
+    for metric in _COMPLETION_TOKEN_METRICS:
+        total = 0.0
+        found = False
+        for line in r.text.splitlines():
+            if not line or line.startswith("#"):
+                continue
+            # A sample line is ``name{labels} value`` or ``name value``.
+            name = line.split("{", 1)[0].split(" ", 1)[0]
+            if name != metric:
+                continue
+            total += float(line.rsplit(" ", 1)[1])
+            found = True
+        if found:
+            return int(total)
+
+    return None
 
 
 def parse_eval_results(loc: Path) -> tuple[EvalResults, EvalSamples]:
@@ -244,6 +302,7 @@ class EvalSummary:
     accuracy_stderr: float
     total_evaluation_time_seconds: float
     task_hash: str
+    num_tokens_generated: int | None = None
 
 
 def build_eval_summary(
@@ -268,6 +327,10 @@ def build_eval_summary(
             accuracy = metrics["exact_match,flexible-extract"]
             accuracy_stderr = metrics["exact_match_stderr,flexible-extract"]
             task_type = "text"
+        elif "babilong" in task:
+            accuracy = metrics["acc,none"]
+            accuracy_stderr = metrics["acc_stderr,none"]
+            task_type = "long-context"
         else:
             raise ValueError(f"Unknown task: {task}")
 
@@ -283,6 +346,7 @@ def build_eval_summary(
                 accuracy_stderr=accuracy_stderr,
                 total_evaluation_time_seconds=total_secs,
                 task_hash=result["task_hashes"][task],
+                num_tokens_generated=result.get("num_tokens_generated"),
             )
         )
 

@@ -586,22 +586,20 @@ def matmul_dispatch_sm90_fp8[
     def _search[
         T: Table[TuningConfigSM90], domain: List[Int] = List[Int]()
     ]() raises -> Int:
-        @parameter
         @always_inline
-        def get_m(x: TuningConfigSM90) -> Int:
+        def get_m(x: TuningConfigSM90) {} -> Int:
             return x.M
 
-        comptime m_values = T.query_values[Int, get_m, domain]()
+        comptime m_values = T.query_values[Int, domain=domain](rule=get_m)
 
         comptime for static_m in m_values:
 
-            @parameter
             @always_inline
-            def rule_eq_m(x: TuningConfigSM90) -> Bool:
+            def rule_eq_m(x: TuningConfigSM90) {} -> Bool:
                 return x.M == static_m
 
             if m <= static_m:
-                comptime idx_list = T.query_index[rule_eq_m, domain=domain]()
+                comptime idx_list = T.query_index[domain=domain](rule=rule_eq_m)
 
                 comptime if idx_list:
                     comptime entry = T.configs[idx_list[0]]
@@ -621,13 +619,12 @@ def matmul_dispatch_sm90_fp8[
         or (static_N == 16384 and static_K == 6656)
     ):
 
-        @parameter
         @always_inline
-        def rule_eq_nk(x: TuningConfigSM90) -> Bool:
+        def rule_eq_nk(x: TuningConfigSM90) {} -> Bool:
             return x.K == static_K and x.N == static_N
 
         # First, filter by static params N and K
-        comptime nk_idx_list = llama_405b_fp8_table.query_index[rule_eq_nk]()
+        comptime nk_idx_list = llama_405b_fp8_table.query_index(rule=rule_eq_nk)
         # Search the table for matching values of M within domain
         if _search[llama_405b_fp8_table, domain=nk_idx_list]() == DISPATCH_HIT:
             return DISPATCH_HIT
@@ -2345,22 +2342,20 @@ def matmul_dispatch_sm90_bf16_fp32[
         T: Table[TuningConfigSM90],
         domain: List[Int] = List[Int](),
     ]() raises -> Int:
-        @parameter
         @always_inline
-        def get_m(x: TuningConfigSM90) -> Int:
+        def get_m(x: TuningConfigSM90) {} -> Int:
             return x.M
 
-        comptime m_values = T.query_values[Int, get_m, domain]()
+        comptime m_values = T.query_values[Int, domain=domain](rule=get_m)
 
         comptime for static_m in m_values:
 
-            @parameter
             @always_inline
-            def rule_eq_m(x: TuningConfigSM90) -> Bool:
+            def rule_eq_m(x: TuningConfigSM90) {} -> Bool:
                 return x.M == static_m
 
             if m <= static_m:
-                comptime idx_list = T.query_index[rule_eq_m, domain=domain]()
+                comptime idx_list = T.query_index[domain=domain](rule=rule_eq_m)
 
                 comptime if idx_list:
                     comptime entry = T.configs[idx_list[0]]
@@ -2372,13 +2367,12 @@ def matmul_dispatch_sm90_bf16_fp32[
 
         return DISPATCH_MISS
 
-    @parameter
     @always_inline
-    def rule_eq_nk(x: TuningConfigSM90) -> Bool:
+    def rule_eq_nk(x: TuningConfigSM90) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
     # First check the new tuning table before falling back on any old results
-    comptime tuning_nk_idx_list = tuning_table.query_index[rule_eq_nk]()
+    comptime tuning_nk_idx_list = tuning_table.query_index(rule=rule_eq_nk)
 
     # make sure the domain (nk_idx_list) is not empty!
     comptime if tuning_nk_idx_list:
@@ -2399,7 +2393,9 @@ def matmul_dispatch_sm90_bf16_fp32[
         static_N == 4096 and static_K == 1536
     ):
         if m > 256:
-            comptime nk_idx_list = miscellaneous_table.query_index[rule_eq_nk]()
+            comptime nk_idx_list = miscellaneous_table.query_index(
+                rule=rule_eq_nk
+            )
             if (
                 _search[miscellaneous_table, domain=nk_idx_list]()
                 == DISPATCH_HIT
@@ -2433,10 +2429,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                     16,
                 )
 
-                @parameter
                 def config_fn(
                     m: Int,
-                ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
+                ) {} -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_smallM[
                         a_type,
                         b_type,
@@ -2456,7 +2451,15 @@ def matmul_dispatch_sm90_bf16_fp32[
                         16,
                     )
 
-                comptime configs = build_configs_generic[1, 32, config_fn]()
+                comptime configs = build_configs_generic[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    1,
+                    32,
+                    config_fn=config_fn,
+                ]()
 
                 comptime for config in configs:
                     if runtime_config == config:
@@ -2740,7 +2743,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 ](c, a, b, ctx)
                 return DISPATCH_HIT
 
-        comptime nk_idx_list = miscellaneous_table.query_index[rule_eq_nk]()
+        comptime nk_idx_list = miscellaneous_table.query_index(rule=rule_eq_nk)
         if _search[miscellaneous_table, domain=nk_idx_list]() == DISPATCH_HIT:
             return DISPATCH_HIT
 
@@ -2760,14 +2763,14 @@ def matmul_dispatch_sm90_bf16_fp32[
         or (static_N == 12800 and static_K == 2560)
     ):
         # First, filter by static params N and K
-        comptime nk_idx_list = internvl_table.query_index[rule_eq_nk]()
+        comptime nk_idx_list = internvl_table.query_index(rule=rule_eq_nk)
         # Search the table for matching values of M within domain
         if _search[internvl_table, domain=nk_idx_list]() == DISPATCH_HIT:
             return DISPATCH_HIT
 
     # matmul configs for llama_3_3_70b
     comptime if a_is_bfloat16_or_float32 and static_N == 2560 and static_K == 8192:
-        comptime nk_idx_list = llama_3_3_70b_table.query_index[rule_eq_nk]()
+        comptime nk_idx_list = llama_3_3_70b_table.query_index(rule=rule_eq_nk)
 
         # In this case for m>64 the ranges are not supported.
         # TODO: add ranges for <=256, 512, 1024, 2048
@@ -2786,7 +2789,7 @@ def matmul_dispatch_sm90_bf16_fp32[
         or (static_N == 43008 and static_K == 5376)
         or (static_N == 8192 and static_K == 5376)
     ):
-        comptime nk_idx_list = gemma_3_27b_table.query_index[rule_eq_nk]()
+        comptime nk_idx_list = gemma_3_27b_table.query_index(rule=rule_eq_nk)
 
         comptime if nk_idx_list:
             # TODO: add ranges for <=256, 512, 1024, 2048
@@ -3094,16 +3097,21 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](m, pdl_level)
 
-                @parameter
                 def config_fn_small(
                     m_val: Int,
-                ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
+                ) {} -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_smallM_ceildiv[
                         a_type, b_type, c_type, transpose_b
                     ](m_val, pdl_level)
 
                 comptime configs_small = build_configs_generic[
-                    1, 41, config_fn_small
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    1,
+                    41,
+                    config_fn=config_fn_small,
                 ]()
 
                 comptime for config in configs_small:
@@ -3128,16 +3136,21 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](m, pdl_level)
 
-                @parameter
                 def config_fn_mid(
                     m_val: Int,
-                ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
+                ) {} -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_midM_linear[
                         a_type, b_type, c_type, transpose_b
                     ](m_val, pdl_level)
 
                 comptime configs_mid = build_configs_generic[
-                    65, 129, config_fn_mid
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    65,
+                    129,
+                    config_fn=config_fn_mid,
                 ]()
 
                 comptime for config in configs_mid:
@@ -3159,16 +3172,21 @@ def matmul_dispatch_sm90_bf16_fp32[
                     a_type, b_type, c_type, transpose_b
                 ](m, pdl_level)
 
-                @parameter
                 def config_fn_large(
                     m_val: Int,
-                ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
+                ) {} -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
                     return swapAB_largeM_clustered[
                         a_type, b_type, c_type, transpose_b
                     ](m_val, pdl_level)
 
                 comptime configs_large = build_configs_generic[
-                    129, 241, config_fn_large
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    129,
+                    241,
+                    config_fn=config_fn_large,
                 ]()
 
                 comptime for config in configs_large:
@@ -3272,7 +3290,7 @@ def _find_largest_bn_for_sm90_matmul[dtype: DType, N: Int]() -> Int:
     comptime if N % 8 != 0:
         return -1
 
-    def _get_max_bn() capturing -> Int:
+    def _get_max_bn() -> Int:
         # For float8_e4m3fn maximum BN that will not result in register spilling is 160
         var BN = 160 if dtype == DType.float8_e4m3fn else 256
         while BN >= 8:

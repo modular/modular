@@ -43,7 +43,7 @@ to the next node:
 
 ```mojo
 struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
-    comptime NodePointer = UnsafePointer[Self, MutExternalOrigin]
+    comptime NodePointer = UnsafePointer[Self, MutUntrackedOrigin]
 
 
     var value: Optional[Self.ElementType] # The `Node`'s value
@@ -60,7 +60,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
 The code defines a type-specific `NodePointer` type alias built on
 [`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/).
 
-[`MutExternalOrigin`](/docs/manual/values/lifetimes/)
+[`MutUntrackedOrigin`](/docs/manual/values/lifetimes/)
 lets the pointer represent dynamically-allocated memory that
 won't be tracked by the lifetime checker. You'll need to both allocate
 and deallocate memory as needed.
@@ -69,7 +69,7 @@ The `next` field is an `Optional[Self.NodePointer]` because a node may or may
 not link to another node. `UnsafePointer` is non-nullable, so `Optional`
 provides the null state. `Optional[UnsafePointer]` has the same memory layout as
 a raw pointer, so there's no overhead. For more on this pattern, see
-[Working with nullability](/docs/manual/pointers/unsafe-pointers#working-with-nullability).
+[Working with nullability](/docs/manual/pointers/unsafe-pointers/#working-with-nullability).
 
 The optional `value` lets you create "empty" nodes, enabling you to move
 new `Node` memory allocations into place.
@@ -205,8 +205,6 @@ struct LinkedList[T]:
             curr = next
 ```
 
-<!-- markdownlint-disable MD033 -->
-
 :::info Putting it together
 
 <details>
@@ -219,7 +217,7 @@ comptime Element = String # Adapt for your type
 comptime ListNode = Node[Element] # Constructing a LinkedList
 
 struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
-    comptime NodePointer = UnsafePointer[Self, MutExternalOrigin]
+    comptime NodePointer = UnsafePointer[Self, MutUntrackedOrigin]
 
     var value: Optional[Self.ElementType] # The `Node`'s value
     var next: Optional[Self.NodePointer] # Pointer to the next `Node`
@@ -304,8 +302,6 @@ one one two three five eight
 
 </details>
 :::
-
-<!-- markdownlint-enable MD033 -->
 
 ## What next?
 

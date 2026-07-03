@@ -164,6 +164,6 @@ async def test_file_uri_security_check(app: FastAPI, tmp_path: Path) -> None:
             assert response.status_code == 400  # ValueError becomes 400
             error = response.json()
             # The API returns a generic "Value error." for security reasons
-            assert error["detail"] == "Value error."
+            assert error["error"]["message"] == "Value error."
     finally:
         os.unlink(outside_path)

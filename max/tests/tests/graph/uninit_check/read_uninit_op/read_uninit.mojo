@@ -18,8 +18,9 @@ works correctly.
 """
 
 import compiler
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, OutputTensor
+
+from std.gpu.host import DeviceContext
+from extensibility import InputTensor, OutputTensor
 
 
 @compiler.register("read_uninit_output")
@@ -38,7 +39,7 @@ struct ReadUninitOutput:
     ](
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         # Read from the output BEFORE writing — this is uninitialized.
         # On GPU, the debug allocator has poisoned this with the

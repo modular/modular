@@ -20,7 +20,7 @@ the fused path by comparing both against the HuggingFace torch reference.
 from __future__ import annotations
 
 import pytest
-from max.interfaces import TextGenerationContext
+from max.pipelines.context import TextContext
 from testbed.harnesses.attention_with_rope import (
     AttentionWithRopeHarness,
     AttentionWithRopeStaticParams,
@@ -49,7 +49,7 @@ _CORRECTNESS_SHAPES = [
 def unfused_runner() -> LayerTestRunner[
     AttentionWithRopeStaticParams,
     AttentionDynamicParams,
-    list[TextGenerationContext],
+    list[TextContext],
 ]:
     session, device = create_session()
     return LayerTestRunner(
@@ -61,7 +61,7 @@ def test_unfused_correctness(
     unfused_runner: LayerTestRunner[
         AttentionWithRopeStaticParams,
         AttentionDynamicParams,
-        list[TextGenerationContext],
+        list[TextContext],
     ],
 ) -> None:
     """Unfused rope+store path matches torch reference."""

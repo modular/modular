@@ -24,17 +24,16 @@ from layout import (
     Layout,
     LayoutTensor,
     RowMajorLayout,
-    RuntimeInt,
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
 )
-from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
 
-import .cpu
+from . import cpu
 from ..gemv import gemv
 from ..utils import (
     GemmShape,
@@ -60,48 +59,7 @@ def matmul[
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    ctx: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """TileTensor overload of `matmul` with DeviceContextPtr."""
-    var device_ctx = ctx.get_optional_device_context()
-
-    return matmul[
-        transpose_a=transpose_a,
-        transpose_b=transpose_b,
-        b_packed=b_packed,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        saturated_vnni=saturated_vnni,
-        _trace_description=_trace_description,
-        target=target,
-    ](c, a, b, device_ctx)
-
-
-@always_inline
-def matmul[
-    transpose_a: Bool = False,
-    transpose_b: Bool = False,
-    b_packed: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
-    saturated_vnni: Bool = False,
-    _trace_description: StaticString = "",
-    target: StaticString = "cpu",
-    has_epilogue_tensor: Bool = False,
-](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    ctx: Optional[DeviceContext],
-    epilogue_tensor: OptionalReg[
-        TileTensor[
-            c.dtype,
-            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
-            ImmutAnyOrigin,
-        ]
-    ] = None,
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     """Primary TileTensor matmul implementation. Routes GPU directly, delegates
     CPU path to cpu.matmul."""
@@ -151,7 +109,6 @@ def matmul[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                has_epilogue_tensor=has_epilogue_tensor,
             ](c, a, b, ctx.value())
     else:
         # CPU path: handle tracing and compute lambda wrapping, then

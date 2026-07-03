@@ -62,6 +62,7 @@ from std.gpu.primitives.grid_controls import (
 )
 from std.gpu.sync import syncwarp
 from std.gpu.compute.arch.tcgen05 import *
+from layout import Layout
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
     tile_layout_mn_major_typed,
@@ -850,12 +851,11 @@ struct BlackwellBlockScaledMatmulKernel[
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
     @__name(
-        StaticString(Self.config.get_kernal_name())
+        StaticString(Self.config.get_kernel_name())
         + StaticString(
             "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
             is not None else ""
         ),
-        mangle=True,
     )
     def run(
         a_tma_op: Self.ATmaOp,

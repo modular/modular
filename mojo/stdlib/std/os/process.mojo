@@ -94,7 +94,7 @@ struct Pipe:
 
     Example usage:
     ```mojo
-    from os.process import Pipe
+    from std.os.process import Pipe
 
     def main() raises:
         var pipe = Pipe()
@@ -215,7 +215,7 @@ struct Process:
 
     Example usage:
     ```mojo
-    from os.process import Process
+    from std.os.process import Process
 
     def main() raises:
         var child_process = Process.run("ls", ["-lha"])

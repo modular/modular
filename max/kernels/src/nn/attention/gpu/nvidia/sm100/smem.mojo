@@ -21,7 +21,9 @@ Split-mode memory layout (low to high address):
     [Q: q_nope_bytes + q_rope_bytes]
     [K: num_kv_stages * (padded_ov_depth*BN*qkv_dt + rope_depth*BN*rope_dt)]
     [V: num_kv_stages * padded_ov_depth * BN elements of qkv_dtype]
-    [correction: BM elements of Float32]
+    [correction: 2 * WARPGROUP_SIZE Float32 entries (= BM in 2Q; doubled
+                  to 2*BM in 1Q so each softmax thread tid in [0, 255]
+                  has a dedicated slot)]
     [q_scale: BM * scale_dtype (0 when scale_dtype is invalid)]
     [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when invalid)]
     [mbars: FA4MiscMBars.size SharedMemBarriers]
@@ -33,7 +35,9 @@ Fused-mode memory layout (low to high address):
     [Q: BM * padded_qk_depth elements of qkv_dtype]
     [KV_fused: num_kv_stages * padded_ov_depth * BN elements of qkv_dtype]
     [Rope: ceil(num_kv_stages/2) * BN * rope_depth elements of qkv_dtype]
-    [correction: BM elements of Float32]
+    [correction: 2 * WARPGROUP_SIZE Float32 entries (= BM in 2Q; doubled
+                  to 2*BM in 1Q so each softmax thread tid in [0, 255]
+                  has a dedicated slot)]
     [q_scale: BM * scale_dtype (0 when scale_dtype is invalid)]
     [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when invalid)]
     [mbars: FA4MiscMBars.size SharedMemBarriers]
@@ -42,6 +46,12 @@ Fused-mode memory layout (low to high address):
 In fused mode, K_nope and V alternate in the same buffer (padded_ov_depth
 wide), and rope data is stored separately at half the staging rate.
 k_smem_base() and v_smem_base() return the same pointer.
+
+In `num_qo == 1` mode the cross-WG LSE exchange runs through the (now-dead)
+s TMEM slot rather than smem, so no additional smem region is needed. Both
+warpgroups still write the combined LSE-reduced output to the single
+q-aliased o_smem region, then TMA-store it to gmem. Output partials remain
+in TMEM throughout the combine.
 """
 
 from std.sys import size_of
@@ -92,8 +102,10 @@ struct SM100AttentionSMem[
         size_of[Self.rope_dtype]() if Self.rope_dtype != DType.invalid else 0
     )
     comptime q_byte_offset: Int = 0
+    # Q_nope SMEM region: width is the non-rope Q/K depth (`padded_nope_depth`),
+    # which differs from the V/output depth when v_head_dim != qk_nope.
     comptime q_nope_bytes: Int = (
-        Self.config.BM * Self.config.padded_ov_depth * Self._qkv_dt_size
+        Self.config.BM * Self.config.padded_nope_depth * Self._qkv_dt_size
     )
     comptime q_rope_byte_offset: Int = Self.q_nope_bytes
     comptime q_rope_bytes: Int = (
@@ -106,16 +118,17 @@ struct SM100AttentionSMem[
     # Fused mode: [KV_fused_stage0]...[KV_fused_stageN][Rope0]...[RopeM]
     comptime kv_byte_offset: Int = Self.q_bytes
 
-    # Per-stage sizes in bytes.
-    # In pair-CTA mode each CTA stores half of K/V, so per-stage sizes
-    # use k_rows_per_cta (BN/2) and v_cols_per_cta (padded_ov_depth/2).
-    # In fused mode K and V share the same buffer (same per-stage size).
-    # In split mode K_nope and K_rope may have different dtypes.
+    # Per-stage sizes in bytes (pair-CTA halves each per-CTA col count).
+    # Fused mode: K_nope and V share one buffer, so the stage fits the wider of
+    # the two (equal for DeepSeek). Split mode: the K stage holds K_nope +
+    # K_rope; V has its own `v_stage_bytes`.
+    # NB: use the pair-halved `*_cols_per_cta()` here, NOT `fused_kv_cols()`
+    # (the un-halved width) — pair-CTA mode stores only half the cols per CTA.
     comptime k_stage_bytes: Int = (
-        Self.config.v_cols_per_cta()
+        max(Self.config.nope_cols_per_cta(), Self.config.v_cols_per_cta())
         * Self.config.BN
         * Self._qkv_dt_size if Self.config.use_fused_kv else (
-            Self.config.v_cols_per_cta() * Self.config.BN * Self._qkv_dt_size
+            Self.config.nope_cols_per_cta() * Self.config.BN * Self._qkv_dt_size
             + Self.rope_depth * Self.config.k_rows_per_cta() * Self.rope_dt_size
         )
     )
@@ -156,9 +169,20 @@ struct SM100AttentionSMem[
         + Self.rope_bytes if Self.config.use_fused_kv else Self.kv_stages_bytes
     )
 
-    # Correction region: BM elements of Float32.
+    # Correction region: 2 * WARPGROUP_SIZE Float32 entries (one slot per
+    # softmax-warp thread). Each softmax thread (CTA-wide `tid`, 0..255 for
+    # two softmax warpgroups) writes its correction value at offset `tid`.
+    # The correction warp reads WG0's slots at [0, WARPGROUP_SIZE) and WG1's
+    # at [WARPGROUP_SIZE, 2*WARPGROUP_SIZE). Doubling in 1Q (BM=128) gives
+    # the same 1 KiB the 2Q (BM=256) layout used to get from `BM`. Keep the
+    # expression `BM` for 2Q and `2*BM` for 1Q so the BM-derived intuition
+    # stays visible.
     comptime correction_byte_offset: Int = Self.kv_byte_offset + Self.kv_bytes
-    comptime correction_bytes: Int = Self.config.BM * size_of[DType.float32]()
+    comptime correction_bytes: Int = (
+        (2 if Self.config.num_qo == 1 else 1)
+        * Self.config.BM
+        * size_of[DType.float32]()
+    )
 
     # Scale regions (per-token scale only; zero-sized when scale_dtype is invalid).
     comptime _scale_dt_size: Int = (
@@ -190,6 +214,7 @@ struct SM100AttentionSMem[
         use_order_barriers=Self.use_order_barriers,
         use_fused_kv=Self.config.use_fused_kv,
         pair_cta=Self.config.pair_cta,
+        num_qo=Self.config.num_qo,
     ]
 
     comptime mbar_bytes: Int = Int(Self.MiscMBarsType.num_mbars()) * size_of[
@@ -220,6 +245,7 @@ struct SM100AttentionSMem[
     )
 
     # ---- storage -------------------------------------------------------------
+    @__allow_legacy_any_origin_fields
     var base: SharedMemPointer[Scalar[DType.uint8]]
 
     # ---- construction --------------------------------------------------------
@@ -234,7 +260,7 @@ struct SM100AttentionSMem[
             address_space=AddressSpace.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
-        ]()
+        ]().as_unsafe_any_origin()
 
     # ---- accessors -----------------------------------------------------------
 

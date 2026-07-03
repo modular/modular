@@ -43,7 +43,7 @@ from test_utils import (
 from std.utils.numerics import nan
 
 comptime void = __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
-comptime int8_pop = __mlir_type.`!pop.scalar<si8>`
+comptime int8_pop = __mlir_type.`!kgen.scalar<si8>`
 
 
 @fieldwise_init
@@ -796,7 +796,10 @@ def test_memmove_overlapping_regions() raises:
     var list = [1, 2, 3, 4, 5, 6, 7]
     # shift all values down by 1
     memmove(
-        dest=list.unsafe_ptr(), src=list.unsafe_ptr() + 1, count=len(list) - 1
+        # NOTE: need `as_unsafe_any_origin` to avoid exclusivity violations
+        dest=list.unsafe_ptr().as_unsafe_any_origin(),
+        src=list.unsafe_ptr().as_unsafe_any_origin() + 1,
+        count=len(list) - 1,
     )
     assert_equal(list, [2, 3, 4, 5, 6, 7, 7])
 

@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -24,11 +23,23 @@ modular_py_library(
 )
 
 modular_py_test(
+    name = "test_local_runtime",
+    size = "small",
+    srcs = ["test_local_runtime.py"],
+    deps = [
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
     name = "test_contexts",
     size = "small",
     srcs = ["test_contexts.py"],
     deps = [
         "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
         requirement("pytest-asyncio"),
     ],
 )
@@ -40,6 +51,50 @@ modular_py_test(
     deps = [
         ":test_helpers",
         "//max/python/max/experimental/cascade",
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_chat_completions",
+    size = "small",
+    srcs = ["test_chat_completions.py"],
+    deps = [
+        ":test_helpers",
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/serve",
+        requirement("fastapi"),
+        requirement("httpx"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_open_responses",
+    size = "small",
+    srcs = ["test_open_responses.py"],
+    deps = [
+        ":test_helpers",
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/serve",
+        requirement("fastapi"),
+        requirement("httpx"),
+        requirement("pillow"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_runtimes",
+    size = "small",
+    srcs = ["test_runtimes.py"],
+    deps = [
+        ":test_helpers",
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
+        "//max/python/max/experimental/cascade/grpc_runtime",
+        "//max/python/max/experimental/cascade/http_runtime",
+        "//max/python/max/serve:process_control",
         requirement("pytest-asyncio"),
     ],
 )

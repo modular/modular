@@ -35,9 +35,10 @@ class TextGenInterface(ABC):
     """Standard interface for a text-generation model."""
 
     @abstractmethod
-    def generate(
+    def generate_text(
         self,
         req: GenerateRequest,
         prompt: str | ChatMessages,
     ) -> AsyncIterator[str]:
         """Generate a streaming text response to a text prompt."""
+        ...

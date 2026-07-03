@@ -12,10 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import InputModality, PipelineTask
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .batch_processor import InternVLBatchProcessor
+from .memory_planner import InternVLMemoryPlanner
 from .model import InternVLModel
 from .model_config import InternVLConfig
 from .tokenizer import InternVLTokenizer
@@ -37,4 +39,8 @@ internvl_arch = SupportedArchitecture(
         "enable_chunked_prefill": False,
     },
     config=InternVLConfig,
+    batching=InternVLBatchProcessor,
+    memory_planner=InternVLMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

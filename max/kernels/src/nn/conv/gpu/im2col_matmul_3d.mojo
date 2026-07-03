@@ -39,7 +39,7 @@ from nn.conv.conv_utils import elementwise_simd_epilogue_type
 # =========================================================================
 
 
-@__name(t"conv3d_im2col_ndhwc_{input_dtype}", mangle=True)
+@__name(t"conv3d_im2col_ndhwc_{input_dtype}")
 def _im2col_ndhwc_kernel[
     input_dtype: DType,
     filter_dtype: DType,
@@ -149,7 +149,7 @@ def _im2col_ndhwc_kernel[
         k += block_dim.x * simd_width
 
 
-@__name(t"conv3d_transpose_qrscf_to_nk_{dtype}", mangle=True)
+@__name(t"conv3d_transpose_qrscf_to_nk_{dtype}")
 def _transpose_qrscf_to_nk[
     dtype: DType,
     filter_layout_type: TensorLayout,
@@ -184,7 +184,7 @@ def _transpose_qrscf_to_nk[
     dst_ptr.store(tid, filter.ptr.load(src_idx))
 
 
-@__name(t"conv3d_transpose_fcqrs_to_nk_{dtype}", mangle=True)
+@__name(t"conv3d_transpose_fcqrs_to_nk_{dtype}")
 def _transpose_fcqrs_to_nk[
     dtype: DType,
     filter_layout_type: TensorLayout,
@@ -231,7 +231,8 @@ def dispatch_im2col_matmul_conv3d[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
-    filter_is_fcrs: Bool,
+    //,
+    filter_is_fcrs: Bool = False,
     maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
     m_tile_byte_budget: Int = _DEFAULT_M_TILE_BYTE_BUDGET,
 ](
@@ -268,9 +269,6 @@ def dispatch_im2col_matmul_conv3d[
         return False
 
     var batch = Int(input.dim[0]())
-    var D = Int(input.dim[1]())
-    var H = Int(input.dim[2]())
-    var W = Int(input.dim[3]())
 
     var D_out = Int(output.dim[1]())
     var H_out = Int(output.dim[2]())
@@ -305,8 +303,7 @@ def dispatch_im2col_matmul_conv3d[
 
     comptime if filter_is_fcrs:
         ctx.enqueue_function[
-            _transpose_fcqrs_to_nk[filter_type, filter.LayoutType],
-            _transpose_fcqrs_to_nk[filter_type, filter.LayoutType],
+            _transpose_fcqrs_to_nk[filter_type, filter.LayoutType]
         ](
             filter.as_immut(),
             filter_nk_buf,
@@ -315,8 +312,7 @@ def dispatch_im2col_matmul_conv3d[
         )
     else:
         ctx.enqueue_function[
-            _transpose_qrscf_to_nk[filter_type, filter.LayoutType],
-            _transpose_qrscf_to_nk[filter_type, filter.LayoutType],
+            _transpose_qrscf_to_nk[filter_type, filter.LayoutType]
         ](
             filter.as_immut(),
             filter_nk_buf,
@@ -333,13 +329,11 @@ def dispatch_im2col_matmul_conv3d[
     var m_tile_cap = (
         m_tile_by_budget if m_tile_by_budget > _MIN_M_TILE else _MIN_M_TILE
     )
-    var num_tiles: Int
     var m_tile: Int
     if full_M <= m_tile_cap:
-        num_tiles = 1
         m_tile = full_M
     else:
-        num_tiles = ceildiv(full_M, m_tile_cap)
+        var num_tiles = ceildiv(full_M, m_tile_cap)
         m_tile = ceildiv(full_M, num_tiles)
 
     var im2col_buf = ctx.enqueue_create_buffer[input_type](m_tile * K)
@@ -364,7 +358,7 @@ def dispatch_im2col_matmul_conv3d[
             output.LayoutType,
             filter_is_fcrs,
         ]
-        ctx.enqueue_function[im2col_kernel, im2col_kernel](
+        ctx.enqueue_function[im2col_kernel](
             im2col_buf,
             input.as_immut(),
             filter.as_immut(),
@@ -381,14 +375,12 @@ def dispatch_im2col_matmul_conv3d[
             block_dim=im2col_block,
         )
 
-        var a_tt = TileTensor(
-            im2col_buf, row_major(Coord(Idx(m_count), Idx(K)))
-        )
-        var b_tt = TileTensor(filter_nk_buf, row_major(Coord(Idx(N), Idx(K))))
+        var a_tt = TileTensor(im2col_buf, row_major(Coord(m_count, K)))
+        var b_tt = TileTensor(filter_nk_buf, row_major(Coord(N, K)))
         # Output is NDHWC = [batch, D_out, H_out, W_out, C_out]; rows in the
         # flattened [M, N] layout are contiguous, so we advance by m_offset * N.
         var c_ptr = output.ptr + m_offset * N
-        var c_tt = TileTensor(c_ptr, row_major(Coord(Idx(m_count), Idx(N))))
+        var c_tt = TileTensor(c_ptr, row_major(Coord(m_count, N)))
 
         comptime if maybe_epilogue_func:
             comptime epilogue_5d = maybe_epilogue_func.value()
@@ -398,7 +390,7 @@ def dispatch_im2col_matmul_conv3d[
             @__copy_capture(DHW_out, HW_out, H_out, W_out, m_offset)
             def _gemm_epilogue[
                 _dtype: DType,
-                _width: Int,
+                _width: SIMDSize,
                 *,
                 alignment: Int = 1,
             ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):

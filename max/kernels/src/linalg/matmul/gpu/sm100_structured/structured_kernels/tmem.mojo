@@ -38,6 +38,7 @@ from std.gpu.compute.arch.tcgen05 import (
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from layout.tma_async import SharedMemBarrier
 from linalg.structuring import SMemArray
+from structured_kernels.pipeline import SM100_PIPELINE_WAIT_TICKS
 from .config import OutputPipelineConfig
 
 
@@ -1008,9 +1009,15 @@ struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterPassable):
         _ = self.barrier.ptr[].arrive()
 
     @always_inline
-    def wait(self):
-        """Wait for barrier completion."""
-        self.barrier.ptr[].wait()
+    def wait[ticks: Optional[UInt32] = None](self):
+        """Wait for barrier completion.
+
+        Parameters:
+            ticks: Optional hardware-suspend ceiling (ns) forwarded to
+                `SharedMemBarrier.wait`. `None` (default) preserves the
+                immediate-return spin for every existing caller.
+        """
+        self.barrier.ptr[].wait[ticks=ticks]()
 
     @always_inline
     def complete_dealloc[
@@ -1022,7 +1029,10 @@ struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterPassable):
         then deallocates the TMEM.
         """
         tmem.release_lock()
-        self.wait()
+        # SM100 warp-specialized matmul: hardware-suspend the MMA warp while it
+        # waits for the epilogue to consume TMEM, instead of busy-spinning.
+        # See SM100_PIPELINE_WAIT_TICKS.
+        self.wait[ticks=SM100_PIPELINE_WAIT_TICKS]()
         tmem.deallocate()
 
     @always_inline

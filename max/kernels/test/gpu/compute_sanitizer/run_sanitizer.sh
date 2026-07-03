@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# ===----------------------------------------------------------------------=== #
+# Local driver: run Mojo GPU kernel tests under NVIDIA Compute Sanitizer or the
+# built-in MAX redzone debug allocator, then summarize findings.
+#
+#   run_sanitizer.sh <tool> <bazel target>...
+#
+# <tool> is one of:
+#   memcheck   - out-of-bounds / misaligned global access (exact kernel line).
+#                NOTE: small OOBs are masked by the device caching allocator;
+#                use `redzone` to catch realistic off-by-one global overflows.
+#   racecheck  - intra-block shared-memory data races (pool-independent).
+#   initcheck  - uninitialized global-memory reads.
+#   synccheck  - divergent / mismatched __syncthreads / named-barrier.
+#   redzone    - MAX's own guard-region allocator (no compute-sanitizer): fast,
+#                catches small global OOB at free time (host alloc/free trace).
+#
+# Env knobs: CS_JOBS (local test parallelism, default 6), COMPUTE_SANITIZER
+# (path to the binary), CS_RESULTS_DIR (output dir, default
+# .derived/cs-findings).
+#
+# compute-sanitizer is compiled with `--mojocopt=--debug-level
+# --mojocopt=line-tables` (line-tables, NOT full: keeps ptxas -O optimizations
+# so racecheck sees the real schedule).
+# ===----------------------------------------------------------------------=== #
+set -uo pipefail
+
+usage() {
+  echo "usage: $0 <memcheck|racecheck|initcheck|synccheck|redzone> <target>..." >&2
+  exit 2
+}
+TOOL="${1:-}"
+[ -n "$TOOL" ] || usage
+shift
+[ "$#" -gt 0 ] || usage
+
+WORKDIR="$(git rev-parse --show-toplevel)"
+cd "$WORKDIR" || exit 1
+CS="${COMPUTE_SANITIZER:-/usr/local/cuda/bin/compute-sanitizer}"
+RESULTS="${CS_RESULTS_DIR:-$WORKDIR/.derived/cs-findings}/$TOOL"
+mkdir -p "$RESULTS"
+
+COMMON=(
+  --test_output=errors --curses=no --noshow_progress
+  --nocache_test_results --keep_going
+  "--test_timeout=900,2400,5400,10800"
+  "--local_test_jobs=${CS_JOBS:-6}"
+  # GPU tests declare a `gpu-memory` resource that only the remote executor
+  # tracks; declare it locally so tests are schedulable on this box.
+  --local_resources=gpu-memory=1000
+  # Pin the sweep to one physical GPU (CS_GPU) so independent sweeps can run
+  # concurrently on different B200s without contention.
+  "--test_env=CUDA_VISIBLE_DEVICES=${CS_GPU:-0}"
+)
+
+# POOL: for the allocator-sensitive tools (memcheck/initcheck) we disable MAX's
+# device caching allocator so each buffer is a 1:1 device allocation and the
+# sanitizer sees true per-buffer bounds (small OOBs / OOB reads are otherwise
+# masked inside the shared ~205MB pool). racecheck/synccheck are pool-
+# independent; redzone validates *within* the pool, so neither gets the flag.
+POOL=""
+case "$TOOL" in
+  memcheck)  EXTRA="--leak-check no --report-api-errors no"; POOL="--//:gpu_disable_memory_manager" ;;
+  racecheck) EXTRA="--racecheck-report all" ;;
+  # `--track-unused-memory` takes NO argument in compute-sanitizer 2025.4.1 and
+  # defaults to OFF (the noisy unused-memory check we want disabled anyway), so
+  # we omit it. (The design doc's `--track-unused-memory no` is wrong: it makes
+  # `no` the target application -> "Target application doesn't exist".)
+  initcheck) EXTRA=""; POOL="--//:gpu_disable_memory_manager" ;;
+  synccheck) EXTRA="" ;;
+  redzone)   EXTRA="" ;;
+  *) usage ;;
+esac
+
+LOG="$RESULTS/run.log"
+echo ">>> tool=$TOOL targets=$# results=$RESULTS" | tee "$LOG"
+
+if [ "$TOOL" = "redzone" ]; then
+  # No compute-sanitizer; the allocator validates guard patterns at free time.
+  ./bazelw test "$@" "${COMMON[@]}" \
+    --test_env=MODULAR_DEBUG_DEVICE_ALLOCATOR=out-of-bounds 2>&1 | tee -a "$LOG"
+else
+  RUNUNDER="$CS --tool $TOOL --target-processes all --launch-timeout 0 --error-exitcode 1 $EXTRA"
+  ./bazelw test "$@" "${COMMON[@]}" $POOL \
+    --run_under="$RUNUNDER" \
+    --mojocopt=--debug-level --mojocopt=line-tables 2>&1 | tee -a "$LOG"
+fi
+
+# --- Extract findings from each target's test.log -----------------------------
+# Markers that indicate a *real* finding. Deliberately precise: we key off
+# specific violation phrases ONLY, never the bare "ERROR SUMMARY: N" count --
+# that count also tallies "Internal Sanitizer Error" (the SM100 nvjet/cuBLAS
+# instrumentation gap), which would false-positive on every GEMM test that uses
+# a vendor reference. Those are reported separately as coverage gaps below.
+MARKERS='Invalid __(global|shared|local|device)__|Race reported|Barrier error|Uninitialized __global__|misaligned address|is out of bounds|MemoryManager detected a device buffer (under|over)flow|CUDA_EXCEPTION|illegal memory access'
+echo "" | tee -a "$LOG"
+echo "==================== FINDINGS SUMMARY ($TOOL) ====================" | tee -a "$LOG"
+found_any=0
+# Expand any `//...` / `:all` wildcards to concrete test targets for scanning.
+EXPANDED=()
+for a in "$@"; do
+  while IFS= read -r t; do [ -n "$t" ] && EXPANDED+=("$t"); done < <(./bazelw query "tests($a)" 2>/dev/null)
+done
+[ "${#EXPANDED[@]}" -eq 0 ] && EXPANDED=("$@")
+for tgt in "${EXPANDED[@]}"; do
+  # //pkg:name -> bazel-testlogs/pkg/name/test.log
+  rel="${tgt#//}"; rel="${rel/://}"
+  tl="bazel-testlogs/$rel/test.log"
+  [ -f "$tl" ] || continue
+  hits="$(grep -nE "$MARKERS" "$tl" 2>/dev/null | grep -vE 'ERROR SUMMARY: 0 errors' | head -40)"
+  if [ -n "$hits" ]; then
+    found_any=1
+    echo "" | tee -a "$LOG"
+    echo "### $tgt" | tee -a "$LOG"
+    echo "$hits" | tee -a "$LOG"
+    cp "$tl" "$RESULTS/$(echo "$rel" | tr '/:' '__').log"
+  fi
+done
+[ "$found_any" = 0 ] && echo "(no findings markers in scanned test logs)" | tee -a "$LOG"
+echo "==================================================================" | tee -a "$LOG"
+echo ">>> full logs under $RESULTS" | tee -a "$LOG"

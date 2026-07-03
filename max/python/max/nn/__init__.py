@@ -48,7 +48,7 @@ from .kv_cache import (
     KVCacheInputs,
     KVCacheMetrics,
     KVCacheParams,
-    build_max_lengths_tensor,
+    build_max_lengths_tensors,
 )
 from .layer import Layer, LayerList, Module, Shardable
 from .linear import MLP, ColumnParallelLinear, GPTQLinear, Linear
@@ -132,7 +132,6 @@ __all__ = [
     "MoEQuantized",
     "Module",
     "MultiheadAttention",
-    "PagedCacheValues",
     "QuantConfig",
     "QuantFormat",
     "RMSNorm",
@@ -158,7 +157,7 @@ __all__ = [
     "WeightScaleSpec",
     "YarnRotaryEmbedding",
     "YarnScalingParams",
-    "build_max_lengths_tensor",
+    "build_max_lengths_tensors",
     "clamp",
     "forward_moe_sharded_layers",
     "split_batch",

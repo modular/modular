@@ -73,9 +73,9 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             bytes: The byte span to write to this file.
         """
         written = external_call["write", c_ssize_t](
-            self.value._int_mlir_index(),
+            self.value.__mlir_index__(),
             bytes.unsafe_ptr(),
-            len(bytes)._int_mlir_index(),
+            len(bytes).__mlir_index__(),
         )
         assert written == len(bytes), "expected amount of bytes not written"
 
@@ -133,7 +133,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
 
         Examples:
             ```mojo
-            from sys import stdout
+            from std.sys import stdout
 
             # Check if stdout is a terminal
             if stdout.isatty():
@@ -145,4 +145,17 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
 
         comptime if is_gpu():
             return False
-        return _external_call_const["isatty", c_int](c_int(self.value)) != 0
+        return external_call["isatty", c_int](c_int(self.value)) != 0
+
+    def fchdir(self) raises:
+        """Changes the current working directory to the one
+           represented by this fd.
+
+        Raises:
+            If the operations fails. In particular if the fd is
+            not a directory.
+        """
+        var result = external_call["fchdir", c_int](c_int(self.value))
+        if result < 0:
+            var err = get_errno()
+            raise Error("fchdir failed err: ", String(err))

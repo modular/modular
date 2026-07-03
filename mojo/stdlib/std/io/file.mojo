@@ -32,8 +32,8 @@ with open("my_file.txt", "r") as f:
 """
 
 from std.format._utils import _WriteBufferStack
-from std.os import PathLike, abort, makedirs, remove
-from std.os import SEEK_END
+from std.os import PathLike as stdPathLike, abort, makedirs, remove
+from std.os import SEEK_SET, SEEK_END
 from std.os.path import dirname
 from std.ffi import c_int, c_ssize_t, external_call, _CPointer
 from std.sys import size_of
@@ -424,9 +424,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         return result^
 
-    def seek(
-        self, offset: UInt64, whence: UInt8 = os.SEEK_SET
-    ) raises -> UInt64:
+    def seek(self, offset: UInt64, whence: UInt8 = SEEK_SET) raises -> UInt64:
         """Seeks to the given offset in the file.
 
         Args:
@@ -709,7 +707,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
 
 def open[
-    PathLike: os.PathLike
+    PathLike: stdPathLike
 ](path: PathLike, mode: StringSlice) raises -> FileHandle:
     """Opens the file specified by path using the mode provided, returning a
     FileHandle.

@@ -21,10 +21,9 @@ Kernels under test (FP8 e4m3fn only):
   - default      : `AMDMatmul.run` with the standard 256x256 FP8 config
                    (the dispatcher's `_launch_standard` configuration,
                    pinned — no per-shape switching)
-  - ping_pong    : `structured_ping_pong_matmul` (kernel picks 256x256
+  - ping_pong    : `amd_ping_pong_matmul` (kernel picks 256x256
                    vs skinny 128x256 internally based on M/N)
-  - 4wave        : `amd_4wave_matmul` (hand-written `_run_iter`)
-  - 4wave_sched  : `amd_4wave_scheduled_matmul` (same struct,
+  - 4wave        : `structured_4wave_matmul` (framework-scheduled body)
                    framework-emitted body via schedule compiler;
                    `sched_barrier_mask = 0xFF` at BM>=128, `0` at BM=64)
   - 4wave_split_k: `amd_4wave_split_k_matmul` — single-launch split-K
@@ -38,7 +37,7 @@ per shape, so the comparison is apples-to-apples (same RNG, same
 cache-bust rotation, same warmup state).
 
 Compile-time defines (`-D`):
-  - dtype             : DType, default float8_e4m3fn (asserted FP8)
+  - dtype             : DType, default float8_e4m3fn (float8, bf16, or fp16)
   - N, K              : Int, static GEMM dims (default 4096)
   - shape_set_id      : Int, M sweep bucket
                           0 = large    (M = N)
@@ -48,12 +47,15 @@ Compile-time defines (`-D`):
                           4 = single   (use --M only)
   - run_default       : Bool, default True
   - run_ping_pong     : Bool, default True
-  - run_4wave         : Bool, default True
-  - run_4wave_sched   : Bool, default True
+  - run_4wave         : Bool, default True   (FP8-only)
   - run_4wave_split_k : Bool, default False
   - num_splits        : Int, default 4 (only used when run_4wave_split_k)
   - run_vendor        : Bool, default True
   - enable_swizzle    : Bool, default True (4wave + ping_pong)
+  - bm_4wave, bn_4wave, bk_4wave : Int, default 0 (auto-pick). Override the
+                          4-wave / split-K (BM, BN, BK) tile. Valid BK is
+                          32, 64, or 128 (bf16/fp16); 128 (FP8). See
+                          `structured_4wave_matmul` for tile recipes.
 
 Runtime args:
   - --M=<int>         : single M when shape_set_id=4
@@ -88,12 +90,9 @@ from std.utils import Index
 from linalg.matmul.gpu import _amdgpu_matmul_config_from_block_shape
 from linalg.matmul.gpu.amd.amd_matmul import AMDMatmul
 from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
-    structured_ping_pong_matmul as ping_pong_matmul,
+    amd_ping_pong_matmul as ping_pong_matmul,
 )
-from linalg.matmul.gpu.amd.amd_4wave_matmul import (
-    amd_4wave_matmul,
-    amd_4wave_scheduled_matmul,
-)
+from linalg.matmul.gpu.amd.amd_4wave_matmul import structured_4wave_matmul
 from linalg.matmul.gpu.amd.amd_4wave_split_k_matmul import (
     amd_4wave_split_k_matmul,
     SplitKWorkspace,
@@ -106,7 +105,6 @@ comptime KERNEL_DEFAULT = 0
 comptime KERNEL_PING_PONG = 1
 comptime KERNEL_4WAVE = 2
 comptime KERNEL_VENDOR = 3
-comptime KERNEL_4WAVE_SCHEDULED = 4
 comptime KERNEL_4WAVE_SPLIT_K = 5
 
 # Shape-bucket IDs.
@@ -132,7 +130,7 @@ def _launch_default[
 ) raises:
     """Host launcher for the AMDMatmul "standard" 256x256 FP8 config.
 
-    Mirrors the role of `structured_ping_pong_matmul` etc.: takes
+    Mirrors the role of `amd_ping_pong_matmul` etc.: takes
     mut=False a/b, mut=True c (so Mojo auto-converts the bench's
     locally-constructed mut=True tensors at the call boundary), then
     builds a comptime config and dispatches via `enqueue_function`.
@@ -151,7 +149,7 @@ def _launch_default[
         True,
         config,
     ].run[c.LayoutType, a.LayoutType, b.LayoutType]
-    ctx.enqueue_function[k, k](
+    ctx.enqueue_function[k](
         c,
         a,
         b,
@@ -170,8 +168,6 @@ def _kernel_name[kernel_id: Int]() -> String:
         return "4wave"
     comptime if kernel_id == KERNEL_VENDOR:
         return "vendor"
-    comptime if kernel_id == KERNEL_4WAVE_SCHEDULED:
-        return "4wave_sched"
     comptime if kernel_id == KERNEL_4WAVE_SPLIT_K:
         return "4wave_split_k"
     return "unknown"
@@ -241,6 +237,7 @@ def _bench_one_kernel[
     enable_swizzle: Bool,
     bm_4wave: Int = 0,
     bn_4wave: Int = 0,
+    bk_4wave: Int = 0,
     num_splits: Int = 1,
 ](
     ctx: DeviceContext,
@@ -295,20 +292,19 @@ def _bench_one_kernel[
                     tensor_a, tensor_b, tensor_c, ctx
                 )
             elif kernel_id == KERNEL_4WAVE:
-                amd_4wave_matmul[
+                structured_4wave_matmul[
                     enable_swizzle=enable_swizzle,
                     block_m_override=bm_4wave,
                     block_n_override=bn_4wave,
-                ](tensor_a, tensor_b, tensor_c, ctx)
-            elif kernel_id == KERNEL_4WAVE_SCHEDULED:
-                amd_4wave_scheduled_matmul[
-                    enable_swizzle=enable_swizzle,
-                    block_m_override=bm_4wave,
-                    block_n_override=bn_4wave,
+                    block_k_override=bk_4wave,
                 ](tensor_a, tensor_b, tensor_c, ctx)
             elif kernel_id == KERNEL_4WAVE_SPLIT_K:
                 amd_4wave_split_k_matmul[
-                    num_splits=num_splits, enable_swizzle=enable_swizzle
+                    num_splits=num_splits,
+                    enable_swizzle=enable_swizzle,
+                    block_m_override=bm_4wave,
+                    block_n_override=bn_4wave,
+                    block_k_override=bk_4wave,
                 ](
                     tensor_a,
                     tensor_b,
@@ -360,12 +356,12 @@ def bench_shape[
     run_default: Bool,
     run_ping_pong: Bool,
     run_4wave: Bool,
-    run_4wave_sched: Bool,
     run_4wave_split_k: Bool,
     run_vendor: Bool,
     num_splits: Int,
     bm_4wave: Int,
     bn_4wave: Int,
+    bk_4wave: Int,
 ](
     ctx: DeviceContext,
     mut b: Bench,
@@ -387,11 +383,11 @@ def bench_shape[
     comptime assert K_static > 0, "K must be a comptime Int"
     comptime assert N_static > 0, "N must be a comptime Int"
 
-    var shape_c = Coord(Idx(M), n)
-    var shape_a = Coord(Idx(M), k)
+    var shape_c = Coord(M, n)
+    var shape_a = Coord(M, k)
     var shape_b = Coord(
-        Idx[N_static if transpose_b else K_static](),
-        Idx[K_static if transpose_b else N_static](),
+        Idx[N_static if transpose_b else K_static],
+        Idx[K_static if transpose_b else N_static],
     )
 
     @always_inline
@@ -445,20 +441,7 @@ def bench_shape[
             enable_swizzle=enable_swizzle,
             bm_4wave=bm_4wave,
             bn_4wave=bn_4wave,
-        ](ctx, b, cb_a, cb_b, cb_c, shape_c, shape_a, shape_b)
-
-    comptime if run_4wave_sched:
-        comptime assert K_static % 256 == 0, "4wave_sched requires K % 256 == 0"
-        _bench_one_kernel[
-            KERNEL_4WAVE_SCHEDULED,
-            dtype,
-            c_dtype,
-            K=K_static,
-            transpose_b=transpose_b,
-            cache_busting=cache_busting,
-            enable_swizzle=enable_swizzle,
-            bm_4wave=bm_4wave,
-            bn_4wave=bn_4wave,
+            bk_4wave=bk_4wave,
         ](ctx, b, cb_a, cb_b, cb_c, shape_c, shape_a, shape_b)
 
     comptime if run_vendor:
@@ -484,6 +467,9 @@ def bench_shape[
             transpose_b=transpose_b,
             cache_busting=cache_busting,
             enable_swizzle=enable_swizzle,
+            bm_4wave=bm_4wave,
+            bn_4wave=bn_4wave,
+            bk_4wave=bk_4wave,
             num_splits=num_splits,
         ](ctx, b, cb_a, cb_b, cb_c, shape_c, shape_a, shape_b)
 
@@ -523,10 +509,9 @@ def _shape_set_m_values(shape_set_id: Int, N: Int, single_M: Int) -> List[Int]:
 
 def main() raises:
     comptime dtype = get_defined_dtype["dtype", DType.float8_e4m3fn]()
-    comptime assert dtype.is_float8(), (
-        "bench_amd_matmul currently only supports float8 (the 4wave kernels are"
-        " FP8-only)"
-    )
+    comptime assert (
+        dtype.is_float8() or dtype == DType.bfloat16 or dtype == DType.float16
+    ), "bench_amd_matmul supports float8_e4m3fn, bfloat16, or float16"
 
     comptime N = get_defined_int["N", 4096]()
     comptime K = get_defined_int["K", 4096]()
@@ -542,17 +527,21 @@ def main() raises:
     comptime run_default = get_defined_bool["run_default", True]()
     comptime run_ping_pong = get_defined_bool["run_ping_pong", True]()
     comptime run_4wave = get_defined_bool["run_4wave", True]()
-    comptime run_4wave_sched = get_defined_bool["run_4wave_sched", True]()
     comptime run_vendor = get_defined_bool["run_vendor", True]()
     # Split-K is off by default — only relevant for the small-M decode
     # regime where the base 4-wave kernel doesn't saturate the GPU.
     # Enable with `-D run_4wave_split_k=True -D num_splits=4`.
     comptime run_4wave_split_k = get_defined_bool["run_4wave_split_k", False]()
     comptime num_splits = get_defined_int["num_splits", 4]()
-    # 4-wave (BM, BN) override: 0 = use kernel's auto-pick (BM=BN, sized
-    # by M). Set both to non-zero to pin a specific block shape.
+    # 4-wave (BM, BN, BK) overrides: 0 = use kernel's auto-pick. Set
+    # bm_4wave + bn_4wave together to pin the spatial tile; set bk_4wave
+    # to pin the K-tile (32, 64, or 128). Valid combos: see the docstring
+    # in `structured_4wave_matmul`. Typical sweep recipe for bf16:
+    #   bm_4wave=128 bn_4wave=128 bk_4wave=128   (M ≤ 512)
+    #   bm_4wave=128 bn_4wave=128 bk_4wave=64    (M ≥ 1024)
     comptime bm_4wave = get_defined_int["bm_4wave", 0]()
     comptime bn_4wave = get_defined_int["bn_4wave", 0]()
+    comptime bk_4wave = get_defined_int["bk_4wave", 0]()
 
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
@@ -574,10 +563,11 @@ def main() raises:
         "default " if run_default else "",
         "ping_pong " if run_ping_pong else "",
         "4wave " if run_4wave else "",
-        "4wave_sched " if run_4wave_sched else "",
         "vendor " if run_vendor else "",
         String("4wave_split_k(", num_splits, ") ") if run_4wave_split_k else "",
-        String(" bm/bn=", bm_4wave, "/", bn_4wave) if bm_4wave > 0 else "",
+        String(" bm/bn/bk=", bm_4wave, "/", bn_4wave, "/", bk_4wave) if bm_4wave
+        > 0
+        or bk_4wave > 0 else "",
         "] M sweep=",
         len(ms),
         " values",
@@ -595,9 +585,9 @@ def main() raises:
         var warm_c = CacheBustingBuffer[dtype](N * N, 4, ctx)
         warm_a.init_on_device(init_type, ctx)
         warm_b.init_on_device(init_type, ctx)
-        var warm_shape_a = Coord(Idx[N](), Idx[K]())
-        var warm_shape_b = Coord(Idx[N](), Idx[K]())
-        var warm_shape_c = Coord(Idx[N](), Idx[N]())
+        var warm_shape_a = Coord(Idx[N], Idx[K])
+        var warm_shape_b = Coord(Idx[N], Idx[K])
+        var warm_shape_c = Coord(Idx[N], Idx[N])
         var ta = TileTensor(warm_a.offset_ptr(0), row_major(warm_shape_a))
         var tb = TileTensor(warm_b.offset_ptr(0), row_major(warm_shape_b))
         var tc = TileTensor(warm_c.offset_ptr(0), row_major(warm_shape_c))
@@ -615,18 +605,18 @@ def main() raises:
                 run_default=run_default,
                 run_ping_pong=run_ping_pong,
                 run_4wave=run_4wave,
-                run_4wave_sched=run_4wave_sched,
                 run_4wave_split_k=run_4wave_split_k,
                 run_vendor=run_vendor,
                 num_splits=num_splits,
                 bm_4wave=bm_4wave,
                 bn_4wave=bn_4wave,
+                bk_4wave=bk_4wave,
             ](
                 ctx,
                 m,
                 ms[i],
-                Idx[N](),
-                Idx[K](),
+                Idx[N],
+                Idx[K],
                 init_type,
             )
 

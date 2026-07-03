@@ -44,15 +44,18 @@ def test_range_with_int_params_declaration_order() raises:
     assert_equal(_range_with_int_params_helper(5, 5), 0)  # empty range
 
 
-def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int) raises:
+def _test_range_iter_bounds[
+    I: Iterator
+](var range_iter: I, len: Int) raises where conforms_to(
+    I.Element, ImplicitlyDeletable
+):
     var iter = range_iter^
+
     for i in range(len):
         var lower, upper = iter.bounds()
         assert_equal(len - i, lower)
         assert_equal(len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()
-        )
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -317,7 +320,7 @@ def test_scalar_range() raises:
     assert_equal(r.end, 16)
     assert_equal(r.step, 4)
 
-    def append_many(mut list: List, *values: list.T):
+    def append_many[T: Copyable, //](mut list: List[T], *values: T):
         for value in values:
             list.append(value.copy())
 

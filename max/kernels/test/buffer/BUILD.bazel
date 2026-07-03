@@ -17,9 +17,9 @@ _FILECHECK_TESTS = [
             "full",
         ],
         deps = [
+            "//max:extensibility",
             "//max:internal_utils",
             "//max:linalg",
-            "//max:tensor",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
@@ -36,9 +36,9 @@ _FILECHECK_TESTS = [
             "full",
         ],
         deps = [
+            "//max:extensibility",
             "//max:internal_utils",
             "//max:linalg",
-            "//max:tensor",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],

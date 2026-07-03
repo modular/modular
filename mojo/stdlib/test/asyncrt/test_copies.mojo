@@ -124,7 +124,7 @@ def _run_fake_memcpy(
     in_host.enqueue_copy_to(in_dev)
     in_dev.enqueue_copy_to(out_dev)
 
-    var out_ptr: UnsafePointer[Int64, MutAnyOrigin]
+    var out_ptr: UnsafePointer[Int64, MutUntrackedOrigin]
     if use_take_ptr:
         out_ptr = out_dev.take_ptr()
     else:

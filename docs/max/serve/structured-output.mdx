@@ -3,7 +3,6 @@ title: Structured output
 description: Enable structured output with your GenAI deployments for predictable responses
 ---
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -99,7 +98,7 @@ response = client.chat.completions.create(
             ]
         }
     ],
-    max_tokens=300,
+    max_completion_tokens=300,
     response_format={
         "type": "json_schema",
         "json_schema": {
@@ -158,7 +157,7 @@ print(response.choices[0].message.content)
         ]
       }
     ],
-    "max_tokens": 300,
+    "max_completion_tokens": 300,
     "response_format": {
       "type": "json_schema",
       "json_schema": {
@@ -188,6 +187,15 @@ print(response.choices[0].message.content)
 
 </TabItem>
 </Tabs>
+
+:::note Schema root type
+
+The root of a `json_schema` must resolve to an object. If the root omits `type`,
+MAX treats it as `type: object`. MAX also accepts root-level type unions that
+include `object`, such as `["object", "array", "string"]`. MAX rejects schemas
+whose root is constrained to a single non-object type (for example, `{"type": "string"}`).
+
+:::
 
 Instead of a typical text response from the model, the `response_format` schema
 defined above results in a JSON-formatted structured output such as the
@@ -265,7 +273,7 @@ completion = client.chat.completions.parse(
             ]
         }
     ],
-    max_tokens=300,
+    max_completion_tokens=300,
     response_format=ImageAnalysis,
 )
 
@@ -285,13 +293,10 @@ deployments.
 
 ## Next steps
 
-Next, try processing local image files, running batch inference offline, or
-deploying to the cloud.
+Next, try processing local image files or deploying to the cloud.
 
-export const docs = [
-  '../../inference/image-to-text.mdx',
-  '../../serve/offline-inference.mdx',
-  '../../deploy/local-to-cloud.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Image and video to text](/max/inference/image-to-text): Use the MAX chat
+  completions endpoint with image or video input to generate descriptions and
+  answer questions about visual content.
+- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+  Learn how to deploy MAX pipelines to cloud.

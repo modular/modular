@@ -18,6 +18,7 @@ It includes support for throughput metrics, warmup iterations, batch execution,
 and both CPU and GPU kernel benchmarking.
 """
 
+from . import Report, Unit
 import std.time
 from std.collections import Dict, Optional
 import std.format._utils as fmt
@@ -437,7 +438,7 @@ struct BenchConfig(Copyable):
 
 
 @fieldwise_init
-struct BenchId:
+struct BenchId(Copyable, Equatable, Hashable, Writable):
     """Defines a benchmark Id struct to identify and represent a particular benchmark execution.
     """
 
@@ -573,7 +574,7 @@ struct Bench(Writable):
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            ctx.enqueue_function_experimental[example_kernel](
+            ctx.enqueue_function[example_kernel](
                 grid_dim=shape[0], block_dim=shape[1]
             )
 

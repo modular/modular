@@ -25,6 +25,7 @@ specialized memory. Most code should prefer higher-level collections and
 automatic memory management.
 """
 
+from .alloc import Allocation, ThinAllocation, alloc, dealloc, Layout
 from .arc_pointer import ArcPointer
 from .memory import (
     memcmp,
@@ -33,6 +34,9 @@ from .memory import (
     memset,
     memset_zero,
     destroy_n,
+    is_trivially_copyable,
+    is_trivially_deletable,
+    is_trivially_movable,
     uninit_copy_n,
     uninit_move_n,
     forget_deinit,
@@ -41,8 +45,6 @@ from .stack_allocation import stack_allocation
 from .owned_pointer import OwnedPointer
 from .pointer import (
     AddressSpace,
-    _GPUAddressSpace,
-    GPUAddressSpace,
     ImmutPointer,
     MutPointer,
     Pointer,

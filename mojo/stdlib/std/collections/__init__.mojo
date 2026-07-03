@@ -24,6 +24,7 @@ algorithms, building custom data structures, or any task requiring collection
 types beyond basic primitives.
 """
 
+from .binary_heap import BinaryHeap
 from .bitset import BitSet
 from .counter import Counter
 from .deque import Deque

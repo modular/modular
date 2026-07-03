@@ -38,11 +38,13 @@ from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
     parse_quant_config,
-    upper_bounded_default,
 )
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ArchConfigWithStoredKVParams,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -93,7 +95,7 @@ def create_rope_embedding(
 
 
 @dataclass(kw_only=True)
-class Llama3Config(ArchConfigWithKVCache):
+class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Model configuration for Llama3 graph construction/execution."""
 
     hidden_size: int
@@ -128,14 +130,10 @@ class Llama3Config(ArchConfigWithKVCache):
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    target_layer_ids: list[int] | None = None
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
-
-    def get_kv_params(self) -> KVCacheParams:
-        return self.kv_params
-
-    def get_max_seq_len(self) -> int:
-        return self.max_seq_len
+    sliding_window: int | None = None
 
     @staticmethod
     def calculate_attention_multiplier(
@@ -160,63 +158,34 @@ class Llama3Config(ArchConfigWithKVCache):
 
         return base_multiplier
 
-    # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
-    @staticmethod
+    @classmethod
     def construct_kv_params(
+        cls,
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
+        """Grouped-attention KV with EAGLE draft-token count when speculative is on."""
         return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=Llama3Config.get_head_dim(huggingface_config),
-            num_layers=Llama3Config.get_num_layers(huggingface_config),
+            head_dim=cls.get_head_dim(huggingface_config),
+            num_layers=cls.get_num_layers(huggingface_config),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            num_eagle_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
+            speculative_method=pipeline_config.speculative.speculative_method
+            if pipeline_config.speculative
+            else None,
+            num_draft_tokens=pipeline_config.speculative.num_speculative_tokens
             if pipeline_config.speculative
             else 0,
         )
 
     @staticmethod
-    def get_head_dim(huggingface_config: AutoConfig) -> int:
-        if hasattr(huggingface_config, "head_dim"):
-            return huggingface_config.head_dim
-        else:
-            return (
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            )
-
-    @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         return huggingface_config.num_hidden_layers
-
-    # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
-    # Also, these should just be class properties since they're already made
-    # unique as a model config.
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
-    ) -> int:
-        model_config = model_config or pipeline_config.model
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=model_config.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for Llama3, the provided "
-                f"max_length ({model_config.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
 
     @override
     @classmethod
@@ -275,6 +244,15 @@ class Llama3Config(ArchConfigWithKVCache):
         rope_scaling = getattr(huggingface_config, "rope_scaling", None)
 
         if rope_scaling is not None:
+            # Only the *flat* HuggingFace rope_scaling shape is supported
+            # here, with either "type" or "rope_type" as the discriminator
+            # (e.g. {"rope_type": "llama3", "factor": 8.0, ...}). The
+            # nested per-layer-type shape used by some modern HF configs —
+            # where `rope_parameters` is keyed by layer type such as
+            # "full_attention" or "sliding_attention" — is not handled
+            # here. Architectures using that shape need a config subclass
+            # that pre-flattens the dominant layer-type's parameters
+            # before delegating to this method.
             # Since "rope_type" huggingface config is not standardized, we need
             # to check for both "type" and "rope_type" keys.
             # TODO: A better solution would be for those family of models to

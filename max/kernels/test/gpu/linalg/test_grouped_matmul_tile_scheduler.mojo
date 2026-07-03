@@ -53,8 +53,9 @@ def test(ctx: DeviceContext) raises:
     )
     comptime offset_layout = Layout(group_len + 1)
     var dev_group_offsets = LayoutTensor[
-        DType.uint32, offset_layout, MutAnyOrigin
-    ](dev_group_offsets_buffer.unsafe_ptr())
+        DType.uint32,
+        offset_layout,
+    ](dev_group_offsets_buffer)
 
     ctx.enqueue_copy(dev_group_offsets_buffer, host_group_offsets_ptr)
 
@@ -89,7 +90,7 @@ def test(ctx: DeviceContext) raises:
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function_experimental[test_kernel[False, offset_layout]](
+    ctx.enqueue_function[test_kernel[False, offset_layout]](
         dev_group_offsets,
         grid_dim=(4),
         block_dim=(1),
@@ -128,7 +129,7 @@ def test(ctx: DeviceContext) raises:
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function_experimental[test_kernel[True, offset_layout]](
+    ctx.enqueue_function[test_kernel[True, offset_layout]](
         dev_group_offsets,
         grid_dim=(4),
         block_dim=(1),

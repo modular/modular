@@ -19,12 +19,14 @@ import enum
 import inspect
 import os
 import types
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, overload
 
 import max._core.driver
 import max._core.dtype
+import max._core.mlrt
 from max._core.driver import Buffer
+from max._core.mlrt import AsyncValue
 from max._core_types.driver import DLPackArray
 
 InputType = DLPackArray | Buffer | int | float | bool
@@ -56,12 +58,51 @@ class TensorSpec:
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
 
+class ModelMetadata:
+    """Input and output metadata for a compiled model function."""
+
+    @property
+    def name(self) -> str: ...
+    @property
+    def input_metadata(self) -> list[TensorSpec]: ...
+    @property
+    def output_metadata(self) -> list[TensorSpec]: ...
+
+class CompiledModels:
+    """A compiled model artifact containing one or more submodels."""
+
+    def __len__(self) -> int: ...
+    def __getitem__(self, arg: int, /) -> ModelMetadata: ...
+    def __iter__(self) -> Iterator[ModelMetadata]: ...
+    @property
+    def names(self) -> list[str]: ...
+    def export_mef(self, path: str) -> None:
+        """
+        Exports the compiled model as MEF bytes to the given file.
+
+        Args:
+            path: Filesystem path to write the MEF to.
+        """
+
 class Model:
     """
     A loaded model that you can execute.
 
     Do not instantiate this class directly. Instead, create it with
-    :obj:`InferenceSession`.
+    :meth:`InferenceSession.load` or :meth:`InferenceSession.init`.
+
+    A :class:`Model` is callable. Calling it directly (``model(inputs...)``)
+    accepts tensors as positional or keyword arguments and dispatches
+    to :meth:`execute`. You can also call :meth:`execute` directly, which
+    accepts positional arguments only.
+
+    When using keyword arguments, the names must match the model's input
+    metadata (see :attr:`input_metadata`). Calling the model raises
+    ``TypeError`` if a keyword argument doesn't match a model input, if a
+    positional and keyword argument refer to the same parameter, or if the
+    number of inputs doesn't match.
+
+    For supported input types and execution errors, see :meth:`execute`.
     """
 
     @property
@@ -117,6 +158,17 @@ class Model:
         """
 
     @property
+    def name(self) -> str:
+        """
+        The symbol name of this model.
+
+        Mirrors the ``sym_name`` of the model's ``mo.graph`` op, preserved
+        through MEF serialization. Used by
+        :meth:`InferenceSession.load_all` to key the returned dict by graph
+        name.
+        """
+
+    @property
     def signature(self) -> inspect.Signature:
         """Get input signature for model."""
 
@@ -132,92 +184,35 @@ class Model:
             model.execute(input_tensor)
 
         Args:
-            args:
-              A list of input tensors. We currently support :obj:`np.ndarray`,
-              :obj:`torch.Tensor`, and :obj:`max.driver.Buffer` inputs. All
-              inputs will be copied to the device that the model is resident on
+            args: A list of input tensors. The following input types are
+              supported:
+
+              * Any tensors implementing the DLPack protocol, such as
+                :obj:`np.ndarray` or :obj:`torch.Tensor`.
+              * Max Driver buffers, such as :obj:`max.driver.Buffer`.
+              * Scalar inputs, such as :obj:`bool`, :obj:`float`, :obj:`int`,
+                or :obj:`np.generic`.
+
+              All inputs are copied to the device that the model is resident on
               prior to executing.
 
-            output_device:
-              The device to copy output tensors to. Defaults to :obj:`None`, in
-              which case the tensors will remain resident on the same device as
-              the model.
-
         Returns:
-            A list of output tensors and Mojo values. The output tensors will be
-            resident on the execution device by default (you can change it with
-            the ``output_device`` argument).
+            A list of output tensors. The output tensors are resident on the
+            execution device.
 
         Raises:
-            RuntimeError: If the given input tensors' shape don't match what
+            RuntimeError: If the given input tensors' shapes don't match what
               the model expects.
 
-            TypeError: If the given input tensors' dtype cannot be cast to what
+            TypeError: If the given input tensors' dtype can't be cast to what
               the model expects.
 
-            ValueError: If positional inputs are not one of the supported
-              types, i.e. :obj:`np.ndarray`, :obj:`torch.Tensor`, and
-              :obj:`max.driver.Buffer`.
+            ValueError: If positional inputs aren't one of the supported
+              types.
         """
 
     def __call__(self, *args: InputType, **kwargs: InputType) -> list[Buffer]:
-        """
-        Executes the model with the provided input and returns the outputs.
-
-        Models can be called with any mixture of positional and named inputs:
-
-        .. code-block:: python
-
-            model(a, b, d=d, c=c)
-
-        This function assumes that positional inputs cannot collide with any
-        named inputs that would be present in the same position. If we have a
-        model that takes named inputs `a`, `b`, `c`, and `d` (in that order),
-        the following is invalid.
-
-        .. code-block:: python
-
-            model(a, d, b=b, c=c)
-
-        The function will assume that input `d` will map to the same position as
-        input `b`.
-
-        Args:
-            args: A list of input tensors. We currently support the following
-              input types:
-
-              * Any tensors implementing the DLPack protocol, such as
-                :obj:`np.ndarray`, :obj:`torch.Tensor`
-              * Max Driver buffers, i.e. :obj:`max.driver.Buffer`
-              * Scalar inputs, i.e. :obj:`bool`, :obj:`float`, :obj:`int`,
-                :obj:`np.generic`
-
-            kwargs: Named inputs. We can support the same types supported
-              in :obj:`args`.
-
-        Returns:
-            A list of output tensors. The output tensors will be
-            resident on the execution device.
-
-        Raises:
-            RuntimeError: If the given input tensors' shape don't match what
-              the model expects.
-
-            TypeError: If the given input tensors' dtype cannot be cast to
-              what the model expects.
-
-            ValueError: If positional inputs are not one of the supported
-              types, i.e. :obj:`np.ndarray`, :obj:`torch.Tensor`, and
-              :obj:`max.driver.Buffer`.
-
-            ValueError: If an input name does not correspond to what the model
-              expects.
-
-            ValueError: If any positional and named inputs collide.
-
-            ValueError: If the number of inputs is less than what the model
-              expects.
-        """
+        """Executes the model. See :class:`Model` for details."""
 
     def __repr__(self) -> str: ...
     def capture(
@@ -456,13 +451,16 @@ class InferenceSession:
         """
 
     def _load_all(
-        self, compiled: Model, weights_registry: Mapping[str, Any]
+        self,
+        compiled: AsyncValue[CompiledModels],
+        weights_registry: Mapping[str, Any],
     ) -> list[Model]: ...
-    def compile_from_path(
+    @overload
+    def compile(
         self,
         model_path: str | os.PathLike,
         custom_extension_paths: Sequence[str | os.PathLike],
-    ) -> Model:
+    ) -> max._core.mlrt.AsyncValue[CompiledModels]:
         """
         Compiles a model from a file path.
 
@@ -471,15 +469,17 @@ class InferenceSession:
             custom_extension_paths: Paths to custom Mojo extension libraries.
 
         Returns:
-            Model: The compiled model ready for execution.
+            AsyncValue[CompiledModels]: handle to the compiled artifact,
+            ready to be initialized with weights via :meth:`_load_all`.
         """
 
-    def compile_from_object(
+    @overload
+    def compile(
         self,
         model: types.CapsuleType,
         custom_extensions: Sequence[str | os.PathLike],
         pipeline_name: str,
-    ) -> Model:
+    ) -> max._core.mlrt.AsyncValue[CompiledModels]:
         """
         Compiles a model from an in-memory capsule object.
 
@@ -489,7 +489,8 @@ class InferenceSession:
             pipeline_name: Name identifier for the compiled pipeline.
 
         Returns:
-            Model: The compiled model ready for execution.
+            CompiledModels: The compiled artifact, ready to be initialized
+            with weights via :meth:`_load_all`.
         """
 
     def set_debug_print_options(

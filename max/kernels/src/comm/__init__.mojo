@@ -16,4 +16,10 @@ This package includes functions for sending and receiving data between GPUs,
 as well as for synchronizing threads across GPUs.
 """
 
+from .lamport import (
+    LamportGeneration,
+    has_neg_zero,
+    remove_neg_zero,
+    set_neg_zero,
+)
 from .sync import Signal, MAX_GPUS, group_start, group_end

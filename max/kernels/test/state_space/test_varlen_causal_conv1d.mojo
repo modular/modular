@@ -140,39 +140,37 @@ def run_varlen_causal_conv1d_fwd[
     random(bias_h)
 
     # Create TileTensor versions for kernel call
-    var x_tt = TileTensor(x_heap, row_major(Idx(dim), Idx(total_seqlen)))
-    var weight_tt = TileTensor(weight_heap, row_major(Idx(dim), Idx(width)))
+    var x_tt = TileTensor(x_heap, row_major(dim, total_seqlen))
+    var weight_tt = TileTensor(weight_heap, row_major(dim, width))
     var bias_tt = TileTensor(
         bias_heap,
         row_major(
-            Idx(dim),
+            dim,
         ),
     )
     var query_start_loc_tt = TileTensor(
         query_start_loc_heap,
         row_major(
-            Idx(batch + 1),
+            batch + 1,
         ),
     )
     var cache_indices_tt = TileTensor(
         cache_indices_heap,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
     var has_initial_state_tt = TileTensor(
         has_initial_state_heap,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
     var conv_states_tt = TileTensor(
         conv_states_heap,
-        row_major(Idx(batch), Idx(dim), Idx(state_len)),
+        row_major(batch, dim, state_len),
     )
-    var output_tt = TileTensor(
-        output_heap, row_major(Idx(dim), Idx(total_seqlen))
-    )
+    var output_tt = TileTensor(output_heap, row_major(dim, total_seqlen))
 
     var x_buf = x_h
     var weight_buf = weight_h
@@ -382,33 +380,31 @@ def run_varlen_causal_conv1d_update[
         conv_state_ref_h.ptr[i] = conv_state_h.ptr[i]
 
     # Create TileTensor versions for kernel call
-    var x_tt2 = TileTensor(x_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen)))
-    var weight_tt2 = TileTensor(weight_heap, row_major(Idx(dim), Idx(width)))
+    var x_tt2 = TileTensor(x_heap, row_major(batch, dim, seqlen))
+    var weight_tt2 = TileTensor(weight_heap, row_major(dim, width))
     var bias_tt2 = TileTensor(
         bias_heap,
         row_major(
-            Idx(dim),
+            dim,
         ),
     )
     var conv_state_tt2 = TileTensor(
         conv_state_heap,
-        row_major(Idx(batch), Idx(dim), Idx(state_len)),
+        row_major(batch, dim, state_len),
     )
     var cache_seqlens_tt = TileTensor(
         cache_seqlens_heap,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
     var conv_state_indices_tt = TileTensor(
         conv_state_indices_heap,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
-    var output_tt2 = TileTensor(
-        output_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen))
-    )
+    var output_tt2 = TileTensor(output_heap, row_major(batch, dim, seqlen))
 
     var x_buf = x_h
     var weight_buf = weight_h
@@ -635,16 +631,14 @@ def run_varlen_causal_conv1d_states[
     random(x_h)
 
     # Create TileTensor versions for kernel call
-    var x_tt3 = TileTensor(x_heap, row_major(Idx(total_tokens), Idx(dim)))
+    var x_tt3 = TileTensor(x_heap, row_major(total_tokens, dim))
     var cu_seqlens_tt = TileTensor(
         cu_seqlens_heap,
         row_major(
-            Idx(batch + 1),
+            batch + 1,
         ),
     )
-    var states_tt = TileTensor(
-        states_heap, row_major(Idx(batch), Idx(dim), Idx(state_len))
-    )
+    var states_tt = TileTensor(states_heap, row_major(batch, dim, state_len))
 
     var x_buf = x_h
     var cu_seqlens_buf = cu_seqlens_h

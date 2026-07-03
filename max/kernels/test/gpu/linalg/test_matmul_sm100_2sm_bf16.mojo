@@ -76,14 +76,14 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} swapAB={swapAB} k_group_size={k_group_size}"
         )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
@@ -117,7 +117,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     if simple_init():
         for m in range(M):
             for k in range(K):
-                var idx = a_host.layout(Coord(Idx(m), Idx(k)))
+                var idx = a_host.layout(Coord(m, k))
                 a_host.ptr[idx] = Float32(k).cast[a_type]()
         for n in range(N):
             for k in range(K):
@@ -230,9 +230,9 @@ def main() raises:
                         block_swizzle_size=8,
                     ](
                         ctx,
-                        Idx(Int(1000)),
-                        Idx[1024](),
-                        Idx[1024 + 16](),
+                        Int(1000),
+                        Idx[1024],
+                        Idx[1024 + 16],
                     )
 
                     comptime for swapAB in [False, True]:
@@ -249,9 +249,9 @@ def main() raises:
                             swapAB=swapAB,
                         ](
                             ctx,
-                            Idx(Int(512)),
-                            Idx[4096](),
-                            Idx[1024 + 16](),
+                            Int(512),
+                            Idx[4096],
+                            Idx[1024 + 16],
                         )
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
@@ -268,9 +268,9 @@ def main() raises:
                             k_group_size=2,
                         ](
                             ctx,
-                            Idx(Int(500)),
-                            Idx[2048](),
-                            Idx[4096](),
+                            Int(500),
+                            Idx[2048],
+                            Idx[4096],
                         )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
@@ -285,9 +285,9 @@ def main() raises:
                         block_swizzle_size=2,
                     ](
                         ctx,
-                        Idx(Int(999)),
-                        Idx[256](),
-                        Idx[128](),
+                        Int(999),
+                        Idx[256],
+                        Idx[128],
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
@@ -302,7 +302,7 @@ def main() raises:
                         block_swizzle_size=1,
                     ](
                         ctx,
-                        Idx(Int(777)),
-                        Idx[2560](),
-                        Idx[8192](),
+                        Int(777),
+                        Idx[2560],
+                        Idx[8192],
                     )

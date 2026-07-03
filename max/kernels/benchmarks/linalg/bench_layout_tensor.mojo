@@ -31,7 +31,7 @@ comptime dtype = DType.float32
 
 
 struct Matrix[rows: Int, cols: Int]:
-    var data: UnsafePointer[Scalar[dtype], MutAnyOrigin]
+    var data: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]
 
     # Initialize zeroeing all values
     def __init__(out self):
@@ -39,7 +39,9 @@ struct Matrix[rows: Int, cols: Int]:
         memset_zero(self.data, Self.rows * Self.cols)
 
     # Initialize taking a pointer, don't set any elements
-    def __init__(out self, data: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
+    def __init__(
+        out self, data: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]
+    ):
         self.data = data
 
     ## Initialize with random values
@@ -179,7 +181,7 @@ def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
 
 def alloc_aligned_tile[
     M: Int, N: Int, dtype: DType
-]() -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+]() -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
     comptime alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
     comptime cache_width = ((N + alignment - 1) // alignment) * alignment
     return alloc[Scalar[dtype]](M * cache_width, alignment=alignment)
