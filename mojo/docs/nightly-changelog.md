@@ -10,16 +10,6 @@ This version is still a work in progress.
 
 ## Language enhancements
 
-- `coord` is now a comptime expression, and `coord[DType]()` has been renamed
-  to `dyn_coord[DType]()`.
-  Now one can just write:
-
-   ```mojo
-   var my_coord = coord[1, 2, 3]
-   ```
-
-   to create a `Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]]`
-
 - Mojo now support `==` and `!=` for type equality check, and `_type_is_eq` is
   removed.
 
@@ -220,6 +210,38 @@ This version is still a work in progress.
   module1.bar()
   ```
 
+- The `@explicit_destroy` decorator is no longer required on structs that
+  conditionally conform to `ImplicitlyDeletable`.
+
+  By default, all Mojo structs implicitly conform to `ImplicitlyDeletable`.
+  As before, a type author can opt-out of that implicit conformance using the
+  `@explicit_destroy` decorator:
+
+  ```mojo
+  @explicit_destroy
+  struct FileHandle:
+      pass
+
+  comptime assert not conforms_to(FileHandle, ImplicitlyDeletable)
+  ```
+
+  Now, if the type *conditionally* conforms to `ImplicitlyDeletable`, you may
+  omit redundantly writing `@explicit_destroy`:
+
+  ```mojo
+  # no @explicit_destroy necessary
+  struct Container[T: AnyType](
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
+  ):
+      var value: Self.T
+
+  comptime assert conforms_to(Container[Int], ImplicitlyDeletable)
+  comptime assert not conforms_to(Container[NonDeletable], ImplicitlyDeletable)
+  ```
+
+  This simplifies the language by replacing special decorator behavior with
+  generalized struct conformance logic.
+
 - `where` clauses inside a parameter list (for example,
   `[x: Int where x > 0]`) are no longer supported, following a period of
   deprecation. Use a trailing `where` clause after the signature instead:
@@ -232,6 +254,11 @@ This version is still a work in progress.
   fn foo[x: Int]() where x > 0:
       pass
   ```
+
+## Library stabilizations
+
+- The traits `ImplicitlyDeletable`, `Movable`, `Copyable`, and
+  `ImplicitlyCopyable` are now stable.
 
 ## Library changes
 
@@ -407,8 +434,15 @@ This version is still a work in progress.
     )
     ```
 
-- The traits `ImplicitlyDeletable`, `Movable`, `Copyable`, and
-  `ImplicitlyCopyable` are now stable.
+- `coord` is now a comptime expression, and `coord[DType]()` has been renamed
+  to `dyn_coord[DType]()`.
+  Now one can just write:
+
+   ```mojo
+   var my_coord = coord[1, 2, 3]
+   ```
+
+   to create a `Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]]`
 
 - Removed `trait_downcast_var()`. Improvements to type refinement based on
   `where conforms_to(..)` and `comptime assert conforms_to(..)` make explicit
