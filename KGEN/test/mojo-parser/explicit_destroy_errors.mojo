@@ -218,3 +218,27 @@ trait LinearWithEmptyMessage:
 # expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
 def take_linear_empty_message[T: LinearWithEmptyMessage](var value: T):
     pass
+
+
+# ===----------------------------------------------------------------------=== #
+# Conditional ImplicitlyDeletable without @explicit_destroy
+# ===----------------------------------------------------------------------=== #
+
+
+# A struct may conditionally conform to ImplicitlyDeletable via a where-clause
+# without using @explicit_destroy. When the where-clause is not satisfied for a
+# given instantiation the type is linear, and the compiler emits a synthesized
+# default linear-type error message.
+struct CondImplicitlyDeletableDefault[cond: Bool](
+    ImplicitlyDeletable where cond
+):
+    def __init__(out self):
+        pass
+
+
+def testConditionalImplicitlyDeletableDefaultMessage():
+    # cond=True satisfies the where-clause, no error.
+    _ = CondImplicitlyDeletableDefault[True]()
+
+    # expected-error @below {{abandoned without being explicitly destroyed: type 'CondImplicitlyDeletableDefault' does not conditionally conform to 'ImplicitlyDeletable' for these parameters}}
+    _ = CondImplicitlyDeletableDefault[False]()

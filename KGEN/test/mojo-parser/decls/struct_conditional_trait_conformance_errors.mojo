@@ -214,24 +214,6 @@ struct NoExplicitRPConformsToRPTrait[T: ImplicitlyDeletable & Movable](
 
 
 # ===========================================================================
-# Conditional ImplicitlyDeletable requires @explicit_destroy
-# ===========================================================================
-# Without @explicit_destroy, there is no error message for when the
-# constraint is not satisfied, so the struct would silently auto-destroy.
-
-
-struct ConditionalImplicitlyDeletable[T: Movable & ImplicitlyDeletable](
-    # expected-error @below {{conditional conformance to 'ImplicitlyDeletable' requires @explicit_destroy}}
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
-    Movable,
-):
-    var data: Self.T
-
-    def __init__(out self, var data: Self.T):
-        self.data = data^
-
-
-# ===========================================================================
 # Unconditional conformance with conditional method
 # ===========================================================================
 # A struct that unconditionally claims to conform to a trait, but the method
