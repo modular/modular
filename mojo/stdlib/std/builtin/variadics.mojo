@@ -409,10 +409,6 @@ struct TypeList[
         this_element: Self.Trait,
     ] = last_value and predicate[this_element]
 
-    comptime _ConformsToPredicate[
-        T: type_of(AnyType), Type: Self.Trait
-    ]: Bool = conforms_to(Type, T)
-
     @always_inline("builtin")
     @staticmethod
     def all_conforms_to[_trait: type_of(AnyType)]() -> Bool:
@@ -424,7 +420,7 @@ struct TypeList[
         Returns:
             True if all types in this list conform to `Trait`, False otherwise.
         """
-        return Self.all_satisfies[Self._ConformsToPredicate[_trait, _]]()
+        return conforms_to(Self.values, _trait)
 
     @always_inline("builtin")
     @staticmethod

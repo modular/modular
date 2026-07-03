@@ -302,6 +302,54 @@ This version is still a work in progress.
   added to `io.FileDescriptor`. These are wrappers for the corresponding POSIX
   functions.
 
+- `TypeList.all_conforms_to()` is now implemented in terms of `conforms_to()`,
+  which supports parameter-list operands like `Ts.values`. As a result,
+  `all_conforms_to()` constraints preserve the same proof structure as direct
+  `conforms_to(Ts.values, Trait)` constraints, so the compiler can use them in
+  conditional conformance implication checks and type refinement.
+
+  This means conditional conformances can rely on trait hierarchy relationships
+  for an entire type parameter pack. Previously, a type that conditionally
+  conformed to `JsonSerializable` would also need to repeat the inherited
+  `Serializable` condition:
+
+  ```mojo
+  trait Serializable:
+      pass
+
+  trait JsonSerializable(Serializable):
+      pass
+
+  struct Packet[*Ts: Movable](
+      Serializable where Ts.all_conforms_to[Serializable](),
+      JsonSerializable where Ts.all_conforms_to[JsonSerializable](),
+      Movable,
+  ):
+      pass
+  ```
+
+  Now the `JsonSerializable` condition is enough for the compiler to prove the
+  inherited `Serializable` conformance:
+
+  ```diff
+   struct Packet[*Ts: Movable](
+  -    Serializable where Ts.all_conforms_to[Serializable](), 
+       JsonSerializable where Ts.all_conforms_to[JsonSerializable](),
+       Movable,
+   ):
+       pass
+  ```
+
+  The same constraints now refine each element of a variadic type parameter
+  pack inside `where`, `comptime assert`, and `comptime if` contexts:
+
+  ```mojo
+  def write_all[*Ts: Movable](mut writer: Some[Writer], *args: *Ts):
+      comptime if Ts.all_conforms_to[Writable]():
+          comptime for i in range(args.__len__()):
+              args[i].write_to(writer)
+  ```
+
 - `ImplicitlyDestructible` has been renamed to `ImplicitlyDeletable`, for better
   name consistency with its required `__del__()` "delete" special method.
 
