@@ -45,6 +45,8 @@ def mla_sm100_prefill[
     cache_depth: Int,
     _ndbuffer_mha_operand: Bool,
     blockwise_scale: Int = 0,
+    # -1 => V width == nope width (DeepSeek); resolved in `MLAConfig.__init__`.
+    v_depth: Int = -1,
 ](
     output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
@@ -79,6 +81,7 @@ def mla_sm100_prefill[
             q_depth=q_depth,
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
+            v_depth=v_depth,
         ](
             output,
             q,
@@ -100,6 +103,7 @@ def mla_sm100_prefill[
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
             blockwise_scale=blockwise_scale,
+            v_depth=v_depth,
         ](
             output,
             q,

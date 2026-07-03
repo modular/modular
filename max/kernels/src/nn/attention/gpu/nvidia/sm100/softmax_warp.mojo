@@ -1077,7 +1077,9 @@ def fa4_softmax[
     # 1Q: WG0 takes even-indexed K/V tiles (start = kv_row); WG1 takes
     # odd-indexed (+BN). Both advance by 2*BN per main-loop iter (set
     # below). 2Q: both WGs share the same kv_row stride of BN.
-    comptime if config.num_qo == 1:
+    # single-O (1Q wide-V): WG0 owns EVERY tile (WG1 no-op), so no
+    # per-WG start offset and a stride of BN (set below).
+    comptime if config.num_qo == 1 and not config.single_o:
         kv_row += warp_group_idx * UInt32(config.BN)
     comptime mask_sets = MaskType.nonfull_sets[BM_mask, BN]()
     comptime mask_strategies = MaskType.mask_strategies[BM_mask, BN]()
@@ -1103,23 +1105,26 @@ def fa4_softmax[
 
         comptime if config.num_qo == 1:
             total_iters_combined = mask_ends[num_sets - 1]
-            # Per-WG split with cumulative-parity carry. WG0 owns
-            # combined indices with parity 0 (even cumulative position);
-            # WG1 owns parity 1. Within set i starting at cumulative
-            # combined index `cum`:
-            #   parity=0: WG0 takes ceil(iters_combined_i/2), WG1 floor.
-            #   parity=1: WG0 takes floor, WG1 ceil.
-            var cumulative: UInt32 = 0
-            comptime for i in range(num_sets):
-                iters_combined_i = mask_iters[i]
-                parity = cumulative & UInt32(1)
-                if warp_group_idx == UInt32(0):
-                    mask_iters[i] = (
-                        iters_combined_i + UInt32(1) - parity
-                    ) // UInt32(2)
-                else:
-                    mask_iters[i] = (iters_combined_i + parity) // UInt32(2)
-                cumulative += iters_combined_i
+            # single-O: WG0 owns EVERY tile (WG1 no-op), so keep the full
+            # combined `mask_iters` (no per-WG split).
+            comptime if not config.single_o:
+                # Per-WG split with cumulative-parity carry. WG0 owns
+                # combined indices with parity 0 (even cumulative position);
+                # WG1 owns parity 1. Within set i starting at cumulative
+                # combined index `cum`:
+                #   parity=0: WG0 takes ceil(iters_combined_i/2), WG1 floor.
+                #   parity=1: WG0 takes floor, WG1 ceil.
+                var cumulative: UInt32 = 0
+                comptime for i in range(num_sets):
+                    iters_combined_i = mask_iters[i]
+                    parity = cumulative & UInt32(1)
+                    if warp_group_idx == UInt32(0):
+                        mask_iters[i] = (
+                            iters_combined_i + UInt32(1) - parity
+                        ) // UInt32(2)
+                    else:
+                        mask_iters[i] = (iters_combined_i + parity) // UInt32(2)
+                    cumulative += iters_combined_i
     else:
         comptime if config.num_qo == 1:
             # Unmasked-only path has no precomputed mask_ends. Derive
@@ -1140,8 +1145,18 @@ def fa4_softmax[
     # LSE-exchange, output write) and drop straight to the final
     # cross-WG sync that gates TMEM dealloc. The dealloc (`warp_idx
     # == 0`) is WG0's responsibility and runs there after the sync.
+    #
+    # single-O (wide-V fallback): the two per-WG O partials do NOT fit in
+    # the 512-col TMEM (`2*BN + 2*padded_ov > 512`), so single-O aliases
+    # O1 onto O0 and cannot run the two-WG even/odd LSE-combine (the peer
+    # read would overrun TMEM). Instead WG0 processes ALL K-tiles serially
+    # into the single O0 accumulator and WG1 is a full no-op for every T
+    # (not just T==1) — mirroring the T==1 fast path, generalized. The MMA
+    # and correction warps take matching single-O single-WG paths.
     comptime if config.num_qo == 1:
-        if total_iters_combined == UInt32(1) and warp_group_idx == UInt32(1):
+        if (
+            config.single_o or total_iters_combined == UInt32(1)
+        ) and warp_group_idx == UInt32(1):
             named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
             return
 
@@ -1231,8 +1246,13 @@ def fa4_softmax[
 
     # 1Q advances kv_row by 2*BN (each WG strides over its half of the
     # K/V stream); 2Q advances by BN (each WG processes every K tile).
+    # single-O (1Q wide-V): WG0 processes CONSECUTIVE tiles (WG1 no-op),
+    # so it strides by BN like 2Q.
     comptime kv_row_stride: Int = (
-        2 * config.BN if config.num_qo == 1 else config.BN
+        2
+        * config.BN if (
+            config.num_qo == 1 and not config.single_o
+        ) else config.BN
     )
 
     comptime if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
@@ -1388,12 +1408,15 @@ def fa4_softmax[
             num_output_rows > 0,
             "1Q tiles always have output rows (is_valid() holds)",
         )
-        if total_iters_combined == UInt32(1):
-            # T==1 fast path: skip LSE-exchange entirely and reuse the
-            # 2Q row-scale + stmatrix + TMA helper directly. No peer
-            # partial to combine; no per-WG smem/gmem-row offsets.
-            # `BM // config.num_qo` is the helper's expected row count
-            # and numerically equals config.BM (= 128) in 1Q.
+        if config.single_o or total_iters_combined == UInt32(1):
+            # T==1 fast path AND the single-O all-T path: skip the
+            # LSE-exchange entirely and reuse the 2Q row-scale + stmatrix
+            # + TMA helper directly. No peer partial to combine; no per-WG
+            # smem/gmem-row offsets. `BM // config.num_qo` is the helper's
+            # expected row count and numerically equals config.BM (= 128)
+            # in 1Q. For single-O, WG0 has accumulated ALL K-tiles' P@V
+            # into the single O0 and holds the full `row_sum`, so this
+            # writer produces the complete output; WG1 already returned.
             inv_row_sum = recip(row_sum.reduce_add())
             o_tile = TMemTile[
                 accum_dtype, BM // config.num_qo, padded_ov_depth

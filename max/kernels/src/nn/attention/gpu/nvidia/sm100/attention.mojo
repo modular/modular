@@ -58,6 +58,13 @@ struct FA4Config[
     var padded_qk_depth: Int  # align_up(qk_depth, swizzle_elems)
     var ov_depth: Int
     var padded_ov_depth: Int
+    # Non-rope part of the Q/K depth (= qk_depth - rope_depth). For MHA and for
+    # DeepSeek-style MLA this equals `ov_depth` (V head dim == qk_nope), but for
+    # GLM-style MLA where `v_head_dim != qk_nope_head_dim` they differ: the Q@K'
+    # contraction and the Q_nope SMEM region are governed by `nope_depth`, while
+    # the P@V output and V SMEM are governed by `ov_depth` (= v_head_dim).
+    var nope_depth: Int
+    var padded_nope_depth: Int
     var group: Int
     var num_q_heads: Int
     var num_kv_heads: Int
@@ -78,6 +85,13 @@ struct FA4Config[
     var use_fused_kv: Bool
     var pair_cta: Bool
     var num_qo: Int
+    # Single-O TMEM mode: reuse ONE O accumulator (TMEM_O1 aliased to TMEM_O0,
+    # tmem_used = 2*BN + padded_ov instead of 2*BN + 2*padded_ov), so a wide V
+    # (e.g. GLM v_head_dim=256, ov_depth too big for the 2-O layout) still fits
+    # the 512-col TMEM. Implies num_qo==1 (the kernel body already aliases O in
+    # the 1Q path). Default False ⇒ EXACTLY the pre-existing 2-O behavior (both
+    # 2Q and the pre-existing prefer_1q short-seq 1Q stay byte-identical).
+    var single_o: Bool
     var page_size: Int
     var is_mla: Bool
     var row_major_v_atoms: Bool
@@ -119,6 +133,28 @@ struct FA4Config[
         if self.pair_cta:
             return self.padded_ov_depth // 2
         return self.padded_ov_depth
+
+    @always_inline
+    def nope_cols_per_cta(self) -> Int:
+        """K_nope columns stored in this CTA's SMEM (per-CTA padded nope width).
+
+        Sibling of `v_cols_per_cta()` on `padded_nope_depth`. Equals
+        `v_cols_per_cta()` for MHA / DeepSeek (nope == ov).
+        """
+        if self.pair_cta:
+            return self.padded_nope_depth // 2
+        return self.padded_nope_depth
+
+    @always_inline
+    def fused_kv_cols(self) -> Int:
+        """Un-halved width of one fused K_nope/V SMEM stage.
+
+        K_nope (padded_nope_depth) and V (padded_ov_depth) share one buffer, so
+        a stage fits the wider of the two. This is the *full* (non-pair-halved)
+        column count; pair-CTA halving is applied at the call site where needed.
+        Equals `padded_ov_depth` for MHA / DeepSeek (nope == ov).
+        """
+        return max(self.padded_nope_depth, self.padded_ov_depth)
 
     @always_inline
     def k_rows_per_cta(self) -> Int:
@@ -238,8 +274,13 @@ struct FA4Config[
 
     @always_inline
     def q_nope_bytes(self) -> Int:
-        """Q nope region bytes: BM * padded_ov_depth * dtype_size."""
-        return self.BM * self.padded_ov_depth * Self.qkv_dtype_size
+        """Q nope region bytes: BM * padded_nope_depth * dtype_size.
+
+        The Q_nope tile feeds the Q@K_nope' contraction, so its width is the
+        non-rope Q depth (`padded_nope_depth`), not the V/output depth. They
+        coincide for MHA / DeepSeek MLA.
+        """
+        return self.BM * self.padded_nope_depth * Self.qkv_dtype_size
 
     @always_inline
     def q_rope_bytes(self) -> Int:
@@ -250,9 +291,11 @@ struct FA4Config[
     @always_inline
     def rope_depth(self) -> Int:
         """Depth of the rope part. Calculated as:
-        padded_qk_depth - padded_ov_depth (0 for MHA where qk_depth == ov_depth).
+        padded_qk_depth - padded_nope_depth (0 for MHA where qk_depth ==
+        nope_depth). Uses the non-rope Q/K width (`padded_nope_depth`), NOT the
+        V/output depth — the two differ when `v_head_dim != qk_nope_head_dim`.
         """
-        return self.padded_qk_depth - self.padded_ov_depth
+        return self.padded_qk_depth - self.padded_nope_depth
 
     @always_inline
     def num_rope_buffers(self) -> Int:
@@ -295,6 +338,9 @@ struct FA4Config[
         pair_cta: Bool = False,
         num_qo: Int = 2,
         num_qk_stages: Int = 0,
+        nope_depth: Int = -1,
+        single_o: Bool = False,
+        bn_cap: Int = 0,
     ):
         # num_qk_stages == 0 (default) derives the optimal Q@K' staging.
         # A nonzero value pins it (used by the in-kernel 1Q/2Q switch, which
@@ -309,6 +355,10 @@ struct FA4Config[
         self.qk_depth = qk_depth
         self.pair_cta = pair_cta
         self.num_qo = num_qo
+        # single_o implies num_qo==1 (the body's 1Q path aliases O). Guard
+        # against an inconsistent caller; `single_o=False` is the default and
+        # leaves every existing config untouched.
+        self.single_o = single_o and num_qo == 1
         self.page_size = page_size
         self.is_mla = is_mla
         self.MMA_M = 256 if pair_cta else 128
@@ -326,19 +376,36 @@ struct FA4Config[
             self.swizzle_mode = swizzle_mode
         swizzle_elems = self.swizzle_mode.bytes() // Self.qkv_dtype_size
         self.ov_depth = ov_depth
+        # `nope_depth < 0` (default) means "no separate nope dim" — used by MHA
+        # and by DeepSeek-style MLA where the non-rope Q/K width equals the V
+        # head dim. In that case nope tracks ov, so every padded_nope_depth use
+        # is byte-identical to the pre-decoupling padded_ov_depth.
+        self.nope_depth = ov_depth if nope_depth < 0 else nope_depth
         self.padded_qk_depth = align_up(qk_depth, swizzle_elems)
         self.padded_ov_depth = align_up(ov_depth, swizzle_elems)
+        self.padded_nope_depth = align_up(self.nope_depth, swizzle_elems)
 
         # we use two q and o
-        # determine BN via tmem:
-        # 2*BN + 2*ov_depth <= 512 -> BN + ov_depth <= 256
-        self.BN = min(
-            256,
-            align_down(
-                (Self.sm100_tmem_cols // 2 - self.padded_ov_depth),
-                Self.MMA_K,
-            ),
-        )
+        # determine BN via tmem. The TMEM column budget (512) holds S
+        # accumulators (2*BN) plus O accumulators:
+        #   2-O (default):  2*BN + 2*ov <= 512 -> BN <= 256 - ov
+        #   single-O:       2*BN + 1*ov <= 512 -> BN <= (512 - ov)/2
+        # The KV tile must hold the nope-wide K_nope AND the v-wide V, so the O
+        # term is bounded by the wider of the two (when v_head_dim < qk_nope,
+        # using the smaller padded_ov alone would inflate BN and starve KV
+        # stages). Byte-identical for MHA / DeepSeek (nope == ov). NB: inline
+        # `max` (not `fused_kv_cols()`) — `self` is partially initialized here, so
+        # a method call (which borrows all of `self`) is illegal before BN.
+        var _o_cols = max(self.padded_nope_depth, self.padded_ov_depth)
+        var _bn_budget = (
+            Self.sm100_tmem_cols - _o_cols
+        ) // 2 if self.single_o else Self.sm100_tmem_cols // 2 - _o_cols
+        self.BN = min(256, align_down(_bn_budget, Self.MMA_K))
+        # `bn_cap > 0` clamps BN below the TMEM-max so the SMEM budget can fit
+        # >= 2 KV stages. Only the single-O wide-V fallback passes a cap; the
+        # default (bn_cap == 0) leaves every existing BN untouched.
+        if bn_cap > 0:
+            self.BN = min(self.BN, align_down(bn_cap, Self.MMA_K))
         # page_size == 0 means non-paged (no constraint).
         # page_size >= BN: page contains full tile (page_size % BN == 0).
         # page_size < BN: tile spans multiple pages (BN % page_size == 0).
@@ -363,7 +430,13 @@ struct FA4Config[
         self.TMEM_P0 = Self.TMEM_S0
         self.TMEM_P1 = self.TMEM_S1
         self.TMEM_O0 = self.TMEM_S1 + self.BN
-        self.TMEM_O1 = self.TMEM_O0 + self.padded_ov_depth
+        # single-O: alias O1 onto O0 (the 1Q body reuses one O accumulator) and
+        # reserve a single O region -> tmem_used = 2*BN + padded_ov. Default
+        # (2-O) is unchanged: two distinct O regions, tmem_used = 2*BN + 2*ov.
+        if self.single_o:
+            self.TMEM_O1 = self.TMEM_O0
+        else:
+            self.TMEM_O1 = self.TMEM_O0 + self.padded_ov_depth
         self.tmem_used = self.TMEM_O1 + self.padded_ov_depth
 
         # We have the following resources that need smem barriers:
@@ -439,17 +512,20 @@ struct FA4Config[
         )
         smem_use += misc_mbars_fixed_size * Self.mbar_size
 
-        rope_depth = self.padded_qk_depth - self.padded_ov_depth
+        # rope occupies the Q/K columns past the non-rope (nope) part, so it is
+        # padded_qk - padded_nope (NOT padded_ov, which is the V/output depth).
+        rope_depth = self.padded_qk_depth - self.padded_nope_depth
 
         # smem use is (NOTE: smem uses padded depth):
         # BM*depth*dtype_size + num_kv_stages*(2*mbar_size + BN*depth*dtype_size) <= smem_remaining
         # num_kv_stages <= (smem_remaining - 2*BM*depth*dtype_size) // (2*mbar_size + BN*depth*dtype_size)
         # Q region: when rope_dtype_size > 0, Q nope and Q rope have different
-        # dtype sizes (e.g. FP8 nope + BF16 rope for per-token-scale MLA).
+        # dtype sizes (e.g. FP8 nope + BF16 rope for per-token-scale MLA). The
+        # Q_nope sub-region is `padded_nope_depth` wide (the Q@K_nope' width).
         var qk_depth_bytes: Int
         comptime if Self.rope_dtype_size > 0:
             qk_depth_bytes = (
-                self.padded_ov_depth * Self.qkv_dtype_size
+                self.padded_nope_depth * Self.qkv_dtype_size
                 + rope_depth * Self.rope_dtype_size
             )
         else:
@@ -482,7 +558,12 @@ struct FA4Config[
         # We divide bytes needed by `k` and `v` into shared and k-specific:
         # In pair-CTA mode each CTA stores half of K/V:
         # K: BN/2 rows × full depth, V: full BN rows × ov_depth/2 cols.
-        kv_data_elems = self.BN * self.padded_ov_depth
+        # The fused K_nope/V buffer stage fits the wider of K_nope/V; pair-CTA
+        # halves it below. Inline `max` (not `fused_kv_cols()`) — `self` is
+        # partially initialized here (a method call would borrow all of `self`).
+        kv_data_elems = self.BN * max(
+            self.padded_nope_depth, self.padded_ov_depth
+        )
         if pair_cta:
             kv_data_elems //= 2
         bytes_per_kv = (
@@ -522,7 +603,16 @@ struct FA4Config[
             )
         smem_use += bytes_used
 
-        if fused_stages % 2 == 1:  # odd, fused
+        # single-O (1Q wide-V) always uses the split-KV pipeline (separate K
+        # and V), never fused KV. The single-O serial P@V path (one warp
+        # group folds every K/V tile into the aliased O0) is implemented and
+        # validated only on split-KV; fused KV interleaves K/V in one ring in
+        # the even/odd pair order, which the single-O per-tile consumption
+        # does not match. Forcing split-KV keeps ONE single-O code path.
+        # `supported()` (>= 2 KV stages) then rejects any wide-V shape that
+        # cannot afford split-KV staging, at compile time. Non-single-O
+        # configs are unaffected (byte-identical).
+        if fused_stages % 2 == 1 and not self.single_o:  # odd, fused
             self.use_fused_kv = True
             self.num_kv_stages = fused_stages
             self.num_qk_stages = 1
@@ -626,6 +716,11 @@ struct FA4Config[
             pair_cta=False,
             num_qo=num_qo,
             num_qk_stages=num_qk_stages,
+            nope_depth=self.nope_depth,
+            # Preserve single-O only when the reconstructed config is itself 1Q.
+            # The existing prefer_1q short-seq path calls with_num_qo(1) on a
+            # single_o=False 2Q config -> stays single_o=False (byte-identical).
+            single_o=self.single_o and num_qo == 1,
         )
 
     @always_inline

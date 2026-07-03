@@ -390,6 +390,7 @@ _FILECHECK_TESTS = [
             "test_mla_prefill_blockscale_paged.mojo",
             "test_mla_prefill_blockscale_large_cache.mojo",
             "test_mla_prefill_per_token_scale_paged.mojo",
+            "test_mla_prefill_vhead_repro.mojo",
             "_paged_prefill_test_utils.mojo",
             # Dtype-parameterized 4-wave conv test (explicit per-dtype
             # targets are declared below).
@@ -793,6 +794,23 @@ _MLA_PREFILL_PAGED_VARIANTS = [
         "test_mla_prefill_per_token_scale_paged.mojo",
         "test_mla_prefill_per_token_scale_paged",
         _MLA_PREFILL_PAGED_PAGE_SIZES,
+        "6",
+    ),
+    # CENG-282 regression: dense MLA prefill must honor v_head_dim independently
+    # of qk_nope_head_dim. Runs CONTROL (v==nope), GLM (v<nope), and STRESS
+    # (v>nope) shapes, plus REAL GLM (v=256, the single-O fallback) across a
+    # seq_len sweep that crosses the single-O KV-tile boundaries (64/65/128/
+    # 129/256) — the >=2-KV-tile cases exercise the single-O serial P@V path
+    # that the earlier seq_len=64-only coverage missed (CUDA illegal-address
+    # at seq_len > 64). A small page_size set is enough (both the V/output
+    # geometry and the single-O boundary are page-size-independent).
+    (
+        "test_mla_prefill_vhead_repro.mojo",
+        "test_mla_prefill_vhead_repro",
+        [
+            "64",
+            "128",
+        ],
         "6",
     ),
     # Large-cache_length finiteness sweep: production page_size (256) only,

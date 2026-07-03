@@ -75,10 +75,154 @@ def fa4_correction[
 
     pipeline_c0 = mbars.consumer_c0()
     pipeline_c1 = mbars.consumer_c1()
-    pipeline_o = mbars.consumer_o()
 
     comptime BM_mask: Int = config.PairBM_eff()
     comptime num_qo: Int = config.num_qo
+
+    # Pure O-rescale arithmetic (online-softmax correction of a previously
+    # accumulated O tile by `c`). Depends only on `o_tmem`, `c_pair` and
+    # comptime `config.ov_depth` — no pipeline / warp-group state — so it is
+    # shared verbatim by BOTH the single-O loop below and the two-WG
+    # `_correction_step` closure further down. `@always_inline` => inlining
+    # it back into either caller reproduces the identical instruction stream
+    # (2-O / DeepSeek / MHA codegen is unchanged).
+    @parameter
+    @always_inline
+    def _rescale_o(o_tmem: TmemAddress, c_pair: SIMD[DType.float32, 2]):
+        comptime batch_size = 16 if config.ov_depth % 16 == 0 else 8
+        comptime assert config.ov_depth % batch_size == 0
+        # output is BM x depth
+        comptime load_iters, load_remainder = divmod(
+            config.ov_depth, 2 * batch_size
+        )
+        comptime assert load_iters > 1
+        comptime assert (load_remainder == batch_size) or (load_remainder == 0)
+
+        var o_b0 = tcgen05_ld[
+            datapaths=32,
+            bits=32,
+            repeat=batch_size,
+            dtype=accum_type,
+            pack=False,
+            width=batch_size,
+        ](o_tmem.addr)
+
+        comptime for b in range(load_iters):
+            comptime b0_offset0 = 2 * b * batch_size
+            comptime b1_offset = b0_offset0 + batch_size
+            comptime b0_offset1 = b1_offset + batch_size
+            var o_b1 = tcgen05_ld[
+                datapaths=32,
+                bits=32,
+                repeat=batch_size,
+                dtype=accum_type,
+                pack=False,
+                width=batch_size,
+            ]((o_tmem + b1_offset).addr)
+            var o_b0_scaled = InlineArray[Scalar[accum_type], batch_size](
+                uninitialized=True
+            )
+
+            comptime for _i in range(0, batch_size, 2):
+                var pair = mul_ftz(
+                    SIMD[DType.float32, 2](o_b0[_i], o_b0[_i + 1]),
+                    c_pair,
+                )
+                o_b0_scaled[_i] = pair[0]
+                o_b0_scaled[_i + 1] = pair[1]
+            tcgen05_st[datapaths=32, bits=32, repeat=batch_size, pack=False](
+                (o_tmem + b0_offset0).addr, o_b0_scaled
+            )
+
+            comptime if b0_offset1 + batch_size <= config.ov_depth:
+                o_b0 = tcgen05_ld[
+                    datapaths=32,
+                    bits=32,
+                    repeat=batch_size,
+                    dtype=accum_type,
+                    pack=False,
+                    width=batch_size,
+                ]((o_tmem + b0_offset1).addr)
+            var o_b1_scaled = InlineArray[Scalar[accum_type], batch_size](
+                uninitialized=True
+            )
+
+            comptime for _i in range(0, batch_size, 2):
+                var pair = mul_ftz(
+                    SIMD[DType.float32, 2](o_b1[_i], o_b1[_i + 1]),
+                    c_pair,
+                )
+                o_b1_scaled[_i] = pair[0]
+                o_b1_scaled[_i + 1] = pair[1]
+            tcgen05_st[datapaths=32, bits=32, repeat=batch_size, pack=False](
+                (o_tmem + b1_offset).addr, o_b1_scaled
+            )
+
+        comptime if load_remainder > 0:
+            comptime offset = 2 * batch_size * load_iters
+            var o_b0_scaled_rem = InlineArray[
+                Scalar[accum_type], load_remainder
+            ](uninitialized=True)
+
+            comptime for _i in range(0, load_remainder, 2):
+                var pair = mul_ftz(
+                    SIMD[DType.float32, 2](o_b0[_i], o_b0[_i + 1]),
+                    c_pair,
+                )
+                o_b0_scaled_rem[_i] = pair[0]
+                o_b0_scaled_rem[_i + 1] = pair[1]
+            tcgen05_st[
+                datapaths=32,
+                bits=32,
+                repeat=load_remainder,
+                pack=False,
+            ]((o_tmem + offset).addr, o_b0_scaled_rem)
+        tcgen05_store_wait()
+        tcgen05_fence_before()
+
+    # ---- single-O correction (1Q wide-V) ----
+    # Wide V forces single-O (aliased O0), so only WG0 runs: it folds EVERY
+    # K-tile serially into the single O0 (WG1 no-op). The correction thus
+    # (a) waits on WG0's O-producer barrier ONLY, via a ONE-stage pipeline
+    # (`consumer_o0`) — the standard two-stage `consumer_o` would alternate
+    # onto WG1's never-produced O barrier and deadlock — and (b) runs
+    # `total_iters - 1` c0-only steps (the online-softmax rescale between
+    # tiles; after WG0's softmax peel, one per remaining tile), with zero c1
+    # steps. It shares only the pure `_rescale_o` arithmetic with the two-WG
+    # path; the pipeline / step-count / control flow is self-contained and
+    # the two-WG code below is untouched (byte-identical for MHA / DeepSeek /
+    # 2-O and standard 1Q).
+    comptime if config.single_o:
+        var o0_tmem_so = TmemAddress(tmem_addr + UInt32(config.TMEM_O0))
+        var pipeline_c0_so = mbars.consumer_c0()
+        var pipeline_o_so = mbars.consumer_o0()
+        var correction_smem_so = correction_smem_arg + UInt32(
+            thread_idx.x
+        ) % UInt32(WARPGROUP_SIZE)
+
+        var t_left_so: UInt32 = (
+            mask.total_iters[BM_mask, BN, page_size](
+                seq_id, score_row, num_keys
+            )
+            - 1
+        )
+        while t_left_so != 0:
+            t_left_so -= 1
+            pipeline_c0_so.wait()
+            var c_scalar = correction_smem_so[0]
+            change = _vote_nvidia_helper(c_scalar < 1.0) != 0
+            pipeline_o_so.wait()
+            if change:
+                _rescale_o(
+                    o0_tmem_so, SIMD[DType.float32, 2](c_scalar, c_scalar)
+                )
+
+            pipeline_o_so.release()
+            pipeline_c0_so.release()
+        return
+
+    # Two-WG (2Q and standard 1Q) O consumer — unchanged.
+    pipeline_o = mbars.consumer_o()
 
     # Per-WG main-loop commit counts (= softmax's main-loop iters after
     # peel, = MMA's post-peel P@V commits per side).
@@ -104,14 +248,6 @@ def fa4_correction[
     var iter_count: UInt32 = c1_iters
     var extra_c0_iters: UInt32 = c0_iters - c1_iters
 
-    comptime batch_size = 16 if config.ov_depth % 16 == 0 else 8
-    comptime assert config.ov_depth % batch_size == 0
-    # output is BM x depth
-    comptime load_iters, load_remainder = divmod(
-        config.ov_depth, 2 * batch_size
-    )
-    comptime assert load_iters > 1
-    comptime assert (load_remainder == batch_size) or (load_remainder == 0)
     var correction_smem_0 = correction_smem_arg + UInt32(thread_idx.x) % UInt32(
         WARPGROUP_SIZE
     )
@@ -137,10 +273,6 @@ def fa4_correction[
         change = _vote_nvidia_helper(c_scalar < 1.0) != 0
         pipeline_o.wait()
         if change:
-            # TODO: experiment with different batch sizes.
-            # The idea here is to both pipeline, and reduce peak register use.
-            var c_pair = SIMD[DType.float32, 2](c_scalar, c_scalar)
-
             var o_tmem: TmemAddress
 
             comptime if i == 0:
@@ -148,113 +280,7 @@ def fa4_correction[
             else:
                 o_tmem = o1_tmem
 
-            var o_b0: InlineArray[Scalar[accum_type], batch_size]
-            var o_b1: InlineArray[Scalar[accum_type], batch_size]
-            o_b0 = tcgen05_ld[
-                datapaths=32,
-                bits=32,
-                repeat=batch_size,
-                dtype=accum_type,
-                pack=False,
-                width=batch_size,
-            ](o_tmem.addr)
-
-            comptime for b in range(load_iters):
-                # BN=64 or BN=80, load_iters=2
-                # b=0
-                # b0_offset0=0
-                # b1_offset =16
-                # b0_offset1=32
-                # b=1
-                # b0_offset0=32
-                # b1_offset =48
-                # b0_offset1=64
-                comptime b0_offset0 = 2 * b * batch_size
-                comptime b1_offset = b0_offset0 + batch_size
-                comptime b0_offset1 = b1_offset + batch_size
-                o_b1 = tcgen05_ld[  # 0b1 start
-                    datapaths=32,
-                    bits=32,
-                    repeat=batch_size,
-                    dtype=accum_type,
-                    pack=False,
-                    width=batch_size,
-                ]((o_tmem + b1_offset).addr)
-                var o_b0_scaled = InlineArray[Scalar[accum_type], batch_size](
-                    uninitialized=True
-                )
-
-                comptime for _i in range(0, batch_size, 2):
-                    var pair = mul_ftz(
-                        SIMD[DType.float32, 2](
-                            o_b0[_i],
-                            o_b0[_i + 1],
-                        ),
-                        c_pair,
-                    )
-                    o_b0_scaled[_i] = pair[0]
-                    o_b0_scaled[_i + 1] = pair[1]
-                tcgen05_st[  # 0b0*c_scalar store
-                    datapaths=32,
-                    bits=32,
-                    repeat=batch_size,
-                    pack=False,
-                ]((o_tmem + b0_offset0).addr, o_b0_scaled)
-
-                comptime if b0_offset1 + batch_size <= config.ov_depth:
-                    o_b0 = tcgen05_ld[  # 0b0 start
-                        datapaths=32,
-                        bits=32,
-                        repeat=batch_size,
-                        dtype=accum_type,
-                        pack=False,
-                        width=batch_size,
-                    ]((o_tmem + b0_offset1).addr)
-                var o_b1_scaled = InlineArray[Scalar[accum_type], batch_size](
-                    uninitialized=True
-                )
-
-                comptime for _i in range(0, batch_size, 2):
-                    var pair = mul_ftz(
-                        SIMD[DType.float32, 2](
-                            o_b1[_i],
-                            o_b1[_i + 1],
-                        ),
-                        c_pair,
-                    )
-                    o_b1_scaled[_i] = pair[0]
-                    o_b1_scaled[_i + 1] = pair[1]
-                tcgen05_st[  # 0b0*c_scalar store
-                    datapaths=32,
-                    bits=32,
-                    repeat=batch_size,
-                    pack=False,
-                ]((o_tmem + b1_offset).addr, o_b1_scaled)
-
-            comptime if load_remainder > 0:  # load_remainder == batch_size
-                comptime offset = 2 * batch_size * load_iters
-                var o_b0_scaled_rem = InlineArray[
-                    Scalar[accum_type], load_remainder
-                ](uninitialized=True)
-
-                comptime for _i in range(0, load_remainder, 2):
-                    var pair = mul_ftz(
-                        SIMD[DType.float32, 2](
-                            o_b0[_i],
-                            o_b0[_i + 1],
-                        ),
-                        c_pair,
-                    )
-                    o_b0_scaled_rem[_i] = pair[0]
-                    o_b0_scaled_rem[_i + 1] = pair[1]
-                tcgen05_st[  # 0b0*c_scalar store
-                    datapaths=32,
-                    bits=32,
-                    repeat=load_remainder,
-                    pack=False,
-                ]((o_tmem + offset).addr, o_b0_scaled_rem)
-            tcgen05_store_wait()
-            tcgen05_fence_before()
+            _rescale_o(o_tmem, SIMD[DType.float32, 2](c_scalar, c_scalar))
 
         comptime if config.pair_cta:
             umma_arrive_leader_cta(pipeline_o.consumer_mbar())
