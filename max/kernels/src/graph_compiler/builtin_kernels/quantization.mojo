@@ -105,7 +105,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         scales: OutputTensor[dtype=scale_dtype, rank=rank, ...],
         input: FusedInputTensor[dtype=input_dtype, rank=rank, ...],
         gamma: InputTensor[dtype=input_dtype, rank=1, ...],
-        epsilon: Scalar[dtype=input_dtype],
+        epsilon: Float32,
         weight_offset: Scalar[dtype=input_dtype],
         scale_ub: Float32,
         ctx: DeviceContext,
@@ -150,7 +150,7 @@ def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape[
 ](
     input: InputTensor[dtype=input_dtype, rank=rank, ...],
     gamma: InputTensor[dtype=input_dtype, rank=1, ...],
-    epsilon: Scalar[dtype=input_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype=input_dtype],
     scale_ub: Float32,
 ) -> IndexList[rank]:

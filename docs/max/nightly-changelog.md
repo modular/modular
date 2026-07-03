@@ -19,7 +19,8 @@ This version is still a work in progress.
   computes its top-k selection on the first MTP step and reuses it on the
   rest. Enabled automatically for GLM checkpoints that ship a NextN layer when
   speculative decoding is requested with no separate draft model. Validated on
-  `zai-org/GLM-5.2-FP8` across 8 B200s (`--speculative-method mtp`).
+  `zai-org/GLM-5.2-FP8` and `nvidia/GLM-5.2-NVFP4` across 8 B200s
+  (`--speculative-method mtp`).
 - Added Laguna (`LagunaForCausalLM`), poolside's decoder-only sparse-MoE
   language model. It uses sigmoid expert routing with a per-expert
   score-correction bias, a per-element softplus attention-output gate, and
@@ -45,6 +46,16 @@ This version is still a work in progress.
   read-modify-write that writes only the active slots (+52% output tok/s at
   concurrency 32).
 - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
+- Added tool-calling, reasoning, and structured-output (`response_format`)
+  support to GLM-5.1 / GLM-5.2, enabled with
+  `--tool-parser glm45 --reasoning-parser glm45 --enable-structured-output`.
+  Reasoning uses `<think>`/`</think>`; tool calls use the model's native
+  `<tool_call>…<arg_key>…<arg_value>…</tool_call>` format. With constrained
+  decoding, tool-call arguments are constrained to each tool's JSON schema
+  (declared keys, `required` properties, and per-property types — including
+  nested objects/arrays, enums, numeric bounds, and string patterns), and the
+  call sequence terminates on the model's turn-ender so it can't loop. Validated
+  on `zai-org/GLM-5.2-FP8`.
 - Added support for the Ideogram 4 (`Ideogram4Pipeline`) text-to-image
   flow-matching diffusion transformer. The pipeline pairs a Qwen3-VL text
   encoder (run text-only, emitting concatenated intermediate hidden states)
@@ -59,6 +70,14 @@ This version is still a work in progress.
   the thinking back into the `content` field wrapped in `<think>...</think>`
   tags, matching the official MiniMax M3 endpoint. The field is a no-op for
   every other model.
+- Gemma 4 with multi-token prediction (MTP) speculative decoding
+  (`UnifiedMTPGemma4ForCausalLM`) now supports image and video input.
+  Previously this path was served text-only: image tokens were ingested by
+  the tokenizer but the vision encoder output never reached the language
+  model, so image prompts were answered as if the model were blind. The
+  vision encoder now runs during prefill and its projected soft-token
+  embeddings are merged into the target model, matching the non-MTP Gemma 4
+  path.
 
 ## MAX framework
 
@@ -313,6 +332,12 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- GPU token sampling with `top_k >= 10` is now 2-4x faster. The softmax,
+  temperature scaling, and min-p masking steps are fused into the top-k/top-p
+  rejection-sampling kernel, eliminating an intermediate probability buffer
+  and two kernel launches per sampling call. The dispatch threshold between
+  the two-stage top-k kernel and the rejection-sampling kernel was lowered
+  from `top_k = 32` to `top_k = 10` to match the new performance crossover.
 - The `TileTensor` layout type no longer takes an `element_size` parameter. A
   tensor's logical element width is now carried by its `Storage` parameter via
   `PointerStorage[element_width]` (default `PointerStorage[1]`), and
@@ -346,11 +371,34 @@ This version is still a work in progress.
   invalid operand. The kernels now read the tensor-memory base once after it
   is published and carry it in a register, so there is no in-loop re-read to
   race.
+- Enabled the low-latency (Lamport) all-reduce on B200 for small messages
+  (up to 1 MiB at 2, 4, and 8 GPUs), where it beats the one-stage path by
+  roughly 1.1-1.68x. The barrier-free protocol marks unwritten slots with a
+  negative-zero sentinel, so its communication region is now initialized when
+  pipeline signal buffers are allocated; without that the region read as
+  already-written and produced non-deterministic results.
 
 ## Breaking changes
 
+- Removed `InferenceSession.use_old_top_k_kernel()` and the
+  `USE_OLD_TOP_K_KERNEL` environment variable. The legacy top-k sampling
+  kernel this fallback selected has been deleted; the current two-stage
+  top-k kernel is now used unconditionally.
+
 ## Fixes
 
+- Fixed a precision loss in the normalization ops where the `epsilon` value was
+  carried in the input's dtype (for example `bfloat16`) before use. A small
+  epsilon such as `1e-6` is not representable in `bfloat16`, so it was silently
+  rounded. The `epsilon` for `rms_norm`, `layer_norm`, `group_norm`, and the
+  fused residual, FP8-quantized, and distributed all-reduce variants is now
+  carried as `float32` end to end — from the graph op through the graph
+  compiler to the kernel. The Python `epsilon: float` argument is unchanged.
+- Fixed MAX Serve crashing the model worker on the first host KV-cache
+  offload/reload when run with `--kv-connector dkv`. The dKV connector had
+  drifted out of sync with its client and no longer passed the required
+  attention group on the load/offload path; it now supplies it, so the
+  same-host prefix-cache path completes instead of raising.
 - Fixed inflated `maxserve.cache.h2d_blocks_copied` and
   `maxserve.cache.d2h_blocks_copied` telemetry on tiered and local KV cache
   deployments. The scheduler now resets connector transfer counters after each
@@ -382,5 +430,12 @@ This version is still a work in progress.
   no-synchronization behavior, so a later `to_numpy()` on the slice triggered
   an unexpected device synchronization. Slices and views now preserve the
   `DevicePinnedBuffer` type.
+
+- Fixed DeepSeek-V3.1-NVFP4 multi-token prediction (MTP) failing to load with
+  `dispatch_quant_config must be specified when dispatch_dtype is not
+  bfloat16` when expert parallelism was enabled. When a quantized model has no
+  resolvable quantization config for its draft (BF16 NextN) weights, the draft
+  config is now built with a bfloat16 dispatch dtype instead of constructing an
+  invalid `EPConfig`.
 
 ## Mojo language

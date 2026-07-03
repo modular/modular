@@ -19,11 +19,12 @@
 # Two dispatch routes of `fused_token_sampling_gpu` are fuzzed (the `gumbel`
 # spec field selects which):
 #
-#   gumbel == 0  -> top-k path. max_k = batch-max per-row k (< 32) so the call
-#       routes to `topk_gpu[sampling=True]` -> `_topk_stage2`. The S1 bug here
-#       is a per-row top_k == 0 (k_batch == 0) leaving the int64 output row
-#       UNWRITTEN (topk.mojo:1437-1439, 1565, 1573; no sentinel fill in the
-#       sampling branch at 1474-1486).
+#   gumbel == 0  -> top-k path. max_k = batch-max per-row k. Batch-max k < 10
+#       routes to `topk_gpu[sampling=True]` -> `_topk_stage2`; k in [10, 32)
+#       routes to the FI rejection-sampling kernel, so both dispatch routes
+#       get fuzzed. The S1 bug on the two-stage route is a per-row
+#       top_k == 0 (k_batch == 0) leaving the int64 output row UNWRITTEN
+#       (no sentinel fill in the sampling branch).
 #
 #   gumbel == 1  -> SERVED greedy path. max_k = -1 and min_top_p = 1.0 so the
 #       call routes to `gumbel_sampling_gpu` (topk.mojo:2262), which applies
@@ -84,7 +85,7 @@ struct CaseSpec(Copyable, Movable, Writable):
     var batch_size: Int
     var vocab_size: Int
     var k_lo: Int  # per-row top_k lower bound (0 allowed: the S1 trigger)
-    var k_hi: Int  # per-row top_k upper bound (kept < 32 to hit the topk path)
+    var k_hi: Int  # per-row top_k upper bound (< 10: two-stage; else FI)
     var temp_milli: Int  # temperature * 1000 (0 == greedy / argmax)
     var dist: Int  # value-distribution id (see _fuzz: VD_*)
     var seed: Int  # drives the deterministic per-row top_k pattern

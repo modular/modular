@@ -45,7 +45,7 @@ from std.memory import (
     destroy_n,
     forget_deinit,
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
     uninit_move_n,
 )
@@ -254,9 +254,9 @@ struct InlineArray[ElementType: Movable, size: Int](
     ```
     """
 
-    comptime __del__is_trivial: Bool = is_trivially_destructible[
-        downcast[Self.ElementType, ImplicitlyDeletable]
-    ]() if conforms_to(Self.ElementType, ImplicitlyDeletable) else False
+    comptime __del__is_trivial: Bool = is_trivially_deletable[
+        Self.ElementType
+    ]()
     comptime __copy_ctor_is_trivial: Bool = _is_trivially_copyable[
         Self.ElementType
     ]()

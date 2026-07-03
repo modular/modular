@@ -20,6 +20,7 @@ from typing import Any, ClassVar
 
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
+from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferValue, Graph, TensorValue, Value
 from max.graph.weights import WeightData
@@ -45,6 +46,21 @@ from .batch_processor import UnifiedMTPGlm5_2BatchProcessor
 from .unified_mtp_glm5_2 import UnifiedMTPGlm5_2
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _subtree_quantized(
+    draft_state_dict: dict[str, WeightData], subtree: str
+) -> bool:
+    """Whether the draft's ``subtree`` ships a quantized ``weight_scale``.
+
+    A projection is quantized iff the checkpoint provides a ``weight_scale``
+    companion for it. Used to detect the MTP layer's per-subtree quantization
+    (e.g. NVFP4 leaves the whole MTP layer in bf16, with no scales).
+    """
+    return any(
+        subtree in key and key.endswith(".weight_scale")
+        for key in draft_state_dict
+    )
 
 
 @dataclass
@@ -105,23 +121,6 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             ):
                 raise ValueError("Only the EP strategy is supported.")
 
-            self.ep_comm_initializer: EPCommInitializer | None = None
-            self.draft_ep_comm_initializer: EPCommInitializer | None = None
-            if config.ep_config is not None and not is_virtual_device_mode():
-                self.ep_comm_initializer = EPCommInitializer(config.ep_config)
-                self.ep_comm_initializer.ep_init(session)
-                config.ep_config.node_id = (
-                    self.ep_comm_initializer.config.node_id
-                )
-                if config.ep_config.node_id == -1:
-                    raise ValueError(
-                        "EP node ID is not set. Please check if the EP "
-                        "initialization is successful."
-                    )
-                # Target and draft both run FP8 and execute sequentially in the
-                # MTP graph, so they share the same EP communication buffers.
-                self.draft_ep_comm_initializer = self.ep_comm_initializer
-
             # Draft config from draft-only keys (strip "draft." prefix).
             draft_state_dict = {
                 k[len("draft.") :]: v
@@ -138,6 +137,46 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
                 draft_state_dict["shared_head_norm.weight"] = state_dict[
                     "target.norm.weight"
                 ]
+
+            # NVFP4 leaves the MTP layer's routed experts in bf16 (no
+            # ``.weight_scale``), so the draft dispatches through EP in bf16 —
+            # wider than an NVFP4 target dispatch, so the shared EP buffers must
+            # be sized for the bf16 case.
+            draft_moe_dispatches_bf16 = (
+                config.ep_config is not None
+                and not _subtree_quantized(draft_state_dict, ".mlp.experts.")
+            )
+
+            self.ep_comm_initializer: EPCommInitializer | None = None
+            self.draft_ep_comm_initializer: EPCommInitializer | None = None
+            if config.ep_config is not None and not is_virtual_device_mode():
+                # Target and draft share one set of EP buffers; size them for
+                # the draft's bf16 dispatch when it is wider (see above). A bf16
+                # draft also fuses its single shared expert, adding one active
+                # expert.
+                ep_alloc_config = config.ep_config
+                if draft_moe_dispatches_bf16:
+                    ep_alloc_config = replace(
+                        config.ep_config,
+                        dispatch_dtype=DType.bfloat16,
+                        dispatch_quant_config=None,
+                        fused_shared_expert=config.n_shared_experts == 1,
+                    )
+                    logger.info(
+                        "Upsizing shared EP buffers for bf16 draft dispatch."
+                    )
+                self.ep_comm_initializer = EPCommInitializer(ep_alloc_config)
+                self.ep_comm_initializer.ep_init(session)
+                # ep_init() sets node_id on the initializer's config; propagate
+                # it back to the target ep_config (a different object when
+                # upsized above).
+                config.ep_config.node_id = ep_alloc_config.node_id
+                if config.ep_config.node_id == -1:
+                    raise ValueError(
+                        "EP node ID is not set. Please check if the EP "
+                        "initialization is successful."
+                    )
+                self.draft_ep_comm_initializer = self.ep_comm_initializer
 
             # Build the nested {target: {mla, indexer}, draft: {mla, indexer}}
             # KV tree. The draft caches store a single layer.
@@ -353,22 +392,37 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
                 for f in fields(base_config)
             }
         )
-        # The single MTP layer is a ``full`` indexer layer that computes its own
-        # top-k at step 0; an empty schedule keeps it full (skip_topk=False) and
-        # avoids indexing the 78-element target schedule at the MTP layer index.
+        # Empty schedule keeps the single MTP layer's indexer full (it computes
+        # its own top-k at step 0) and avoids indexing the target's 78-element
+        # schedule at the MTP layer index.
         draft_config.indexer_types = []
         # The draft owns a single-layer {mla, indexer} cache.
         draft_config.kv_params = draft_kv
 
-        # ``mlp_quantized_layers`` / ``attn_quantized_layers`` are derived from
-        # ``range(num_hidden_layers)`` and therefore exclude the MTP layer's
-        # index (== num_hidden_layers). The GLM-5.2 MTP layer ships FP8, so mark
-        # its index quantized to match the checkpoint weights.
         if draft_config.quant_config is not None:
             nextn_layer_idx = max(
                 draft_config.num_hidden_layers,
                 draft_config.first_k_dense_replace,
             )
-            draft_config.quant_config.mlp_quantized_layers.add(nextn_layer_idx)
-            draft_config.quant_config.attn_quantized_layers.add(nextn_layer_idx)
+
+            # Correct draft model quantization config for NVFP4 MTP layer.
+            if _subtree_quantized(draft_state_dict, ".mlp.experts."):
+                draft_config.quant_config.mlp_quantized_layers.add(
+                    nextn_layer_idx
+                )
+            if _subtree_quantized(draft_state_dict, ".self_attn."):
+                draft_config.quant_config.attn_quantized_layers.add(
+                    nextn_layer_idx
+                )
+
+        # Correct draft model EP config for NVFP4 MTP layer.
+        if draft_config.ep_config is not None and not _subtree_quantized(
+            draft_state_dict, ".mlp.experts."
+        ):
+            draft_config.ep_config = replace(
+                draft_config.ep_config,
+                dispatch_dtype=DType.bfloat16,
+                dispatch_quant_config=None,
+                fused_shared_expert=draft_config.n_shared_experts == 1,
+            )
         return draft_config

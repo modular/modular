@@ -13,7 +13,7 @@ modular_py_test(
         ["*.py"],
     ),
     exec_properties = {
-        "test.resources:gpu-memory": "5",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = ["gpu"],
@@ -25,5 +25,6 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/support",
         requirement("numpy"),
+        requirement("torch"),
     ],
 )

@@ -100,6 +100,7 @@ from layout import (
     row_major,
 )
 from layout.tile_tensor import NullableTileTensor
+from std.memory.alloc import Layout as AllocLayout
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils import IndexList
 from std.utils.variant import Variant
@@ -346,7 +347,7 @@ def _get_global_handle[
         return ptr[]
 
     # Otherwise, we have not initialized the handle yet.
-    var handle_ptr = alloc[Handle[backend]](1)
+    var handle_ptr = alloc(AllocLayout[Handle[backend]].single()).unsafe_leak()
     handle_ptr.init_pointee_move(Handle[backend]())
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(HANDLE_NAME),

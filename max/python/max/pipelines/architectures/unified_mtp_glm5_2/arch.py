@@ -14,11 +14,16 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from ..deepseekV3_2.memory_planner import DeepseekV3_2MemoryPlanner
 from ..glm5_1.model_config import Glm5_1Config
+from ..glm5_1.reasoning import (
+    GlmReasoningParser,  # noqa: F401  registers "glm45"
+)
+from ..glm5_1.tokenizer import GlmTokenizer
+from ..glm5_1.tool_parser import GlmToolParser  # noqa: F401  registers "glm45"
 from .batch_processor import UnifiedMTPGlm5_2BatchProcessor
 from .model import UnifiedMTPGlm5_2Model
 from .weight_adapters import convert_with_mtp_state_dict
@@ -31,11 +36,13 @@ unified_mtp_glm5_2_arch = SupportedArchitecture(
     ],
     default_encoding="float8_e4m3fn",
     supported_encodings={
+        "float4_e2m1fnx2",
         "float8_e4m3fn",
+        "bfloat16",
     },
     multi_gpu_supported=True,
     pipeline_model=UnifiedMTPGlm5_2Model,
-    tokenizer=TextTokenizer,
+    tokenizer=GlmTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
@@ -46,6 +53,8 @@ unified_mtp_glm5_2_arch = SupportedArchitecture(
     config=Glm5_1Config,
     memory_planner=DeepseekV3_2MemoryPlanner,
     batching=UnifiedMTPGlm5_2BatchProcessor,
+    tool_parser="glm45",
+    reasoning_parser="glm45",
     # DeepSeek-V3.2 sparse attention does not support device graph capture
     # (matches the GLM-5.1 base architecture).
     supports_device_graph_capture=False,

@@ -606,6 +606,8 @@ struct MatmulConfig[
         use_tma_epilogue_load: Bool = False,
         num_tma_epilogue_pipeline_stages: Optional[Int] = None,
         epilogue_is_1d: Bool = False,
+        output_tile_shape: Optional[IndexList[2]] = None,
+        c_swizzle: Optional[TensorMapSwizzle] = None,
     ):
         comptime assert Self.a_type == Self.b_type
         comptime assert (
@@ -719,6 +721,18 @@ struct MatmulConfig[
         self.num_pipeline_stages = align_down(
             self.num_pipeline_stages, self.k_group_size
         )
+
+        # Optional caller overrides for decode-mode matmul+RS. The fused
+        # kernel widens the C SMEM row (output_tile_shape[1]) so per-row
+        # TMA slices meet the 128B source-alignment requirement, and forces
+        # a non-swizzled C layout so per-row slicing composes. Neither is
+        # derivable from mma_shape, so they are explicit opt-in knobs;
+        # applied last so the default derivations (block_tile_shape, A/B
+        # swizzles) are unaffected.
+        if output_tile_shape:
+            self.output_tile_shape = output_tile_shape.value()
+        if c_swizzle:
+            self.c_swizzle = c_swizzle.value()
 
     def swap_AB_type(
         self,
@@ -1073,6 +1087,7 @@ struct BlockScaledMatmulConfig[
     var num_sf_k_tiles: Int
     var is_small_bn: Bool
     var gemm_kind: GEMMKind
+    var prefetch_tiles_n: Int
 
     def __init__(
         out self,
@@ -1093,6 +1108,7 @@ struct BlockScaledMatmulConfig[
         is_small_bn: Bool = False,
         register_based_epilogue: Bool = True,
         gemm_kind: GEMMKind = GEMMKind.GEMM,
+        prefetch_tiles_n: Int = 0,
     ):
         comptime assert Self.a_type == Self.b_type
 
@@ -1114,6 +1130,7 @@ struct BlockScaledMatmulConfig[
         )
 
         self.gemm_kind = gemm_kind
+        self.prefetch_tiles_n = prefetch_tiles_n
 
         # Scaling factors configuration (SFA, SFB)
         self.scaling_kind = scaling_kind
@@ -1232,6 +1249,7 @@ struct BlockScaledMatmulConfig[
             is_small_bn=self.is_small_bn,
             register_based_epilogue=self.register_based_epilogue,
             gemm_kind=self.gemm_kind,
+            prefetch_tiles_n=self.prefetch_tiles_n,
         )
 
     def write_to[W: Writer](self, mut writer: W):

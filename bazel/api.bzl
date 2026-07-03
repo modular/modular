@@ -31,7 +31,6 @@ modular_py_venv = _modular_py_venv
 modular_run_binary_test = _modular_run_binary_test
 modular_versioned_expand_template = _modular_versioned_expand_template
 mojo_binary = _mojo_binary
-mojo_shared_library = _mojo_shared_library
 mojo_test = _mojo_test
 mojo_filecheck_test = _mojo_filecheck_test
 modular_sphinx_docs = _modular_sphinx_docs
@@ -57,6 +56,9 @@ def _process_cc_deps(data, deps):
             needs_wheel = True
         elif dep == "//Kernels/lib/msa":
             new_deps.append("@modular_wheel//:msa_lib")
+            needs_wheel = True
+        elif dep == "//Kernels/lib/matmul_rs":
+            new_deps.append("@modular_wheel//:matmul_rs_lib")
             needs_wheel = True
         else:
             new_deps.append(dep)
@@ -98,7 +100,9 @@ def modular_generate_stubfiles(name, pyi_srcs, deps = [], tags = [], **_kwargs):
         tags = tags + ["no-pydeps"],  # Pydeps works internally but not externally
     )
 
-def mojo_library(data = [], deps = [], **kwargs):
+# Ignore use_production_compiler_for_asan for public builds
+# buildifier: disable=unused-variable
+def mojo_library(data = [], deps = [], use_production_compiler_for_asan = None, **kwargs):
     _mojo_library(
         **(kwargs | _process_cc_deps(
             data = data,
@@ -106,12 +110,19 @@ def mojo_library(data = [], deps = [], **kwargs):
         ))
     )
 
+# Ignore use_production_compiler_for_asan for public builds
+# buildifier: disable=unused-variable
+def mojo_shared_library(use_production_compiler_for_asan = None, **kwargs):
+    _mojo_shared_library(**kwargs)
+
 # buildifier: disable=function-docstring
 def modular_py_binary(mojo_deps = [], **kwargs):
     new_mojo_deps = []
     for dep in mojo_deps:
         if dep == "//Kernels/lib/msa":
             new_mojo_deps.append("@modular_wheel//:msa_lib")
+        elif dep == "//Kernels/lib/matmul_rs":
+            new_mojo_deps.append("@modular_wheel//:matmul_rs_lib")
         else:
             new_mojo_deps.append(dep)
     _modular_py_binary(mojo_deps = new_mojo_deps, **kwargs)
@@ -122,6 +133,8 @@ def mef(**kwargs):
     for dep in MOJO_DEPS:
         if dep == "//Kernels/lib/msa":
             new_deps.append("@modular_wheel//:msa_lib")
+        elif dep == "//Kernels/lib/matmul_rs":
+            new_deps.append("@modular_wheel//:matmul_rs_lib")
         else:
             new_deps.append(dep)
     _mef(mojo_deps = new_deps, **kwargs)

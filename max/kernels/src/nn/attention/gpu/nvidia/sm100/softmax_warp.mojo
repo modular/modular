@@ -600,6 +600,36 @@ def fa4_softmax[
         not MaskType.apply_log2e_after_mask
     ) and SinkType.is_null and QScaleType.is_null
 
+    # Fixed P scale for FP8-QKV only. The un-normalized softmax
+    # probabilities P = exp2(score - row_max) sit in the e4m3 subnormal floor;
+    # lifting them before the fp8 cast that feeds the P@V GEMM reduces PV-GEMM
+    # quantization error. Because the softmax uses exp2, the scale is exactly
+    # an additive +bias in the exp2 argument (added raw, NOT multiplied by
+    # scale_log2e). The final output is normalized by 1/row_sum, and row_sum
+    # is accumulated from the SAME scaled P (plus the sink mass, also biased),
+    # so the scale factor appears in both numerator and denominator and
+    # cancels exactly -- no explicit descale.
+    #
+    # `p_fp8_bias` and the online-softmax lazy-rescale gate `rescale_threshold`
+    # are the same knob (both live in the exp2/log2 domain), linked as
+    # `p_fp8_bias = 8 + rescale_threshold`:
+    #   fp8 : rescale_threshold = -2,  p_fp8_bias = 6   (a 64x P lift out of
+    #         the e4m3 subnormal floor)
+    #   bf16: rescale_threshold = -8,  p_fp8_bias = 0   (no bias)
+    # The fp8 threshold of -2 (bias 6) was chosen as the perf sweet spot: a
+    # prefill sweep of the threshold magnitude gained ~6% and saturated at
+    # T=2, and it is accuracy-neutral vs the prior x256 default (bit-identical
+    # tail-stress regression test + byte-identical Gemma-4-31B fp8-KV 16k
+    # e2e). The bias is applied ONLY inside `comptime if p_fp8_bias != 0:`
+    # branches below, so the bf16 codegen is byte-identical (a `+ 0.0` would
+    # otherwise survive as a real fadd). Overflow-safe: the lazy-rescale
+    # gate (threshold -2) lets a non-rescaled tile's max lag the true max
+    # by up to 2 (log2), so max P = exp2(2 + 6) = 256 < 448 (e4m3 max).
+    comptime rescale_threshold: Scalar[accum_dtype] = Scalar[accum_dtype](
+        -8
+    ) if size_of[qkv_type]() >= 2 else Scalar[accum_dtype](-2)
+    comptime p_fp8_bias: Scalar[accum_dtype] = 8 + rescale_threshold
+
     @parameter
     @always_inline
     def mask_row[
@@ -830,10 +860,19 @@ def fa4_softmax[
 
         comptime if use_fma:
             vscale = f32x2(scale_log2e)
-            vneg_max_scaled = f32x2(-row_max * scale_log2e)
+            # expression byte-identical (no `+ 0.0` instruction emitted).
+            comptime if p_fp8_bias != 0:
+                vneg_max_scaled = fma_ftz(
+                    f32x2(-row_max), f32x2(scale_log2e), f32x2(p_fp8_bias)
+                )
+            else:
+                vneg_max_scaled = f32x2(-row_max * scale_log2e)
             vrow_max = f32x2(0)  # unused
         else:
-            vrow_max = f32x2(row_max)
+            comptime if p_fp8_bias != 0:
+                vrow_max = f32x2(row_max - p_fp8_bias)
+            else:
+                vrow_max = f32x2(row_max)
             vscale = f32x2(0)  # unused
             vneg_max_scaled = f32x2(0)  # unused
 
@@ -1038,7 +1077,9 @@ def fa4_softmax[
     # 1Q: WG0 takes even-indexed K/V tiles (start = kv_row); WG1 takes
     # odd-indexed (+BN). Both advance by 2*BN per main-loop iter (set
     # below). 2Q: both WGs share the same kv_row stride of BN.
-    comptime if config.num_qo == 1:
+    # single-O (1Q wide-V): WG0 owns EVERY tile (WG1 no-op), so no
+    # per-WG start offset and a stride of BN (set below).
+    comptime if config.num_qo == 1 and not config.single_o:
         kv_row += warp_group_idx * UInt32(config.BN)
     comptime mask_sets = MaskType.nonfull_sets[BM_mask, BN]()
     comptime mask_strategies = MaskType.mask_strategies[BM_mask, BN]()
@@ -1064,23 +1105,26 @@ def fa4_softmax[
 
         comptime if config.num_qo == 1:
             total_iters_combined = mask_ends[num_sets - 1]
-            # Per-WG split with cumulative-parity carry. WG0 owns
-            # combined indices with parity 0 (even cumulative position);
-            # WG1 owns parity 1. Within set i starting at cumulative
-            # combined index `cum`:
-            #   parity=0: WG0 takes ceil(iters_combined_i/2), WG1 floor.
-            #   parity=1: WG0 takes floor, WG1 ceil.
-            var cumulative: UInt32 = 0
-            comptime for i in range(num_sets):
-                iters_combined_i = mask_iters[i]
-                parity = cumulative & UInt32(1)
-                if warp_group_idx == UInt32(0):
-                    mask_iters[i] = (
-                        iters_combined_i + UInt32(1) - parity
-                    ) // UInt32(2)
-                else:
-                    mask_iters[i] = (iters_combined_i + parity) // UInt32(2)
-                cumulative += iters_combined_i
+            # single-O: WG0 owns EVERY tile (WG1 no-op), so keep the full
+            # combined `mask_iters` (no per-WG split).
+            comptime if not config.single_o:
+                # Per-WG split with cumulative-parity carry. WG0 owns
+                # combined indices with parity 0 (even cumulative position);
+                # WG1 owns parity 1. Within set i starting at cumulative
+                # combined index `cum`:
+                #   parity=0: WG0 takes ceil(iters_combined_i/2), WG1 floor.
+                #   parity=1: WG0 takes floor, WG1 ceil.
+                var cumulative: UInt32 = 0
+                comptime for i in range(num_sets):
+                    iters_combined_i = mask_iters[i]
+                    parity = cumulative & UInt32(1)
+                    if warp_group_idx == UInt32(0):
+                        mask_iters[i] = (
+                            iters_combined_i + UInt32(1) - parity
+                        ) // UInt32(2)
+                    else:
+                        mask_iters[i] = (iters_combined_i + parity) // UInt32(2)
+                    cumulative += iters_combined_i
     else:
         comptime if config.num_qo == 1:
             # Unmasked-only path has no precomputed mask_ends. Derive
@@ -1101,8 +1145,18 @@ def fa4_softmax[
     # LSE-exchange, output write) and drop straight to the final
     # cross-WG sync that gates TMEM dealloc. The dealloc (`warp_idx
     # == 0`) is WG0's responsibility and runs there after the sync.
+    #
+    # single-O (wide-V fallback): the two per-WG O partials do NOT fit in
+    # the 512-col TMEM (`2*BN + 2*padded_ov > 512`), so single-O aliases
+    # O1 onto O0 and cannot run the two-WG even/odd LSE-combine (the peer
+    # read would overrun TMEM). Instead WG0 processes ALL K-tiles serially
+    # into the single O0 accumulator and WG1 is a full no-op for every T
+    # (not just T==1) — mirroring the T==1 fast path, generalized. The MMA
+    # and correction warps take matching single-O single-WG paths.
     comptime if config.num_qo == 1:
-        if total_iters_combined == UInt32(1) and warp_group_idx == UInt32(1):
+        if (
+            config.single_o or total_iters_combined == UInt32(1)
+        ) and warp_group_idx == UInt32(1):
             named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
             return
 
@@ -1154,34 +1208,51 @@ def fa4_softmax[
         # only. WG0 must be the carrier because the T==1 fast path returns
         # WG1 early (~L1257) before any LSE exchange, so WG0 always survives
         # to fold the sink into the combined denominator.
+        # The sink mass must enter row_sum in the SAME scale as the P values
+        # stored by store_exp, so it cancels through the final 1/row_sum
+        # normalize. fp8 adds the same +p_fp8_bias as store_exp; the
+        # `comptime if p_fp8_bias != 0` keeps the bf16 sink expression
+        # byte-identical.
+        @parameter
+        @always_inline
+        def sink_mass() -> Float32:
+            comptime if use_fma:
+                comptime if p_fp8_bias != 0:
+                    return exp2(
+                        (sink_weight - row_max) * scale_log2e + p_fp8_bias
+                    )
+                else:
+                    return exp2((sink_weight - row_max) * scale_log2e)
+            else:
+                comptime if p_fp8_bias != 0:
+                    return exp2(sink_weight - row_max + p_fp8_bias)
+                else:
+                    return exp2(sink_weight - row_max)
+
         comptime if config.num_qo == 1:
             if warp_group_idx == UInt32(0):
-                comptime if use_fma:
-                    row_sum[0] += exp2((sink_weight - row_max) * scale_log2e)
-                else:
-                    row_sum[0] += exp2(sink_weight - row_max)
+                row_sum[0] += sink_mass()
         else:
-            comptime if use_fma:
-                row_sum[0] += exp2((sink_weight - row_max) * scale_log2e)
-            else:
-                row_sum[0] += exp2(sink_weight - row_max)
+            row_sum[0] += sink_mass()
 
     # Lazy-rescale gate for online softmax: only re-scale the accumulator
-    # (and adopt the new running max) when `new_row_max - old_max > 8` in
-    # log2 domain — i.e., `old_max - new_row_max < rescale_threshold`.
-    # Below that, we keep the stale max and skip the rescale; the new
-    # exp2(score - old_max) terms stay within 2^8 = 256× of the existing
-    # scale, which fp32 accumulation can absorb without meaningful loss.
-    # For FP8 inputs (`size_of < 2`), set threshold to 0 to force a
-    # rescale on every actual max update.
-    comptime rescale_threshold: Float32 = Float32(-8) if size_of[
-        qkv_type
-    ]() >= 2 else Float32(0)
+    # (and adopt the new running max) when `old_max - new_row_max <
+    # rescale_threshold` in the log2 domain. Below that, we keep the stale max
+    # and skip the rescale; the new exp2(score - old_max) terms stay within
+    # 2^|rescale_threshold| of the existing scale, which fp32 accumulation can
+    # absorb without meaningful loss. bf16 uses -8 (256x); fp8 uses -2 (a
+    # tighter gate that rescales sooner, chosen with `p_fp8_bias` above -- the
+    # knob it is linked to via `p_fp8_bias = 8 + rescale_threshold`).
 
     # 1Q advances kv_row by 2*BN (each WG strides over its half of the
     # K/V stream); 2Q advances by BN (each WG processes every K tile).
+    # single-O (1Q wide-V): WG0 processes CONSECUTIVE tiles (WG1 no-op),
+    # so it strides by BN like 2Q.
     comptime kv_row_stride: Int = (
-        2 * config.BN if config.num_qo == 1 else config.BN
+        2
+        * config.BN if (
+            config.num_qo == 1 and not config.single_o
+        ) else config.BN
     )
 
     comptime if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
@@ -1337,12 +1408,15 @@ def fa4_softmax[
             num_output_rows > 0,
             "1Q tiles always have output rows (is_valid() holds)",
         )
-        if total_iters_combined == UInt32(1):
-            # T==1 fast path: skip LSE-exchange entirely and reuse the
-            # 2Q row-scale + stmatrix + TMA helper directly. No peer
-            # partial to combine; no per-WG smem/gmem-row offsets.
-            # `BM // config.num_qo` is the helper's expected row count
-            # and numerically equals config.BM (= 128) in 1Q.
+        if config.single_o or total_iters_combined == UInt32(1):
+            # T==1 fast path AND the single-O all-T path: skip the
+            # LSE-exchange entirely and reuse the 2Q row-scale + stmatrix
+            # + TMA helper directly. No peer partial to combine; no per-WG
+            # smem/gmem-row offsets. `BM // config.num_qo` is the helper's
+            # expected row count and numerically equals config.BM (= 128)
+            # in 1Q. For single-O, WG0 has accumulated ALL K-tiles' P@V
+            # into the single O0 and holds the full `row_sum`, so this
+            # writer produces the complete output; WG1 already returned.
             inv_row_sum = recip(row_sum.reduce_add())
             o_tile = TMemTile[
                 accum_dtype, BM // config.num_qo, padded_ov_depth

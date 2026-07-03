@@ -31,7 +31,8 @@
 # POISON sentinel. The fuzz axes are batch, the per-batch cache_lengths (biased
 # toward non-BN-aligned via the boundary generator), and topk. `head_dim`/`group`
 # are compile-time (`-D head_dim=.. -D group=..`, default the M3 d128 / group 8;
-# group >= 8 keeps a single head's poison dot from sign-cancelling). SM100/B200.
+# group >= 8 keeps a single head's poison dot from sign-cancelling).
+# Dual-arch: SM100/B200 (msa_sm100_decode) + AMD MI355 (msa_amd_decode_dispatch).
 #
 # `ref` oracle (--check 1, default): an f64 block-restricted softmax that drops
 # `k_logical > cache_length` (the tail). A kernel that attends the poison tail
@@ -41,6 +42,11 @@
 
 from std.math import exp, isinf, isnan, sqrt
 from std.random import randn, seed
+from std.sys import (
+    CompilationTarget,
+    has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+)
 from std.sys.defines import get_defined_int
 from std.utils import IndexList
 
@@ -59,6 +65,7 @@ from nn.attention.mha_operand import KVCacheMHAOperand
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_utils import MHAConfig, StaticInt
 from msa.msa_1q import msa_sm100_decode
+from msa.amd.decode import msa_amd_decode_dispatch
 
 from _fuzz import boundary_int, collect_args, flag, flag_int
 
@@ -325,31 +332,62 @@ def run_one_case(
 
     # Production decode call (msa.mojo): ragged, no valid_key, no causal/spec,
     # mask_unselected=True.
-    msa_sm100_decode[
-        config=config,
-        group=group,
-        ragged=True,
-        _is_cache_length_accurate=False,
-        mask_unselected=True,
-    ](
-        o_dev,
-        q_dev,
-        k_op,
-        v_op,
-        TileTensor(
-            idx_dev.unsafe_ptr(), row_major(Coord(len(idx_dev)))
-        ).as_immut(),
-        topk,  # indices_stride (blocks)
-        batch_size,  # num_rows_q (1 token/seq)
-        NullMask(),
-        valid_length,  # ragged Q offsets
-        StaticInt[1](),  # max_prompt_len (decode)
-        topk_tokens,  # max_cache_valid_length
-        scale,
-        None,  # kv_input_row_offsets
-        batch_size,
-        ctx,
-    )
+    comptime if has_amd_gpu_accelerator():
+        msa_amd_decode_dispatch[
+            config=config,
+            group=group,
+            ragged=True,
+            _is_cache_length_accurate=False,
+            mask_unselected=True,
+        ](
+            o_dev,
+            q_dev,
+            k_op,
+            v_op,
+            TileTensor(
+                idx_dev.unsafe_ptr(), row_major(Coord(len(idx_dev)))
+            ).as_immut(),
+            topk,  # indices_stride (blocks)
+            batch_size,  # num_rows_q (1 token/seq)
+            NullMask(),
+            valid_length,  # ragged Q offsets
+            StaticInt[1](),  # max_prompt_len (decode)
+            topk_tokens,  # max_cache_valid_length
+            scale,
+            None,  # kv_input_row_offsets
+            batch_size,
+            ctx,
+        )
+    elif has_nvidia_gpu_accelerator():
+        msa_sm100_decode[
+            config=config,
+            group=group,
+            ragged=True,
+            _is_cache_length_accurate=False,
+            mask_unselected=True,
+        ](
+            o_dev,
+            q_dev,
+            k_op,
+            v_op,
+            TileTensor(
+                idx_dev.unsafe_ptr(), row_major(Coord(len(idx_dev)))
+            ).as_immut(),
+            topk,  # indices_stride (blocks)
+            batch_size,  # num_rows_q (1 token/seq)
+            NullMask(),
+            valid_length,  # ragged Q offsets
+            StaticInt[1](),  # max_prompt_len (decode)
+            topk_tokens,  # max_cache_valid_length
+            scale,
+            None,  # kv_input_row_offsets
+            batch_size,
+            ctx,
+        )
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
+        ]()
 
     if not check:
         ctx.synchronize()

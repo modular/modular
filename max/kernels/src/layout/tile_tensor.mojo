@@ -287,18 +287,16 @@ struct TileTensor[
         Returns:
             The host type's name.
         """
-
-        return String(
-            "TileTensor[mut = ",
-            Self.mut,
-            ", dtype = ",
-            Self.dtype,
-            ", address_space = ",
-            Self.address_space,
-            ", linear_idx_type = ",
-            Self.linear_idx_type,
-            "]",
+        var writer = String()
+        t"TileTensor[mut={Self.mut}, dtype={Self.dtype}, Storage=".write_to(
+            writer
         )
+        Self.Storage.write_type_name_to(writer)
+        (
+            t", address_space={Self.address_space},"
+            t" linear_idx_type={Self.linear_idx_type}]"
+        ).write_to(writer)
+        return writer^
 
     comptime GenericType = TileTensor[
         Self.dtype,
@@ -1255,7 +1253,7 @@ struct TileTensor[
             t"tile requires exactly one tile size per tensor dimension; got"
             t" {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
         )
-        return _tile(self, coord[*tile_sizes](), coordinates)
+        return _tile(self, coord[*tile_sizes], coordinates)
 
     @always_inline("nodebug")
     def tile[
@@ -1295,7 +1293,7 @@ struct TileTensor[
             t" {Self.rank}"
         )
         return _tile[stride_layout=stride_layout](
-            self, coord[*tile_sizes](), coordinates
+            self, coord[*tile_sizes], coordinates
         )
 
     @always_inline("nodebug")
@@ -1332,7 +1330,7 @@ struct TileTensor[
         var tensor = TileTensor(storage, row_major[4, 4]()).fill(1.0)
 
         # Extract the tile at position (1, 0) with tile size 2x2
-        var t = tensor.tile(coord[2, 2](), coord[1, 0]())
+        var t = tensor.tile(coord[2, 2], coord[1, 0])
         ```
         """
         comptime assert tile_shape_types.size == Self.rank, String(
@@ -1370,7 +1368,7 @@ struct TileTensor[
             t"tile_with_offset requires one tile size per tensor dimension;"
             t" got {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
         )
-        return _tile_with_offset(self, coord[*tile_sizes](), coordinates)
+        return _tile_with_offset(self, coord[*tile_sizes], coordinates)
 
     @always_inline("nodebug")
     def tile_with_offset[
@@ -1410,7 +1408,7 @@ struct TileTensor[
             t" {Self.rank}"
         )
         return _tile_with_offset[stride_layout=stride_layout](
-            self, coord[*tile_sizes](), coordinates
+            self, coord[*tile_sizes], coordinates
         )
 
     comptime ViewType[new_layout: TensorLayout] = TileTensor[
@@ -1520,7 +1518,7 @@ struct TileTensor[
                 )
             )
 
-        return _tile(self, coord[*tile_sizes](), coordinates)
+        return _tile(self, coord[*tile_sizes], coordinates)
 
     @always_inline("nodebug")
     def distribute[
@@ -2221,7 +2219,7 @@ struct TileTensor[
             Self.Storage == PointerStorage[element_width=1]
         ), "TileTensor.vectorize requires PointerStorage"
 
-        return _vectorize(self, coord[*vector_shape]())
+        return _vectorize(self, coord[*vector_shape])
 
     @always_inline("nodebug")
     def vectorize(self) -> Self.VectorizedType[1, simd_width_of[Self.dtype]()]:

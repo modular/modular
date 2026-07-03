@@ -28,7 +28,7 @@
 # Renamed to coexist in one file (the page names both `Pair`):
 #   - Generic types -> `Pair`; parts conformance -> `HashablePair`.
 from std.testing import assert_equal, assert_false, assert_true
-
+from std.sys.info import is_64bit
 
 # --- Intro: value parameter alongside a type parameter ---
 # The page bounds `T` as `Comparable & ImplicitlyCopyable & ImplicitlyDeletable`
@@ -408,6 +408,50 @@ def test_value_param_conformance() raises:
     assert_true(conforms_to(type_of(s), Writable))
 
 
+# Gate a function on a trait with a where clause.
+def describe[T: AnyType](value: T) -> String where conforms_to(T, Writable):
+    return String(value)
+
+
+# Combine checks with `and`.
+def describe_copyable[
+    T: AnyType
+](value: T) -> String where conforms_to(T, Writable) and conforms_to(
+    T, Copyable
+):
+    return String(value)
+
+
+# A numeric fact on a parameter: a power-of-two width.
+def block[w: Int]() -> Int where w.is_power_of_two():
+    return w
+
+
+# A DType kind predicate on a parameter.
+def float_only[dt: DType]() -> Bool where dt.is_floating_point():
+    return True
+
+
+def test_where_clauses() raises:
+    assert_equal(describe(2), "2")  # Int is Writable
+    assert_equal(describe("hello"), "hello")  # String is Writable
+    assert_equal(describe_copyable(7), "7")  # Writable and Copyable
+    assert_equal(block[8](), 8)  # 8 is a power of two
+    assert_true(float_only[DType.float32]())  # float32 is floating point
+    # process(non_writable) would be a COMPILE error (fails the where);
+    # a runtime test can't assert a compile error.
+
+
+# Contrast: is_64bit() works in `comptime if`, NOT in a `where` clause.
+def test_comptime_if_machine() raises:
+    var w: Int
+    comptime if is_64bit():
+        w = 64
+    else:
+        w = 32
+    assert_equal(w, 64)
+
+
 def main() raises:
     test_count_above()
     test_all_equal()
@@ -422,6 +466,8 @@ def main() raises:
     test_conditional_conformance()
     test_parts_conformance()
     test_value_param_conformance()
+    test_where_clauses()
+    test_comptime_if_machine()
 
     # Compile-only examples: confirm the signature-only snippets build.
     my_generic_fn(42)

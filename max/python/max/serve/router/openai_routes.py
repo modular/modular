@@ -117,6 +117,7 @@ from max.serve.schemas.openai import (
     MaxModel,
     Model,
     PromptTokensDetails,
+    ResponseFormat,
     TopLogprob,
     UnloadLoraRequest,
 )
@@ -139,13 +140,6 @@ from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
 from openai.types.create_embedding_response import Usage as EmbeddingUsage
-from openai.types.shared_params import (
-    ResponseFormatJSONObject as ResponseFormatJsonObject,
-)
-from openai.types.shared_params import (
-    ResponseFormatJSONSchema as ResponseFormatJsonSchema,
-)
-from openai.types.shared_params import ResponseFormatText as ResponseFormatText
 from PIL import Image
 from pydantic import AnyUrl, BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
@@ -1615,11 +1609,16 @@ async def openai_create_chat_completion(
             fold_reasoning_into_content=fold_reasoning_into_content,
             emit_reasoning_content=pipeline_config.runtime.emit_reasoning_content,
         )
-        # Use request-level temperature/thinking_temperature if provided, else server defaults.
+        # Use request-level sampling params if provided, else server defaults.
         temp = (
             completion_request.temperature
             if completion_request.temperature is not None
             else pipeline_config.runtime.temperature
+        )
+        top_k = (
+            completion_request.top_k
+            if completion_request.top_k is not None
+            else pipeline_config.runtime.top_k
         )
         thinking_temp = (
             completion_request.thinking_temperature
@@ -1633,7 +1632,7 @@ async def openai_create_chat_completion(
         )
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
-                top_k=completion_request.top_k,
+                top_k=top_k,
                 top_p=completion_request.top_p,
                 min_p=completion_request.min_p,
                 temperature=temp,
@@ -1851,10 +1850,7 @@ def _validate_json_schema(json_schema: dict[str, Any]) -> None:
 
 
 def _create_response_format(
-    response_format: ResponseFormatText
-    | ResponseFormatJsonObject
-    | ResponseFormatJsonSchema
-    | None,
+    response_format: ResponseFormat | None,
     enable_response_format_schema: bool,
 ) -> TextGenerationResponseFormat | None:
     """Convert OpenAI response format to TextGenerationResponseFormat.
@@ -1896,7 +1892,13 @@ def _create_response_format(
         json_schema_param = cast(dict[str, Any], response_format).get(
             "json_schema", {}
         )
-        if (schema := json_schema_param.get("schema")) is not None:
+        schema = json_schema_param.get("schema")
+        if isinstance(schema, bool):
+            # Boolean JSON Schema: ``true`` -> any value, ``false`` ->
+            # unsatisfiable (``{"anyOf": [False]}`` compiles to an honest
+            # "Unsatisfiable schema" error; ``{"not": {}}`` does not).
+            json_schema = {} if schema else {"anyOf": [False]}
+        elif schema is not None:
             json_schema = dict(schema)
 
     # Validate the schema early to return 400 instead of crashing the model worker.
@@ -2507,11 +2509,16 @@ async def openai_create_completion(
         )
         prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []
-        # Use request-level temperature/thinking_temperature if provided, else server defaults.
+        # Use request-level sampling params if provided, else server defaults.
         temp = (
             completion_request.temperature
             if completion_request.temperature is not None
             else pipeline_config.runtime.temperature
+        )
+        top_k = (
+            completion_request.top_k
+            if completion_request.top_k is not None
+            else pipeline_config.runtime.top_k
         )
         thinking_temp = (
             completion_request.thinking_temperature
@@ -2522,7 +2529,7 @@ async def openai_create_completion(
             prompt = cast(str | Sequence[int], prompt)
             sampling_params = SamplingParams.from_input_and_generation_config(
                 SamplingParamsInput(
-                    top_k=completion_request.top_k,
+                    top_k=top_k,
                     top_p=completion_request.top_p,
                     min_p=completion_request.min_p,
                     temperature=temp,

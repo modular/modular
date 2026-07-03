@@ -401,7 +401,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
 
     def unsafe_ptr(
         ref self,
-    ) -> UnsafePointer[Self.T, origin_of(self._alloc._alloc)]:
+    ) -> UnsafePointer[Self.T, origin_of(self)]:
         """Returns a pointer to the allocated storage without consuming `self`.
 
         The returned pointer borrows from `self`, so the `DeletableAllocation`
@@ -417,7 +417,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
         to uninitialized memory. Initialize an element (for example with
         `init_pointee_move`) before reading it.
         """
-        return self._alloc.unsafe_ptr()
+        return self._alloc.unsafe_ptr().unsafe_origin_cast[origin_of(self)]()
 
     def unsafe_span(ref self) -> Span[Self.T, origin_of(self._alloc._alloc)]:
         """Returns a span over the allocated storage without consuming `self`.

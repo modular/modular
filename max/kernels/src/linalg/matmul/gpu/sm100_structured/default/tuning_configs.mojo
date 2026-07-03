@@ -153,6 +153,7 @@ struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
     var num_threads: Int
     var unroll_factor: Int
     var tile_k: Int
+    var swapAB: Bool
 
     def __init__(
         out self,
@@ -166,6 +167,7 @@ struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
         kernel_kind: GEMVAlgorithm,
         unroll_factor: Int = 1,
         tile_k: Int = 128,
+        swapAB: Bool = False,
     ):
         self.M = M
         self.M_end = M_end
@@ -177,6 +179,7 @@ struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
         self.num_threads = num_threads
         self.unroll_factor = unroll_factor
         self.tile_k = tile_k
+        self.swapAB = swapAB
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write(
@@ -197,6 +200,8 @@ struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
             self.tile_n,
             "/threads:",
             self.num_threads,
+            "/swapAB:",
+            self.swapAB,
         )
 
 
@@ -2176,5 +2181,22 @@ def _get_tuning_list_small_MN_gemms_bf16() -> List[TuningConfigSmallMNGemms]:
             num_threads=256,
             kernel_kind=GEMVAlgorithm.GEMM_MMA_CPASYNC,
             tile_k=256,
+        ),
+        # Kimi-style decode: small-M `act @ weight^T` with the weight as the
+        # large free-streaming operand. swapAB feeds the weight to the A slot
+        # and transposes the store, so the N=2112 weight load streams under any
+        # PDL-attached producer (e.g. Lamport AR+RMSNorm) while the output
+        # stays row-major [M, N]. Covers the M in [1, 17) range used by decode.
+        TuningConfigSmallMNGemms(
+            M=1,
+            M_end=17,
+            N=2112,
+            K=7168,
+            tile_m=16,
+            tile_n=8,
+            num_threads=128,
+            kernel_kind=GEMVAlgorithm.GEMM_MMA_CPASYNC,
+            tile_k=128,
+            swapAB=True,
         ),
     ]

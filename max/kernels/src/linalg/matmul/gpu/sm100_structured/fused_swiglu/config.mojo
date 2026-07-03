@@ -314,12 +314,11 @@ def build_sm100_matmul_configs[
         _get_tuning_list_swiglu_bf16(), "swiglu_bf16_tuning"
     )
 
-    @parameter
     @always_inline
-    def rule_nk(x: TuningConfigSwiGLU) -> Bool:
+    def rule_nk(x: TuningConfigSwiGLU) {} -> Bool:
         return x.N == N and x.K == K
 
-    comptime nk_configs = tuning_table.find[rule_nk]()
+    comptime nk_configs = tuning_table.find(rule=rule_nk)
 
     # Tuned shape: build directly from each tuning table entry.
     # For untuned (N, K) shapes the set is empty; dispatch falls back to its

@@ -64,7 +64,7 @@ def _layer_norm_cpu[
     beta_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_dim: Int,
     feature_dim: Int,
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
 ) where dtype.is_floating_point():
     """CPU layer normalization on a rank-2 [batch, feature_dim] buffer.
 
@@ -102,7 +102,7 @@ def _layer_norm_cpu[
         var_val = var_val / Scalar[dtype](feature_dim)
 
         # Pass 3: normalize
-        var inv_std = Scalar[dtype](1) / sqrt(var_val + epsilon)
+        var inv_std = Scalar[dtype](1) / sqrt(var_val + epsilon.cast[dtype]())
         for i in range(feature_dim):
             out_ptr[offset + i] = (
                 in_ptr[offset + i] - mean_val
@@ -118,7 +118,7 @@ def layer_norm_op[
     beta_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[2],
     gamma_shape: IndexList[1],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
     """Layer normalization on a rank-2 normalized tensor.
@@ -244,7 +244,7 @@ def layer_norm_dispatcher(
     """Layer normalization dispatcher with dtype dispatch.
 
     Normalizes the input to rank-2 [batch, feature_dim] and dispatches by dtype.
-    The epsilon buffer is a scalar tensor on CPU with the same dtype as input.
+    The epsilon buffer is a float32 scalar tensor on CPU.
     """
     var dtype = _get_dtype(in_buffer)
     var ctx = _get_ctx(device_context_ptr)
@@ -274,7 +274,7 @@ def layer_norm_dispatcher(
             _get_buffer_ptr[DType.float16](beta_buffer),
             normalized_shape,
             gamma_shape,
-            _get_buffer_ptr[DType.float16](epsilon_buffer)[0],
+            _get_buffer_ptr[DType.float32](epsilon_buffer)[0],
             ctx,
         )
     elif dtype == DType.float32:
@@ -296,7 +296,7 @@ def layer_norm_dispatcher(
             _get_buffer_ptr[DType.float64](beta_buffer),
             normalized_shape,
             gamma_shape,
-            _get_buffer_ptr[DType.float64](epsilon_buffer)[0],
+            _get_buffer_ptr[DType.float32](epsilon_buffer)[0],
             ctx,
         )
     elif dtype == DType.bfloat16:
@@ -307,7 +307,7 @@ def layer_norm_dispatcher(
             _get_buffer_ptr[DType.bfloat16](beta_buffer),
             normalized_shape,
             gamma_shape,
-            _get_buffer_ptr[DType.bfloat16](epsilon_buffer)[0],
+            _get_buffer_ptr[DType.float32](epsilon_buffer)[0],
             ctx,
         )
     else:

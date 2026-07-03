@@ -2401,9 +2401,13 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     maximizing the overlap between MMAs and softmax calculation.
     """
 
+    # K stage stride uses the K_nope width (`padded_nope_depth`), not the
+    # V/output depth — they differ when `v_head_dim != qk_nope_head_dim`. V
+    # stage stride uses `v_cols_per_cta()` (= padded_ov_depth). Equal for
+    # DeepSeek and MHA (nope == ov).
     comptime full_kv_bytes = (
         Self.config.k_rows_per_cta()
-        * Self.config.padded_ov_depth
+        * Self.config.padded_nope_depth
         * size_of[Self.dtype]()
         + Self.config.k_rows_per_cta()
         * Self.config.rope_depth()
@@ -3088,6 +3092,25 @@ struct FA4MiscMBars[
         return {
             self.mbar_base + Self.O_producer_offset,
             self.mbar_base,
+        }
+
+    @always_inline("nodebug")
+    def consumer_o0(self) -> RolePipeline[1, False, 1, Self.num_pv_stages]:
+        """Single-O (1Q wide-V) O consumer: a ONE-stage pipeline on WG0's
+        O-producer barrier only.
+
+        The standard `consumer_o()` is a 2-stage pipeline that alternates
+        between the two per-WG O-producer barriers (`O_producer_offset+0`
+        for WG0, `+1` for WG1). The single-O path runs a single warp group
+        (WG0) that accumulates ALL K-tiles into the single (aliased) O0, so
+        the correction warp must wait on ONLY `O_producer_offset+0` with an
+        incrementing phase — never the never-produced `+1` (which would
+        deadlock). Release side is WG0's combined P+O consumer barrier, as
+        in `producer_o0`.
+        """
+        return {
+            self.mbar_base + Self.O_producer_offset,
+            self.combined_p_o_consumer(0),
         }
 
     @always_inline("nodebug")

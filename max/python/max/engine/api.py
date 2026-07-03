@@ -668,10 +668,6 @@ class InferenceSession:
                 ) from e
             self.set_mojo_assert_level(assert_level)
 
-        # TODO: Remove this once the new topk kernel is stable.
-        if use_old_top_k_kernel := os.getenv("USE_OLD_TOP_K_KERNEL"):
-            self.use_old_top_k_kernel(use_old_top_k_kernel)
-
         if use_fi_topk := os.getenv("USE_FI_TOPK_KERNEL"):
             self.use_fi_topk_kernel(use_fi_topk)
 
@@ -1278,23 +1274,6 @@ class InferenceSession:
             self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", 1)
 
         set_gpu_profiling_state(mode)
-
-    def use_old_top_k_kernel(self, mode: str) -> None:
-        """Falls back to the previous top-k kernel implementation.
-
-        By default, the session uses a newer top-k kernel. Use this
-        fallback only if you encounter correctness or performance issues
-        with the default kernel.
-
-        Args:
-            mode: The enable/disable flag. Accepts ``"false"``, ``"off"``,
-                ``"no"``, or ``"0"`` to disable. Any other value enables the
-                old top-k kernel.
-        """
-        if mode.lower() in ("false", "off", "no", "0"):
-            return
-
-        self._set_mojo_define("USE_OLD_TOP_K_KERNEL", 1)
 
     def use_fi_topk_kernel(self, mode: str) -> None:
         """Enables the fused-inference top-k kernel.

@@ -89,7 +89,7 @@ def run_fused_qk_rms_norm_rope[
     comptime layer_idx = 0
     comptime max_seq_len = 1024
     comptime weight_offset = 1.0
-    var epsilon = Scalar[dtype](1e-6)
+    var epsilon = Float32(1e-6)
 
     var prompt_lens = [16, 24, 8, 32]
     var cache_lens = [0, 7, 13, 5]

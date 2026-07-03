@@ -358,6 +358,14 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    top_k: int | None = Field(
+        default=None,
+        description=(
+            "Default top-k sampling limit. When set, this server-level default "
+            "applies to all requests that do not explicitly provide ``top_k``."
+        ),
+    )
+
     thinking_temperature: float | None = Field(
         default=None,
         description=(

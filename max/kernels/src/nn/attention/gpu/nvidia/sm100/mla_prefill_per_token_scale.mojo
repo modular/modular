@@ -86,6 +86,7 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_utils import (
     MLAKVLayouts,
     MLAPositionSummary,
     SM100MLA,
+    select_mla_prefill_config,
     split_smem,
 )
 
@@ -103,9 +104,14 @@ struct MLASmemStorage[
 
     comptime num_kv_stages = Self.config.num_kv_stages * Self.config.num_qk_stages
 
-    comptime kv_nope_bytes = Self.config.nope_depth * Self.config.BN * size_of[
-        Self.qkv_dtype
-    ]() * Self.num_kv_stages
+    # Per-stage K_nope/V data width: the buffer fits the wider of K_nope/V
+    # (fused_kv_cols, padded). Equal for DeepSeek (nope == v).
+    comptime kv_nope_bytes = (
+        Self.config.fa4_config.fused_kv_cols()
+        * Self.config.BN
+        * size_of[Self.qkv_dtype]()
+        * Self.num_kv_stages
+    )
     comptime kv_rope_bytes = Self.config.rope_depth * Self.config.BN * size_of[
         Self.rope_dtype
     ]() * Self.num_kv_stages
@@ -180,7 +186,7 @@ __extension SM100MLA:
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BN=kv_sub_tile_rows(Self.config.BN, Self.page_size),
-            BK=Self.nope_depth,
+            BK=Self.ov_depth,  # V tile: ov_depth-wide
         ],
         q_scale_tma_op: TMATensorTile[
             config.scale_dtype,
@@ -305,7 +311,7 @@ __extension SM100MLA:
                 Kernel1Q.KVLUTType.dtype,
                 Kernel1Q.config.qkv_swizzle_mode,
                 BN=kv_sub_tile_rows(Kernel1Q.config.BN, Kernel1Q.page_size),
-                BK=Kernel1Q.nope_depth,
+                BK=Kernel1Q.ov_depth,  # V tile: ov_depth-wide
             ]
             comptime QScale1Q = TMATensorTile[
                 Kernel1Q.config.scale_dtype,
@@ -410,7 +416,7 @@ __extension SM100MLA:
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BN=kv_sub_tile_rows(Self.config.BN, Self.page_size),
-            BK=Self.nope_depth,
+            BK=Self.ov_depth,  # V tile: ov_depth-wide
         ],
         q_scale_tma_op: TMATensorTile[
             config.scale_dtype,
@@ -701,7 +707,7 @@ __extension SM100MLA:
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BN=kv_sub_tile_rows(Self.config.BN, Self.page_size),
-            BK=Self.nope_depth,
+            BK=Self.ov_depth,  # V tile: ov_depth-wide
         ],
         q_scale_tma_op: TMATensorTile[
             config.scale_dtype,
@@ -883,16 +889,18 @@ __extension SM100MLA:
         comptime k_rope_bytes_pp = (
             Self.rope_depth * rope_sub_BN * size_of[Self.KRopeType.dtype]()
         )
+        # V sub-page bytes use the V head dim (`ov_depth`), not `nope_depth`.
         comptime v_bytes_pp = (
-            Self.nope_depth * kv_sub_BN * size_of[Self.qkv_dtype]()
+            Self.ov_depth * kv_sub_BN * size_of[Self.qkv_dtype]()
         )
         comptime k_scale_bytes_pp = kv_sub_BN * size_of[config.scale_dtype]()
         # Full-tile byte counts (when no partial bound applies).
         comptime k_rope_full_bytes = (
             Self.rope_depth * Self.config.BN * size_of[Self.KRopeType.dtype]()
         )
+        # V full-tile bytes use the V head dim (`ov_depth`), not `nope_depth`.
         comptime kv_data_full_bytes = (
-            Self.nope_depth * Self.config.BN * size_of[Self.qkv_dtype]()
+            Self.ov_depth * Self.config.BN * size_of[Self.qkv_dtype]()
         )
 
         @parameter
@@ -1074,8 +1082,9 @@ __extension SM100MLA:
 
         comptime if Self.config.fa4_config.use_fused_kv:
             # ---- Fused KV mode with per-token scale ----
+            # K_nope/V share one buffer; a stage fits the wider (fused_kv_cols).
             comptime kv_stage_elems = (
-                Self.config.fa4_config.padded_ov_depth * Self.config.BN
+                Self.config.fa4_config.fused_kv_cols() * Self.config.BN
             )
             comptime rope_stage_elems = (
                 Self.config.rope_depth * Self.config.BN
@@ -1612,9 +1621,11 @@ __extension SM100MLA:
             var pipeline_v: VPipeType = {mbars.get_v_mbars(), v_smem_base}
 
             # K stage may contain mixed dtypes (e.g. FP8 nope + BF16 rope).
-            # Compute byte size then convert to qkv_dtype element count.
+            # Compute byte size then convert to qkv_dtype element count. The
+            # K_nope part is `padded_nope_depth` wide (split-KV: V has its own
+            # `pipeline_v`), so this is K-only.
             comptime k_stage_bytes = (
-                Self.config.fa4_config.padded_ov_depth
+                Self.config.fa4_config.padded_nope_depth
                 * Self.config.BN
                 * Self.qkv_dt_size
                 + Self.config.rope_depth
@@ -1967,6 +1978,7 @@ def mla_sm100_prefill_per_token_scale[
     q_depth: Int,
     cache_depth: Int,
     _ndbuffer_mha_operand: Bool,
+    v_depth: Int = -1,
 ](
     output: TileTensor[
         mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
@@ -1995,7 +2007,12 @@ def mla_sm100_prefill_per_token_scale[
     ), "q_rope and k_rope must have the same dtype"
     comptime assert KType.dtype == VType.dtype
 
-    comptime fa4_config = MLAConfig[
+    # Select the supported config: the standard 2-O config first (byte-identical
+    # to the pre-decoupling path when v_head_dim == qk_nope_head_dim), else a
+    # single-O fallback for a wide V. `v_depth` (V/output head dim) is `-1` for
+    # the DeepSeek shape (V width == nope width). Shared with the generic /
+    # blockscale kernels so the fallback policy lives in one place.
+    comptime fa4_config = select_mla_prefill_config[
         q_dtype,
         rope_mma_dtype=rope_dtype,
         rope_gmem_dtype=rope_dtype,
@@ -2005,8 +2022,11 @@ def mla_sm100_prefill_per_token_scale[
         group=group,
         depth=q_depth,
         page_size=KType.page_size,
+        v_depth=v_depth,
     )
     comptime assert fa4_config.supported()
+    # V / output head dim (= v_head_dim).
+    comptime ov_depth = fa4_config.fa4_config.ov_depth
 
     var num_rows_q = q_num_matrix_view_rows(q_nope)
 
@@ -2015,7 +2035,7 @@ def mla_sm100_prefill_per_token_scale[
     comptime store_blocks_per_op = o_store_tma_blocks_per_op[
         output_dtype,
         fa4_config.output_swizzle_mode,
-        fa4_config.fa4_config.ov_depth,
+        ov_depth,
         1,
         depth_splits=2,
     ]()
@@ -2023,7 +2043,7 @@ def mla_sm100_prefill_per_token_scale[
         output_dtype,
         fa4_config.output_swizzle_mode,
         BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_qo,
-        BN=fa4_config.fa4_config.ov_depth,
+        BN=ov_depth,
         middle_dim=fa4_config.num_q_heads,
         tma_blocks_per_op=store_blocks_per_op,
     ]
@@ -2078,10 +2098,11 @@ def mla_sm100_prefill_per_token_scale[
         kv_sub_tile_rows(fa4_config.BN, KType.page_size)
     ](ctx)
 
+    # V gmem width is ov_depth (= v_head_dim).
     v_tma_op = v.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KType.page_size),
-        depth=fa4_config.nope_depth,
+        depth=ov_depth,
     ](ctx)
 
     comptime ValidLengthType = NonNullPointer[DType.uint32]
@@ -2180,21 +2201,26 @@ def mla_sm100_prefill_per_token_scale[
         )
 
     # --- 1Q / 2Q dispatch (see the generic MLA dispatch for details) ---
-    comptime cfg_1q = fa4_config.with_num_qo(1)
-    comptime can_use_1q: Bool = (
-        cfg_1q.supported()
-        and cfg_1q.fa4_config.supported()
-        and mask_functor.nonfull_sets[cfg_1q.BM, cfg_1q.BN]()[0]
-        != TileMaskStatus.UNKNOWN_MASK
-    )
-    comptime if can_use_1q:
-        if fa4_config.prefer_1q(
-            max_prompt_len.as_uint32(),
-            UInt32(PartitionType().num_partitions()),
-            UInt32(batch_size),
-            ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
-        ):
-            _launch[cfg_1q]()
+    # Only when the selected config is the standard 2Q one; the single-O
+    # fallback is already num_qo=1 and launches directly.
+    comptime if fa4_config.fa4_config.num_qo == 2:
+        comptime cfg_1q = fa4_config.with_num_qo(1)
+        comptime can_use_1q: Bool = (
+            cfg_1q.supported()
+            and cfg_1q.fa4_config.supported()
+            and mask_functor.nonfull_sets[cfg_1q.BM, cfg_1q.BN]()[0]
+            != TileMaskStatus.UNKNOWN_MASK
+        )
+        comptime if can_use_1q:
+            if fa4_config.prefer_1q(
+                max_prompt_len.as_uint32(),
+                UInt32(PartitionType().num_partitions()),
+                UInt32(batch_size),
+                ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+            ):
+                _launch[cfg_1q]()
+            else:
+                _launch[fa4_config]()
         else:
             _launch[fa4_config]()
     else:

@@ -32,7 +32,6 @@ import uuid
 from typing import Any
 
 from llguidance import LLMatcher
-from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib.pipeline_variants.structured_output_backend import (
     build_xgrammar_tool_grammar,
 )
@@ -358,12 +357,6 @@ class KimiToolParser(StructuralTagToolParser):
             A grammar string compatible with the selected backend.
         """
         if backend == "xgrammar":
-            if response_format_schema is not None:
-                raise InputError(
-                    "The xgrammar backend does not yet support combined "
-                    "tool-calling and response_format json_schema. Use "
-                    "--structured-output-backend=llguidance for that case."
-                )
             normalized_choice = (
                 tool_choice if tool_choice is not None else "auto"
             )
@@ -373,11 +366,15 @@ class KimiToolParser(StructuralTagToolParser):
             forced = normalized_choice == "required" or isinstance(
                 normalized_choice, dict
             )
+            # ``response_format_schema`` is only set for the auto path (forced
+            # tool choice ignores response_format upstream), where it adds a
+            # schema-conforming JSON response as an alternative to a tool call.
             return build_xgrammar_tool_grammar(
                 KimiToolParser.XGRAMMAR_FORMAT,
                 tools or [],
                 normalized_choice,
                 reasoning=not forced,
+                response_format_schema=response_format_schema,
             )
 
         tool_names = names_from_tools(tools)

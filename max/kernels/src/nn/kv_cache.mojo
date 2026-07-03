@@ -14,6 +14,8 @@
 from std.algorithm.functional import unswitch
 from std.math import ceildiv, min
 from std.math.uutils import udivmod
+from std.memory import ThinAllocation, dealloc
+from std.memory.alloc import Layout as AllocLayout
 from std.sys.info import align_of, simd_width_of
 from std.gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
@@ -441,9 +443,11 @@ def _matmul_common[
     comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
 
     comptime if is_cpu[target]():
-        var c_ptr = alloc[Scalar[dtype]](BS * SEQ_LEN * N)
+        var c_alloc = alloc(
+            AllocLayout[Scalar[dtype]](count=BS * SEQ_LEN * N)
+        ).into_deletable()
         var c_nd = LayoutTensor[dtype, c_layout](
-            c_ptr,
+            c_alloc.unsafe_ptr(),
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
 
@@ -453,7 +457,7 @@ def _matmul_common[
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
 
-        c_nd.ptr.free()
+        dealloc(c_alloc^.into_allocation())
     else:
         # Allocate a device-local scratch for the matmul accumulator; the
         # epilogue lambda reads from it and scatters Q/K/V to the real
@@ -956,7 +960,7 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
     k_cache: cache_t,
     q_gamma: TileTensor[dtype, q_gamma_layout, q_gamma_origin],
     k_gamma: TileTensor[dtype, k_gamma_layout, k_gamma_origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[DType.uint32, offsets_layout, offsets_origin],
@@ -972,7 +976,6 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
     ), "input_row_offsets must be rank 1"
 
     comptime accum_type = get_accum_type[dtype]()
-    var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     var tid = thread_idx.x
@@ -1023,7 +1026,7 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
         idx,
         vec_data,
         gamma_val,
-        eps_accum,
+        epsilon,
         weight_offset_accum,
         num_cols,
     )
@@ -1068,7 +1071,7 @@ def fused_qk_rms_norm_ragged_paged[
     ],
     q_gamma: TileTensor[mut=False, dtype, ...],
     k_gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
@@ -1222,7 +1225,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     q_gamma: TileTensor[dtype, q_gamma_layout, q_gamma_origin],
     k_gamma: TileTensor[dtype, k_gamma_layout, k_gamma_origin],
     freqs_cis: TileTensor[freq_dtype, freqs_layout, freqs_origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[DType.uint32, offsets_layout, offsets_origin],
@@ -1239,7 +1242,6 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     ), "input_row_offsets must be rank 1"
 
     comptime accum_type = get_accum_type[dtype]()
-    var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     comptime head_dim = q_gamma.static_shape[0]
@@ -1293,7 +1295,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
         idx,
         vec_data,
         gamma_val,
-        eps_accum,
+        epsilon,
         weight_offset_accum,
         num_cols,
     )
@@ -1430,7 +1432,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
     q_gamma: TileTensor[mut=False, dtype, ...],
     k_gamma: TileTensor[mut=False, dtype, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
@@ -1603,7 +1605,7 @@ def rms_norm_kv_cache_ragged_paged[
         ...,
     ],
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
@@ -1795,7 +1797,7 @@ def rms_norm_value_cache_ragged_paged[
         ...,
     ],
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
@@ -2086,34 +2088,46 @@ def print_kv_cache_cont_batch_generic_gpu[
     var dev_ctx = context
 
     var n_blocks = kv_collection.blocks.num_elements()
-    var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
-    dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
+    var blocks_alloc = alloc(
+        AllocLayout[Scalar[dtype]](count=n_blocks)
+    ).into_deletable()
+    dev_ctx.enqueue_copy(
+        blocks_alloc.unsafe_ptr(), kv_collection.blocks.ptr, n_blocks
+    )
     var blocks_host = type_of(kv_collection.blocks).OriginCastType[_](
-        ptr=blocks_ptr,
+        ptr=blocks_alloc.unsafe_ptr(),
         layout=kv_collection.blocks.layout,
     )
 
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
-    var cache_lengths_ptr = alloc[UInt32](n_cache_lengths)
+    var cache_lengths_alloc = alloc(
+        AllocLayout[UInt32](count=n_cache_lengths)
+    ).into_deletable()
     dev_ctx.enqueue_copy(
-        cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
+        cache_lengths_alloc.unsafe_ptr(),
+        kv_collection.cache_lengths.ptr,
+        n_cache_lengths,
     )
     var cache_lengths_host = type_of(
         kv_collection.cache_lengths
     ).OriginCastType[mut=False, _](
-        ptr=cache_lengths_ptr,
+        ptr=cache_lengths_alloc.unsafe_ptr(),
         layout=kv_collection.cache_lengths.layout,
     )
 
     var n_lookup_table = kv_collection.lookup_table.num_elements()
-    var lookup_table_ptr = alloc[UInt32](n_lookup_table)
+    var lookup_table_alloc = alloc(
+        AllocLayout[UInt32](count=n_lookup_table)
+    ).into_deletable()
     dev_ctx.enqueue_copy(
-        lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
+        lookup_table_alloc.unsafe_ptr(),
+        kv_collection.lookup_table.ptr,
+        n_lookup_table,
     )
     var lookup_table_host = type_of(kv_collection.lookup_table).OriginCastType[
         mut=False, _
     ](
-        ptr=lookup_table_ptr,
+        ptr=lookup_table_alloc.unsafe_ptr(),
         layout=kv_collection.lookup_table.layout,
     )
 
@@ -2127,11 +2141,13 @@ def print_kv_cache_cont_batch_generic_gpu[
         kv_collection.max_cache_length,
     )
 
-    var valid_lengths_host_ptr = alloc[UInt32](valid_lengths.size())
+    var valid_lengths_host_alloc = alloc(
+        AllocLayout[UInt32](count=valid_lengths.size())
+    ).into_deletable()
     var valid_lengths_host_nd = LayoutTensor[
         valid_lengths.dtype, valid_lengths.layout
     ](
-        valid_lengths_host_ptr,
+        valid_lengths_host_alloc.unsafe_ptr(),
         RuntimeLayout[valid_lengths.layout].row_major(
             valid_lengths.runtime_layout.shape.value.canonicalize()
         ),
@@ -2164,10 +2180,10 @@ def print_kv_cache_cont_batch_generic_gpu[
         is_print_compact,
     )
 
-    blocks_ptr.free()
-    cache_lengths_ptr.free()
-    lookup_table_ptr.free()
-    valid_lengths_host_ptr.free()
+    dealloc(blocks_alloc^.into_allocation())
+    dealloc(cache_lengths_alloc^.into_allocation())
+    dealloc(lookup_table_alloc^.into_allocation())
+    dealloc(valid_lengths_host_alloc^.into_allocation())
 
 
 def print_kv_cache_paged_generic_gpu[
@@ -2192,34 +2208,46 @@ def print_kv_cache_paged_generic_gpu[
     var dev_ctx = context
 
     var n_blocks = kv_collection.blocks.num_elements()
-    var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
-    dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
+    var blocks_alloc = alloc(
+        AllocLayout[Scalar[dtype]](count=n_blocks)
+    ).into_deletable()
+    dev_ctx.enqueue_copy(
+        blocks_alloc.unsafe_ptr(), kv_collection.blocks.ptr, n_blocks
+    )
     var blocks_host = type_of(kv_collection.blocks).OriginCastType[_](
-        ptr=blocks_ptr,
+        ptr=blocks_alloc.unsafe_ptr(),
         layout=kv_collection.blocks.layout,
     )
 
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
-    var cache_lengths_ptr = alloc[UInt32](n_cache_lengths)
+    var cache_lengths_alloc = alloc(
+        AllocLayout[UInt32](count=n_cache_lengths)
+    ).into_deletable()
     dev_ctx.enqueue_copy(
-        cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
+        cache_lengths_alloc.unsafe_ptr(),
+        kv_collection.cache_lengths.ptr,
+        n_cache_lengths,
     )
     var cache_lengths_host = type_of(
         kv_collection.cache_lengths
     ).OriginCastType[mut=False, _](
-        ptr=cache_lengths_ptr,
+        ptr=cache_lengths_alloc.unsafe_ptr(),
         layout=kv_collection.cache_lengths.layout,
     )
 
     var n_lookup_table = kv_collection.lookup_table.num_elements()
-    var lookup_table_ptr = alloc[UInt32](n_lookup_table)
+    var lookup_table_alloc = alloc(
+        AllocLayout[UInt32](count=n_lookup_table)
+    ).into_deletable()
     dev_ctx.enqueue_copy(
-        lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
+        lookup_table_alloc.unsafe_ptr(),
+        kv_collection.lookup_table.ptr,
+        n_lookup_table,
     )
     var lookup_table_host = type_of(kv_collection.lookup_table).OriginCastType[
         mut=False, _
     ](
-        ptr=lookup_table_ptr,
+        ptr=lookup_table_alloc.unsafe_ptr(),
         layout=kv_collection.lookup_table.layout,
     )
 
@@ -2243,11 +2271,13 @@ def print_kv_cache_paged_generic_gpu[
         kv_collection.max_seq_length,
         kv_collection.max_cache_length,
     )
-    var valid_lengths_host_ptr = alloc[UInt32](valid_lengths.size())
+    var valid_lengths_host_alloc = alloc(
+        AllocLayout[UInt32](count=valid_lengths.size())
+    ).into_deletable()
     var valid_lengths_host_nd = LayoutTensor[
         valid_lengths.dtype, valid_lengths.layout
     ](
-        valid_lengths_host_ptr,
+        valid_lengths_host_alloc.unsafe_ptr(),
         RuntimeLayout[valid_lengths.layout].row_major(
             valid_lengths.runtime_layout.shape.value.canonicalize()
         ),
@@ -2280,10 +2310,10 @@ def print_kv_cache_paged_generic_gpu[
         is_print_compact,
     )
 
-    blocks_ptr.free()
-    cache_lengths_ptr.free()
-    lookup_table_ptr.free()
-    valid_lengths_host_ptr.free()
+    dealloc(blocks_alloc^.into_allocation())
+    dealloc(cache_lengths_alloc^.into_allocation())
+    dealloc(lookup_table_alloc^.into_allocation())
+    dealloc(valid_lengths_host_alloc^.into_allocation())
 
 
 # ===-----------------------------------------------------------------------===#

@@ -898,14 +898,8 @@ class TestAdvanceFsmAndComputeBitmasks:
         # Rollback() should not be used to undo token consumption.
         scratch.rollback.assert_not_called()
 
-    def test_part2_asserts_on_unattributable_output_row(self) -> None:
-        """Part 2 enforces the single-writer invariant: a consumer row whose
-        request did not produce this iteration (absent from ``context_batch``)
-        means the callback was enqueued for a batch it does not own, so it
-        asserts rather than indexing ``next_draft_tokens`` with None. The
-        current scheduler never admits such a row into a batch the callback runs
-        for; the assert guards a future scheduler change (and, inside the
-        callback's try/except, degrades to the safe blanket -1 fallback)."""
+    def test_part2_degrades_unattributable_output_row(self) -> None:
+        """A row absent from the producing batch is degraded, not raised on."""
         helper = self._make_helper()
         ctx_prod, _ = self._make_context_with_matcher()
         # A consumer-only row whose request is NOT in the producing batch.
@@ -916,25 +910,26 @@ class TestAdvanceFsmAndComputeBitmasks:
         )
         ctx_extra._is_initial_prompt = False
 
+        # Poison every row: a reached row is reset to -1 at the top of its loop
+        # iteration, so a row still holding 9 afterwards was never reached.
         bitmask_out = np.full((2, 3, 2), 9, dtype=np.int32)
 
         with patch("llguidance.numpy.fill_next_token_bitmask"):
-            with pytest.raises(AssertionError):
-                helper.advance_fsm_and_compute_bitmasks(
-                    context_batch=[ctx_prod],
-                    accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
-                    num_accepted=np.zeros(1, dtype=np.int32),
-                    bonus_tokens=np.array([5], dtype=np.int64),
-                    next_draft_tokens=np.array([[10, 11]], dtype=np.int64),
-                    bitmask_out=bitmask_out,
-                    output_context_batch=[ctx_prod, ctx_extra],
-                )
+            helper.advance_fsm_and_compute_bitmasks(
+                context_batch=[ctx_prod],
+                accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
+                num_accepted=np.zeros(1, dtype=np.int32),
+                bonus_tokens=np.array([5], dtype=np.int64),
+                next_draft_tokens=np.array([[10, 11]], dtype=np.int64),
+                bitmask_out=bitmask_out,
+                output_context_batch=[ctx_extra, ctx_prod],
+            )
 
-    def test_part2_asserts_on_initial_prompt_continuing_row(self) -> None:
-        """The other half of the invariant: a row whose request IS in the
-        producing batch but is flagged ``is_initial_prompt=True`` (e.g. reset
-        by a future preempt-without-reprefill scheduler) has no producer drafts
-        and must also assert, not be filled."""
+        # No raise; both rows reached (neither retains the sentinel).
+        assert (bitmask_out == -1).all()
+
+    def test_part2_degrades_preempted_initial_prompt_row(self) -> None:
+        """A row reset (preempted) after enqueue is degraded, not raised on."""
         helper = self._make_helper()
         ctx, _ = self._make_context_with_matcher()
         # Same request present in both batches, but reset to an initial prompt.
@@ -943,16 +938,18 @@ class TestAdvanceFsmAndComputeBitmasks:
         bitmask_out = np.full((1, 3, 2), 9, dtype=np.int32)
 
         with patch("llguidance.numpy.fill_next_token_bitmask"):
-            with pytest.raises(AssertionError):
-                helper.advance_fsm_and_compute_bitmasks(
-                    context_batch=[ctx],
-                    accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
-                    num_accepted=np.zeros(1, dtype=np.int32),
-                    bonus_tokens=np.array([5], dtype=np.int64),
-                    next_draft_tokens=np.array([[10, 11]], dtype=np.int64),
-                    bitmask_out=bitmask_out,
-                    output_context_batch=[ctx],
-                )
+            helper.advance_fsm_and_compute_bitmasks(
+                context_batch=[ctx],
+                accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
+                num_accepted=np.zeros(1, dtype=np.int32),
+                bonus_tokens=np.array([5], dtype=np.int64),
+                next_draft_tokens=np.array([[10, 11]], dtype=np.int64),
+                bitmask_out=bitmask_out,
+                output_context_batch=[ctx],
+            )
+
+        # No raise; the preempted row is degraded to all-valid (-1).
+        assert (bitmask_out == -1).all()
 
     def test_part2_reordered_rows_use_producer_drafts_by_request(self) -> None:
         """Part 2 writes in CONSUMER row order but reads each row's drafts from
