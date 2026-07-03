@@ -81,9 +81,21 @@ from openai.types.completion_usage import (
 from openai.types.embedding_create_params import (
     EmbeddingCreateParams as _OpenAIEmbeddingParams,
 )
+from openai.types.shared_params.response_format_json_object import (
+    ResponseFormatJSONObject,
+)
+from openai.types.shared_params.response_format_text import (
+    ResponseFormatText,
+)
 
 # isort: on
-from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    create_model,
+    model_validator,
+)
 from typing_extensions import NotRequired, TypedDict
 
 # ---------------------------------------------------------------------------
@@ -102,23 +114,27 @@ from typing_extensions import NotRequired, TypedDict
 class ChatCompletionResponseMessage(_OpenAIChatCompletionMessage):
     """OpenAI assistant message extended with MAX reasoning text.
 
-    Reasoning-capable models emit their chain-of-thought under ``reasoning``
-    (the OpenAI Responses API naming). The ``reasoning_content`` alias
-    previously emitted by vLLM, SGLang, and the DeepSeek API is deprecated;
-    see https://github.com/vllm-project/vllm/pull/33402.
+    Reasoning-capable models emit their chain-of-thought under one of two
+    fields, selected by the ``emit_reasoning_content`` runtime flag:
+    ``reasoning`` (the OpenAI Responses API naming, the default) or
+    ``reasoning_content`` (the alias used by vLLM, SGLang, and the DeepSeek
+    API). Exactly one is populated per response; the other stays ``None``.
     """
 
     reasoning: str | None = None
+    reasoning_content: str | None = None
 
 
 class ChatCompletionStreamResponseDelta(_OpenAIChoiceDelta):
     """OpenAI stream delta extended with MAX reasoning text.
 
     Mirrors :class:`ChatCompletionResponseMessage`: each delta carries the
-    reasoning fragment under ``reasoning``.
+    reasoning fragment under ``reasoning`` or ``reasoning_content`` (selected
+    by the ``emit_reasoning_content`` runtime flag), never both.
     """
 
     reasoning: str | None = None
+    reasoning_content: str | None = None
 
 
 class ChatCompletionResponseChoice(_OpenAIChatCompletionChoice):
@@ -245,6 +261,29 @@ class ChatCompletionMessageParam(TypedDict):
 ChatCompletionMessageParam.__pydantic_config__ = ConfigDict(extra="allow")  # type: ignore[attr-defined]
 
 
+# Response-format ``json_schema`` arm, forked from OpenAI's to widen
+# ``schema``: a boolean is a valid JSON Schema (``true`` = any value,
+# ``false`` = none) and the route de-sugars it to the equivalent object
+# schema. Declaring the boolean here (not just coercing in a validator)
+# keeps the generated OpenAPI schema accurate about what is accepted. The
+# ``text``/``json_object`` arms are reused from the SDK unchanged.
+class JSONSchema(TypedDict, total=False):
+    name: str
+    description: str
+    schema: dict[str, object] | bool
+    strict: bool | None
+
+
+class ResponseFormatJSONSchema(TypedDict, total=False):
+    type: Literal["json_schema"]
+    json_schema: JSONSchema
+
+
+ResponseFormat = (
+    ResponseFormatText | ResponseFormatJSONObject | ResponseFormatJSONSchema
+)
+
+
 def _model_from_typeddict(name: str, td: type) -> type[BaseModel]:
     """Builds a pydantic ``BaseModel`` mirroring an OpenAI ``TypedDict``.
 
@@ -301,6 +340,10 @@ class _MaxRequestExtensions(BaseModel):
     repetition_penalty: float | None = None
     thinking_temperature: float | None = None
 
+    # MiniMax M3 only: ``False`` folds reasoning into ``content`` wrapped in
+    # ``<think>...</think>``; ``True`` (default) keeps it in the ``reasoning`` field.
+    reasoning_split: bool = True
+
     # Generation control.
     min_tokens: int | None = None
     stop_token_ids: list[int] | None = None
@@ -309,6 +352,17 @@ class _MaxRequestExtensions(BaseModel):
     # Routing / cache hints used by disaggregated serving.
     target_endpoint: str | None = None
     dkv_cache_hint: dict[str, Any] | None = None
+    # Per-request prefix-cache isolation for multi-tenant deployments.
+    cache_salt: str | None = Field(
+        default=None,
+        max_length=512,
+        description=(
+            "Per-request salt that isolates this prompt's prefix-cache "
+            "entries from other requests. Combined with the cluster-level "
+            "kv_cache_hash_seed via XOR. Requires kv_cache_hash_algo=sha256 "
+            "or sha256_64; ignored under ahash64 with a one-time warning."
+        ),
+    )
 
     # OpenRouter reasoning object; mapped to enable_thinking in the route.
     reasoning: ReasoningConfig | None = None
@@ -353,6 +407,11 @@ class CreateChatCompletionRequest(
 
     max_tokens: int | None = None
     max_completion_tokens: int | None = None
+
+    # Re-typed from the SDK union so the ``json_schema`` arm advertises a
+    # boolean ``schema`` (a valid JSON Schema). Pydantic emits a plain dict;
+    # the route reads it via dict access.
+    response_format: ResponseFormat | None = None
 
     # ``stream`` lives on the OpenAI streaming/non-streaming subclasses, not
     # on ``CompletionCreateParamsBase`` - declare it explicitly here.

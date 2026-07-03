@@ -15,6 +15,8 @@ from std.hashlib.hasher import Hasher
 
 from std.collections.set import Set
 from std.math.uutils import ualign_down, ualign_up, ufloordiv, uceildiv
+from std.math import ceildiv
+from std.sys import size_of
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host.info import H100
 from std.utils.index import Index, IndexList

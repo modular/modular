@@ -127,9 +127,11 @@ def bench_broadcast[
         out_multicast_buf = DeviceMulticastBuffer[dtype](
             list_of_ctx.copy(), length
         )
-        out_multicast_ptr = out_multicast_buf.multicast_buffer_for(
-            list_of_ctx[0]
-        ).unsafe_ptr()
+        out_multicast_ptr = (
+            out_multicast_buf.multicast_buffer_for(list_of_ctx[0])
+            .unsafe_ptr()
+            .as_unsafe_any_origin()
+        )
 
         comptime for gpu_idx in range(ngpus):
             # For multimem, we use unicast buffers for verification/copy-back

@@ -23,6 +23,7 @@ from max.nn.kernels import rms_norm_key_cache
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -65,7 +66,8 @@ class RMSNormKeyCacheModel:
                 kv_blocks=graph_inputs[0].buffer,
                 cache_lengths=graph_inputs[1].tensor,
                 lookup_table=graph_inputs[2].tensor,
-                max_lengths=graph_inputs[3].tensor,
+                max_prompt_length=graph_inputs[3].tensor,
+                max_cache_length=graph_inputs[4].tensor,
             ),
             gamma=gamma,
             epsilon=1e-5,
@@ -87,7 +89,7 @@ class RMSNormKeyCacheModel:
 def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     seq_lens = [10, 4]
     batch_size = 2
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -143,7 +145,8 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         kv_blocks=Buffer.from_numpy(all_ones.copy()),
         cache_lengths=graph_inputs.cache_lengths,
         lookup_table=graph_inputs.lookup_table,
-        max_lengths=graph_inputs.max_lengths,
+        max_prompt_length=graph_inputs.max_prompt_length,
+        max_cache_length=graph_inputs.max_cache_length,
         kv_scales=graph_inputs.kv_scales,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
@@ -168,7 +171,7 @@ def test_partial_rms_norm_key_cache(
     ]
     batch_size = 1
     gamma_size = 512
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=1,
         head_dim=576,
@@ -225,7 +228,8 @@ def test_partial_rms_norm_key_cache(
         kv_blocks=Buffer.from_numpy(all_ones.copy()),
         cache_lengths=graph_inputs.cache_lengths,
         lookup_table=graph_inputs.lookup_table,
-        max_lengths=graph_inputs.max_lengths,
+        max_prompt_length=graph_inputs.max_prompt_length,
+        max_cache_length=graph_inputs.max_cache_length,
         kv_scales=graph_inputs.kv_scales,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
@@ -263,7 +267,7 @@ def test_rms_norm_new_key_cache(
     ]
     batch_size = 1
     gamma_size = 128
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -328,7 +332,8 @@ def test_rms_norm_new_key_cache(
         kv_blocks=Buffer.from_numpy(all_ones.copy()),
         cache_lengths=graph_inputs.cache_lengths,
         lookup_table=graph_inputs.lookup_table,
-        max_lengths=graph_inputs.max_lengths,
+        max_prompt_length=graph_inputs.max_prompt_length,
+        max_cache_length=graph_inputs.max_cache_length,
         kv_scales=graph_inputs.kv_scales,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )
@@ -370,7 +375,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
 ) -> None:
     """Tests that a TypeError is raised when gamma dtype mismatches kv dtype."""
     seq_lens = [10]
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=kv_dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -410,7 +415,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     n_kv_heads = 4
     head_dim = 64
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -473,7 +478,8 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         kv_blocks=Buffer.from_numpy(all_ones.copy()),
         cache_lengths=graph_inputs.cache_lengths,
         lookup_table=graph_inputs.lookup_table,
-        max_lengths=graph_inputs.max_lengths,
+        max_prompt_length=graph_inputs.max_prompt_length,
+        max_cache_length=graph_inputs.max_cache_length,
         kv_scales=graph_inputs.kv_scales,
         attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
     )

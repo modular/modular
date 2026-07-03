@@ -26,7 +26,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.type import Shape
 from max.graph.weights import WeightData
 from max.nn import AttentionWithRope, RotaryEmbedding
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -183,7 +183,7 @@ class AttentionWithRopeHarness(
         max_seq_len = p.max_seq_len
         rope_theta = p.rope_theta
 
-        kv_params = KVCacheParams(
+        kv_params = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=n_kv_heads,
             head_dim=head_dim,

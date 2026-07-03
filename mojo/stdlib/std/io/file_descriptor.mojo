@@ -146,3 +146,16 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         comptime if is_gpu():
             return False
         return external_call["isatty", c_int](c_int(self.value)) != 0
+
+    def fchdir(self) raises:
+        """Changes the current working directory to the one
+           represented by this fd.
+
+        Raises:
+            If the operations fails. In particular if the fd is
+            not a directory.
+        """
+        var result = external_call["fchdir", c_int](c_int(self.value))
+        if result < 0:
+            var err = get_errno()
+            raise Error("fchdir failed err: ", String(err))

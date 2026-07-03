@@ -29,14 +29,25 @@ from max.nn.kv_cache import (
     KVCacheBuffer,
     KVCacheParams,
     KVConnectorType,
+    MHAKVCacheParams,
     MultiKVCacheBuffer,
     MultiKVCacheParams,
 )
 from max.nn.kv_cache.cache_params import KVCacheQuantizationConfig
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
+from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     PagedKVCacheManager,
 )
+
+# Test-fixture helpers for the bytes-only connector boundary: tests pre-date
+# Option A and used int hashes directly; ``_b`` wraps a single int and ``_hs``
+# wraps a variadic sequence into the canonical 8-byte signed-BE encoding.
+_b = to_block_hash_bytes
+
+
+def _hs(*ns: int) -> list[bytes]:
+    return [_b(n) for n in ns]
 
 
 def create_tiered_connector(
@@ -57,7 +68,7 @@ def create_tiered_connector(
         disk_cache_dir = tempfile.mkdtemp(prefix="tiered_test_")
 
     device = Accelerator()
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         num_layers=num_layers,
         n_kv_heads=n_kv_heads,
@@ -83,7 +94,7 @@ def create_tiered_connector(
 
     return TieredConnector(
         devices=[device],
-        kv_memory=kv_buffer.to_memory(),
+        replica_kv_memory=[kv_buffer.to_memory()],
         total_num_host_blocks=num_host_blocks,
         disk_cache_dir=disk_cache_dir,
         max_disk_size_gb=max_disk_size_gb,
@@ -124,15 +135,15 @@ def test_num_used_host_blocks_initially_zero() -> None:
 
 def test_offload_transfers_blocks_to_host() -> None:
     connector = create_tiered_connector()
-    connector.offload([0, 1], [100, 200])
+    connector.offload([0, 1], _hs(100, 200))
     assert connector.num_used_host_blocks == 2
     connector.shutdown()
 
 
 def test_duplicate_hash_not_saved_twice() -> None:
     connector = create_tiered_connector()
-    connector.offload([0], [100])
-    connector.offload([1], [100])
+    connector.offload([0], _hs(100))
+    connector.offload([1], _hs(100))
     assert connector.num_used_host_blocks == 1
     connector.shutdown()
 
@@ -142,26 +153,26 @@ def test_duplicate_hash_not_saved_twice() -> None:
 
 def test_load_returns_zero_for_empty_cache() -> None:
     connector = create_tiered_connector(page_size=16)
-    loaded = connector.load([0, 1, 2], [100, 200, 300])
+    loaded = connector.load([0, 1, 2], _hs(100, 200, 300))
     assert loaded == 0
     connector.shutdown()
 
 
 def test_load_finds_cached_blocks() -> None:
     connector = create_tiered_connector(page_size=16)
-    connector.offload([0, 1, 2], [100, 200, 300])
+    connector.offload([0, 1, 2], _hs(100, 200, 300))
 
-    loaded = connector.load([3, 4, 5], [100, 200, 300])
+    loaded = connector.load([3, 4, 5], _hs(100, 200, 300))
     assert loaded == 3
     connector.shutdown()
 
 
 def test_load_stops_at_first_miss() -> None:
     connector = create_tiered_connector(page_size=16)
-    connector.offload([0], [100])
-    connector.offload([2], [300])
+    connector.offload([0], _hs(100))
+    connector.offload([2], _hs(300))
 
-    loaded = connector.load([3, 4, 5], [100, 200, 300])
+    loaded = connector.load([3, 4, 5], _hs(100, 200, 300))
     assert loaded == 1
     connector.shutdown()
 
@@ -169,9 +180,9 @@ def test_load_stops_at_first_miss() -> None:
 def test_load_full_round_trip() -> None:
     """Verify full prefix cache hit: save -> load round-trip."""
     connector = create_tiered_connector(page_size=16)
-    connector.offload([0, 1], [100, 200])
+    connector.offload([0, 1], _hs(100, 200))
 
-    loaded = connector.load([10, 11], [100, 200])
+    loaded = connector.load([10, 11], _hs(100, 200))
     assert loaded == 2
     connector.shutdown()
 
@@ -184,19 +195,19 @@ def test_write_through_to_disk() -> None:
     with tempfile.TemporaryDirectory(prefix="tiered_wt_") as disk_dir:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
-        connector.offload([0, 1, 2], [100, 200, 300])
+        connector.offload([0, 1, 2], _hs(100, 200, 300))
         # offload() records pending disk writes; sync() executes them
         connector.wait_for_offloads()
 
         # Wait for async disk writes to complete
         connector._disk_tier.wait_for_writes()
 
-        assert connector._disk_tier.contains(100)
-        assert connector._disk_tier.contains(200)
-        assert connector._disk_tier.contains(300)
+        assert connector._disk_tier.contains(_b(100))
+        assert connector._disk_tier.contains(_b(200))
+        assert connector._disk_tier.contains(_b(300))
 
-        # Verify files exist on disk
-        bin_files = list(Path(disk_dir).glob("*.bin"))
+        # Verify files exist on disk (sharded into per-hash subdirectories)
+        bin_files = list(Path(disk_dir).glob("*/*.bin"))
         assert len(bin_files) == 3
 
         connector.shutdown()
@@ -208,14 +219,14 @@ def test_write_through_skips_already_on_disk() -> None:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
         # First offload
-        connector.offload([0], [100])
+        connector.offload([0], _hs(100))
         connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
 
         written_before = connector._disk_blocks_written
 
         # Offload same hash again (from different device block)
-        connector.offload([1], [100])
+        connector.offload([1], _hs(100))
         connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
 
@@ -238,27 +249,27 @@ def test_disk_promotion_to_cpu() -> None:
         )
 
         # Offload 4 blocks -> fills CPU cache
-        connector.offload([0, 1, 2, 3], [100, 200, 300, 400])
+        connector.offload([0, 1, 2, 3], _hs(100, 200, 300, 400))
         connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
         connector.wait_for_offloads()  # drain write-locked blocks
 
         # All 4 should be on disk
-        for h in [100, 200, 300, 400]:
+        for h in _hs(100, 200, 300, 400):
             assert connector._disk_tier.contains(h)
 
         # Offload 4 more blocks -> evicts the first 4 from CPU
-        connector.offload([4, 5, 6, 7], [500, 600, 700, 800])
+        connector.offload([4, 5, 6, 7], _hs(500, 600, 700, 800))
         connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
         connector.wait_for_offloads()  # drain write-locked blocks
 
         # The first 4 should still be on disk (write-through)
-        for h in [100, 200, 300, 400]:
+        for h in _hs(100, 200, 300, 400):
             assert connector._disk_tier.contains(h)
 
         # Load hash 100 -> should find it on disk and promote to CPU
-        loaded = connector.load([10], [100])
+        loaded = connector.load([10], _hs(100))
         assert loaded == 1  # disk hit
 
         connector.shutdown()
@@ -276,23 +287,23 @@ def test_full_round_trip() -> None:
         )
 
         # Offload 2 blocks (fills CPU)
-        connector.offload([0, 1], [100, 200])
+        connector.offload([0, 1], _hs(100, 200))
         connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
         connector.wait_for_offloads()  # drain write-locked blocks
 
         # Offload 2 more -> evicts 100, 200 from CPU
-        connector.offload([2, 3], [300, 400])
+        connector.offload([2, 3], _hs(300, 400))
         connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
         connector.wait_for_offloads()  # drain write-locked blocks
 
         # 100, 200 should still be on disk
-        assert connector._disk_tier.contains(100)
-        assert connector._disk_tier.contains(200)
+        assert connector._disk_tier.contains(_b(100))
+        assert connector._disk_tier.contains(_b(200))
 
         # Load [100, 200] -> both promoted from disk
-        loaded = connector.load([20, 21], [100, 200])
+        loaded = connector.load([20, 21], _hs(100, 200))
         assert loaded == 2
 
         connector.shutdown()
@@ -310,7 +321,7 @@ def test_metrics_track_disk_operations() -> None:
         )
 
         # Write 2 blocks through to disk
-        connector.offload([0, 1], [100, 200])
+        connector.offload([0, 1], _hs(100, 200))
         connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
         connector.wait_for_offloads()  # drain write-locked blocks
@@ -320,12 +331,12 @@ def test_metrics_track_disk_operations() -> None:
         assert metrics.disk_blocks_written == 2
 
         # Evict from CPU, then promote from disk
-        connector.offload([2, 3], [300, 400])
+        connector.offload([2, 3], _hs(300, 400))
         connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
         connector.wait_for_offloads()  # drain write-locked blocks
 
-        connector.load([10], [100])
+        connector.load([10], _hs(100))
 
         metrics = connector.metrics
         assert metrics.disk_blocks_read >= 1
@@ -343,13 +354,13 @@ def test_load_breaks_chain_at_disk_miss() -> None:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
         # Only offload hash 100 and 300, NOT 200
-        connector.offload([0], [100])
-        connector.offload([2], [300])
+        connector.offload([0], _hs(100))
+        connector.offload([2], _hs(300))
         connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
 
         # Load [100, 200, 300] -> should stop at 200 (miss)
-        loaded = connector.load([10, 11, 12], [100, 200, 300])
+        loaded = connector.load([10, 11, 12], _hs(100, 200, 300))
         assert loaded == 1  # only hash 100
 
         connector.shutdown()
@@ -360,7 +371,7 @@ def test_load_breaks_chain_at_disk_miss() -> None:
 
 def test_shutdown_clears_pending_state() -> None:
     connector = create_tiered_connector()
-    connector.offload([0, 1], [100, 200])
+    connector.offload([0, 1], _hs(100, 200))
     connector.shutdown()
 
     assert len(connector._pending_disk_writes) == 0
@@ -373,17 +384,17 @@ def test_reset_prefix_cache_clears_cpu_and_disk() -> None:
     with tempfile.TemporaryDirectory(prefix="tiered_reset_") as disk_dir:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
-        connector.offload([0, 1], [100, 200])
+        connector.offload([0, 1], _hs(100, 200))
         connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
         assert connector.num_used_host_blocks == 2
-        assert connector._disk_tier.contains(100)
+        assert connector._disk_tier.contains(_b(100))
 
         connector.reset_prefix_cache()
 
         assert connector.num_used_host_blocks == 0
-        assert not connector._disk_tier.contains(100)
-        assert not connector._disk_tier.contains(200)
+        assert not connector._disk_tier.contains(_b(100))
+        assert not connector._disk_tier.contains(_b(200))
 
         connector.shutdown()
 
@@ -396,18 +407,18 @@ def test_warm_restart_loads_disk_cache() -> None:
     with tempfile.TemporaryDirectory(prefix="tiered_warm_") as disk_dir:
         # First connector: write blocks to disk
         c1 = create_tiered_connector(disk_cache_dir=disk_dir)
-        c1.offload([0, 1], [100, 200])
+        c1.offload([0, 1], _hs(100, 200))
         c1.wait_for_offloads()
         c1._disk_tier.wait_for_writes()
         c1.shutdown()  # saves metadata
 
         # Second connector: same disk dir -> should load metadata
         c2 = create_tiered_connector(disk_cache_dir=disk_dir)
-        assert c2._disk_tier.contains(100)
-        assert c2._disk_tier.contains(200)
+        assert c2._disk_tier.contains(_b(100))
+        assert c2._disk_tier.contains(_b(200))
 
         # Should be able to promote from disk
-        loaded = c2.load([10, 11], [100, 200])
+        loaded = c2.load([10, 11], _hs(100, 200))
         assert loaded == 2
 
         c2.shutdown()
@@ -422,7 +433,7 @@ def test_write_locked_blocks_lifecycle() -> None:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
         # Offload -> creates pending_disk_writes
-        connector.offload([0, 1], [100, 200])
+        connector.offload([0, 1], _hs(100, 200))
 
         assert len(connector._pending_disk_writes) == 1
         pending_disk_write = connector._pending_disk_writes[0]
@@ -463,7 +474,7 @@ def test_host_blocks_pinned_during_disk_write() -> None:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
         # Offload -> D2H copies queued
-        connector.offload([0, 1], [100, 200])
+        connector.offload([0, 1], _hs(100, 200))
 
         # At this point, host blocks should be pinned (ref_cnt=1)
         for pending_disk_write in connector._pending_disk_writes:
@@ -488,14 +499,14 @@ def test_drain_completed_writes_across_sync_cycles() -> None:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
         # Cycle 1: offload + sync
-        connector.offload([0, 1], [100, 200])
+        connector.offload([0, 1], _hs(100, 200))
         connector.wait_for_offloads()
 
         # Wait for cycle 1 writes to complete
         connector._disk_tier.wait_for_writes()
 
         # Cycle 2: offload + sync — should drain cycle 1's blocks
-        connector.offload([2, 3], [300, 400])
+        connector.offload([2, 3], _hs(300, 400))
         connector.wait_for_offloads()  # calls _drain_completed_writes() internally
 
         # Wait for cycle 2
@@ -507,7 +518,7 @@ def test_drain_completed_writes_across_sync_cycles() -> None:
         )
 
         # Verify all 4 blocks are on disk
-        for h in [100, 200, 300, 400]:
+        for h in _hs(100, 200, 300, 400):
             assert connector._disk_tier.contains(h)
 
         connector.shutdown()
@@ -518,7 +529,7 @@ def test_shutdown_releases_write_locked_blocks() -> None:
     with tempfile.TemporaryDirectory(prefix="tiered_sd_wlb_") as disk_dir:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
-        connector.offload([0, 1], [100, 200])
+        connector.offload([0, 1], _hs(100, 200))
         connector.wait_for_offloads()
 
         # Don't manually drain — let shutdown handle it
@@ -601,7 +612,7 @@ def _make_connector_and_buffers(
         n_kv_heads = 8
         quant_cfg = None
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         num_layers=num_layers,
         n_kv_heads=n_kv_heads,
@@ -639,7 +650,7 @@ def _make_connector_and_buffers(
 
     connector = TieredConnector(
         devices=[device],
-        kv_memory=kv_buffer.to_memory(),
+        replica_kv_memory=[kv_buffer.to_memory()],
         total_num_host_blocks=num_host_blocks,
         disk_cache_dir=disk_cache_dir,
         max_disk_size_gb=1.0,
@@ -659,7 +670,7 @@ def _evict_cpu_prefix(
     for k in range(num_host_blocks):
         for b in device_buffers:
             _write_block_pattern(b, scratch_block, seed=987654)
-        connector.offload([scratch_block], [900_000 + k])
+        connector.offload([scratch_block], _hs(900_000 + k))
         connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
         connector.wait_for_offloads()
@@ -687,9 +698,9 @@ def test_disk_round_trip_is_bit_exact(use_fp8: bool) -> None:
             num_host_blocks=num_host_blocks,
         )
 
-        hashes = [1001, 1002, 1003]
+        hashes = _hs(1001, 1002, 1003)
         src_blocks = [0, 1, 2]
-        ground_truth: dict[int, np.ndarray] = {}
+        ground_truth: dict[bytes, np.ndarray] = {}
         for i, (bid, h) in enumerate(zip(src_blocks, hashes, strict=False)):
             parts = [
                 _write_block_pattern(b, bid, seed=1000 * (i + 1) + j)
@@ -709,7 +720,7 @@ def test_disk_round_trip_is_bit_exact(use_fp8: bool) -> None:
         _evict_cpu_prefix(connector, device_buffers, 10, num_host_blocks)
         for h in hashes:
             assert h not in connector._host_block_pool.prefix_cache, (
-                f"hash {h} should be evicted from CPU"
+                f"hash {h.hex()} should be evicted from CPU"
             )
             assert connector._disk_tier.contains(h)
 
@@ -732,7 +743,7 @@ def test_disk_round_trip_is_bit_exact(use_fp8: bool) -> None:
                 actual,
                 ground_truth[h],
                 err_msg=(
-                    f"block hash {h} corrupted on disk round-trip "
+                    f"block hash {h.hex()} corrupted on disk round-trip "
                     f"(use_fp8={use_fp8})"
                 ),
             )
@@ -762,8 +773,8 @@ def test_mixed_cpu_and_disk_chain_is_bit_exact(use_fp8: bool) -> None:
             num_host_blocks=num_host_blocks,
         )
 
-        hashes = [3000, 3001, 3002, 3003]
-        ground_truth: dict[int, np.ndarray] = {}
+        hashes = _hs(3000, 3001, 3002, 3003)
+        ground_truth: dict[bytes, np.ndarray] = {}
         for i, (bid, h) in enumerate(zip([0, 1, 2, 3], hashes, strict=False)):
             parts = [
                 _write_block_pattern(b, bid, seed=7000 * (i + 1) + j)
@@ -771,7 +782,7 @@ def test_mixed_cpu_and_disk_chain_is_bit_exact(use_fp8: bool) -> None:
             ]
             ground_truth[h] = np.concatenate(parts)
 
-        def restore(bid: int, h: int) -> None:
+        def restore(bid: int, h: bytes) -> None:
             off = 0
             for b in device_buffers:
                 n = _bytes_per_block(b)
@@ -783,14 +794,14 @@ def test_mixed_cpu_and_disk_chain_is_bit_exact(use_fp8: bool) -> None:
                 off += n
 
         # Push h2,h3 to disk, evict everything, then make h0,h1 CPU-resident.
-        connector.offload([2, 3], [3002, 3003])
+        connector.offload([2, 3], _hs(3002, 3003))
         connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
         connector.wait_for_offloads()
         _evict_cpu_prefix(connector, device_buffers, 12, num_host_blocks)
-        restore(0, 3000)
-        restore(1, 3001)
-        connector.offload([0, 1], [3000, 3001])
+        restore(0, _b(3000))
+        restore(1, _b(3001))
+        connector.offload([0, 1], _hs(3000, 3001))
         connector.wait_for_offloads()
         connector._disk_tier.wait_for_writes()
         connector.wait_for_offloads()
@@ -798,7 +809,7 @@ def test_mixed_cpu_and_disk_chain_is_bit_exact(use_fp8: bool) -> None:
         in_cpu = [
             h for h in hashes if h in connector._host_block_pool.prefix_cache
         ]
-        assert in_cpu == [3000, 3001], (
+        assert in_cpu == _hs(3000, 3001), (
             f"expected 3000,3001 CPU-resident, got {in_cpu}"
         )
         for h in hashes:
@@ -820,7 +831,7 @@ def test_mixed_cpu_and_disk_chain_is_bit_exact(use_fp8: bool) -> None:
                 actual,
                 ground_truth[h],
                 err_msg=(
-                    f"block hash {h} corrupted on mixed CPU+disk load "
+                    f"block hash {h.hex()} corrupted on mixed CPU+disk load "
                     f"(use_fp8={use_fp8})"
                 ),
             )
@@ -858,7 +869,7 @@ def _fp8_cache_params(
     head_dim: int,
     num_layers: int = 2,
 ) -> KVCacheParams:
-    return KVCacheParams(
+    return MHAKVCacheParams(
         dtype=DType.float8_e4m3fn,
         num_layers=num_layers,
         n_kv_heads=n_kv_heads,
@@ -930,9 +941,10 @@ def test_connector_offloads_every_cache_not_just_primary() -> None:
         )
 
         assert len(cache_buffers) == 2, "expected sliding + global caches"
-        assert len(engine.device_buffers) == expected_num_buffers, (
+        device_buffers = engine._replicas[0].device_buffers
+        assert len(device_buffers) == expected_num_buffers, (
             "connector offload engine must cover every cache's buffers "
-            f"(sliding+global); got {len(engine.device_buffers)}, expected "
+            f"(sliding+global); got {len(device_buffers)}, expected "
             f"{expected_num_buffers} -- only the primary cache is offloaded "
             "(SERVOPT-1420 regression)"
         )
@@ -969,7 +981,7 @@ def test_multi_cache_disk_round_trip_restores_all_caches() -> None:
         assert len(all_bufs) == 4
 
         bid = 0
-        block_hash = 4242
+        block_hash = _b(4242)
         ground_truth = {
             i: _write_block_pattern(b, bid, seed=100 + i * 7)
             for i, b in enumerate(all_bufs)
@@ -984,7 +996,7 @@ def test_multi_cache_disk_round_trip_restores_all_caches() -> None:
         for k in range(4):
             for b in all_bufs:
                 _write_block_pattern(b, 1, seed=55)
-            connector.offload([1], [70_000 + k])
+            connector.offload([1], _hs(70_000 + k))
             connector.wait_for_offloads()
             connector._disk_tier.wait_for_writes()
             connector.wait_for_offloads()

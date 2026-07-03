@@ -86,6 +86,18 @@ comptime MbarPtr = UnsafePointer[
     SharedMemBarrier, MutUntrackedOrigin, address_space=AddressSpace.SHARED
 ]
 
+# SM100 (B200) warp-specialized pipeline backoff hint, in nanoseconds.
+#
+# `SharedMemBarrier.wait` lowers to the
+# `LAB_WAIT: mbarrier.try_wait.parity ...; @P1 bra DONE; bra LAB_WAIT;`.
+# Without a `ticks` operand `try_wait.parity` returns immediately, so the warp
+# tight-spins (BRA/SYNCS per iteration). With a `ticks` operand the hardware
+# *suspends* the warp for up to `ticks` ns (it wakes the instant the barrier
+# flips, so this is a ceiling, not a fixed sleep) — the NANOSLEEP-equivalent
+# idiom cuBLAS `nvjet` uses. Cuts the spin instructions when a warp would
+# otherwise re-iterate the loop many times (near-full occupancy / many waves).
+comptime SM100_PIPELINE_WAIT_TICKS = UInt32(0x989680)
+
 
 struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
     """A producer-consumer pipeline using shared memory barriers to
@@ -131,14 +143,27 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         self._consumer_phase = 0
 
     @always_inline
-    def wait_producer(self):
-        """Consumer waits for producer."""
-        self.full[self._consumer_stage].wait(self._consumer_phase)
+    def wait_producer[ticks: Optional[UInt32] = None](self):
+        """Consumer waits for producer.
+
+        Parameters:
+            ticks: Optional hardware-suspend ceiling (ns) forwarded to
+                `SharedMemBarrier.wait`. `None` (default) preserves the
+                immediate-return spin for every existing caller; pass
+                `SM100_PIPELINE_WAIT_TICKS` to let the warp suspend instead
+                of busy-spinning while blocked.
+        """
+        self.full[self._consumer_stage].wait[ticks=ticks](self._consumer_phase)
 
     @always_inline
-    def wait_consumer(self):
-        """Producer waits for consumer."""
-        self.empty[self._producer_stage].wait(self._producer_phase)
+    def wait_consumer[ticks: Optional[UInt32] = None](self):
+        """Producer waits for consumer.
+
+        Parameters:
+            ticks: Optional hardware-suspend ceiling (ns) forwarded to
+                `SharedMemBarrier.wait`. See `wait_producer` for semantics.
+        """
+        self.empty[self._producer_stage].wait[ticks=ticks](self._producer_phase)
 
     @always_inline
     def try_wait_producer(self) -> Bool:

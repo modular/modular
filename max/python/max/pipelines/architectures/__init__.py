@@ -188,6 +188,7 @@ def register_all_models() -> None:
             "KimiK25ForConditionalGeneration", ".kimik2_5", "kimik2_5_arch"
         ),
         _LazyArch("KimiVLForConditionalGeneration", ".kimik2_5", "kimivl_arch"),
+        _LazyArch("LagunaForCausalLM", ".laguna", "laguna_arch"),
         _LazyArch("Lfm2ForCausalLM", ".lfm2", "lfm2_arch"),
         _LazyArch("LlamaForCausalLM", ".llama3", "llama_arch"),
         _LazyArch(
@@ -195,8 +196,15 @@ def register_all_models() -> None:
             ".llama3_modulev3",
             "llama_modulev3_arch",
         ),
+        _LazyArch("Llama4ForCausalLM", ".llama4", "llama4_arch"),
+        _LazyArch(
+            "Llama4ForConditionalGeneration",
+            ".llama4",
+            "llama4_conditional_arch",
+        ),
         _LazyArch("MambaForCausalLM", ".mamba", "mamba_arch"),
         _LazyArch("MiniMaxM2ForCausalLM", ".minimax_m2", "minimax_m2_arch"),
+        _LazyArch("NemotronHForCausalLM", ".nemotron_h", "nemotron_h_arch"),
         _LazyArch("MistralForCausalLM", ".mistral", "mistral_arch"),
         _LazyArch(
             "Mistral3ForConditionalGeneration", ".mistral3", "mistral3_arch"
@@ -290,6 +298,11 @@ def register_all_models() -> None:
             ".unified_mtp_gemma4",
             "unified_mtp_gemma4_arch",
         ),
+        _LazyArch(
+            "UnifiedMTPGlmMoeDsaForCausalLM",
+            ".unified_mtp_glm5_2",
+            "unified_mtp_glm5_2_arch",
+        ),
         _LazyArch("WanPipeline", ".wan", "wan_arch"),
         _LazyArch("WanImageToVideoPipeline", ".wan", "wan_i2v_arch"),
         _LazyArch("ZImagePipeline", ".z_image_modulev3", "z_image_arch"),
@@ -311,6 +324,16 @@ def register_all_models() -> None:
         from minimax_m3 import minimax_m3_arch  # type: ignore[import-not-found]
 
         PIPELINE_REGISTRY.register(minimax_m3_arch)
+    except ModuleNotFoundError:
+        pass
+
+    # Optional: import the unified MiniMax-M3 + MTP model if available.
+    try:
+        from minimax_m3_mtp import (  # type: ignore[import-not-found]
+            unified_mtp_minimax_m3_arch,
+        )
+
+        PIPELINE_REGISTRY.register(unified_mtp_minimax_m3_arch)
     except ModuleNotFoundError:
         pass
 

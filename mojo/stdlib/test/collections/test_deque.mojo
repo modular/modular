@@ -1092,14 +1092,16 @@ def test_reversed_iter() raises:
 
 def _test_deque_iter_bounds[
     I: Iterator
-](var deque_iter: I, deque_len: Int) raises:
+](var deque_iter: I, deque_len: Int) raises where conforms_to(
+    I.Element, ImplicitlyDeletable
+):
     var iter = deque_iter^
 
     for i in range(deque_len):
         var lower, upper = iter.bounds()
         assert_equal(deque_len - i, lower)
         assert_equal(deque_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)

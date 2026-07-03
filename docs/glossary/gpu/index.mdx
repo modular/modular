@@ -3,10 +3,73 @@ title: GPU terms
 hide_table_of_contents: true
 ---
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
+import ListingCard from '@site/src/components/Listing/ListingCard';
+import ListingCards from '@site/src/components/Listing/ListingCards';
 
-export const terms = [
-        '*.mdx'
-    ]
+<ListingCards>
+  <ListingCard
+    title="Block index"
+    url="/glossary/gpu/block-index"
+    description="What is a GPU block index?"
+  />
 
-<MDXListing mdxList={terms} />
+  <ListingCard
+    title="Grid"
+    url="/glossary/gpu/grid"
+    description="What is a GPU grid?"
+  />
+
+  <ListingCard
+    title="Kernel"
+    url="/glossary/gpu/kernel"
+    description="What is a GPU kernel?"
+  />
+
+  <ListingCard
+    title="GPU memory"
+    url="/glossary/gpu/memory"
+    description="What is GPU memory?"
+  />
+
+  <ListingCard
+    title="Occupancy"
+    url="/glossary/gpu/occupancy"
+    description="What is GPU occupancy?"
+  />
+
+  <ListingCard
+    title="Register"
+    url="/glossary/gpu/register"
+    description="What is a GPU register?"
+  />
+
+  <ListingCard
+    title="Streaming multiprocessor"
+    url="/glossary/gpu/streaming-multiprocessor"
+    description="What is a streaming multiprocessor (SM)?"
+  />
+
+  <ListingCard
+    title="Thread"
+    url="/glossary/gpu/thread"
+    description="What is a GPU thread?"
+  />
+
+  <ListingCard
+    title="Thread block"
+    url="/glossary/gpu/thread-block"
+    description="What is a GPU thread block?"
+  />
+
+  <ListingCard
+    title="Thread index"
+    url="/glossary/gpu/thread-index"
+    description="What is a GPU thread index?"
+  />
+
+  <ListingCard
+    title="Warp"
+    url="/glossary/gpu/warp"
+    description="What is a GPU warp?"
+  />
+</ListingCards>

@@ -67,6 +67,14 @@ class SamplingConfig(ConfigFileModel):
         ),
     )
 
+    structured_output_backend: str = Field(
+        default="llguidance",
+        description=(
+            "Grammar backend for constrained decoding. One of ``llguidance`` "
+            "(default) or ``xgrammar``."
+        ),
+    )
+
     enable_variable_logits: bool = Field(
         default=False,
         description=(

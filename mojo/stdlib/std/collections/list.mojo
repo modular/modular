@@ -27,7 +27,6 @@ from std.collections._asan_annotations import (
 )
 from std.os import abort
 from std.sys import size_of
-from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 from std.memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
@@ -1160,10 +1159,7 @@ struct List[T: Movable](
                 " size is smaller than the current size."
             )
 
-        # TODO(MOCO-3679): Use `destroy_n(self._data + new_size, ...)`
-        # directly once where clause bounds propagate to callee inference.
-        var data = self._data.bitcast[downcast[Self.T, ImplicitlyDeletable]]()
-        destroy_n(data + new_size, count=len(self) - new_size)
+        destroy_n(self._data + new_size, count=len(self) - new_size)
 
         var old_size: Int = self._len
         self._len = new_size
@@ -1263,10 +1259,7 @@ struct List[T: Movable](
         print(len(list))  # 0
         ```
         """
-        # TODO(MOCO-3679): Use `destroy_n(self._data, ...)` directly once
-        # where clause bounds propagate to callee inference.
-        var data = self._data.bitcast[downcast[Self.T, ImplicitlyDeletable]]()
-        destroy_n(data, count=self._len)
+        destroy_n(self._data, count=self._len)
         var old_size: Int = self._len
         self._len = 0
         self._annotate_shrink(old_size)
@@ -1412,11 +1405,7 @@ struct List[T: Movable](
             the list. Instead, do `my_list.unsafe_set(len(my_list) - 1, value)`.
         """
         check_bounds[cpu_default=False](idx, len(self))
-        # TODO(MOCO-3679): Use `(self._data + idx).destroy_pointee()`
-        # directly once where clause bounds propagate to callee inference.
-        (self._data + idx).bitcast[
-            downcast[Self.T, ImplicitlyDeletable]
-        ]().destroy_pointee()
+        (self._data + idx).destroy_pointee()
         (self._data + idx).init_pointee_move(value^)
 
     def count(self, value: Self.T) -> Int where conforms_to(Self.T, Equatable):

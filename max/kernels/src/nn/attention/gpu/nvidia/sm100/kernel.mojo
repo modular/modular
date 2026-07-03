@@ -35,12 +35,14 @@ from std.gpu.compute.arch.tcgen05 import (
 from std.gpu.memory import fence_mbarrier_init
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from layout.tma_async import RaggedTMA3DTile
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     SM100TensorAccumulator,
     elect,
     kv_sub_tile_rows,
+    o_store_tma_blocks_per_op,
 )
 from nn.attention.gpu.nvidia.common import (
     get_seq_info,
@@ -195,13 +197,24 @@ struct SM100MHA2Q[
     ]
     comptime OTMAStoreType = RaggedTMA3DTile[
         Self.output_type,
-        Self.config.swizzle_mode,
+        # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
+        # Q/K/V/S/P buffers governed by `config.swizzle_mode`).
+        TensorMapSwizzle.SWIZZLE_NONE,
         # 2Q: BM=128 (each WG writes one of two Q halves).
         # 1Q: BM=128 (both WGs cover the full BM=128 Q rows and write
         # disjoint depth-column ranges).
         BM=Self.config.BM // Self.config.num_qo,
         BN=Self.config.ov_depth,
+        middle_dim=Self.config.num_kv_heads if Self.fuse_gqa else Self.config.num_q_heads,
         group=Self.config.group if Self.fuse_gqa else 1,
+        # Batched rank-5 O store (must match dispatch.mojo's store).
+        tma_blocks_per_op=o_store_tma_blocks_per_op[
+            Self.output_type,
+            TensorMapSwizzle.SWIZZLE_NONE,
+            Self.config.ov_depth,
+            Self.config.group if Self.fuse_gqa else 1,
+            depth_splits=2,
+        ](),
     ]
     comptime PackType = Pack[
         Self.MaskType,

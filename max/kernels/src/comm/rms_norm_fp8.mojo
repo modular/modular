@@ -88,7 +88,7 @@ def rms_norm_fused_fp8[
     shape: IndexList[rank],
     output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
-    epsilon: Scalar[in_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     ctx: DeviceContext,
     scale_ub: Float32,
@@ -189,7 +189,7 @@ def _rms_norm_fused_fp8_gpu[
     shape: IndexList[rank],
     output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
-    epsilon: Scalar[in_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
     scale_output: TileTensor[mut=True, scales_dtype, ...],
@@ -290,7 +290,7 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     scale_buffer: TileTensor[
         mut=True, scales_dtype, ScaleLayoutType, scale_origin
     ],
-    epsilon: Scalar[in_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     cols: Int,
     scale_ub: Scalar[scales_dtype],
@@ -389,7 +389,7 @@ def _rms_norm_fused_fp8_gpu_launch[
     cols: Int,
     output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
-    epsilon: Scalar[in_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
     scale_output: TileTensor[mut=True, scales_dtype, ...],
@@ -497,7 +497,7 @@ def _rms_norm_fused_fp8_kernel_block[
     scale_buffer: TileTensor[
         mut=True, scales_dtype, ScaleLayoutType, scale_origin
     ],
-    epsilon: Scalar[in_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     cols: Int,
     scale_ub: Scalar[scales_dtype],

@@ -309,7 +309,11 @@ def main() raises:
                 comptime for mma_n in [
                     8,
                     16,
+                    24,
                     32,
+                    48,
+                    64,
+                    96,
                 ]:
                     comptime block_tile_shape = Index(
                         bm, mma_n // cta_group, BK

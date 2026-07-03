@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.os import abort
+from std.os.os import _abort_base
 
 # ===-----------------------------------------------------------------------===#
 # __MLIRType
@@ -64,7 +64,7 @@ def paramfor_next_iter[
         _ = elem^
         return result.copy()
     except:
-        abort()
+        _abort_base()
 
 
 def paramfor_next_value[
@@ -77,4 +77,4 @@ def paramfor_next_value[
         var result = it.copy()
         return result.__next__()
     except:
-        abort()
+        _abort_base()

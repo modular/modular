@@ -73,7 +73,6 @@ from std.sys.info import (
     _is_sm_100x_or_newer,
     is_32bit,
 )
-from std.sys.intrinsics import _type_is_eq
 
 from std.bit import bit_width, byte_swap, pop_count
 from std.builtin._format_float import _write_float
@@ -118,7 +117,7 @@ comptime Scalar = SIMD[
 """Represents a scalar dtype."""
 
 comptime Int = Scalar[DType.int]
-"""Represents a signed integer sutable for indexing."""
+"""Represents a signed integer suitable for indexing."""
 comptime Int8 = Scalar[DType.int8]
 """Represents an 8-bit signed scalar integer."""
 comptime UInt8 = Scalar[DType.uint8]

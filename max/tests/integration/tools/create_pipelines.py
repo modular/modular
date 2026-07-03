@@ -34,6 +34,7 @@ import hf_repo_lock
 import huggingface_hub
 import torch
 import transformers
+import transformers.integrations.peft as peft_integration
 from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
@@ -65,15 +66,12 @@ from typing_extensions import NotRequired
 # since it is always taken when `peft` is available in the env.
 @contextmanager
 def disable_peft() -> Generator[None, None, None]:
-    original_peft_available = transformers.utils.import_utils._peft_available
-
-    transformers.utils.import_utils._peft_available = False
+    original_is_peft_available = peft_integration.is_peft_available
+    peft_integration.is_peft_available = lambda: False
     try:
         yield
     finally:
-        transformers.utils.import_utils._peft_available = (
-            original_peft_available
-        )
+        peft_integration.is_peft_available = original_is_peft_available
 
 
 ENCODING_TO_TORCH_DTYPE: dict[str, torch.dtype] = {
@@ -450,8 +448,9 @@ class Idefics3PipelineOracle(PipelineOracle):
         processor = transformers.AutoProcessor.from_pretrained(
             self.model_path, revision=revision
         )
-        # Use AutoModelForVision2Seq instead of AutoModel for Idefics3
-        model = transformers.AutoModelForVision2Seq.from_pretrained(
+        # Use AutoModelForImageTextToText instead of AutoModel for Idefics3
+        # (transformers 5.12 removed AutoModelForVision2Seq).
+        model = transformers.AutoModelForImageTextToText.from_pretrained(
             self.model_path,
             revision=revision,
             config=config,
@@ -639,7 +638,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             torch_dtype = (
                 ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None
             )
-        model = transformers.AutoModelForVision2Seq.from_pretrained(
+        model = transformers.AutoModelForImageTextToText.from_pretrained(
             self.model_path,
             revision=revision,
             config=config,
@@ -1722,6 +1721,12 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16"],
         },
     ),
+    "meta-llama/Llama-4-Scout-17B-16E-Instruct": GenericOracle(
+        model_path="meta-llama/Llama-4-Scout-17B-16E-Instruct",
+        # BF16 weights use ~278/288 GB on MI355X; cap context + batch to fit KV cache in remaining ~10 GB.
+        config_params={"max_length": 8192, "max_batch_size": 16},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "meta-llama/Meta-Llama-3-8B-Instruct": GenericOracle(
         model_path="meta-llama/Meta-Llama-3-8B-Instruct",
         weight_path_map={
@@ -2238,6 +2243,34 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         ],
         apply_chat_template=False,
     ),
+    # MiniMax-M3-MXFP8, compared against goldens pregenerated
+    # from the mm-sglang MiniMax-M3 fork. Uses the short logit-verification
+    # prompts (the long prompt is excluded) and apply_chat_template is off so
+    # the input_ids match the raw tokens the reference logits were generated
+    # from. Config mirrors the proven 8-GPU MXFP8 recipe
+    # (max_private/minimax_m3/recipes/mxfp8_8x_b200.yaml): ep_size=8 builds the
+    # sparse-attention indexer's multi-KV branch, data_parallel_degree=1 avoids
+    # the DP-attention indexer kernel crash, and chunked prefill + prefix
+    # caching keep the EP / FP8 paths on their known-good code path.
+    # trust_remote_code is off so MAX's registered MiniMaxM3VLConfig is used.
+    # The MAX side needs the private arch registered: run via
+    # //max_private/minimax_m3:verify_minimax_m3.
+    "MiniMaxAI/MiniMax-M3-MXFP8": GenericOracle(
+        model_path="MiniMaxAI/MiniMax-M3-MXFP8",
+        config_params={
+            "max_length": 1024,
+            "trust_remote_code": False,
+            "data_parallel_degree": 1,
+            "ep_size": 8,
+            "max_batch_input_tokens": 4096,
+            "enable_chunked_prefill": True,
+            "enable_prefix_caching": True,
+            "device_memory_utilization": 0.65,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        prompts=list(test_data.SHORT_TEXT_PROMPTS),
+        apply_chat_template=False,
+    ),
     "MiniMaxAI/MiniMax-M2.7": GenericOracle(
         model_path="MiniMaxAI/MiniMax-M2.7",
         config_params={
@@ -2306,5 +2339,18 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "Wan-AI/Wan2.1-T2V-14B-Diffusers": WanGenerationOracle(
         "Wan-AI/Wan2.1-T2V-14B-Diffusers",
+    ),
+    "zai-org/GLM-5.1-FP8": GenericOracle(
+        model_path="zai-org/GLM-5.1-FP8",
+        config_params={
+            "max_length": 4096,
+            "kv_cache_format": "float8_e4m3fn",
+            "ep_size": 8,
+            "data_parallel_degree": 8,
+            "max_batch_input_tokens": 4096,
+            "device_memory_utilization": 0.7,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        apply_chat_template=True,
     ),
 }
