@@ -3301,8 +3301,21 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     structOp.setLinearTypeErrorMsg(
         std::make_optional(llvm::StringRef(linearTypeErrorMsg)));
   } else {
-    if (implDestrDecl)
+    // The type is not marked with `@explicit_destroy`
+    if (implDestrDecl &&
+        !explicitTraits.contains(implDestrDecl->getSymbolRef())) {
+      // The type does not already have an explicit `ImplicitlyDeletable`
+      // conformance (possibly conditional) written by the user.
+      //
+      // (An explicit conformance makes adding the implicit one unnecessary, and
+      // injecting a second unconditional conformance here would override the
+      // user's where-clause and make the struct unconditionally
+      // ImplicitlyDeletable.)
+      //
+      // So proceed to injecting the implicit unconditional ImplicitlyDeletable
+      // conformance that every struct gets by default.
       parentTraits.push_back(implDestrDecl->getSymbolRef());
+    }
   }
 
   // Build canonical trait with constraints for conditional conformance.
@@ -3332,15 +3345,18 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Always generate SourceName for structs (even on non-debug builds).
   structOp.setSourceNameAttr(shared.getSourceName(structOp));
 
-  // Check for unsupported conditional conformance to
-  // TrivialRegisterPassable and ImplicitlyDeletable.
+  // Check for unsupported conditional conformance to TrivialRegisterPassable,
+  // and finalize the linear-type message for conditional ImplicitlyDeletable.
   //
   // TrivialRegisterPassable depends on struct body (field triviality for
   // copy/move/del) which creates parser cycle risks and requires composing
   // the user's where-clause with field-level triviality witnesses.
   //
-  // ImplicitlyDeletable is rejected because CheckLifetimes does not
-  // consult where-clause constraints when auto-destroying fields.
+  // Conditional conformance to ImplicitlyDeletable IS allowed: when its
+  // where-clause is not satisfied the type is linear, so we synthesize a
+  // default linear-type error message here if the user did not provide one
+  // via @explicit_destroy. CheckLifetimes consults that message when
+  // automatic destruction is unavailable for a given instantiation.
   //
   // Conditional conformance to RegisterPassable IS allowed. The struct stays
   // pessimistically MemoryOnly at declaration time; the parametric
@@ -3361,13 +3377,18 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
           return failure();
         }
         if (traitName == "ImplicitlyDeletable") {
+          // A struct that conditionally conforms to ImplicitlyDeletable is a
+          // linear type whenever its where-clause is not satisfied. If the
+          // user did not supply a custom message via @explicit_destroy,
+          // set a generic default so that CheckLifetimes has a
+          // diagnostic to emit when automatic destruction is unavailable.
           if (!structOp.getLinearTypeErrorMsg().has_value()) {
-            shared.emitError(traitConstraints[i].getLoc())
-                << "conditional conformance to 'ImplicitlyDeletable' "
-                   "requires @explicit_destroy to provide the error message "
-                   "when the constraint is not satisfied";
-            decl.setErroneous();
-            return failure();
+            std::string defaultMsg =
+                "type '" + structOp.getDeclName().str() +
+                "' does not conditionally conform to "
+                "'ImplicitlyDeletable' for these parameters";
+            structOp.setLinearTypeErrorMsg(
+                std::make_optional(llvm::StringRef(defaultMsg)));
           }
         }
       }

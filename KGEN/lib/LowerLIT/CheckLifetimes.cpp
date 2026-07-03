@@ -598,6 +598,9 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
       // destructor for the purposes of destructor insertion.
       // FIXME: This is wrong, we should check the 'where' clause on the
       // conformance.
+      // Any struct that conditionally conforms to ImplicitlyDeletable always
+      // has a linear-type error message: DeclResolution synthesizes a default
+      // one when @explicit_destroy is not used.
       assert(info.decl.getLinearTypeErrorMsg().value_or("") != "" &&
              "Shouldn't conditionally conform to ImplicitlyDeletable without a "
              "linear type error message");

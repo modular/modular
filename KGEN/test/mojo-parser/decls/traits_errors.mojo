@@ -223,20 +223,21 @@ def blah[b_t: SameEntryDeclB](b: b_t):
     # expected-error @+1 {{ambiguous call to 'foo'}}
     b.foo()
 
-@explicit_destroy
+
+# MOCO-4252
 struct CondDeletableField1[T: AnyType](
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
 ):
-    var value: Self.T # Ok
+    var value: Self.T  # Ok
 
-@explicit_destroy
+
 struct CondDeletableField2[T: AnyType, X: Int](
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable) and X > 10,
 ):
-    var value: Self.T # Ok
+    var value: Self.T  # Ok
 
-@explicit_destroy
+
 struct CondDeletableField3[T: AnyType, X: Int](
     ImplicitlyDeletable where X > 10,
 ):
-    var value: Self.T # expected-error {{field 'value' has non-implicitly deletable type 'T'}}
+    var value: Self.T  # expected-error {{field 'value' has non-implicitly deletable type 'T'}}
