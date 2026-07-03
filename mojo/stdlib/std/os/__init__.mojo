@@ -44,6 +44,7 @@ from .os import (
     unlink,
     symlink,
     link,
+    chdir,
 )
 from .pathlike import PathLike
 from .process import Process, Pipe

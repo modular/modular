@@ -581,7 +581,7 @@ def removedirs[PathLike: stdPathLike](path: PathLike) raises -> None:
     this latter phase are ignored, which occur when a directory was not empty.
 
     Parameters:
-      PathLike: The a type conforming to the os.PathLike trait.
+      PathLike: A type conforming to the os.PathLike trait.
 
     Args:
       path: The path to the directory.
@@ -632,3 +632,27 @@ def isatty(fd: Int) -> Bool:
     """
 
     return FileDescriptor(fd).isatty()
+
+
+# ===----------------------------------------------------------------------=== #
+# chdir
+# ===----------------------------------------------------------------------=== #
+
+
+def chdir[PathLike: os.PathLike](path: PathLike) raises:
+    """Changes the current working directory.
+
+    Parameters:
+        PathLike: A type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to the new working directory.
+
+    Raises:
+        If the operation fails.
+    """
+    var fspath = path.__fspath__()
+    var error = external_call["chdir", Int32](fspath.as_c_string_slice())
+    if error != 0:
+        var err = get_errno()
+        raise Error("chdir failed: ", fspath, " Err: ", String(err))

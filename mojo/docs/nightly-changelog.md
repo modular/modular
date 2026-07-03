@@ -247,6 +247,10 @@ This version is still a work in progress.
 
   The new `Int` should still be used in all other situations.
 
+- `chdir` has been added to the `std.os` module and an `fchdir` method has been
+  added to `io.FileDescriptor`. These are wrappers for the corresponding POSIX
+  functions.
+
 - `ImplicitlyDestructible` has been renamed to `ImplicitlyDeletable`, for better
   name consistency with its required `__del__()` "delete" special method.
 
