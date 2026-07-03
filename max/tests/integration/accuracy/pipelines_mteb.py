@@ -37,7 +37,7 @@ import mteb
 import numpy as np
 
 # Pipelines
-from max.entrypoints.cli import pipeline_config_options
+from max._entrypoints.cli.config import pipeline_config_options
 from max.pipelines import (
     PIPELINE_REGISTRY,
     EmbeddingsPipelineType,

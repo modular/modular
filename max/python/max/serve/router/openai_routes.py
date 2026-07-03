@@ -78,10 +78,9 @@ from max.serve.parser import (
 )
 from max.serve.parser.tool_call_normalization import (
     _normalize_tools_parameters,
-    _validate_response_format_schema,
     normalize_response_format_schema,
 )
-from max.serve.parser.tool_call_validation import log_tool_call_conformance
+from max.serve.parser.tool_call_validation import check_tool_call_conformance
 from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
@@ -118,6 +117,7 @@ from max.serve.schemas.openai import (
     MaxModel,
     Model,
     PromptTokensDetails,
+    ResponseFormat,
     TopLogprob,
     UnloadLoraRequest,
 )
@@ -140,13 +140,6 @@ from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
 from openai.types.create_embedding_response import Usage as EmbeddingUsage
-from openai.types.shared_params import (
-    ResponseFormatJSONObject as ResponseFormatJsonObject,
-)
-from openai.types.shared_params import (
-    ResponseFormatJSONSchema as ResponseFormatJsonSchema,
-)
-from openai.types.shared_params import ResponseFormatText as ResponseFormatText
 from PIL import Image
 from pydantic import AnyUrl, BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
@@ -308,14 +301,25 @@ class OpenAIChatResponseGenerator(
         parser: ToolParser | None = None,
         parse_tool_calls: bool = False,
         tools: list[TextGenerationRequestTool] | None = None,
+        fold_reasoning_into_content: bool = False,
+        emit_reasoning_content: bool = False,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
+        # MiniMax ``reasoning_split=False`` folds reasoning into ``content`` as ``<think>...</think>``; ``_think_*`` track the stream fold.
+        self.fold_reasoning_into_content = fold_reasoning_into_content
+        self._think_opened = False
+        self._think_closed = False
         self.parser: ToolParser = (
             parser if parser is not None else LlamaToolParser()
         )
         # Whether to parse tool calls from the response.
         self.parse_tool_calls = parse_tool_calls
+        # Reasoning text is emitted under exactly one field, selected here.
+        # See PipelineRuntimeConfig.emit_reasoning_content / CENG-651.
+        self._reasoning_field = (
+            "reasoning_content" if emit_reasoning_content else "reasoning"
+        )
         # Function name -> JSON schema, used only for observability-only
         # schema-conformance logging (see tool_call_validation). The raw
         # client schema is kept so it matches what callers validate against.
@@ -332,6 +336,57 @@ class OpenAIChatResponseGenerator(
         # Per-call streaming accumulators for end-of-stream conformance check.
         self._stream_tool_names: dict[int, str] = {}
         self._stream_tool_args: dict[int, list[str]] = {}
+
+    def _log_tool_call_conformance(
+        self,
+        calls: list[tuple[str, object]],
+        request_id: str,
+        is_streaming: bool,
+    ) -> None:
+        results = check_tool_call_conformance(calls, self._tool_schemas)
+        for result in results:
+            if result.outcome == "valid":
+                continue
+            logger.warning(
+                "tool_call_conformance req=%s stream=%s fn=%s outcome=%s errors=%s",
+                request_id,
+                is_streaming,
+                result.function,
+                result.outcome,
+                ",".join(result.errors) if result.errors else "-",
+            )
+
+    def _fold_reasoning_delta(
+        self, reasoning_text: str | None, content_text: str | None
+    ) -> str | None:
+        """Folds a streaming delta's reasoning + content into one content string.
+
+        Injects ``<think>\\n`` before the first reasoning text and
+        ``\\n</think>\\n\\n`` before the first content text, so the full stream
+        reconstructs ``<think>\\n{reasoning}\\n</think>\\n\\n{content}`` —
+        matching the official MiniMax ``reasoning_split=False`` format. Relies on
+        per-request ``_think_opened`` / ``_think_closed`` state.
+
+        Args:
+            reasoning_text: Decoded reasoning tokens in this delta, if any.
+            content_text: Decoded content tokens in this delta, if any.
+
+        Returns:
+            The folded content string, or ``None`` when the delta carries no
+            visible text.
+        """
+        parts: list[str] = []
+        if reasoning_text:
+            if not self._think_opened:
+                parts.append("<think>\n")
+                self._think_opened = True
+            parts.append(reasoning_text)
+        if content_text:
+            if self._think_opened and not self._think_closed:
+                parts.append("\n</think>\n\n")
+                self._think_closed = True
+            parts.append(content_text)
+        return "".join(parts) or None
 
     async def stream(
         self, request: TextGenerationRequest
@@ -351,6 +406,10 @@ class OpenAIChatResponseGenerator(
             self.parser.reset()
             self._stream_tool_names.clear()
             self._stream_tool_args.clear()
+
+        # Reset the ``<think>`` fold state for this streaming session.
+        self._think_opened = False
+        self._think_closed = False
 
         try:
             async for chunk in self.pipeline.next_token_chunk(request):
@@ -434,7 +493,7 @@ class OpenAIChatResponseGenerator(
                     and self._tool_schemas
                     and self._stream_tool_names
                 ):
-                    log_tool_call_conformance(
+                    self._log_tool_call_conformance(
                         [
                             (
                                 self._stream_tool_names[i],
@@ -442,9 +501,8 @@ class OpenAIChatResponseGenerator(
                             )
                             for i in sorted(self._stream_tool_names)
                         ],
-                        self._tool_schemas,
                         request_id=str(request.request_id),
-                        streaming=True,
+                        is_streaming=True,
                     )
 
                 if (
@@ -464,11 +522,24 @@ class OpenAIChatResponseGenerator(
                     elif tool_call_chunks:
                         content = None
 
+                    # MiniMax ``reasoning_split=False``: fold reasoning into the
+                    # content stream wrapped in ``<think>...</think>`` and drop
+                    # the dedicated reasoning field. Tool-call deltas are left
+                    # untouched.
+                    reasoning = chunk.decoded_reasoning_tokens
+                    if (
+                        self.fold_reasoning_into_content
+                        and not tool_call_chunks
+                    ):
+                        content = self._fold_reasoning_delta(reasoning, content)
+                        reasoning = None
+
                     finish_reason = get_finish_reason_from_status(
                         chunk.status,
                         allow_none=True,
                         has_tool_calls=has_emitted_tool_calls,
                     )
+                    reasoning_kwargs = {self._reasoning_field: reasoning}
                     choices = [
                         ChatCompletionStreamResponseChoice(
                             index=0,
@@ -477,10 +548,10 @@ class OpenAIChatResponseGenerator(
                                 function_call=None,
                                 role="assistant",
                                 refusal=None,
-                                reasoning=chunk.decoded_reasoning_tokens,
                                 tool_calls=tool_call_chunks
                                 if tool_call_chunks
                                 else None,
+                                **reasoning_kwargs,
                             ),
                             logprobs=logprobs_response,
                             finish_reason=finish_reason,
@@ -685,8 +756,11 @@ class OpenAIChatResponseGenerator(
             # content so a successful turn never returns ``message.content``
             # null. On ``length`` (truncated mid-thought) keep it as reasoning
             # rather than misrepresenting a partial thought as the answer.
+            # Skipped when folding reasoning into content: the ``<think>`` block
+            # already guarantees ``message.content`` is non-null.
             if (
-                not response_message.strip()
+                not self.fold_reasoning_into_content
+                and not response_message.strip()
                 and reasoning_message
                 and finish_reason == "stop"
             ):
@@ -721,40 +795,22 @@ class OpenAIChatResponseGenerator(
                                 )
                     if parsed.tool_calls:
                         if self._tool_schemas:
-                            log_tool_call_conformance(
+                            self._log_tool_call_conformance(
                                 [
                                     (tc.name, tc.arguments)
                                     for tc in parsed.tool_calls
                                 ],
-                                self._tool_schemas,
                                 request_id=str(request.request_id),
-                                streaming=False,
+                                is_streaming=False,
                             )
                         response_choices = self._tool_response_to_choices(
                             parsed, logprobs=logprobs
                         )
-                    else:
-                        # No tool calls found, handle as text
-                        self._handle_text_response(
-                            response_message,
-                            response_choices,
-                            finish_reason=finish_reason,
-                            logprobs=logprobs,
-                        )
                 except Exception as e:
                     # If parser fails, handle as traditional text
-                    logging.warning(
-                        f"Parsing for tool use failed, handling as general text response. Original error: {e}"
-                    )
-                    self._handle_text_response(
-                        response_message,
-                        response_choices,
-                        finish_reason=finish_reason,
-                        logprobs=logprobs,
-                    )
+                    logging.warning(f"Parsing for tool use failed: {e}")
 
-            else:
-                # Handle as regular text response if JSON cannot be parsed
+            if not response_choices:
                 self._handle_text_response(
                     response_message,
                     response_choices,
@@ -763,8 +819,22 @@ class OpenAIChatResponseGenerator(
                 )
 
             if reasoning_message is not None:
-                for choice in response_choices:
-                    choice.message.reasoning = reasoning_message
+                if self.fold_reasoning_into_content:
+                    # MiniMax ``reasoning_split=False``: fold reasoning into
+                    # ``content`` wrapped in ``<think>...</think>`` and leave the
+                    # dedicated reasoning field unset.
+                    think_block = f"<think>\n{reasoning_message}\n</think>\n\n"
+                    for choice in response_choices:
+                        choice.message.content = think_block + (
+                            choice.message.content or ""
+                        )
+                else:
+                    for choice in response_choices:
+                        setattr(
+                            choice.message,
+                            self._reasoning_field,
+                            reasoning_message,
+                        )
 
             usage = None
             if n_reasoning_tokens > 0 or n_tokens > 0:
@@ -981,6 +1051,11 @@ def _coerce_positive_float(value: Any) -> float | None:
     return coerced if coerced > 0 else None
 
 
+def _coerce_optional_str(value: Any) -> str | None:
+    """Returns ``value`` when it is a string, else ``None``."""
+    return value if isinstance(value, str) else None
+
+
 def _validate_tool_message_consistency(
     messages: Sequence[Mapping[str, Any]],
 ) -> None:
@@ -1053,6 +1128,8 @@ async def openai_parse_chat_completion_request(
     settings: Settings,
     max_images_per_request: int | None = None,
     max_image_bytes: int | None = None,
+    max_videos_per_request: int | None = None,
+    max_video_bytes: int | None = None,
     allowed_roles: frozenset[str] | None = None,
 ) -> _ParsedChatRequest:
     """Parse the OpenAI ChatCompletionRequest to build TextGenerationRequestMessages.
@@ -1061,9 +1138,12 @@ async def openai_parse_chat_completion_request(
     can be downloaded and bundled alongside the request for preprocessing by
     pipelines.
 
-    ``max_images_per_request`` and ``max_image_bytes`` are model-specific image
+    ``max_images_per_request``/``max_image_bytes`` and
+    ``max_videos_per_request``/``max_video_bytes`` are model-specific media
     limits supplied by the caller (read off the tokenizer); ``None`` means the
-    corresponding limit is not enforced.
+    corresponding limit is not enforced. The per-item byte caps are enforced
+    while resolving each reference, so an oversized image/video is rejected
+    before its bytes are fully downloaded or decoded.
 
     ``allowed_roles`` is the set of message roles the model accepts; ``None``
     skips role validation (vendor roles are only allowed for models that
@@ -1126,9 +1206,12 @@ async def openai_parse_chat_completion_request(
                         # Carry the optional sizing hint onto the placeholder.
                         message_content.append(
                             ImageContentPart(
+                                detail=_coerce_optional_str(
+                                    image_url.get("detail")
+                                ),
                                 max_long_side_pixel=_coerce_positive_int(
                                     image_url.get("max_long_side_pixel")
-                                )
+                                ),
                             )
                         )
                     else:
@@ -1146,6 +1229,9 @@ async def openai_parse_chat_completion_request(
                                 ),
                                 max_frames=_coerce_positive_int(
                                     video_url.get("max_frames")
+                                ),
+                                detail=_coerce_optional_str(
+                                    video_url.get("detail")
                                 ),
                                 max_long_side_pixel=_coerce_positive_int(
                                     video_url.get("max_long_side_pixel")
@@ -1181,7 +1267,7 @@ async def openai_parse_chat_completion_request(
                 )
             )
 
-    # Reject over-limit requests before downloading any image.
+    # Reject over-limit requests before downloading any media.
     if (
         max_images_per_request is not None
         and len(image_refs) > max_images_per_request
@@ -1190,9 +1276,23 @@ async def openai_parse_chat_completion_request(
             f"too many images: {len(image_refs)} exceeds the maximum of "
             f"{max_images_per_request} images per request"
         )
+    if (
+        max_videos_per_request is not None
+        and len(video_refs) > max_videos_per_request
+    ):
+        raise InputError(
+            f"too many videos: {len(video_refs)} exceeds the maximum of "
+            f"{max_videos_per_request} videos per request"
+        )
 
+    # Resolve each reference into bytes, enforcing the per-item byte cap during
+    # the download/decode so an oversized item is rejected before it is fully
+    # materialized (CENG-640).
     resolve_image_tasks = [
-        resolve_image_from_url(image_url, settings) for image_url in image_refs
+        resolve_image_from_url(
+            image_url, settings, max_bytes=max_image_bytes, media_kind="image"
+        )
+        for image_url in image_refs
     ]
     request_images = await asyncio.gather(*resolve_image_tasks)
 
@@ -1206,7 +1306,10 @@ async def openai_parse_chat_completion_request(
     )
 
     resolve_video_tasks = [
-        resolve_image_from_url(video_url, settings) for video_url in video_refs
+        resolve_image_from_url(
+            video_url, settings, max_bytes=max_video_bytes, media_kind="video"
+        )
+        for video_url in video_refs
     ]
     request_videos = await asyncio.gather(*resolve_video_tasks)
 
@@ -1385,6 +1488,10 @@ async def openai_create_chat_completion(
                 tokenizer, "max_images_per_request", None
             ),
             max_image_bytes=getattr(tokenizer, "max_image_bytes", None),
+            max_videos_per_request=getattr(
+                tokenizer, "max_videos_per_request", None
+            ),
+            max_video_bytes=getattr(tokenizer, "max_video_bytes", None),
             allowed_roles=_STANDARD_CHAT_ROLES
             | getattr(tokenizer, "extra_chat_roles", frozenset()),
         )
@@ -1449,6 +1556,8 @@ async def openai_create_chat_completion(
                         response_format_schema=response_format_schema,
                         tools=grammar_tools,
                         tokenizer=pipeline.tokenizer,
+                        backend=pipeline_config.sampling.structured_output_backend,
+                        tool_choice=completion_request.tool_choice,
                     )
                 # Create the response format.
                 # Note:
@@ -1484,18 +1593,32 @@ async def openai_create_chat_completion(
         # the model can output either tool calls or structured content. The parser
         # will detect which format was used and handle accordingly.
         parse_tool_calls = tools is not None
+        # MiniMax ``reasoning_split=False`` folds reasoning back into the
+        # ``content`` field wrapped in ``<think>...</think>``. Gated to MiniMax
+        # M3 (identified by its reasoning parser) so other models are unaffected.
+        fold_reasoning_into_content = (
+            completion_request.reasoning_split is False
+            and pipeline_config.runtime.reasoning_parser == "minimax_m3"
+        )
         response_generator = OpenAIChatResponseGenerator(
             pipeline,
             stream_options=stream_options,
             parser=parser,
             parse_tool_calls=parse_tool_calls,
             tools=tools,
+            fold_reasoning_into_content=fold_reasoning_into_content,
+            emit_reasoning_content=pipeline_config.runtime.emit_reasoning_content,
         )
-        # Use request-level temperature/thinking_temperature if provided, else server defaults.
+        # Use request-level sampling params if provided, else server defaults.
         temp = (
             completion_request.temperature
             if completion_request.temperature is not None
             else pipeline_config.runtime.temperature
+        )
+        top_k = (
+            completion_request.top_k
+            if completion_request.top_k is not None
+            else pipeline_config.runtime.top_k
         )
         thinking_temp = (
             completion_request.thinking_temperature
@@ -1509,7 +1632,7 @@ async def openai_create_chat_completion(
         )
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
-                top_k=completion_request.top_k,
+                top_k=top_k,
                 top_p=completion_request.top_p,
                 min_p=completion_request.min_p,
                 temperature=temp,
@@ -1598,6 +1721,7 @@ async def openai_create_chat_completion(
                 request, completion_request.target_endpoint
             ),
             dkv_cache_hint=completion_request.dkv_cache_hint,
+            cache_salt=completion_request.cache_salt,
             chat_template_options=chat_template_options,
         )
 
@@ -1707,33 +1831,26 @@ def _validate_json_schema(json_schema: dict[str, Any]) -> None:
     crashing the model worker process later during constrained decoding.
 
     Raises:
-        InputError: If the schema cannot be compiled or has a non-object root.
+        InputError: If a grammar cannot be created from the JSON schema.
     """
     if not json_schema:
         return
 
-    # Root must be type: object per OpenAI's structured-outputs guide.
     try:
-        _validate_response_format_schema(json_schema)
-    except ValueError as e:
-        raise InputError(str(e)) from e
-
-    try:
-        # This validates the schema can be compiled to a grammar.
-        # It doesn't need a tokenizer - just checks schema structure.
-        LLMatcher.grammar_from_json_schema(json_schema)
+        grammar = LLMatcher.grammar_from_json_schema(json_schema)
     except Exception as e:
         raise InputError(
-            f"JSON schema cannot be compiled to valid grammar: {e}. "
-            "Recursive $ref schemas and other unsupported constructs are not allowed."
+            f"Failed to create a grammar from the JSON schema: {e}"
         ) from e
+    error = LLMatcher.validate_grammar(grammar)
+    if error:
+        raise InputError(
+            f"Invalid grammar created from the JSON schema: {error}"
+        )
 
 
 def _create_response_format(
-    response_format: ResponseFormatText
-    | ResponseFormatJsonObject
-    | ResponseFormatJsonSchema
-    | None,
+    response_format: ResponseFormat | None,
     enable_response_format_schema: bool,
 ) -> TextGenerationResponseFormat | None:
     """Convert OpenAI response format to TextGenerationResponseFormat.
@@ -1775,7 +1892,13 @@ def _create_response_format(
         json_schema_param = cast(dict[str, Any], response_format).get(
             "json_schema", {}
         )
-        if (schema := json_schema_param.get("schema")) is not None:
+        schema = json_schema_param.get("schema")
+        if isinstance(schema, bool):
+            # Boolean JSON Schema: ``true`` -> any value, ``false`` ->
+            # unsatisfiable (``{"anyOf": [False]}`` compiles to an honest
+            # "Unsatisfiable schema" error; ``{"not": {}}`` does not).
+            json_schema = {} if schema else {"anyOf": [False]}
+        elif schema is not None:
             json_schema = dict(schema)
 
     # Validate the schema early to return 400 instead of crashing the model worker.
@@ -2386,11 +2509,16 @@ async def openai_create_completion(
         )
         prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []
-        # Use request-level temperature/thinking_temperature if provided, else server defaults.
+        # Use request-level sampling params if provided, else server defaults.
         temp = (
             completion_request.temperature
             if completion_request.temperature is not None
             else pipeline_config.runtime.temperature
+        )
+        top_k = (
+            completion_request.top_k
+            if completion_request.top_k is not None
+            else pipeline_config.runtime.top_k
         )
         thinking_temp = (
             completion_request.thinking_temperature
@@ -2401,7 +2529,7 @@ async def openai_create_completion(
             prompt = cast(str | Sequence[int], prompt)
             sampling_params = SamplingParams.from_input_and_generation_config(
                 SamplingParamsInput(
-                    top_k=completion_request.top_k,
+                    top_k=top_k,
                     top_p=completion_request.top_p,
                     min_p=completion_request.min_p,
                     temperature=temp,
@@ -2436,6 +2564,7 @@ async def openai_create_completion(
                     request, completion_request.target_endpoint
                 ),
                 dkv_cache_hint=completion_request.dkv_cache_hint,
+                cache_salt=completion_request.cache_salt,
             )
             token_requests.append(tgr)
 

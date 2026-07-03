@@ -465,7 +465,7 @@ def rms_norm_fused_residual(
         custom_extensions = _get_state_space_paths()
 
     weight_cast = weight.cast(x.dtype)
-    eps_const = F.constant(eps, dtype=x.dtype, device=CPU())
+    eps_const = F.constant(eps, dtype=DType.float32, device=CPU())
     weight_offset_const = F.constant(weight_offset, dtype=x.dtype, device=CPU())
     dropout_p_const = F.constant(0.0, dtype=x.dtype, device=CPU())
     seed_const = F.constant(0, dtype=DType.uint64, device=CPU())

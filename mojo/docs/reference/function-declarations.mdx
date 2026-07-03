@@ -4,7 +4,7 @@ sidebar_label: Function declarations
 sidebar_position: 7
 description: >
   Reference for Mojo function declaration syntax. Covers
-  signatures, passing conventions, markers, variadic
+  signatures, argument conventions, markers, variadic
   arguments, effects, return types, and special methods.
 ---
 
@@ -325,10 +325,10 @@ def wrong(x: Int where x > 0):
     pass
 ```
 
-## Argument passing conventions
+## Argument conventions
 
-A *passing convention* controls how a value passes to a
-function. It appears before the argument name.
+An *argument convention* controls how an argument value passes to a function. It
+appears before the argument name.
 
 ### `mut`
 

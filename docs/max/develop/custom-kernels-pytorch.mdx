@@ -8,7 +8,6 @@ is_tutorial: true
 ---
 
 import InstallModular from '../../_includes/install-modular.mdx';
-import MDXListing from '@site/src/components/Listing/MDXListing';
 
 When working with PyTorch models, you might encounter performance bottlenecks in
 specific operations that could benefit from custom optimization. You might also
@@ -212,9 +211,8 @@ improvements over CPU-only implementations.
 Now that you wrote a Mojo kernel with your PyTorch model, check out these
 other tutorials:
 
-export const docs = [
-  '../../develop/build-custom-ops.mdx',
-  '../../develop/modules.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Build custom ops for GPUs](/max/develop/build-custom-ops): Write custom GPU
+  and CPU operations in Mojo and load them into a MAX graph.
+- [Build a model graph with Module](/max/develop/modules): Learn how to
+  compose modules, write custom modules with explicit weights, load checkpoint
+  data, and construct a model graph.

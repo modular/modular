@@ -26,7 +26,6 @@ from std.collections import Set
 import std.format._utils as fmt
 
 from std.reflection import get_function_name, call_location, SourceLocation
-from std.sys.intrinsics import _type_is_eq
 from std.sys import argv
 
 
@@ -455,7 +454,7 @@ struct TestSuite(Movable):
             comptime test_func = test_funcs[idx]
 
             comptime if get_function_name[test_func]().startswith("test_"):
-                comptime if _type_is_eq[type_of(test_func), _Test.fn_type]():
+                comptime if type_of(test_func) == _Test.fn_type:
                     self.test[rebind[_Test.fn_type](test_func)]()
                 else:
                     raise Error(

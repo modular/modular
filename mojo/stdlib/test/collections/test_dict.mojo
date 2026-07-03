@@ -21,7 +21,13 @@ from std.collections._swisstable import GROUP_WIDTH
 
 from std.hashlib import Hasher, default_comp_time_hasher
 
-from test_utils import CopyCounter, DelCounter, MoveOnly, check_write_to
+from test_utils import (
+    CopyCounter,
+    DelCounter,
+    ExplicitDestroy,
+    MoveOnly,
+    check_write_to,
+)
 from std.testing import (
     assert_equal,
     assert_false,
@@ -276,13 +282,18 @@ def test_key_error() raises:
 
 def _test_iter_bounds[
     I: Iterator, //
-](var dict_iter: I, dict_len: Int,) raises:
+](
+    var dict_iter: I,
+    dict_len: Int,
+) raises where conforms_to(
+    I.Element, ImplicitlyDeletable
+):
     var iter = dict_iter^
     for i in range(dict_len):
         var lower, upper = iter.bounds()
         assert_equal(dict_len - i, lower)
         assert_equal(dict_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -385,6 +396,32 @@ def test_iter_take_items() raises:
     for i in range(3):
         with assert_raises(contains="KeyError"):
             _ = dict[i]
+
+
+def test_iter_take_items_owned() raises:
+    # Test that dict `take_items()` works with non-Copyable values
+    var dict = Dict[MoveOnly[Int], String]()
+    dict[MoveOnly(0)] = "a"
+    dict[MoveOnly(1)] = "b"
+    dict[MoveOnly(2)] = "c"
+
+    var values = String()
+    var keys = 0
+
+    for entry in dict.take_items():
+        keys += entry.key.data
+        values += entry.value
+
+    assert_equal(values, "abc")
+    assert_equal(keys, 3)
+    assert_equal(len(dict), 0)
+    with assert_raises():
+        var it = dict.take_items()
+        _ = it.__next__()  # raises StopIteration
+
+    for i in range(3):
+        with assert_raises(contains="KeyError"):
+            _ = dict[MoveOnly(i)]
 
 
 def test_iter_take_items_empty() raises:
@@ -1274,6 +1311,11 @@ def test_dict_conditional_conformances() raises:
     assert_true(conforms_to(Dict[Int, Int], Hashable))
     assert_false(conforms_to(Dict[Int, NonWritable], Writable))
 
+    # Owned iteration should work for any combination of non-Copyable K/V types
+    assert_true(conforms_to(Dict[MoveOnly[Int], Int], IterableOwned))
+    assert_true(conforms_to(Dict[Int, MoveOnly[Int]], IterableOwned))
+    assert_true(conforms_to(Dict[MoveOnly[Int], MoveOnly[Int]], IterableOwned))
+
     # Move-only key drops every copy-requiring conformance: each conditional
     # clause on `Dict` includes `conforms_to(K, Copyable)`.
     assert_false(conforms_to(Dict[MoveOnly[Int], Int], Copyable))
@@ -1297,14 +1339,15 @@ def test_dict_conditional_conformances() raises:
 
 
 def test_dict_iter_owned() raises:
-    var d = Dict[String, Int]()
-    d["a"] = 1
-    d["b"] = 2
-    d["c"] = 3
+    # Test that owned iteration works, for non-Copyable types
+    var d = Dict[MoveOnly[String], Int]()
+    d[MoveOnly("a")] = 1
+    d[MoveOnly("b")] = 2
+    d[MoveOnly("c")] = 3
 
-    var keys = List[String]()
-    for key in d^:
-        keys.append(key)
+    var keys = List[MoveOnly[String]]()
+    for var key in d^:
+        keys.append(key^)
 
     assert_equal(len(keys), 3)
     assert_equal(keys[0], "a")
@@ -1480,6 +1523,49 @@ def test_dict_move_only_key_and_value() raises:
     ref already = d.setdefault(MoveOnly[Int](1), MoveOnly[Int](999))
     assert_equal(already, MoveOnly[Int](10))
     assert_equal(len(d), 1)
+
+
+def test_dict_conditional_implicitly_deletable() raises:
+    assert_true(conforms_to(Dict[Int, Int], ImplicitlyDeletable))
+
+    assert_false(conforms_to(Dict[Int, ExplicitDestroy], ImplicitlyDeletable))
+
+
+def test_dict_destroy_with() raises:
+    # `destroy_with` must hand every entry's key/value to the closure exactly
+    # once. Uses a deletable value type because populating a linear-valued dict
+    # isn't supported yet (tracked in the linear-usability follow-up).
+    var d = Dict[Int, Int]()
+    d[1] = 10
+    d[2] = 20
+    d[3] = 30
+
+    var destroyed = List[Int]()
+
+    def dispose(var key: Int, var value: Int) {mut}:
+        destroyed.append(value)
+
+    d^.destroy_with(dispose)
+
+    # Order follows slot layout, not insertion, so check membership.
+    assert_equal(len(destroyed), 3)
+    assert_true(10 in destroyed)
+    assert_true(20 in destroyed)
+    assert_true(30 in destroyed)
+
+
+def test_dict_destroy_with_empty() raises:
+    # `destroy_with` on an empty (linear-valued) dict must run and free the
+    # backing without invoking the closure — there are no entries.
+    var d = Dict[Int, ExplicitDestroy]()
+    var calls = 0
+
+    def dispose(var key: Int, var value: ExplicitDestroy) {mut}:
+        calls += 1
+        value^.destroy()
+
+    d^.destroy_with(dispose)
+    assert_equal(calls, 0)
 
 
 def main() raises:

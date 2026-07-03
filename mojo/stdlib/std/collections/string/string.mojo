@@ -41,9 +41,8 @@ from std.ffi import c_char, CStringSlice
 from std.sys.info import is_32bit
 
 from std.bit import count_leading_zeros
-from std.memory import memcmp, memcpy, memset
+from std.memory import Layout, ThinAllocation, dealloc, memcmp, memcpy, memset
 from std.python import ConvertibleFromPython, PythonObject
-from std.reflection.traits import AllWritable
 
 # ===----------------------------------------------------------------------=== #
 # String
@@ -479,7 +478,7 @@ struct String(
         _ = variadic_pack_to_string(1, ", ", 2.0, ", ", "three")
         ```
         """
-        comptime assert AllWritable[*Ts]  # satisfy where clause.
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
 
         var total_bytes = _TotalWritableBytes()
         args._write_to(total_bytes, end=end, sep=sep)
@@ -510,7 +509,7 @@ struct String(
         Returns:
             A string formed by formatting the argument sequence.
         """
-        comptime assert AllWritable[*Ts]  # satisfy where clause.
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
 
         var total_bytes = _TotalWritableBytes()
         args._write_to(total_bytes, end=end, sep=sep)
@@ -535,7 +534,7 @@ struct String(
         Args:
             args: Sequence of arguments to write to this Writer.
         """
-        comptime assert AllWritable[*Ts]  # satisfy where clause.
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
 
         var total_bytes = _TotalWritableBytes()
         total_bytes.size += self.byte_length()
@@ -742,12 +741,22 @@ struct String(
             var refcount = ptr.bitcast[Atomic[DType.int]]()
             if refcount[].fetch_sub(1) == 1:
                 fence[Ordering.ACQUIRE]()
-                ptr.free()
+                dealloc(
+                    ThinAllocation(
+                        unsafe_assume_ownership=ptr
+                    ).unsafe_with_layout(
+                        Layout[Byte](
+                            count=self.capacity() + Self.REF_COUNT_SIZE
+                        )
+                    )
+                )
 
     @staticmethod
     def _alloc(capacity: Int) -> UnsafePointer[Byte, MutUntrackedOrigin]:
         """Allocate space for a new out-of-line string buffer."""
-        var ptr = alloc[Byte](capacity + Self.REF_COUNT_SIZE)
+        var ptr = alloc(
+            Layout[Byte](count=capacity + Self.REF_COUNT_SIZE)
+        ).unsafe_leak()
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
@@ -799,6 +808,19 @@ struct String(
     def __getitem__(
         self, _slice: ContiguousSlice, /
     ) -> StringSlice[origin_of(self)]:
+        ...
+
+    @doc_hidden
+    @unavailable(
+        "String does not support `__len__` because Mojo strings are UTF-8"
+        " encoded, so a single length is ambiguous: it could mean the number"
+        " of UTF-8 bytes, the number of Unicode code points, or the number of"
+        " user-visible characters (grapheme clusters). Use `s.byte_length()`"
+        " or `len(s.bytes())` for the number of UTF-8 bytes,"
+        " `len(s.codepoints())` for Unicode code points, or"
+        " `len(s.graphemes())` for grapheme clusters."
+    )
+    def __len__(self) -> Int:
         ...
 
     @always_inline
@@ -1054,23 +1076,33 @@ struct String(
         """
         self._iadd(other.as_bytes())
 
-    @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
-    def __iter__(self) -> CodepointSliceIter[origin_of(self)]:
-        """Iterate over the string, returning immutable references.
+    def __iter__(self) -> GraphemeSliceIter[origin_of(self)]:
+        """Iterate over the grapheme clusters in the string.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen. See `graphemes()` for the precise
+        definition.
+
+        To iterate by Unicode codepoint or by byte instead, use
+        `codepoints()`/`codepoint_slices()` or `bytes()`.
 
         Returns:
-            An iterator of references to the string elements.
+            An iterator yielding each grapheme cluster as a `StringSlice`.
         """
-        return self.codepoint_slices()
+        return self.graphemes()
 
-    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
-    def __reversed__(self) -> CodepointSliceIter[origin_of(self), False]:
-        """Iterate backwards over the string, returning immutable references.
+    def __reversed__(self) -> GraphemeSliceIter[origin_of(self), False]:
+        """Iterate backwards over the grapheme clusters in the string.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen. See `graphemes()` for the precise
+        definition.
 
         Returns:
-            A reversed iterator of references to the string elements.
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
         """
-        return self.codepoint_slices_reversed()
+        return self.graphemes_reversed()
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations

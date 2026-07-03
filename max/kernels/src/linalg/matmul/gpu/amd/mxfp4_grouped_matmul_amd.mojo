@@ -963,6 +963,40 @@ def mxfp4_grouped_matmul_amd_preb(
         else:
             return run_kernel[64, 128, 512, 64, False, deep_prime=True]()
 
+    comptime if N == 6144 and packed_K == (6144 // 2):  # MiniMax-M3 gate+up
+        if etm <= 4:
+            return run_kernel[16, 64, 512, 16, True, STREAM]()
+        elif etm <= 256:
+            return run_kernel[16, 128, 512, 32, True, STREAM]()
+        elif etm <= 512:
+            return run_kernel[32, 128, 512, 32, True, STREAM]()
+        elif etm <= 1023:
+            return run_kernel[64, 128, 512, 32, True]()
+        elif etm <= 2047:
+            return run_kernel[64, 128, 512, 64, True]()
+        elif etm <= 4095:
+            return run_kernel[128, 128, 512, 64, True]()
+        else:
+            return run_kernel[64, 128, 512, 64, False]()
+
+    comptime if N == 6144 and packed_K == (3072 // 2):  # MiniMax-M3 down
+        if etm <= 4:
+            return run_kernel[16, 64, 512, 16, True, STREAM]()
+        elif etm <= 256:
+            return run_kernel[16, 128, 512, 32, True, STREAM]()
+        elif etm <= 512:
+            return run_kernel[32, 128, 512, 32, True, STREAM]()
+        elif etm <= 2047:
+            return run_kernel[64, 128, 512, 32, True]()
+        else:
+            return run_kernel[128, 128, 512, 64, True]()
+
+    comptime if N == 3072 and packed_K == (6144 // 2):
+        if etm <= 4096:
+            return run_kernel[64, 128, 512, 64, True]()
+        else:
+            return run_kernel[128, 128, 512, 64, True]()
+
     # Other shapes: persistent below the threshold, direct at/above it.
     if etm >= m_threshold:
         return run_kernel[64, 128, 512, 64, False]()

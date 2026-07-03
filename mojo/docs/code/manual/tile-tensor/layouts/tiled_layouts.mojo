@@ -24,8 +24,8 @@ from layout.tile_layout import (
 def use_layout_constructor():
     print("layout constructor")
     var tiled_layout = Layout(
-        Coord(coord[3, 2](), coord[2, 5]()),  # shape
-        Coord(coord[1, 6](), coord[3, 12]()),  # strides
+        Coord(coord[3, 2], coord[2, 5]),  # shape
+        Coord(coord[1, 6], coord[3, 12]),  # strides
     )
     print_layout(tiled_layout.to_layout())
     print()
@@ -57,19 +57,19 @@ def use_zipped_divide():
     # Create layouts
     # start-zipped-divide-example
     var base = row_major[6, 4]()
-    var result = zipped_divide[coord[2, 2]()](base)
+    var result = zipped_divide[coord[2, 2]](base)
     print_layout(base.to_layout())
     print_layout(result.to_layout())
     # end-zipped-divide-example
-    print(result(coord[1, 1]()))
-    print(result(coord[1]()))
-    print(result(Coord(coord[1, 0](), coord[1, 0]())))
+    print(result(coord[1, 1]))
+    print(result(coord[1]))
+    print(result(Coord(coord[1, 0], coord[1, 0])))
 
 
 def minimal_repro():
     var base = row_major[6, 8]()
-    var result = zipped_divide[coord[2, 2]()](base)
-    var linear_idx = Int(result(coord[1, 1]()))
+    var result = zipped_divide[coord[2, 2]](base)
+    var linear_idx = Int(result(coord[1, 1]))
     var natural_coords = result.idx2crd(linear_idx)
     print(linear_idx, natural_coords)  # 24, ((1, 0), (1, 0))
 

@@ -22,10 +22,10 @@
 # `max serve --model-path ideogram-ai/ideogram-4-fp8` with the responses API):
 #
 #   MAX_SERVE_API_TYPES='["responses"]' \
-#     ./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+#     ./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
 #       --model-path ideogram-ai/ideogram-4-fp8
 #
-#   ./bazelw run //max/python/max/entrypoints:pipelines -- benchmark \
+#   ./bazelw run //max/python/max/_entrypoints:pipelines -- benchmark \
 #     --model ideogram-ai/ideogram-4-fp8 --benchmark-task text-to-image \
 #     --endpoint /v1/responses --dataset-name synthetic-pixel \
 #     --num-prompts 5 --request-rate inf --max-concurrency 1 \

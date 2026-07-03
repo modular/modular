@@ -19,9 +19,9 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
+from max._entrypoints.cli.config import parse_task_flags
 from max.driver import DeviceSpec, accelerator_count
 from max.dtype import DType
-from max.entrypoints.cli.config import parse_task_flags
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.context import SamplingParamsGenerationConfigDefaults
 from max.pipelines.lib import (
@@ -31,10 +31,6 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineRuntimeConfig,
     SamplingConfig,
-)
-from max.pipelines.lib.config.config import (
-    _DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES,
-    _DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.config_enums import SupportedEncoding
@@ -46,6 +42,27 @@ from test_common.mocks import (
 )
 from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH, DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry
+
+# ===----------------------------------------------------------------------=== #
+# Helpers
+# ===----------------------------------------------------------------------=== #
+
+
+def _serve_optimization_arch(
+    name: str,
+    *,
+    supports_overlap_scheduler: bool = True,
+    supports_device_graph_capture: bool = True,
+    task: PipelineTask = PipelineTask.TEXT_GENERATION,
+) -> SimpleNamespace:
+    """Minimal architecture stub for serve-optimization resolution tests."""
+    return SimpleNamespace(
+        name=name,
+        task=task,
+        supports_overlap_scheduler=supports_overlap_scheduler,
+        supports_device_graph_capture=supports_device_graph_capture,
+    )
+
 
 # ===----------------------------------------------------------------------=== #
 # Tests for utility methods
@@ -715,7 +732,7 @@ class TestDraftModelQuantizationEncoding:
         draft_max_seq_len: int = 131072,
         draft_encoding: SupportedEncoding = "bfloat16",
     ) -> None:
-        """Run _validate_and_resolve_speculative_memory with mocked internals.
+        """Run _validate_speculative_model_configs with mocked internals.
 
         Mocks architecture resolution so that calling it on the target model
         sets its encoding to ``"bfloat16"`` and on the draft model sets its
@@ -754,10 +771,10 @@ class TestDraftModelQuantizationEncoding:
             ),
             patch.object(
                 PipelineConfig,
-                "_validate_and_resolve_remaining_pipeline_config",
+                "_validate_remaining_pipeline_config",
             ),
         ):
-            config._validate_and_resolve_speculative_memory(
+            config._validate_speculative_model_configs(
                 target_arch=mock_arch, draft_arch=mock_arch
             )
 
@@ -1523,26 +1540,30 @@ class TestSamplingConfig:
         assert sampling_config.enable_penalties is False
 
 
-@prepare_registry
 @mock_pipeline_config_resolve
 @pytest.mark.parametrize(
-    "arch_name,max_batch_size,force,is_cuda,expected_device_graph_capture",
+    (
+        "arch_name,supports_overlap_scheduler,supports_device_graph_capture,"
+        "max_batch_size,force,is_cuda,expected_device_graph_capture"
+    ),
     [
-        ("LlamaForCausalLM", 16, False, True, True),
-        ("DeepseekV2ForCausalLM", 16, False, True, True),
-        ("DeepseekV3ForCausalLM", 16, False, True, True),
-        ("DeepseekV32ForCausalLM", 16, False, True, True),
-        ("DeepseekV3ForCausalLMNextN", 16, False, True, True),
-        ("KimiK25ForConditionalGeneration", 16, False, True, True),
-        ("UnifiedEagleLlama3ForCausalLM", 16, False, True, True),
-        ("LlamaForCausalLM", 16, False, False, False),
-        ("LlamaForCausalLM", None, False, True, False),
-        ("LlamaForCausalLM", 16, True, True, False),
-        ("SomeOtherArchitecture", 16, False, True, False),
+        ("LlamaForCausalLM", True, True, 16, False, True, True),
+        ("DeepseekV2ForCausalLM", False, False, 16, False, True, False),
+        ("DeepseekV3ForCausalLM", True, True, 16, False, True, True),
+        ("DeepseekV32ForCausalLM", True, True, 16, False, True, True),
+        ("DeepseekV3ForCausalLMNextN", True, True, 16, False, True, True),
+        ("KimiK25ForConditionalGeneration", True, True, 16, False, True, True),
+        ("UnifiedEagleLlama3ForCausalLM", True, True, 16, False, True, True),
+        ("LlamaForCausalLM", True, True, 16, False, False, False),
+        ("LlamaForCausalLM", True, True, None, False, True, False),
+        ("LlamaForCausalLM", True, True, 16, True, True, False),
+        ("SomeOtherArchitecture", True, True, 16, False, True, True),
     ],
 )
 def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_capture(
     arch_name: str,
+    supports_overlap_scheduler: bool,
+    supports_device_graph_capture: bool,
     max_batch_size: int | None,
     force: bool,
     is_cuda: bool,
@@ -1553,10 +1574,14 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
     monkeypatch.setattr(
         MAXModelConfig, "architecture_name", property(lambda self: arch_name)
     )
-    arch = SimpleNamespace(name=arch_name, task=PipelineTask.TEXT_GENERATION)
+    arch = _serve_optimization_arch(
+        arch_name,
+        supports_overlap_scheduler=supports_overlap_scheduler,
+        supports_device_graph_capture=supports_device_graph_capture,
+    )
     monkeypatch.setattr(
         "max.pipelines.lib.config.config.accelerator_api",
-        Mock(return_value="cuda" if is_cuda else "hip"),
+        Mock(return_value="cuda" if is_cuda else "cpu"),
     )
 
     config = PipelineConfig(
@@ -1580,7 +1605,6 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
         assert config.runtime.enable_overlap_scheduler is True
 
 
-@prepare_registry
 @mock_pipeline_config_resolve
 def test_validate_and_resolve_overlap_scheduler__no_auto_enable_for_non_text_generation(
     monkeypatch: pytest.MonkeyPatch,
@@ -1589,22 +1613,19 @@ def test_validate_and_resolve_overlap_scheduler__no_auto_enable_for_non_text_gen
     auto-enable the overlap scheduler or device graph capture.
 
     Both features only support ``PipelineTask.TEXT_GENERATION`` (see
-    ``get_pipeline_for_task`` in registry.py). The auto-enable logic uses a
-    blacklist, so an embeddings architecture that is absent from the blacklist
-    (e.g. ``MPNetForMaskedLM``) would otherwise be incorrectly auto-enabled and
-    crash pipeline construction. Regression test for QUA-460.
+    ``get_pipeline_for_task`` in registry.py). An embeddings architecture with
+    default ``supports_* = True`` (e.g. ``MPNetForMaskedLM``) would otherwise
+    be incorrectly auto-enabled and crash pipeline construction. Regression
+    test for QUA-460.
     """
     arch_name = "MPNetForMaskedLM"
-    # Sanity check: the architecture is intentionally NOT in the blacklist, so
-    # the only thing preventing auto-enable is the pipeline-task guard.
-    assert arch_name not in _DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
-    assert arch_name not in _DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES
+    arch = _serve_optimization_arch(
+        arch_name,
+        task=PipelineTask.EMBEDDINGS_GENERATION,
+    )
 
     monkeypatch.setattr(
         MAXModelConfig, "architecture_name", property(lambda self: arch_name)
-    )
-    arch = SimpleNamespace(
-        name=arch_name, task=PipelineTask.EMBEDDINGS_GENERATION
     )
     monkeypatch.setattr(
         "max.pipelines.lib.config.config.accelerator_api",
@@ -1628,7 +1649,6 @@ def test_validate_and_resolve_overlap_scheduler__no_auto_enable_for_non_text_gen
     assert config.runtime.enable_overlap_scheduler is False
 
 
-@prepare_registry
 @mock_pipeline_config_resolve
 def test_validate_and_resolve_overlap_scheduler__no_device_graph_capture_for_prefill_only(
     monkeypatch: pytest.MonkeyPatch,
@@ -1638,7 +1658,7 @@ def test_validate_and_resolve_overlap_scheduler__no_device_graph_capture_for_pre
     monkeypatch.setattr(
         MAXModelConfig, "architecture_name", property(lambda self: arch_name)
     )
-    arch = SimpleNamespace(name=arch_name, task=PipelineTask.TEXT_GENERATION)
+    arch = _serve_optimization_arch(arch_name)
     monkeypatch.setattr(
         "max.pipelines.lib.config.config.accelerator_api",
         Mock(return_value="cuda"),
@@ -1666,22 +1686,18 @@ def test_validate_and_resolve_overlap_scheduler__no_device_graph_capture_for_pre
     assert config.runtime.device_graph_capture is False
 
 
-@prepare_registry
 @mock_pipeline_config_resolve
 def test_validate_and_resolve_overlap_scheduler__auto_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Override enable_overlap_scheduler to True for Llama or Deepseek models
+    # Auto-enable overlap scheduler for architectures that declare support.
     for arch_name in (
         "LlamaForCausalLM",
-        "DeepseekV2ForCausalLM",
         "DeepseekV3ForCausalLM",
         "DeepseekV32ForCausalLM",
         "DeepseekV3ForCausalLMNextN",
     ):
-        arch = SimpleNamespace(
-            name=arch_name, task=PipelineTask.TEXT_GENERATION
-        )
+        arch = _serve_optimization_arch(arch_name)
         config = PipelineConfig(
             models=ModelManifest(
                 {
@@ -1696,10 +1712,28 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
         config._validate_and_resolve_overlap_scheduler(arch=arch)
         assert config.runtime.enable_overlap_scheduler is True
 
-    # Don't override if the device is CPU
-    llama_arch = SimpleNamespace(
-        name="LlamaForCausalLM", task=PipelineTask.TEXT_GENERATION
+    # Architectures that opt out of overlap scheduler are not auto-enabled.
+    deepseek_v2 = _serve_optimization_arch(
+        "DeepseekV2ForCausalLM",
+        supports_overlap_scheduler=False,
+        supports_device_graph_capture=False,
     )
+    config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
+        ),
+        runtime=PipelineRuntimeConfig(),
+    )
+    config._validate_and_resolve_overlap_scheduler(arch=deepseek_v2)
+    assert config.runtime.enable_overlap_scheduler is False
+
+    # Don't override if the device is CPU
+    llama_arch = _serve_optimization_arch("LlamaForCausalLM")
     config = PipelineConfig(
         models=ModelManifest(
             {
@@ -1713,7 +1747,7 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
     config._validate_and_resolve_overlap_scheduler(arch=llama_arch)
     assert config.runtime.enable_overlap_scheduler is False
 
-    # Don't override if structured output is enabled
+    # Don't override if variable logits are enabled
     config = PipelineConfig(
         models=ModelManifest(
             {
@@ -1723,7 +1757,7 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
                 )
             }
         ),
-        sampling=SamplingConfig(enable_structured_output=True),
+        sampling=SamplingConfig(enable_variable_logits=True),
     )
     config._validate_and_resolve_overlap_scheduler(arch=llama_arch)
     assert config.runtime.enable_overlap_scheduler is False
@@ -1744,10 +1778,8 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
         config._validate_and_resolve_overlap_scheduler(arch=llama_arch)
         assert config.runtime.enable_overlap_scheduler is True
 
-    # Don't override for other architectures
-    other_arch = SimpleNamespace(
-        name="SomeOtherArchitecture", task=PipelineTask.TEXT_GENERATION
-    )
+    # Don't auto-enable for unknown architectures that keep default support.
+    other_arch = _serve_optimization_arch("SomeOtherArchitecture")
     config = PipelineConfig(
         models=ModelManifest(
             {
@@ -1759,10 +1791,29 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
         ),
     )
     config._validate_and_resolve_overlap_scheduler(arch=other_arch)
+    assert config.runtime.enable_overlap_scheduler is True
+
+    # Explicitly opt-out architectures stay disabled.
+    disabled_arch = SimpleNamespace(
+        name="SomeDisabledArchitecture",
+        task=PipelineTask.TEXT_GENERATION,
+        supports_overlap_scheduler=False,
+        supports_device_graph_capture=False,
+    )
+    config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
+        ),
+    )
+    config._validate_and_resolve_overlap_scheduler(arch=disabled_arch)
     assert config.runtime.enable_overlap_scheduler is False
 
 
-@prepare_registry
 @mock_pipeline_config_resolve
 def test_validate_and_resolve_overlap_scheduler__validate(
     monkeypatch: pytest.MonkeyPatch,
@@ -1822,7 +1873,7 @@ def test_validate_and_resolve_overlap_scheduler__validate(
     config._validate_and_resolve_overlap_scheduler()
     assert config.runtime.enable_overlap_scheduler is True
 
-    # Error out if user tries to enable overlap scheduler with structured output
+    # Error out if user tries to enable overlap scheduler with variable logits
     config = PipelineConfig(
         models=ModelManifest(
             {
@@ -1832,7 +1883,7 @@ def test_validate_and_resolve_overlap_scheduler__validate(
                 )
             }
         ),
-        sampling=SamplingConfig(enable_structured_output=True),
+        sampling=SamplingConfig(enable_variable_logits=True),
         runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
     with pytest.raises(ValueError):
@@ -1903,6 +1954,8 @@ def test_auto_device_graph_capture_eagle_gating(
     arch = SimpleNamespace(
         name="UnifiedEagleLlama3ForCausalLM",
         task=PipelineTask.TEXT_GENERATION,
+        supports_overlap_scheduler=True,
+        supports_device_graph_capture=True,
     )
     monkeypatch.setattr(
         "max.pipelines.lib.config.config.accelerator_api",

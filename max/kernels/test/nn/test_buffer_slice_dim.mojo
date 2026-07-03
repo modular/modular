@@ -27,14 +27,13 @@ def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
     print("New strides:", stride)
 
     @always_inline
-    @parameter
     def print_elements_lambda[
         simd_width: Int, alignment: Int = 1
-    ](coords: Coord):
+    ](coords: Coord) {var}:
         var idx = tensor.layout(coords)
         print(tensor.raw_load(idx))
 
-    elementwise[print_elements_lambda, 1](shape, DeviceContext(api="cpu"))
+    elementwise[1](print_elements_lambda, shape, DeviceContext(api="cpu"))
 
 
 # slice_dim

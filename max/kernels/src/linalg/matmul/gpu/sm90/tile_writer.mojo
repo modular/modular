@@ -33,6 +33,7 @@ Two main traits abstract these writing mechanisms:
 from layout.tma_async import TMATensorTile
 from layout import (
     Coord,
+    Idx,
     IntTuple,
     Layout,
     MixedLayout,
@@ -253,7 +254,6 @@ struct TileWriterThreadwise[
     dst_origin: MutOrigin,
     dst_storage: TensorStorage,
     dst_linear_idx_type: DType,
-    dst_element_size: Int,
     //,
     thread_layout: MixedLayout,
     simd_size: Int,
@@ -270,7 +270,6 @@ struct TileWriterThreadwise[
         Storage=Self.dst_storage,
         address_space=AddressSpace.GENERIC,
         linear_idx_type=Self.dst_linear_idx_type,
-        element_size=Self.dst_element_size,
     ]
     var dst: Self.DstType
     var thread_idx: Int
@@ -675,7 +674,6 @@ struct RegisterToGMemWriter[
     dst_origin: MutOrigin,
     dst_storage: TensorStorage,
     dst_linear_idx_type: DType,
-    dst_element_size: Int,
     //,
     wgmma_shape: IndexList[3],
     num_consumer: Int,
@@ -697,7 +695,6 @@ struct RegisterToGMemWriter[
         dst_origin: Origin type of the destination tensor.
         dst_storage: Storage type of the destination tensor.
         dst_linear_idx_type: Linear index type for destination tensor.
-        dst_element_size: Number of scalar elements per destination element.
         wgmma_shape: Shape of the WGMMA operation [M, N, K].
         num_consumer: Number of consumer warp groups.
         N: Matrix N dimension.
@@ -726,7 +723,6 @@ struct RegisterToGMemWriter[
         Storage=Self.dst_storage,
         address_space=AddressSpace.GENERIC,
         linear_idx_type=Self.dst_linear_idx_type,
-        element_size=Self.dst_element_size,
     ]
     var dst: Self.DstType
     var num_m_mmas: Int

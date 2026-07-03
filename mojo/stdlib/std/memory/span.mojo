@@ -25,7 +25,7 @@ from std.bit.mask import splat
 from std.bit import pop_count
 from std.memory import (
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     pack_bits,
     uninit_copy_n,
 )
@@ -598,7 +598,7 @@ struct Span[
         # needed). For non-trivial types, we keep the single-pass assignment
         # loop rather than destroy_n + uninit_copy_n, which would be two
         # passes over memory with worse cache locality.
-        comptime if is_trivially_copyable[_T]() and is_trivially_destructible[
+        comptime if is_trivially_copyable[_T]() and is_trivially_deletable[
             _T
         ]():
             uninit_copy_n[overlapping=False](

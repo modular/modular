@@ -50,7 +50,7 @@ def bench_layer_norm_gpu[
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
-    var epsilon = Scalar[dtype]()
+    var epsilon = Float32(0)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -136,7 +136,7 @@ def bench_rms_norm_gpu[
 
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[dtype](0.0)
 
     ctx.enqueue_copy(data_d, data_h)
@@ -174,7 +174,13 @@ def bench_rms_norm_gpu[
         def kernel_launch(ctx: DeviceContext) raises:
             rms_norm_gpu[
                 rank, input_fn, identity_output_fn, multiply_before_cast=True
-            ](Coord(shape), gamma, epsilon, weight_offset, ctx)
+            ](
+                Coord(shape),
+                gamma,
+                epsilon,
+                weight_offset,
+                ctx,
+            )
 
         b.iter_custom[kernel_launch](ctx)
 
