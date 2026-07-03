@@ -112,6 +112,30 @@ This version is still a work in progress.
   To check several distinct standalone types against a trait, conjoin scalar
   checks, for example `conforms_to(T, Trait) and conforms_to(U, Trait)`.
 
+- Mojo has improved its tracking of import locations and is now able to show
+  where a package containing a diagnostic was first introduced into the program:
+
+  ```text
+  Included from /bug.mojo:2:
+  Included from /foo/__init__.mojo:3:
+  Included from /foo/nested_pkg/__init__.mojo:4:
+  /foo/nested_pkg/my_module.mojo:1:5: note: candidate not viable: unexpected argument
+  def bar(): pass
+      ^
+  ```
+
+  Compared to the previous:
+
+  ```text
+  Included from /foo/nested_pkg/__init__.mojo:1:
+  Included from /foo/nested_pkg/__init__.mojo:4:
+  /foo/nested_pkg/my_module.mojo:1:5: note: candidate not viable: unexpected argument
+  def bar(): pass
+      ^
+  ```
+
+  Note that this is only possible for source packages for now
+
 ## Language changes
 
 - Relative imports must now use `from` (`from . import foo`); the `import .foo`
