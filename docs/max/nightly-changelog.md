@@ -70,6 +70,12 @@ This version is still a work in progress.
   the thinking back into the `content` field wrapped in `<think>...</think>`
   tags, matching the official MiniMax M3 endpoint. The field is a no-op for
   every other model.
+- FLUX.2 diffusion pipelines now support both denoising-cache backends to skip
+  redundant transformer passes during generation: `--taylorseer` (Taylor-series
+  step skipping — the recommended default, with `balanced` and `fast` presets)
+  and `--first-block-caching` (first-block-residual reuse — zero-tuning and
+  data-adaptive). The two are mutually exclusive and both off by default. See
+  the [image generation guide](/max/inference/image-generation).
 - Gemma 4 with multi-token prediction (MTP) speculative decoding
   (`UnifiedMTPGemma4ForCausalLM`) now supports image and video input.
   Previously this path was served text-only: image tokens were ingested by
