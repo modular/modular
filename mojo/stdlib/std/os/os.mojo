@@ -639,7 +639,7 @@ def isatty(fd: Int) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-def chdir[PathLike: os.PathLike](path: PathLike) raises:
+def chdir[PathLike: stdPathLike](path: PathLike) raises:
     """Changes the current working directory.
 
     Parameters:
