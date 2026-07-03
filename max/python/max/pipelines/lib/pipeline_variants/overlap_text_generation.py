@@ -1491,6 +1491,8 @@ class OverlapTextGenerationPipeline(
         # flag and gates user-supplied JSON schemas; the bitmask-in-the-graph
         # decisions below are gated separately on
         # ``pipeline_config.needs_bitmask_constraints``.
+        # structured_output_backend is None only on an unresolved config;
+        # from_tokenizer falls back to "xgrammar" in that case.
         self._structured_output = StructuredOutputHelper.from_tokenizer(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,

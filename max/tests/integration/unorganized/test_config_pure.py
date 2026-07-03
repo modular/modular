@@ -2166,3 +2166,88 @@ def test_resolve_default_tool_parser__none_sentinel_disables(
     config._resolve_default_tool_parser(arch=arch)
 
     assert config.runtime.tool_parser is None
+
+
+# ===----------------------------------------------------------------------=== #
+# Tests for _resolve_default_structured_output_backend
+# ===----------------------------------------------------------------------=== #
+
+
+def _backend_arch(default: str | None) -> SimpleNamespace:
+    """Minimal architecture stub for structured-output-backend resolution."""
+    return SimpleNamespace(
+        name="DummyForCausalLM", default_structured_output_backend=default
+    )
+
+
+def test_resolve_backend__unset_normal_arch_defaults_to_xgrammar() -> None:
+    """Unset + an arch with no backend preference resolves to the global
+    default ``xgrammar``."""
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+    )
+    assert config.sampling.structured_output_backend is None  # unset sentinel
+
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default=None)
+    )
+
+    assert config.sampling.structured_output_backend == "xgrammar"
+
+
+def test_resolve_backend__unset_pinned_arch_uses_arch_default() -> None:
+    """Unset + an arch that pins ``llguidance`` (e.g. Gemma 3 / MiniMax-M2)
+    resolves to the arch default."""
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+    )
+
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default="llguidance")
+    )
+
+    assert config.sampling.structured_output_backend == "llguidance"
+
+
+def test_resolve_backend__explicit_xgrammar_overrides_pinned_arch() -> None:
+    """Regression: an explicit ``xgrammar`` on a ``llguidance``-pinned arch is
+    honored, not silently overwritten. This is the precedence bug this fix
+    closes (explicit ``xgrammar`` equalled the old hardcoded default)."""
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        sampling=SamplingConfig(structured_output_backend="xgrammar"),
+    )
+
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default="llguidance")
+    )
+
+    assert config.sampling.structured_output_backend == "xgrammar"
+
+
+def test_resolve_backend__explicit_llguidance_on_normal_arch_is_honored() -> (
+    None
+):
+    """An explicit ``llguidance`` on a model with no arch preference is
+    honored over the global ``xgrammar`` default."""
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        sampling=SamplingConfig(structured_output_backend="llguidance"),
+    )
+
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default=None)
+    )
+
+    assert config.sampling.structured_output_backend == "llguidance"
+
+
+def test_resolve_backend__unset_no_arch_defaults_to_xgrammar() -> None:
+    """Unset + ``arch=None`` exercises the unconditional global fallback."""
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+    )
+
+    config._resolve_default_structured_output_backend(arch=None)
+
+    assert config.sampling.structured_output_backend == "xgrammar"

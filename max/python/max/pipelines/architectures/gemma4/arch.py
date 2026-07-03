@@ -60,6 +60,7 @@ gemma4_arch = SupportedArchitecture(
     reasoning_parser="gemma4",
     memory_planner=Gemma4MemoryPlanner,
     supports_device_graph_capture=False,
+    default_structured_output_backend="llguidance",
 )
 
 
