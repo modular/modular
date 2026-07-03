@@ -496,12 +496,12 @@ def is_trivially_copyable[T: Copyable]() -> Bool:
 
 
 @always_inline("nodebug")
-def is_trivially_destructible[T: ImplicitlyDeletable]() -> Bool:
+def is_trivially_deletable[T: AnyType]() -> Bool:
     """Returns whether `T` has a trivial destructor.
 
     A destructor is trivial when the compiler generates it and all of `T`'s
     fields are themselves trivially destructible. In practice this means
-    `__del__` is a no-op.
+    `__del__` is a no-op. A non-`ImplicitlyDeletable` (linear) type returns `False`
 
     Parameters:
         T: The type to check.
@@ -509,7 +509,10 @@ def is_trivially_destructible[T: ImplicitlyDeletable]() -> Bool:
     Returns:
         `True` if `T` has a trivial destructor.
     """
-    return T.__del__is_trivial
+    comptime if conforms_to(T, ImplicitlyDeletable):
+        return T.__del__is_trivial
+    else:
+        return False
 
 
 # ===-----------------------------------------------------------------------===#
@@ -669,7 +672,7 @@ def destroy_n[
         must not be read or destroyed again until re-initialized.
     """
 
-    comptime if is_trivially_destructible[T]():
+    comptime if is_trivially_deletable[T]():
         # Trivial destructors don't need to be called!
         pass
     else:

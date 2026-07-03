@@ -14,7 +14,7 @@
 from std.memory import (
     UnsafeMaybeUninit,
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
     memcmp,
 )
@@ -109,12 +109,12 @@ def test_triviality() raises:
 
     assert_true(is_trivially_copyable[Trivial]())
     assert_true(is_trivially_movable[Trivial]())
-    assert_true(is_trivially_destructible[Trivial]())
+    assert_true(is_trivially_deletable[Trivial]())
 
     assert_false(is_trivially_copyable[NotTrivial]())
     assert_false(is_trivially_movable[NotTrivial]())
     # UnsafeMaybeUninit always has a trivial destructor
-    assert_true(is_trivially_destructible[NotTrivial]())
+    assert_true(is_trivially_deletable[NotTrivial]())
 
 
 def test_conditional_register_passable() raises:

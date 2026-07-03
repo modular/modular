@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -27,6 +26,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/qwen3vl_moe",
+        "//max/python/max/pipelines/architectures/step3p5",
         "//max/python/max/pipelines/weights",
         # TODO(GEX-2238): replace data field in WeightData with driver tensor.
         requirement("torch"),

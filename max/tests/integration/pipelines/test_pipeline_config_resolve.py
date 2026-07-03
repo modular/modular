@@ -36,6 +36,7 @@ from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import MAXModelConfig, MemoryEstimator
+from max.pipelines.lib.memory_estimation import _MemoryPlan
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
@@ -196,8 +197,14 @@ def _pipeline_resolve_mocks(
             "max.pipelines.lib.config.config.load_devices",
             return_value=mock_devices,
         ),
+        patch(
+            "max.pipelines.lib.registry.load_devices",
+            return_value=mock_devices,
+        ),
         patch.object(
-            MemoryEstimator, "estimate_memory_footprint", return_value=0
+            MemoryEstimator,
+            "estimate_memory_footprint",
+            return_value=_MemoryPlan(max_batch_size=1, footprint=0),
         ),
         patch.object(
             MemoryEstimator,
@@ -248,6 +255,14 @@ def _resolve_config(config: PipelineConfig) -> None:
             " model architecture to MAX."
         )
     config.resolve(arch)
+    # Overlap-scheduler/DGC resolution now lives in the registry, after
+    # memory planning. Tests that call resolve() directly must replicate it.
+    from max.pipelines.lib.registry import _run_memory_planning
+
+    plan = _run_memory_planning(config, arch)
+    config._validate_and_resolve_overlap_scheduler(
+        arch=arch, max_batch_size=plan.max_batch_size
+    )
 
 
 def _make_pipeline_config(
@@ -863,4 +878,10 @@ class TestDGCTaskDisambiguation:
                 ),
             ):
                 config.resolve(arch)
+                from max.pipelines.lib.registry import _run_memory_planning
+
+                plan = _run_memory_planning(config, arch)
+                config._validate_and_resolve_overlap_scheduler(
+                    arch=arch, max_batch_size=plan.max_batch_size
+                )
             assert config.runtime.device_graph_capture is True

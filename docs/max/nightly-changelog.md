@@ -10,11 +10,52 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added GLM-5.2 (`GlmMoeDsaForCausalLM`) support, extending the existing
+  GLM-5.1 sparse-attention architecture with cross-layer index sharing.
+- Added multi-token prediction (MTP) speculative decoding for GLM-5.2
+  (`UnifiedMTPGlm5_2ForCausalLM`). The baked-in NextN layer is served as a
+  single-layer sparse-MLA draft (its own lightning indexer plus a paired
+  `{mla, indexer}` KV cache); per `index_share_for_mtp_iteration`, the draft
+  computes its top-k selection on the first MTP step and reuses it on the
+  rest. Enabled automatically for GLM checkpoints that ship a NextN layer when
+  speculative decoding is requested with no separate draft model. Validated on
+  `zai-org/GLM-5.2-FP8` and `nvidia/GLM-5.2-NVFP4` across 8 B200s
+  (`--speculative-method mtp`).
+- Added Laguna (`LagunaForCausalLM`), poolside's decoder-only sparse-MoE
+  language model. It uses sigmoid expert routing with a per-expert
+  score-correction bias, a per-element softplus attention-output gate, and
+  per-head QK-RMSNorm. Verified on `poolside/Laguna-M.1-NVFP4` (131B,
+  compressed-tensors NVFP4 experts) on a single B200, including chat-template
+  serving and tool calling. On GSM8K (0-shot) it scores ~0.81 with light
+  sampling (`temperature=0.3` plus a frequency penalty); greedy decoding
+  (`temperature=0`) is **not** recommended for this NVFP4 checkpoint, since it
+  falls into repetition loops on a sizable fraction of prompts (dropping GSM8K
+  to ~0.59). An experimental, not-yet-accuracy-validated FP8 KV cache (unscaled
+  cast) is available behind `--kv-cache-format float8_e4m3fn`; the default bf16
+  KV cache is the validated configuration.
 - Added DiffusionGemma (`DiffusionGemmaForBlockDiffusion`), an
   encoder/decoder block-diffusion text model that generates 256-token
   blocks per step via an inner denoising loop. Supports NVFP4 and bfloat16
   weights; text-only for now.
+- Added Nemotron-H (`NemotronHForCausalLM`), NVIDIA's hybrid Mamba-2 +
+  attention + relu-squared-MLP decoder, with modelopt per-tensor FP8. Adds a
+  new Mamba-2 SSD chunked-scan varlen prefill kernel (also used for decode as
+  length-1 sequences). Verified on `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on a
+  single B200: random-weight logit-verify cosine 0.9999 vs HuggingFace, GSM8K
+  strict-match ~0.70. Decode is optimized with an in-place SSM state-pool
+  read-modify-write that writes only the active slots (+52% output tok/s at
+  concurrency 32).
 - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
+- Added tool-calling, reasoning, and structured-output (`response_format`)
+  support to GLM-5.1 / GLM-5.2, enabled with
+  `--tool-parser glm45 --reasoning-parser glm45 --enable-structured-output`.
+  Reasoning uses `<think>`/`</think>`; tool calls use the model's native
+  `<tool_call>…<arg_key>…<arg_value>…</tool_call>` format. With constrained
+  decoding, tool-call arguments are constrained to each tool's JSON schema
+  (declared keys, `required` properties, and per-property types — including
+  nested objects/arrays, enums, numeric bounds, and string patterns), and the
+  call sequence terminates on the model's turn-ender so it can't loop. Validated
+  on `zai-org/GLM-5.2-FP8`.
 - Added support for the Ideogram 4 (`Ideogram4Pipeline`) text-to-image
   flow-matching diffusion transformer. The pipeline pairs a Qwen3-VL text
   encoder (run text-only, emitting concatenated intermediate hidden states)
@@ -23,9 +64,36 @@ This version is still a work in progress.
   (`float8_e4m3fn`) checkpoint weights are dequantized to `bfloat16` at load.
   Serve via `/v1/responses`; benchmark with
   `--benchmark-task text-to-image`.
+- Added the `reasoning_split` chat-completion request field for MiniMax M3.
+  It defaults to `true`, which keeps the existing behavior of returning the
+  model's thinking in a separate `reasoning` field. Setting it to `false` folds
+  the thinking back into the `content` field wrapped in `<think>...</think>`
+  tags, matching the official MiniMax M3 endpoint. The field is a no-op for
+  every other model.
+- Gemma 4 with multi-token prediction (MTP) speculative decoding
+  (`UnifiedMTPGemma4ForCausalLM`) now supports image and video input.
+  Previously this path was served text-only: image tokens were ingested by
+  the tokenizer but the vision encoder output never reached the language
+  model, so image prompts were answered as if the model were blind. The
+  vision encoder now runs during prefill and its projected soft-token
+  embeddings are merged into the target model, matching the non-MTP Gemma 4
+  path.
 
 ## MAX framework
 
+- Added `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` to control how long the server
+  waits for in-flight requests to finish after receiving `SIGTERM` before
+  exiting (default 5 seconds). Raise it so long-running requests are drained
+  rather than dropped during a rolling restart.
+- Data-parallel (DP) serving now shares the prefix cache across replicas, so a
+  multi-turn conversation gets cache hits even when a later turn is scheduled on
+  a different replica than the previous one. GPU prefix-cache hits are served by
+  a cheap device-to-device copy of the cached pages onto the assigned replica,
+  and the CPU/disk offload tiers are now a single pool shared by every replica
+  (a block offloaded by one replica can be loaded by another). As a result,
+  `host_kvcache_swap_space_gb` now sizes one shared host pool of that size for
+  the whole deployment, rather than allocating a separate pool of that size per
+  replica.
 - The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
   into a single `rms_norm_rope` GPU kernel even when the RMSNorm is written "in
   float32" — that is, when a `bfloat16`/`float16` activation is upcast to
@@ -37,9 +105,36 @@ This version is still a work in progress.
   input upcast is absorbed by ordinary prologue fusion. Numerics match the
   unfused graph (the normalized value is rounded to the output dtype before
   RoPE).
+- Added a `poison-all` mode to the `MODULAR_DEBUG_DEVICE_ALLOCATOR` environment
+  variable for debugging uninitialized device-memory reads. Unlike the existing
+  `uninitialized-poison` (which fills graph tensors with a type-aware, non-NaN
+  sentinel and is detected by an instrumented load check), `poison-all` fills
+  *every* memory-manager allocation — including internal scratch and other
+  non-tensor buffers — with a raw byte (default `0xFF`, a NaN pattern for
+  `float32`/`bfloat16`), so an uninitialized read propagates NaN into the output
+  and trips existing differential tests without any kernel instrumentation. The
+  fill byte is configurable via
+  `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_POISON_PATTERN`, and the mode composes
+  with `out-of-bounds` redzone checks. Because the NaN can also surface on
+  legitimately-uninitialized allocation padding, it is a manual debugging aid
+  rather than a default.
 
 ### Inference server
 
+- Added an opt-in `emit_reasoning_content` server config. When enabled, chat
+  completion responses emit a reasoning model's chain-of-thought under
+  `reasoning_content` instead of `reasoning` (the two are never emitted
+  together). This restores the `reasoning_content` field for clients that
+  require it; it remains off by default, so responses emit `reasoning` only.
+- Improved time-to-first-token for multimodal requests by making the image and
+  video preprocessor reject and decode media more efficiently. Oversized media
+  is now rejected before its bytes are fully materialized: an `http(s)` download
+  is aborted as soon as the advertised `Content-Length` (or the streamed total)
+  crosses the per-item cap, and a `data:` URI is rejected from its base64 length
+  before it is decoded. Large `data:` base64 decoding now runs on a worker
+  thread instead of blocking the server event loop, so one big payload no longer
+  stalls other in-flight requests. Per-request video count and per-video byte
+  limits are also enforced up front (mirroring the existing image limits).
 - Reduced per-iteration latency for structured-output (constrained decoding)
   requests on speculative-decode models. The overlap pipeline now enqueues the
   asynchronous FSM-advance and bitmask compute once the next iteration's batch
@@ -54,6 +149,15 @@ This version is still a work in progress.
   the GPU. The packed `int32` bitmask is transferred to device as-is and
   unpacked and applied to the logits in a single fused kernel
   (`apply_packed_bitmask`), instead of unpacking to a `bool` tensor on the CPU.
+- Made numpy array transport across the API-server-to-model-worker request
+  queue zero-copy. Large arrays (notably multi-image or high-resolution vision
+  `pixel_values`) now ride out-of-band as their own ZMQ frame instead of being
+  copied into the message body and then again through the socket, and the
+  receiver decodes them as views with no copy. This is faster than both the
+  previous copy and shared-memory transports at every payload size (for example
+  ~5x faster than the copy path and ~2x faster than shared memory at 24-32 MiB
+  in the transport microbenchmark), and removes the per-request shared-memory
+  segment (and its sizing, leak, and page-fault costs) from this path entirely.
 - Fixed image requests failing with a 400 or 500 across all vision models. Two
   bugs in the shared image-resolution layer: `data:` URIs with unpadded or
   URL-safe base64 (sent routinely by clients and relays) were rejected by the
@@ -99,8 +203,48 @@ This version is still a work in progress.
 - Added `maxserve.cache.disk_blocks_read` and
   `maxserve.cache.disk_blocks_written` counters, reporting KV blocks read from
   and written to the disk cache tier when tiered (disk) KV caching is enabled.
+- Added opt-in SHA-256 KV-cache block hashing. A new `kv_cache_hash_algo`
+  field on `KVCacheConfig` (default `ahash64`; opt-in `sha256` and
+  `sha256_64`) threads through the pipeline and serve config, selecting a
+  Mojo `block_hasher_sha256` and the matching `hash_request_tokens` SHA-256
+  path. Chat-completion requests also accept an optional `cache_salt` field
+  that scopes prefix-cache reuse to a single per-request KV chain. Default
+  behavior is the same as the existing `ahash64` path.
+- Added opt-in SHA-256 KV-cache block hashes through host-tier KV
+  connectors. `NullConnector`, `LocalConnector`, and `TieredConnector` now
+  accept 32-byte SHA-256 digests alongside 64-bit `ahash64` hashes. The
+  `KVConnector` Protocol's `load` and `offload` take `Sequence[bytes]`
+  block hashes and a `bytes | None` parent-sequence hash; the block
+  manager coerces legacy `ahash64` int hashes to bytes (8-byte
+  big-endian, signed) at the boundary, so a connector implementation only
+  ever sees one hash shape. Connectors advertise what they accept via a
+  new `supported_hash_algos: frozenset[KVHashAlgo]` property (default
+  `frozenset({"ahash64"})`), which the block manager validates against
+  the configured `kv_hash_algo` at startup so a mismatch fails fast with
+  a clear remediation message. The disk tier names files `<hex>.bin` (16
+  hex chars for 64-bit hashes, 64 hex chars for SHA-256 digests) and pins
+  the algo in a `kv-disk-cache.meta.json` sidecar to refuse cross-algo
+  reuse of a cache directory. `KVHashAlgo` is re-exported from
+  `max.nn.kv_cache` for downstream consumers. Default behavior is
+  unchanged.
+- Extended SHA-256 KV-cache block hashes to the dKV (`DKVConnector`)
+  external tier. `DKVConnector.supported_hash_algos` now advertises
+  `frozenset({"ahash64", "sha256", "sha256_64"})`, and `load`/`offload`
+  accept both 8-byte (`ahash64` / `sha256_64`) and 32-byte (full
+  `sha256`) block hashes; 32-byte digests are truncated to their first
+  8 bytes at the boundary into the unchanged `dkv_connector` Rust
+  client, which continues to carry a `uint64 seq_hash` on the wire.
+  Truncation is byte-identical to the existing `sha256_64` algorithm,
+  so configuring MAX with `sha256` or `sha256_64` produces the same
+  dKV key for the same logical block — no change to the dkv wire
+  format, stored block identity, or `DKVExternalBlockMetadata`
+  orchestrator hint shape. Default behavior is unchanged.
 
 ### `max` CLI
+
+- The entrypoint for the CLI, formerly `max.entrypoints`, has been marked as
+  private and moved to `max._entrypoints`. The CLI is still a public facing API,
+  but the code within it is not.
 
 ### Python API
 
@@ -139,11 +283,25 @@ This version is still a work in progress.
   `EagerRealizationContext(use_interpreter=...)` argument is deprecated in
   favor of `EagerRealizationContext(executor=...)`.
 
-- The eager interpreter precompiles its matmul and unary-elementwise
-  graph-compiler models for the full `(device, dtype)` matrix at import by
-  default. Set `MAX_EAGER_OP_PRECOMPILE=0` to skip the import-time sweep and
-  compile each target lazily on first dispatch instead, bounding compile cost to
-  the targets a program actually uses.
+- The eager interpreter now compiles its matmul and unary-elementwise
+  graph-compiler models lazily, per target on first dispatch, by default —
+  bounding compile cost to the targets a program uses instead of JIT-compiling
+  the full kernel library at import. Set `MAX_EAGER_OP_PRECOMPILE=1` to
+  precompile the full matrix at import instead.
+
+- Added a `max warm-interpreter-cache` command that batch-compiles the full
+  eager interpreter model matrix into the on-disk cache for the current
+  machine's devices and drops a stamp. A later lazy eager process on the same
+  device set adopts the warm — one batched cache load instead of compiling each
+  target on first use — so later programs start warm. Run it as a provisioning
+  step (for example a Dockerfile `RUN`) on the target hardware. Pure
+  optimization: if skipped, or on a different device set, dispatch compiles each
+  target lazily.
+
+- Added `max.experimental.nn.subgraphable` for `Module` subgraph compilation: a
+  repeated block (via the `@subgraphable` class decorator, or the
+  `subgraphable(layer)(x)` call form) lowers to one shared subgraph reused per
+  call. Opt out per compile with `Module.compile(..., allow_subgraphs=False)`.
 
 - `max.nn.hooks.PrintHook` now supports `max.experimental.nn.Module`.
 
@@ -155,6 +313,10 @@ This version is still a work in progress.
   backend can make its custom-op kernel library reachable from graphs built
   without an explicit `custom_extensions=` — including the eager-realization
   graph that backs `max.experimental` tensors. Empty by default.
+
+- Moved the `max.entrypoints` package to be private. In doing so, we
+  deprecated the `max.entrypoints.LLM` API and we'll introduce a new API
+  for offline inference in a future release.
 
 ### C API
 
@@ -170,6 +332,19 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- GPU token sampling with `top_k >= 10` is now 2-4x faster. The softmax,
+  temperature scaling, and min-p masking steps are fused into the top-k/top-p
+  rejection-sampling kernel, eliminating an intermediate probability buffer
+  and two kernel launches per sampling call. The dispatch threshold between
+  the two-stage top-k kernel and the rejection-sampling kernel was lowered
+  from `top_k = 32` to `top_k = 10` to match the new performance crossover.
+- The `TileTensor` layout type no longer takes an `element_size` parameter. A
+  tensor's logical element width is now carried by its `Storage` parameter via
+  `PointerStorage[element_width]` (default `PointerStorage[1]`), and
+  `element_size` remains available as a derived comptime member. Code that
+  passed `element_size=N` should now pass
+  `Storage=PointerStorage[element_width=N]`, or use `TileTensor.vectorize()` to
+  build the vectorized view.
 - Apple silicon GPU support for running MAX models has been extended to M1 and
   M2 systems. Previously, the optimized matrix multiplication kernels for Apple
   silicon GPUs only returned correct results on M3 and newer systems. That has
@@ -196,11 +371,38 @@ This version is still a work in progress.
   invalid operand. The kernels now read the tensor-memory base once after it
   is published and carry it in a register, so there is no in-loop re-read to
   race.
+- Enabled the low-latency (Lamport) all-reduce on B200 for small messages
+  (up to 1 MiB at 2, 4, and 8 GPUs), where it beats the one-stage path by
+  roughly 1.1-1.68x. The barrier-free protocol marks unwritten slots with a
+  negative-zero sentinel, so its communication region is now initialized when
+  pipeline signal buffers are allocated; without that the region read as
+  already-written and produced non-deterministic results.
 
 ## Breaking changes
 
+- Removed `InferenceSession.use_old_top_k_kernel()` and the
+  `USE_OLD_TOP_K_KERNEL` environment variable. The legacy top-k sampling
+  kernel this fallback selected has been deleted; the current two-stage
+  top-k kernel is now used unconditionally.
+
 ## Fixes
 
+- Fixed a precision loss in the normalization ops where the `epsilon` value was
+  carried in the input's dtype (for example `bfloat16`) before use. A small
+  epsilon such as `1e-6` is not representable in `bfloat16`, so it was silently
+  rounded. The `epsilon` for `rms_norm`, `layer_norm`, `group_norm`, and the
+  fused residual, FP8-quantized, and distributed all-reduce variants is now
+  carried as `float32` end to end — from the graph op through the graph
+  compiler to the kernel. The Python `epsilon: float` argument is unchanged.
+- Fixed MAX Serve crashing the model worker on the first host KV-cache
+  offload/reload when run with `--kv-connector dkv`. The dKV connector had
+  drifted out of sync with its client and no longer passed the required
+  attention group on the load/offload path; it now supplies it, so the
+  same-host prefix-cache path completes instead of raising.
+- Fixed inflated `maxserve.cache.h2d_blocks_copied` and
+  `maxserve.cache.d2h_blocks_copied` telemetry on tiered and local KV cache
+  deployments. The scheduler now resets connector transfer counters after each
+  batch metrics sample so OpenTelemetry counters report per-batch deltas.
 - Fixed `max.nn.WeightNormConvTranspose1d` raising `AttributeError` when
   constructed with its default `has_bias=False`. The constructor
   unconditionally deleted the wrapped conv's `bias` attribute, which is only
@@ -222,5 +424,18 @@ This version is still a work in progress.
   matcher across certain tool-call structural tags (e.g.
   `<|tool_call_begin|>`). The walk now runs on a deep copy of the matcher,
   leaving the real matcher untouched.
+
+- Fixed slicing and `view()` on a `max.driver.DevicePinnedBuffer` silently
+  returning a plain `Buffer`. The decayed type lost the pinned buffer's
+  no-synchronization behavior, so a later `to_numpy()` on the slice triggered
+  an unexpected device synchronization. Slices and views now preserve the
+  `DevicePinnedBuffer` type.
+
+- Fixed DeepSeek-V3.1-NVFP4 multi-token prediction (MTP) failing to load with
+  `dispatch_quant_config must be specified when dispatch_dtype is not
+  bfloat16` when expert parallelism was enabled. When a quantized model has no
+  resolvable quantization config for its draft (BF16 NextN) weights, the draft
+  config is now built with a bfloat16 dispatch dtype instead of constructing an
+  invalid `EPConfig`.
 
 ## Mojo language

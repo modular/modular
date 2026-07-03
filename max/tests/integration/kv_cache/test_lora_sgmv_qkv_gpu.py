@@ -22,7 +22,12 @@ from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import sgmv_qkv_lora_kernel
-from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheBuffer,
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
@@ -290,7 +295,7 @@ def run_sgmv_qkv_lora_kernel(
         # V adapter IDs are offset by num_adapters
         grouped_ids_kv.append(id_ + num_adapters if id_ >= 0 else id_)
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DTYPE,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -375,7 +380,8 @@ def run_sgmv_qkv_lora_kernel(
             kv_blocks=kv_inputs[0].buffer,
             cache_lengths=kv_inputs[1].tensor,
             lookup_table=kv_inputs[2].tensor,
-            max_lengths=kv_inputs[3].tensor,
+            max_prompt_length=kv_inputs[3].tensor,
+            max_cache_length=kv_inputs[4].tensor,
         )
 
         q_out = sgmv_qkv_lora_kernel(

@@ -395,6 +395,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         video_num_soft_tokens: list[int] = []
 
         video_metadata_list: list[VideoMetadata] = []
+        video_hashes: list[int] = []
         if request.videos:
             (
                 padded_pvs,
@@ -411,6 +412,26 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
                     video_frame_pos_ids.append(pos[f, :n_real, :])
                     video_frame_patch_counts.append(n_real)
                     video_frame_soft_token_counts.append(n_real // (k * k))
+
+            if self.enable_vision_caching:
+                # Content hash per video: hash all real pixels, then fold in
+                # (n_frames, patches_per_frame) so clips with identical pixels
+                # but different sizes don't collide (same pattern as M3).
+                for pv, pos in zip(padded_pvs, padded_pos, strict=True):
+                    n_frames = pv.shape[0]
+                    real_mask = pos[:, :, 0] >= 0
+                    real_patches = np.concatenate(
+                        [pv[f, real_mask[f]] for f in range(n_frames)], axis=0
+                    )
+                    pixel_hash = hash_image(real_patches)
+                    video_hashes.append(
+                        hash_image(
+                            np.array(
+                                [pixel_hash, n_frames, int(real_mask[0].sum())],
+                                dtype=np.int64,
+                            )
+                        )
+                    )
 
         # Expand image placeholders
         if isinstance(prompt, str):
@@ -548,6 +569,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             video_frame_patch_counts=video_frame_patch_counts,
             video_frame_soft_token_counts=video_frame_soft_token_counts,
             video_token_ranges=video_token_ranges,
+            video_hashes=video_hashes,
             tokens=TokenBuffer(
                 array=encoded_prompt.astype(np.int64, copy=False),
             ),

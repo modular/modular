@@ -21,7 +21,7 @@ bazel+mypy complain about this import not being available even though it is part
 Explicitly importing //max/python/max/serve/schemas in the test's BUILD file hasn't worked either.
 """
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from max.serve.schemas.openai import CreateChatCompletionRequest
@@ -553,6 +553,34 @@ def test_openai_chat_completion_accepts_explicit_null_tool_choice() -> None:
     assert request.tool_choice is None
 
 
+def test_openai_response_format_schema_advertises_boolean() -> None:
+    """The generated JSON/OpenAPI schema must advertise the boolean ``schema``
+    so the published docs match what the endpoint actually accepts."""
+    schema = CreateChatCompletionRequest.model_json_schema()
+    schema_field = schema["$defs"]["JSONSchema"]["properties"]["schema"]
+    types = {
+        opt.get("type") for opt in schema_field.get("anyOf", [schema_field])
+    }
+    assert "boolean" in types
+
+
+@pytest.mark.parametrize("schema", [True, False])
+def test_openai_response_format_accepts_boolean_schema(schema: bool) -> None:
+    """A boolean is a valid JSON Schema; the request must accept it verbatim
+    (de-sugaring to a dict happens later, in ``_create_response_format``)."""
+    body = {
+        "model": "test",
+        "messages": [{"role": "user", "content": "hi"}],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "target", "schema": schema},
+        },
+    }
+    request = CreateChatCompletionRequest.model_validate(body)
+    response_format = cast(dict[str, Any], request.response_format)
+    assert response_format["json_schema"]["schema"] is schema
+
+
 def test_openai_chat_message_validates_structure() -> None:
     """Regression for SERVSYS-1257: ``messages`` should not be typed as
     ``list[dict[str, Any]]`` (the ``Any`` clobbered OpenAI SDK validation).
@@ -781,6 +809,46 @@ def test_openai_image_url_accepts_non_string_sizing_hints() -> None:
     video_url = content[2]["video_url"]
     assert video_url["fps"] == 2.0
     assert video_url["max_long_side_pixel"] == 1008
+
+
+async def test_openai_wrap_content_carries_detail_hint() -> None:
+    """``detail`` is carried onto wrapped image/video content parts."""
+    smily_b64 = (
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+        "AAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    )
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "describe"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": smily_b64, "detail": "high"},
+                        },
+                        {
+                            "type": "video_url",
+                            "video_url": {
+                                "url": "data:video/mp4;base64,AAAA",
+                                "detail": "low",
+                            },
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+    settings = Settings()
+    parsed = await openai_parse_chat_completion_request(request, True, settings)
+    content = parsed.messages[0].content
+    assert isinstance(content, list)
+    assert content[1].type == "image"
+    assert content[1].detail == "high"
+    assert content[2].type == "video"
+    assert content[2].detail == "low"
 
 
 async def test_openai_root_role_accepted_and_passed_through() -> None:
@@ -1216,3 +1284,22 @@ async def test_openai_accepts_64mb_request_body() -> None:
     assert len(messages) == 1
     assert not images
     assert not videos
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({}, True),  # defaults to True
+        ({"reasoning_split": True}, True),
+        ({"reasoning_split": False}, False),  # False is accepted and preserved
+    ],
+)
+def test_reasoning_split(payload: dict[str, Any], expected: bool) -> None:
+    """``reasoning_split`` defaults to True; both True and False are accepted."""
+    body = {
+        "model": "test",
+        "messages": [{"role": "user", "content": "hi"}],
+        **payload,
+    }
+    request = CreateChatCompletionRequest.model_validate(body)
+    assert request.reasoning_split is expected

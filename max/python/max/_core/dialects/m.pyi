@@ -315,8 +315,8 @@ class SymbolRefArrayAttr(max._core.Attribute):
 class TargetInfoAttr(max._core.Attribute):
     """
     The `#M.target` attribute represents a compilation target configuration. It
-    contains the target triple, microarchitecture, optional features, and
-    derived data such as data layout and SIMD width.
+    contains the target triple, microarchitecture, stdlib plugin, optional features,
+    and derived data such as data layout and SIMD width.
 
     The user can also specify the default index bit width being used. This is
     important for GPUs where the hardware can support different index bit widths
@@ -339,9 +339,10 @@ class TargetInfoAttr(max._core.Attribute):
     Example:
     ```mlir
     #M.target<triple="x86_64-unknown-linux-gnu", arch="znver3",
-              features="+avx,+avx2", data_layout="p:64:64-i64:64:64",
-              relocation_model="static", simd_bit_width=256, index_bit_width=64>
-    #M.target<triple="nvptx64-nvidia-cuda", arch="sm_80">
+              stdlib_plugin="default", features="+avx,+avx2",
+              data_layout="p:64:64-i64:64:64", relocation_model="static",
+              simd_bit_width=256, index_bit_width=64>
+    #M.target<triple="nvptx64-nvidia-cuda", arch="sm_80", stdlib_plugin="cuda">
     ```
 
     Can be (partially) represented at runtime by M::TargetInfo.
@@ -355,6 +356,7 @@ class TargetInfoAttr(max._core.Attribute):
         self,
         triple: max._core._TargetTriple,
         arch: str,
+        stdlib_plugin: str,
         features: str,
         data_layout: DataLayout,
         relocation_model: max._core._RelocationModel,
@@ -367,6 +369,8 @@ class TargetInfoAttr(max._core.Attribute):
     def triple(self) -> max._core._TargetTriple: ...
     @property
     def arch(self) -> str: ...
+    @property
+    def stdlib_plugin(self) -> str: ...
     @property
     def features(self) -> str: ...
     @property

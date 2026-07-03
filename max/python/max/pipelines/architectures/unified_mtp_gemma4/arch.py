@@ -12,13 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from ..gemma4.context import Gemma4Context
 from ..gemma4.memory_planner import Gemma4MemoryPlanner
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
 from ..gemma4.tokenizer import Gemma4Tokenizer
+from .batch_processor import UnifiedMTPGemma4BatchProcessor
 from .model import UnifiedMTPGemma4Model
 from .weight_adapters import convert_safetensor_state_dict
 
@@ -30,7 +31,12 @@ unified_mtp_gemma4_arch = SupportedArchitecture(
     supported_encodings={"bfloat16", "float4_e2m1fnx2"},
     pipeline_model=UnifiedMTPGemma4Model,
     tokenizer=Gemma4Tokenizer,
-    context_type=TextContext,
+    context_type=Gemma4Context,
+    input_modalities={
+        InputModality.TEXT,
+        InputModality.IMAGE,
+        InputModality.VIDEO,
+    },
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={WeightsFormat.safetensors: convert_safetensor_state_dict},
     supports_empty_batches=True,
@@ -40,4 +46,9 @@ unified_mtp_gemma4_arch = SupportedArchitecture(
     memory_planner=Gemma4MemoryPlanner,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
+    batching=UnifiedMTPGemma4BatchProcessor,
+    # The vision encoder runs eagerly during prefill (outside the captured
+    # graph) and produces variable-shape image embeddings, so this path does
+    # not auto-enable device graph capture (mirrors the non-MTP gemma4 arch).
+    supports_device_graph_capture=False,
 )

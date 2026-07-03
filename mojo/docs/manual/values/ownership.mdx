@@ -20,7 +20,7 @@ deallocates those resources in its destructor. Mojo's ownership system ensures
 that destructors are called promptly.
 
 On this page, we'll explain the rules that govern this ownership model, and how
-to specify different passing conventions that define how values are passed into
+to specify different argument conventions that define how values are passed into
 functions.
 
 ## Ownership summary
@@ -48,7 +48,7 @@ can use a reference binding:
 ref value_ref = list[0]
 ```
 
-## Argument passing conventions
+## Argument conventions
 
 In all programming languages, code quality and performance is heavily dependent
 upon how functions treat argument values. That is, whether a value received by
@@ -63,10 +63,10 @@ also need to offer full control over memory optimizations, which generally
 requires reference semantics. The trick is to introduce reference semantics in
 a way that ensures all code is memory safe by tracking the lifetime of every
 value and destroying each one at the right time (and only once). All of this is
-made possible in Mojo through the use of passing conventions that ensure every
+made possible in Mojo through the use of argument conventions that ensure every
 value has only one owner at a time.
 
-A passing convention specifies whether an argument is mutable or immutable,
+An argument convention specifies whether an argument is mutable or immutable,
 and whether the function owns the value. Each convention is defined by a
 keyword at the beginning of an argument declaration:
 
@@ -110,11 +110,7 @@ def main():
     var a = 1
     var b = 2
     add(a, b)
-    print(a)
-```
-
-```output
-3
+    print(a)  # 3
 ```
 
 You've probably already seen some function arguments that don't declare a
@@ -152,7 +148,7 @@ and destructor aren't invoked for a default (immutable reference) argument.
 
 ### Compared to C++ and Rust
 
-Mojo's default passing convention is similar in some ways to passing an
+Mojo's default argument convention is similar in some ways to passing an
 argument by `const&` in C++, which also avoids a copy of the value and disables
 mutability in the callee. However, the default convention differs from
 `const&` in C++ in two important ways:
@@ -282,28 +278,35 @@ copies of the value.
 
 ## Transfer arguments (`var` and `^`)
 
-And finally, if you'd like your function to receive value **ownership**, add the
-`var` keyword in front of the argument name.
+If you want your function to take *ownership* of a value, add the `var`
+keyword before the argument name.
 
-This convention is often combined with use of the postfixed `^` "transfer"
-sigil on the variable that is passed into the function, which ends the
-lifetime of that variable.
+This convention is often combined with using the postfix `^` transfer sigil
+on an argument at the call site.
 
-Technically, the `var` keyword doesn't guarantee that the received value is
-*the original value*—it guarantees only that the function
-gets unique ownership of a value. This happens in one of
-three ways:
+When using a variable, transferring a value leaves the original variable
+uninitialized. You can't use the variable after the transfer until you
+assign it a new value of the original type.
 
-- The caller passes the argument with the `^` transfer sigil, which ends the
-  lifetime of that variable (the variable becomes uninitialized) and ownership
-  is transferred into the function.
+### Transferring with `var`
 
-- The caller **doesn't** use the `^` transfer sigil, in which case, Mojo copies
-  the value. If the type isn't copyable, this is a compile-time error.
+`var` behaves differently depending on whether the caller uses the `^`
+transfer sigil and whether the value conforms to `Copyable`.
 
-- The caller passes in a newly-created "owned" value, such as a value returned
-  from a function. In this case, no variable owns the value and it's
-  transferred directly to the callee. For example:
+The `var` keyword doesn't guarantee that the function receives *the original
+value*. It guarantees only that the function receives *ownership of a
+value*. That happens in one of three ways:
+
+- **Value transfer**: The caller uses the `^` transfer sigil. This
+  transfers the value, leaving the original variable uninitialized. The function
+  argument receives ownership.
+
+- **Copying**: Without the transfer sigil, Mojo copies the value. If the
+  type isn't `Copyable`, this produces a compile-time error.
+
+- **Newly created value**: The caller passes a newly created value,
+  such as the result of a function call. In this case, no variable owns the
+  value, so ownership transfers directly to the callee. For example:
 
   ```mojo
   def take(var s: String):

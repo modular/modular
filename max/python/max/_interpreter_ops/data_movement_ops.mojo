@@ -481,19 +481,17 @@ def memcpy_op[
     var s = src_ptr + src_offset
 
     @always_inline
-    @parameter
-    @__copy_capture(d, s)
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
         d.store[width=width](i, s.load[width=width](i))
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=simd_width_of[dtype]()](Coord(count), ctx)
+        elementwise[simd_width=simd_width_of[dtype]()](func, Coord(count), ctx)
     else:
         # GPU execution
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=1, target="gpu"](Coord(count), ctx)
+                elementwise[simd_width=1, target="gpu"](func, Coord(count), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for memcpy with dtype float64"

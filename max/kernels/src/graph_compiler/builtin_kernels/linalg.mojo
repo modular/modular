@@ -17,7 +17,11 @@
 # ===-----------------------------------------------------------------------===#
 
 from std.collections import OptionalReg
-from std.sys.info import simd_width_of, _accelerator_arch
+from std.sys.info import (
+    simd_width_of,
+    _accelerator_arch,
+    has_apple_gpu_accelerator,
+)
 import extensibility as compiler
 
 # ===-----------------------------------------------------------------------===#
@@ -40,6 +44,7 @@ from linalg.matmul.gpu.amd import (
     mxfp4_grouped_matmul_amd_preb,
 )
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
+from linalg.matmul.gpu.apple.fp4_matmul import enqueue_apple_fp4_matmul
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
@@ -56,7 +61,10 @@ from linalg.matmul.gpu.sm100_structured.fused_swiglu import (
     matmul_swiglu_dispatch_sm100_bf16,
 )
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
-from linalg.grouped_matmul import grouped_matmul
+from linalg.grouped_matmul import (
+    grouped_matmul,
+    grouped_matmul_rowwise_dynamic_scaled_fp8,
+)
 from linalg.lora import shrink_qkv_permute_3mn_sm100
 from linalg.matmul import matmul
 from linalg.matmul.gpu import _matmul_gpu
@@ -105,7 +113,7 @@ struct MatmulFusedPartialRMSNorm:
         input: InputTensor[dtype=dtype, rank=rank, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
+        epsilon: Float32,
         weight_offset: Scalar[dtype=dtype],
         ctx: DeviceContext,
     ) capturing raises:
@@ -143,7 +151,7 @@ def composite_matmul_fused_partial_rms_norm_shape[
     input: InputTensor[dtype=dtype, rank=rank, ...],
     weight: InputTensor[dtype=dtype, rank=2, ...],
     gamma: InputTensor[dtype=dtype, rank=1, ...],
-    epsilon: Scalar[dtype=dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype=dtype],
 ) -> IndexList[rank]:
     # Return the input shape for normed output
@@ -395,7 +403,6 @@ struct Struct_grouped_matmul_ragged:
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "grouped matmul only support GPUs"
-        cuda_ctx = context
         grouped_matmul(
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
@@ -403,7 +410,7 @@ struct Struct_grouped_matmul_ragged:
             expert_start_indices.to_tile_tensor[DType.int64](),
             expert_ids.to_tile_tensor[DType.int64](),
             expert_usage_stats.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
         )
 
 
@@ -470,7 +477,6 @@ struct Struct_grouped_matmul_block_scaled:
         ](), "grouped block-scaled matmul only supports GPUs"
         if num_active_experts == 0:
             return
-        var cuda_ctx = context
         grouped_matmul_block_scaled_dispatch[transpose_b=True, target=target](
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
@@ -483,7 +489,7 @@ struct Struct_grouped_matmul_block_scaled:
             expert_scales.to_tile_tensor[DType.int64](),
             Int(num_active_experts),
             Int(estimated_total_m),
-            cuda_ctx,
+            context,
         )
 
 
@@ -619,13 +625,66 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
             "grouped dynamic scaled matmul only support GPUs with native"
             " FP8 support"
         )
-        cuda_ctx = context
         grouped_matmul_dynamic_scaled_fp8[
             input_scale_granularity,
             weight_scale_granularity,
             m_scale_granularity,
             n_scale_granularity,
             k_scale_granularity,
+            transpose_b=True,
+            target=target,
+        ](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            Int(max_num_tokens_per_expert),
+            Int(num_active_experts),
+            context,
+        )
+
+
+@compiler.register("mo.grouped.matmul.rowwise.dynamic.scaled.fp8")
+struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
+    """MOGG wrapper for grouped (ragged MoE) rowwise/per-token scaled FP8 matmul.
+
+    Serves rowwise (per-output-channel) weight scales + per-token (colwise)
+    dynamic activation scales - the compressed-tensors FP8 layout used by
+    e.g. ``RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic``. Targets
+    NVIDIA SM100 (B200) with a correctness-first naive grouped kernel.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        a_scales_type: DType,
+        b_scales_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        a_scales: InputTensor[dtype=a_scales_type, rank=2, ...],
+        b_scales: InputTensor[dtype=b_scales_type, rank=3, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "grouped rowwise dynamic scaled matmul only supports GPUs with"
+            " native FP8 support"
+        )
+        cuda_ctx = context
+        grouped_matmul_rowwise_dynamic_scaled_fp8[
             transpose_b=True,
             target=target,
         ](
@@ -775,7 +834,6 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
 
         if a.dim_size(1) == 0:
             return
-        cuda_ctx = context
         batched_matmul_dynamic_scaled_fp8[
             input_scale_granularity,
             weight_scale_granularity,
@@ -790,7 +848,7 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
             b.to_tile_tensor[DType.int64](),
             a_scales.to_tile_tensor[DType.int64](),
             b_scales.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
         )
 
 
@@ -804,10 +862,11 @@ struct Struct_matmul_dynamic_block_scaled:
         b_type: DType,
         scales_type: DType,
         //,
+        has_epilogue_fusion: Bool,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
+        c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
         b: InputTensor[dtype=b_type, rank=2, ...],
         a_scales: InputTensor[dtype=scales_type, rank=5, ...],
@@ -820,10 +879,51 @@ struct Struct_matmul_dynamic_block_scaled:
             " block scaled support"
         )
 
-        cuda_ctx = context
+        # The SM100 block-scaled matmul applies the epilogue on the f32
+        # accumulator (`_dtype` may be f32), whereas the fusion lambdas operate
+        # on the logical output dtype `c.dtype`. Use `cast` rather than `rebind`
+        # so the conversion is correct on both the structured Mojo path (f32
+        # accumulator) and the vendor path (`_dtype == c.dtype`).
+        @parameter
+        @always_inline
+        def epilogue_fn[
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
+            c._lambda_store[width=_width, element_alignment=alignment](
+                coords,
+                val.cast[c.dtype](),
+            )
+
+        @parameter
+        @always_inline
+        def output_compute_fn[
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
+            _dtype, _width
+        ]:
+            return c._fused_compute_output_lambda[element_alignment=alignment](
+                coords, val.cast[c.dtype]()
+            ).cast[_dtype]()
+
+        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+
+        comptime elementwise_lambda = Optional[
+            matmul_elementwise_epilogue_type
+        ](
+            epilogue_fn
+        ) if has_epilogue_fusion and not has_compute_lambda else None
+
+        comptime compute_lambda = Optional[
+            matmul_elementwise_compute_lambda_type
+        ](
+            output_compute_fn
+        ) if has_epilogue_fusion and has_compute_lambda else None
+
         block_scaled_matmul[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=True,
+            elementwise_lambda_fn=elementwise_lambda,
+            elementwise_compute_lambda_fn=compute_lambda,
             target=target,
         ](
             c.to_tile_tensor[DType.int64](),
@@ -832,7 +932,7 @@ struct Struct_matmul_dynamic_block_scaled:
             a_scales.to_tile_tensor[DType.int64](),
             b_scales.to_tile_tensor[DType.int64](),
             tensor_sf,
-            cuda_ctx,
+            context,
         )
 
 
@@ -904,13 +1004,55 @@ struct Struct_matmul_mxfp4_dequant_fp8:
             b_scales_type == DType.float8_e8m0fnu
         ), "MXFP4 matmul scales must be float8_e8m0fnu"
 
-        cuda_ctx = context
         mxfp4_matmul_sm90(
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             b_scales.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            context,
+        )
+
+
+@compiler.register("mo.matmul.weight.only.block.scaled.apple")
+struct Struct_matmul_weight_only_block_scaled_apple:
+    """Apple M5 weight-only NVFP4 (W4A16) matmul: `out = a @ dequant(b)^T`.
+
+    Unlike `mo.matmul.dynamic.block.scaled` (the NVIDIA SM100 path), the
+    activation `a` stays in bf16 (NOT dynamically quantized to FP4) and the
+    weight block scales are PLAIN rank-2 `[N, K // 16]` (NOT the SM100 rank-5
+    TCGEN05 interleave). The FP4 weight is dequantized to bf16 in-register at
+    the MMA loader seam (`enqueue_apple_fp4_matmul`); weights stay packed in
+    DRAM. The NVFP4 per-tensor `weight_scale_2` scalar is applied at the graph
+    level by the caller (a post-matmul multiply), so it is NOT an input here.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        b_scales: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "Apple weight-only block-scaled matmul only supports GPUs"
+        comptime assert has_apple_gpu_accelerator(), (
+            "mo.matmul.weight.only.block.scaled.apple requires an Apple"
+            " (Metal) GPU accelerator"
+        )
+
+        enqueue_apple_fp4_matmul[c_type=c_type](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            context,
         )
 
 
@@ -1158,21 +1300,19 @@ struct Struct_lora_sgmv_ragged:
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "SGMV only supported on GPUs"
-        cuda_ctx = context
-        var a_tensor = a.to_tile_tensor[DType.int64]()
 
         if a.dim_size[0]() == 0:
             return
 
         grouped_matmul(
             c.to_tile_tensor[DType.int64](),
-            a_tensor,
+            a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             input_row_offsets.to_tile_tensor[DType.int64](),
             lora_ids.to_tile_tensor[DType.int64](),
             Int(max_seq_length),
             lora_ids.dim_size[0](),
-            cuda_ctx,
+            context,
         )
 
 
@@ -1196,21 +1336,19 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "SGMV only supported on GPUs"
-        cuda_ctx = context
-        var a_tensor = a.to_tile_tensor[DType.int64]()
 
         if a.dim_size[0]() == 0:
             return
 
         shrink_qkv_permute_3mn_sm100(
             c.to_tile_tensor[DType.int64](),
-            a_tensor,
+            a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             input_row_offsets.to_tile_tensor[DType.int64](),
             lora_ids.to_tile_tensor[DType.int64](),
             Int(max_seq_length),
             lora_ids.dim_size[0](),
-            cuda_ctx,
+            context,
         )
 
 

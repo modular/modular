@@ -37,7 +37,6 @@ from std.testing.prop import PropTest
 # TODO(MOCO-522): Figure out desired behavior for importing files with only
 # extensions in them.
 from std.testing.prop.strategy import SIMD, List
-from std.sys.intrinsics import _type_is_eq
 
 
 def test_mojo_issue_698() raises:
@@ -783,14 +782,18 @@ def test_list_iter_owned_bounds() raises:
         _ = iter.__next__()
 
 
-def _test_list_iter_bounds[I: Iterator](var list_iter: I, list_len: Int) raises:
+def _test_list_iter_bounds[
+    I: Iterator
+](var list_iter: I, list_len: Int) raises where conforms_to(
+    I.Element, ImplicitlyDeletable
+):
     var iter = list_iter^
 
     for i in range(list_len):
         var lower, upper = iter.bounds()
         assert_equal(list_len - i, lower)
         assert_equal(list_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
+        _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -1184,7 +1187,7 @@ def test_list_comprehension() raises:
 def test_list_can_infer_iterable_element_type() raises:
     var string = "Mojo🔥"
     var l = List(string.codepoints())
-    assert_true(_type_is_eq[type_of(l), List[Codepoint]]())
+    assert_true(type_of(l) == List[Codepoint])
     assert_equal(
         l,
         [

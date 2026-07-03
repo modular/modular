@@ -38,13 +38,12 @@ from std.utils import Variant
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
+from std.builtin.variadics import TypeList
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
 from std.memory import UnsafeMaybeUninit
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location, reflect
-from std.reflection.traits import AllCopyable
-from std.sys.intrinsics import _type_is_eq
 from std.utils._nicheable import (
     UnsafeNicheable,
     UnsafeCustomNicheStorage,
@@ -94,10 +93,13 @@ struct EmptyOptionalError[T: AnyType](
 
 struct Optional[T: Movable](
     Boolable,
-    # TODO(MOCO-3640): Remove AllCopyable once the compiler can synthesize copy
-    # constructors through variadic conditional conformances
-    # (AllCopyable[_NoneType, T] when T: Copyable).
-    Copyable where conforms_to(T, Copyable) and AllCopyable[_NoneType, T],
+    # TODO(MOCO-3640): Remove the _NoneType check once the compiler can
+    # synthesize copy constructors through variadic conditional conformances
+    # (TypeList.of[_NoneType, T]().all_conforms_to[Copyable]() when T: Copyable).
+    Copyable where (
+        conforms_to(T, Copyable)
+        and TypeList.of[T, _NoneType]().all_conforms_to[Copyable]()
+    ),
     Defaultable,
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
@@ -249,57 +251,6 @@ struct Optional[T: Movable](
         """Implicitly cast an `OptionalReg[T]` to an `Optional[T]`."""
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         UnsafePointer(to=self).bitcast[OptionalReg[U]]()[] = optional_reg
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__(
-        nullable: UnsafePointer[...],
-        out self: Optional[
-            UnsafePointer[
-                nullable.type,
-                nullable.origin,
-                address_space=nullable.address_space,
-            ]
-        ],
-    ):
-        self = {value = nullable}
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__(
-        nullable: UnsafePointer[mut=True, ...],
-        out self: Optional[
-            UnsafePointer[
-                nullable.type,
-                AnyOrigin[mut=True],
-                address_space=nullable.address_space,
-            ]
-        ],
-    ):
-        self = {value = nullable.unsafe_origin_cast[AnyOrigin[mut=True]]()}
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__[
-        __disambiguate: NoneType = None
-    ](
-        nullable: UnsafePointer[...],
-        out self: Optional[
-            UnsafePointer[
-                nullable.type,
-                AnyOrigin[mut=False],
-                address_space=nullable.address_space,
-            ]
-        ],
-    ):
-        self = {
-            value = nullable.as_immutable().unsafe_origin_cast[
-                AnyOrigin[mut=False]
-            ]()
-        }
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -973,14 +924,14 @@ struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
 
     @always_inline
     def __init__[U: TrivialRegisterPassable](out self, value: U):
-        comptime assert _type_is_eq[U, Self.T]()
+        comptime assert U == Self.T
         self._value = __mlir_op.`kgen.variant.create`[
             _type=Self._mlir_type, index=SIMDSize(0)._mlir_value
         ](rebind[Self.T](value))
 
     @always_inline
     def value[U: TrivialRegisterPassable](self) -> U:
-        comptime assert _type_is_eq[U, Self.T]()
+        comptime assert U == Self.T
         var value = __mlir_op.`kgen.variant.get`[index=SIMDSize(0)._mlir_value](
             self._value
         )
@@ -1014,14 +965,14 @@ struct _NicheableOptionalRegStorage[
 
     @always_inline
     def __init__[U: TrivialRegisterPassable](out self, value: U):
-        comptime assert _type_is_eq[U, Self.T]()
+        comptime assert U == Self.T
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         var ptr = UnsafePointer(to=self.storage).bitcast[Self.T]()
         ptr.init_pointee_move(rebind[Self.T](value))
 
     @always_inline
     def value[U: TrivialRegisterPassable](self) -> U:
-        comptime assert _type_is_eq[U, Self.T]()
+        comptime assert U == Self.T
         return UnsafePointer(to=self.storage).bitcast[U]()[]
 
     @always_inline

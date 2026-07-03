@@ -113,6 +113,12 @@ class Pipeline(Generic[PipelineInputsType, PipelineOutputType], ABC):
                 pass
     """
 
+    @property
+    @abstractmethod
+    def max_batch_size(self) -> int:
+        """Returns the maximum number of requests processed in a single batch."""
+        ...
+
     @abstractmethod
     def execute(
         self, inputs: PipelineInputsType

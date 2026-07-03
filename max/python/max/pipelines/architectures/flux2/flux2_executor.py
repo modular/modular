@@ -273,7 +273,15 @@ class Flux2Executor(
             manifest, session, graphs_module=self._graphs_module
         )
         self.decoder = VaeDecoder(
-            manifest, session, graphs_module=self._graphs_module
+            manifest,
+            session,
+            graphs_module=self._graphs_module,
+            # The transformer emits latents in ``_model_dtype`` (bfloat16 for
+            # an NVFP4 transformer); the VAE may compile at a different dtype
+            # (float32) in a mixed-precision assembly.  Tell the decoder the
+            # incoming dtype so it casts at the graph boundary instead of
+            # rejecting the buffer.
+            latents_in_dtype=self._model_dtype,
         )
 
         # Conditionally build fused OR split denoise graphs.

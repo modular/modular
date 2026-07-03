@@ -72,7 +72,7 @@ _LETTERS = "ABCDEFGHIJ"
 
 # Real mmlu_pro engineering questions with short, well-defined answers that a
 # healthy server solves well within the cap. Observed runaway on
-# google/gemma-4-31b-it: the model fails to terminate and runs to the token
+# google/gemma-4-31B-it: the model fails to terminate and runs to the token
 # cap (finish_reason="length") without emitting a final answer.
 _CASES: list[dict[str, Any]] = [
     {
@@ -109,7 +109,7 @@ _CASES: list[dict[str, Any]] = [
         "gold": "D",
         "expected_clean_tokens": 4902,
         "question": (
-            "Find the radiation resistance of a single-turn circular loop witha"
+            "Find the radiation resistance of a single-turn circular loop with a"
             " circumference of (1/4) wavelength."
         ),
         "options": [

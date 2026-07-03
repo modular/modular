@@ -30,11 +30,10 @@ from std.format._utils import FormatStruct, Named, TypeNames
 from std.memory import (
     UnsafePointer,
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
 )
 from std.sys import align_of, size_of
-from std.sys.intrinsics import _type_is_eq
 
 
 # ===----------------------------------------------------------------------=== #
@@ -50,7 +49,7 @@ def _all_types_unique[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime for j in range(i + 1, Ts.size):
-            if _type_is_eq[Ts[i], Ts[j]]():
+            if Ts[i] == Ts[j]:
                 return False
     return True
 
@@ -59,12 +58,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial destructors."""
 
     comptime for i in range(Ts.size):
-        comptime if conforms_to(Ts[i], ImplicitlyDeletable):
-            if not is_trivially_destructible[
-                downcast[Ts[i], ImplicitlyDeletable]
-            ]():
-                return False
-        else:
+        if not is_trivially_deletable[Ts[i]]():
             return False
     return True
 
@@ -74,7 +68,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Copyable):
-            if not is_trivially_copyable[downcast[Ts[i], Copyable]]():
+            if not is_trivially_copyable[Ts[i]]():
                 return False
         else:
             return False
@@ -86,7 +80,7 @@ def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Movable):
-            if not is_trivially_movable[downcast[Ts[i], Movable]]():
+            if not is_trivially_movable[Ts[i]]():
                 return False
         else:
             return False

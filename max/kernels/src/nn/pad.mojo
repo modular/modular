@@ -159,8 +159,6 @@ def pad_constant[
     var constant_cast = rebind[Scalar[dtype]](constant[0])
     comptime output_rank = output.rank
 
-    @__copy_capture(constant_cast)
-    @parameter
     def pad_constant_wrapper(
         output: UnsafePointer[
             mut=True, Scalar[dtype], address_space=AddressSpace.GENERIC, ...
@@ -172,7 +170,7 @@ def pad_constant[
         output_shape: IndexList[output_rank],
         output_strides: UnsafePointer[mut=True, Scalar[DType.int], _],
         input_strides: UnsafePointer[Scalar[DType.int], _],
-    ):
+    ) {var constant_cast}:
         return _pad_constant_impl[output_rank, dtype, paddings_type](
             output,
             input,
@@ -186,8 +184,7 @@ def pad_constant[
     return _do_pad[
         dtype,
         paddings_type,
-        pad_constant_wrapper,
-    ](output, input, paddings)
+    ](output, input, paddings, pad_constant_wrapper)
 
 
 def pad_reflect[
@@ -230,7 +227,6 @@ def pad_reflect[
 
     comptime output_rank = output.rank
 
-    @parameter
     def pad_reflect_wrapper(
         output: UnsafePointer[
             mut=True, Scalar[dtype], address_space=AddressSpace.GENERIC, ...
@@ -242,7 +238,7 @@ def pad_reflect[
         output_shape: IndexList[output_rank],
         output_strides: UnsafePointer[mut=True, Scalar[DType.int], _],
         input_strides: UnsafePointer[Scalar[DType.int], _],
-    ):
+    ) {}:
         return _pad_reflect_impl[output_rank, dtype, paddings_type](
             output, input, paddings, output_shape, output_strides, input_strides
         )
@@ -250,8 +246,7 @@ def pad_reflect[
     return _do_pad[
         dtype,
         paddings_type,
-        pad_reflect_wrapper,
-    ](output, input, paddings)
+    ](output, input, paddings, pad_reflect_wrapper)
 
 
 @always_inline
@@ -304,7 +299,8 @@ def _do_pad[
     //,
     dtype: DType,
     paddings_type: DType,
-    pad_impl_fn: def(
+    PadImplFn: ImplicitlyCopyable
+    & def(
         UnsafePointer[
             mut=True, Scalar[dtype], address_space=AddressSpace.GENERIC, ...
         ],
@@ -313,7 +309,7 @@ def _do_pad[
         IndexList[OutputLayoutType.rank],
         UnsafePointer[mut=True, Scalar[DType.int], _],
         UnsafePointer[Scalar[DType.int], _],
-    ) capturing[_] -> None,
+    ) -> None,
 ](
     output: TileTensor[
         mut=True,
@@ -326,6 +322,7 @@ def _do_pad[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     paddings: UnsafePointer[Scalar[paddings_type], _],
+    pad_impl_fn: PadImplFn,
 ):
     var input_strides_stack = InlineArray[Scalar[DType.int], output.rank](
         uninitialized=True
@@ -581,8 +578,14 @@ def _memcpy_regions_fast[
                 copy_from * output_axis_stride
             )
 
+            # dest and src are non-overlapping slices of the same buffer
+            # (shared origin). Opt out of exclusivity with an unsafe any-origin:
+            # memcpy's non-overlap requirement is a caller contract the
+            # exclusivity checker can't prove.
             memcpy(
-                dest=copy_to_ptr, src=copy_from_ptr, count=output_axis_stride
+                dest=copy_to_ptr,
+                src=copy_from_ptr.as_unsafe_any_origin(),
+                count=output_axis_stride,
             )
             copy_to += -1 if pre_copy else +1
 
