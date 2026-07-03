@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # This file is a test input that defines a module within a package.
 
-from .test_nested_package.module import nested_function
+from .test_nested_package.module import nested_function, parametric_fn
 
 comptime top_level_alias = 2
 

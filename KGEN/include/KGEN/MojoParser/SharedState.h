@@ -627,9 +627,11 @@ private:
                                          FileLineColLoc loc);
 
   /// Create a new module state for a package with the given name, location,
-  /// and body.
+  /// and body. The importLoc, if valid, is the location of the `import` that
+  /// pulled the package in.
   ModuleState &createPackageState(StringAttr declName, StringRef packagePath,
-                                  ModuleState &parentState, FileLineColLoc loc);
+                                  ModuleState &parentState, FileLineColLoc loc,
+                                  SMLoc importLoc);
 
   /// Create a new module state for a binary package with the given name.
   ModuleState &createBinaryPackageState(SMLoc loc, StringAttr declName,
