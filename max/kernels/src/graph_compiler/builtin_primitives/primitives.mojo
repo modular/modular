@@ -965,9 +965,24 @@ def test_my_int_reg2_to_index(x: MyIntReg2) -> Int:
 # C++'s pointers.
 comptime AnyAsyncValueRefPtr = OpaquePointer[MutAnyOrigin]
 
-# TensorBufferRef is a C++ struct. Primitives should always manipulate a
-# reference to it. Therefore, it is modeled here as an OpaquePointer.
-comptime TensorBufferRefPtr = OpaquePointer[MutAnyOrigin]
+
+# Opaque stand-in for the C++ `M::MLRT::TensorBufferRef` type. Mojo never sees
+# the layout of the C++ struct; this only gives the C pointer a distinct pointee
+# type so it can't be confused with other opaque handles (e.g. the async-value
+# storage handle), mirroring how `DeviceContext` uses `_DeviceContextCpp`.
+struct _TensorBufferRefCpp:
+    pass
+
+
+# Typed C pointer to the C++ tensor-buffer ref. Primitives only ever manipulate
+# a reference to it (never its layout); the default `UntrackedOrigin` marks the
+# pointee as living outside the Mojo program (its lifetime is managed by the C++
+# runtime), mirroring `_DeviceContextPtr`.
+comptime TensorBufferRefPtr[
+    mut: Bool,
+    //,
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
+] = _CPointer[_TensorBufferRefCpp, origin]
 
 
 # Opaque stand-in for the C++ `M::MLRT::StateContext` type. Mojo never sees the
@@ -1038,21 +1053,22 @@ struct StateContext(ImplicitlyCopyable, RegisterPassable):
     @always_inline
     def get_cached_buffer(
         self, slot: Int
-    ) -> Tuple[MutByteBuffer, TensorBufferRefPtr]:
+    ) -> Tuple[MutByteBuffer, AnyAsyncValueRefPtr]:
         """Returns a reference to the buffer cached in the given state slot.
 
         Args:
             slot: The index of the state slot to read.
 
         Returns:
-            A tuple of the buffer view and the underlying tensor-buffer-ref
-            handle.
+            A tuple of the buffer view and the backing storage handle of the
+            cached `TensorBufferRef` (its `AnyAsyncValueRef` memory handle, not
+            the `TensorBufferRef` itself).
         """
         var buffer_size: UInt64 = 0
         var buffer_data = Optional[OpaquePointer[MutAnyOrigin]]()
 
-        var buffer_ref = external_call[
-            "TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr
+        var mem_handle = external_call[
+            "TMP_MGP_RT_GetCachedBuffer", AnyAsyncValueRefPtr
         ](
             slot,
             self._handle,
@@ -1065,7 +1081,7 @@ struct StateContext(ImplicitlyCopyable, RegisterPassable):
             Index(buffer_size),
         )
 
-        return {buffer, buffer_ref}
+        return {buffer, mem_handle}
 
     @always_inline
     def remove_cached_buffer(self, slot: Int):
@@ -1228,7 +1244,7 @@ def mogg_async_pack_borrow[
 ](
     borrower: AnyAsyncValueRefPtr,
     buffer: DynamicTensor[dtype, buffer_rank],
-    mem: Optional[TensorBufferRefPtr],
+    mem: Optional[AnyAsyncValueRefPtr],
 ):
     """
     Borrows an async value. This differs from `mogg.async.pack` which assigns a
@@ -1258,8 +1274,8 @@ def mogg_async_pack_borrow[
     is_tensor: Bool,  # unused
 ](
     borrower: AnyAsyncValueRefPtr,
-    buffer: TensorBufferRefPtr,
-    mem: Optional[TensorBufferRefPtr],
+    buffer: TensorBufferRefPtr[mut=True],
+    mem: Optional[AnyAsyncValueRefPtr],
 ):
     """
     Borrows an async value. This differs from `mogg.async.pack` which assigns a
@@ -1421,7 +1437,7 @@ def reshape_contiguous_buffer[
 def mgp_buffer_get_cached(
     ctx: StateContext,
     buffer_slot: Int,
-) -> Tuple[MutByteBuffer, TensorBufferRefPtr]:
+) -> Tuple[MutByteBuffer, AnyAsyncValueRefPtr]:
     """
     Get a reference to the cached tensor.
     """
