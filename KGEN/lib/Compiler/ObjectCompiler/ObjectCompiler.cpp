@@ -16,7 +16,6 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/Support/FileUtils.h"
-#include "KGEN/Support/PluginUtils.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/Debug.h"
@@ -132,26 +131,22 @@ ObjectCompiler::create(StringRef basePath, CompilationOptions options,
   }
 
   std::string linker = *lldPath;
-  // Load the plugins.
-  std::unique_ptr<PluginManager> pluginMgr =
-      std::make_unique<PluginManager>(options.targetTriple);
 
-  return std::unique_ptr<ObjectCompiler>(new ObjectCompiler(
-      std::move(*transformCache), std::move(options), isJIT, context, linker,
-      std::move(pluginMgr), std::move(pmOptions)));
+  return std::unique_ptr<ObjectCompiler>(
+      new ObjectCompiler(std::move(*transformCache), std::move(options), isJIT,
+                         context, linker, std::move(pmOptions)));
 }
 
 ObjectCompiler::ObjectCompiler(RCRef<Cache::BlobCacheBackend> transformCache,
                                CompilationOptions options, bool isJIT,
                                MLIRContext &context, const std::string &linker,
-                               std::unique_ptr<PluginManager> pluginMgr,
                                PassManagerConfigOptions pmOptions)
     : transformCache(
           decltype(this->transformCache)::create(std::move(transformCache))),
       options(std::move(options)), isJIT(isJIT),
       pmOptions(std::move(pmOptions)), context(context),
-      cpuDevice(*loadContext(&context)->get<MLRT::CPUDevice>()), linker(linker),
-      pluginMgr(std::move(pluginMgr)) {}
+      cpuDevice(*loadContext(&context)->get<MLRT::CPUDevice>()),
+      linker(linker) {}
 
 //===----------------------------------------------------------------------===//
 // Time Trace Instrumentation
@@ -816,7 +811,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   llvmOptions.globalCtorFnName = ExecutionEngine::getGlobalCtorFnName();
   llvmOptions.globalDtorFnName = ExecutionEngine::getGlobalDtorFnName();
 
-  buildLowerToLLVMPipeline(mgr, llvmOptions, pluginMgr.get());
+  buildLowerToLLVMPipeline(mgr, llvmOptions);
 
   if (failed(writeTempModule(options.saveTempsPrefix, ".pre-llvm-dialect",
                              module, ".mlir")))

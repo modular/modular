@@ -12,7 +12,6 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
-#include "KGEN/Support/PluginUtils.h"
 #include "KGENToLLVM/Target/TargetLowering.h"
 #include "LLVMLoweringUtils.h"
 #include "LowerPOPToLLVMExternalCalls.h"
@@ -2031,39 +2030,10 @@ struct LowerPOPToLLVMPass
     : public KGEN::impl::LowerPOPToLLVMBase<LowerPOPToLLVMPass> {
   using LowerPOPToLLVMBase::LowerPOPToLLVMBase;
 
-  LowerPOPToLLVMPass()
-      : passLocalPluginManager(std::make_unique<PluginManager>()),
-        pluginMgr(passLocalPluginManager.get()) {}
-
-  LowerPOPToLLVMPass(const LowerPOPToLLVMPass &other)
-      : passLocalPluginManager(other.pluginMgr
-                                   ? nullptr
-                                   : std::make_unique<PluginManager>(
-                                         *other.passLocalPluginManager)),
-        pluginMgr(other.pluginMgr ? other.pluginMgr
-                                  : passLocalPluginManager.get()) {}
-
-  LowerPOPToLLVMPass(LowerPOPToLLVMPass &&other)
-      : passLocalPluginManager(std::move(other.passLocalPluginManager)),
-        pluginMgr(other.pluginMgr ? other.pluginMgr
-                                  : passLocalPluginManager.get()) {}
-
-  LowerPOPToLLVMPass(const PluginManager *plugin)
-      : passLocalPluginManager(plugin ? nullptr
-                                      : std::make_unique<PluginManager>()),
-        pluginMgr(plugin ? plugin : passLocalPluginManager.get()) {}
-
   void runOnOperation() override;
 
   /// Verify that the operation is a function and has no nested CFGs.
   FailureOr<mlir::FunctionOpInterface> validateOperation();
-
-private:
-  /// pass local plugin, only created if the pass is created as a
-  /// standalone pass, e.g. though kgen-opt
-  std::unique_ptr<PluginManager> passLocalPluginManager = nullptr;
-
-  const PluginManager *pluginMgr = nullptr;
 };
 } // namespace
 
@@ -2124,11 +2094,6 @@ void LowerPOPToLLVMPass::runOnOperation() {
     return signalPassFailure();
   }
 
-  // See parallel comment in LowerGlobalPOPToLLVMPass: when this pass owns
-  // a default-constructed PluginManager, select the target plugin now.
-  if (passLocalPluginManager)
-    passLocalPluginManager->selectPluginForTarget(targetInfo.getTriple().str());
-
   const TargetLowering *lowering =
       TargetLoweringRegistry::get().lookup(targetInfo.getTriple());
 
@@ -2155,15 +2120,6 @@ void LowerPOPToLLVMPass::runOnOperation() {
   mlir::populateNVVMToLLVMConversionPatterns(patterns);
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
-
-  if (pluginMgr->hasPluginForTarget(targetInfo.getTriple().str())) {
-    // Don't fail if plugin is not loaded or doesn't provide the pattern
-    // population function, just keep continuing with the default patterns.
-    // We can make this more strict when we have better support with the
-    // plugin system and building it.
-    (void)pluginMgr->populateLowerPOPToLLVMPatterns(patterns, typeConverter,
-                                                    targetInfo);
-  }
 
   // Target-specific patterns contributed by the target lowering, inserted after
   // the generic patterns. Target patterns use a higher benefit to win for the
@@ -2574,36 +2530,7 @@ struct LowerGlobalPOPToLLVMPass
     : public KGEN::impl::LowerGlobalPOPToLLVMBase<LowerGlobalPOPToLLVMPass> {
   using LowerGlobalPOPToLLVMBase::LowerGlobalPOPToLLVMBase;
 
-  LowerGlobalPOPToLLVMPass()
-      : passLocalPluginManager(std::make_unique<PluginManager>()),
-        pluginMgr(passLocalPluginManager.get()) {}
-
-  LowerGlobalPOPToLLVMPass(const LowerGlobalPOPToLLVMPass &other)
-      : passLocalPluginManager(
-            other.passLocalPluginManager
-                ? std::make_unique<PluginManager>(*other.passLocalPluginManager)
-                : nullptr),
-        pluginMgr(other.pluginMgr ? other.pluginMgr
-                                  : passLocalPluginManager.get()) {}
-
-  LowerGlobalPOPToLLVMPass(LowerGlobalPOPToLLVMPass &&other)
-      : passLocalPluginManager(std::move(other.passLocalPluginManager)),
-        pluginMgr(other.pluginMgr ? other.pluginMgr
-                                  : passLocalPluginManager.get()) {}
-
-  LowerGlobalPOPToLLVMPass(const PluginManager *plugin)
-      : passLocalPluginManager(plugin ? nullptr
-                                      : std::make_unique<PluginManager>()),
-        pluginMgr(plugin ? plugin : passLocalPluginManager.get()) {}
-
   void runOnOperation() override;
-
-private:
-  /// pass local plugin, only created if the pass is created as a
-  /// standalone pass, e.g. though kgen-opt
-  std::unique_ptr<PluginManager> passLocalPluginManager = nullptr;
-
-  const PluginManager *pluginMgr = nullptr;
 };
 
 } // namespace
@@ -2625,13 +2552,6 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
                     "could not find an enclosing target specification");
     return signalPassFailure();
   }
-
-  // Needs this when pass is running for unit test with kgen-opt as a pass alone
-  // instead of being part of the pipeline where the pipeline setup would take
-  // care of setting currPlugin. Pick it now so plugin pattern-population
-  // forwarders find an active plugin.
-  if (passLocalPluginManager)
-    passLocalPluginManager->selectPluginForTarget(targetInfo.getTriple().str());
 
   const TargetLowering *lowering =
       TargetLoweringRegistry::get().lookup(targetInfo.getTriple());
@@ -2668,26 +2588,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   // pop.compiler.* are all illegal.
   target.addIllegalOp<CompilerGlobalLoadOp, CompilerGlobalStoreOp>();
 
-  if (pluginMgr->hasPluginForTarget(targetInfo.getTriple().str())) {
-    // Don't fail if plugin is not loaded or doesn't provide the pattern
-    // population function, just keep continuing with the default patterns.
-    // We can make this more strict when we have better support with the
-    // plugin system and building it.
-    (void)pluginMgr->populateLowerGlobalPOPToLLVMPatterns(
-        patterns, typeConverter, symtab, targetInfo);
-  }
-
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();
-}
-
-std::unique_ptr<mlir::Pass>
-KGEN::createLowerGlobalPOPToLLVM(const PluginManager *plugin) {
-  return std::make_unique<LowerGlobalPOPToLLVMPass>(plugin);
-}
-
-std::unique_ptr<mlir::Pass>
-KGEN::createLowerPOPToLLVM(const PluginManager *plugin) {
-  return std::make_unique<LowerPOPToLLVMPass>(plugin);
 }
