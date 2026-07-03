@@ -1239,35 +1239,6 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
 }
 
 //===----------------------------------------------------------------------===//
-// isNVPTX
-//===----------------------------------------------------------------------===//
-
-bool KGEN::isNVPTX(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs) {
-  if (!target.getTriple().isNVPTX())
-    return false;
-  return llvm::is_contained(allowedGPUs, target.getArch()) ||
-         llvm::is_contained(allowedGPUs, target.getArch().rtrim("a"));
-}
-
-//===----------------------------------------------------------------------===//
-// isAMDGPU
-//===----------------------------------------------------------------------===//
-
-bool KGEN::isAMDGPU(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs) {
-  if (!target.getTriple().isAMDGPU())
-    return false;
-  return llvm::is_contained(allowedGPUs, target.getArch());
-}
-
-//===----------------------------------------------------------------------===//
-// isNVPTX_HopperAndAbove
-//===----------------------------------------------------------------------===//
-
-bool KGEN::isNVPTX_HopperAndAbove(TargetInfoAttr target) {
-  return isNVPTX(target, {"sm_90", "sm_100", "sm_101", "sm_103", "sm_120"});
-}
-
-//===----------------------------------------------------------------------===//
 // getWorkGroupSizeRange
 //===----------------------------------------------------------------------===//
 

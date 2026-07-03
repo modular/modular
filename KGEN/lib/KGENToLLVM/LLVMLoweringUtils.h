@@ -465,15 +465,6 @@ protected:
   SymbolTable &symtab;
 };
 
-/// Return true if target is NVPTX and `arch` is in `allowedGPUs`.
-bool isNVPTX(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs);
-
-/// Return true if target is AMDGPU and `arch` is in `allowedGPUs`.
-bool isAMDGPU(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs);
-
-/// Return true if target is NVPTX and arch is of hopper architecture or above.
-bool isNVPTX_HopperAndAbove(TargetInfoAttr target);
-
 /// Return true if fpType is an fp8 type.
 bool isFP8(Type fpType);
 
