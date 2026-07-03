@@ -129,19 +129,19 @@ struct StructViolation3(MemTraitViolation):
 
 
 @explicit_destroy
-trait TFoo:
+trait NotImplicitlyDeletable:
     def foo(self):
         ...
 
 
 @fieldwise_init
-struct Bar[T: TFoo]:  # expected-note {{'Bar' declared here}}
+struct Bar[T: NotImplicitlyDeletable]:  # expected-note {{'Bar' declared here}}
     pass
 
 
 def bindAnyTraitToTrait():
-    # expected-error @+1 {{'Bar' parameter 'T' has 'TFoo' type, but value has type 'AnyTrait[TFoo]'}}
-    var _list = Bar[TFoo]()
+    # expected-error @+1 {{'Bar' parameter 'T' has 'NotImplicitlyDeletable' type, but value has type 'AnyTrait[NotImplicitlyDeletable]'}}
+    var _list = Bar[NotImplicitlyDeletable]()
 
 
 def anytrait_assignment():
@@ -222,3 +222,21 @@ trait SameEntryDeclB(SameEntryDeclA, TrivialRegisterPassable):
 def blah[b_t: SameEntryDeclB](b: b_t):
     # expected-error @+1 {{ambiguous call to 'foo'}}
     b.foo()
+
+@explicit_destroy
+struct CondDeletableField1[T: AnyType](
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
+):
+    var value: Self.T # Ok
+
+@explicit_destroy
+struct CondDeletableField2[T: AnyType, X: Int](
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable) and X > 10,
+):
+    var value: Self.T # Ok
+
+@explicit_destroy
+struct CondDeletableField3[T: AnyType, X: Int](
+    ImplicitlyDeletable where X > 10,
+):
+    var value: Self.T # expected-error {{field 'value' has non-implicitly deletable type 'T'}}

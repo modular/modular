@@ -31,6 +31,41 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Check if a parameterized field type conditionally conforms to a builtin
+/// trait based on the function's where-clause constraints.  Constructs a
+/// conforms_to proposition and delegates to constraintImplies.
+///
+/// Returns the resolved TraitDeclOp on success (for reuse in code-gen),
+/// or a null TraitDeclOp if no conditional conformance was found.
+static TraitDeclOp
+fieldConditionallyConformsToBuiltin(Type fieldMLIRType, StringRef traitName,
+                                    SharedState &shared, ASTDecl &structDecl,
+                                    ArrayRef<ConstraintAttr> bodyConstraints) {
+  auto paramType = dyn_cast<ParamType>(fieldMLIRType);
+  if (!paramType)
+    return {};
+
+  ASTDecl *requiredTraitDecl =
+      shared.lookupBuiltinTrait(traitName, structDecl.getLoc());
+  if (!requiredTraitDecl)
+    return {};
+
+  auto traitOp = dyn_cast<TraitDeclOp>(requiredTraitDecl->getIfOperation());
+  if (!traitOp)
+    return {};
+
+  TypedAttr fieldParam = getCanonicalAttr(paramType.getParam());
+  SmallVector<SymbolRefAttr> traitSymbols = {requiredTraitDecl->getSymbolRef()};
+  auto traitType = TraitType::get(fieldParam.getContext(), traitSymbols);
+  auto conformsTo =
+      TypeConformsToTraitAttr::get(fieldParam, traitType.getPValue());
+
+  for (ConstraintAttr constraint : bodyConstraints)
+    if (constraintImplies(constraint.getProposition(), conformsTo))
+      return traitOp;
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // FunctionEmitter
 //===----------------------------------------------------------------------===//
@@ -711,6 +746,9 @@ FnOp StructEmitter::synthesizeEmptyDtor(ConstraintAttr conformanceConstraint) {
                                     shared, {})
             .first;
     if (!confResult.isTrue() &&
+        !fieldConditionallyConformsToBuiltin(fieldType.mlirType,
+                                             "ImplicitlyDeletable", shared,
+                                             structDecl, constraints) &&
         !fieldType.isTrivialRegisterType(structDecl.getLoc(), shared)) {
       emitError(fieldOp.getLoc())
           << "field '" << fieldOp.getName()
@@ -765,41 +803,6 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(
   // TODO: Should only do this if the type is RP or small?
   resultFn.setInlineLevel(InlineLevel::AlwaysNoDebug);
   return resultFn;
-}
-
-/// Check if a parameterized field type conditionally conforms to a builtin
-/// trait based on the function's where-clause constraints.  Constructs a
-/// conforms_to proposition and delegates to constraintImplies.
-///
-/// Returns the resolved TraitDeclOp on success (for reuse in code-gen),
-/// or a null TraitDeclOp if no conditional conformance was found.
-static TraitDeclOp
-fieldConditionallyConformsToBuiltin(Type fieldMLIRType, StringRef traitName,
-                                    SharedState &shared, ASTDecl &structDecl,
-                                    ArrayRef<ConstraintAttr> bodyConstraints) {
-  auto paramType = dyn_cast<ParamType>(fieldMLIRType);
-  if (!paramType)
-    return {};
-
-  ASTDecl *requiredTraitDecl =
-      shared.lookupBuiltinTrait(traitName, structDecl.getLoc());
-  if (!requiredTraitDecl)
-    return {};
-
-  auto traitOp = dyn_cast<TraitDeclOp>(requiredTraitDecl->getIfOperation());
-  if (!traitOp)
-    return {};
-
-  TypedAttr fieldParam = getCanonicalAttr(paramType.getParam());
-  SmallVector<SymbolRefAttr> traitSymbols = {requiredTraitDecl->getSymbolRef()};
-  auto traitType = TraitType::get(fieldParam.getContext(), traitSymbols);
-  auto conformsTo =
-      TypeConformsToTraitAttr::get(fieldParam, traitType.getPValue());
-
-  for (ConstraintAttr constraint : bodyConstraints)
-    if (constraintImplies(constraint.getProposition(), conformsTo))
-      return traitOp;
-  return {};
 }
 
 /// Rebind a field reference to access it through a trait downcast.
