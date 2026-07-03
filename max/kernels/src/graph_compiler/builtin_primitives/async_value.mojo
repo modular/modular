@@ -67,6 +67,37 @@ struct AnyAsyncValueRef(ImplicitlyCopyable, Movable):
         external_call["AsyncRT_AsyncValue_retain", NoneType](copy._handle)
         self._handle = copy._handle
 
+    def __init__(out self, *, retained_storage_of: OpaquePointer[MutAnyOrigin]):
+        """Retains the backing storage of a packed async slot into a new ref.
+
+        Reads the `AsyncValue*` behind the slot's `TensorBufferRef` storage
+        handle and adds one reference, so the returned handle independently keeps
+        the backing memory alive (e.g. when an unpacked value is re-packed).
+
+        Args:
+            retained_storage_of: A pointer to the packed async value (slot) whose
+                backing storage should be retained.
+        """
+        # AsyncValue *MGP_RT_RetainBufferStorage(void *async)
+        self._handle = external_call[
+            "MGP_RT_RetainBufferStorage", _AsyncValuePtr[mut=True]
+        ](retained_storage_of)
+
+    def __init__(out self, *, retain_handle: OpaquePointer[MutAnyOrigin]):
+        """Retains an existing `AnyAsyncValueRef` storage handle into a new ref.
+
+        Reads the `AsyncValue*` behind the given C++ `AnyAsyncValueRef` handle
+        (e.g. a cached buffer's memory handle) and adds one reference. A null
+        handle yields the empty (non-tracked) reference.
+
+        Args:
+            retain_handle: A pointer to a C++ `AnyAsyncValueRef` storage handle.
+        """
+        # AsyncValue *MGP_RT_RetainAsyncValueHandle(AnyAsyncValueRef *handle)
+        self._handle = external_call[
+            "MGP_RT_RetainAsyncValueHandle", _AsyncValuePtr[mut=True]
+        ](retain_handle)
+
     def __init__(out self, *, var storage_buf: DeviceBuffer):
         """Wraps a live owning `DeviceBuffer` in an `AsyncValue[DeviceBufferRef]`.
 
