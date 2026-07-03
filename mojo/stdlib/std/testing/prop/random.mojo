@@ -10,8 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements random number generation for property-based testing."""
 
-from std.random import random_ui64, seed
+from std.random import random_ui64, seed as seed_fn
 
 
 struct Rng(Movable):
@@ -25,7 +26,7 @@ struct Rng(Movable):
     def __init__(out self, *, seed: Int):
         # TODO: Figure out how to ensure this 'global' seed value is not
         # accidentally overwritten by the user in their test code.
-        random.seed(seed)
+        seed_fn(seed)
 
     # TODO: Add playback support.
     @doc_hidden

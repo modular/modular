@@ -20,16 +20,24 @@ from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import ReturnLogits, YarnScalingParams
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ArchConfigWithPermissiveMaxSeqLen,
+    ArchConfigWithStoredKVParams,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
 
 @dataclass(kw_only=True)
-class Olmo3Config(ArchConfigWithKVCache):
+class Olmo3Config(
+    ArchConfigWithPermissiveMaxSeqLen,
+    ArchConfigWithStoredKVParams,
+    ArchConfigWithKVCache,
+):
     """Configuration for Olmo3 models.
 
     Contains parameters specific to the Olmo3 architecture, typically
@@ -129,58 +137,6 @@ class Olmo3Config(ArchConfigWithKVCache):
 
     kv_params: KVCacheParams
     """KV cache parameters."""
-
-    def get_kv_params(self) -> KVCacheParams:
-        return self.kv_params
-
-    def get_max_seq_len(self) -> int:
-        return self.max_position_embeddings
-
-    @staticmethod
-    def get_head_dim(huggingface_config: AutoConfig) -> int:
-        """Retrieves the head dimension from the HuggingFace configuration.
-
-        Args:
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The head dimension, either from the config or calculated from hidden_size and num_attention_heads.
-        """
-        if hasattr(huggingface_config, "head_dim"):
-            return huggingface_config.head_dim
-        else:
-            return (
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            )
-
-    @staticmethod
-    def construct_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Constructs the KV cache parameters from configuration objects.
-
-        Args:
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-            devices: The list of devices the model will run on.
-            kv_cache_config: The MAX Engine KV cache configuration settings (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            cache_dtype: The desired data type for the KV cache (:obj:`max.dtype.DType`).
-
-        Returns:
-            The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
-        """
-        return kv_cache_config.to_params(
-            dtype=cache_dtype,
-            num_layers=Olmo3Config.get_num_layers(huggingface_config),
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=Olmo3Config.get_head_dim(huggingface_config),
-            devices=devices,
-            data_parallel_degree=pipeline_config.model.data_parallel_degree,
-        )
 
     @override
     @classmethod
@@ -361,28 +317,6 @@ class Olmo3Config(ArchConfigWithKVCache):
             The number of hidden layers specified in the configuration.
         """
         return huggingface_config.num_hidden_layers
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the model.
-
-        Uses the `max_length` from the :obj:`max.pipelines.config.PipelineConfig` if provided,
-        otherwise falls back to the `max_position_embeddings` from the HuggingFace
-        configuration's text config.
-
-        Args:
-            pipeline_config: The MAX Engine pipeline configuration.
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The calculated maximum sequence length.
-        """
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
 
 
 _HIDDEN_ACTIVATION_MAP = {

@@ -2,14 +2,19 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
 
 modular_py_test(
     name = "tests",
-    srcs = glob(["*_gpu.py"]),
+    srcs = glob(["*_gpu.py"]) + ["conftest.py"],
+    # Explicit data dep so the NIXL plugin .so is in the runfiles tree and
+    # conftest.py can locate it via TEST_SRCDIR/+http_archive+nixl_upstream/.
+    data = [
+        "@nixl_upstream//:libplugin_LIBFABRIC.so",
+        "@nixl_upstream//:libplugin_UCX.so",
+    ],
     gpu_constraints = [
         "//:has_gpu",
         "//:nvidia_gpu",

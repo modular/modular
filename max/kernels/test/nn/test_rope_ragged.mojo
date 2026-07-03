@@ -25,7 +25,9 @@ from testdata.fused_qk_rope_goldens import (
 from std.utils import IndexList
 
 
-def test_rope_ragged[rope_dim: Int, dtype: DType]() raises -> None:
+def test_rope_ragged[
+    rope_dim: Int, dtype: DType
+](ctx: DeviceContext) raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     comptime assert (
         dtype == DType.float32
@@ -60,9 +62,6 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() raises -> None:
     comptime input_row_offsets_layout = row_major[batch_size + 1]()
     comptime start_pos_layout = row_major[batch_size]()
     comptime freqs_cis_layout = row_major[max_seq_len, rope_dim]()
-
-    # Create DeviceContext for CPU operations
-    var ctx = DeviceContext(api="cpu")
 
     # Create and initialize query tensor using HostBuffer + TileTensor
     var q_host_buffer = ctx.enqueue_create_host_buffer[dtype](
@@ -145,7 +144,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() raises -> None:
 
     @always_inline
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
         q_out_tensor.store[width=width](Coord(idx), val)
 
@@ -160,7 +159,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() raises -> None:
         input_row_offsets=input_row_offsets_tensor,
         start_pos=start_pos_tensor,
         freqs_cis=freqs_cis_tensor,
-        context=Optional[DeviceContext](),
+        context=ctx,
     )
 
     # Compare output and expected query tensors.
@@ -174,28 +173,36 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() raises -> None:
                     + head_idx * head_dim  # head offset
                 )
                 # Verify unroped region: First (head_dim - rope_dim) elements should remain unchanged
+                var unroped_len = head_dim - rope_dim
                 assert_almost_equal(
-                    q_out_host_buffer.unsafe_ptr() + base_offset,
-                    q_host_buffer.unsafe_ptr() + base_offset,
-                    head_dim - rope_dim,
+                    q_out_host_buffer.as_span()[
+                        base_offset : base_offset + unroped_len
+                    ],
+                    q_host_buffer.as_span()[
+                        base_offset : base_offset + unroped_len
+                    ],
                 )
 
                 # Verify roped region: Last rope_dim elements should match expected output
                 roped_offset = base_offset + (head_dim - rope_dim)
                 assert_almost_equal(
-                    q_out_host_buffer.unsafe_ptr() + roped_offset,
-                    expected_q_out_host_buffer.unsafe_ptr() + roped_offset,
-                    rope_dim,
+                    q_out_host_buffer.as_span()[
+                        roped_offset : roped_offset + rope_dim
+                    ],
+                    expected_q_out_host_buffer.as_span()[
+                        roped_offset : roped_offset + rope_dim
+                    ],
                 )
 
 
 def main() raises -> None:
-    # Full head RoPE - this works correctly and is production ready
-    print("Full head RoPE")
-    test_rope_ragged[8, DType.float32]()
+    with DeviceContext(api="cpu") as ctx:
+        # Full head RoPE - this works correctly and is production ready
+        print("Full head RoPE")
+        test_rope_ragged[8, DType.float32](ctx)
 
-    # TODO: This was failing for some reason, we don't actually need it for now.
-    # Circle back and fix this.
-    # Partial RoPE (last 4 elements of each head)
-    print("Partial RoPE")
-    test_rope_ragged[4, DType.float32]()
+        # TODO: This was failing for some reason, we don't actually need it for now.
+        # Circle back and fix this.
+        # Partial RoPE (last 4 elements of each head)
+        print("Partial RoPE")
+        test_rope_ragged[4, DType.float32](ctx)

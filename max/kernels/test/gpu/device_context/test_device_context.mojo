@@ -15,6 +15,7 @@ from std.math import iota
 
 from std.gpu import global_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
+from std.reflection import reflect
 from std.testing import assert_equal
 
 
@@ -32,6 +33,22 @@ def vec_func(
     output[tid] = in0[tid] + in1[tid] + Float32(supplement)
 
 
+def test_declared_arg_types(ctx: DeviceContext) raises:
+    var compiled = ctx.compile_function[vec_func]()
+    comptime arg_types = type_of(compiled).declared_arg_types
+
+    # The list is always present and reports the kernel's arity.
+    assert_equal(arg_types.size, 5)
+
+    # Indexing yields the declared argument types in order.
+    comptime assert arg_types[0] == UnsafePointer[Float32, ImmutAnyOrigin]
+    comptime assert arg_types[2] == UnsafePointer[Float32, MutAnyOrigin]
+    comptime assert arg_types[3] == Int
+    comptime assert arg_types[4] == Int
+
+    assert_equal(reflect[arg_types[0]].base_name(), "UnsafePointer")
+
+
 def test_is_compatible(ctx: DeviceContext) raises:
     assert_equal(ctx.is_compatible(), True)
 
@@ -40,14 +57,15 @@ def test_basic(ctx: DeviceContext) raises:
     comptime length = 1024
 
     # Host memory buffers for input and output data
-    var in0_host = alloc[Float32](length)
-    var in1_host = alloc[Float32](length)
-    var out_host = alloc[Float32](length)
+    var in0_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var in1_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.synchronize()
 
     # Initialize inputs
     for i in range(length):
         in0_host[i] = Float32(i)
-        in1_host[i] = 2
+        in1_host[i] = Float32(2)
 
     # Device memory buffers for the kernel input and output
     var in0_device = ctx.enqueue_create_buffer[DType.float32](length)
@@ -63,7 +81,7 @@ def test_basic(ctx: DeviceContext) raises:
 
     # Execute the kernel on the device.
     #  - notice the simple function call like invocation
-    ctx.enqueue_function_experimental[vec_func](
+    ctx.enqueue_function[vec_func](
         in0_device,
         in1_device,
         out_device,
@@ -95,11 +113,6 @@ def test_basic(ctx: DeviceContext) raises:
         print("at index", i, "the value is", out_host[i])
         assert_equal(out_host[i], expected[i])
 
-    # Release the Host buffers
-    in0_host.free()
-    in1_host.free()
-    out_host.free()
-
 
 def test_move(ctx: DeviceContext) raises:
     var b = ctx
@@ -118,7 +131,7 @@ def test_print(ctx: DeviceContext) raises:
     var host_buffer = ctx.enqueue_create_host_buffer[DType.uint16](size)
     ctx.synchronize()
 
-    iota(host_buffer.unsafe_ptr(), size)
+    iota(host_buffer.as_span())
 
     var expected_host = (
         "HostBuffer([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])"
@@ -138,7 +151,7 @@ def test_print(ctx: DeviceContext) raises:
     var large_buffer = ctx.enqueue_create_host_buffer[DType.float32](large_size)
     ctx.synchronize()
 
-    iota(large_buffer.unsafe_ptr(), large_size)
+    iota(large_buffer.as_span())
 
     var expected_large = (
         "HostBuffer([0.0, 1.0, 2.0, ..., 998.0, 999.0, 1000.0])"
@@ -150,14 +163,15 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
     comptime length = 1024
 
     # Host memory buffers for input and output data
-    var in0_host = alloc[Float32](length)
-    var in1_host = alloc[Float32](length)
-    var out_host = alloc[Float32](length)
+    var in0_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var in1_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.synchronize()
 
     # Initialize inputs
     for i in range(length):
         in0_host[i] = Float32(i)
-        in1_host[i] = 2
+        in1_host[i] = Float32(2)
 
     # Device memory buffers for the kernel input and output
     var in0_device = ctx.enqueue_create_buffer[DType.float32](length)
@@ -175,9 +189,7 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
     var in0 = Span(ptr=in0_device.unsafe_ptr(), length=length)
     var in1 = Span(ptr=in1_device.unsafe_ptr(), length=length)
 
-    def vec_closure() unified register_passable {
-        var supplement, var in0, var in1, var output
-    }:
+    def vec_closure() {var supplement, var in0, var in1, var output}:
         var tid = global_idx.x
         if tid >= length:
             return
@@ -213,11 +225,6 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
         print("at index", i, "the value is", out_host[i])
         assert_equal(out_host[i], expected[i])
 
-    # Release the Host buffers
-    in0_host.free()
-    in1_host.free()
-    out_host.free()
-
 
 def test_enqueue_copy_from_span(ctx: DeviceContext) raises:
     comptime length = 8
@@ -227,13 +234,12 @@ def test_enqueue_copy_from_span(ctx: DeviceContext) raises:
     var dev_buf = ctx.enqueue_create_buffer[DType.float32](length)
     ctx.enqueue_copy(dev_buf, Span(src_list))
 
-    var out_host = alloc[Float32](length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
     ctx.enqueue_copy(out_host, dev_buf)
     ctx.synchronize()
 
     for i in range(length):
         assert_equal(out_host[i], Float32(i + 1))
-    out_host.free()
 
 
 def test_enqueue_copy_to_span(ctx: DeviceContext) raises:
@@ -345,6 +351,7 @@ def main() raises:
         # Execute our test with the context
         test_is_compatible(ctx)
         test_basic(ctx)
+        test_declared_arg_types(ctx)
         test_move(ctx)
         test_id(ctx)
         test_print(ctx)

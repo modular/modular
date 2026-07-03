@@ -21,7 +21,6 @@ from std.testing.prop import Rng, Strategy
 from std.testing.prop.strategy.simd_strategy import *
 from std.testing.prop.strategy.string_strategy import *
 from std.testing.prop.strategy.list_strategy import *
-from std.sys.intrinsics import _type_is_eq
 from std.collections.string._utf8 import _is_valid_utf8
 
 
@@ -69,14 +68,14 @@ def test_string_ascii_strategy() raises:
     var rng = Rng(seed=1234)
     for _ in range(10):
         var s = s.value(rng)
-        assert_true(1 <= len(s) <= 10)
+        assert_true(1 <= s.byte_length() <= 10)
         assert_true(StringSlice(s).is_ascii_printable())
 
     s = String.ascii_strategy(min_len=1, max_len=10, only_printable=False)
     rng = Rng(seed=1234)
     for _ in range(10):
         var s = s.value(rng)
-        assert_true(1 <= len(s) <= 10)
+        assert_true(1 <= s.byte_length() <= 10)
         for c in s.codepoints():
             assert_true(c.to_u32() <= UInt32(127))
 

@@ -42,10 +42,15 @@ struct CacheBustingBuffer[dtype: DType](ImplicitlyCopyable):
         alignment: Int,
         ctx: DeviceContext,
         enabled: Bool = True,
+        budget_bytes: Int = CACHE_BUST_BYTES,
     ) raises:
+        # `budget_bytes` is the target buffer footprint. The default exceeds 2x
+        # GPU cache; pass a larger value when one tensor copy is itself bigger
+        # than the default (otherwise the buffer collapses to a single window
+        # and `offset()` always returns 0 — no cache busting).
         self.stride = align_up(tensor_size, alignment)
         var full_buf_size = (
-            align_up(CACHE_BUST_BYTES, self.stride * size_of[Self.dtype]())
+            align_up(budget_bytes, self.stride * size_of[Self.dtype]())
             // size_of[Self.dtype]()
         )
         self.buffer_size = full_buf_size if enabled else self.stride

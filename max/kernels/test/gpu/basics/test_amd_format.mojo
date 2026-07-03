@@ -44,10 +44,10 @@ struct Buffer[capacity: Int](Defaultable, Writer):
 def check_float[
     dtype: DType, //, expected: StaticString
 ](f8: Scalar[dtype]) where dtype.is_floating_point():
-    var f8_str = Buffer[len(expected)]()
+    var f8_str = Buffer[expected.byte_length()]()
     _write_float(f8_str, f8)
     var res = memcmp(
-        expected.unsafe_ptr(), f8_str.data.unsafe_ptr(), len(expected)
+        expected.unsafe_ptr(), f8_str.data.unsafe_ptr(), expected.byte_length()
     )
     if res != 0:
         abort()
@@ -93,8 +93,8 @@ def main() raises:
     with DeviceContext() as ctx:
         print("== test_format_float8_e5m2")
         comptime kernel_0 = test_format_float8_e5m2
-        ctx.enqueue_function_experimental[kernel_0](grid_dim=1, block_dim=1)
+        ctx.enqueue_function[kernel_0](grid_dim=1, block_dim=1)
 
         print("== test_format_float8_e4m3fn")
         comptime kernel_1 = test_format_float8_e4m3fn
-        ctx.enqueue_function_experimental[kernel_1](grid_dim=1, block_dim=1)
+        ctx.enqueue_function[kernel_1](grid_dim=1, block_dim=1)

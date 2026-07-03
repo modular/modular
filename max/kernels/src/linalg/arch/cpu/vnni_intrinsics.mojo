@@ -26,7 +26,7 @@ from std.memory.unsafe import bitcast
 
 
 def vpdpwssd[
-    width: Int, a_type: DType, b_type: DType, c_type: DType
+    width: SIMDSize, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width],
     a: SIMD[a_type, width * 2],
@@ -55,7 +55,7 @@ def vpdpwssd[
 
 
 def vpdpwssds[
-    width: Int, a_type: DType, b_type: DType, c_type: DType
+    width: SIMDSize, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width],
     a: SIMD[a_type, width * 2],
@@ -84,7 +84,7 @@ def vpdpwssds[
 
 
 def vpdpbusd[
-    width: Int, a_type: DType, b_type: DType, c_type: DType
+    width: SIMDSize, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
@@ -123,7 +123,7 @@ def vpdpbusd[
 
 
 def vpdpbusds[
-    width: Int, a_type: DType, b_type: DType, c_type: DType
+    width: SIMDSize, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
@@ -237,7 +237,7 @@ def _dot_i8_to_i32_4(
 
 
 def pmaddubs[
-    width: Int
+    width: SIMDSize
 ](a: SIMD[DType.int32, width], b: SIMD[DType.int32, width]) -> SIMD[
     DType.int32, width
 ]:
@@ -278,7 +278,7 @@ def pmaddubs[
 
 
 def pmaddw[
-    width: Int
+    width: SIMDSize
 ](a: SIMD[DType.int32, width], b: SIMD[DType.int32, width]) -> SIMD[
     DType.int32, width
 ]:
@@ -357,7 +357,7 @@ def _dot_i8_to_i32_saturated_4(
 
 
 def dot_i8_to_i32_AVX2[
-    width: Int, a_type: DType, b_type: DType, c_type: DType
+    width: SIMDSize, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
@@ -412,7 +412,7 @@ def dot_i8_to_i32_AVX2[
 
 
 def dot_i8_to_i32_saturated_AVX2[
-    width: Int, a_type: DType, b_type: DType, c_type: DType
+    width: SIMDSize, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
@@ -467,7 +467,7 @@ def dot_i8_to_i32_saturated_AVX2[
 
 
 def dot_i8_to_i32_x86[
-    width: Int, a_type: DType, b_type: DType, c_type: DType
+    width: SIMDSize, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
@@ -502,7 +502,7 @@ def dot_i8_to_i32_x86[
 
 # Saturation is much faster but limits input a to range [0, 127] instead of [0, 255]
 def dot_i8_to_i32_saturated_x86[
-    width: Int, a_type: DType, b_type: DType, c_type: DType
+    width: SIMDSize, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
@@ -536,7 +536,7 @@ def dot_i8_to_i32_saturated_x86[
 
 
 def dot_i16_to_i32_AVX2[
-    width: Int, a_type: DType, b_type: DType, c_type: DType
+    width: SIMDSize, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width],
     a: SIMD[a_type, width * 2],
@@ -579,7 +579,7 @@ def dot_i16_to_i32_AVX2[
 
 
 def dot_i16_to_i32_x86[
-    width: Int, a_type: DType, b_type: DType, c_type: DType
+    width: SIMDSize, a_type: DType, b_type: DType, c_type: DType
 ](
     src: SIMD[c_type, width],
     a: SIMD[a_type, width * 2],

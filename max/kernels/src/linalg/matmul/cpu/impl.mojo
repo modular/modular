@@ -12,19 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 from std.collections import Optional
 from std.math import align_up, ceildiv
-from std.sys.info import align_of
+from std.sys.info import align_of, simd_width_of
 
 from std.algorithm import sync_parallelize, tile, vectorize
+from std.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
     TileTensor,
 )
 from layout.tile_layout import TensorLayout, row_major
-from std.memory import alloc
+from std.memory import alloc, dealloc, Allocation
+from std.memory.alloc import Layout as AllocLayout
 from std.runtime.asyncrt import parallelism_level
 
 from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 from ...gemv import gemv
 from ...packing import BTileGenerator
@@ -55,7 +58,7 @@ from .vnni import Inner_matmul_vnni
 # - _run_inner_loop_i8mm()
 
 
-trait InnerMatmulKernel(ImplicitlyCopyable):
+trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDeletable):
     def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
@@ -77,16 +80,16 @@ trait InnerMatmulKernel(ImplicitlyCopyable):
 def elementwise_epilogue_c_tile[
     simd_width: Int,
     c_type: DType,
-    func: def[dtype: DType, width: Int, *, alignment: Int = 1](
+    func: def[dtype: DType, width: SIMDSize, *, alignment: Int = 1](
         IndexList[2], SIMD[dtype, width]
     ) capturing -> None,
 ](
     offset: GemmShape,
     tile_len: GemmShape,
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=False, c_type, address_space=AddressSpace.GENERIC, ...],
 ):
     @always_inline
-    def activation_on_col_chunk[col_chunk_size: Int](idx_n: Int) unified {mut}:
+    def activation_on_col_chunk[col_chunk_size: Int](idx_n: Int) {read}:
         var n_coord = idx_n + offset.N
         for idx_m in range(tile_len.M):
             var m_coord = idx_m + offset.M
@@ -109,7 +112,11 @@ def tiled_matmul_run[
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
     ElementwiseEpilogueFnType: ImplicitlyCopyable
-    & def(GemmShape, GemmShape) unified -> None,
+    & def(
+        GemmShape,
+        GemmShape,
+        TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    ) -> None,
 ](
     alg: algorithm,
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
@@ -187,7 +194,11 @@ struct TiledMatmul[
     c_origin: MutOrigin,
     algorithm: InnerMatmulKernel,
     ElementwiseEpilogueFnType: ImplicitlyCopyable
-    & def(GemmShape, GemmShape) unified -> None,
+    & def(
+        GemmShape,
+        GemmShape,
+        TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    ) -> None,
 ](ImplicitlyCopyable):
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
@@ -288,6 +299,7 @@ struct TiledMatmul[
                     GemmShape(
                         tile_kernel_rows, sub_tile_n_k[0], sub_tile_n_k[1]
                     ),
+                    self.c.as_immut(),
                 )
 
         comptime if Self.kernel_id == InnerKernelID.I8MM:
@@ -396,6 +408,7 @@ def _matmul_cpu_impl[
     a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     num_threads: Int = -1,
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert c.rank == 2 and c.flat_rank == 2
     comptime assert a.rank == 2 and a.flat_rank == 2
@@ -407,8 +420,8 @@ def _matmul_cpu_impl[
     var k = shape.K
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        var out = TileTensor(c.ptr, row_major(Coord(Idx(Int(c.dim[0]())))))
-        var rhs = TileTensor(b.ptr, row_major(Coord(Idx(Int(b.dim[0]())))))
+        var out = TileTensor(c.ptr, row_major(Coord(Int(c.dim[0]()))))
+        var rhs = TileTensor(b.ptr, row_major(Coord(Int(b.dim[0]()))))
         gemv[parallelize=True, elementwise_lambda_fn=elementwise_lambda_fn](
             out, a, rhs
         )
@@ -423,7 +436,7 @@ def _matmul_cpu_impl[
                     b_packed=b_packed,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
-                ](c, a, b)
+                ](c, a, b, ctx=ctx)
             else:
                 comptime apple_transpose = True if b_packed else transpose_b
                 apple_matmul[
@@ -435,7 +448,7 @@ def _matmul_cpu_impl[
         var complexity = m * n * k
         var num_tasks = min(
             ceildiv(complexity, get_min_task_size()),
-            num_threads if num_threads > 0 else parallelism_level(),
+            num_threads if num_threads > 0 else parallelism_level(ctx),
         )
 
         comptime use_i8mm = kernel_id == InnerKernelID.I8MM
@@ -443,11 +456,11 @@ def _matmul_cpu_impl[
         comptime alignment = align_of[SIMD[c.dtype, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
-        var a_packed_ptr: Optional[
-            UnsafePointer[Scalar[a.dtype], MutExternalOrigin]
-        ] = None
+        var a_packed_alloc: Optional[Allocation[Scalar[a.dtype]]] = None
         comptime if use_i8mm:
-            a_packed_ptr = alloc[Scalar[a.dtype]](mh * kh, alignment=alignment)
+            a_packed_alloc = alloc(
+                AllocLayout[Scalar[a.dtype]](count=mh * kh, alignment=alignment)
+            )
 
         @always_inline
         @__copy_capture(m, k, num_tasks)
@@ -467,10 +480,12 @@ def _matmul_cpu_impl[
                 return
             var t0 = sub_matmul_config.offset[0]
             var t1 = t0 + sub_matmul_config.shape[0]
-            packA_i8mm[a.dtype](t0, t1, k, a.ptr, a_packed_ptr.unsafe_value())
+            packA_i8mm[a.dtype](
+                t0, t1, k, a.ptr, a_packed_alloc.unsafe_value().unsafe_ptr()
+            )
 
         @always_inline
-        @__copy_capture(m, k, num_tasks, n, a_packed_ptr, mh, kh)
+        @__copy_capture(m, k, num_tasks, n, mh, kh)
         @parameter
         def task_func(task_id: Int):
             var sub_matmul_config = get_partitioned_matmul[
@@ -500,8 +515,8 @@ def _matmul_cpu_impl[
                     alg,
                     c,
                     TileTensor(
-                        a_packed_ptr.unsafe_value(),
-                        row_major(Coord(Idx(mh), Idx(kh))),
+                        a_packed_alloc.unsafe_value().unsafe_ptr(),
+                        row_major(Coord(mh, kh)),
                     ),
                     b,
                     GemmShape(sub_matmul_config.shape),
@@ -518,7 +533,7 @@ def _matmul_cpu_impl[
                     alg,
                     c,
                     TileTensor(
-                        a.ptr.unsafe_mut_cast[True]().as_any_origin(),
+                        a.ptr.unsafe_mut_cast[True]().as_unsafe_any_origin(),
                         a.layout,
                     ),
                     b,
@@ -530,14 +545,19 @@ def _matmul_cpu_impl[
         # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
         # See issue 27734
         comptime if use_i8mm:
-            sync_parallelize[pack_task_func](num_tasks)
+            sync_parallelize[pack_task_func](num_tasks, ctx)
 
         # TODO (#12624): Closure captures some state on the stack so this needs
         # to be synchronous in order to keep that state alive
-        sync_parallelize[task_func](num_tasks)
+        sync_parallelize[task_func](num_tasks, ctx)
 
-        if a_packed_ptr:
-            a_packed_ptr.unsafe_value().free()
+        # NOTE: passing `dealloc[Scalar[a.dtype]]` directly crashes the
+        # compiler (simplifyBindParams, KGENAttrs.cpp) when the dtype is
+        # parametric; wrap it in a local function as a workaround.
+        def _dealloc_packed(var packed: Allocation[Scalar[a.dtype]]):
+            dealloc(packed^)
+
+        a_packed_alloc^.destroy_with(_dealloc_packed)
 
 
 @always_inline
@@ -549,10 +569,11 @@ def matmul[
     saturated_vnni: Bool = False,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     kernel_type_m: Int,
     num_threads: Int = -1,
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     """TileTensor matmul dispatcher. Selects kernel type and delegates to
     `_matmul_cpu_impl`."""
@@ -563,11 +584,56 @@ def matmul[
     comptime assert a.flat_rank == 2
     comptime assert b.flat_rank == 2
 
+    # KERN-2790: for low-precision output (f16/bf16), route through an f32
+    # scratch buffer so we accumulate in fp32 across all K tiles and cast
+    # down in a single pass at the end. Mirrors GPU behavior where the
+    # fp32 accumulator is cast to the output dtype right at the epilogue.
+    comptime scratch_type = get_accum_type[c.dtype]()
+    comptime if scratch_type != c.dtype:
+        var scratch_shape = GemmShape.get[transpose_b](c, a, b)
+        var scratch_m = scratch_shape.M
+        var scratch_n = scratch_shape.N
+
+        comptime scratch_simd = simd_width_of[scratch_type]()
+        comptime scratch_align = align_of[SIMD[scratch_type, scratch_simd]]()
+        var scratch_alloc = alloc(
+            AllocLayout[Scalar[scratch_type]](
+                count=scratch_m * scratch_n, alignment=scratch_align
+            )
+        ).into_deletable()
+        var scratch = TileTensor(
+            scratch_alloc.unsafe_ptr(), row_major(Coord(scratch_m, scratch_n))
+        )
+
+        @parameter
+        @always_inline
+        def cast_epilogue[
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        ](coord: IndexList[2], val: SIMD[dtype, width]):
+            var cast_val = val.cast[c.dtype]()
+            comptime if elementwise_lambda_fn:
+                comptime user_fn = elementwise_lambda_fn.value()
+                user_fn[c.dtype, width, alignment=alignment](coord, cast_val)
+            else:
+                c.store_linear[width=width, alignment=alignment](
+                    coord, cast_val
+                )
+
+        matmul[
+            transpose_b=transpose_b,
+            b_packed=b_packed,
+            elementwise_lambda_fn=cast_epilogue,
+            saturated_vnni=saturated_vnni,
+        ](scratch, a, b, kernel_type_m, num_threads, ctx)
+
+        return
+
     comptime kernel_id = select_inner_kernel[a.dtype, b.dtype, c.dtype]()
 
-    @parameter
     @always_inline
-    def dispatch_on_kernel_type[kernel_type: Bool]() raises:
+    def dispatch_on_kernel_type[
+        kernel_type: Bool
+    ]() raises {c, a, b, num_threads, ctx}:
         comptime config = get_kernel_config[
             a.dtype,
             b.dtype,
@@ -588,6 +654,7 @@ def matmul[
                 a,
                 b,
                 num_threads,
+                ctx,
             )
         elif kernel_id == InnerKernelID.VNNI:
             _matmul_cpu_impl[
@@ -602,6 +669,7 @@ def matmul[
                 a,
                 b,
                 num_threads,
+                ctx,
             )
         elif kernel_id == InnerKernelID.NEON:
             _matmul_cpu_impl[
@@ -616,6 +684,7 @@ def matmul[
                 a,
                 b,
                 num_threads,
+                ctx,
             )
         elif kernel_id == InnerKernelID.I8MM:
             _matmul_cpu_impl[
@@ -630,6 +699,7 @@ def matmul[
                 a,
                 b,
                 num_threads,
+                ctx,
             )
         else:
             comptime assert False, "no _run_inner_loop implementation"
@@ -637,7 +707,7 @@ def matmul[
     var shape = GemmShape.get[transpose_b](c, a, b)
     var n = shape.N
     var k = shape.K
-    dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
+    dispatch_get_kernel_type(dispatch_on_kernel_type, kernel_type_m, n, k)
 
 
 def _submatmul_sequential_sync[
@@ -650,26 +720,28 @@ def _submatmul_sequential_sync[
 ](
     alg: algorithm,
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):
     comptime simd_size = config.simd_size
 
     def elementwise_closure(
-        offset: GemmShape, shape: GemmShape
-    ) unified {read c}:
+        offset: GemmShape,
+        shape: GemmShape,
+        c_read: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    ):
         comptime if elementwise_lambda_fn:
             comptime func = elementwise_lambda_fn.value()
             elementwise_epilogue_c_tile[
                 simd_size,
-                c.dtype,
+                c_read.dtype,
                 func,
             ](
                 offset,
                 shape,
-                c,
+                c_read,
             )
         else:
             pass
@@ -700,8 +772,8 @@ def _submatmul_sequential_sync[
     saturated_vnni: Bool,
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):

@@ -40,6 +40,7 @@ def test_mla_index_fp8_paged_variable_lengths[
     page_size: Int,
     top_k: Int,
     mask_name: StaticString = MaskName.NULL.name,
+    strict_complete: Bool = False,
 ](seq_lens: List[Int], cache_lens: List[Int], ctx: DeviceContext,) raises:
     """Test mla_indexer_ragged_float8_paged with variable-length sequences.
 
@@ -49,6 +50,16 @@ def test_mla_index_fp8_paged_variable_lengths[
         page_size: Page size for paged KV cache.
         top_k: Number of top indices to return.
         mask_name: Mask type name (NULL or CAUSAL).
+        strict_complete: When True, additionally assert that every token
+            selects its *complete* set of valid keys (exactly `num_keys`
+            distinct indices covering `[0, num_keys)`).  Only valid in the
+            dense regime where `top_k >= num_keys` for every token, so the
+            indexer is expected to return all valid keys (no real sparsity).
+            This is the strong invariant that the lenient default check
+            (which permits -1 at any position) does NOT enforce; it is what
+            catches the topk_gpu out_vals/out_idxs row-stride desync bug,
+            where higher query rows collapsed to all -1 (see the regression
+            cases in main()).
 
     Args:
         seq_lens: Length of each sequence (new tokens) per batch item.
@@ -69,10 +80,6 @@ def test_mla_index_fp8_paged_variable_lengths[
         total_seq_len += seq_lens[i]
         max_seq_len = max(max_seq_len, seq_lens[i])
         max_cache_len = max(max_cache_len, cache_lens[i])
-
-    # max_num_keys uses static max values to match kernel's calculation
-    # (kernel uses k_cache.max_context_length() + max_prompt_length())
-    var max_num_keys = max_cache_len + max_seq_len
 
     print(
         "test_mla_index_fp8_paged_variable_lengths with params:",
@@ -98,7 +105,7 @@ def test_mla_index_fp8_paged_variable_lengths[
 
     comptime kv_params = KVCacheStaticParams(
         num_heads=1,  # MLA uses single head for K
-        head_size=UInt(depth),
+        head_size=depth,
         is_mla=True,
     )
     comptime num_layers = 1
@@ -110,20 +117,22 @@ def test_mla_index_fp8_paged_variable_lengths[
 
     # Q tensor: [total_seq_len, num_heads, depth]
     var q_size = total_seq_len * num_heads * depth
-    var q_ptr = alloc[Scalar[DType.float8_e4m3fn]](q_size)
-    rand(q_ptr, q_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](q_size)
+    rand(q_ptr.as_span())
     var q_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](q_size)
     ctx.enqueue_copy(q_device, q_ptr)
 
     # Q scales: [total_seq_len, num_heads]
     var qs_size = total_seq_len * num_heads
-    var qs_ptr = alloc[Scalar[DType.float32]](qs_size)
-    rand(qs_ptr, qs_size)
+    var qs_ptr = ctx.enqueue_create_host_buffer[DType.float32](qs_size)
+    rand(qs_ptr.as_span())
     var qs_device = ctx.enqueue_create_buffer[DType.float32](qs_size)
     ctx.enqueue_copy(qs_device, qs_ptr)
 
     # Input row offsets: [batch_size + 1] for ragged indexing (variable lengths)
-    var input_row_offsets_ptr = alloc[UInt32](batch_size + 1)
+    var input_row_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
     input_row_offsets_ptr[0] = UInt32(0)
     for i in range(batch_size):
         input_row_offsets_ptr[i + 1] = input_row_offsets_ptr[i] + UInt32(
@@ -135,7 +144,9 @@ def test_mla_index_fp8_paged_variable_lengths[
     ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_ptr)
 
     # Cache lengths: [batch_size] - variable cached tokens per sequence
-    var cache_lengths_ptr = alloc[UInt32](batch_size)
+    var cache_lengths_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size
+    )
     for i in range(batch_size):
         cache_lengths_ptr[i] = UInt32(cache_lens[i])
     var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
@@ -149,8 +160,8 @@ def test_mla_index_fp8_paged_variable_lengths[
         1,  # MLA uses single kv
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     comptime k_block_layout = Layout.row_major[6]()
     var k_block_runtime_layout = RuntimeLayout[k_block_layout].row_major(
@@ -160,7 +171,7 @@ def test_mla_index_fp8_paged_variable_lengths[
         k_shape.flattened_length()
     )
     with k_block_device.map_to_host() as k_block_host:
-        rand(k_block_host.unsafe_ptr(), k_shape.flattened_length())
+        rand(k_block_host.as_span())
 
     # K scale blocks
     comptime head_dim_granularity = 1
@@ -169,14 +180,14 @@ def test_mla_index_fp8_paged_variable_lengths[
         1,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
+        kv_params.num_heads,
         head_dim_granularity,
     )
     var ks_block_device = ctx.enqueue_create_buffer[DType.float32](
         ks_shape.flattened_length()
     )
     with ks_block_device.map_to_host() as ks_block_host:
-        rand(ks_block_host.unsafe_ptr(), ks_shape.flattened_length())
+        rand(ks_block_host.as_span())
 
     # Page lookup tables
     comptime paged_lut_layout = Layout.row_major[2]()
@@ -210,50 +221,58 @@ def test_mla_index_fp8_paged_variable_lengths[
         ks_shape
     )
     var k_collection = PagedKVCacheCollection[
-        DType.float8_e4m3fn, kv_params, page_size, DType.float32, 128
+        DType.float8_e4m3fn,
+        kv_params,
+        page_size,
+        scale_dtype_=DType.float32,
+        quantization_granularity_=128,
     ](
-        LayoutTensor[DType.float8_e4m3fn, k_block_layout, MutAnyOrigin](
-            k_block_device.unsafe_ptr(), k_block_runtime_layout
+        LayoutTensor[DType.float8_e4m3fn, k_block_layout](
+            k_block_device,
+            k_block_runtime_layout,
         ),
-        LayoutTensor[DType.uint32, cache_lengths_layout, ImmutAnyOrigin](
-            cache_lengths_device.unsafe_ptr(), cache_lengths_runtime_layout
+        LayoutTensor[mut=False, DType.uint32, cache_lengths_layout](
+            cache_lengths_device,
+            cache_lengths_runtime_layout,
         ),
-        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
-            k_lut_device.unsafe_ptr(), paged_lut_runtime_layout
+        LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+            k_lut_device,
+            paged_lut_runtime_layout,
         ),
         UInt32(max_seq_len),  # max_seq_length (new tokens)
         UInt32(max_cache_len),  # max_cache_length (cached tokens)
-        LayoutTensor[DType.float32, ks_block_layout, MutAnyOrigin](
-            ks_block_device.unsafe_ptr(), ks_block_runtime_layout
+        LayoutTensor[DType.float32, ks_block_layout](
+            ks_block_device,
+            ks_block_runtime_layout,
         ),
     )
 
     # Dense output: [total_seq_len, top_k]
     var total_output_size = total_seq_len * top_k
 
-    var o_ptr = alloc[Scalar[DType.int32]](total_output_size)
+    var o_ptr = ctx.enqueue_create_host_buffer[DType.int32](total_output_size)
     var o_device = ctx.enqueue_create_buffer[DType.int32](total_output_size)
 
     var q_tile = TileTensor(
-        q_device.unsafe_ptr(),
-        row_major(Idx(total_seq_len), Idx(num_heads), Idx(depth)),
+        q_device,
+        row_major(total_seq_len, num_heads, depth),
     )
 
     var qs_tile = TileTensor(
-        qs_device.unsafe_ptr(),
-        row_major(Idx(total_seq_len), Idx(num_heads)),
+        qs_device,
+        row_major(total_seq_len, num_heads),
     )
 
     var input_row_offsets_tile = TileTensor(
-        input_row_offsets_device.unsafe_ptr(),
+        input_row_offsets_device,
         row_major(
-            Idx(batch_size + 1),
+            batch_size + 1,
         ),
     )
 
     var o_tile = TileTensor(
-        o_device.unsafe_ptr(),
-        row_major(Idx(total_seq_len), Idx(top_k)),
+        o_device,
+        row_major(total_seq_len, top_k),
     )
 
     mla_indexer_ragged_float8_paged[
@@ -301,9 +320,13 @@ def test_mla_index_fp8_paged_variable_lengths[
     for batch_idx in range(batch_size):
         for _ in range(seq_lens[batch_idx]):
             var num_keys = token_to_num_keys[global_token_idx]
+            var valid_count = 0
             for k_idx in range(top_k):
                 var output_idx = global_token_idx * top_k + k_idx
                 var idx_int = Int(o_ptr[output_idx])
+
+                if idx_int >= 0:
+                    valid_count += 1
 
                 if k_idx < num_keys:
                     # Valid position: index should be in range or -1 if masked
@@ -331,6 +354,26 @@ def test_mla_index_fp8_paged_variable_lengths[
                         + ", got "
                         + String(idx_int),
                     )
+
+            comptime if strict_complete:
+                # Dense regime (top_k >= num_keys): the indexer must select
+                # ALL num_keys valid keys, never drop or collapse any.  The
+                # topk_gpu row-stride desync bug corrupted this for higher
+                # query rows (valid_count fell below num_keys, reaching 0 for
+                # the last prefill tokens), so this exact-count check is the
+                # regression guard.  The default (non-strict) check above
+                # permits -1 anywhere and would NOT catch that collapse.
+                assert_true(
+                    valid_count == num_keys,
+                    "Incomplete top-k for token "
+                    + String(global_token_idx)
+                    + ": selected "
+                    + String(valid_count)
+                    + " valid keys but expected "
+                    + String(num_keys)
+                    + " (dense causal set). Indicates dropped/collapsed keys"
+                    + " (e.g. topk out_vals/out_idxs row-stride desync).",
+                )
             global_token_idx += 1
 
     print("  Test passed!")
@@ -344,12 +387,6 @@ def test_mla_index_fp8_paged_variable_lengths[
     _ = qs_device
     _ = input_row_offsets_device
     _ = o_device
-
-    q_ptr.free()
-    qs_ptr.free()
-    input_row_offsets_ptr.free()
-    cache_lengths_ptr.free()
-    o_ptr.free()
 
 
 def main() raises:
@@ -422,6 +459,105 @@ def main() raises:
         ](
             seq_lens=[4, 8, 2],
             cache_lens=[4, 8, 2],
+            ctx=ctx,
+        )
+
+        # ===== Regression: large top_k (2048) + long context =====
+        # These cover two bugs that only appear at production scale:
+        #   (A) topk_gpu stage-2 dynamic shared memory exceeded the device
+        #       per-block limit once max_k = min(top_k, ctx) reached ~2000,
+        #       crashing the launch with CUDA_ERROR_INVALID_VALUE.
+        #   (B) fill_invalid_topk_kernel only covered the first 1024 output
+        #       columns, leaving columns [1024, top_k) as garbage when
+        #       top_k > 1024.
+        # Each case mixes a long sequence (drives max_num_keys past the old
+        # smem cliff -> exercises A) with a short sequence whose token needs
+        # -1 padding spanning columns >1024 (-> exercises B).
+        print("\n--- regression: top_k=2048, long context ---")
+
+        # Decode, causal: long seq (cache 2100) + short seq (cache 50, so its
+        # token needs -1 across columns [51, 2048), including the >1024 range).
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=128,
+            depth=128,
+            page_size=64,
+            top_k=2048,
+            mask_name=MaskName.CAUSAL.name,
+        ](
+            seq_lens=[1, 1, 1, 1],
+            cache_lens=[2100, 1990, 1500, 50],
+            ctx=ctx,
+        )
+
+        # Decode, NULL mask: long + short seq.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=128,
+            depth=128,
+            page_size=64,
+            top_k=2048,
+            mask_name=MaskName.NULL.name,
+        ](
+            seq_lens=[1, 1],
+            cache_lens=[2100, 100],
+            ctx=ctx,
+        )
+
+        # Prefill, causal: 200 new tokens over a 1900-token cache
+        # (max_num_keys=2100, past the old cliff; early tokens need -1 padding).
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=128,
+            depth=128,
+            page_size=64,
+            top_k=2048,
+            mask_name=MaskName.CAUSAL.name,
+        ](
+            seq_lens=[200],
+            cache_lens=[1900],
+            ctx=ctx,
+        )
+
+        # ===== Regression: topk out_vals/out_idxs row-stride desync =====
+        # GLM-5.1 / DSv3.2 prefix-cached prefill: a multi-token chunk on top of
+        # a cached prefix where max_num_keys < top_k, so effective_k =
+        # min(top_k, max_num_keys) < top_k.  topk_gpu indexes both of its
+        # outputs by effective_k, so out_vals (effective_k stride) and out_idxs
+        # MUST share that stride; aliasing out_idxs onto the top_k-strided
+        # output desynced them, scattering each query row's indices r*(top_k -
+        # effective_k) elements off -> higher rows collapsed to all -1.  Row 0
+        # always looked fine (offset 0), so the lenient check missed it; the
+        # earlier top_k=2048 cases had max_num_keys>=2048 (effective_k==top_k)
+        # so they never triggered it.  These cases force max_num_keys < top_k
+        # AND use strict_complete to require every token's full causal set.
+        print("\n--- regression: topk stride desync (max_num_keys < top_k) ---")
+
+        # GLM geometry: 64 heads, depth 128, top_k=2048, ~900-token cached
+        # prefix + 179 fresh tokens => max_num_keys=1075 < 2048.  Last fresh
+        # token must still select all 1075 causal keys.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=64,
+            top_k=2048,
+            mask_name=MaskName.CAUSAL.name,
+            strict_complete=True,
+        ](
+            seq_lens=[179],
+            cache_lens=[896],
+            ctx=ctx,
+        )
+
+        # Multi-batch mix of cached prefixes + multi-token chunks, all with
+        # max_num_keys < top_k.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=128,
+            depth=128,
+            page_size=64,
+            top_k=2048,
+            mask_name=MaskName.CAUSAL.name,
+            strict_complete=True,
+        ](
+            seq_lens=[64, 200, 32],
+            cache_lens=[300, 500, 100],
             ctx=ctx,
         )
 

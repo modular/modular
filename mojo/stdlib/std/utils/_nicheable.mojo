@@ -56,6 +56,33 @@ struct NicheIndex(Equatable, TrivialRegisterPassable):
     """
 
 
+comptime NicheStorageTraits = TrivialRegisterPassable
+"""Trait requirements for a custom niche backing storage type."""
+
+
+trait UnsafeCustomNicheStorage:
+    """Allows a nicheable type to customize its backing storage representation.
+
+    By default, niche-optimized containers (like `Optional`) store a nicheable
+    type's value in an `UnsafeMaybeUninit[T]`, which lowers to `pop.array<1,T>`.
+    This is not always desirable. For example, `UnsafePointer` needs to
+    lower directly to `kgen.pointer` to preserve its ABI across exported
+    function boundaries.
+
+    A type conforming to this trait provides an associated `NicheStorage` type that
+    the container uses instead of `UnsafeMaybeUninit[T]`. The `NicheStorage` type
+    must have the same size and alignment as the nicheable type, and must conform
+    to `NicheStorageTraits`.
+    """
+
+    comptime NicheStorage: NicheStorageTraits
+    """The backing storage type to use instead of `UnsafeMaybeUninit[Self]`.
+
+    Safety:
+        This must have the same alignment and size as `Self`.
+    """
+
+
 trait UnsafeNicheable:
     """A type that exposes known-invalid bit patterns to enable niche optimizations.
 
@@ -79,6 +106,9 @@ trait UnsafeNicheable:
     A `NonMaxUInt` that uses `UInt.MAX` as its single niche:
 
     ```mojo
+    from std.utils._nicheable import UnsafeNicheable, NicheIndex
+    from std.memory import UnsafeMaybeUninit
+
     struct NonMaxUInt(UnsafeNicheable):
         var _n: UInt
 
@@ -94,7 +124,7 @@ trait UnsafeNicheable:
             return 1
 
         @staticmethod
-        def write_niche[index: NicheIndex](
+        def write_niche[index: Int](
             memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
         ):
             # Write UInt.MAX into the storage, not a valid NonMaxUInt.
@@ -195,6 +225,9 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
     A `NonMaxUInt` that uses `UInt.MAX` as its single niche:
 
     ```mojo
+    from std.utils._nicheable import UnsafeSingleNicheable
+    from std.memory import UnsafeMaybeUninit
+
     struct NonMaxUInt(UnsafeSingleNicheable):
         var _n: UInt
 

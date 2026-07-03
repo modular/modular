@@ -21,7 +21,7 @@ from internal_utils import assert_almost_equal
 from linalg.grouped_matmul_sm100_1d1d import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
-from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig, GEMMKind
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_block_scaled,
 )
@@ -44,7 +44,6 @@ from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import (
     Coord,
     Idx,
-    RuntimeInt,
     TileTensor,
     row_major,
 )
@@ -104,56 +103,52 @@ def _test_kernel_impl[
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    var a_shape = row_major(
-        Coord(Idx(Int(total_num_tokens)), Idx[expert_shape[1]]())
-    )
+    var a_shape = row_major(Coord(Int(total_num_tokens), Idx[expert_shape[1]]))
     var b_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[expert_shape[0]](),
-            Idx[expert_shape[1]](),
+            Idx[num_experts],
+            Idx[expert_shape[0]],
+            Idx[expert_shape[1]],
         )
     )
-    var c_shape = row_major(
-        Coord(Idx(Int(total_num_tokens)), Idx[expert_shape[0]]())
-    )
+    var c_shape = row_major(Coord(Int(total_num_tokens), Idx[expert_shape[0]]))
 
     var a_size = total_num_tokens * K
     var b_size = num_experts * expert_shape[0] * expert_shape[1]
     var c_size = total_num_tokens * expert_shape[0]
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
-        a_offsets_device.unsafe_ptr(),
+        a_offsets_device,
         row_major(
             Coord(
-                Idx(Int(num_active_experts + 1)),
+                Int(num_active_experts + 1),
             )
         ),
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
     var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
-        expert_ids_device.unsafe_ptr(),
+        expert_ids_device,
         row_major(
             Coord(
-                Idx(Int(num_active_experts)),
+                Int(num_active_experts),
             )
         ),
     )
@@ -161,33 +156,41 @@ def _test_kernel_impl[
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
-        a_scale_offsets_device.unsafe_ptr(),
+        a_scale_offsets_device,
         row_major(
             Coord(
-                Idx(Int(num_active_experts)),
+                Int(num_active_experts),
             )
         ),
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
     var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
         num_experts
     )
     var expert_scales_tensor = TileTensor(
-        expert_scales_device.unsafe_ptr(),
+        expert_scales_device,
         row_major(
             Coord(
-                Idx[num_experts](),
+                Idx[num_experts],
             )
         ),
     )
 
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var a_scale_offsets_ptr = alloc[Scalar[DType.uint32]](num_active_experts)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_experts)
-    var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_active_experts + 1
+    )
+    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_active_experts
+    )
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+        num_experts
+    )
+    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        num_experts
+    )
     for i in range(num_experts):
         expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(num_experts)
 
@@ -205,56 +208,54 @@ def _test_kernel_impl[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(Int(a_scale_dim0)),
-            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Int(a_scale_dim0),
+            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[num_experts],
+            Idx[ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
     var a_scales_total = a_scales_shape.product()
     var b_scales_total = b_scales_shape.product()
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        a_scales_total
+    )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        b_scales_total
+    )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Initialize matmul operands
     if simple_init():
         for m in range(M):
             for k in range(K):
-                a_host[(Idx(m), Idx(k))] = random_ui64(0, 1).cast[a_type]()
+                a_host[m, k] = random_ui64(0, 1).cast[a_type]()
         for e in range(num_experts):
             for n in range(N):
                 for k in range(K):
-                    b_host[(Idx(e), Idx(n), Idx(k))] = random_ui64(0, 1).cast[
-                        b_type
-                    ]()
+                    b_host[e, n, k] = random_ui64(0, 1).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements())
         rand(b_host.ptr, b_host.num_elements())
@@ -301,14 +302,14 @@ def _test_kernel_impl[
             * Int(b_scales_host.dim(5))
         )
         var b_scales_tensor_expert_slice = TileTensor(
-            b_scales_host_ptr + e * expert_slice_size,
+            b_scales_host_ptr.unsafe_ptr() + e * expert_slice_size,
             row_major(
                 Coord(
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -361,6 +362,7 @@ def _test_kernel_impl[
             AB_swapped=swapAB,
             k_group_size=k_group_size,
             num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
+            gemm_kind=GEMMKind.GMM,
         )
 
         blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -395,44 +397,45 @@ def _test_kernel_impl[
             k_group_size=k_group_size,
             num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
             is_gmm=True,
+            gemm_kind=GEMMKind.GMM,
         )
 
         # Construct scale TileTensors from raw pointers with explicit
         comptime k_groups = ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)
         comptime n_groups = ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)
         var a_scales_tt = TileTensor(
-            a_scales_device.unsafe_ptr().bitcast[Scalar[scales_dtype]](),
+            a_scales_device,
             row_major(
                 Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Int64(a_scale_dim0),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         var b_scales_tt = TileTensor(
-            b_scales_device.unsafe_ptr().bitcast[Scalar[scales_dtype]](),
+            b_scales_device,
             row_major(
                 Coord(
-                    Idx[num_experts](),
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[num_experts],
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         var expert_scales_tt = TileTensor(
-            expert_scales_device.unsafe_ptr().bitcast[Scalar[DType.float32]](),
+            expert_scales_device,
             row_major(
                 Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
+                    Int64(num_experts),
                 )
             ),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
 
         grouped_matmul_block_scaled[
             transpose_b=transpose_b,
@@ -476,28 +479,28 @@ def _test_kernel_impl[
 
         var c_slice = TileTensor(
             c_ref_tensor.ptr + start * c_row_stride,
-            row_major((Idx(end - start), Idx[expert_shape[0]]())),
+            row_major((end - start, Idx[expert_shape[0]])),
         )
 
         var new_a_tensor = TileTensor(
             a_tensor.ptr + start * a_row_stride,
-            row_major((Idx(end - start), Idx[expert_shape[1]]())),
+            row_major((end - start, Idx[expert_shape[1]])),
         )
 
         var new_b_tensor = TileTensor(
             b_tensor.ptr + Int(expert_id) * b_expert_stride,
-            row_major((Idx[expert_shape[0]](), Idx[expert_shape[1]]())),
+            row_major((Idx[expert_shape[0]], Idx[expert_shape[1]])),
         )
 
         var new_b_scales_tensor = TileTensor(
             b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
             row_major(
                 Coord(
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -509,11 +512,11 @@ def _test_kernel_impl[
             a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
             row_major(
                 Coord(
-                    Idx(ceildiv(end - start, SF_MN_GROUP_SIZE)),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    ceildiv(end - start, SF_MN_GROUP_SIZE),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -547,16 +550,6 @@ def _test_kernel_impl[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
-    a_offsets_host_ptr.free()
-    a_scale_offsets_ptr.free()
-    expert_ids_host_ptr.free()
-    expert_scales_host_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -1038,6 +1031,79 @@ def main() raises:
             ctx,
         )
 
+        # MMA_N=8: cp.async SFB (group_size < 128)
+        # Single token per expert
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            test_rtol=0.08,
+        ](
+            4,
+            [1, 2, 3, 4],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        # MMA_N=8: Mixed cp.async (gs<128) + TMA (gs>=128)
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            test_rtol=0.08,
+        ](
+            4,
+            [4, 256, 1, 200],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        # MMA_N=8: Boundary gs=127/128
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            test_rtol=0.08,
+        ](
+            4,
+            [127, 128, 64, 256],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
         # MMA_N=16 tests (new structured kernel only, small BN, MXFP8)
         print("\n========================================")
         print("Testing NEW kernel with MMA_N=16 (MXFP8)")
@@ -1092,6 +1158,29 @@ def main() raises:
             ctx,
         )
 
+        # MMA_N=16: cp.async SFB (group_size < 128)
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n16,
+            umma_shape_n16,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+        ](
+            4,
+            [1, 64, 4, 256],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
         # MMA_N=32 tests (new structured kernel only, small BN, MXFP8)
         print("\n========================================")
         print("Testing NEW kernel with MMA_N=32 (MXFP8)")
@@ -1143,6 +1232,29 @@ def main() raises:
             3,
             [64 + 1, 1024 + 3, 128 * 3 + 2],
             [2, 0, 1],
+            ctx,
+        )
+
+        # MMA_N=32: cp.async SFB (group_size < 128)
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n32,
+            umma_shape_n32,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+        ](
+            4,
+            [1, 64, 32, 256],
+            [0, 1, 2, 3],
             ctx,
         )
 
@@ -1223,6 +1335,31 @@ def main() raises:
             4,
             [512, 1000, 2000, 3000],
             [0, 3, 2, 4],
+            ctx,
+        )
+
+        # MMA_N=8 AB_swapped: cp.async SFB (mixed small/large)
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            swapAB=True,
+            test_rtol=0.08,
+        ](
+            4,
+            [4, 256, 1, 200],
+            [0, 1, 2, 3],
             ctx,
         )
 

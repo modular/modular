@@ -10,7 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""OLMo 2 transformer architecture for text generation."""
 
 from .arch import olmo2_modulev3_arch
+from .model import Olmo2Model
+from .model_config import Olmo2Config
 
-__all__ = ["olmo2_modulev3_arch"]
+__all__ = [
+    "Olmo2Config",
+    "Olmo2Model",
+    "olmo2_modulev3_arch",
+]

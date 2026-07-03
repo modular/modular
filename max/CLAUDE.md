@@ -25,11 +25,11 @@ SDK, APIs, and tools. The SDK provides:
 
 # Build specific components
 ./bazelw build //max/python/max
-./bazelw build //max/python/max/entrypoints:pipelines
+./bazelw build //max/python/max/_entrypoints:pipelines
 ./bazelw build //max/python/max/serve
 
 # Build and install MAX CLI
-./bazelw run //max/python/max/entrypoints:pipelines
+./bazelw run //max/python/max/_entrypoints:pipelines
 ```
 
 ### Running Tests
@@ -47,7 +47,6 @@ SDK, APIs, and tools. The SDK provides:
   //max/tests/integration/architectures/llama3:test_cross_attention
 
 # Run GPU tests remotely
-bt-h100 //max/tests/integration/architectures/llama3:tests_gpu
 bt-b200 //max/tests/integration/architectures/llama3:tests_gpu
 ```
 
@@ -87,16 +86,16 @@ bt-b200 //max/tests/integration/architectures/llama3:tests_gpu
 
 ```bash
 # Generate text with a model
-./bazelw run //max/python/max/entrypoints:pipelines -- generate \
+./bazelw run //max/python/max/_entrypoints:pipelines -- generate \
   --model modularai/Llama-3.1-8B-Instruct-GGUF \
   --prompt "Hello, world!"
 
 # Serve a model locally
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
   --model modularai/Llama-3.1-8B-Instruct-GGUF
 
 # Run with custom configuration
-./bazelw run //max/python/max/entrypoints:pipelines -- generate \
+./bazelw run //max/python/max/_entrypoints:pipelines -- generate \
   --model model.gguf \
   --max-new-tokens 256 \
   --temperature 0.7
@@ -157,15 +156,65 @@ class YourModelConfig(HFModelConfig):
 ./bazelw test //max/tests/integration/serve:test_tinyllama_serving_cpu
 ```
 
+### Avoid Per-Test Graph Recompilation
+
+Building a `Graph` and calling `InferenceSession.load(...)` inside every
+test case (or inside a `function`-scoped fixture) is one of the top
+causes of timeout-based flakes in MAX integration tests. Locally the
+compile cost may look modest, but on shared BuildBuddy CI workers CPU
+contention inflates compile time substantially — multiplying that by
+the number of cases is what pushes suites past their timeout. The
+blow-up is in CI, not locally.
+
+- **Antipattern**: building a `Graph` and calling `session.load(...)` inside
+  each `def test_*` or inside a `function`-scoped fixture when the cases only
+  differ in payload data, not graph structure.
+- **Why it matters**: on contended BuildBuddy workers each recompile is far
+  slower than locally; multiplying that by per-case repetition is the
+  dominant cost driver and the most common trigger for timeout-based flakes.
+- **Pattern to apply**: put `InferenceSession` and each unique compiled graph
+  behind `scope="module"` (or `scope="session"`) fixtures. Split the work into
+  a builder (`build_*` returns the compiled model + any resources like a
+  `PagedKVCacheManager`) and an executor (claims/runs/releases per call).
+  Parametrize per-case inputs separately and have each test consume the
+  compiled-model fixture.
+- **Use `shard_count` to parallelize compilations**: a module-scoped fixture
+  deduplicates within a pytest process, but each shard runs its own process.
+  When a test file has multiple tests that need distinct compiles, use Bazel
+  test sharding instead of splitting into separate files. Add `shard_count` or
+  `per_test_shard_count` to the BUILD rule:
+
+  ```python
+  modular_py_test(
+      name = "tests",
+      srcs = ["test_attention.py", ...],
+      # 4 tests → 4 shards: one test per shard, compiles run in parallel
+      per_test_shard_count = {
+          "test_attention.py": 4,
+      },
+  )
+  ```
+
+  Sharding distributes tests across CI workers via round-robin. Each shard
+  runs as its own pytest process, so tests that would serialize locally now
+  compile in parallel across separate workers.
+- **Reference**: see
+  `max/tests/integration/architectures/gemma4/test_attention.py` which uses
+  `per_test_shard_count = 4` to parallelize bf16 vs fp8-local vs fp8-global
+  tests. Shared fixtures sit in `gemma4/conftest.py`; `build_max_attention` /
+  `execute_max_attention` helpers live in `_attention_helpers.py`. Also see
+  `max/tests/integration/nn/kv_cache/conftest.py` for the simpler session-scoped
+  `InferenceSession` fixture pattern.
+
 ### Performance Testing
 
 ```bash
 # Benchmark model performance
-./bazelw run //max/python/max/entrypoints:pipelines -- benchmark \
+./bazelw run //max/python/max/_entrypoints:pipelines -- benchmark \
   --model model
 
 # Profile model execution
-./bazelw run //max/python/max/entrypoints:pipelines -- profile \
+./bazelw run //max/python/max/_entrypoints:pipelines -- profile \
   --model model
 ```
 
@@ -230,6 +279,20 @@ Most neural network layers follow this structure:
 - Models can be distributed across devices using `transfer_to` ops
 - Implement custom sharding strategies in model classes
 - Use collective operations for cross-device communication
+
+### Experimental Tensor API Style
+
+When writing model code that uses `max.experimental.tensor.Tensor` (modulev3
+architectures and `max.experimental.nn` layers), prefer Python operator syntax
+and instance methods over `F.*` functional calls.
+
+- Use `x @ w` not `F.matmul(x, w)`
+- Use `w.T` not `F.transpose(w)` (transposes last two dims)
+- Use `x.split(sizes, axis)` not `F.split(x, sizes, axis)`
+- Use `x.reshape(shape)`, `x.cast(dtype)`, `x.squeeze(axis)` over their
+  `F.*` equivalents
+- Arithmetic operators (`+`, `-`, `*`, `/`, `**`, `-x`) are preferred over
+  `F.add`, `F.sub`, `F.mul`, `F.div`, `F.pow`, `F.negate`
 
 ## Common Development Tasks
 

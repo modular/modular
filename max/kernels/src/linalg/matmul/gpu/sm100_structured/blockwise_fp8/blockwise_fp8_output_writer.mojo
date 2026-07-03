@@ -24,18 +24,14 @@ Supports two write modes:
 
 from std.sys import align_of, simd_width_of, size_of
 
-from std.gpu import (
-    WARP_SIZE,
-    lane_id_uint as lane_id,
-    thread_idx_int as thread_idx,
-)
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import WARP_SIZE, thread_idx, lane_id, warp_id as get_warp_id
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.sync import named_barrier
 from layout import (
     ComptimeInt,
     Coord,
+    CoordLike,
     Idx,
     TensorLayout,
     TileTensor,
@@ -155,6 +151,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         c_tma_op: TMATensorTile[
@@ -185,6 +182,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         c_tma_op: TMATensorTile[
@@ -198,10 +196,10 @@ struct BlockwiseFP8TileWriter[
 
         comptime for stage in range(Self.num_stages):
             var upper_frag = accum.upper.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(stage, Idx[0])
             )
             var lower_frag = accum.lower.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(stage, Idx[0])
             )
 
             var c_smem_tile = c_tiles[stage % 2]  # double-buffer
@@ -292,6 +290,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         m_abs: UInt32,
@@ -329,6 +328,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         m_abs: UInt32,
@@ -350,10 +350,10 @@ struct BlockwiseFP8TileWriter[
 
         comptime for stage in range(Self.num_stages):
             var upper_frag = accum.upper.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(stage, Idx[0])
             )
             var lower_frag = accum.lower.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(stage, Idx[0])
             )
 
             # Apply expert scale
@@ -367,7 +367,7 @@ struct BlockwiseFP8TileWriter[
             # Write register fragments to SMEM using stsm_helper
             # (handles bf16 correctly with stsmx instead of stmtx)
             var c_smem_warp_tt = c_smem_tile.tile[c_smem_tile_m, Self.stageN](
-                Int(warp_id), 0
+                warp_id, 0
             )
             var c_smem_warp_tile_upper = c_smem_warp_tt.tile[
                 Self.data_paths, Self.stageN
@@ -478,10 +478,12 @@ struct BlockwiseFP8TileWriter[
         # inherited from the row_major parent tile).
         comptime split_layout = Layout[
             shape_types=Coord[
-                ComptimeInt[TMA_BM], ComptimeInt[Self.stageN]
+                ComptimeInt[TMA_BM],
+                ComptimeInt[Self.stageN],
             ].element_types,
             stride_types=Coord[
-                ComptimeInt[Self.c_smem_dim1], ComptimeInt[1]
+                ComptimeInt[Self.c_smem_dim1],
+                ComptimeInt[1],
             ].element_types,
         ]
 
@@ -497,7 +499,7 @@ struct BlockwiseFP8TileWriter[
             comptime for j in range(
                 zipped.shape_types[1].element_types[0].static_value
             ):
-                var input_crd = Coord(Idx(UInt32(thread_idx.x)), Idx[j]())
+                var input_crd = Coord(UInt32(thread_idx.x), Idx[j])
                 var linear_idx = zipped[linear_idx_type=DType.uint32](
                     input_crd
                 ) * UInt32(simd_size)
@@ -514,7 +516,7 @@ struct BlockwiseFP8TileWriter[
                 if global_i < m_end:
                     # Compute destination pointer via TileTensor layout
                     var dst_offset = c_tensor.layout(
-                        Coord(Idx(Int(global_i)), Idx(Int(global_j)))
+                        Coord(Int(global_i), Int(global_j))
                     )
                     var dst_ptr = c_tensor.ptr + Int(dst_offset)
 

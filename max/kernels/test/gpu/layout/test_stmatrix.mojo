@@ -40,39 +40,39 @@ def test_stmatrix(
     n: Int,
     k: Int,
 ):
-    comptime mma_m: UInt = 16
-    comptime mma_n: UInt = 8
-    comptime mma_k: UInt = 8
+    comptime mma_m: Int = 16
+    comptime mma_n: Int = 8
+    comptime mma_k: Int = 8
 
     var d_reg = SIMD[DType.float32, 4](0)
     var tid = thread_idx.x
     var a_shared = stack_allocation[
-        Int(mma_m * mma_k),
+        mma_m * mma_k,
         DType.float32,
         alignment=32,
         address_space=AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
-        Int(mma_n * mma_k),
+        mma_n * mma_k,
         DType.float32,
         alignment=32,
         address_space=AddressSpace.SHARED,
     ]()
 
     var c_shared = stack_allocation[
-        Int(mma_m * mma_n),
+        mma_m * mma_n,
         DType.float32,
         alignment=32,
         address_space=AddressSpace.SHARED,
     ]()
 
-    for i in range(tid, Int(mma_m * mma_k), WARP_SIZE):
+    for i in range(tid, mma_m * mma_k, WARP_SIZE):
         a_shared[i] = a_ptr[i]
 
     # Transpose B to fit ld_matrix layout.
-    for i in range(tid, Int(mma_k * mma_n), WARP_SIZE):
-        var y, x = divmod(i, Int(mma_n))
-        b_shared[x * Int(mma_k) + y] = b_ptr[i]
+    for i in range(tid, mma_k * mma_n, WARP_SIZE):
+        var y, x = divmod(i, mma_n)
+        b_shared[x * mma_k + y] = b_ptr[i]
 
     barrier()
 
@@ -89,9 +89,9 @@ def test_stmatrix(
         c_shared + thread_idx.x * 4, rebind[SIMD[DType.float32, 4]](d_reg)
     )
 
-    var base = UInt(tid) * 4
+    var base = tid * 4
     for i in range(4):
-        var d = base + UInt(i)
+        var d = base + i
         var r = d & 63
         var src = ((d >> 6) << 6) + ((r & 1) << 5) + (r >> 1)
         c_ptr[d] = c_shared[src]
@@ -153,9 +153,9 @@ def test_stmatrix_gen[
         rebind[SIMD[DType.float32, c_frag_size]](d_reg),
     )
 
-    var base = UInt(thread_idx.x) * 4
+    var base = thread_idx.x * 4
     for i in range(4):
-        var d = base + UInt(i)
+        var d = base + i
         var r = d & 63
         var src = ((d >> 6) << 6) + ((r & 1) << 5) + (r >> 1)
         c_ptr[d] = c_shared[src].cast[output_type]()
@@ -198,7 +198,7 @@ def check_stmatrix_gen[
     ctx.enqueue_copy(b_device, b_host)
 
     comptime kernel_type = test_stmatrix_gen[input_type, output_type]
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         c_device,
         a_device,
         b_device,
@@ -213,25 +213,25 @@ def check_stmatrix_gen[
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
-        row_major(Coord(Idx(M), Idx(N))),
+        c_device_ref,
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     comptime kernel_naive_type = matmul_kernel_naive[
@@ -243,7 +243,7 @@ def check_stmatrix_gen[
         type_of(b_tt).LayoutType,
         BLOCK_DIM,
     ]
-    ctx.enqueue_function_experimental[kernel_naive_type](
+    ctx.enqueue_function[kernel_naive_type](
         c_ref_tt,
         a_tt,
         b_tt,
@@ -309,7 +309,7 @@ def check_stmatrix(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
-    ctx.enqueue_function_experimental[test_stmatrix](
+    ctx.enqueue_function[test_stmatrix](
         c_device,
         a_device,
         b_device,
@@ -329,25 +329,25 @@ def check_stmatrix(
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
-        row_major(Coord(Idx(M), Idx(N))),
+        c_device_ref,
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     comptime kernel = matmul_kernel_naive[
@@ -359,7 +359,7 @@ def check_stmatrix(
         type_of(b_tt).LayoutType,
         BLOCK_DIM,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_ref_tt,
         a_tt,
         b_tt,

@@ -20,6 +20,7 @@ from std.algorithm import parallel_memcpy
 ```
 """
 
+from . import sync_parallelize
 from std.math import ceildiv
 
 from std.memory import memcpy
@@ -30,8 +31,8 @@ def parallel_memcpy[
     dtype: DType
 ](
     *,
-    dest: UnsafePointer[mut=True, Scalar[dtype], _],
-    src: UnsafePointer[mut=False, Scalar[dtype], _],
+    dest: OptionalUnsafePointer[mut=True, Scalar[dtype], _],
+    src: OptionalUnsafePointer[Scalar[dtype], _],
     count: Int,
     count_per_task: Int,
     num_tasks: Int,
@@ -64,7 +65,11 @@ def parallel_memcpy[
         if to_copy <= 0:
             return
 
-        memcpy(dest=dest + begin, src=src + begin, count=to_copy)
+        memcpy(
+            dest=dest.unsafe_value() + begin,
+            src=src.unsafe_value() + begin,
+            count=to_copy,
+        )
 
     sync_parallelize[_parallel_copy](num_tasks)
 
@@ -73,8 +78,8 @@ def parallel_memcpy[
     dtype: DType,
 ](
     *,
-    dest: UnsafePointer[mut=True, Scalar[dtype], _],
-    src: UnsafePointer[mut=False, Scalar[dtype], _],
+    dest: OptionalUnsafePointer[mut=True, Scalar[dtype], _],
+    src: OptionalUnsafePointer[Scalar[dtype], _],
     count: Int,
 ):
     """Copies `count` elements from a memory buffer `src` to `dest` in parallel.

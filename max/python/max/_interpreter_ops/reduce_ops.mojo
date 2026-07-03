@@ -14,6 +14,7 @@
 """Mojo kernel wrappers for reduce MO interpreter operations."""
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
@@ -24,8 +25,8 @@ from std.algorithm import sum as reduce_sum
 from std.algorithm import mean as reduce_mean
 from std.algorithm import product as reduce_product
 from std.algorithm.functional import IndexList
-from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
+from std.utils.coord import Coord
+
 from std.sys.info import has_apple_gpu_accelerator
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
@@ -37,7 +38,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-def PyInit_reduce_ops() -> PythonObject:
+def PyInit_reduce_ops() abi("C") -> PythonObject:
     """Create a Python module with reduce kernel function bindings."""
     try:
         var b = PythonModuleBuilder("reduce_ops")
@@ -66,23 +67,23 @@ def PyInit_reduce_ops() -> PythonObject:
 # =============================================================================
 
 # Function type shared by reduce_max, reduce_min, reduce_sum, and
-# _reduce_mean. Each takes (input_shape, reduce_dim, context) with
-# compile-time dtype, input/output lambdas, and target parameters.
+# _reduce_mean. Each takes (input_shape, context) with compile-time dtype,
+# input/output lambdas, and target parameters. The reduction always happens
+# along axis 1 of the rank-3 normalized shape, so `reduce_dim` is baked in as
+# a compile-time constant by each wrapper.
 comptime ReduceFn = def[
     dtype: DType,
     input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
-    reduce_dim: Int,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) capturing raises -> None
 
 
@@ -91,25 +92,23 @@ def _reduce_max[
     input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
-    reduce_dim: Int,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Non-overloaded wrapper around algorithm.max for use with ReduceFn."""
     reduce_max[
         dtype,
         input_fn,
         output_fn,
-        single_thread_blocking_override=single_thread_blocking_override,
         target=target,
-    ](input_shape, reduce_dim, context)
+        reduce_dim=1,
+    ](Coord(input_shape), context)
 
 
 def _reduce_min[
@@ -117,25 +116,23 @@ def _reduce_min[
     input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
-    reduce_dim: Int,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Non-overloaded wrapper around algorithm.min for use with ReduceFn."""
     reduce_min[
         dtype,
         input_fn,
         output_fn,
-        single_thread_blocking_override=single_thread_blocking_override,
         target=target,
-    ](input_shape, reduce_dim, context)
+        reduce_dim=1,
+    ](Coord(input_shape), context)
 
 
 def _reduce_sum[
@@ -143,25 +140,23 @@ def _reduce_sum[
     input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
-    reduce_dim: Int,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Non-overloaded wrapper around algorithm.sum for use with ReduceFn."""
     reduce_sum[
         dtype,
         input_fn,
         output_fn,
-        single_thread_blocking_override=single_thread_blocking_override,
         target=target,
-    ](input_shape, reduce_dim, context)
+        reduce_dim=1,
+    ](Coord(input_shape), context)
 
 
 def _reduce_mean[
@@ -169,16 +164,14 @@ def _reduce_mean[
     input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
-    reduce_dim: Int,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Wrapper around algorithm.mean matching the reduce_max/min/sum signature.
 
@@ -186,14 +179,14 @@ def _reduce_mean[
     reduce_mean which requires it as an extra argument.
     """
     var output_shape = input_shape
-    output_shape[reduce_dim] = 1
+    output_shape[1] = 1
     reduce_mean[
         dtype,
         input_fn,
         output_fn,
-        single_thread_blocking_override=single_thread_blocking_override,
         target=target,
-    ](input_shape, reduce_dim, output_shape, context)
+        reduce_dim=1,
+    ](Coord(input_shape), Coord(output_shape), context)
 
 
 def _reduce_mul[
@@ -201,30 +194,64 @@ def _reduce_mul[
     input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
-    reduce_dim: Int,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Non-overloaded wrapper around algorithm.product for use with ReduceFn."""
     reduce_product[
         dtype,
         input_fn,
         output_fn,
-        single_thread_blocking_override=single_thread_blocking_override,
         target=target,
-    ](input_shape, reduce_dim, context)
+        reduce_dim=1,
+    ](Coord(input_shape), context)
 
 
 # =============================================================================
 # Dispatchers
 # =============================================================================
+
+
+def _normalize_reduce_shape(
+    in_buffer: PythonObject,
+    axis: PythonObject,
+) raises -> IndexList[3]:
+    """Compute normalized rank-3 shape for reduction along an axis.
+
+    Collapses an N-dimensional tensor shape into three dimensions:
+    - dim0: product of dims before the reduction axis
+    - dim1: the reduction axis dimension
+    - dim2: product of dims after the reduction axis
+
+    Args:
+        in_buffer: The input buffer object (must have a .shape attribute).
+        axis: The axis along which to reduce (integer).
+
+    Returns:
+        An IndexList[3] with [dim0, dim1, dim2].
+    """
+    var axis_val = Int(py=axis)
+    var in_shape_py = in_buffer.shape
+    var rank = Int(py=len(in_shape_py))
+    var in_shape = _get_shape(in_shape_py, rank)
+
+    var dim0 = 1
+    for i in range(axis_val):
+        dim0 *= in_shape[i]
+
+    var dim1 = in_shape[axis_val]
+
+    var dim2 = 1
+    for i in range(axis_val + 1, rank):
+        dim2 *= in_shape[i]
+
+    return IndexList[3](dim0, dim1, dim2)
 
 
 def reduce_dispatcher[
@@ -245,31 +272,11 @@ def reduce_dispatcher[
         out_buffer: The output buffer object (reduced shape).
         in_buffer: The input buffer object.
         axis: The axis along which to reduce (integer).
-        device_context_ptr: Device context pointer (must be null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(in_buffer)
-    var axis_val = Int(py=axis)
     var ctx = _get_ctx(device_context_ptr)
-
-    # Extract input shape and compute normalized rank-3 shape:
-    # dim0: product of dims before axis
-    # dim1: the reduction axis dimension
-    # dim2: product of dims after axis
-    var in_shape_py = in_buffer.shape
-    var rank = Int(py=len(in_shape_py))
-    var in_shape = _get_shape(in_shape_py, rank)
-
-    var dim0 = 1
-    for i in range(axis_val):
-        dim0 *= in_shape[i]
-
-    var dim1 = in_shape[axis_val]
-
-    var dim2 = 1
-    for i in range(axis_val + 1, rank):
-        dim2 *= in_shape[i]
-
-    var normalized_shape = IndexList[3](dim0, dim1, dim2)
+    var normalized_shape = _normalize_reduce_shape(in_buffer, axis)
 
     # Float types
     if dtype == DType.float16:
@@ -372,10 +379,10 @@ def reduce_op[
     dtype: DType,
     reduce_fn: ReduceFn,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     normalized_shape: IndexList[3],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: DeviceContext,
 ) raises:
     """Reduce operation on a rank-3 normalized tensor.
 
@@ -416,20 +423,20 @@ def reduce_op[
     @parameter
     @__copy_capture(out_ptr, outStride0)
     def output_fn[
-        width: Int, rank: Int
+        width: SIMDSize, rank: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]):
         var c = rebind[IndexList[3]](coords)
         var flat_idx = c[0] * outStride0 + c[2]
         out_ptr.store[width=width](flat_idx, val)
 
     # Always dispatch rank-3 reduction with axis=1
-    if not ctx:
+    if ctx.api() == "cpu":
         reduce_fn[
             dtype,
             input_fn,
             output_fn,
             target="cpu",
-        ](normalized_shape, 1, DeviceContextPtr(ctx))
+        ](normalized_shape, ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype in (
@@ -441,13 +448,12 @@ def reduce_op[
                 DType.int64,
                 DType.uint64,
             ):
-                var device_ctx = DeviceContextPtr(ctx)
                 reduce_fn[
                     dtype,
                     input_fn,
                     output_fn,
                     target="gpu",
-                ](normalized_shape, 1, device_ctx)
+                ](normalized_shape, ctx)
             else:
                 raise Error(
                     "GPU execution not supported for reduce with dtype "
@@ -462,15 +468,44 @@ def reduce_op[
 # reduce_dispatcher[_reduce_max] directly (parametric def type can't be inferred).
 
 
+def _reduce_bool_dispatcher[
+    reduce_fn: ReduceFn
+](
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Handle DType.bool reduction for max/min only.
+
+    Bool is not numeric so it cannot go through the generic
+    reduce_dispatcher (sum/mean/mul would fail the SIMD numeric
+    constraint). This helper dispatches directly for bool buffers.
+    """
+    var ctx = _get_ctx(device_context_ptr)
+    var normalized_shape = _normalize_reduce_shape(in_buffer, axis)
+    reduce_op[DType.bool, reduce_fn](
+        _get_buffer_ptr[DType.bool](out_buffer),
+        _get_buffer_ptr[DType.bool](in_buffer),
+        normalized_shape,
+        ctx,
+    )
+
+
 def reduce_max_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     axis: PythonObject,
     device_context_ptr: PythonObject,
 ) raises:
-    reduce_dispatcher[_reduce_max](
-        out_buffer, in_buffer, axis, device_context_ptr
-    )
+    if _get_dtype(in_buffer) == DType.bool:
+        _reduce_bool_dispatcher[_reduce_max](
+            out_buffer, in_buffer, axis, device_context_ptr
+        )
+    else:
+        reduce_dispatcher[_reduce_max](
+            out_buffer, in_buffer, axis, device_context_ptr
+        )
 
 
 def reduce_min_dispatcher(
@@ -479,9 +514,14 @@ def reduce_min_dispatcher(
     axis: PythonObject,
     device_context_ptr: PythonObject,
 ) raises:
-    reduce_dispatcher[_reduce_min](
-        out_buffer, in_buffer, axis, device_context_ptr
-    )
+    if _get_dtype(in_buffer) == DType.bool:
+        _reduce_bool_dispatcher[_reduce_min](
+            out_buffer, in_buffer, axis, device_context_ptr
+        )
+    else:
+        reduce_dispatcher[_reduce_min](
+            out_buffer, in_buffer, axis, device_context_ptr
+        )
 
 
 def reduce_sum_dispatcher(

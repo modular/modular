@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main() raises:
+def main():
     # Conditional expression
     temp_celsius = 15
     forecast = "warm" if temp_celsius > 20 else "cool"

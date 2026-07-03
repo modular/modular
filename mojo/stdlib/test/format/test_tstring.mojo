@@ -130,7 +130,7 @@ def test_tstring_in_variable() raises:
 def test_method_calls() raises:
     var s = String("hello")
     assert_equal(String(t"Uppercase: {s.upper()}"), "Uppercase: HELLO")
-    assert_equal(String(t"Length: {s.__len__()}"), "Length: 5")
+    assert_equal(String(t"Length: {s.byte_length()}"), "Length: 5")
 
 
 def test_list_subscripting() raises:

@@ -10,12 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides a compact, grow-only set of non-negative integers.
+"""Provides a compact set of non-negative integers backed by inline storage.
 
 Optimized for space (1 bit per element) and speed (O(1) operations).
-Offers set/clear/test/toggle and fast population count. The underlying
-storage grows automatically but does not shrink unless `shrink_to_fit`
-is called (not implemented yet).
+Offers set/clear/test/toggle and fast population count.
 
 Example:
 ```mojo
@@ -125,10 +123,10 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             init: A SIMD vector of booleans to initialize the bitset with.
         """
         comptime assert (
-            max(init.size, _WORD_BITS) // _WORD_BITS == Self._words_size
+            max(Int(init.size), _WORD_BITS) // _WORD_BITS == Self._words_size
         )
         self._words = type_of(self._words)(uninitialized=True)
-        comptime step = min(init.size, _WORD_BITS)
+        comptime step = min(Int(init.size), _WORD_BITS)
 
         comptime for i in range(Self._words_size):
             self._words.unsafe_get(i) = pack_bits(
@@ -317,7 +315,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         @always_inline
         def _intersect[
             simd_width: Int
-        ](offset: Int) unified {mut res, read left, read right}:
+        ](offset: Int) {mut res, read left, read right}:
             # Initialize SIMD vectors to hold multiple words from each bitset
             var left_vec = SIMD[DType.int64, simd_width]()
             var right_vec = SIMD[DType.int64, simd_width]()
@@ -343,9 +341,11 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         else:
             # For small bitsets, use a simple scalar implementation
             comptime for i in range(Self._words_size):
-                res._words.unsafe_get(i) = func(
-                    left._words.unsafe_get(i),
-                    right._words.unsafe_get(i),
+                res._words.unsafe_get(i) = Int64(
+                    func[simd_width=1](
+                        left._words.unsafe_get(i),
+                        right._words.unsafe_get(i),
+                    )
                 )
 
         return res^

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.sys import (
     get_defined_bool,
     get_defined_int,
@@ -20,14 +20,22 @@ from std.sys import (
 )
 
 from std.algorithm import elementwise
-from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from layout import Coord, Idx, TileTensor
+from layout import (
+    Coord,
+    Idx,
+    RowMajorLayout,
+    TensorLayout,
+    TileTensor,
+)
+from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 
 from std.utils.index import Index, IndexList
+from std.collections import OptionalReg
 
 from .....utils import (
     GemmShape,
@@ -37,13 +45,16 @@ from .....utils import (
 from .....utils_gpu import MatmulKernels, _vendor_blas_fallback_disabled
 from ..structured_kernels.config import (
     MatmulConfig,
-    build_configs,
+    build_sm100_matmul_configs,
+    build_sm100_batched_matmul_configs,
     choose_config,
     default_matmul_config_bf16_fp8,
+    GEMMKind,
 )
-from ... import matmul_kernel_naive, gemv_gpu, multistage_gemm
+from ... import matmul_kernel_naive, gemv_gpu, multistage_gemm, gemm_mma_cpasync
 from ....vendor.matmul import matmul as matmul_vendor
 from ...tile_scheduler import RasterOrder
+from linalg.gemv import gemv_split_k, gemv_gpu_dispatch, GEMVAlgorithm
 from .matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
     blackwell_batched_matmul_tma_umma_warp_specialized,
@@ -51,14 +62,229 @@ from .matmul import (
 from internal_utils import Table
 from .tuning_configs import (
     _get_tuning_list_sm100_fp8,
+    _get_tuning_list_sm100_fp32,
     TuningConfigSM100,
+    TuningConfigSmallMNGemms,
     _get_tuning_list_sm100_bf16,
+    _get_tuning_list_sm100_batched_bf16,
+    _get_tuning_list_sm100_batched_fp8,
+    _get_tuning_list_sm100_batched_fp32,
+    _get_tuning_list_small_MN_gemms_bf16,
 )
 
 comptime DISPATCH_MISS = 0
 comptime DISPATCH_HIT = 1
 
 comptime logger = Logger()
+
+
+@always_inline
+def small_MN_gemms[
+    config: TuningConfigSmallMNGemms,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
+    ctx: DeviceContext,
+) raises:
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
+
+    comptime if config.kernel_kind == GEMVAlgorithm.GEMM_MMA_CPASYNC:
+        var m = Int(c.dim[0]())
+        comptime static_K = a.static_shape[1]
+        comptime static_N = c.static_shape[1]
+        gemm_mma_cpasync[
+            pdl_level=pdl_level,
+            tile_k=config.tile_k,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            swapAB=config.swapAB,
+        ](
+            c,
+            a,
+            b,
+            m,
+            static_K,
+            static_N,
+            1,
+            ctx,
+        )
+    else:
+        comptime c_type = c.dtype
+        comptime a_type = a.dtype
+        comptime b_type = b.dtype
+        comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
+        comptime static_N = c.static_shape[1]
+        # m is only known at runtime, so the grid can overshoot the final
+        # rows whenever tile_m > 1 (m % tile_m != 0); the row guard must
+        # then be on. The column guard is comptime-decidable from static N.
+        comptime check_bounds_m = config.tile_m > 1
+        comptime check_bounds_n = static_N % config.tile_n != 0
+
+        var m = Int(c.dim[0]())
+        var n = Int(c.dim[1]())
+        var k = Int(a.dim[1]())
+
+        comptime c_layout = type_of(c).LayoutType
+        comptime a_layout = type_of(a).LayoutType
+        comptime b_layout = type_of(b).LayoutType
+
+        comptime kernel = gemv_split_k[
+            c_type,
+            a_type,
+            b_type,
+            c_layout,
+            a_layout,
+            b_layout,
+            simd_width=simd_width,
+            tile_m=config.tile_m,
+            tile_n=config.tile_n,
+            num_threads=config.num_threads,
+            unroll_factor=config.unroll_factor,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            check_bounds_m=check_bounds_m,
+            check_bounds_n=check_bounds_n,
+        ]
+
+        ctx.enqueue_function[kernel](
+            c,
+            a.as_immut(),
+            b.as_immut(),
+            m,
+            n,
+            k,
+            grid_dim=(ceildiv(m, config.tile_m), ceildiv(n, config.tile_n)),
+            block_dim=config.num_threads,
+            attributes=pdl_launch_attributes(pdl_level),
+        )
+
+
+@always_inline
+def try_small_MN_gemms_bf16[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
+    ctx: DeviceContext,
+) raises -> Int:
+    """Try to dispatch via the bf16 SmallMNGemms tuning table.
+
+    Returns `DISPATCH_HIT` if the (N, K) matches an entry and the runtime `m`
+    falls into one of its `[M, M_end)` buckets; otherwise returns
+    `DISPATCH_MISS` without launching anything. Shared between the M=1 GEMV
+    path (`dispatch_gemv`) and the main bf16 dispatch
+    (`matmul_dispatch_sm100_bf16`) so the table is consulted once, in one
+    place.
+    """
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
+
+    comptime small_MN_gemms_table = Table(
+        _get_tuning_list_small_MN_gemms_bf16(), "small_MN_gemms_configs"
+    )
+
+    @always_inline
+    def small_MN_gemms_rule(x: TuningConfigSmallMNGemms) {} -> Bool:
+        return x.K == static_K and x.N == static_N
+
+    comptime small_MN_gemms_configs = small_MN_gemms_table.find(
+        rule=small_MN_gemms_rule
+    )
+
+    comptime if small_MN_gemms_configs:
+        var m = Int(c.dim[0]())
+        comptime for config in small_MN_gemms_configs:
+            if m >= config.M and m < config.M_end:
+                logger.info("Dispatching to small_MN_gemms: ", config)
+                small_MN_gemms[
+                    config=config,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    pdl_level=pdl_level,
+                ](c, a, b, ctx)
+                return DISPATCH_HIT
+
+    return DISPATCH_MISS
+
+
+@always_inline
+def dispatch_gemv[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
+    ctx: DeviceContext,
+) raises:
+    """Dispatch M=1 (or N=1) matmul to GEMV or SM100 GEMM based on (N, K).
+
+    For most M=1 shapes GEMV is preferred, but for certain large (N, K)
+    combinations the SM100 GEMM kernel achieves higher throughput. Add new
+    (N, K) pairs to `SM100_GEMV_SHAPES` as they are identified through
+    benchmarking, or to the SmallMNGemms tuning table when the shape needs an
+    explicit cp-async / split-K config (the bf16 branch consults that table
+    via `matmul_dispatch_sm100_bf16` before falling back to the heuristic).
+
+    N=1 always routes to GEMV: SM100 TMA requires N * sizeof(c_type) % 16 == 0.
+    """
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
+
+    comptime static_NK = Index(static_N, static_K)
+
+    # Shared with `matmul_dispatch_sm100_bf16`: bf16 shapes that register a
+    # SmallMNGemms config (cp-async swapAB for Kimi-style decode, the
+    # small-N decode family, etc.) want the tuning-table kernel even at M=1.
+    # On MISS this returns DISPATCH_MISS and we fall through to the GEMV path
+    # below.
+    comptime if a_type == DType.bfloat16 and c_type in (DType.bfloat16,):
+        var status = try_small_MN_gemms_bf16[
+            elementwise_lambda_fn=elementwise_lambda_wrapper,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+        if status:
+            return
+
+    # (N, K) shapes where SM100 GEMM outperforms GEMV kernel.
+    comptime SM100_GEMV_SHAPES = [
+        Index(12288, 1536),
+        Index(7168, 8192),
+        Index(7168, 21504),
+        Index(7168, 18432),
+    ]
+
+    comptime if static_NK in SM100_GEMV_SHAPES:
+        var status = sm100_heuristic_and_outliers_dispatch[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+
+        if status:
+            logger.info("------ Executing SM100 GEMV kernel ------")
+            return
+
+    logger.info("------ Executing GEMV Matmul------")
+    gemv_gpu[
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_wrapper,
+        pdl_level=pdl_level,
+    ](c, a, b, ctx)
 
 
 @always_inline
@@ -94,7 +320,7 @@ def matmul_dispatch_sm100[
         comptime BK = (
             TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
         )
-        comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+        comptime MMA_K = 32 // size_of[a_type]()
         comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 2]()
         comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
         comptime CLUSTER_DIM_Z = get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()
@@ -119,6 +345,7 @@ def matmul_dispatch_sm100[
             cta_group=CTA_GROUP,
             AB_swapped=AB_SWAPPED,
             k_group_size=K_GROUP_SIZE,
+            use_tma_epilogue_load=False,
         )
 
         return blackwell_matmul_tma_umma_warp_specialized[
@@ -126,27 +353,86 @@ def matmul_dispatch_sm100[
             config=config,
         ](c, a, b, ctx)
 
-    # M=1 (or N=1): use GEMV split-K for both BF16 and FP8.
-    # static_N=1 is not supported on SM100 due to TMA requirements
-    # (N * size_of(c_type) % 16 == 0).
+    # M = 1(or N = 1) : dispatch to GEMV or SM100 based on(N, K).
+    # For certain large(N, K) shapes SM100 GEMM outperforms GEMV even at M = 1.
     comptime if a_type in (DType.bfloat16, DType.float8_e4m3fn):
         if static_N == 1 or m == 1:
-            logger.info("------ Executing GEMV Matmul------")
-            gemv_gpu[
+            dispatch_gemv[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_lambda_wrapper=elementwise_lambda_wrapper,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](c, a, b, ctx)
             return
 
+    # Tiny-/mid-M, small-N FP32 GEMM (e.g. the decode router/gate GEMM:
+    # M<=64, N=128, K=6144, transpose_b). The SM100 tile GEMM launches only
+    # ~2 CTAs for tiny M, leaving HBM and the MMA units almost idle; the
+    # split-K GEMV (warps along K, all-K-in-block) instead streams the N*K
+    # weight across many CTAs.
+    #
+    # M-adaptive tile_m: each GEMV block processes tile_m output rows, reusing
+    # the weight tile across them. This cuts the redundant L2 weight re-reads
+    # (~ceildiv(M, tile_m) * N*K) at the cost of a larger per-thread
+    # [tile_m, tile_n] accumulator and warp-reduce tail, so the optimum is
+    # M-dependent and non-monotone (grid quantization). The bucket boundaries
+    # below are the swept winners on B200; crossover to the tile GEMM is M=64
+    # (its tensor-core weight reuse wins for larger M). KERN-3076.
+    #
+    # Gate is conservative so FP32 shapes the tile GEMM serves better are not
+    # diverted: static_N<=256 (weight dominates; wider N favors MMA) and
+    # static_K>=2048 (enough K to hide the many-CTA launch). A fused epilogue
+    # rides through as elementwise_lambda_wrapper (which already folds in any
+    # compute lambda) and is applied per output element by the GEMV.
+    comptime if (
+        a_type == DType.float32
+        and c_type == DType.float32
+        and transpose_b
+        and static_N > -1
+        and static_N <= 256
+        and static_K >= 2048
+        and static_K % simd_width_of[a_type, target=get_gpu_target()]() == 0
+    ):
+        # tile_m is a comptime kernel param, so each bucket instantiates a
+        # distinct gemv_split_k; the runtime `m` selects the bucket.
+        @parameter
+        def _dispatch_split_k[tile_m: Int]() raises:
+            gemv_gpu_dispatch[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+                pdl_level=pdl_level,
+                tile_m=tile_m,
+            ](GEMVAlgorithm.GEMV_SPLIT_K, c, a, b, ctx)
+
+        if m <= 6:
+            _dispatch_split_k[1]()
+            return
+        elif m <= 12:
+            _dispatch_split_k[2]()
+            return
+        elif m <= 64:
+            _dispatch_split_k[4]()
+            return
+
     comptime if _vendor_blas_fallback_disabled():
         comptime if (
-            c_type in (DType.bfloat16, DType.float8_e4m3fn)
+            (
+                (
+                    a_type == DType.bfloat16
+                    and c_type in (DType.bfloat16, DType.float8_e4m3fn)
+                )
+                or (
+                    a_type == DType.float8_e4m3fn
+                    and c_type in (DType.bfloat16,)
+                )
+                or (a_type == DType.float32 and c_type in (DType.float32,))
+            )
             and static_N * size_of[c_type]() % 16 == 0
             and static_K * size_of[a_type]() % 16 == 0
             and transpose_b
         ):
-            var status = heuristic_and_outliers_dispatch[
+            var status = sm100_heuristic_and_outliers_dispatch[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -185,23 +471,39 @@ def matmul_dispatch_sm100[
         epilogue_type,
     )
 
-    # default matmul config for sm100
-    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+    # Default matmul config for SM100.
+    comptime MMA_K = 32 // size_of[a_type]()
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
     # SM100 kernel requirements:
-    # 1. `N * size_of(c_type) % 16B == 0` for output buffer (TMA requirement)
-    # 2. `c_type == DType.bfloat16` SM100 kernel only supports bfloat16 for output buffer
+    # 1. `N * size_of(c_type) % 16B == 0` for output buffer (TMA requirement).
+    # 2. Supported output dtypes: bfloat16, float8_e4m3fn, and float32.
+    #    float32 input only supports float32 output.
+    #    float8_e4m3fn input only supports bfloat16 output.
     comptime if (
-        c_type in (DType.bfloat16, DType.float8_e4m3fn)
-        and static_N * size_of[c_type]() % 16 == 0
+        static_N * size_of[c_type]() % 16 == 0
         and static_K * size_of[a_type]() % 16 == 0
         and transpose_b
     ):
         var status = DISPATCH_MISS
 
-        comptime if a_type == b_type == DType.bfloat16:
+        comptime if a_type == DType.bfloat16 and c_type in (
+            DType.bfloat16,
+            DType.float8_e4m3fn,
+        ):
             status = matmul_dispatch_sm100_bf16[
+                c_type=c_type,
+                a_type=a_type,
+                b_type=b_type,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_lambda_wrapper=elementwise_lambda_wrapper,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+
+        elif a_type == DType.float8_e4m3fn and c_type in (DType.bfloat16,):
+            status = matmul_dispatch_sm100_fp8[
                 c_type=c_type,
                 a_type=a_type,
                 b_type=b_type,
@@ -211,8 +513,8 @@ def matmul_dispatch_sm100[
                 pdl_level=pdl_level,
             ](c, a, b, ctx)
 
-        elif a_type == b_type == DType.float8_e4m3fn:
-            status = matmul_dispatch_sm100_fp8[
+        elif a_type == DType.float32 and c_type in (DType.float32,):
+            status = matmul_dispatch_sm100_fp32[
                 c_type=c_type,
                 a_type=a_type,
                 b_type=b_type,
@@ -226,21 +528,21 @@ def matmul_dispatch_sm100[
             logger.info("------ Executing MOJO SM100 Matmul------")
             return
 
-    # fallback to vendor matmul for untuned shapes
-    # We assume that this will always be a hit as in the worst case it will be a navie matmul.
+    # Fallback to vendor matmul for untuned shapes.
+    # We assume this is always a hit because the worst case is a naive matmul.
     return _vendor_blas_matmul_sm100[
         c_type,
         a_type,
         b_type,
         transpose_b,
         elementwise_lambda_wrapper=elementwise_lambda_wrapper,
-        pdl_level=pdl_level,
     ](c, a, b, ctx)
 
 
 @always_inline
 # NOTE:
-# 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
+# 1. SM100 matmul supports compute lambdas, so we should use normal and
+#    compute lambdas.
 def matmul_dispatch_sm100_fp8[
     c_type: DType,
     a_type: DType,
@@ -263,6 +565,8 @@ def matmul_dispatch_sm100_fp8[
     comptime assert b.rank == 2, "b must be of rank 2"
     comptime static_N = c.static_shape[1]
     comptime static_K = a.static_shape[1]
+
+    comptime assert c_type in (DType.bfloat16,), "Only support bfloat16 output"
 
     comptime MMA_K = 32
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
@@ -299,29 +603,28 @@ def matmul_dispatch_sm100_fp8[
         T: Table[TuningConfigSM100],
         domain: List[Int] = List[Int](),
     ]() raises -> Int:
-        @parameter
         @always_inline
-        def get_m(x: TuningConfigSM100) -> Int:
+        def get_m(x: TuningConfigSM100) {} -> Int:
             return x.M
 
-        comptime m_values = T.query_values[Int, get_m, domain]()
+        comptime m_values = T.query_values[Int, domain=domain](rule=get_m)
 
         comptime for static_m in m_values:
 
-            @parameter
             @always_inline
-            def rule_eq_m(x: TuningConfigSM100) -> Bool:
+            def rule_eq_m(x: TuningConfigSM100) {} -> Bool:
                 return x.M == static_m
 
             if m <= static_m:
-                comptime idx_list = T.query_index[rule_eq_m, domain=domain]()
+                comptime idx_list = T.query_index[domain=domain](rule=rule_eq_m)
 
                 comptime if idx_list:
                     comptime entry = T.configs[idx_list[0]]
                     _dispatch[entry]()
                     return DISPATCH_HIT
                 else:
-                    # dynamic m is in the range but cannot find any corresponding config in the table.
+                    # Dynamic m is in range but no corresponding config exists
+                    # in the table.
                     break
 
         return DISPATCH_MISS
@@ -329,48 +632,88 @@ def matmul_dispatch_sm100_fp8[
     comptime tuning_list = _get_tuning_list_sm100_fp8[mma_k=MMA_K, bk=BK]()
     comptime tuning_table = Table(tuning_list, "tuning_table_sm100_fp8")
 
-    @parameter
     @always_inline
-    def rule_eq_nk(x: TuningConfigSM100) -> Bool:
+    def rule_eq_nk(x: TuningConfigSM100) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
-    comptime nk_idx_list = tuning_table.query_index[rule_eq_nk]()
+    comptime nk_idx_list = tuning_table.query_index(rule=rule_eq_nk)
 
-    # TODO: re-enable the following tuning dispatch.
-    # make sure the domain (nk_idx_list) is not empty!
+    # TODO: Re-enable the following tuning dispatch.
+    # Make sure `domain(nk_idx_list)` is not empty.
     if m > 128:
         comptime if nk_idx_list:
             if _search[tuning_table, domain=nk_idx_list]() == DISPATCH_HIT:
                 return DISPATCH_HIT
 
-    # TODO (KERN-2084): Enable default matmul for large shapes to increase accuracy
-    # # fallback to default matmul for large shapes
+    # TODO(KERN-2084): Enable default matmul for large shapes to increase
+    # accuracy.
+    # #fallback to default matmul for large shapes
     # alias block_tile_shape = Index(128, 128, BK)
     # alias umma_shape = Index(
-    #     block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+    # block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
     # )
     # alias cluster_shape = Index(2, 1, 1)
     # alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-    #     block_tile_shape=block_tile_shape,
-    #     mma_shape=umma_shape,
-    #     cluster_shape=cluster_shape,
+    # block_tile_shape = block_tile_shape,
+    # mma_shape = umma_shape,
+    # cluster_shape = cluster_shape,
     # )
     # _matmul_dispatch_sm100[
-    #     transpose_b=transpose_b,
-    #     config=config,
-    #     elementwise_lambda_fn=elementwise_lambda_fn,
-    #     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-    #     pdl_level=pdl_level,
-    #     block_swizzle_size=0,
+    # transpose_b = transpose_b,
+    # config = config,
+    # elementwise_lambda_fn = elementwise_lambda_fn,
+    # elementwise_compute_lambda_fn = elementwise_compute_lambda_fn,
+    # pdl_level = pdl_level,
+    # block_swizzle_size = 0,
     # ](c, a, b, ctx)
     # return DISPATCH_HIT
     return DISPATCH_MISS
 
 
-def heuristic_and_outliers_dispatch[
+def _sm100_outlier_configs[
+    a_type: DType, mma_k: Int, bk: Int, static_N: Int, static_K: Int
+]() -> List[TuningConfigSM100]:
+    """Per-dtype heuristic outlier tuning list, filtered to this (N, K).
+
+    Uses a comptime branch (not a ternary) so the fp8 list -- which bakes
+    `mma_k` into its tile shapes -- is never instantiated for bf16/fp32.
+    """
+
+    @always_inline
+    def rule(x: TuningConfigSM100) {} -> Bool:
+        return x.K == static_K and x.N == static_N
+
+    comptime if a_type == DType.bfloat16:
+        return Table(
+            _get_tuning_list_sm100_bf16(), "bf16_heuristic_outliers"
+        ).find(rule=rule)
+    elif a_type == DType.float32:
+        return Table(
+            _get_tuning_list_sm100_fp32(), "fp32_heuristic_outliers"
+        ).find(rule=rule)
+    else:
+        return Table(
+            _get_tuning_list_sm100_fp8[mma_k, bk](), "fp8_heuristic_outliers"
+        ).find(rule=rule)
+
+
+def select_and_launch_sm100_config[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    launch_type: def[config: MatmulConfig[...]](
+        TileTensor[mut=True, c_type, ...],
+        TileTensor[a_type, ...],
+        TileTensor[b_type, ...],
+        DeviceContext,
+        OptionalReg[
+            TileTensor[
+                c_type,
+                RowMajorLayout[Int64, Int64],
+                ImmutAnyOrigin,
+            ]
+        ],
+    ) raises -> None,
     //,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
@@ -378,11 +721,21 @@ def heuristic_and_outliers_dispatch[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    has_epilogue_tensor: Bool = False,
+    epilogue_is_1d: Bool = False,
 ](
+    launch: launch_type,
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
+    epilogue_tensor: OptionalReg[
+        TileTensor[
+            c_type,
+            RowMajorLayout[Int64, Int64],
+            ImmutAnyOrigin,
+        ]
+    ] = None,
 ) raises -> Int:
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
@@ -394,23 +747,18 @@ def heuristic_and_outliers_dispatch[
     comptime assert a_type == b_type and a_type in (
         DType.bfloat16,
         DType.float8_e4m3fn,
-    ), "Only support bfloat16 and float8_e4m3fn input types"
+        DType.float32,
+    ), "Only support bfloat16, float8_e4m3fn, and float32 input types"
+    comptime assert (
+        a_type != DType.float32 or c_type == DType.float32
+    ), "float32 input only supports float32 output"
 
-    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+    comptime MMA_K = 32 // size_of[a_type]()
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
-    comptime outliers = Table(
-        _get_tuning_list_sm100_bf16(), "bf16_heuristic_outliers"
-    ) if a_type == DType.bfloat16 else Table(
-        _get_tuning_list_sm100_fp8[MMA_K, BK](), "fp8_heuristic_outliers"
-    )
-
-    @parameter
-    @always_inline
-    def rule(x: TuningConfigSM100) -> Bool:
-        return x.K == static_K and x.N == static_N
-
-    comptime outlier_configs = outliers.find[rule]()
+    comptime outlier_configs = _sm100_outlier_configs[
+        a_type, MMA_K, BK, static_N, static_K
+    ]()
 
     # do not use outliers list when c_type is FP8 as we don't support all tile shapes dude to TMA requirements
     comptime if c_type != DType.float8_e4m3fn:
@@ -429,61 +777,188 @@ def heuristic_and_outliers_dispatch[
                     num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
                     k_group_size=tuning_config.k_group_size,
                     num_split_k=tuning_config.num_split_k,
+                    use_tma_epilogue_load=has_epilogue_tensor,
+                    epilogue_is_1d=epilogue_is_1d,
                 )
 
                 logger.info("dispatching to outlier config: ", matmul_config)
 
-                _matmul_dispatch_sm100[
-                    transpose_b=transpose_b,
-                    config=matmul_config,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    pdl_level=pdl_level,
-                ](c, a, b, ctx)
-
+                launch[matmul_config](c, a, b, ctx, epilogue_tensor)
                 return DISPATCH_HIT
 
-    comptime configs = build_configs[
-        a_type, b_type, c_type, static_N, static_K, transpose_b
+    comptime configs = build_sm100_matmul_configs[
+        a_type,
+        b_type,
+        c_type,
+        static_N,
+        static_K,
+        transpose_b,
+        has_epilogue_tensor=has_epilogue_tensor,
+        epilogue_is_1d=epilogue_is_1d,
     ]()
     var aligned_m = align_up(m, 64) if m >= 256 else m
-    var config_runtime = choose_config[a_type, b_type, c_type, transpose_b](
-        aligned_m, static_N, static_K
-    )
+    var config_runtime = choose_config[
+        a_type,
+        b_type,
+        c_type,
+        transpose_b,
+        has_epilogue_tensor=has_epilogue_tensor,
+        epilogue_is_1d=epilogue_is_1d,
+    ](aligned_m, static_N, static_K, 1)
 
     comptime for config in configs:
         if config_runtime == config:
             logger.info("dispatching to config: ", config)
 
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
+            launch[config](c, a, b, ctx, epilogue_tensor)
             return DISPATCH_HIT
 
-    # For float8_e4m3fn output, we should never fail dispatching, use the default config.
+    # For float8_e4m3fn output, dispatch should never fail; use the
+    # default config.
     comptime if c_type == DType.float8_e4m3fn:
         comptime default_config = default_matmul_config_bf16_fp8[
-            a_type, b_type, c_type, transpose_b
+            a_type,
+            b_type,
+            c_type,
+            transpose_b,
+            has_epilogue_tensor=has_epilogue_tensor,
         ]()
-        _matmul_dispatch_sm100[
-            transpose_b=transpose_b,
-            config=default_config,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
+        launch[default_config](c, a, b, ctx, epilogue_tensor)
         return DISPATCH_HIT
 
     return DISPATCH_MISS
 
 
+def heuristic_and_outliers_dispatch[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+    has_epilogue_tensor: Bool = False,
+    epilogue_is_1d: Bool = False,
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
+    ctx: DeviceContext,
+    epilogue_tensor: OptionalReg[
+        TileTensor[
+            c.dtype,
+            RowMajorLayout[Int64, Int64],
+            ImmutAnyOrigin,
+        ]
+    ] = None,
+) raises -> Int:
+    @always_inline
+    def launch_callback[
+        config: MatmulConfig[...]
+    ](
+        c_tensor: TileTensor[mut=True, c_type, ...],
+        a_tensor: TileTensor[a_type, ...],
+        b_tensor: TileTensor[b_type, ...],
+        dispatch_ctx: DeviceContext,
+        dispatch_epilogue_tensor: OptionalReg[
+            TileTensor[
+                c_type,
+                RowMajorLayout[Int64, Int64],
+                ImmutAnyOrigin,
+            ]
+        ],
+    ) raises:
+        _matmul_dispatch_sm100[
+            transpose_b,
+            rebind[MatmulConfig[a_type, b_type, c_type, transpose_b]](config),
+            elementwise_lambda_fn,
+            elementwise_compute_lambda_fn,
+            pdl_level,
+        ](
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            dispatch_ctx,
+            epilogue_tensor=dispatch_epilogue_tensor,
+        )
+
+    return select_and_launch_sm100_config[
+        transpose_b,
+        elementwise_lambda_fn,
+        elementwise_compute_lambda_fn,
+        pdl_level,
+        has_epilogue_tensor=has_epilogue_tensor,
+        epilogue_is_1d=epilogue_is_1d,
+    ](launch_callback, c, a, b, ctx, epilogue_tensor)
+
+
 # NOTE:
-# 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
+# 1. SM100 matmul supports compute lambdas, so we should use normal and
+#    compute lambdas.
 def matmul_dispatch_sm100_bf16[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
+    ctx: DeviceContext,
+) raises -> Int:
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
+
+    comptime MMA_K = 16
+    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+
+    comptime low_perf_shapes = [
+        Index(2112, 14336),
+    ]
+
+    # fallback to vendor matmul for shapes that Mojo kernel is lagging behind
+    comptime if (static_N, static_K) in low_perf_shapes and c_type in (
+        DType.bfloat16,
+    ):
+        _vendor_blas_matmul_sm100[
+            c_type,
+            a_type,
+            b_type,
+            transpose_b,
+            elementwise_lambda_wrapper=elementwise_lambda_wrapper,
+        ](c, a, b, ctx)
+        return DISPATCH_HIT
+
+    var small_mn_status = try_small_MN_gemms_bf16[
+        elementwise_lambda_fn=elementwise_lambda_wrapper,
+        pdl_level=pdl_level,
+    ](c, a, b, ctx)
+    if small_mn_status:
+        return DISPATCH_HIT
+
+    return sm100_heuristic_and_outliers_dispatch[
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        pdl_level=pdl_level,
+    ](c, a, b, ctx)
+
+
+def matmul_dispatch_sm100_fp32[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -503,152 +978,21 @@ def matmul_dispatch_sm100_bf16[
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
-    var m = Int(c.dim[0]())
-    comptime static_N = c.static_shape[1]
-    comptime static_K = a.static_shape[1]
+    comptime assert (
+        a_type == b_type == DType.float32 and c_type == DType.float32
+    ), "matmul_dispatch_sm100_fp32 only supports float32 input and output"
 
-    comptime MMA_K = 16
-    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-
-    comptime llama3_8b_NK = [
-        # TP1
-        Index(6144, 4096),
-        Index(4096, 4096),
-        Index(28672, 4096),
-        Index(4096, 14336),
-        # TP2
-        Index(3072, 4096),
-        Index(4096, 2048),
-        Index(14336, 4096),
-        Index(4096, 7168),
-    ]
-
-    comptime DeepSeek_NK = [
-        Index(16384, 512),
-        Index(256, 7168),
-        Index(1536, 7168),
-        Index(576, 7168),
-        Index(2112, 7168),
-        Index(24576, 1536),
-    ]
-
-    comptime miscellaneous_NK = [
-        Index(1536, 4096),
-        Index(4096, 1536),
-        Index(4608, 1536),
-        Index(1536, 1536),
-        Index(8192, 1536),
-        Index(5376, 16384),
-        Index(5376, 21504),
-        Index(16384, 5376),
-        Index(20480, 5376),
-        Index(262144, 5376),
-        Index(43008, 5376),
-        Index(5376, 8192),
-    ]
-
-    comptime FLUX2_NK = [
-        # Flux2-dev
-        Index(6144, 24576),
-        Index(55296, 6144),
-        Index(6144, 6144),
-        Index(36864, 6144),
-        Index(6144, 18432),
-        Index(1024, 5120),
-        Index(32768, 5120),
-        # Flux2-Klein-4B
-        Index(3072, 3072),
-        Index(18432, 3072),
-        Index(3072, 9216),
-        Index(9216, 3072),
-        Index(27648, 3072),
-        Index(3072, 12288),
-        Index(3072, 7680),
-        Index(6144, 3072),
-    ]
-
-    comptime GEMMA_3_27B_NK = [
-        Index(5376, 21504),
-        Index(43008, 5376),
-        Index(8192, 5376),
-        Index(5376, 4096),
-        Index(4096, 5376),
-        Index(5376, 2048),
-        Index(21504, 5376),
-        Index(5376, 10752),
-    ]
-
-    comptime Kimi_2_5_NK = [
-        Index(1024, 512),
-        Index(1536, 1536),
-        Index(7168, 1024),
-    ]
-
-    comptime static_NK = Index(static_N, static_K)
-
-    # Always use heuristic dispatch for FP8 c_type otherwise it will fallback to naive gemm.
-    comptime if c_type == DType.float8_e4m3fn:
-        return heuristic_and_outliers_dispatch[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
-
-    comptime if static_NK in DeepSeek_NK:
-        return sm100_heuristic_and_outliers_dispatch[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
-
-    comptime if static_NK in miscellaneous_NK:
-        return heuristic_and_outliers_dispatch[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
-
-    comptime if static_NK in FLUX2_NK:
-        return heuristic_and_outliers_dispatch[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
-
-    comptime if Index(static_N, static_K) in llama3_8b_NK:
-        if m <= 128:
-            return heuristic_and_outliers_dispatch[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-
-    comptime if Index(static_N, static_K) in GEMMA_3_27B_NK:
-        return heuristic_and_outliers_dispatch[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
-
-    comptime if Index(static_N, static_K) in Kimi_2_5_NK:
-        return heuristic_and_outliers_dispatch[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
-
-    return DISPATCH_MISS
+    return sm100_heuristic_and_outliers_dispatch[
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        pdl_level=pdl_level,
+    ](c, a, b, ctx)
 
 
-# NOTE: vendor blas, naive matmul, and multistage gemm doesn't support compute lambdas so we need to wrap them in a lambda function.
-# if there is no compute lambda, then this wrapper will be a simple element wise lambda.
+# NOTE: Vendor BLAS, naive matmul, and multistage GEMM do not support compute
+# lambdas, so we wrap them in a lambda function.
+# If there is no compute lambda, this wrapper is a simple elementwise lambda.
 @always_inline
 def _vendor_blas_matmul_sm100[
     c_type: DType,
@@ -656,7 +1000,6 @@ def _vendor_blas_matmul_sm100[
     b_type: DType,
     transpose_b: Bool = False,
     elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
@@ -681,7 +1024,8 @@ def _vendor_blas_matmul_sm100[
         ](c, a, b, ctx)
 
     except:
-        # fallback to multistage/naive gemms if the cublas failed. This is a workaround for now for KERN-1812
+        # Fallback to multistage/naive GEMMs if cuBLAS fails.
+        # This is a temporary workaround for KERN-1812.
         logger.warning("Vendor BLAS failed")
 
         comptime if not a_type.is_float8() and K * size_of[a_type]() >= 8 * 16:
@@ -711,7 +1055,7 @@ def _vendor_blas_matmul_sm100[
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ]
 
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 c,
                 a,
                 b,
@@ -741,6 +1085,53 @@ def _matmul_dispatch_sm100[
     a_tensor: TileTensor[a_type, ...],
     b_tensor: TileTensor[b_type, ...],
     ctx: DeviceContext,
+    epilogue_tensor: OptionalReg[
+        TileTensor[
+            c_type,
+            RowMajorLayout[Int64, Int64],
+            ImmutAnyOrigin,
+        ]
+    ] = None,
+) raises:
+    _matmul_dispatch_sm100[
+        transpose_b=transpose_b,
+        config=config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        pdl_level=pdl_level,
+    ](
+        NullableTileTensor(c_tensor),
+        a_tensor,
+        b_tensor,
+        ctx,
+        epilogue_tensor=epilogue_tensor,
+    )
+
+
+def _matmul_dispatch_sm100[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    transpose_b: Bool,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c_tensor: NullableTileTensor[mut=True, c_type, ...],
+    a_tensor: TileTensor[a_type, ...],
+    b_tensor: TileTensor[b_type, ...],
+    ctx: DeviceContext,
+    epilogue_tensor: OptionalReg[
+        TileTensor[
+            c_type,
+            RowMajorLayout[Int64, Int64],
+            ImmutAnyOrigin,
+        ]
+    ] = None,
 ) raises:
     """Our sm100 matmul kernel still does not support fusion of elementwise
     operations. This is a temporary implementation that uses our sm100 matmul
@@ -753,7 +1144,7 @@ def _matmul_dispatch_sm100[
     ), "Either the epilogue lambda or the compute lambda can be used"
 
     comptime if not elementwise_lambda_fn:
-        if not c_tensor.ptr._is_not_null():
+        if not c_tensor.ptr:
             raise "c must be allocated!"
 
         blackwell_matmul_tma_umma_warp_specialized[
@@ -761,13 +1152,19 @@ def _matmul_dispatch_sm100[
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-        ](c_tensor, a_tensor, b_tensor, ctx)
+        ](
+            c_tensor.value(),
+            a_tensor,
+            b_tensor,
+            ctx,
+            epilogue_tensor=epilogue_tensor,
+        )
         return
 
     else:
         comptime epilogue = elementwise_lambda_fn.value()
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
-        # arch support 32B load/store to global memory, see KERN-2037.
+        # arch support 32B load / store to global memory, see KERN - 2037.
         comptime use_32b_simd = (
             has_nvidia_gpu_accelerator()
             and ctx.default_device_info.compute >= B200.compute
@@ -776,39 +1173,41 @@ def _matmul_dispatch_sm100[
             simd_width_of[c_type, target=get_gpu_target()]()
         )
 
-        @parameter
-        @__copy_capture(c_tensor)
-        def epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            comptime assert c_tensor.flat_rank >= 2
-            comptime assert idx.element_type.is_integral()
-            var c_coord = Coord(Idx(idx[0]), Idx(idx[1]))
-            var c_val = c_tensor.load[
-                width=simd_width,
-                # load_alignment is in bytes, lambda alignment is in elements
-                alignment=alignment * size_of[c_type](),
-            ](c_coord)
-            epilogue[c_type, simd_width, alignment=alignment](
-                IndexList[2](idx[0], idx[1]), c_val
-            )
-
         # If c is already allocated, we can just use the sm100 matmul and
         # apply the epilogue.
-        if c_tensor.ptr._is_not_null():
+        if c_tensor.ptr:
             var m = Int(c_tensor.dim[0]())
             var n = Int(c_tensor.dim[1]())
+            var c_tt = c_tensor.value()
+
+            def epilogue_wrapper[
+                simd_width: Int, alignment: Int = 1
+            ](idx: Coord) {var}:
+                comptime assert c_tt.flat_rank >= 2
+                var c_val = c_tt.load[
+                    width=simd_width,
+                    # load_alignment is in bytes, lambda alignment is in elements
+                    alignment=alignment * size_of[c_type](),
+                ](idx)
+                epilogue[c_type, simd_width, alignment=alignment](
+                    IndexList[2](Int(idx[0].value()), Int(idx[1].value())),
+                    c_val,
+                )
 
             blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
-            ](c_tensor, a_tensor, b_tensor, ctx)
-
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
+            ](
+                c_tt,
+                a_tensor,
+                b_tensor,
+                ctx,
+                epilogue_tensor=epilogue_tensor,
             )
+
+            elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
@@ -829,40 +1228,147 @@ def _matmul_dispatch_sm100[
         _ = tmp_device_buffer^
 
 
+def _sm100_batched_outlier_configs[
+    a_type: DType, static_N: Int, static_K: Int
+]() -> List[TuningConfigSM100]:
+    """Per-dtype batched heuristic outlier tuning list, filtered to this (N, K).
+
+    Mirrors `_sm100_outlier_configs` for the batched matmul path so future
+    hand-tuned fp32 batched configs added to `_get_tuning_list_sm100_batched_fp32`
+    are picked up automatically. Uses a comptime branch (not a ternary) so each
+    dtype's list is only instantiated for its own dtype.
+    """
+
+    @always_inline
+    def rule(x: TuningConfigSM100) {} -> Bool:
+        return x.K == static_K and x.N == static_N
+
+    comptime if a_type == DType.bfloat16:
+        return Table(
+            _get_tuning_list_sm100_batched_bf16(),
+            "batched_bf16_heuristic_outliers",
+        ).find(rule=rule)
+    elif a_type == DType.float32:
+        return Table(
+            _get_tuning_list_sm100_batched_fp32(),
+            "batched_fp32_heuristic_outliers",
+        ).find(rule=rule)
+    else:
+        return Table(
+            _get_tuning_list_sm100_batched_fp8(),
+            "batched_fp8_heuristic_outliers",
+        ).find(rule=rule)
+
+
 @always_inline
-def batched_matmul_dispatch_sm100_bf16[
+def dispatch_sm100_batched_matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
     transpose_b: Bool,
+    pdl_level: PDLLevel = PDLLevel.OFF,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[mut=False, a_type, ...],
     b: TileTensor[mut=False, b_type, ...],
     ctx: DeviceContext,
 ) raises:
-    """Dispatch batched BF16 matmul to SM100 kernel with a default config.
+    """Dispatch batched matmul to SM100 kernel.
 
-    Uses a reasonable default config (256x256x16 MMA, 2x1x1 cluster, cta_group=2)
-    which works well for a variety of batched matmul shapes.
+    First, try to dispatch to a batched matmul config from the tuning table. Then try to find a optimized config for the given shape.
+    If not found, then dispatch to a default config.
     """
-    comptime MMA_K = 16
+
+    comptime MMA_K = 32 // size_of[a_type]()
     comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
 
-    comptime block_tile_shape = Index(128, 128, BK)
-    comptime umma_shape = Index(
-        block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+    var batch_size = Int(c.dim(0))
+    var m = Int(c.dim(1))
+    comptime static_K = a.LayoutType._shape_types[2].static_value
+    comptime static_N = c.LayoutType._shape_types[2].static_value
+
+    comptime static_NK = Index(static_N, static_K)
+
+    logger.info(
+        "Dispatching to SM100 Batched Matmul B= ",
+        batch_size,
+        " M= ",
+        m,
+        " N= ",
+        static_N,
+        " K= ",
+        static_K,
     )
-    comptime cluster_shape = Index(2, 1, 1)
-    comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        mma_shape=umma_shape,
-        cluster_shape=cluster_shape,
-        block_swizzle_size=0,
-    )
+
+    comptime outlier_configs = _sm100_batched_outlier_configs[
+        a_type, static_N, static_K
+    ]()
+
+    comptime if c_type in (DType.bfloat16, DType.float32):
+        comptime for tuning_config in outlier_configs:
+            if (
+                batch_size == tuning_config.batch_size
+                and m >= tuning_config.M
+                and m < tuning_config.M_end
+            ):
+                comptime matmul_config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    mma_shape=tuning_config.mma_shape,
+                    cta_group=tuning_config.cta_group,
+                    cluster_shape=tuning_config.cluster_shape,
+                    block_swizzle_size=tuning_config.block_swizzle_size,
+                    raster_order=tuning_config.rasterize_order,
+                    AB_swapped=tuning_config.swapAB,
+                    num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                    num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                    k_group_size=tuning_config.k_group_size,
+                    num_split_k=tuning_config.num_split_k,
+                    gemm_kind=GEMMKind.BMM,
+                )
+
+                logger.info("Using batched tuning config: ", matmul_config)
+
+                blackwell_batched_matmul_tma_umma_warp_specialized[
+                    transpose_b=transpose_b,
+                    config=matmul_config,
+                    pdl_level=pdl_level,
+                ](c, a, b, ctx)
+
+                return
+
+    comptime configs = build_sm100_batched_matmul_configs[
+        a_type, b_type, c_type, static_N, static_K, transpose_b
+    ]()
+    var aligned_m = align_up(m, 64) if m >= 256 else m
+    var config_runtime = choose_config[
+        a_type, b_type, c_type, transpose_b, gemm_kind=GEMMKind.BMM
+    ](aligned_m, static_N, static_K, batch_size)
+
+    comptime for config in configs:
+        if config_runtime == config:
+            logger.info("dispatching to batched matmul config: ", config)
+
+            blackwell_batched_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b,
+                config=config,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+            return
+
+    # fallback to default config
+    comptime default_config = default_matmul_config_bf16_fp8[
+        a_type,
+        b_type,
+        c_type,
+        transpose_b,
+        gemm_kind=GEMMKind.BMM,
+    ]()
 
     blackwell_batched_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
-        config=config,
+        config=default_config,
+        pdl_level=pdl_level,
     ](c, a, b, ctx)
 
 
@@ -877,104 +1383,58 @@ def sm100_heuristic_and_outliers_dispatch[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    has_epilogue_tensor: Bool = False,
+    epilogue_is_1d: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
+    epilogue_tensor: OptionalReg[
+        TileTensor[
+            c.dtype,
+            RowMajorLayout[Int64, Int64],
+            ImmutAnyOrigin,
+        ]
+    ] = None,
 ) raises -> Int:
-    comptime assert c.rank == 2, "c must be of rank 2"
-    comptime assert a.rank == 2, "a must be of rank 2"
-    comptime assert b.rank == 2, "b must be of rank 2"
-    var m = Int(c.dim[0]())
-    comptime static_N = c.static_shape[1]
-    comptime static_K = a.static_shape[1]
-
-    comptime assert a_type == b_type and a_type in (
-        DType.bfloat16,
-        DType.float8_e4m3fn,
-    ), "Only support bfloat16 and float8_e4m3fn input types"
-
-    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-
-    comptime outliers = Table(
-        _get_tuning_list_sm100_bf16(), "bf16_heuristic_outliers"
-    ) if a_type == DType.bfloat16 else Table(
-        _get_tuning_list_sm100_fp8[MMA_K, BK](), "fp8_heuristic_outliers"
-    )
-
-    @parameter
     @always_inline
-    def rule(x: TuningConfigSM100) -> Bool:
-        return x.K == static_K and x.N == static_N
-
-    comptime outlier_configs = outliers.find[rule]()
-
-    # do not use outliers list when c_type is FP8 as we don't support all tile shapes dude to TMA requirements
-    comptime if c_type != DType.float8_e4m3fn:
-        comptime for tuning_config in outlier_configs:
-            if m >= tuning_config.M and m < tuning_config.M_end:
-                comptime matmul_config = MatmulConfig[
-                    a_type, b_type, c_type, transpose_b
-                ](
-                    mma_shape=tuning_config.mma_shape,
-                    cta_group=tuning_config.cta_group,
-                    cluster_shape=tuning_config.cluster_shape,
-                    block_swizzle_size=tuning_config.block_swizzle_size,
-                    raster_order=tuning_config.rasterize_order,
-                    AB_swapped=tuning_config.swapAB,
-                    num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
-                    num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
-                    k_group_size=tuning_config.k_group_size,
-                    num_split_k=tuning_config.num_split_k,
-                )
-
-                logger.info("dispatching to outlier config: ", matmul_config)
-
-                blackwell_matmul_tma_umma_warp_specialized[
-                    transpose_b=transpose_b,
-                    config=matmul_config,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    pdl_level=pdl_level,
-                ](c, a, b, ctx)
-
-                return DISPATCH_HIT
-
-    comptime configs = build_configs[
-        a_type, b_type, c_type, static_N, static_K, transpose_b
-    ]()
-    var aligned_m = align_up(m, 64) if m >= 256 else m
-    var config_runtime = choose_config[a_type, b_type, c_type, transpose_b](
-        aligned_m, static_N, static_K
-    )
-
-    comptime for config in configs:
-        if config_runtime == config:
-            logger.info("dispatching to config: ", config)
-
-            blackwell_matmul_tma_umma_warp_specialized[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    # For float8_e4m3fn output, we should never fail dispatching, use the default config.
-    comptime if c_type == DType.float8_e4m3fn:
-        comptime default_config = default_matmul_config_bf16_fp8[
-            a_type, b_type, c_type, transpose_b
-        ]()
+    def launch_callback[
+        config: MatmulConfig[...]
+    ](
+        c_tensor: TileTensor[mut=True, c_type, ...],
+        a_tensor: TileTensor[a_type, ...],
+        b_tensor: TileTensor[b_type, ...],
+        dispatch_ctx: DeviceContext,
+        dispatch_epilogue_tensor: OptionalReg[
+            TileTensor[
+                c_type,
+                RowMajorLayout[Int64, Int64],
+                ImmutAnyOrigin,
+            ]
+        ],
+    ) raises:
         blackwell_matmul_tma_umma_warp_specialized[
-            transpose_b=transpose_b,
-            config=default_config,
+            transpose_b,
+            config=rebind[MatmulConfig[a_type, b_type, c_type, transpose_b]](
+                config
+            ),
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-        ](c, a, b, ctx)
-        return DISPATCH_HIT
+        ](
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            dispatch_ctx,
+            epilogue_tensor=dispatch_epilogue_tensor,
+        )
 
-    return DISPATCH_MISS
+    return select_and_launch_sm100_config[
+        transpose_b,
+        elementwise_lambda_fn,
+        elementwise_compute_lambda_fn,
+        pdl_level,
+        has_epilogue_tensor=has_epilogue_tensor,
+        epilogue_is_1d=epilogue_is_1d,
+    ](launch_callback, c, a, b, ctx, epilogue_tensor)

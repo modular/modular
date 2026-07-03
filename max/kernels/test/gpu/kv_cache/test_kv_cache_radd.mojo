@@ -106,9 +106,7 @@ def test_kv_cache_radd[
 
     var kv_collection_device = PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         page_size,
     ](
         kv_block_paged.device_tensor(),
@@ -150,9 +148,7 @@ def test_kv_cache_radd[
 
     var kv_collection_host = PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         page_size,
     ](
         kv_block_paged_host,

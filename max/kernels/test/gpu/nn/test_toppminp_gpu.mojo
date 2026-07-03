@@ -80,7 +80,7 @@ def fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
-        buffer.ptr[i] = random_value.cast[dtype]()
+        buffer.raw_store(i, random_value.cast[dtype]())
 
 
 @parameter
@@ -96,14 +96,14 @@ def merge[
     var right_size = end - mid
 
     # Create temporary arrays
-    var left_ptr = alloc[Scalar[dtype]](left_size)
-    var right_ptr = alloc[Scalar[dtype]](right_size)
+    var left_ptr = List[Scalar[dtype]](unsafe_uninit_length=left_size)
+    var right_ptr = List[Scalar[dtype]](unsafe_uninit_length=right_size)
 
     # Copy data to temporary arrays
     for i in range(left_size):
-        left_ptr[i] = buf.ptr[start + i]
+        left_ptr[i] = buf.raw_load(start + i)
     for i in range(right_size):
-        right_ptr[i] = buf.ptr[mid + i]
+        right_ptr[i] = buf.raw_load(mid + i)
 
     # Merge back into original array
     var i = 0  # Index for left subarray
@@ -112,27 +112,23 @@ def merge[
 
     while i < left_size and j < right_size:
         if left_ptr[i] >= right_ptr[j]:  # Use >= for descending order
-            buf.ptr[k] = left_ptr[i]
+            buf.raw_store(k, left_ptr[i])
             i += 1
         else:
-            buf.ptr[k] = right_ptr[j]
+            buf.raw_store(k, right_ptr[j])
             j += 1
         k += 1
 
     # Copy remaining elements if any
     while i < left_size:
-        buf.ptr[k] = left_ptr[i]
+        buf.raw_store(k, left_ptr[i])
         i += 1
         k += 1
 
     while j < right_size:
-        buf.ptr[k] = right_ptr[j]
+        buf.raw_store(k, right_ptr[j])
         j += 1
         k += 1
-
-    # Free temporary arrays
-    left_ptr.free()
-    right_ptr.free()
 
 
 def merge_sort_recursive[
@@ -165,11 +161,7 @@ def test_is_sorted_descending[
 ](mut buf: TileTensor[mut=True, dtype, ...], vocab_size: Int) -> Bool:
     comptime assert buf.flat_rank == 2, "rank must be 2"
     var batch_size = buf.num_elements() // vocab_size
-    var sorted_flag = alloc[Bool](batch_size)
-
-    # Initialize all flags to True
-    for i in range(batch_size):
-        sorted_flag[i] = True
+    var sorted_flag = List(length=batch_size, fill=True)
 
     @parameter
     def process_rows(start_batch: Int, end_batch: Int):
@@ -177,16 +169,16 @@ def test_is_sorted_descending[
         for batch_id in range(start_batch, end_batch):
             var offset = batch_id * vocab_size
             for i in range(vocab_size - 1):
-                if buf.ptr[offset + i] < buf.ptr[offset + i + 1]:
+                if buf.raw_load(offset + i) < buf.raw_load(offset + i + 1):
                     print(
                         "[",
                         batch_id,
                         "][",
                         i,
                         "]: ",
-                        buf.ptr[offset + i],
+                        buf.raw_load(offset + i),
                         " < ",
-                        buf.ptr[offset + i + 1],
+                        buf.raw_load(offset + i + 1),
                     )
                     sorted_flag[batch_id] = False
                     break
@@ -202,9 +194,6 @@ def test_is_sorted_descending[
     var all_sorted = True
     for i in range(batch_size):
         all_sorted = all_sorted and sorted_flag[i]
-
-    # Free the temporary array
-    sorted_flag.free()
 
     return all_sorted
 
@@ -240,32 +229,36 @@ def test_case_sampling[
     comptime is_top_p = test_case.is_top_p
     var batch_size = test_case.batch_size
     var vocab_size = test_case.vocab_size
-    var temperature = rebind[Scalar[dtype]](test_case.temperature)
-    var p_threshold = rebind[Scalar[dtype]](test_case.p_threshold)
+    var temperature = test_case.temperature
+    var p_threshold = test_case.p_threshold
 
-    var m: Bench
+    var _m: Bench
 
     comptime if DEBUG_BENCH:
-        m = Bench()
+        _m = Bench()
 
     # Create input tensors
-    var in_logits_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
+    var in_logits_ptr = ctx.enqueue_create_host_buffer[dtype](
+        batch_size * vocab_size
+    )
     var in_logits = TileTensor(
-        in_logits_ptr, row_major(Coord(Idx(batch_size), Idx(vocab_size)))
+        in_logits_ptr, row_major(Coord(batch_size, vocab_size))
     )
-    var token_ids_ptr = alloc[Scalar[out_idx_type]](batch_size * 1)
+    var token_ids_ptr = ctx.enqueue_create_host_buffer[out_idx_type](
+        batch_size * 1
+    )
     var token_ids = TileTensor(
-        token_ids_ptr, row_major(Coord(Idx(batch_size), Idx(Int(1))))
+        token_ids_ptr, row_major(Coord(batch_size, Int(1)))
     )
-    var p_thresholds_ptr = alloc[Scalar[dtype]](batch_size)
+    var p_thresholds_ptr = ctx.enqueue_create_host_buffer[dtype](batch_size)
     var p_thresholds = TileTensor(
-        p_thresholds_ptr, row_major(Coord(Idx(batch_size)))
+        p_thresholds_ptr, row_major(Coord(batch_size))
     )
 
     # Fill tensors
     fill_fn(in_logits)
     for i in range(batch_size):
-        p_thresholds.ptr[i] = p_threshold
+        p_thresholds.raw_store(i, p_threshold)
 
     # Create device buffers
     var device_in_buf = ctx.enqueue_create_buffer[dtype](
@@ -281,39 +274,42 @@ def test_case_sampling[
     ctx.enqueue_copy(device_p_thresholds_buf, p_thresholds.ptr)
 
     # Copy to CPU and perform softmax & sort for correctness testing
-    var in_logits_cpu_test_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
-    var probs_cpu_test_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
+    var in_logits_cpu_test_ptr = ctx.enqueue_create_host_buffer[dtype](
+        batch_size * vocab_size
+    )
+    var probs_cpu_test_ptr = ctx.enqueue_create_host_buffer[dtype](
+        batch_size * vocab_size
+    )
     var in_logits_cpu_test = TileTensor(
         in_logits_cpu_test_ptr,
-        row_major(Idx(batch_size), Idx(vocab_size)),
+        row_major(batch_size, vocab_size),
     )
     var probs_cpu_test = TileTensor(
         probs_cpu_test_ptr,
-        row_major(Idx(batch_size), Idx(vocab_size)),
+        row_major(batch_size, vocab_size),
     )
     for i in range(in_logits.num_elements()):
-        in_logits_cpu_test.ptr[i] = in_logits.ptr[i] / temperature
+        in_logits_cpu_test.raw_store(i, in_logits.raw_load(i) / temperature)
 
     softmax[simd_width=1, rank=rank](
         in_logits_cpu_test,
         probs_cpu_test,
         axis=1,
     )
-    in_logits_cpu_test_ptr.free()
     sort_buf_descending(probs_cpu_test, vocab_size)
 
     var device_in_tensor = TileTensor(
-        device_in_buf.unsafe_ptr(),
-        row_major(Idx(batch_size), Idx(vocab_size)),
+        device_in_buf,
+        row_major(batch_size, vocab_size),
     )
     var device_token_ids_tensor = TileTensor(
-        device_token_ids_buf.unsafe_ptr(),
-        row_major(Idx(batch_size), Idx(1)),
+        device_token_ids_buf,
+        row_major(batch_size, Idx[1]),
     )
     var device_p_thresholds_tensor = TileTensor(
-        device_p_thresholds_buf.unsafe_ptr(),
+        device_p_thresholds_buf,
         row_major(
-            Idx(batch_size),
+            batch_size,
         ),
     )
 
@@ -341,7 +337,7 @@ def test_case_sampling[
             ctx.synchronize()
 
         time_kernel[run_func](
-            m,
+            _m,
             ctx,
             "top-p-sampling" if is_top_p else "min-p-sampling",
         )
@@ -376,16 +372,16 @@ def test_case_sampling[
     for i in range(in_logits.num_elements()):
         try:
             assert_almost_equal(
-                in_logits.ptr[i], probs_cpu_test.ptr[i], atol=5e-3
+                in_logits.raw_load(i), probs_cpu_test.raw_load(i), atol=5e-3
             )
         except e:
             print(
                 "i: ",
                 i,
                 "in_logits: ",
-                in_logits.ptr[i],
+                in_logits.raw_load(i),
                 "probs_cpu_test: ",
-                probs_cpu_test.ptr[i],
+                probs_cpu_test.raw_load(i),
             )
             raise e^
 
@@ -393,12 +389,7 @@ def test_case_sampling[
         print("Sampled token indices:", token_ids)
 
     comptime if DEBUG_BENCH:
-        m.dump_report()
-    # free all pointers
-    in_logits_ptr.free()
-    token_ids_ptr.free()
-    p_thresholds_ptr.free()
-    probs_cpu_test_ptr.free()
+        _m.dump_report()
 
 
 def test_toppminp_gpu[

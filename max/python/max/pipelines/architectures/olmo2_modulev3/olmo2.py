@@ -27,9 +27,9 @@ from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn.kv_cache import (
+    KVCacheInputs,
     KVCacheParamInterface,
     PagedCacheValues,
-    unflatten_ragged_attention_inputs,
 )
 from max.nn.transformer import ReturnLogits
 
@@ -211,9 +211,11 @@ class Olmo2(Module[..., tuple[Tensor, ...]]):
         input_row_offsets: Tensor,
         *variadic_args,
     ) -> tuple[Tensor, ...]:
-        kv_collections = unflatten_ragged_attention_inputs(
-            variadic_args, n_devices=self.kv_params.n_devices
+        symbolic_inputs = self.kv_params.unflatten_kv_inputs(
+            iter(variadic_args)
         )
+        assert isinstance(symbolic_inputs, KVCacheInputs)
+        kv_collections = symbolic_inputs.inputs
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets
         )

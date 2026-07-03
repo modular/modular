@@ -16,7 +16,7 @@ from std.collections import Optional
 from std.math import ceildiv, floor
 from std.os import getenv
 from std.sys import argv, get_defined_bool, get_defined_string
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.memory import bitcast
 from std.benchmark import (
     Bench,
@@ -27,12 +27,8 @@ from std.benchmark import (
     keep,
 )
 from std.compile import compile_info
-from std.gpu import (
-    block_dim_uint as block_dim,
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
-)
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu import block_dim, global_idx, grid_dim
+from std.gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
 from std.random import Random
 from std.utils import IndexList
 
@@ -47,8 +43,10 @@ struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -103,7 +101,9 @@ def bench_compile_time[
                 keep(s.unsafe_ptr())
             elif emission_kind == "ptx":
                 with DeviceContext() as ctx:
-                    var func = ctx.compile_function_unchecked[func]()
+                    var func = DeviceFunction[
+                        func, TypeList.of[Trait=AnyType]()
+                    ](ctx)
                     # Ensure that the compilation step is not optimized away.
                     keep(UnsafePointer(to=func))
                     clobber_memory()
@@ -146,7 +146,7 @@ def parse_shape[name: StaticString]() -> List[Int]:
     var vals: List[Int] = List[Int]()
     var sum: Int = 0
 
-    comptime for i in range(len(name)):
+    comptime for i in range(name.byte_length()):
         comptime diff = Int(name_unsafe_ptr[i] - zero)
         comptime assert name_unsafe_ptr[i] == x_ptr or 0 <= diff <= 9
 
@@ -363,7 +363,7 @@ def init_vector_gpu[
     def apply(values: SIMD[dtype, 4]):
         comptime for i in range(4):
             comptime if i == 3:
-                if tid >= UInt(len):
+                if tid >= len:
                     return
             x[tid] = values[i]
             tid += stride
@@ -394,8 +394,8 @@ def init_vector_gpu[
         values = SIMD[dtype, 4](
             UInt64(tid).cast[dtype](),
             UInt64(tid + stride).cast[dtype](),
-            UInt64(tid + UInt(2 * Int(stride))).cast[dtype](),
-            UInt64(tid + UInt(3 * Int(stride))).cast[dtype](),
+            UInt64(tid + 2 * stride).cast[dtype](),
+            UInt64(tid + 3 * stride).cast[dtype](),
         )
     apply(values)
 
@@ -413,7 +413,7 @@ def init_vector_launch[
     # using num-threads = 1/4th of length to initialize the array
 
     comptime kernel = init_vector_gpu[dtype]
-    context.enqueue_function_experimental[kernel](
+    context.enqueue_function[kernel](
         out_device,
         length,
         init_type,
@@ -437,7 +437,7 @@ def _init_block_scaled_scales_gpu[
     def apply(values: SIMD[dtype, 4]):
         comptime for i in range(4):
             comptime if i == 3:
-                if tid >= UInt(len):
+                if tid >= len:
                     return
             x[tid] = Scalar[dtype](values[i])
             tid += stride
@@ -465,7 +465,7 @@ def _init_block_scaled_scales_launch[
     # using num-threads = 1/4th of length to initialize the array
 
     comptime kernel = _init_block_scaled_scales_gpu[dtype]
-    context.enqueue_function_experimental[kernel](
+    context.enqueue_function[kernel](
         out_device,
         length,
         grid_dim=(num_blocks),

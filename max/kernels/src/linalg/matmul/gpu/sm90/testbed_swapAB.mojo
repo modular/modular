@@ -25,6 +25,8 @@ from std.math import ceildiv
 from std.sys import align_of
 
 from std.gpu.host import DeviceContext
+from std.memory import dealloc
+from std.memory.alloc import Layout as AllocLayout
 from layout import Coord, CoordLike, TileTensor, row_major
 from std.utils.index import IndexList
 from internal_utils import assert_almost_equal
@@ -63,9 +65,9 @@ def test_matmul_sm90_swapAB_comparison[
         k: The K dimension (can be static or dynamic).
     """
     comptime transpose_b = True
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     # Convert SM90 configs to base configs for the kernel
     comptime base_config = config.to_base_config()
@@ -88,10 +90,20 @@ def test_matmul_sm90_swapAB_comparison[
     var c_size = M * N
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_normal_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_swapAB_host_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_alloc = alloc(
+        AllocLayout[Scalar[a_type]](count=a_size)
+    ).into_deletable()
+    var b_host_alloc = alloc(
+        AllocLayout[Scalar[b_type]](count=b_size)
+    ).into_deletable()
+    var c_normal_host_alloc = alloc(
+        AllocLayout[Scalar[c_type]](count=c_size)
+    ).into_deletable()
+    var c_normal_host_ptr = c_normal_host_alloc.unsafe_ptr()
+    var c_swapAB_host_alloc = alloc(
+        AllocLayout[Scalar[c_type]](count=c_size)
+    ).into_deletable()
+    var c_swapAB_host_ptr = c_swapAB_host_alloc.unsafe_ptr()
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -101,26 +113,22 @@ def test_matmul_sm90_swapAB_comparison[
 
     # Construct TileTensors for device buffers
     # transpose_b=True: b shape is (N, K)
-    var a_tensor = TileTensor(
-        a_dev_buffer.unsafe_ptr(), row_major(Coord(m, k))
-    ).as_immut()
-    var b_tensor = TileTensor(
-        b_dev_buffer.unsafe_ptr(), row_major(Coord(n, k))
-    ).as_immut()
+    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_immut()
+    var b_tensor = TileTensor(b_dev_buffer, row_major(Coord(n, k))).as_immut()
     var c_normal_tensor = TileTensor(
-        c_normal_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
+        c_normal_dev_buffer, row_major(Coord(m, n))
     )
     var c_swapAB_tensor = TileTensor(
-        c_swapAB_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
+        c_swapAB_dev_buffer, row_major(Coord(m, n))
     )
 
     # Initialize matmul operands with random values
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
+    rand(a_host_alloc.unsafe_span())
+    rand(b_host_alloc.unsafe_span())
 
     # Move operands to the Device
-    ctx.enqueue_copy(a_dev_buffer, a_host_ptr)
-    ctx.enqueue_copy(b_dev_buffer, b_host_ptr)
+    ctx.enqueue_copy(a_dev_buffer, a_host_alloc.unsafe_ptr())
+    ctx.enqueue_copy(b_dev_buffer, b_host_alloc.unsafe_ptr())
 
     # Extract more config values for printing
     comptime BK = config.block_tile_shape[2]
@@ -342,10 +350,10 @@ def test_matmul_sm90_swapAB_comparison[
     print("=== SwapAB comparison test PASSED ===\n")
 
     # Cleanup host pointers
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_normal_host_ptr.free()
-    c_swapAB_host_ptr.free()
+    dealloc(a_host_alloc^.into_allocation())
+    dealloc(b_host_alloc^.into_allocation())
+    dealloc(c_normal_host_alloc^.into_allocation())
+    dealloc(c_swapAB_host_alloc^.into_allocation())
 
     # Consume device buffers
     _ = a_dev_buffer^
@@ -445,9 +453,9 @@ def test_matmul_sm90_swapAB_comparison_v2[
         k: The K dimension (can be static or dynamic).
     """
     comptime transpose_b = True
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     # Build compile-time configs directly using BaseMatmulConfig
     comptime base_config = BaseMatmulConfig[
@@ -457,11 +465,11 @@ def test_matmul_sm90_swapAB_comparison_v2[
         warp_tile_shape=Index(MMA_M, MMA_N, BK),
         mma_shape=Index(MMA_M, MMA_N, MMA_K),
         cluster_shape=Index(1, 1, 1),
-        num_pipeline_stages=UInt(num_pipeline_stages),
-        num_k_partitions=UInt(num_k_partitions),
-        k_group_size=UInt(k_group_size),
+        num_pipeline_stages=num_pipeline_stages,
+        num_k_partitions=num_k_partitions,
+        k_group_size=k_group_size,
         num_warp_k_partitions=1,
-        num_consumer=UInt(num_consumer),
+        num_consumer=num_consumer,
         partitioned_multicast=partitioned_multicast,
     )
 
@@ -472,11 +480,11 @@ def test_matmul_sm90_swapAB_comparison_v2[
         warp_tile_shape=Index(MMA_M_SWAPAB, MMA_N_SWAPAB, BK_SWAPAB),
         mma_shape=Index(MMA_M_SWAPAB, MMA_N_SWAPAB, MMA_K_SWAPAB),
         cluster_shape=Index(1, 1, 1),
-        num_pipeline_stages=UInt(num_pipeline_stages_swapAB),
-        num_k_partitions=UInt(num_k_partitions_swapAB),
-        k_group_size=UInt(k_group_size_swapAB),
+        num_pipeline_stages=num_pipeline_stages_swapAB,
+        num_k_partitions=num_k_partitions_swapAB,
+        k_group_size=k_group_size_swapAB,
         num_warp_k_partitions=1,
-        num_consumer=UInt(num_consumer_swapAB),
+        num_consumer=num_consumer_swapAB,
         partitioned_multicast=partitioned_multicast_swapAB,
     )
 
@@ -492,10 +500,20 @@ def test_matmul_sm90_swapAB_comparison_v2[
     var c_size = M * N
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_normal_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_swapAB_host_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_alloc = alloc(
+        AllocLayout[Scalar[a_type]](count=a_size)
+    ).into_deletable()
+    var b_host_alloc = alloc(
+        AllocLayout[Scalar[b_type]](count=b_size)
+    ).into_deletable()
+    var c_normal_host_alloc = alloc(
+        AllocLayout[Scalar[c_type]](count=c_size)
+    ).into_deletable()
+    var c_normal_host_ptr = c_normal_host_alloc.unsafe_ptr()
+    var c_swapAB_host_alloc = alloc(
+        AllocLayout[Scalar[c_type]](count=c_size)
+    ).into_deletable()
+    var c_swapAB_host_ptr = c_swapAB_host_alloc.unsafe_ptr()
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -505,26 +523,22 @@ def test_matmul_sm90_swapAB_comparison_v2[
 
     # Construct TileTensors for device buffers
     # transpose_b=True: b shape is (N, K)
-    var a_tensor = TileTensor(
-        a_dev_buffer.unsafe_ptr(), row_major(Coord(m, k))
-    ).as_immut()
-    var b_tensor = TileTensor(
-        b_dev_buffer.unsafe_ptr(), row_major(Coord(n, k))
-    ).as_immut()
+    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_immut()
+    var b_tensor = TileTensor(b_dev_buffer, row_major(Coord(n, k))).as_immut()
     var c_normal_tensor = TileTensor(
-        c_normal_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
+        c_normal_dev_buffer, row_major(Coord(m, n))
     )
     var c_swapAB_tensor = TileTensor(
-        c_swapAB_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
+        c_swapAB_dev_buffer, row_major(Coord(m, n))
     )
 
     # Initialize matmul operands with random values
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
+    rand(a_host_alloc.unsafe_span())
+    rand(b_host_alloc.unsafe_span())
 
     # Move operands to the Device
-    ctx.enqueue_copy(a_dev_buffer, a_host_ptr)
-    ctx.enqueue_copy(b_dev_buffer, b_host_ptr)
+    ctx.enqueue_copy(a_dev_buffer, a_host_alloc.unsafe_span())
+    ctx.enqueue_copy(b_dev_buffer, b_host_alloc.unsafe_span())
 
     print(
         "=== SwapAB Comparison Test V2 ===\n",
@@ -646,7 +660,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
     @__copy_capture(c_normal_tensor)
     def epilogue_fn_normal[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -659,7 +673,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
     @__copy_capture(c_swapAB_tensor)
     def epilogue_fn_swapAB[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -842,10 +856,10 @@ def test_matmul_sm90_swapAB_comparison_v2[
     print("=== SwapAB comparison test V2 PASSED ===\n")
 
     # Cleanup host pointers
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_normal_host_ptr.free()
-    c_swapAB_host_ptr.free()
+    dealloc(a_host_alloc^.into_allocation())
+    dealloc(b_host_alloc^.into_allocation())
+    dealloc(c_normal_host_alloc^.into_allocation())
+    dealloc(c_swapAB_host_alloc^.into_allocation())
 
     # Consume device buffers
     _ = a_dev_buffer^

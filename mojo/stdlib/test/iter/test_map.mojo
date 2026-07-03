@@ -57,5 +57,18 @@ def test_map_function_can_take_owned_value() raises:
     assert_equal(next(m1), next(m2))
 
 
+def test_map_owned() raises:
+    def double(x: Int) -> Int:
+        return x * 2
+
+    var l: List[Int] = [1, 2, 3]
+    var m = map[double](l^)
+    assert_equal(next(m), 2)
+    assert_equal(next(m), 4)
+    assert_equal(next(m), 6)
+    with assert_raises():
+        _ = next(m)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

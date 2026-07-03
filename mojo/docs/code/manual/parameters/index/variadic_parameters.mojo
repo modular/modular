@@ -12,10 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
+struct MyTensor[*dimensions: Int]:
+    pass
+
+
 def sum_params[*values: Int]() -> Int:
-    comptime list = ParameterList[*values]()
     var sum = 0
-    for v in list:
+    for v in values:
         sum += v
     return sum
 
@@ -23,5 +26,5 @@ def sum_params[*values: Int]() -> Int:
 comptime sum = sum_params[1, 2, 3, 4, 5]()
 
 
-def main() raises:
+def main():
     print(sum)

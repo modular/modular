@@ -15,23 +15,23 @@ from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
 from std.pathlib import Path
 from std.algorithm import elementwise
 from std.utils import IndexList
-from std.ffi import _get_global_or_null, external_call
+from std.ffi import _CPointer, _get_global_or_null, external_call
 from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import OwnedDLHandle, _Global
 from std.collections.optional import Optional
 from layout import TensorLayout, TileTensor
+from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.alloc import Layout as AllocLayout
 from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
 from comm import MAX_GPUS, Signal
 from comm.allreduce import elementwise_epilogue_type
 from std.gpu.primitives.grid_controls import PDLLevel
+from std.utils.coord import Coord
 
-# Safety: don't use `ExternalOrigin` here as that will turn of extending the
-# lifetime of any Mojo structs that pass an internal pointer to the functions
-# below.
-comptime ncclComm_t = OpaquePointer[AnyOrigin[mut=True]]
+comptime ncclComm_t = _CPointer[NoneType, MutUntrackedOrigin]
 
 
 @fieldwise_init
@@ -110,12 +110,12 @@ struct _Group:
 
     def __enter__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupStart", def() -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupStart", def() thin -> ncclResult_t]()()
         )
 
     def __exit__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupEnd", def() -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupEnd", def() thin -> ncclResult_t]()()
         )
 
 
@@ -130,7 +130,7 @@ def ncclCommInitAll(
 ) raises -> ncclResult_t:
     return _get_ccl_function[
         "ncclCommInitAll",
-        def(type_of(comms), Int, type_of(devlist)) -> ncclResult_t,
+        def(type_of(comms), Int, type_of(devlist)) thin -> ncclResult_t,
     ]()(comms, ndev, devlist)
 
 
@@ -155,7 +155,7 @@ def _ccl_allreduce(
             ncclRedOp_t,
             ncclComm_t,
             type_of(stream_ptr),
-        ) -> ncclResult_t,
+        ) thin -> ncclResult_t,
     ]()(sendbuff, recvbuff, count, datatype, op, comm, stream_ptr)
 
 
@@ -179,7 +179,7 @@ def _ccl_allgather(
             ncclDataType_t,
             ncclComm_t,
             type_of(stream_ptr),
-        ) -> ncclResult_t,
+        ) thin -> ncclResult_t,
     ]()(sendbuff, recvbuff, count, datatype, comm, stream_ptr)
 
 
@@ -205,7 +205,7 @@ def _ccl_broadcast(
             Int,
             ncclComm_t,
             type_of(stream_ptr),
-        ) -> ncclResult_t,
+        ) thin -> ncclResult_t,
     ]()(
         sendbuff,
         recvbuff,
@@ -220,11 +220,11 @@ def _ccl_broadcast(
 @always_inline
 def _ccl_stream_ptr(
     ctx: DeviceContext,
-) raises -> OpaquePointer[ExternalOrigin[mut=True]]:
+) raises -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
     comptime if has_amd_gpu_accelerator():
-        return HIP(ctx.stream()).bitcast[NoneType]()
+        return unsafe_cast[Type=NoneType](HIP(ctx.stream()))
     else:
-        return CUDA(ctx.stream()).bitcast[NoneType]()
+        return unsafe_cast[Type=NoneType](CUDA(ctx.stream()))
 
 
 @fieldwise_init
@@ -262,7 +262,7 @@ def _get_global_comms(ngpus: Int) raises -> Communicators:
     if ngpus > MAX_GPUS:
         raise Error("too many GPUs for CCL")
 
-    var comms = InlineArray[ncclComm_t, MAX_GPUS](fill={_unsafe_null = ()})
+    var comms = InlineArray[ncclComm_t, MAX_GPUS](fill={})
     var devlist = InlineArray[Int32, MAX_GPUS](fill={})
     for i in range(ngpus):
         devlist[i] = Int32(i)
@@ -273,7 +273,7 @@ def _get_global_comms(ngpus: Int) raises -> Communicators:
 
     var c = Communicators(ngpus=ngpus, comms=comms.copy())
 
-    var ptr = alloc[Communicators](1)
+    var ptr = alloc(AllocLayout[Communicators].single()).unsafe_leak()
     ptr.init_pointee_move(c)
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(NAME), ptr.bitcast[NoneType]()
@@ -361,24 +361,24 @@ def allreduce[
         comptime epilogue = output_lambda.value()
         comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
-        @parameter
-        @__copy_capture(output_tensor)
         def epilogue_wrapper[
-            simd_width: Int, _rank: Int, alignment: Int = 1
-        ](idx: IndexList[_rank]):
-            var flat_idx = idx[0]
-            var val = output_tensor.ptr.load[
+            simd_width: Int, alignment: Int = 1
+        ](idx: Coord) {var}:
+            var flat_idx = idx[0].value()
+            var val = output_tensor.raw_load[
                 width=simd_width,
                 alignment=alignment * size_of[dtype](),
             ](flat_idx)
             epilogue[dtype, simd_width, alignment=alignment](
-                output_tensor.layout.idx2crd(flat_idx),
+                output_tensor.layout.idx2crd(Int(flat_idx)),
                 val,
             )
 
-        elementwise[epilogue_wrapper, simd_size, target="gpu"](
-            IndexList[1](output_tensor.num_elements()), ctx
-        )
+        elementwise[
+            simd_size,
+            target="gpu",
+            _trace_description="ccl_epilogue",
+        ](epilogue_wrapper, Coord(output_tensor.num_elements()), ctx)
 
 
 @parameter
@@ -386,7 +386,7 @@ def _is_ccl_symbol_available[name: StaticString]() -> Bool:
     # Resolve a CCL symbol by name from the appropriate vendor DSO.
     # We intentionally cast to a trivial signature and do not call it.
     try:
-        _ = _get_ccl_function[name, def() -> ncclResult_t]()
+        _ = _get_ccl_function[name, def() thin -> ncclResult_t]()
         return True
     except:
         return False

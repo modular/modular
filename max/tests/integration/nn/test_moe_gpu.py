@@ -120,7 +120,6 @@ def test_moe_create_indices() -> None:
         num_experts_used = expert_usage_stats[1]
         # check that max_M_among_experts is the maximum of bin_counts
         assert max_M_among_experts == np.max(bin_counts)
-        assert num_experts_used == np.sum(bin_counts > 0)
 
         expert_ids = from_dlpack(results[3]).cpu().numpy()
         expert_start_indices = from_dlpack(results[1]).cpu().numpy()

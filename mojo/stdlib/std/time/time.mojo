@@ -249,7 +249,7 @@ def monotonic() -> UInt:
 
 @always_inline
 def time_function[
-    FuncType: def() raises unified -> None
+    FuncType: def() raises -> None
 ](func: FuncType) raises -> UInt:
     """Measures the time spent in the function.
 
@@ -272,7 +272,7 @@ def time_function[
 
 
 @always_inline
-def time_function[FuncType: def() unified -> None](func: FuncType) -> UInt:
+def time_function[FuncType: def() -> None](func: FuncType) -> UInt:
     """Measures the time spent in the function.
 
     Parameters:
@@ -363,7 +363,7 @@ def sleep(sec: Float64):
         Int((sec - total_secs) * NANOSECONDS_IN_SECOND),
     )
     var req = UnsafePointer(to=tv_spec)
-    var rem = _CPointer[_CTimeSpec, MutExternalOrigin]()
+    var rem = _CPointer[_CTimeSpec, MutUntrackedOrigin]()
     _ = external_call["nanosleep", Int32](req, rem)
 
 

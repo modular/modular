@@ -14,28 +14,32 @@
 from std.math import sqrt
 
 
+# start-rsqrt-def
 def rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
 
 
+# end-rsqrt-def
+
+
 # start-infer-struct-param
-struct One[Type: Writable & Copyable]:
+struct One[Type: Writable & Copyable & ImplicitlyDeletable]:
     var value: Self.Type
 
     def __init__(out self, value: Self.Type):
         self.value = value.copy()
 
 
-def use_one() raises:
-    s1 = One(123)
-    s2 = One("Hello")
+def use_one():
+    s1 = One(123)  # equivalent to One[Int](123)
+    s2 = One("Hello")  # equivalent to One[String]("Hello")
     # end-infer-struct-param
     _ = s1^
     _ = s2^
 
 
 # start-infer-constructor-static-param
-struct Two[Type: Writable & Copyable]:
+struct Two[Type: Writable & Copyable & ImplicitlyDeletable]:
     var val1: Self.Type
     var val2: Self.Type
 
@@ -49,7 +53,7 @@ struct Two[Type: Writable & Copyable]:
         print("🔥", String(thing1.value), String(thing2.value))
 
 
-def use_two() raises:
+def use_two():
     s3 = Two(One("infer"), One("me"))
     Two.fire(One(1), One(2))
     # Two.fire(One("mixed"), One(0)) # Error: parameter inferred to two different values
@@ -57,9 +61,11 @@ def use_two() raises:
     _ = s3^
 
 
-def main() raises:
-    var v = Scalar[DType.float16](33)
+def main():
+    # start-rsqrt-usage
+    var v = Scalar[DType.float16](42)
     print(rsqrt(v))
+    # end-rsqrt-usage
 
     # second example
     use_one()

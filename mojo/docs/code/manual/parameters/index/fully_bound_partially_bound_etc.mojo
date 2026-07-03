@@ -12,33 +12,43 @@
 # ===----------------------------------------------------------------------=== #
 
 
+# start-has-default
+@fieldwise_init
+struct HasDefault[x: Int, y: Int = 0]:
+    pass
+
+
+comptime UseDefault = HasDefault[10]
+# end-has-default
+
+
 @fieldwise_init
 struct MyType[s: String, i: Int, i2: Int, b: Bool = True]:
     pass
 
 
 # Fully-bound
-def my_fn1(mt: MyType["Hello", 3, 4, True]) raises:
+def my_fn1(mt: MyType["Hello", 3, 4, True]):
     pass
 
 
 # Partially-bound
-def my_fn2(mt: MyType["Hola", _, _, True]) raises:
+def my_fn2(mt: MyType["Hola", _, _, True]):
     pass
 
 
 # Unbound
-def my_fn3(mt: MyType[_, _, _, _]) raises:
+def my_fn3(mt: MyType[_, _, _, _]):
     pass
 
 
 # Partially-bound with omitted parameters
-def my_fn4(mt: MyType["Hi there!", ...]) raises:
+def my_fn4(mt: MyType["Hi there!", ...]):
     pass
 
 
 # Unbound with omitted parameters
-def my_fn5(mt: MyType) raises:
+def my_fn5(mt: MyType):
     pass
 
 
@@ -69,7 +79,12 @@ def use_kw_struct(k: KeyWordStruct[...]):
     pass
 
 
-def main() raises:
+def main():
+    # start-has-default-usage
+    var instance1 = UseDefault()  # instance of HasDefault[10, 0]
+    # end-has-default-usage
+    _ = instance1
+
     # start-partially-bound-example
     comptime StringKeyDict = Dict[String, _]
     var b: StringKeyDict[UInt8] = {"answer": 42}

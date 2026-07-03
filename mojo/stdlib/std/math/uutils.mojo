@@ -18,6 +18,9 @@ slower when performed using signed integers on some accelerators, as correctly
 handling negative values requires additional instructions.
 """
 
+from std.builtin.dtype import _unsigned_integral_type_of
+from std.math import align_up, align_down
+
 
 @always_inline
 def ufloordiv(a: Int, b: Int) -> Int:
@@ -38,6 +41,27 @@ def ufloordiv(a: Int, b: Int) -> Int:
     return Int(UInt(a) // UInt(b))
 
 
+@always_inline("nodebug")
+def udiv_unchecked(a: Int, b: Int) -> Int:
+    """Unsigned division without zero-guard.
+
+    Unlike `ufloordiv`, this uses `UInt.__truediv__` (`pop.div`) which emits
+    a raw unsigned division without the zero-guard that `UInt.__floordiv__`
+    inserts. This produces tighter codegen on GPUs where the guard is
+    unnecessary overhead.
+
+    The caller must guarantee that `b > 0`. Behavior is undefined otherwise.
+
+    Args:
+        a: The dividend (must be non-negative).
+        b: The divisor (must be positive).
+
+    Returns:
+        The quotient of unsigned division.
+    """
+    return Int(UInt(a) / UInt(b))
+
+
 @always_inline
 def umod(a: Int, b: Int) -> Int:
     """Perform unsigned modulo (`%`) on Int arguments.
@@ -55,6 +79,37 @@ def umod(a: Int, b: Int) -> Int:
         The remainder of unsigned division.
     """
     return Int(UInt(a) % UInt(b))
+
+
+@always_inline
+def umod[
+    dtype: DType, width: SIMDSize, //
+](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    """Perform unsigned modulo (`%`) on `SIMD` arguments.
+
+    This function reinterprets both arguments as unsigned values of the same
+    bit width and performs unsigned modulo, which is faster than signed modulo
+    on NVIDIA GPUs.
+
+    For correctness, both arguments should be non-negative integers.
+
+    Constraints:
+        `dtype` must be an integral type.
+
+    Parameters:
+        dtype: The integral data type of the operands.
+        width: The number of elements in each `SIMD` vector.
+
+    Args:
+        a: The dividend (treated as unsigned).
+        b: The divisor (treated as unsigned).
+
+    Returns:
+        The elementwise remainder of unsigned division.
+    """
+    comptime assert dtype.is_integral(), "umod requires an integral dtype"
+    comptime utype = _unsigned_integral_type_of[dtype]()
+    return (a.cast[utype]() % b.cast[utype]()).cast[dtype]()
 
 
 @always_inline

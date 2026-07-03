@@ -51,6 +51,7 @@ from linalg.fp4_utils import (
 # Structured kernel
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
@@ -80,31 +81,35 @@ def bench_cublas_per_group[
     comptime is_fp4 = (a_type == DType.uint8)
     comptime k_pack = 2 if is_fp4 else 1
     comptime K_ARRAY = KType.static_value // k_pack
-    var k_array_val = k.value() // k_pack
+    var k_array_val = Int(k.value()) // k_pack
 
-    var a_size = m.value() * k_array_val
-    var b_size = n.value() * k_array_val
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * k_array_val
+    var b_size = Int(n.value()) * k_array_val
+    var c_size = Int(m.value()) * Int(n.value())
 
     var a_scales_total = (
-        ceildiv(m.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        ceildiv(n.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
 
-    var a_host = alloc[Scalar[a_type]](a_size)
-    var b_host = alloc[Scalar[b_type]](b_size)
-    var sfa_host = alloc[Scalar[scales_dtype]](a_scales_total)
-    var sfb_host = alloc[Scalar[scales_dtype]](b_scales_total)
+    var a_host = List(length=a_size, fill=Scalar[a_type](0))
+    var b_host = List(length=b_size, fill=Scalar[b_type](0))
+    var sfa_host = List(
+        length=a_scales_total, fill=Float32(1.0).cast[scales_dtype]()
+    )
+    var sfb_host = List(
+        length=b_scales_total, fill=Float32(1.0).cast[scales_dtype]()
+    )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -113,13 +118,8 @@ def bench_cublas_per_group[
     var sfb_device = ctx.enqueue_create_buffer[scales_dtype](b_scales_total)
 
     seed(42)
-    rand(a_host, a_size)
-    rand(b_host, b_size)
-    var scale_one = Float32(1.0).cast[scales_dtype]()
-    for i in range(a_scales_total):
-        sfa_host[i] = scale_one
-    for i in range(b_scales_total):
-        sfb_host[i] = scale_one
+    rand(a_host)
+    rand(b_host)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -127,36 +127,34 @@ def bench_cublas_per_group[
     ctx.enqueue_copy(sfb_device, sfb_host)
     ctx.synchronize()
 
-    var a_shape = Coord(m, Idx[K_ARRAY]())
-    var b_shape = Coord(n, Idx[K_ARRAY]())
+    var a_shape = Coord(m, Idx[K_ARRAY])
+    var b_shape = Coord(n, Idx[K_ARRAY])
     var c_shape = Coord(m, n)
     var a_scales_shape = Coord(
-        Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
-        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = Coord(
-        Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
-        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
-    var sfa_tensor = TileTensor(
-        sfa_device.unsafe_ptr(), row_major(a_scales_shape)
-    )
-    var sfb_tensor = TileTensor(
-        sfb_device.unsafe_ptr(), row_major(b_scales_shape)
-    )
+    var a_tensor = TileTensor(a_device, row_major(a_shape))
+    var b_tensor = TileTensor(b_device, row_major(b_shape))
+    var c_tensor = TileTensor(c_device, row_major(c_shape))
+    var sfa_tensor = TileTensor(sfa_device, row_major(a_scales_shape))
+    var sfb_tensor = TileTensor(sfb_device, row_major(b_scales_shape))
 
     # FLOPs use logical K (not packed)
-    var total_flops = 2 * m.value() * n.value() * k.value() * num_groups
+    var total_flops = (
+        2 * Int(m.value()) * Int(n.value()) * Int(k.value()) * num_groups
+    )
 
     @parameter
     @__copy_capture(a_tensor, b_tensor, c_tensor, sfa_tensor, sfb_tensor)
@@ -190,21 +188,19 @@ def bench_cublas_per_group[
                 ",per-group) : ",
                 num_groups,
                 " x ",
-                m.value(),
+                Int(m.value()),
                 " x ",
-                n.value(),
+                Int(n.value()),
                 " x ",
-                k.value(),
+                Int(k.value()),
             )
         ),
         [ThroughputMeasure(BenchMetric.flops, total_flops)],
     )
-
-    # Cleanup
-    a_host.free()
-    b_host.free()
-    sfa_host.free()
-    sfb_host.free()
+    _ = sfb_host^
+    _ = sfa_host^
+    _ = b_host^
+    _ = a_host^
 
 
 def bench_structured_kernel[
@@ -233,31 +229,35 @@ def bench_structured_kernel[
     comptime is_fp4 = (a_type == DType.uint8)
     comptime k_pack = 2 if is_fp4 else 1
     comptime K_ARRAY = KType.static_value // k_pack
-    var k_array_val = k.value() // k_pack
+    var k_array_val = Int(k.value()) // k_pack
 
-    var a_size = m.value() * k_array_val
-    var b_size = n.value() * k_array_val
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * k_array_val
+    var b_size = Int(n.value()) * k_array_val
+    var c_size = Int(m.value()) * Int(n.value())
 
     var a_scales_total = (
-        ceildiv(m.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        ceildiv(n.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
 
-    var a_host = alloc[Scalar[a_type]](a_size)
-    var b_host = alloc[Scalar[b_type]](b_size)
-    var sfa_host = alloc[Scalar[scales_dtype]](a_scales_total)
-    var sfb_host = alloc[Scalar[scales_dtype]](b_scales_total)
+    var a_host = List(length=a_size, fill=Scalar[a_type](0))
+    var b_host = List(length=b_size, fill=Scalar[b_type](0))
+    var sfa_host = List(
+        length=a_scales_total, fill=Float32(1.0).cast[scales_dtype]()
+    )
+    var sfb_host = List(
+        length=b_scales_total, fill=Float32(1.0).cast[scales_dtype]()
+    )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -266,13 +266,8 @@ def bench_structured_kernel[
     var sfb_device = ctx.enqueue_create_buffer[scales_dtype](b_scales_total)
 
     seed(42)
-    rand(a_host, a_size)
-    rand(b_host, b_size)
-    var scale_one = Float32(1.0).cast[scales_dtype]()
-    for i in range(a_scales_total):
-        sfa_host[i] = scale_one
-    for i in range(b_scales_total):
-        sfb_host[i] = scale_one
+    rand(a_host)
+    rand(b_host)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -282,63 +277,66 @@ def bench_structured_kernel[
 
     # Template tensors - 3D with batch=1
     var a_template = TileTensor(
-        a_device.unsafe_ptr(),
-        row_major(Coord(Idx[1](), m, Idx[K_ARRAY]())),
+        a_device,
+        row_major(Coord(Idx[1], m, Idx[K_ARRAY])),
     )
     var b_template = TileTensor(
-        b_device.unsafe_ptr(),
-        row_major(Coord(Idx[1](), n, Idx[K_ARRAY]())),
+        b_device,
+        row_major(Coord(Idx[1], n, Idx[K_ARRAY])),
     )
     var c_template = TileTensor(
-        c_device.unsafe_ptr(),
-        row_major(Coord(Idx[1](), m, n)),
+        c_device,
+        row_major(Coord(Idx[1], m, n)),
     )
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
     var sfa_template = TileTensor(
-        sfa_device.unsafe_ptr(),
+        sfa_device,
         row_major(
             Coord(
-                Idx[1](),
-                Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
-                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[1],
+                ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
         ),
     )
     var sfb_template = TileTensor(
-        sfb_device.unsafe_ptr(),
+        sfb_device,
         row_major(
             Coord(
-                Idx[1](),
-                Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
-                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[1],
+                ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
         ),
     )
 
-    var problem_sizes_host = alloc[Int32](max_groups * 4)
+    var problem_sizes_host = List(length=max_groups * 4, fill=Int32(0))
     for g in range(max_groups):
-        problem_sizes_host[g * 4 + 0] = Int32(m.value())
-        problem_sizes_host[g * 4 + 1] = Int32(n.value())
-        problem_sizes_host[g * 4 + 2] = Int32(k.value())  # Logical K
+        problem_sizes_host[g * 4 + 0] = Int32(Int(m.value()))
+        problem_sizes_host[g * 4 + 1] = Int32(Int(n.value()))
+        problem_sizes_host[g * 4 + 2] = Int32(Int(k.value()))  # Logical K
         problem_sizes_host[g * 4 + 3] = 1
 
-    var a_ptrs_host = alloc[UInt64](max_groups)
-    var b_ptrs_host = alloc[UInt64](max_groups)
-    var c_ptrs_host = alloc[UInt64](max_groups)
-    var sfa_ptrs_host = alloc[UInt64](max_groups)
-    var sfb_ptrs_host = alloc[UInt64](max_groups)
-
-    for g in range(max_groups):
-        a_ptrs_host[g] = UInt64(Int(a_device.unsafe_ptr()))
-        b_ptrs_host[g] = UInt64(Int(b_device.unsafe_ptr()))
-        c_ptrs_host[g] = UInt64(Int(c_device.unsafe_ptr()))
-        sfa_ptrs_host[g] = UInt64(Int(sfa_device.unsafe_ptr()))
-        sfb_ptrs_host[g] = UInt64(Int(sfb_device.unsafe_ptr()))
+    var a_ptrs_host = List(
+        length=max_groups, fill=UInt64(Int(a_device.unsafe_ptr()))
+    )
+    var b_ptrs_host = List(
+        length=max_groups, fill=UInt64(Int(b_device.unsafe_ptr()))
+    )
+    var c_ptrs_host = List(
+        length=max_groups, fill=UInt64(Int(c_device.unsafe_ptr()))
+    )
+    var sfa_ptrs_host = List(
+        length=max_groups, fill=UInt64(Int(sfa_device.unsafe_ptr()))
+    )
+    var sfb_ptrs_host = List(
+        length=max_groups, fill=UInt64(Int(sfb_device.unsafe_ptr()))
+    )
 
     var a_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
     var b_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
@@ -355,33 +353,35 @@ def bench_structured_kernel[
 
     var problem_sizes_tensor = TileTensor(
         problem_sizes_host,
-        row_major(Coord(Idx[max_groups](), Idx[4]())),
+        row_major(Coord(Idx[max_groups], Idx[4])),
     )
 
     var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(),
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        a_ptrs_device,
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
     var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(),
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        b_ptrs_device,
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
     var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(),
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        c_ptrs_device,
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(),
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        sfa_ptrs_device,
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(),
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        sfb_ptrs_device,
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
 
     comptime BM = mma_shape[0]
     comptime BN = mma_shape[1]
-    var tiles_per_group = ceildiv(m.value(), BM) * ceildiv(n.value(), BN)
+    var tiles_per_group = ceildiv(Int(m.value()), BM) * ceildiv(
+        Int(n.value()), BN
+    )
     var total_tiles = tiles_per_group * num_groups
 
     comptime config = BlockScaledMatmulConfig[
@@ -394,10 +394,13 @@ def bench_structured_kernel[
         cta_group=1,
         k_group_size=k_grp_size,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     # FLOPs use logical K (not packed)
-    var total_flops = 2 * m.value() * n.value() * k.value() * num_groups
+    var total_flops = (
+        2 * Int(m.value()) * Int(n.value()) * Int(k.value()) * num_groups
+    )
 
     @parameter
     @__copy_capture(
@@ -458,27 +461,25 @@ def bench_structured_kernel[
                 ") : ",
                 num_groups,
                 " x ",
-                m.value(),
+                Int(m.value()),
                 " x ",
-                n.value(),
+                Int(n.value()),
                 " x ",
-                k.value(),
+                Int(k.value()),
             )
         ),
         [ThroughputMeasure(BenchMetric.flops, total_flops)],
     )
-
-    # Cleanup
-    a_host.free()
-    b_host.free()
-    sfa_host.free()
-    sfb_host.free()
-    problem_sizes_host.free()
-    a_ptrs_host.free()
-    b_ptrs_host.free()
-    c_ptrs_host.free()
-    sfa_ptrs_host.free()
-    sfb_ptrs_host.free()
+    _ = sfb_ptrs_host^
+    _ = sfa_ptrs_host^
+    _ = c_ptrs_host^
+    _ = b_ptrs_host^
+    _ = a_ptrs_host^
+    _ = problem_sizes_host^
+    _ = sfb_host^
+    _ = sfa_host^
+    _ = b_host^
+    _ = a_host^
 
 
 def main() raises:
@@ -515,7 +516,7 @@ def main() raises:
             c_type,
             scales_dtype,
             num_groups=32,
-        ](ctx, b, Idx[4096](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[4096], Idx[4096], Idx[7168])
 
         bench_structured_kernel[
             a_type,
@@ -526,7 +527,7 @@ def main() raises:
             mma_m=128,
             mma_n=128,
             k_grp_size=1,
-        ](ctx, b, Idx[4096](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[4096], Idx[4096], Idx[7168])
 
         # =====================================================================
         # MXFP8: DeepSeek-V2 Decode: 32 groups x 128 x 4096 x 7168
@@ -539,7 +540,7 @@ def main() raises:
             c_type,
             scales_dtype,
             num_groups=32,
-        ](ctx, b, Idx[128](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[128], Idx[4096], Idx[7168])
 
         bench_structured_kernel[
             a_type,
@@ -550,7 +551,7 @@ def main() raises:
             mma_m=128,
             mma_n=128,
             k_grp_size=1,
-        ](ctx, b, Idx[128](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[128], Idx[4096], Idx[7168])
 
         # =====================================================================
         # NVFP4: DeepSeek-V2 Prefill: 32 groups x 4096 x 4096 x 7168
@@ -564,7 +565,7 @@ def main() raises:
             fp4_scales_dtype,
             num_groups=32,
             sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-        ](ctx, b, Idx[4096](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[4096], Idx[4096], Idx[7168])
 
         bench_structured_kernel[
             fp4_a_type,
@@ -577,7 +578,7 @@ def main() raises:
             k_grp_size=1,
             scaling_kind=UMMAKind.KIND_MXF4NVF4,
             sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-        ](ctx, b, Idx[4096](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[4096], Idx[4096], Idx[7168])
 
         # =====================================================================
         # NVFP4: DeepSeek-V2 Decode: 32 groups x 128 x 4096 x 7168
@@ -591,7 +592,7 @@ def main() raises:
             fp4_scales_dtype,
             num_groups=32,
             sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-        ](ctx, b, Idx[128](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[128], Idx[4096], Idx[7168])
 
         bench_structured_kernel[
             fp4_a_type,
@@ -604,7 +605,7 @@ def main() raises:
             k_grp_size=1,
             scaling_kind=UMMAKind.KIND_MXF4NVF4,
             sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-        ](ctx, b, Idx[128](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[128], Idx[4096], Idx[7168])
 
     b.dump_report()
     print()

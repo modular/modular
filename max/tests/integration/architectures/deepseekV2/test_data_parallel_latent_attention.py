@@ -17,22 +17,19 @@ import numpy as np
 import pytest
 import torch
 from max._core.engine import PrintStyle
-from max.driver import Accelerator, Buffer, accelerator_api
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
-from max.nn.kv_cache import (
-    KVCacheParams,
-    unflatten_ragged_attention_inputs,
-)
+from max.nn.kv_cache import MLAKVCacheParams
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from torch_reference.configuration_deepseek import DeepseekV2Config
@@ -73,14 +70,12 @@ def generate_latent_attention_max_outputs_dp(
         scaling_params=scaling_params,
     )
 
-    kv_params = KVCacheParams(
+    kv_params = MLAKVCacheParams(
         dtype=DType.bfloat16,
-        n_kv_heads=1,
         head_dim=576,
         num_layers=config.num_hidden_layers,
         devices=[DeviceRef.GPU()],
         page_size=128,
-        is_mla=True,
         num_q_heads=config.num_attention_heads,
     )
 
@@ -121,14 +116,14 @@ def generate_latent_attention_max_outputs_dp(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.flattened_kv_inputs(),
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = unflatten_ragged_attention_inputs(
-                graph.inputs[2:], n_devices=1
-            )[0]
+            kv_collection = kv_params.unflatten_kv_inputs(
+                iter(graph.inputs[2:])
+            ).inputs[0]
             out_list = dp_attention(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 xs=[hidden_states],
@@ -163,8 +158,8 @@ def generate_latent_attention_max_outputs_dp(
         all_outputs = []
         for tok_idx in range(total_tokens):
             for ctx in batch:
-                kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-            kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+                kv_manager.alloc(ctx, replica_idx=0)
+            kv_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
             input_tensor_device = (
                 Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -173,7 +168,9 @@ def generate_latent_attention_max_outputs_dp(
                 .to(device0)
             )
             max_output = compiled.execute(
-                input_tensor_device, input_row_offsets.to(device0), *kv_inputs
+                input_tensor_device,
+                input_row_offsets.to(device0),
+                *kv_inputs.flatten(),
             )
 
             for ctx in batch:
@@ -185,24 +182,21 @@ def generate_latent_attention_max_outputs_dp(
         return torch.concat(all_outputs, dim=1)
 
     for ctx in batch:
-        kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-    kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+        kv_manager.alloc(ctx, replica_idx=0)
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)
         .to(device0)
     )
     max_output = compiled.execute(
-        input_tensor_device, input_row_offsets.to(device0), *kv_inputs
+        input_tensor_device, input_row_offsets.to(device0), *kv_inputs.flatten()
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]
 
 
 @pytest.mark.skip("MODELS-1039: times out on B200")
-@pytest.mark.skipif(
-    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
-)
 def test_data_parallel_latent_attention_prefill_matches_single(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
@@ -220,9 +214,6 @@ def test_data_parallel_latent_attention_prefill_matches_single(
 
 
 @pytest.mark.skip("MODELS-1039: times out on B200")
-@pytest.mark.skipif(
-    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
-)
 def test_data_parallel_latent_attention_decode_matches_single(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,

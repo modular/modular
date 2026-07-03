@@ -72,5 +72,30 @@ def test_enumerate_bounds() raises:
     assert_equal(iter(list).bounds()[1].value(), e.bounds()[1].value())
 
 
+def test_enumerate_owned() raises:
+    var l: List[Int] = [10, 20, 30]
+    var it = enumerate(l^)
+    var elem = next(it)
+    assert_equal(elem[0], 0)
+    assert_equal(elem[1], 10)
+    elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 20)
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 30)
+    with assert_raises():
+        _ = next(it)
+
+
+def test_enumerate_owned_for_loop() raises:
+    var count = 0
+    var l: List[Int] = [10, 20, 30]
+    for i, _ in enumerate(l^):
+        assert_equal(i, count)
+        count += 1
+    assert_equal(count, 3)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

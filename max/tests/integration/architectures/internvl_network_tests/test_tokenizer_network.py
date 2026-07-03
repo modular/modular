@@ -18,16 +18,16 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from max.interfaces import (
+from max.pipelines.architectures.internvl.tokenizer import (
+    InternVLProcessor,
+    InternVLTokenizer,
+)
+from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-)
-from max.pipelines.architectures.internvl.tokenizer import (
-    InternVLProcessor,
-    InternVLTokenizer,
 )
 from PIL import Image
 from pytest_mock import MockerFixture

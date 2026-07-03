@@ -59,18 +59,39 @@ def mi355x_cost_model() -> TargetCostModel:
     Op tags are kernel-specific (defined in PingPongOps / DefaultMatmulOps):
       Ping-pong: 0=LOAD_A, 1=LOAD_B, 2=COMPUTE, 3=MMA_LOAD_A, 4=MMA_LOAD_B, 5=MMA
       Default:   0=LOAD_DRAM, 1=STORE_SMEM, 2=LOAD_FRAG, 3=COMPUTE
+
+    VGPR liveness hints (per-quadrant frag, fp8 MFMA 16x16x128, num_k_mmas=2):
+      LOAD_*:     0 (buffer_load_lds writes directly to LDS, no persistent
+                     register footprint)
+      MMA_LOAD_*: vgpr_def=8 — one quadrant frag is 8 VGPRs (32 fp8 / lane,
+                     packed 4-per-dword)
+      MMA:        vgpr_def=4 — one MMA writes 4 VGPRs of f32 accumulator
+                     (16 elements / 64 lanes / 4 elements per VGPR);
+                     accumulator persists across iterations so vgpr_kill=0
     """
     var model = TargetCostModel()
-    # Global loads: DRAM → LDS buffer
+    # Global loads: DRAM → LDS buffer (no register footprint).
     model.set_cost(0, OpCost(ResourceKind.GLOBAL_MEM, 200, OpRole.GLOBAL_LOAD))
     model.set_cost(1, OpCost(ResourceKind.GLOBAL_MEM, 200, OpRole.GLOBAL_LOAD))
-    # Compute (tag 2 is legacy COMPUTE alias)
-    model.set_cost(2, OpCost(ResourceKind.MMA_UNIT, 16, OpRole.COMPUTE))
-    # Fragment loads: LDS → registers
-    model.set_cost(3, OpCost(ResourceKind.LDS, 20, OpRole.FRAGMENT_LOAD))
-    model.set_cost(4, OpCost(ResourceKind.LDS, 20, OpRole.FRAGMENT_LOAD))
-    # MMA execution
-    model.set_cost(5, OpCost(ResourceKind.MMA_UNIT, 16, OpRole.COMPUTE))
+    # Compute (tag 2 is legacy COMPUTE alias).
+    model.set_cost(
+        2,
+        OpCost(ResourceKind.MMA_UNIT, 16, OpRole.COMPUTE, vgpr_def=4),
+    )
+    # Fragment loads: LDS → registers (one quadrant = 8 VGPRs for fp8).
+    model.set_cost(
+        3,
+        OpCost(ResourceKind.LDS, 20, OpRole.FRAGMENT_LOAD, vgpr_def=8),
+    )
+    model.set_cost(
+        4,
+        OpCost(ResourceKind.LDS, 20, OpRole.FRAGMENT_LOAD, vgpr_def=8),
+    )
+    # MMA execution (writes 4 VGPRs of f32 accumulator).
+    model.set_cost(
+        5,
+        OpCost(ResourceKind.MMA_UNIT, 16, OpRole.COMPUTE, vgpr_def=4),
+    )
     return model^
 
 
@@ -95,7 +116,7 @@ def mi355x_double_buffer(
         frag_order=FragOrder(b_before_a=True),
         m_mmas=2,
         n_mmas=2,
-        num_halves=2,
+        num_partitions=2,
         mma_serial=True,
         mma_latency=16,
         vm_per_load_a=vm_per_load_a,
@@ -118,7 +139,7 @@ def mi355x_single_buffer() -> PipelineConfig:
         frag_order=FragOrder(b_before_a=True),
         m_mmas=2,
         n_mmas=2,
-        num_halves=1,
+        num_partitions=1,
         mma_serial=True,
         mma_latency=16,
         vm_per_load_a=4,
@@ -163,12 +184,24 @@ def mi355x_single_buffer_cost_model() -> TargetCostModel:
       1=STORE_SMEM: LDS, 20 cycles, SHARED_STORE
       2=LOAD_FRAG:  LDS, 20 cycles, FRAGMENT_LOAD
       3=COMPUTE:    MMA_UNIT, 64 cycles, COMPUTE
+
+    VGPR liveness hints (BF16 32x32x16 MFMA on MI355X):
+      LOAD_DRAM:  0 (buffer_load_lds writes directly to LDS)
+      STORE_SMEM: 0 (ds_write consumes existing register data)
+      LOAD_FRAG:  vgpr_def=4 (one 32x32 frag is 4 VGPRs/lane)
+      COMPUTE:    vgpr_def=16 (32x32 fp32 accumulator = 16 VGPRs/lane)
     """
     var model = TargetCostModel()
     model.set_cost(0, OpCost(ResourceKind.GLOBAL_MEM, 200, OpRole.GLOBAL_LOAD))
     model.set_cost(1, OpCost(ResourceKind.LDS, 20, OpRole.SHARED_STORE))
-    model.set_cost(2, OpCost(ResourceKind.LDS, 20, OpRole.FRAGMENT_LOAD))
-    model.set_cost(3, OpCost(ResourceKind.MMA_UNIT, 64, OpRole.COMPUTE))
+    model.set_cost(
+        2,
+        OpCost(ResourceKind.LDS, 20, OpRole.FRAGMENT_LOAD, vgpr_def=4),
+    )
+    model.set_cost(
+        3,
+        OpCost(ResourceKind.MMA_UNIT, 64, OpRole.COMPUTE, vgpr_def=16),
+    )
     return model^
 
 

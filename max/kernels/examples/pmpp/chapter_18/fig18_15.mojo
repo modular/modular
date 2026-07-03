@@ -21,7 +21,7 @@ from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
-from std.os import Atomic
+from std.atomic import Atomic
 from std.collections import List
 
 from graph_utils import (
@@ -178,7 +178,7 @@ def main() raises:
         if grid_size == 0:
             grid_size = 1
 
-        ctx.enqueue_function_experimental[bfs_kernel](
+        ctx.enqueue_function[bfs_kernel](
             d_src_ptrs,
             d_dst,
             d_level,

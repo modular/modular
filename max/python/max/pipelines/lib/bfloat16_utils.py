@@ -21,7 +21,7 @@ from max.dtype import DType
 def float32_to_bfloat16_as_uint16(
     arr: npt.NDArray[np.float32],
 ) -> npt.NDArray[np.uint16]:
-    """Convert float32 array to bfloat16 representation stored as uint16.
+    """Converts a float32 array to bfloat16 representation stored as uint16.
 
     BFloat16 is the upper 16 bits of float32 with proper rounding.
     This allows us to halve memory usage while maintaining the exponent range.

@@ -25,7 +25,6 @@ package for path functions or the `pathlib` package for the object-oriented
 `Path` type.
 """
 
-from .atomic import Atomic
 from .env import getenv, setenv, unsetenv
 from .fstat import lstat, stat, stat_result
 from .os import (
@@ -45,6 +44,9 @@ from .os import (
     unlink,
     symlink,
     link,
+    chdir,
 )
 from .pathlike import PathLike
 from .process import Process, Pipe
+
+from . import path

@@ -61,8 +61,8 @@ def test_equality() raises:
 
 
 def test_len() raises:
-    assert_equal(0, StringLiteral.__len__(""))
-    assert_equal(4, StringLiteral.__len__("four"))
+    assert_equal(0, "".byte_length())
+    assert_equal(4, "four".byte_length())
 
 
 def test_bool() raises:
@@ -417,6 +417,23 @@ def test_unicode_escape_byte_layout() raises:
     assert_equal(Int(bi[5]), 0xB8)  # second byte of U+4E2D
     assert_equal(Int(bi[6]), 0xAD)  # third byte of U+4E2D
     assert_equal(Int(bi[7]), 0x63)  # 'c' at end
+
+
+struct TakesStringLiteral[a: StringLiteral](TrivialRegisterPassable):
+    def __init__(out self):
+        pass
+
+
+def concat[
+    xa: StringLiteral
+](x: TakesStringLiteral[xa]) -> TakesStringLiteral[xa + xa]:
+    return {}
+
+
+def test_concat_with_string_literal() raises:
+    var a = TakesStringLiteral["hello"]()
+    # This requires folding of the string append to know that "hello"+"hello" = "hellohello"
+    _: TakesStringLiteral["hellohello"] = concat(a)
 
 
 def main() raises:

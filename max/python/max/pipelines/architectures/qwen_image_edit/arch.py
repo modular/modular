@@ -12,16 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.pipelines.core import PixelContext
-from max.pipelines.lib import PixelGenerationTokenizer, SupportedArchitecture
+from max.pipelines.context import PixelContext
+from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from ..qwen_image.arch import QwenImageArchConfig
 from .pipeline_qwen_image_edit import QwenImageEditPipeline
+from .tokenizer import QwenImageEditTokenizer
 
 qwen_image_edit_arch = SupportedArchitecture(
     name="QwenImageEditPipeline",
     task=PipelineTask.PIXEL_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},
     example_repo_ids=[
@@ -30,13 +32,14 @@ qwen_image_edit_arch = SupportedArchitecture(
     pipeline_model=QwenImageEditPipeline,  # type: ignore[arg-type]
     context_type=PixelContext,
     default_weights_format=WeightsFormat.safetensors,
-    tokenizer=PixelGenerationTokenizer,
+    tokenizer=QwenImageEditTokenizer,
     config=QwenImageArchConfig,
 )
 
 qwen_image_edit_plus_arch = SupportedArchitecture(
     name="QwenImageEditPlusPipeline",
     task=PipelineTask.PIXEL_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},
     example_repo_ids=[
@@ -45,6 +48,6 @@ qwen_image_edit_plus_arch = SupportedArchitecture(
     pipeline_model=QwenImageEditPipeline,  # type: ignore[arg-type]
     context_type=PixelContext,
     default_weights_format=WeightsFormat.safetensors,
-    tokenizer=PixelGenerationTokenizer,
+    tokenizer=QwenImageEditTokenizer,
     config=QwenImageArchConfig,
 )

@@ -17,7 +17,7 @@ from std.math import align_up, ceildiv
 from std.math.uutils import umod
 from std.memory import stack_allocation
 
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 from std.sys.info import simd_width_of
 
 import std.gpu.primitives.warp as warp
@@ -27,9 +27,11 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_idx,
+    warp_id,
     lane_id,
     thread_idx,
 )
+from std.gpu.host import DeviceContext
 from std.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -44,7 +46,6 @@ from layout import (
     row_major,
     stack_allocation as tensor_alloc,
 )
-from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel
 
 from std.utils.index import IndexList, StaticTuple
@@ -53,214 +54,11 @@ from std.builtin.dtype import _uint_type_of_width
 from nn.topk import TopK_2
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+from std.gpu.memory import (
+    async_copy,
+    async_copy_commit_group,
+    async_copy_wait_all,
 )
-def moe_create_indices_kernel[
-    input_type: DType,
-    num_threads: Int,
-    TokenExpertOrderLayoutType: TensorLayout,
-    ExpertStartIndicesLayoutType: TensorLayout,
-    RestoreTokenOrderLayoutType: TensorLayout,
-    ExpertIdsLayoutType: TensorLayout,
-    ExpertUsageStatsLayoutType: TensorLayout,
-    IndicesPaddedLayoutType: TensorLayout,
-    PaddedInputLayoutType: TensorLayout,
-    TopkIdsLayoutType: TensorLayout,
-](
-    token_expert_order: TileTensor[
-        mut=True, DType.uint32, TokenExpertOrderLayoutType, MutAnyOrigin
-    ],
-    expert_start_indices: TileTensor[
-        mut=True, DType.uint32, ExpertStartIndicesLayoutType, MutAnyOrigin
-    ],
-    restore_token_order: TileTensor[
-        mut=True, DType.uint32, RestoreTokenOrderLayoutType, MutAnyOrigin
-    ],
-    expert_ids: TileTensor[
-        mut=True, DType.int32, ExpertIdsLayoutType, MutAnyOrigin
-    ],
-    expert_usage_stats: TileTensor[
-        mut=True, DType.uint32, ExpertUsageStatsLayoutType, MutAnyOrigin
-    ],
-    indices_padded: TileTensor[
-        mut=True, DType.uint32, IndicesPaddedLayoutType, MutAnyOrigin
-    ],
-    topk_ids_padded: TileTensor[
-        mut=True, input_type, PaddedInputLayoutType, MutAnyOrigin
-    ],
-    topk_ids: TileTensor[input_type, TopkIdsLayoutType, MutAnyOrigin],
-):
-    comptime assert topk_ids.flat_rank == 1
-    comptime assert expert_ids.flat_rank == 1
-    comptime assert indices_padded.flat_rank == 1
-    comptime assert topk_ids_padded.flat_rank == 1
-    comptime assert expert_start_indices.flat_rank == 1
-    comptime assert token_expert_order.flat_rank == 1
-    comptime assert restore_token_order.flat_rank == 1
-    comptime assert expert_usage_stats.flat_rank == 1
-
-    comptime indices_type = DType.uint32
-    var num_tokens: Int = Int(topk_ids.layout.shape[0]().value())
-    var num_tokens_padded: Int = Int(indices_padded.layout.shape[0]().value())
-    var num_tokens_per_thread = ceildiv(num_tokens_padded, num_threads)
-    var thd_tok_idx = thread_idx.x * num_tokens_per_thread
-
-    # first copy topk_ids to topk_ids_padded and fill indices_padded
-    for tok_id in range(num_tokens_per_thread):
-        var i = thd_tok_idx + tok_id
-        if i < num_tokens:
-            indices_padded[i] = UInt32(i)
-            topk_ids_padded[i] = rebind[Scalar[input_type]](topk_ids[i])
-        elif i < num_tokens_padded:
-            indices_padded[i] = Scalar[indices_type].MAX_FINITE
-            topk_ids_padded[i] = Scalar[input_type].MAX_FINITE
-        else:
-            pass
-
-    # Use Bitonic sort algorithm to sort expert IDs and their corresponding token indices.
-    @always_inline
-    def bitonic_sort_step[
-        IndicesLayoutType: TensorLayout,
-        InputLayoutType: TensorLayout,
-    ](
-        indices: TileTensor[
-            mut=True, DType.uint32, IndicesLayoutType, MutAnyOrigin
-        ],
-        input: TileTensor[mut=True, input_type, InputLayoutType, MutAnyOrigin],
-        n: Int,
-        step: Int,
-        stage: Int,
-        i: Int,
-    ) -> None:
-        """Perform one step of bitonic sort.
-
-        Bitonic sort works by comparing elements at distance 'step' apart and
-        swapping them based on the direction of the current stage.
-
-        Parameters:
-            indices_shape_types: Shape types of the indices tensor layout.
-            indices_stride_types: Stride types of the indices tensor layout.
-            input_shape_types: Shape types of the input tensor layout.
-            input_stride_types: Stride types of the input tensor layout.
-
-        Args:
-            indices: Token indices to be sorted alongside input values.
-            input: Expert IDs to sort.
-            n: Total number of elements.
-            step: Distance between elements to compare.
-            stage: Current stage size (power of 2), determines sort direction.
-            i: Index of the current element.
-        """
-        comptime assert input.flat_rank == 1
-        comptime assert indices.flat_rank == 1
-
-        if i >= n:
-            return
-
-        # Calculate partner index using XOR - determines the element to compare with
-        var partner = i ^ step
-
-        # Compare if partner is greater than current index to avoid redundant comparisons
-        if partner > i and partner < n:
-            var cmp_val = input[i] > input[partner]
-
-            # Determine sort direction for this part of the bitonic sequence
-            # (i & stage) == 0 should be in ascending order
-            # (i & stage) != 0 should be in descending order
-            var bitonic_merge_direction = (i & stage) == 0
-
-            # Swap if elements are in wrong order for current direction
-            if cmp_val == bitonic_merge_direction:
-                swap(input[i], input[partner])
-                swap(indices[i], indices[partner])
-
-    # Synchronize all threads before starting sort
-    barrier()
-
-    # Bitonic sort main loop: build bitonic sequences of increasing sizes
-    # Starting from stage=2 (pairs), double the stage size each iteration
-    var stage = 2
-    while stage <= num_tokens_padded:
-        # For each stage, perform multiple merge steps
-        # Start with step = stage/2 and halve it each iteration
-        var step = stage // 2
-        while step > 0:
-            for tok_id in range(num_tokens_per_thread):
-                var i = thd_tok_idx + tok_id
-                bitonic_sort_step(
-                    indices_padded,
-                    topk_ids_padded,
-                    num_tokens_padded,
-                    step,
-                    stage,
-                    i,
-                )
-            barrier()
-            step //= 2
-        stage *= 2
-
-    # fill the expert_offsets array with sentinel value
-    var num_experts = Int(expert_start_indices.layout.shape[0]().value())
-    var num_experts_per_thread = ceildiv(num_experts, num_threads)
-    for i in range(num_experts_per_thread):
-        var expert_id = thread_idx.x * num_experts_per_thread + i
-        if expert_id < num_experts:
-            expert_start_indices[expert_id] = Scalar[indices_type].MAX_FINITE
-    barrier()
-
-    # check if this is the start of a new expert
-    for tok_id in range(num_tokens_per_thread):
-        var i = thd_tok_idx + tok_id
-        if i < num_tokens:
-            # copy results back to token_expert_order
-            token_expert_order[i] = indices_padded[i]
-
-            # also, fill the restore_token_order array
-            restore_token_order[Int(indices_padded[i])] = UInt32(i)
-
-            # check if this is the start of a new expert
-            if i != 0:
-                if topk_ids_padded[i] != topk_ids_padded[i - 1]:
-                    expert_start_indices[Int(topk_ids_padded[i])] = UInt32(i)
-            else:
-                expert_start_indices[Int(topk_ids_padded[i])] = 0
-    barrier()
-
-    if thread_idx.x == 0:
-        # squeeze the expert_start_indices array to remove all the sentinel values
-        var num_experts_used = 0
-        var max_M: UInt32 = 0
-        for i in range(num_experts):
-            # check if this is an active expert
-            if expert_start_indices[i] != Scalar[indices_type].MAX_FINITE:
-                # fill the expert_start_indices array with the active expert's start index
-                expert_start_indices[num_experts_used] = expert_start_indices[i]
-                if num_experts_used > 0:
-                    max_M = max(
-                        max_M,
-                        rebind[Scalar[indices_type]](
-                            expert_start_indices[num_experts_used]
-                            - expert_start_indices[num_experts_used - 1]
-                        ),
-                    )
-
-                # fill the expert_ids array with the active expert ids
-                expert_ids[num_experts_used] = Int32(i)
-
-                num_experts_used += 1
-
-        # this is the token length for the last expert
-        expert_start_indices[num_experts_used] = UInt32(num_tokens)
-        var last_expert_token_length = (
-            UInt32(num_tokens) - expert_start_indices[num_experts_used - 1]
-        )
-        max_M = max(
-            max_M, rebind[Scalar[indices_type]](last_expert_token_length)
-        )
-
-        expert_usage_stats[0] = max_M
-        expert_usage_stats[1] = UInt32(num_experts_used)
 
 
 @always_inline
@@ -313,7 +111,7 @@ def _count_expert_tokens[
     //,
     expected_count: Int,
 ](
-    topk_ids: TileTensor[input_type, ...],
+    topk_ids: TileTensor[mut=False, input_type, ...],
     smem: TileTensor[mut=True, DType.uint32, ...],
     bg_params: _BucketGroupParams[num_threads, input_type],
 ) -> UInt64:
@@ -336,7 +134,7 @@ def _count_expert_tokens[
         var g_vector: SIMD[input_type, width]
 
         if idx + width <= bg_params.topk_ids_length:
-            g_vector = topk_ids.load[width=width](Coord(Idx(0), Idx(idx)))
+            g_vector = topk_ids.load[width=width](Coord(Idx[0], idx))
         else:
             g_vector = SIMD[input_type, width](bg_params.expert + 1)
 
@@ -362,7 +160,7 @@ def _count_expert_tokens[
 
             # If this token matches, store its index in shared memory
             if state and offset < UInt64(expected_count):
-                smem[0, offset] = UInt32(idx + i)
+                smem[Coord(Idx[0], offset)] = UInt32(idx + i)
 
     var expert_id = (
         topk_ids[
@@ -381,35 +179,42 @@ def _count_expert_tokens[
     total_writes += warp_writes
 
     if state and offset < UInt64(expected_count):
-        smem[0, offset] = UInt32(bg_params.remainder_start_idx)
+        smem[Coord(Idx[0], offset)] = UInt32(bg_params.remainder_start_idx)
 
     return total_writes
 
 
 @always_inline
 def _get_index_and_offset(
-    lock: TileTensor[mut=True, DType.uint32, ...],
-    total_writes: UInt64,
-) -> Tuple[UInt32, UInt32]:
-    var expert_idx_and_offsets: UInt32 = 0
+    lock: TileTensor[mut=True, DType.uint64, ...],
+    total_writes: UInt32,
+    aligned_total_writes: UInt32,
+) -> Tuple[UInt32, UInt32, UInt32]:
+    var expert_idx_and_offsets: UInt64 = 0
 
     # in order to write back to gmem we need to know the current available offset
     # so we use atomics to get the next available offset
 
     if thread_idx.x == 0:
-        # Pack expert index (8 bits) and offset (24 bits) into single atomic update
-        # Upper 8 bits: expert counter (which expert slot to use)
-        # Lower 24 bits: offset in token_expert_order array
+        # Pack expert index (12 bits), current total writes (26 bits), and
+        # aligned total writes (26 bits) into single atomic update
+        # Upper 12 bits: expert counter (which expert slot to use)
+        # Middle 26 bits: current total writes
+        # Lower 26 bits: aligned total writes
         expert_idx_and_offsets = Atomic.fetch_add(
-            lock.ptr, UInt32(total_writes) | 0x01000000
+            lock.ptr,
+            (UInt64(1) << 52)
+            | (UInt64(total_writes) << 26)
+            | UInt64(aligned_total_writes),
         )
 
     # Broadcast the atomic result to all threads in the warp
     expert_idx_and_offsets = warp.broadcast(expert_idx_and_offsets)
-    var expert_idx = expert_idx_and_offsets >> 24
-    var base_g_offset = expert_idx_and_offsets & 0x00FFFFFF
+    var expert_idx = UInt32(expert_idx_and_offsets >> 52)
+    var base_g_offset = UInt32(expert_idx_and_offsets >> 26) & 0x03FFFFFF
+    var aligned_g_offset = UInt32(expert_idx_and_offsets) & 0x03FFFFFF
 
-    return expert_idx, base_g_offset
+    return expert_idx, base_g_offset, aligned_g_offset
 
 
 @always_inline
@@ -421,7 +226,7 @@ def _copy_tokens_smem_to_gmem[
 ](
     token_expert_order: TileTensor[mut=True, DType.uint32, ...],
     restore_token_order: TileTensor[mut=True, DType.uint32, ...],
-    smem: TileTensor[DType.uint32, ...],
+    smem: TileTensor[mut=False, DType.uint32, ...],
     g_offset: UInt32,
     total_writes: UInt64,
     bg_params: _BucketGroupParams[num_threads, input_type],
@@ -449,26 +254,24 @@ def _copy_tokens_smem_to_gmem[
         bg_params.start_idx, rounded_smem_reads, bg_params.reads_per_iteration
     ):
         if smem_idx + width <= Int(smem_writes):
-            var source_vector = smem.load[width=width](
-                Coord(Idx(0), Idx(smem_idx))
-            )
+            var source_vector = smem.load[width=width](Coord(Idx[0], smem_idx))
 
             comptime for i in range(width):
                 token_expert_order[
-                    g_offset_copy + UInt32(smem_idx) + UInt32(i)
+                    Coord(g_offset_copy + UInt32(smem_idx) + UInt32(i))
                 ] = source_vector[i]
                 restore_token_order[Int(source_vector[i])] = (
                     g_offset_copy + UInt32(smem_idx) + UInt32(i)
                 )
 
-    var start_idx = UInt((smem_writes // UInt64(width)) * UInt64(width))
+    var start_idx: UInt64 = (smem_writes // UInt64(width)) * UInt64(width)
 
     g_offset_copy += UInt32(start_idx)
 
-    if UInt64(thread_idx.x) < smem_writes - UInt64(start_idx):
-        var smem_val = smem[0, start_idx + UInt(thread_idx.x)]
+    if UInt64(thread_idx.x) < smem_writes - start_idx:
+        var smem_val = smem[Coord(Idx[0], start_idx + UInt64(thread_idx.x))]
         token_expert_order.store(
-            Coord(Idx(Int(g_offset_copy + UInt32(thread_idx.x)))),
+            Coord(Int(g_offset_copy + UInt32(thread_idx.x))),
             smem_val,
         )
 
@@ -484,8 +287,8 @@ def _copy_tokens_to_gmem[
     //,
     expected_count: Int,
 ](
-    topk_ids: TileTensor[input_type, ...],
-    smem: TileTensor[DType.uint32, ...],
+    topk_ids: TileTensor[mut=False, input_type, ...],
+    smem: TileTensor[mut=False, DType.uint32, ...],
     token_expert_order: TileTensor[mut=True, DType.uint32, ...],
     restore_token_order: TileTensor[mut=True, DType.uint32, ...],
     total_writes: UInt64,
@@ -514,7 +317,7 @@ def _copy_tokens_to_gmem[
         var g_vector: SIMD[input_type, width]
 
         if idx + width <= bg_params.topk_ids_length:
-            g_vector = topk_ids.load[width=width](Coord(Idx(0), Idx(idx)))
+            g_vector = topk_ids.load[width=width](Coord(Idx[0], idx))
         else:
             g_vector = SIMD[input_type, width](bg_params.expert + 1)
 
@@ -535,7 +338,7 @@ def _copy_tokens_to_gmem[
             # so we only need to write the remaining tokens to global memory.
             if thr_tokens_seen >= UInt64(expected_count) and state:
                 token_expert_order[
-                    g_offset_copy + UInt32(preceding_thread_writes)
+                    Coord(g_offset_copy + UInt32(preceding_thread_writes))
                 ] = UInt32(idx + i)
                 restore_token_order[idx + i] = g_offset_copy + UInt32(
                     preceding_thread_writes
@@ -562,7 +365,7 @@ def _copy_tokens_to_gmem[
 
     if temp_current_writes >= UInt64(expected_count) and state:
         token_expert_order[
-            g_offset_copy + UInt32(preceding_thread_writes)
+            Coord(g_offset_copy + UInt32(preceding_thread_writes))
         ] = UInt32(bg_params.remainder_start_idx)
         restore_token_order[
             bg_params.remainder_start_idx
@@ -572,6 +375,7 @@ def _copy_tokens_to_gmem[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
+@__name(t"moe_create_indices_bucket_group_{input_type}_t{num_threads}")
 def moe_create_indices_bucket_group_kernel[
     input_type: DType,
     TokenExpertOrderLayoutType: TensorLayout,
@@ -583,11 +387,12 @@ def moe_create_indices_bucket_group_kernel[
     TopkIdsLayoutType: TensorLayout,
     num_threads: Int = WARP_SIZE,
     expected_count: Int = 8192,
+    _scale_alignment: UInt32 = 128,
 ](
     token_expert_order: TileTensor[
         mut=True, DType.uint32, TokenExpertOrderLayoutType, MutAnyOrigin
     ],
-    lock: TileTensor[DType.uint32, LockLayoutType, MutAnyOrigin],
+    lock: TileTensor[DType.uint64, LockLayoutType, MutAnyOrigin],
     expert_start_indices: TileTensor[
         mut=True, DType.uint32, ExpertStartIndicesLayoutType, MutAnyOrigin
     ],
@@ -600,7 +405,8 @@ def moe_create_indices_bucket_group_kernel[
     expert_usage_stats: TileTensor[
         mut=True, DType.uint32, ExpertUsageStatsLayoutType, MutAnyOrigin
     ],
-    topk_ids: TileTensor[input_type, TopkIdsLayoutType, MutAnyOrigin],
+    topk_ids: TileTensor[input_type, TopkIdsLayoutType, ImmutAnyOrigin],
+    scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]],
 ):
     """Create indices for MoE routing using bucket sort algorithm.
 
@@ -669,22 +475,33 @@ def moe_create_indices_bucket_group_kernel[
         topk_ids, smem, bucket_group_params
     )
 
+    var aligned_total_writes = align_up(UInt32(total_writes), _scale_alignment)
+
+    var expert_idx, g_offset, aligned_g_offset = _get_index_and_offset(
+        lock, UInt32(total_writes), aligned_total_writes
+    )
+
+    if scales_offset_p:
+        var _ptr = scales_offset_p.value()
+        _ptr[expert_idx] = (
+            aligned_g_offset // _scale_alignment - g_offset // _scale_alignment
+        )
+
+    # Record which expert is active at this index
+    # this signals this expert is being used
+    expert_ids[Coord(expert_idx)] = Int32(bucket_group_params.expert)
+
+    # Store the ending index for this expert (start of next expert)
+    # NOTE: expert_start_indices must be zero-initialized for this to work correctly
+    expert_start_indices[Coord(expert_idx + 1)] = g_offset + UInt32(
+        total_writes
+    )
+
+    # First expert always starts at index 0
+    if expert_idx == 0:
+        expert_start_indices[Coord(expert_idx)] = 0
+
     if total_writes > 0:
-        # Copy all tokens in shared memory back to global memory
-        var expert_idx, g_offset = _get_index_and_offset(lock, total_writes)
-
-        # Record which expert is active at this index
-        # this signals this expert is being used
-        expert_ids[expert_idx] = Int32(bucket_group_params.expert)
-
-        # Store the ending index for this expert (start of next expert)
-        # NOTE: expert_start_indices must be zero-initialized for this to work correctly
-        expert_start_indices[expert_idx + 1] = g_offset + UInt32(total_writes)
-
-        # First expert always starts at index 0
-        if expert_idx == 0:
-            expert_start_indices[expert_idx] = 0
-
         # Copy all tokens in shared memory back to global memory
         _copy_tokens_smem_to_gmem[expected_count](
             token_expert_order,
@@ -707,12 +524,12 @@ def moe_create_indices_bucket_group_kernel[
                 bucket_group_params,
             )
 
-        # update expert_usage_stats
-        if thread_idx.x == 0:
-            _ = Atomic.fetch_add(expert_usage_stats.ptr + 1, 1)
+    # update expert_usage_stats.
+    if thread_idx.x == 0:
+        _ = Atomic.fetch_add(expert_usage_stats.ptr + 1, 1)
 
-            # NOTE: must be zero initialized otherwise atomic max will not work
-            _ = Atomic.max(expert_usage_stats.ptr, UInt32(total_writes))
+        # NOTE: must be zero initialized otherwise atomic max will not work
+        _ = Atomic.max(expert_usage_stats.ptr, UInt32(total_writes))
 
 
 @always_inline
@@ -727,37 +544,43 @@ def moe_create_indices[
     restore_token_order: TileTensor[mut=True, DType.uint32, ...],
     expert_ids: TileTensor[mut=True, DType.int32, ...],
     expert_usage_stats: TileTensor[mut=True, DType.uint32, ...],
-    topk_ids: TileTensor[input_type, ...],
-    context: DeviceContextPtr,
+    topk_ids: TileTensor[mut=False, input_type, ...],
+    context: DeviceContext,
+    scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]] = None,
 ) raises:
     comptime assert is_gpu[
         target
     ](), "Creating MoE indices is only supported on GPU"
 
-    var cuda_ctx = context.get_device_context()
-
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.create_indices", task_id=Int(context.get_device_context().id())
+        "mo.moe.create_indices", task_id=Int(context.id())
     ):
-        var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint32](1)
-        lock_buffer.enqueue_fill(0)
-        var lock = TileTensor(lock_buffer.unsafe_ptr(), row_major[1]())
+        var lock_buffer = context.enqueue_create_buffer[DType.uint64](1)
+
+        def fill_zero_kernel(
+            lock_ptr: UnsafePointer[UInt64, MutAnyOrigin],
+            expert_usage_stats_ptr: UnsafePointer[UInt32, MutAnyOrigin],
+        ):
+            lock_ptr.store(0)
+            expert_usage_stats_ptr.store(0)
+            expert_usage_stats_ptr.store(1, 0)
+
+        context.enqueue_function[fill_zero_kernel](
+            lock_buffer,
+            expert_usage_stats.ptr,
+            grid_dim=(1,),
+            block_dim=(1,),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
+
+        var lock = TileTensor(lock_buffer, row_major[1]())
 
         var topk_2D = TileTensor(
             topk_ids.ptr,
-            row_major(Coord(Idx(1), Idx(Int(topk_ids.dim(0))))),
+            row_major(Coord(Idx[1], Int(topk_ids.dim(0)))),
         )
 
         var num_experts = expert_ids.dim(0)
-
-        var expert_usage_stats_host = cuda_ctx.enqueue_create_host_buffer[
-            DType.uint32
-        ](2)
-        expert_usage_stats_host.enqueue_fill(0)
-        cuda_ctx.enqueue_copy[DType.uint32](
-            expert_usage_stats.ptr,
-            expert_usage_stats_host,
-        )
 
         comptime kernel = moe_create_indices_bucket_group_kernel[
             input_type,
@@ -771,7 +594,7 @@ def moe_create_indices[
             expected_count=expected_count,
         ]
 
-        cuda_ctx.enqueue_function[kernel, kernel](
+        context.enqueue_function[kernel](
             token_expert_order,
             lock,
             expert_start_indices,
@@ -779,12 +602,10 @@ def moe_create_indices[
             expert_ids,
             expert_usage_stats,
             topk_2D,
+            scales_offset_p,
             grid_dim=(num_experts),
             block_dim=(WARP_SIZE),
         )
-
-        _ = lock_buffer^
-        _ = expert_usage_stats_host^
 
 
 # Function to perform warp-level sorting
@@ -851,6 +672,9 @@ def _warp_bitonic_sort[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"group_limited_router_{scores_type}_{bias_type}_t{num_threads}",
 )
 def group_limited_router_kernel[
     scores_type: DType,
@@ -937,7 +761,7 @@ def group_limited_router_kernel[
     ]()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
 
-    var thread_expert_bias = expert_bias.load[width=1](Coord(Idx(tid))).cast[
+    var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
         scores_type
     ]()
 
@@ -948,9 +772,7 @@ def group_limited_router_kernel[
             comptime scores_fn = scores_input_fn.value()
             thread_expert_score = scores_fn[width=1]((token_idx, tid))
         else:
-            thread_expert_score = expert_scores.load[width=1](
-                (Idx(token_idx), Idx(tid))
-            )
+            thread_expert_score = expert_scores.load[width=1]((token_idx, tid))
 
         thread_expert_score += thread_expert_bias
         var thd_topk2 = TopK_2(u=thread_expert_score, p=tid)
@@ -1019,7 +841,7 @@ def group_limited_router_kernel[
                 original_weight = (
                     global_topk_result.u
                     - expert_bias.load[width=1](
-                        Coord(Idx(global_topk_result.p))
+                        Coord(global_topk_result.p)
                     ).cast[scores_type]()
                 )
 
@@ -1034,7 +856,7 @@ def group_limited_router_kernel[
 
             if tid < n_experts_per_tok:
                 expert_indices.store(
-                    (Idx(token_idx), Idx(tid)), Int32(global_topk_result.p)
+                    (token_idx, tid), Int32(global_topk_result.p)
                 )
                 expert_weights[token_idx, tid] = original_weight
 
@@ -1056,10 +878,10 @@ def router_group_limited[
 ](
     expert_indices: TileTensor[mut=True, DType.int32, ...],
     expert_weights: TileTensor[mut=True, scores_type, ...],
-    expert_scores: TileTensor[scores_type, ...],
-    expert_bias: TileTensor[bias_type, ...],
+    expert_scores: TileTensor[mut=False, scores_type, ...],
+    expert_bias: TileTensor[mut=False, bias_type, ...],
     routed_scaling_factor: Float32,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """
     A manually fused MoE router with the group-limited strategy.
@@ -1086,7 +908,7 @@ def router_group_limited[
             [num_tokens, n_routed_experts].
         expert_bias: The bias for each expert. Shape: [n_routed_experts].
         routed_scaling_factor: The scaling factor for the routed expert weights.
-        context: DeviceContextPtr.
+        context: The device context.
     """
     comptime assert is_gpu[
         target
@@ -1095,7 +917,7 @@ def router_group_limited[
     if expert_scores.dim(0) == 0:
         return
 
-    var gpu_ctx = context.get_device_context()
+    var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.router_group_limited", task_id=Int(gpu_ctx.id())
@@ -1122,7 +944,7 @@ def router_group_limited[
             scores_input_fn=scores_input_fn,
         ]
 
-        gpu_ctx.enqueue_function[kernel, kernel](
+        gpu_ctx.enqueue_function[kernel](
             expert_indices,
             expert_weights,
             expert_scores,
@@ -1130,5 +952,850 @@ def router_group_limited[
             routed_scaling_factor,
             grid_dim=expert_scores.dim(0),
             block_dim=num_threads,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(t"single_group_router_{scores_type}_{bias_type}_t{num_threads}")
+def single_group_router_kernel[
+    scores_type: DType,
+    bias_type: DType,
+    ExpertIndicesLayoutType: TensorLayout,
+    ExpertWeightsLayoutType: TensorLayout,
+    ExpertScoresLayoutType: TensorLayout,
+    ExpertBiasLayoutType: TensorLayout,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    norm_weights: Bool,
+    num_threads: Int,
+    scores_input_fn: OptionalReg[
+        def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
+    ] = None,
+](
+    expert_indices: TileTensor[
+        mut=True, DType.int32, ExpertIndicesLayoutType, MutAnyOrigin
+    ],
+    expert_weights: TileTensor[
+        mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
+    ],
+    expert_scores: TileTensor[
+        scores_type, ExpertScoresLayoutType, ImmutAnyOrigin
+    ],
+    expert_bias: TileTensor[bias_type, ExpertBiasLayoutType, ImmutAnyOrigin],
+    routed_scaling_factor: Float32,
+):
+    """Single-group MoE router kernel. One block per token, one thread per expert.
+
+    Fuses: corrected = scores + bias → top-k selection → weight = corrected - bias
+    → optional normalize → scale.
+    Uses warp-bitonic sort across 2 or 3 phases
+    depending on WARP_SIZE. NVIDIA (WARP_SIZE=32): 3-phase. AMD (WARP_SIZE=64):
+    2-phase (phase 2 eliminated at compile time when phase1_candidates fits in
+    one wavefront).
+    """
+
+    comptime assert expert_indices.flat_rank == 2
+    comptime assert expert_weights.flat_rank == 2
+    comptime assert expert_scores.flat_rank == 2
+    comptime assert expert_bias.flat_rank == 1
+
+    comptime assert (
+        expert_scores.static_shape[1] == n_routed_experts
+    ), "expert_scores.static_shape[1] must be equal to n_routed_experts"
+
+    comptime assert (
+        expert_weights.static_shape[1] == n_experts_per_tok
+    ), "expert_weights.static_shape[1] must be equal to n_experts_per_tok"
+
+    comptime assert (
+        expert_indices.static_shape[1] == n_experts_per_tok
+    ), "expert_indices.static_shape[1] must be equal to n_experts_per_tok"
+
+    comptime assert (
+        num_threads == n_routed_experts
+    ), "num_threads must be equal to n_routed_experts"
+
+    comptime assert (
+        num_threads % WARP_SIZE == 0
+    ), "WARP_SIZE must be divisible by num_threads"
+
+    # k = n_experts_per_tok must be a power of 2 because _warp_bitonic_sort[num_lanes=k] uses a bitonic sort algorithm
+    comptime assert (
+        n_experts_per_tok.is_power_of_two()
+    ), "n_experts_per_tok must be a power of two"
+
+    # Phase 1 produces num_warps × n_experts_per_tok survivors:
+    comptime num_warps = num_threads // WARP_SIZE
+    comptime phase1_candidates = num_warps * n_experts_per_tok
+
+    # Phase 2 assign selected candidates to ceil(ph1/32) warps, each sorting 32:
+    comptime num_phase2_warps = ceildiv(phase1_candidates, WARP_SIZE)
+    comptime phase2_candidates = num_phase2_warps * n_experts_per_tok
+
+    # AMD has 64 warps per SM, so we can skip phase 2 for KIMIk2.5 with 384 MOE
+    comptime skip_phase2 = (num_phase2_warps == 1)
+    # Phase 3 takes ph2_candidates padded up to WARP_SIZE.
+    comptime assert (
+        phase2_candidates <= WARP_SIZE
+    ), "phase2_candidates must be less than or equal to WARP_SIZE"
+
+    comptime if skip_phase2:
+        # When skipping phase 2, warp 0 reads directly from smem_phase1.
+        # Requires phase1_candidates to fit within one warp.
+        comptime assert (
+            phase1_candidates <= WARP_SIZE
+        ), "phase1_candidates exceeds WARP_SIZE — cannot skip phase 2"
+    # comptime ph3_padding = WARP_SIZE - phase2_candidates
+
+    comptime total_smem = phase1_candidates if skip_phase2 else (
+        phase1_candidates + phase2_candidates
+    )
+
+    var token_idx = Int(block_idx.x)
+    var tid = Int(thread_idx.x)
+    var warp_id = warp_id()
+    var lane_id = lane_id()
+
+    var shared_mem = stack_allocation[
+        total_smem,
+        TopK_2[scores_type],
+        address_space=AddressSpace.SHARED,
+    ]()
+
+    var shared_mem_phase1 = shared_mem
+    var shared_mem_phase2 = shared_mem + phase1_candidates
+
+    with PDL():
+        var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
+            scores_type
+        ]()
+
+        var thread_expert_score: Scalar[scores_type]
+        comptime if scores_input_fn:
+            comptime scores_fn = scores_input_fn.value()
+            thread_expert_score = scores_fn[width=1]((token_idx, tid))
+        else:
+            thread_expert_score = expert_scores.load[width=1]((token_idx, tid))
+        var biased_score = thread_expert_score + thread_expert_bias
+
+        var val = TopK_2(u=biased_score, p=tid)
+        var sorted_val = _warp_bitonic_sort[num_lanes=WARP_SIZE](val)
+
+        if lane_id < n_experts_per_tok:
+            shared_mem_phase1[
+                warp_id * n_experts_per_tok + lane_id
+            ] = sorted_val
+
+        barrier()
+
+        comptime if not skip_phase2:
+            var val2: TopK_2[scores_type]
+            if warp_id < num_phase2_warps:
+                # Sequential read: warp W reads smem_phase1[W*32 .. W*32+31].
+                # No bank conflicts — each warp reads a contiguous slice.
+                val2 = shared_mem_phase1[tid]
+            else:
+                # Inactive warps: dead-value cannot corrupt the sort because
+                # _warp_bitonic_sort is fully intra-warp.
+                val2 = TopK_2[scores_type]()
+
+            var sorted_val2 = _warp_bitonic_sort[num_lanes=WARP_SIZE](val2)
+
+            if warp_id < num_phase2_warps and lane_id < n_experts_per_tok:
+                shared_mem_phase2[
+                    warp_id * n_experts_per_tok + lane_id
+                ] = sorted_val2
+
+            barrier()
+
+        # WARP 0 ONLY gives top n_experts_per_tok
+        if warp_id == 0:
+            var val3: TopK_2[scores_type]
+
+            comptime if skip_phase2:
+                # AMD path: read phase1_candidates (48) entries directly.
+                if lane_id < phase1_candidates:
+                    val3 = shared_mem_phase1[lane_id]
+                else:
+                    val3 = TopK_2[scores_type]()  # padding: -inf
+            else:
+                # NVIDIA path: read phase2_candidates (24) entries.
+                if lane_id < phase2_candidates:
+                    val3 = shared_mem_phase2[lane_id]
+                else:
+                    val3 = TopK_2[scores_type]()  # padding: -inf
+
+            var sorted_val3 = _warp_bitonic_sort[num_lanes=WARP_SIZE](val3)
+
+            # get the original weights and normalize them
+            var original_weight: Scalar[scores_type] = 0
+            if lane_id < n_experts_per_tok:
+                comptime if scores_input_fn:
+                    comptime d_fn = scores_input_fn.value()
+                    original_weight = d_fn[width=1]((token_idx, sorted_val3.p))
+                else:
+                    original_weight = expert_scores.load[width=1](
+                        (token_idx, sorted_val3.p)
+                    )
+
+            var weights_sum = warp.lane_group_sum[num_lanes=n_experts_per_tok](
+                original_weight
+            )
+
+            comptime if norm_weights:
+                original_weight /= weights_sum
+
+            original_weight *= Scalar[scores_type](routed_scaling_factor)
+
+            # Write expert index and weight for this token.
+            if lane_id < n_experts_per_tok:
+                expert_indices.store((token_idx, lane_id), Int32(sorted_val3.p))
+                expert_weights[token_idx, lane_id] = original_weight
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"single_group_router_eplb_{scores_type}_{bias_type}_t{num_threads}_n{num_log}_r{max_replicas}_h{Int(hash_decorrelate)}",
+)
+def single_group_router_eplb_kernel[
+    scores_type: DType,
+    bias_type: DType,
+    ExpertIndicesLayoutType: TensorLayout,  # phy ids out
+    ExpertIndicesLogLayoutType: TensorLayout,  # log ids out (for histogram)
+    ExpertWeightsLayoutType: TensorLayout,
+    ExpertScoresLayoutType: TensorLayout,
+    ExpertBiasLayoutType: TensorLayout,
+    LogcntLayoutType: TensorLayout,
+    Log2phyLayoutType: TensorLayout,
+    LayerIdxLayoutType: TensorLayout,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    norm_weights: Bool,
+    num_threads: Int,
+    num_log: Int,
+    max_replicas: Int,
+    hash_decorrelate: Bool,
+    scores_input_fn: OptionalReg[
+        def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
+    ] = None,
+](
+    expert_indices: TileTensor[
+        mut=True, DType.int32, ExpertIndicesLayoutType, MutAnyOrigin
+    ],  # phy ids
+    expert_indices_log: TileTensor[
+        mut=True, DType.int32, ExpertIndicesLogLayoutType, MutAnyOrigin
+    ],  # log ids (for EPLB histogram)
+    expert_weights: TileTensor[
+        mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
+    ],
+    expert_scores: TileTensor[
+        scores_type, ExpertScoresLayoutType, ImmutAnyOrigin
+    ],
+    expert_bias: TileTensor[bias_type, ExpertBiasLayoutType, ImmutAnyOrigin],
+    logcnt: TileTensor[DType.int32, LogcntLayoutType, ImmutAnyOrigin],
+    log2phy: TileTensor[DType.int32, Log2phyLayoutType, ImmutAnyOrigin],
+    layer_idx: TileTensor[DType.int32, LayerIdxLayoutType, ImmutAnyOrigin],
+    routed_scaling_factor: Float32,
+):
+    """Single-group MoE router fused with EPLB log->phy remap.
+
+    Mirrors `single_group_router_kernel` exactly through phase 3, then at the
+    K writers performs the EPLB lookup using a per-block SMEM cache of the
+    current layer's logcnt/log2phy slice.
+
+    Backend specialization:
+      - NVIDIA: cp.async issues the table fetch up front; sort hides the latency.
+      - AMD/Apple: plain ld_global into registers up front, ds_write later.
+    """
+
+    # ---- existing comptime asserts ----
+    comptime assert expert_indices.flat_rank == 2
+    comptime assert expert_indices_log.flat_rank == 2
+    comptime assert expert_weights.flat_rank == 2
+    comptime assert expert_scores.flat_rank == 2
+    comptime assert expert_bias.flat_rank == 1
+    comptime assert logcnt.flat_rank == 2
+    comptime assert log2phy.flat_rank == 3
+    comptime assert layer_idx.flat_rank == 1
+
+    comptime assert (
+        expert_scores.static_shape[1] == n_routed_experts
+    ), "expert_scores.static_shape[1] must be equal to n_routed_experts"
+    comptime assert (
+        expert_indices.static_shape[1] == n_experts_per_tok
+    ), "expert_indices.static_shape[1] must be equal to n_experts_per_tok"
+    comptime assert (
+        expert_indices_log.static_shape[1] == n_experts_per_tok
+    ), "expert_indices_log.static_shape[1] must be equal to n_experts_per_tok"
+    comptime assert (
+        num_threads == n_routed_experts
+    ), "num_threads must be equal to n_routed_experts"
+    comptime assert (
+        num_threads % WARP_SIZE == 0
+    ), "WARP_SIZE must be divisible by num_threads"
+    comptime assert (
+        n_experts_per_tok.is_power_of_two()
+    ), "n_experts_per_tok must be a power of two"
+
+    # ---- EPLB-specific asserts ----
+    comptime assert (
+        logcnt.static_shape[1] == num_log
+    ), "logcnt.static_shape[1] must equal num_log"
+    comptime assert (
+        log2phy.static_shape[1] == num_log
+    ), "log2phy.static_shape[1] must equal num_log"
+    comptime assert (
+        log2phy.static_shape[2] == max_replicas
+    ), "log2phy.static_shape[2] must equal max_replicas"
+    comptime assert (
+        n_experts_per_tok.is_power_of_two()
+    ), "n_experts_per_tok must be a power of two"
+
+    # ---- existing phase math ----
+    comptime num_warps = num_threads // WARP_SIZE
+    comptime phase1_candidates = num_warps * n_experts_per_tok
+    comptime num_phase2_warps = ceildiv(phase1_candidates, WARP_SIZE)
+    comptime phase2_candidates = num_phase2_warps * n_experts_per_tok
+    comptime skip_phase2 = (num_phase2_warps == 1)
+    comptime assert phase2_candidates <= WARP_SIZE
+    comptime if skip_phase2:
+        comptime assert phase1_candidates <= WARP_SIZE
+
+    comptime total_smem = phase1_candidates if skip_phase2 else (
+        phase1_candidates + phase2_candidates
+    )
+
+    var token_idx = Int(block_idx.x)
+    var tid = Int(thread_idx.x)
+    var w_id = warp_id()
+    var l_id = lane_id()
+
+    # ---- existing TopK_2 SMEM ----
+    var shared_mem = stack_allocation[
+        total_smem,
+        TopK_2[scores_type],
+        address_space=AddressSpace.SHARED,
+    ]()
+    var shared_mem_phase1 = shared_mem
+    var shared_mem_phase2 = shared_mem + phase1_candidates
+
+    with PDL():
+        var Lidx = Int(layer_idx.load[width=1](Coord(Idx[0]))[0])
+        var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
+            scores_type
+        ]()
+
+        var thread_expert_score: Scalar[scores_type]
+        comptime if scores_input_fn:
+            comptime scores_fn = scores_input_fn.value()
+            thread_expert_score = scores_fn[width=1]((token_idx, tid))
+        else:
+            thread_expert_score = expert_scores.load[width=1]((token_idx, tid))
+        var biased_score = thread_expert_score + thread_expert_bias
+
+        var val = TopK_2(u=biased_score, p=tid)
+        var sorted_val = _warp_bitonic_sort[num_lanes=WARP_SIZE](val)
+
+        if l_id < n_experts_per_tok:
+            shared_mem_phase1[w_id * n_experts_per_tok + l_id] = sorted_val
+        barrier()
+
+        comptime if not skip_phase2:
+            var val2: TopK_2[scores_type]
+            if w_id < num_phase2_warps:
+                val2 = shared_mem_phase1[tid]
+            else:
+                val2 = TopK_2[scores_type]()
+
+            var sorted_val2 = _warp_bitonic_sort[num_lanes=WARP_SIZE](val2)
+
+            if w_id < num_phase2_warps and l_id < n_experts_per_tok:
+                shared_mem_phase2[w_id * n_experts_per_tok + l_id] = sorted_val2
+            barrier()
+
+        # ============================================================
+        # PHASE 3 + REMAP + STORE (warp 0 only)
+        # ============================================================
+        if w_id == 0:
+            var val3: TopK_2[scores_type]
+            comptime if skip_phase2:
+                if l_id < phase1_candidates:
+                    val3 = shared_mem_phase1[l_id]
+                else:
+                    val3 = TopK_2[scores_type]()
+            else:
+                if l_id < phase2_candidates:
+                    val3 = shared_mem_phase2[l_id]
+                else:
+                    val3 = TopK_2[scores_type]()
+
+            var sorted_val3 = _warp_bitonic_sort[num_lanes=WARP_SIZE](val3)
+
+            comptime assert (
+                max_replicas == 1
+                or max_replicas == 2
+                or max_replicas == 4
+                or max_replicas == 8
+                or max_replicas == 16
+            ), "max_replicas must be a SIMD-loadable width (1,2,4,8,16)"
+
+            # Hoisted out of the `if l_id < K` so non-writer lanes still
+            # have valid registers for the reduction's uniform shuffles.
+            var log: Int = 0
+            var original_weight: Scalar[scores_type] = 0
+            var cnt: Int = 1
+            var phy_all = SIMD[DType.int32, max_replicas](0)
+
+            if l_id < n_experts_per_tok:
+                log = Int(sorted_val3.p)
+
+                # Burst load #1 — original_weight (existing).
+                comptime if scores_input_fn:
+                    comptime d_fn = scores_input_fn.value()
+                    original_weight = d_fn[width=1]((token_idx, log))
+                else:
+                    original_weight = expert_scores.load[width=1](
+                        (token_idx, log)
+                    )
+
+                # Burst load #2 — full log2phy[Lidx, log, :] slice.
+                # One 4*max_replicas-byte HBM transaction (16B for mr=4,
+                # 32B for mr=8). Replica selection moves into registers.
+                phy_all = log2phy.load[width=max_replicas]((Lidx, log, Idx[0]))
+
+                # Burst load #3 — cnt (only when mr > 1).
+                comptime if max_replicas > 1:
+                    cnt = Int(logcnt.load[width=1]((Lidx, log))[0])
+
+            # ---------- Weight reduction (loads above are in flight) ----
+            var weights_sum = warp.lane_group_sum[num_lanes=n_experts_per_tok](
+                original_weight
+            )
+            comptime if norm_weights:
+                original_weight /= weights_sum
+            original_weight *= Scalar[scores_type](routed_scaling_factor)
+
+            # ---------- Replica pick + store (all register ops) ---------
+            if l_id < n_experts_per_tok:
+                var r = _pick_replica[
+                    max_replicas, hash_decorrelate, n_experts_per_tok
+                ](log, cnt, token_idx, Int(l_id))
+
+                var phy: Int32
+                comptime if max_replicas == 1:
+                    phy = phy_all[0]
+                else:
+                    # Comptime-unrolled select chain. Keeps phy_all in
+                    # registers — dynamic SIMD indexing can otherwise
+                    # spill to local memory on some lowerings.
+                    phy = phy_all[0]
+                    comptime for ri in range(1, max_replicas):
+                        if r == ri:
+                            phy = phy_all[ri]
+
+                expert_indices.store((token_idx, l_id), phy)
+                expert_indices_log.store((token_idx, l_id), Int32(log))
+                expert_weights[token_idx, l_id] = original_weight
+
+
+@always_inline
+def single_group_router[
+    scores_type: DType,
+    bias_type: DType,
+    //,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    norm_weights: Bool,
+    target: StaticString,
+    scores_input_fn: OptionalReg[
+        def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
+    ] = None,
+](
+    expert_indices: TileTensor[mut=True, DType.int32, ...],
+    expert_weight: TileTensor[mut=True, scores_type, ...],
+    expert_scores: TileTensor[mut=False, scores_type, ...],
+    expert_bias: TileTensor[mut=False, bias_type, ...],
+    routed_scaling_factor: Float32,
+    context: DeviceContext,
+) raises:
+    """Launch the single-group MoE router on GPU.
+
+    One block per token, one thread per expert. Selects top n_experts_per_tok
+    experts using warp-bitonic sort with 2 or 3 reduction phases depending on
+    hardware warp size (AMD skips phase 2 at compile time).
+
+    Parameters:
+        scores_type: DType of routing scores and output weights.
+        bias_type: DType of the expert correction bias.
+        n_routed_experts: Total number of experts (e.g. 384 for Kimi K2.5).
+        n_experts_per_tok: Experts selected per token — must be a power of 2
+            (e.g. 8 for Kimi K2.5).
+        norm_weights: If True, normalize selected weights to sum to 1 before
+            applying routed_scaling_factor.
+        target: The target device to run the kernel on.
+        scores_input_fn: Optional fused input lambda to load scores. If None,
+            scores are loaded directly from expert_scores.
+
+    Inputs:
+        expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
+        expert_weights: Output expert weights. Shape: [num_tokens, n_experts_per_tok].
+        expert_scores: Input routing scores. Shape: [num_tokens, n_routed_experts].
+        expert_bias: Per-expert correction bias used for selection only.
+        routed_scaling_factor: Scalar multiplied into every output weight.
+        context: The device context.
+    """
+    comptime assert is_gpu[
+        target
+    ](), "Single group router is only supported on GPU"
+
+    if expert_scores.dim(0) == 0:
+        return
+
+    var gpu_ctx = context
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.moe.router_single_group", task_id=Int(gpu_ctx.id())
+    ):
+        # comptime num_tokens = Int(expert_scores.dim(0))
+        comptime num_threads = n_routed_experts
+        comptime hw_info = gpu_ctx.default_device_info
+        comptime blocks_per_sm = hw_info.threads_per_multiprocessor // num_threads
+
+        comptime num_sms = hw_info.sm_count
+
+        comptime kernel = single_group_router_kernel[
+            scores_type,
+            bias_type,
+            expert_indices.LayoutType,
+            expert_weight.LayoutType,
+            expert_scores.LayoutType,
+            expert_bias.LayoutType,
+            n_routed_experts,
+            n_experts_per_tok,
+            norm_weights,
+            num_threads,
+            scores_input_fn=scores_input_fn,
+        ]
+
+        # launch the kernle using gpu_ctx
+        gpu_ctx.enqueue_function[kernel](
+            expert_indices,
+            expert_weight,
+            expert_scores,
+            expert_bias,
+            routed_scaling_factor,
+            grid_dim=expert_scores.dim(0),
+            block_dim=num_threads,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
+
+
+# EPLB remap (log2hy id) kernel
+@always_inline
+def single_group_router_eplb[
+    scores_type: DType,
+    bias_type: DType,
+    //,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    norm_weights: Bool,
+    num_log: Int,
+    max_replicas: Int,
+    hash_decorrelate: Bool,
+    target: StaticString,
+    scores_input_fn: OptionalReg[
+        def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
+    ] = None,
+](
+    expert_indices: TileTensor[mut=True, DType.int32, ...],
+    expert_indices_log: TileTensor[mut=True, DType.int32, ...],
+    expert_weights: TileTensor[mut=True, scores_type, ...],
+    expert_scores: TileTensor[scores_type, ...],
+    expert_bias: TileTensor[bias_type, ...],
+    logcnt: TileTensor[DType.int32, ...],
+    log2phy: TileTensor[DType.int32, ...],
+    layer_idx: TileTensor[DType.int32, ...],
+    routed_scaling_factor: Float32,
+    context: DeviceContext,
+) raises:
+    comptime assert is_gpu[
+        target
+    ](), "Single group router (EPLB) is only supported on GPU"
+
+    if expert_scores.dim(0) == 0:
+        return
+
+    var gpu_ctx = context
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.moe.single.group.router.eplb", task_id=Int(gpu_ctx.id())
+    ):
+        comptime num_threads = n_routed_experts
+
+        comptime kernel = single_group_router_eplb_kernel[
+            scores_type,
+            bias_type,
+            expert_indices.LayoutType,
+            expert_indices_log.LayoutType,
+            expert_weights.LayoutType,
+            expert_scores.LayoutType,
+            expert_bias.LayoutType,
+            logcnt.LayoutType,
+            log2phy.LayoutType,
+            layer_idx.LayoutType,
+            n_routed_experts,
+            n_experts_per_tok,
+            norm_weights,
+            num_threads,
+            num_log,
+            max_replicas,
+            hash_decorrelate,
+            scores_input_fn=scores_input_fn,
+        ]
+
+        gpu_ctx.enqueue_function[kernel](
+            expert_indices,
+            expert_indices_log,
+            expert_weights,
+            expert_scores,
+            expert_bias,
+            logcnt,
+            log2phy,
+            layer_idx,
+            routed_scaling_factor,
+            grid_dim=expert_scores.dim(0),
+            block_dim=num_threads,
+            attributes=pdl_launch_attributes(PDLLevel(1)),
+        )
+
+
+@always_inline
+def _pick_replica[
+    max_replicas: Int,
+    hash_decorrelate: Bool,
+    K: Int,
+](log: Int, cnt: Int, n: Int, k: Int,) -> Int:
+    """Deterministic replica picker. cnt is ignored when max_replicas == 1."""
+    comptime if max_replicas == 1:
+        return 0
+    else:
+        comptime HASH_C = UInt32(2654435761)  # Knuth golden ratio
+        var pos: UInt32 = UInt32(n) * UInt32(K) + UInt32(k)
+        comptime if hash_decorrelate:
+            pos = pos ^ (UInt32(log) * HASH_C)
+        return Int(pos % UInt32(cnt))
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(tile_tokens * K))
+)
+@__name(
+    t"eplb_remap_kernel_n{num_log}_r{max_replicas}_k{K}_t{tile_tokens}_h{Int(hash_decorrelate)}",
+)
+def eplb_remap_kernel[
+    PhyIdxLayoutType: TensorLayout,
+    RouterIdxLayoutType: TensorLayout,
+    LogcntLayoutType: TensorLayout,
+    Log2phyLayoutType: TensorLayout,
+    LayerIdxLayoutType: TensorLayout,
+    num_log: Int,
+    max_replicas: Int,
+    K: Int,  # topK experts per token
+    tile_tokens: Int,  # rows of router_idx per block; threads/block = tile_tokens * K
+    hash_decorrelate: Bool,
+](
+    phy_idx: TileTensor[mut=True, DType.int32, PhyIdxLayoutType, MutAnyOrigin],
+    router_idx: TileTensor[DType.int32, RouterIdxLayoutType, ImmutAnyOrigin],
+    logcnt: TileTensor[DType.int32, LogcntLayoutType, ImmutAnyOrigin],
+    log2phy: TileTensor[DType.int32, Log2phyLayoutType, ImmutAnyOrigin],
+    layer_idx: TileTensor[DType.int32, LayerIdxLayoutType, ImmutAnyOrigin],
+):
+    """Fused EPLB per tile_token rows of router idx; one thread per (n,k) element.
+    Each block cooperatively caces the current layer's logcnt and log2phy slices in
+    SMEM, then every thread does: HBM-load logical id -> SMEM-looup cnt -> int mod -> SMEM-Lookup phy id
+    -> HBM-store.
+
+    Portable across all hardwares.
+
+    Optimality of choosing : hash_decorrelate=True xor-hashes the flat position with a
+    Knuth multiplicative hash of the logical id before the modulo, breaking
+    structured position-vs-cnt alignment without warp ops.
+    """
+
+    comptime assert phy_idx.flat_rank == 2
+    comptime assert router_idx.flat_rank == 2
+    comptime assert logcnt.flat_rank == 2
+    comptime assert log2phy.flat_rank == 3
+    comptime assert layer_idx.flat_rank == 1
+
+    comptime assert (
+        router_idx.static_shape[1] == K
+    ), "router_idx.static_shape[1] must equal K"
+    comptime assert (
+        phy_idx.static_shape[1] == K
+    ), "phy_idx.static_shape[1] must equal K"
+    comptime assert (
+        logcnt.static_shape[1] == num_log
+    ), "logcnt.static_shape[1] must equal num_log"
+    comptime assert (
+        log2phy.static_shape[1] == num_log
+    ), "log2phy.static_shape[1] must equal num_log"
+    comptime assert (
+        log2phy.static_shape[2] == max_replicas
+    ), "log2phy.static_shape[2] must equal max_replicas"
+    comptime assert (
+        K.is_power_of_two()
+    ), "K must be a power of two so (tid % K) is a bitmask"
+
+    comptime BLOCK_THREADS = tile_tokens * K
+    comptime HASH_C = UInt32(
+        2654435761
+    )  # Knuth golden-ratio multiplicative hash
+
+    var tid = Int(thread_idx.x)
+
+    var smem_cnt = stack_allocation[
+        num_log,
+        DType.int32,
+        address_space=AddressSpace.SHARED,
+    ]()
+
+    var smem_phy = stack_allocation[
+        num_log * max_replicas,
+        DType.int32,
+        address_space=AddressSpace.SHARED,
+    ]()
+
+    with PDL():
+        # Broadcast scalar layer index. Every thread reads the same address →
+        # one HBM transaction, hot in L1 for the rest of the block.
+        var Lidx = Int(layer_idx.load[width=1](Coord(Idx[0]))[0])
+
+        # Cooperative SMEM load of (logcnt, log2phy) slice for layer Lidx.
+        # BLOCK_THREADS threads cover num_log entries; unrolled at comptime.
+        comptime for off in range(ceildiv(num_log, BLOCK_THREADS)):
+            var i = tid + off * BLOCK_THREADS
+            if i < num_log:
+                # logcnt only matters for the round-robin path.
+                comptime if max_replicas > 1:
+                    smem_cnt[i] = Int32(logcnt.load[width=1]((Lidx, i))[0])
+                comptime for r in range(max_replicas):
+                    smem_phy[i * max_replicas + r] = Int32(
+                        log2phy.load[width=1]((Lidx, i, r))[0]
+                    )
+        barrier()
+
+        # Per element remap, One thread = one (n,k)
+        var token_in_block = tid // K
+        var k = tid % K
+        var n = Int(block_idx.x) * tile_tokens + token_in_block
+        var N = Int(phy_idx.dim(0))
+
+        if n < N:
+            var log = Int(router_idx.load[width=1]((n, k))[0])
+
+            comptime if max_replicas == 1:
+                # Pure permutation: cnt is always 1, r is always 0.
+                # No cnt lookup, no modulo, no hash.
+                var phy = Int32(smem_phy[log])
+                phy_idx.store((n, k), phy)
+            else:
+                # Permutation + round-robin replica picker.
+                var cnt = Int(smem_cnt[log])
+                var pos: UInt32 = UInt32(n) * UInt32(K) + UInt32(k)
+
+                comptime if hash_decorrelate:
+                    # XOR-hash to break structured-position bias against `cnt`.
+                    pos = pos ^ (UInt32(log) * HASH_C)
+
+                var r = Int(pos % UInt32(cnt))
+                var phy = Int32(smem_phy[log * max_replicas + r])
+                phy_idx.store((n, k), phy)
+
+
+@always_inline
+def eplb_remap[
+    num_log: Int,
+    max_replicas: Int,
+    K: Int,
+    hash_decorrelate: Bool,
+    target: StaticString,
+](
+    phy_idx: TileTensor[mut=True, DType.int32, ...],  # [N, K] output
+    router_idx: TileTensor[DType.int32, ...],  # [N, K] logical ids
+    logcnt: TileTensor[DType.int32, ...],  # [L, num_log]
+    log2phy: TileTensor[DType.int32, ...],  # [L, num_log, max_replicas]
+    layer_idx: TileTensor[DType.int32, ...],  # rank-1 [1] scalar
+    context: DeviceContext,
+) raises:
+    """Launch the fused EPLB log->phy remap on GPU.
+
+    One block per tile_tokens rows of router_idx; one thread per
+    (n, k) element.
+
+    Parameters:
+        num_log: Number of logical experts per layer.
+        max_replicas: Maximum physical replicas per logical expert.
+        K: Top-K experts per token. Must be a power of two.
+        hash_decorrelate: If True, xor-hash the position before the modulo
+            to break structured-position bias in replica selection. If False,
+            preserves the exact pos % cnt semantics of the legacy chain.
+        target: The target device to run the kernel on.
+
+    Inputs:
+        phy_idx: Output physical expert ids. Shape: [num_tokens, K].
+        router_idx: Input logical expert ids from the gate.
+            Shape: [num_tokens, K].
+        logcnt: Per-(layer, logical) replica count.
+            Shape: [num_moe_layers, num_log].
+        log2phy: Per-(layer, logical, replica) physical-id table.
+            Shape: [num_moe_layers, num_log, max_replicas].
+        layer_idx: Rank-1 scalar tensor of shape [1] carrying the current
+            MoE layer index. Sits on the same device as router_idx.
+        context: DeviceContext.
+    """
+    comptime assert is_gpu[
+        target
+    ](), "EPLB remap kernel is only supported on GPU"
+
+    if router_idx.dim(0) == 0:
+        return
+
+    var gpu_ctx = context
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.moe.eplb.remap", task_id=Int(gpu_ctx.id())
+    ):
+        # Target ~128 threads/block. Divides cleanly into NVIDIA warp=32,
+        # AMD wave=64, and Apple SIMD=32 so no lanes idle from divisibility.
+        # tile_tokens scales with K so block_dim stays ≈128 regardless of model.
+        comptime tile_tokens = 128 // K if K <= 128 else 1
+
+        comptime kernel = eplb_remap_kernel[
+            phy_idx.LayoutType,
+            router_idx.LayoutType,
+            logcnt.LayoutType,
+            log2phy.LayoutType,
+            layer_idx.LayoutType,
+            num_log,
+            max_replicas,
+            K,
+            tile_tokens,
+            hash_decorrelate,
+        ]
+
+        gpu_ctx.enqueue_function[kernel](
+            phy_idx,
+            router_idx,
+            logcnt,
+            log2phy,
+            layer_idx,
+            grid_dim=ceildiv(Int(router_idx.dim(0)), tile_tokens),
+            block_dim=tile_tokens * K,
             attributes=pdl_launch_attributes(PDLLevel(1)),
         )

@@ -18,7 +18,7 @@ This is essential for accurate benchmarking when memory access patterns need to
 be preserved exactly as written.
 """
 
-from std.os.atomic import Consistency, fence
+from std.atomic import Ordering, fence
 
 # ===-----------------------------------------------------------------------===#
 # clobber_memory
@@ -36,4 +36,4 @@ def clobber_memory():
 
     # This operation corresponds to  atomic_signal_fence(memory_order_acq_rel)
     # in C++.
-    fence[Consistency.ACQUIRE_RELEASE, scope="singlethread"]()
+    fence[Ordering.ACQUIRE_RELEASE, scope="singlethread"]()

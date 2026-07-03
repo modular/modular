@@ -48,7 +48,6 @@ def create_attention_weights(
                 3 * hidden_size, dtype=dtype, device=device
             )
     else:
-        # Create separate Q, K, V weights
         for proj in ["q", "k", "v"]:
             weights[f"{proj}_proj.weight"] = std * torch.randn(
                 hidden_size, hidden_size, dtype=dtype, device=device

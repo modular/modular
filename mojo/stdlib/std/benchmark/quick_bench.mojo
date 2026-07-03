@@ -18,6 +18,7 @@ automatically handles `Bencher` setup and the `keep()` calls needed to prevent
 optimization, supporting functions with 0-10 arguments.
 """
 
+from .compiler import keep
 from .bencher import Bench, Bencher, BenchId, ThroughputMeasure
 
 
@@ -51,7 +52,7 @@ struct QuickBench:
         T_out: TrivialRegisterPassable
     ](
         mut self,
-        func: def() -> T_out,
+        func: def() thin -> T_out,
         *,
         bench_id: BenchId,
         measures: List[ThroughputMeasure] = {},
@@ -89,7 +90,7 @@ struct QuickBench:
         T0: TrivialRegisterPassable, /, T_out: TrivialRegisterPassable
     ](
         mut self,
-        func: def(T0) -> T_out,
+        func: def(T0) thin -> T_out,
         x0: T0,
         *,
         bench_id: BenchId,
@@ -133,7 +134,7 @@ struct QuickBench:
         T_out: TrivialRegisterPassable,
     ](
         mut self,
-        func: def(T0, T1) -> T_out,
+        func: def(T0, T1) thin -> T_out,
         x0: T0,
         x1: T1,
         *,
@@ -181,7 +182,7 @@ struct QuickBench:
         T_out: TrivialRegisterPassable,
     ](
         mut self,
-        func: def(T0, T1, T2) -> T_out,
+        func: def(T0, T1, T2) thin -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -233,7 +234,7 @@ struct QuickBench:
         T_out: TrivialRegisterPassable,
     ](
         mut self,
-        func: def(T0, T1, T2, T3) -> T_out,
+        func: def(T0, T1, T2, T3) thin -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -289,7 +290,7 @@ struct QuickBench:
         T_out: TrivialRegisterPassable,
     ](
         mut self,
-        func: def(T0, T1, T2, T3, T4) -> T_out,
+        func: def(T0, T1, T2, T3, T4) thin -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -349,7 +350,7 @@ struct QuickBench:
         T_out: TrivialRegisterPassable,
     ](
         mut self,
-        func: def(T0, T1, T2, T3, T4, T5) -> T_out,
+        func: def(T0, T1, T2, T3, T4, T5) thin -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -413,7 +414,7 @@ struct QuickBench:
         T_out: TrivialRegisterPassable,
     ](
         mut self,
-        func: def(T0, T1, T2, T3, T4, T5, T6) -> T_out,
+        func: def(T0, T1, T2, T3, T4, T5, T6) thin -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -481,7 +482,7 @@ struct QuickBench:
         T_out: TrivialRegisterPassable,
     ](
         mut self,
-        func: def(T0, T1, T2, T3, T4, T5, T6, T7) -> T_out,
+        func: def(T0, T1, T2, T3, T4, T5, T6, T7) thin -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -553,7 +554,7 @@ struct QuickBench:
         T_out: TrivialRegisterPassable,
     ](
         mut self,
-        func: def(T0, T1, T2, T3, T4, T5, T6, T7, T8) -> T_out,
+        func: def(T0, T1, T2, T3, T4, T5, T6, T7, T8) thin -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -629,7 +630,7 @@ struct QuickBench:
         T_out: TrivialRegisterPassable,
     ](
         mut self,
-        func: def(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9) -> T_out,
+        func: def(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9) thin -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,

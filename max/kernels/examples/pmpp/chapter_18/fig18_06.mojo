@@ -20,7 +20,7 @@ its unvisited neighbors.
 
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim
 from std.gpu.host import DeviceContext
-from std.os import Atomic
+from std.atomic import Atomic
 from std.collections import List
 
 from graph_utils import (
@@ -121,7 +121,7 @@ def main() raises:
         h_flag[0] = 0
         ctx.enqueue_copy(d_new_vertex_visited, h_flag)
 
-        ctx.enqueue_function_experimental[bfs_kernel](
+        ctx.enqueue_function[bfs_kernel](
             d_src_ptrs,
             d_dst,
             NUM_VERTICES,

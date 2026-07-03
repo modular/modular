@@ -45,7 +45,7 @@ def arg_nonzero[
     comptime assert (
         output_buffer.flat_rank == 2
     ), "output_buffer must be of rank 2"
-    # Provide evidence that flat_rank >= 2 for the Coord(Idx(...), Idx(...)) stores below.
+    # Provide evidence that flat_rank >= 2 for the Coord(..., ...) stores below.
     comptime assert output_buffer.flat_rank >= 2
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")]("arg_nonzero"):
@@ -59,7 +59,7 @@ def arg_nonzero[
                 i, coord_to_index_list(input_buffer.layout.shape_coord())
             )
             var offset = input_buffer.layout(Coord(indices))
-            if input_buffer.ptr.load(offset) != 0:
+            if input_buffer.raw_load(offset) != 0:
                 var out_indices = IndexList[2]()
                 out_indices[0] = j
                 j += 1
@@ -71,7 +71,7 @@ def arg_nonzero[
                 comptime for k in range(input_buffer.rank):
                     out_indices[1] = k
                     output_buffer.store(
-                        Coord(Idx(out_indices[0]), Idx(out_indices[1])),
+                        Coord(out_indices[0], out_indices[1]),
                         output_buffer.ElementType(coords[k].value()),
                     )
 
@@ -101,8 +101,8 @@ def arg_nonzero_shape[
 
     var j: Int = 0
     for i in range(numel):
-        var offset = input_buffer.layout(Idx(i))
-        if input_buffer.ptr.load(offset) != 0:
+        var offset = input_buffer.layout(i)
+        if input_buffer.raw_load(offset) != 0:
             j += 1
 
     shape[0] = j

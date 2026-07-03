@@ -86,6 +86,11 @@ def distributed_scatter(
         )
 
     # Infer root from where the input chunks live.
+    if root_device not in devices:
+        raise ValueError(
+            f"input chunk device {root_device} not found in signal buffer "
+            f"devices: {devices}"
+        )
     root = devices.index(root_device)
 
     tp_size = math.ceil(ngpus / dp_size)
@@ -110,9 +115,7 @@ def distributed_scatter(
     graph = Graph.current
 
     # Merge all device chains into one input chain.
-    in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
-    )
+    in_chain = graph.device_chains.merge_for(devices)
 
     # Stage a single scatter op across all devices.
     root_attr = IntegerAttr(IntegerType(64), root)

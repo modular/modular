@@ -13,16 +13,16 @@
 
 
 @fieldwise_init
-struct Container[ElementType: Movable & ImplicitlyDestructible]:
+struct Container[ElementType: Movable & ImplicitlyDeletable]:
     var element: Self.ElementType
 
     def __str__[
-        StrElementType: Writable & Copyable, //
-    ](self: Container[StrElementType]) raises -> String:
+        StrElementType: Writable & Copyable & ImplicitlyDeletable, //
+    ](self: Container[StrElementType]) -> String:
         return String(self.element)
 
 
-def main() raises:
+def main():
     float_container = Container(5.0)
     string_container = Container("Hello")
     print(float_container.__str__())

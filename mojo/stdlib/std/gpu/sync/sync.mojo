@@ -24,7 +24,7 @@ thread blocks and warps, and manage memory consistency across different memory s
 """
 
 from std.os import abort
-from std.os.atomic import Consistency, fence
+from std.atomic import Ordering, fence
 from std.sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, llvm_intrinsic
 from std.sys._assembly import inlined_assembly
 from std.sys.info import CompilationTarget, _is_amd_cdna
@@ -79,8 +79,7 @@ def named_barrier[
         is_nvidia_gpu()
     ), "named barrier is only supported by NVIDIA GPUs"
     _ = __mlir_op.`nvvm.barrier`[
-        _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1, 1, 0>}`,
-        _type=__mlir_type.i32,
+        _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1, 1>}`,
     ](to_i32(id), to_i32(num_threads))
 
 
@@ -123,15 +122,17 @@ def barrier():
     """
 
     comptime if is_nvidia_gpu():
-        __mlir_op.`nvvm.barrier0`()
+        _ = __mlir_op.`nvvm.barrier`[
+            _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 0, 0>}`,
+        ]()
     elif _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM:
         comptime assert is_amd_gpu()
         llvm_intrinsic["llvm.amdgcn.s.waitcnt", NoneType](Int32(0xC07F))
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
     elif is_amd_gpu():
-        fence[Consistency.RELEASE, scope="workgroup"]()
+        fence[Ordering.RELEASE, scope="workgroup"]()
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
-        fence[Consistency.ACQUIRE, scope="workgroup"]()
+        fence[Ordering.ACQUIRE, scope="workgroup"]()
     elif is_apple_gpu():
         # threadgroup_barrier(mem_flags::mem_threadgroup)
         llvm_intrinsic["llvm.air.wg.barrier", NoneType](Int32(2), Int32(1))
@@ -440,7 +441,7 @@ def syncwarp(mask: Int = -1):
 
     This function creates a synchronization point where threads in a warp must wait until all
     threads specified by the mask reach this point. On NVIDIA GPUs, it uses warp-level
-    synchronization primitives. On AMD GPUs, this is a no-op since threads execute in lock-step.
+    synchronization primitives. On AMD GPUs, this acts as a wave execution barrier.
     On Apple GPUs, this acts as a SIMDGROUP execution barrier. Lane masks are not supported,
     so the mask argument is ignored and all active lanes must reach this point.
 
@@ -452,7 +453,7 @@ def syncwarp(mask: Int = -1):
 
     Note:
         - On NVIDIA GPUs, this maps to the nvvm.bar.warp.sync intrinsic.
-        - On AMD GPUs, this is a no-op since threads execute in lock-step.
+        - On AMD GPUs, this maps to the llvm.amdgcn.wave.barrier intrinsic.
         - On Apple GPUs, this provides *execution synchronization only* via a SIMDGROUP
           barrier with `mem_none` (no memory fence). Use `barrier()` for threadgroup
           memory ordering.
@@ -461,17 +462,17 @@ def syncwarp(mask: Int = -1):
 
     comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.bar.warp.sync`(
-            __mlir_op.`index.casts`[_type=__mlir_type.i32](mask._mlir_value)
+            __mlir_op.`index.casts`[_type=__mlir_type.i32](
+                mask.__mlir_index__()
+            )
         )
     elif is_amd_gpu():
-        # In AMD GPU this is a nop (everything executed in lock-step).
-        return
+        llvm_intrinsic["llvm.amdgcn.wave.barrier", NoneType]()
     elif is_apple_gpu():
         # simdgroup_barrier(mem_flags::mem_none)
         llvm_intrinsic["llvm.air.simdgroup.barrier", NoneType](
             Int32(0), Int32(4)
         )
-        return
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
@@ -512,8 +513,30 @@ def _mbarrier_impl[
 
 
 @always_inline("nodebug")
-def async_copy_arrive[
+def _mbarrier_noinc_impl[
     type: AnyType, address_space: AddressSpace
+](address: UnsafePointer[mut=True, type, _, address_space=address_space]):
+    """Internal noinc implementation for making a memory barrier track async operations.
+
+    The noinc variant does not increment the expected transaction count.
+    It still tracks the async copies for mbarrier completion, but avoids
+    incrementing outstanding bytes.
+
+    Args:
+        address: Pointer to the memory barrier object location.
+    """
+
+    comptime if address_space == AddressSpace.SHARED:
+        llvm_intrinsic[
+            "llvm.nvvm.cp.async.mbarrier.arrive.noinc.shared", NoneType
+        ](address)
+    else:
+        comptime assert False, "invalid address space"
+
+
+@always_inline("nodebug")
+def async_copy_arrive[
+    type: AnyType, address_space: AddressSpace, *, noinc: Bool = False
 ](address: UnsafePointer[mut=True, type, _, address_space=address_space]):
     """Makes a memory barrier track all prior async copy operations from this thread.
 
@@ -521,16 +544,25 @@ def async_copy_arrive[
     from the executing thread are tracked by the memory barrier at the specified location.
     Only supported on NVIDIA GPUs.
 
+    When `noinc` is True, the increment to the pending count of the mbarrier
+    object is not performed. The decrement of the pending count done by the
+    asynchronous arrive-on operation must be accounted for in the
+    initialization of the mbarrier object.
+
     Parameters:
         type: The data type stored at the barrier location.
         address_space: The memory address space where the barrier is located.
+        noinc: If True, do not increment the pending count. Defaults to False.
 
     Args:
         address: Pointer to the memory barrier object location.
     """
 
     comptime if is_nvidia_gpu():
-        _mbarrier_impl(address)
+        comptime if noinc:
+            _mbarrier_noinc_impl(address)
+        else:
+            _mbarrier_impl(address)
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),

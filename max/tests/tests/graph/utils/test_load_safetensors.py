@@ -12,7 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Test loading external safetensor weights into Max Graph."""
 
+import json
+import struct
+from pathlib import Path
+
 import pytest
+from max._core.safetensors import safe_open
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import SafetensorWeights
@@ -180,3 +185,41 @@ def test_load_invalid_tensor(testdata_directory) -> None:  # noqa: ANN001
     ):
         print(weights._tensors_to_file_idx)
         _ = weights["0"].a.allocate()
+
+
+def _write_safetensors(
+    path: Path,
+    metadata: dict[str, str] | None,
+) -> None:
+    """Write a minimal valid safetensors file with optional metadata."""
+    header: dict[str, object] = {
+        "t": {"dtype": "I32", "shape": [2, 2], "data_offsets": [0, 16]},
+    }
+    if metadata is not None:
+        header["__metadata__"] = metadata
+    header_bytes = json.dumps(header).encode("utf-8")
+    with open(path, "wb") as f:
+        f.write(struct.pack("<Q", len(header_bytes)))
+        f.write(header_bytes)
+        f.write(b"\x00" * 16)
+
+
+def test_metadata_present(tmp_path) -> None:  # noqa: ANN001
+    path = tmp_path / "with_metadata.safetensors"
+    _write_safetensors(path, {"foo": "bar", "format": "nvfp4"})
+    with safe_open(path) as f:
+        assert f.metadata() == {"foo": "bar", "format": "nvfp4"}
+
+
+def test_metadata_absent(tmp_path) -> None:  # noqa: ANN001
+    path = tmp_path / "no_metadata.safetensors"
+    _write_safetensors(path, None)
+    with safe_open(path) as f:
+        assert f.metadata() == {}
+
+
+def test_metadata_on_bundled_testdata(testdata_directory) -> None:  # noqa: ANN001
+    # Sanity-check that metadata() works on the checked-in fixtures, which
+    # were generated without a ``__metadata__`` section.
+    with safe_open(testdata_directory / "example_data_1.safetensors") as f:
+        assert f.metadata() == {}

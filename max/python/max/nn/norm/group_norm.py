@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, Weight, ops
+from max.graph import DeviceRef, TensorValue, Weight, ops
 
 from ..layer import Module
 
@@ -120,17 +120,4 @@ class GroupNorm(Module):
             ).to(x.device)
         )
 
-        return ops.custom(
-            "group_norm",
-            x.device,
-            [
-                x,
-                gamma,
-                beta,
-                ops.constant(self.eps, dtype=x.dtype, device=DeviceRef.CPU()),
-                ops.constant(
-                    self.num_groups, dtype=DType.int32, device=DeviceRef.CPU()
-                ),
-            ],
-            [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
-        )[0].tensor
+        return ops.group_norm(x, gamma, beta, self.num_groups, self.eps)

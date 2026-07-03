@@ -13,9 +13,15 @@
 
 from std.math import ceildiv, exp, exp2, log, rsqrt
 
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._fillers import random
-from std.memory import alloc
 from state_space.selective_scan import (
     mamba_split_conv1d_scan_combined_cpu,
 )
@@ -68,55 +74,44 @@ def run_mamba_split_conv1d_scan_combined[
     # zxbcdt: (batch, seqlen, 2*dim + 2*ngroups*dstate + nheads)
     var zxbcdt_channels = 2 * dim + 2 * ngroups * dstate + nheads
     var zxbcdt_size = batch * seqlen * zxbcdt_channels
-    var zxbcdt_heap = alloc[Scalar[dtype]](zxbcdt_size)
+    var zxbcdt_heap = List(length=zxbcdt_size, fill=Scalar[dtype](0))
     comptime layout_3d = Layout.row_major[3]()
-    var zxbcdt_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        zxbcdt_heap,
-        RuntimeLayout[layout_3d].row_major(
-            Index(batch, seqlen, zxbcdt_channels)
-        ),
+    var zxbcdt_h = TileTensor(
+        zxbcdt_heap, row_major(batch, seqlen, zxbcdt_channels)
     )
 
     # conv_weight: (dim + 2*ngroups*dstate, width)
     var conv_weight_channels = dim + 2 * ngroups * dstate
     var conv_weight_size = conv_weight_channels * width
-    var conv_weight_heap = alloc[Scalar[dtype]](conv_weight_size)
+    var conv_weight_heap = List(length=conv_weight_size, fill=Scalar[dtype](0))
     comptime layout_2d = Layout.row_major[2]()
-    var conv_weight_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        conv_weight_heap,
-        RuntimeLayout[layout_2d].row_major(Index(conv_weight_channels, width)),
+    var conv_weight_h = TileTensor(
+        conv_weight_heap, row_major(conv_weight_channels, width)
     )
 
     # conv_bias: (dim + 2*ngroups*dstate,)
     var conv_bias_size = conv_weight_channels
-    var conv_bias_heap = alloc[Scalar[dtype]](conv_bias_size)
+    var conv_bias_heap = List(length=conv_bias_size, fill=Scalar[dtype](0))
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    var conv_bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        conv_bias_heap,
-        RuntimeLayout[layout_1d].row_major(Index(conv_bias_size)),
-    )
+    var conv_bias_h = TileTensor(conv_bias_heap, row_major(conv_bias_size))
 
     # dt_bias: (nheads,)
     var dt_bias_size = nheads
-    var dt_bias_heap = alloc[Scalar[dtype]](dt_bias_size)
-    var dt_bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        dt_bias_heap, RuntimeLayout[layout_1d].row_major(Index(dt_bias_size))
-    )
+    var dt_bias_heap = List(length=dt_bias_size, fill=Scalar[dtype](0))
+    var dt_bias_h = TileTensor(dt_bias_heap, row_major(dt_bias_size))
 
     # A: (nheads,)
     var A_size = nheads
-    var A_heap = alloc[Scalar[dtype]](A_size)
-    var A_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        A_heap, RuntimeLayout[layout_1d].row_major(Index(A_size))
-    )
+    var A_heap = List(length=A_size, fill=Scalar[dtype](0))
+    var A_h = TileTensor(A_heap, row_major(A_size))
 
     # D: (nheads, headdim) or (nheads,)
     var D_size = nheads * headdim if has_D else 0
-    var D_heap = alloc[Scalar[dtype]](max(D_size, 1))
-    var D_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var D_heap = List(length=max(D_size, 1), fill=Scalar[dtype](0))
+    var D_h = TileTensor(
         D_heap,
-        RuntimeLayout[layout_2d].row_major(
-            Index(
+        row_major(
+            (
                 nheads if has_D else 0,
                 headdim if has_D and D_size > nheads else 0,
             )
@@ -125,93 +120,70 @@ def run_mamba_split_conv1d_scan_combined[
 
     # x: (batch, dim, num_chunks, 2*dstate)
     var x_size = batch * dim * n_chunks * 2 * dstate
-    var x_heap = alloc[Scalar[dtype]](x_size)
+    var x_heap = List(length=x_size, fill=Scalar[dtype](0))
     comptime layout_4d = Layout.row_major[4]()
-    var x_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        x_heap,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, dim, n_chunks, 2 * dstate)
-        ),
-    )
+    var x_h = TileTensor(x_heap, row_major(batch, dim, n_chunks, 2 * dstate))
 
     # out_z: (batch, dim, seqlen)
     var out_z_size = batch * dim * seqlen
-    var out_z_heap = alloc[Scalar[dtype]](out_z_size)
-    var out_z_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        out_z_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
+    var out_z_heap = List(length=out_z_size, fill=Scalar[dtype](0))
+    var out_z_h = TileTensor(out_z_heap, row_major(batch, dim, seqlen))
 
     # dt: (batch, nheads, seqlen)
     var dt_size = batch * nheads * seqlen
-    var dt_heap = alloc[Scalar[dtype]](dt_size)
-    var dt_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        dt_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, nheads, seqlen)),
-    )
+    var dt_heap = List(length=dt_size, fill=Scalar[dtype](0))
+    var dt_h = TileTensor(dt_heap, row_major(batch, nheads, seqlen))
 
     # B: (batch, ngroups, dstate, seqlen)
     var B_size = batch * ngroups * dstate * seqlen
-    var B_heap = alloc[Scalar[dtype]](B_size)
-    var B_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        B_heap,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, ngroups, dstate, seqlen)
-        ),
-    )
+    var B_heap = List(length=B_size, fill=Scalar[dtype](0))
+    var B_h = TileTensor(B_heap, row_major(batch, ngroups, dstate, seqlen))
 
     # C: (batch, ngroups, dstate, seqlen)
     var C_size = batch * ngroups * dstate * seqlen
-    var C_heap = alloc[Scalar[dtype]](C_size)
-    var C_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        C_heap,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, ngroups, dstate, seqlen)
-        ),
-    )
+    var C_heap = List(length=C_size, fill=Scalar[dtype](0))
+    var C_h = TileTensor(C_heap, row_major(batch, ngroups, dstate, seqlen))
 
     # z: (batch, dim, seqlen)
     var z_size = batch * dim * seqlen
-    var z_heap = alloc[Scalar[dtype]](z_size)
-    var z_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        z_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
+    var z_heap = List(length=z_size, fill=Scalar[dtype](0))
+    var z_h = TileTensor(z_heap, row_major(batch, dim, seqlen))
 
     # rmsnorm_weight: (dim,)
     var rmsnorm_weight_size = dim if has_rmsnorm else 0
-    var rmsnorm_weight_heap = alloc[Scalar[dtype]](max(rmsnorm_weight_size, 1))
-    var rmsnorm_weight_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        rmsnorm_weight_heap,
-        RuntimeLayout[layout_1d].row_major(Index(rmsnorm_weight_size)),
+    var rmsnorm_weight_heap = List(
+        length=max(rmsnorm_weight_size, 1), fill=Scalar[dtype](0)
+    )
+    var rmsnorm_weight_h = TileTensor(
+        rmsnorm_weight_heap, row_major(rmsnorm_weight_size)
     )
 
     # outproj_weight: (out_dim, dim)
     var out_dim = dim  # For simplicity, use same as input dim
     var outproj_weight_size = out_dim * dim if has_outproj else 0
-    var outproj_weight_heap = alloc[Scalar[dtype]](max(outproj_weight_size, 1))
-    var outproj_weight_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var outproj_weight_heap = List(
+        length=max(outproj_weight_size, 1), fill=Scalar[dtype](0)
+    )
+    var outproj_weight_h = TileTensor(
         outproj_weight_heap,
-        RuntimeLayout[layout_2d].row_major(
-            Index(out_dim if has_outproj else 0, dim if has_outproj else 0)
-        ),
+        row_major((out_dim if has_outproj else 0, dim if has_outproj else 0)),
     )
 
     # outproj_bias: (out_dim,)
     var outproj_bias_size = out_dim if has_outproj else 0
-    var outproj_bias_heap = alloc[Scalar[dtype]](max(outproj_bias_size, 1))
-    var outproj_bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        outproj_bias_heap,
-        RuntimeLayout[layout_1d].row_major(Index(outproj_bias_size)),
+    var outproj_bias_heap = List(
+        length=max(outproj_bias_size, 1), fill=Scalar[dtype](0)
+    )
+    var outproj_bias_h = TileTensor(
+        outproj_bias_heap, row_major(outproj_bias_size)
     )
 
     # output: (batch, seqlen, dim) or (batch, seqlen, out_dim)
     var output_size = batch * seqlen * (out_dim if has_outproj else dim)
-    var output_heap = alloc[Scalar[dtype]](output_size)
-    var output_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var output_heap = List(length=output_size, fill=Scalar[dtype](0))
+    var output_h = TileTensor(
         output_heap,
-        RuntimeLayout[layout_3d].row_major(
-            Index(batch, seqlen, out_dim if has_outproj else dim)
-        ),
+        row_major(batch, seqlen, out_dim if has_outproj else dim),
     )
 
     # Initialize data
@@ -233,28 +205,28 @@ def run_mamba_split_conv1d_scan_combined[
         random(outproj_weight_h)
         random(outproj_bias_h)
 
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
 
     # Call kernel
     mamba_split_conv1d_scan_combined_cpu[
         dtype,
         DSTATE,
-        zxbcdt_h.layout,
-        conv_weight_h.layout,
-        conv_bias_h.layout,
-        output_h.layout,
-        x_h.layout,
-        out_z_h.layout,
-        dt_h.layout,
-        A_h.layout,
-        B_h.layout,
-        C_h.layout,
-        D_h.layout,
-        z_h.layout,
-        dt_bias_h.layout,
-        rmsnorm_weight_h.layout,
-        outproj_weight_h.layout,
-        outproj_bias_h.layout,
+        zxbcdt_h.LayoutType,
+        conv_weight_h.LayoutType,
+        conv_bias_h.LayoutType,
+        output_h.LayoutType,
+        x_h.LayoutType,
+        out_z_h.LayoutType,
+        dt_h.LayoutType,
+        A_h.LayoutType,
+        B_h.LayoutType,
+        C_h.LayoutType,
+        D_h.LayoutType,
+        z_h.LayoutType,
+        dt_bias_h.LayoutType,
+        rmsnorm_weight_h.LayoutType,
+        outproj_weight_h.LayoutType,
+        outproj_bias_h.LayoutType,
     ](
         batch,
         seqlen,
@@ -284,7 +256,7 @@ def run_mamba_split_conv1d_scan_combined[
         outproj_weight_h,
         outproj_bias_h,
         output_h,
-        epsilon,
+        epsilon.cast[dtype](),
     )
 
     # ===--- Reference implementation for numerical verification ---=== #
@@ -295,9 +267,7 @@ def run_mamba_split_conv1d_scan_combined[
     # 4. Gating with z (optional RMSNorm)
     # 5. Store output (no outproj in current tests)
     var output_ref_size = batch * seqlen * dim
-    var output_ref_heap = alloc[Scalar[dtype]](output_ref_size)
-    for i in range(output_ref_size):
-        output_ref_heap[i] = Scalar[dtype](0)
+    var output_ref_heap = List(length=output_ref_size, fill=Scalar[dtype](0))
 
     # Channel offsets within zxbcdt
     var z_start = 0
@@ -418,7 +388,7 @@ def run_mamba_split_conv1d_scan_combined[
                 # --- Step 6: Apply gating and optional RMSNorm ---
                 var out_val = ss_output
                 if has_rmsnorm:
-                    var eps = Float32(epsilon)
+                    var eps = epsilon
                     if norm_before_gate:
                         # RMSNorm(x) * SiLU(z)
                         var norm_val = (
@@ -444,26 +414,6 @@ def run_mamba_split_conv1d_scan_combined[
             output_ref_heap[i],
             rtol=rtol,
         )
-
-    output_ref_heap.free()
-
-    # Cleanup
-    zxbcdt_heap.free()
-    conv_weight_heap.free()
-    conv_bias_heap.free()
-    dt_bias_heap.free()
-    A_heap.free()
-    D_heap.free()
-    x_heap.free()
-    out_z_heap.free()
-    dt_heap.free()
-    B_heap.free()
-    C_heap.free()
-    z_heap.free()
-    rmsnorm_weight_heap.free()
-    outproj_weight_heap.free()
-    outproj_bias_heap.free()
-    output_heap.free()
 
 
 def test_mamba_combined_basic() raises:

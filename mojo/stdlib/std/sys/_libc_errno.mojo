@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import c_int, external_call
+from std.ffi import CStringSlice, c_int, external_call
 from std.sys.info import CompilationTarget, platform_map
 
 
-def _errno_ptr(out result: UnsafePointer[c_int, MutExternalOrigin]):
+def _errno_ptr(out result: UnsafePointer[c_int, MutUntrackedOrigin]):
     comptime if CompilationTarget.is_linux():
         result = external_call["__errno_location", type_of(result)]()
     elif CompilationTarget.is_macos():
@@ -68,19 +68,17 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
 
     Example:
         ```mojo
-        import std.os
-        from std.ffi import get_errno, set_errno, ErrNo
+        from std.os import abort
+        from std.sys._libc_errno import get_errno, set_errno, ErrNo
 
-        try:
-            _ = os.path.realpath("non-existent-file")
-        except:
+        def main():
             var err = get_errno()
             if err == ErrNo.ENOENT:
                 # Handle missing path, clear errno, and continue
                 set_errno(ErrNo.SUCCESS)
-            else:
-                # Else raise error
-                raise Error(err)
+            elif err != ErrNo.SUCCESS:
+                # Else abort on error
+                abort("unexpected errno")
         ```
     """
 
@@ -420,9 +418,13 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
         comptime if CompilationTarget.is_macos():
             assert self != ErrNo.SUCCESS, "macos can't stringify ErrNo.SUCCESS"
         var ptr = external_call[
-            "strerror", UnsafePointer[Byte, MutExternalOrigin]
+            "strerror", UnsafePointer[Byte, MutUntrackedOrigin]
         ](self.value)
-        var string = StringSlice(unsafe_from_utf8_ptr=ptr)
+        var string = StringSlice(
+            unsafe_from_utf8=CStringSlice(
+                unsafe_from_ptr=ptr.bitcast[Int8]().unsafe_mut_cast[False]()
+            )
+        )
         string.write_to(writer)
 
     @always_inline

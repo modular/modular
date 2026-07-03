@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Elementwise ops tests on real 4 GPUs — inherits all logic from _elementwise."""
 
-from _test_helpers import gpu_partial
+from _test_helpers import make_partial
 from max.driver import Accelerator
 from max.experimental.sharding import DeviceMesh
 
@@ -45,4 +45,4 @@ class TestElementwise(ElementwiseTests):
         mesh_shape=(2,),
         axis_names=("tp",),
     )
-    partial_fn = staticmethod(gpu_partial)
+    partial_fn = staticmethod(make_partial)

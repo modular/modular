@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """
-AMD Warp-Specialized Matrix Multiplication
+AMD Warp-Specialized Matrix Multiplication.
 
 Architecture Overview:
 - Producer warps: Load tiles from global to shared memory
@@ -36,14 +36,16 @@ Ring Buffer Configuration:
 - Can be changed to SplitCounterSync in the RingBuffer type aliases for reduced contention
 - The trait-based design allows easy experimentation with different sync strategies
 """
+from std.sys import simd_width_of
 from std.gpu import (
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
-    block_idx_int as block_idx,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
+    block_idx,
+    thread_idx,
+    warp_id,
 )
+from std.gpu.host import DeviceContext
 from std.gpu.intrinsics import inlined_assembly
 from layout import Layout, LayoutTensor, TileTensor
 from layout.layout import blocked_product
@@ -118,8 +120,8 @@ def determine_thread_role[
         producer_a_warps + producer_b_warps
     ) * WARP_SIZE
 
-    if thread_idx.x < UInt(producer_thread_count):
-        if warp_id < UInt(producer_a_warps):
+    if thread_idx.x < producer_thread_count:
+        if warp_id < producer_a_warps:
             return (ThreadRole.PRODUCER, 0)  # A producer
         else:
             return (ThreadRole.PRODUCER, 1)  # B producer
@@ -250,7 +252,7 @@ def run_producer[
 ](
     matrix: GlobalTensor[dtype, layout],
     mut ring_buffer: RingBuffer,
-    warp_id: UInt,
+    warp_id: Int,
     block_idx_dim: Int,
 ):
     """Generic producer function for loading matrix tiles from global to shared memory.
@@ -277,9 +279,7 @@ def run_producer[
         var scatter_gather = ScatterGatherAmd[thread_layout](matrix)
 
         comptime for producer_iteration in range(warps_processed_per_producer):
-            var warp_tile_idx = (
-                Int(warp_id) + producer_iteration * producer_warps
-            )
+            var warp_tile_idx = warp_id + producer_iteration * producer_warps
 
             comptime for tile_num in range(tile_count):
                 comptime stage = tile_num % pipeline_stages
@@ -324,6 +324,9 @@ def run_producer[
             (a_producer_warps + b_producer_warps + consumer_warps) * WARP_SIZE
         )
     )
+)
+@__name(
+    t"amd_warp_specialized_matmul_{in_type}_{out_type}_{BM}x{BN}x{BK}",
 )
 def warp_specialized_matmul_kernel[
     in_type: DType,
@@ -460,7 +463,7 @@ def warp_specialized_matmul_kernel[
                 block_idx.x,
             )
         else:  # B producer
-            var producer_warp_id = warp_id - UInt(a_producer_warps)
+            var producer_warp_id = warp_id - a_producer_warps
             run_producer[
                 in_type,
                 b_layout,
@@ -495,9 +498,7 @@ def warp_specialized_matmul_kernel[
         comptime total_consumer_operations = m_warps_per_block * n_warps_per_block
         comptime warps_computed_per_consumer = total_consumer_operations // consumer_warps
 
-        var consumer_warp_id = (
-            Int(warp_id) - a_producer_warps - b_producer_warps
-        )
+        var consumer_warp_id = warp_id - a_producer_warps - b_producer_warps
 
         # Create a single tile operator that we'll reuse for each tile
         var tile_operator = AmdTileOperator[
@@ -621,7 +622,7 @@ def warp_specialized_matmul[
         AddressSpace.GLOBAL
     ]()
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         global_a_device_tensor,
         global_b_device_tensor,
         global_c_device_tensor,

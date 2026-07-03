@@ -1,7 +1,7 @@
 # Code examples and tests for GPU programming fundamentals
 
 This directory contains Code examples and tests for the
-[GPU programming fundamentals](../../../../../docs/manual/gpu/fundamentals.mdx)
+[GPU programming fundamentals](../../../../manual/gpu/intro-tutorial.mdx)
 section of the Mojo Manual.
 
 Contents:
@@ -12,9 +12,9 @@ Contents:
     extension).
   - A `modular_run_binary_test` target for each binary (with a `_test` suffix).
 
-**Note:** These examples require a [supported
-GPU](https://docs.modular.com/mojo/requirements/#gpu-compatibility) to compile
-and run the kernels. If your system doesn't have a supported GPU, you can
+**Note:** These examples require a [compatible
+GPU](/docs/requirements#gpu-compatibility) to compile
+and run the kernels. If your system doesn't have a compatible GPU, you can
 compile the programs but the only output you'll see when you run them is the
 message:
 

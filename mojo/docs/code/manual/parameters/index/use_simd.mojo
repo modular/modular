@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main() raises:
+def main():
     var vector = SIMD[DType.int16, 4](1, 2, 3, 4)
     vector = vector * vector
     for i in range(4):
@@ -21,6 +21,7 @@ def main() raises:
 
     # Example: "Using parameterized types and functions"
 
+    # start-simd-usage-example
     # Make a vector of 4 floats.
     var small_vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
 
@@ -33,19 +34,22 @@ def main() raises:
     # You can write types out explicitly if you want of course.
     var bigger_vec2: SIMD[DType.float32, 32] = bigger_vec
 
-    print("small_vec DType:", small_vec.dtype, "size:", small_vec.size)
+    print("small_vec DType:", small_vec.dtype, "size:", Int(small_vec.size))
     print(
         "bigger_vec2 DType:",
         bigger_vec2.dtype,
         "size:",
-        bigger_vec2.size,
+        Int(bigger_vec2.size),
     )
+    # end-simd-usage-example
 
     # second example
 
     from std.math import sqrt
 
-    def rsqrt[dt: DType, width: Int](x: SIMD[dt, width]) -> SIMD[dt, width]:
+    def rsqrt[
+        dt: DType, width: SIMDSize
+    ](x: SIMD[dt, width]) -> SIMD[dt, width]:
         return 1 / sqrt(x)
 
     var v = SIMD[DType.float16, 4](42)

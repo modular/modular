@@ -13,7 +13,7 @@
 
 from std.hashlib import default_comp_time_hasher
 from std.math import align_up
-from std.math.uutils import umod, ufloordiv
+from std.math.uutils import umod, ufloordiv, udivmod
 from std.memory import bitcast
 from std.sys import argv, size_of
 
@@ -36,10 +36,11 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    LTToTTLayout,
     RuntimeLayout,
     RuntimeTuple,
+    TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
 )
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
@@ -140,21 +141,21 @@ def kernel_5[
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
@@ -177,21 +178,8 @@ def kernel_5[
         Int64
     ]()
 
-    var a_smem_tile = LayoutTensor[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](a_smem)
-
-    var b_smem_tile = LayoutTensor[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](b_smem)
+    var a_smem_tile = TileTensor(a_smem, LTToTTLayout[a_smem_layout]())
+    var b_smem_tile = TileTensor(b_smem, LTToTTLayout[b_smem_layout]())
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -240,7 +228,7 @@ def kernel_5[
     var rank_n = block_id_in_cluster.y
 
     # (peer_id, mma_coord_m, mma_coord_n)
-    var peer_cta_quot, peer_cta_rem = divmod(rank_m, UInt(cta_group))
+    var peer_cta_quot, peer_cta_rem = udivmod(rank_m, cta_group)
     var peer_cta_coord = (
         peer_cta_rem,
         peer_cta_quot,
@@ -259,13 +247,8 @@ def kernel_5[
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
-    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
+    b_multicast_mask <<= UInt16(rank_n * CLUSTER_M)
 
-    var a_mma_mask = a_multicast_mask >> UInt16(peer_cta_coord[0])
-    var b_mma_mask = b_multicast_mask >> UInt16(peer_cta_coord[0])
-    var c_mma_mask: UInt16 = (a_mma_mask | a_mma_mask << 1) | (
-        b_mma_mask | b_mma_mask << 1
-    )
     var mma_op = MmaOpSM100_SS[
         c_type,
         a_type,
@@ -288,11 +271,11 @@ def kernel_5[
                 tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             var a_gmem_slice_coord = (
-                Int(peer_cta_coord[2]) * a_tma_rows + block_idx.x * BM
+                peer_cta_coord[2] * a_tma_rows + block_idx.x * BM
             )
             var b_gmem_slice_coord = (
-                Int(peer_cta_coord[1]) * b_tma_rows
-                + Int(peer_cta_coord[0]) * BN
+                peer_cta_coord[1] * b_tma_rows
+                + peer_cta_coord[0] * BN
                 + block_idx.y * MMA_N
             )
 
@@ -306,12 +289,10 @@ def kernel_5[
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
 
                 var a_smem_slice = type_of(sub_a_smem_tile)(
-                    sub_a_smem_tile.ptr
-                    + peer_cta_coord[2] * UInt(a_tma_load_size)
+                    sub_a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
                 )
                 var b_smem_slice = type_of(sub_b_smem_tile)(
-                    sub_b_smem_tile.ptr
-                    + peer_cta_coord[1] * UInt(b_tma_load_size)
+                    sub_b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
                 )
                 a_tma_op.async_multicast_load[cta_group](
                     a_smem_slice,
@@ -333,8 +314,8 @@ def kernel_5[
 
             if elect_one_warp and elect_one_thread:
                 mma_op.mma(
-                    lt_to_tt(a_smem_tile),
-                    lt_to_tt(b_smem_tile),
+                    a_smem_tile,
+                    b_smem_tile,
                     tmem_addr,
                     init_c=(i == 0),  # Initialize C on first iteration
                 )
@@ -376,7 +357,7 @@ def kernel_5[
     var c_coord_y = ufloordiv(warp_id(), 2) if MMA_M == 128 else 0
 
     # 32 x BN
-    c_warp_tile = c_smem_tile.tile[C_WBM, C_WBN](c_coord_x, c_coord_y)
+    _c_warp_tile = c_smem_tile.tile[C_WBM, C_WBN](c_coord_x, c_coord_y)
 
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
@@ -474,7 +455,6 @@ def kernel_5[
         var c_tma_tile = LayoutTensor[
             c_type,
             Layout.row_major(c_tile_shape[0], c_tile_shape[1]),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
             alignment=128,
         ](c_smem_offset)
@@ -507,9 +487,9 @@ def blackwell_kernel_5[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutUntrackedOrigin],
+    a: LayoutTensor[a_type, a_layout, MutUntrackedOrigin],
+    b: LayoutTensor[b_type, b_layout, MutUntrackedOrigin],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()
@@ -571,7 +551,7 @@ def blackwell_kernel_5[
         cta_group=cta_group,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -639,9 +619,9 @@ def test_blackwell_kernel_5[
     ) if transpose_b else Layout.row_major(K, N)
     comptime c_layout = Layout.row_major(M, N)
 
-    var a_host_ptr = alloc[Scalar[a_type]](M * K)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = alloc[Scalar[b_type]](N * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)
@@ -758,9 +738,6 @@ def test_blackwell_kernel_5[
         )
 
     print("\n=== TEST PASSED ===")
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
 
 
 def get_dic_of_shapes(

@@ -10,8 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Idefics3 vision-language architecture for multimodal text generation."""
 
 from .arch import idefics3_modulev3_arch
+from .model import Idefics3Inputs, Idefics3Model
+from .model_config import Idefics3Config
 
-__all__ = ["idefics3_modulev3_arch"]
+__all__ = [
+    "Idefics3Config",
+    "Idefics3Inputs",
+    "Idefics3Model",
+    "idefics3_modulev3_arch",
+]

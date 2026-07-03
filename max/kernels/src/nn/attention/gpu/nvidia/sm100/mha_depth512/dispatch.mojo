@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Dispatch for depth=512 pair-CTA SM100 (Blackwell) MHA prefill.
+"""Dispatch for depth=256/512 pair-CTA SM100 (Blackwell) MHA prefill.
 
 Creates the Depth512SM100Config, TMA tile descriptors, and launches the
 pair-CTA kernel with cluster_dim=(2,1,1). The TransientScheduler uses
@@ -20,10 +20,11 @@ from block_idx.x >> 1.
 
 from std.collections import OptionalReg
 from std.math import ceildiv
-from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from std.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
 from layout.tma_async import RaggedTMA3DTile
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     ImmutTileTensor1D,
     NonNullPointer,
     NullPointer,
@@ -39,6 +40,11 @@ from nn.attention.mha_utils import (
     MHAPartitionScheme,
     OptionallyStaticInt,
     _is_decoding,
+)
+from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    kv_sub_tile_rows,
+    kv_tma_fold_chunks,
+    o_store_tma_blocks_per_op,
 )
 from .config import Depth512SM100Config
 from .kernel import SM100MHADepth512
@@ -83,16 +89,20 @@ def mha_sm100_depth512_dispatch[
     comptime assert not decoding, "depth512 pair-CTA does not support decoding"
 
     comptime d512_config = Depth512SM100Config[KVType.dtype](
-        num_q_heads=Int(config.num_heads),
+        num_q_heads=config.num_heads,
         group=group,
-        qk_depth=Int(config.depth),
-        ov_depth=Int(config.depth),
+        qk_depth=config.depth,
+        ov_depth=config.depth,
         swizzle_mode=config.swizzle_mode,
         page_size=KVType.page_size,
     )
     comptime assert d512_config.supported(), d512_config.description()
     comptime swizzle_mode = d512_config.swizzle_mode
-    comptime PairBM = d512_config.BM * 2  # 128
+    # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
+    # Q/K/V/S/P buffers governed by `swizzle_mode`).
+    comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE
+    comptime fuse_gqa = d512_config.fuse_gqa
+    comptime PairBM_eff = d512_config.BM_eff() * 2
     comptime num_threads = d512_config.num_threads  # 384
 
     var q = rebind[UnsafePointer[Scalar[KVType.dtype], q_arg.origin]](q_arg)
@@ -101,21 +111,31 @@ def mha_sm100_depth512_dispatch[
 
     # ---- TMA tile descriptors ------------------------------------------------
 
-    # Output store: BM=64 per CTA, full ov_depth=512.
+    # Output store: BM per CTA, full ov_depth. Single issuer, no combine
+    # (depth_splits=1) -> one batched rank-5 TMA over the full depth (group==1).
+    comptime store_blocks_per_op = o_store_tma_blocks_per_op[
+        output_type,
+        output_swizzle_mode,
+        d512_config.ov_depth,
+        d512_config.group if fuse_gqa else 1,
+        depth_splits=1,
+    ]()
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_type,
-        swizzle_mode,
+        output_swizzle_mode,
         BM=d512_config.BM,
         BN=d512_config.ov_depth,
+        middle_dim=d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads,
+        group=d512_config.group if fuse_gqa else 1,
+        tma_blocks_per_op=store_blocks_per_op,
     ]
     var ragged_tma_store = RaggedStoreType.create(
         ctx,
         output.unsafe_ptr(),
         rows=num_rows_q,
-        middle_dim=d512_config.num_q_heads,
     )
 
-    # Q: BM=64 per CTA (not halved like 2Q).
+    # Q: BM per CTA (not halved like 2Q).
     q_tma_op = q_tma[
         swizzle_mode,
         BM=d512_config.BM,
@@ -123,30 +143,66 @@ def mha_sm100_depth512_dispatch[
         q_num_heads=d512_config.num_q_heads,
         group=d512_config.group,
         decoding=False,
+        fuse_gqa=fuse_gqa,
         num_qk_stages=d512_config.num_qk_stages,
     ](ctx, q, num_rows_q)
 
     # K: each CTA loads BN//2 rows, BK0 depth per stage.
+    comptime k_sub_BN = kv_sub_tile_rows(d512_config.BN // 2, KVType.page_size)
+    # Depth-chunk TMA fold (SM100 K-only): fold the BK0 = num_chunks*gran depth
+    # chunks into one rank-4 TMA when byte-equivalent. `kv_tma_fold_chunks` is the
+    # single source of truth shared with the `tma_copy_k` issue site; here
+    # box_rows == k_sub_BN and smem_BN == BN//2, so the fold is allowed exactly
+    # when k_sub_BN == BN//2 (i.e. page_size >= BN//2 -> pages_per_iter == 1).
+    comptime k_fold_chunks = kv_tma_fold_chunks[
+        KVType.dtype,
+        d512_config.swizzle_mode,
+        BK=d512_config.BK0,
+        head_size=d512_config.qk_depth,
+        box_rows=k_sub_BN,
+        smem_BN=d512_config.BN // 2,
+        page_size=KVType.page_size,
+    ]()
     k_tma_op = k.create_tma_tile[
         d512_config.swizzle_mode,
-        BN=d512_config.BN // 2,
+        BN=k_sub_BN,
         depth=d512_config.qk_depth,
         BK=d512_config.BK0,
+        fold_chunks=k_fold_chunks,
     ](ctx)
 
-    # V: BK1 rows x ov_depth//4 columns (heavily sub-tiled for SMEM).
+    # V: BK1 rows x v_cols_per_cta columns (heavily sub-tiled for SMEM).
+    # Depth-chunk TMA fold (SM100): fold the v_cols_per_cta = num_chunks*gran
+    # depth columns into one rank-4 TMA when byte-equivalent. Shares
+    # `kv_tma_fold_chunks` with the `tma_copy_v` issue site (single source of
+    # truth); here box_rows == v_sub_BN and smem_BN == BK1 (V's per-sub-tile
+    # tile_rows), so the fold is allowed exactly when v_sub_BN == BK1 (i.e.
+    # page_size >= BK1 -> pages_per_iter == 1).
+    comptime v_sub_BN = kv_sub_tile_rows(d512_config.BK1, KVType.page_size)
+    comptime v_fold_chunks = kv_tma_fold_chunks[
+        KVType.dtype,
+        d512_config.swizzle_mode,
+        BK=d512_config.v_cols_per_cta,
+        head_size=d512_config.ov_depth,
+        box_rows=v_sub_BN,
+        smem_BN=d512_config.BK1,
+        page_size=KVType.page_size,
+    ]()
     v_tma_op = v.create_tma_tile[
         d512_config.swizzle_mode,
-        BN=d512_config.BK1,
+        BN=v_sub_BN,
         depth=d512_config.ov_depth,
-        BK=d512_config.ov_depth // 4,
+        BK=d512_config.v_cols_per_cta,
+        fold_chunks=v_fold_chunks,
     ](ctx)
 
     # ---- Scheduler -----------------------------------------------------------
 
     comptime SchedulerType = TransientScheduler[
-        UInt32(PairBM),
-        UInt32(d512_config.num_q_heads),
+        UInt32(PairBM_eff),
+        UInt32(
+            d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads
+        ),
         flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
         pair_cta=True,
     ]
@@ -184,7 +240,7 @@ def mha_sm100_depth512_dispatch[
             }
 
             var max_num_prompt_tiles: UInt32 = ceildiv(
-                max_prompt_len_arg.as_uint32(), UInt32(PairBM)
+                max_prompt_len_arg.as_uint32(), UInt32(PairBM_eff)
             )
             var block_x: UInt32 = max_num_prompt_tiles
             # SchedulerType.grid_dim doubles block_x (pair_cta=True).
@@ -220,7 +276,7 @@ def mha_sm100_depth512_dispatch[
                 PartitionType,
             ].kernel
 
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 q_tma_op,
                 k_tma_op,
                 v_tma_op,
@@ -232,6 +288,7 @@ def mha_sm100_depth512_dispatch[
                 pack,
                 grid_dim=SchedulerType.grid_dim(batch_size, block_x),
                 block_dim=(num_threads, 1, 1),
+                cluster_dim=Dim(2, 1, 1),
                 shared_mem_bytes=smem_use,
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(smem_use)
@@ -240,7 +297,9 @@ def mha_sm100_depth512_dispatch[
 
         # --- ragged dispatch ---
         comptime if ragged:
-            with_valid_length[NonNullPointer[DType.uint32]]({valid_length})
+            with_valid_length[NonNullPointer[DType.uint32]](
+                {valid_length.as_immutable().as_unsafe_any_origin()}
+            )
         else:
             with_valid_length[NullPointer[DType.uint32]]({})
 

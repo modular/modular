@@ -35,7 +35,7 @@ Usage:
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
 
-from std.gpu import block_idx_int as block_idx, grid_dim_int as grid_dim
+from std.gpu import block_idx, grid_dim
 from std.gpu.primitives.cluster import elect_one_sync
 from std.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
@@ -355,6 +355,8 @@ struct GroupedTileScheduler[
 
     var num_groups: Int
     """Number of active groups."""
+
+    @__allow_legacy_any_origin_fields
     var problem_sizes: _ProblemSizesTile[Self.max_groups]
     """Problem sizes tensor (num_groups, 4) with [M, N, K, L] per group."""
 

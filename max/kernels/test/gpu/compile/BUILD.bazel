@@ -6,12 +6,12 @@ _LIT_TESTS = [
     "test_amd_asan_oob.mojo",
     "test_amd_block_sync_lds.mojo",
     "test_compile_via_param.mojo",
+    "test_elementwise_trace_description.mojo",
 ]
 
 _FILECHECK_TESTS = [
     "test_amd_target.mojo",
     "test_compile_gcn.mojo",
-    "test_compile_intrinsics.mojo",
     "test_compile_nvptx.mojo",
     "test_compile_nvptx_debuginfo.mojo",
     "test_compile_to_llvm_codegen.mojo",
@@ -62,6 +62,9 @@ _EXTRA_CONSTRAINTS = {
         size = "large",
         srcs = [src],
         copts = _EXTRA_COPTS.get(src, []),
+        exec_properties = {
+            "test.resources:gpu-memory": "1",
+        },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [

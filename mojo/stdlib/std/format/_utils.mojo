@@ -24,13 +24,14 @@ from std.reflection.type_info import _unqualified_type_name
 from std.sys import align_of, size_of
 from std.sys.info import is_gpu
 from std.sys.defines import get_defined_int
+from std.ffi import CStringSlice
 
 from std.bit import byte_swap
 from std.memory import Span, bitcast, memcpy
 
 
 def constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
-    comptime for i in range(Variadic.size_types[Ts]):
+    comptime for i in range(Ts.size):
         comptime T = Ts[i]
         _constrained_conforms_to[
             conforms_to(T, Writable),
@@ -149,6 +150,7 @@ def write_sequence_to[
         end: The ending delimiter.
         sep: The separator between items (default: `", "`).
     """
+    comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
     args._write_to(writer, start=start, end=end, sep=sep)
 
 
@@ -205,7 +207,7 @@ struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
             writer.write_string(_unqualified_type_name[Self.Types[i]]())
 
         write_sequence_to[
-            size=Variadic.size_types[Self.Types],
+            size=Self.Types.size,
             ElementFn=elements,
         ](writer, open="", close="")
 
@@ -213,13 +215,13 @@ struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
 @always_inline
 def write_repr_to[T: AnyType](t: T, mut writer: Some[Writer]):
     comptime assert conforms_to(T, Writable), "T must be Writable"
-    trait_downcast[Writable](t).write_repr_to(writer)
+    t.write_repr_to(writer)
 
 
 @always_inline
 def write_to[T: AnyType](t: T, mut writer: Some[Writer]):
     comptime assert conforms_to(T, Writable), "T must be Writable"
-    trait_downcast[Writable](t).write_to(writer)
+    t.write_to(writer)
 
 
 struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
@@ -342,6 +344,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Returns:
             A reference to this `FormatStruct` instance for method chaining.
         """
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
         args._write_to(self._writer[], start="[", end="]")
         return self
 
@@ -359,6 +362,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Args:
             args: The field values to write.
         """
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
         args._write_to(self._writer[], start="(", end=")")
 
     # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
@@ -394,15 +398,15 @@ comptime STACK_BUFFER_BYTES = UInt(
 
 
 struct _WriteBufferHeap(Writable, Writer):
-    var _data: UnsafePointer[Byte, MutExternalOrigin]
+    var _data: UnsafePointer[Byte, MutUntrackedOrigin]
     var _pos: Int
 
     def __init__(out self):
         comptime alignment: Int = align_of[Byte]()
         self._data = __mlir_op.`pop.stack_allocation`[
-            count=HEAP_BUFFER_BYTES._mlir_value,
+            count=HEAP_BUFFER_BYTES.__mlir_index__(),
             _type=type_of(self._data)._mlir_type,
-            alignment=alignment._mlir_value,
+            alignment=alignment.__mlir_index__(),
         ]()
         self._pos = 0
 
@@ -443,7 +447,9 @@ struct _WriteBufferHeap(Writable, Writer):
             StringSlice(unsafe_from_utf8=Span(ptr=self._data, length=self._pos))
         )
 
-    def nul_terminate(mut self):
+    def nul_terminate(
+        mut self,
+    ) -> CStringSlice[origin_of(self).unsafe_mut_cast[False]()]:
         if self._pos + 1 > HEAP_BUFFER_BYTES:
             _printf[
                 "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
@@ -452,6 +458,12 @@ struct _WriteBufferHeap(Writable, Writer):
             abort()
         self._data[self._pos] = 0
         self._pos += 1
+
+        return CStringSlice(
+            unsafe_from_ptr=self._data.bitcast[Int8]()
+            .as_immutable()
+            .unsafe_origin_cast[origin_of(self).unsafe_mut_cast[False]()]()
+        )
 
     def as_string_slice[
         mut: Bool, origin: Origin[mut=mut], //
@@ -571,25 +583,29 @@ def _hex_digits_to_hex_chars(
     Examples:
 
     ```mojo
-    %# from std.memory import memset_zero
-    %# from std.testing import assert_equal
-    %# from std.utils import StringSlice
-    %# from std.io.write import _hex_digits_to_hex_chars
-    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-    comptime S = StringSlice[origin_of(items)]
-    ptr = items.unsafe_ptr()
-    ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
-    assert_equal("0001f525", S(ptr=ptr, length=8))
-    ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
-    assert_equal("4f60", S(ptr=ptr, length=4))
-    ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
-    assert_equal("d6", S(ptr=ptr, length=2))
+    from std.memory import memset_zero
+    from std.testing import assert_equal
+    from std.utils import StringSlice
+    from std.format._utils import _hex_digits_to_hex_chars
+
+    def main() raises:
+        var items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+        comptime S = StringSlice[origin_of(items)]
+        var ptr = items.unsafe_ptr()
+        ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
+        assert_equal("0001f525", S(unsafe_from_utf8=Span(ptr=ptr, length=8)))
+        ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
+        assert_equal("4f60", S(unsafe_from_utf8=Span(ptr=ptr, length=4)))
+        ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
+        assert_equal("d6", S(unsafe_from_utf8=Span(ptr=ptr, length=2)))
     ```
     """
     comptime size = size_of[decimal.dtype]()
     var bytes = bitcast[DType.uint8, size](byte_swap(decimal))
     var nibbles = (bytes >> 4).interleave(bytes & 0xF)
-    return _hex_table._dynamic_shuffle(nibbles)
+    return SIMD[DType.uint8, size_of[decimal.dtype]() * 2](
+        _hex_table._dynamic_shuffle(nibbles)
+    )
 
 
 @always_inline
@@ -601,18 +617,18 @@ def _write_hex[
     Examples:
 
     ```mojo
-    %# from memory import memset_zero
-    %# from testing import assert_equal
-    %# from utils import StringSlice
-    %# from io.write import _write_hex
+    from std.memory import memset_zero
+    from std.testing import assert_equal
+    from std.utils import StringSlice
+    from std.format._utils import _write_hex
     var s = String()
-    _write_hex[amnt_hex_bytes=8](s, ord("🔥"))
+    _write_hex[amnt_hex_bytes=8](s, UInt32(ord("🔥")))
     assert_equal("\\U0001f525", s)
     s = ""
-    _write_hex[amnt_hex_bytes=4](s, ord("你"))
+    _write_hex[amnt_hex_bytes=4](s, UInt16(ord("你")))
     assert_equal("\\u4f60", s)
     s = ""
-    _write_hex[amnt_hex_bytes=2](s, ord("Ö"))
+    _write_hex[amnt_hex_bytes=2](s, UInt8(ord("Ö")))
     assert_equal("\\xd6", s)
     ```
     """

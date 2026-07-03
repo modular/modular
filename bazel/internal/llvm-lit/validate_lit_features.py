@@ -25,6 +25,8 @@ _KNOWN_FEATURES = {
     "emit-mojo",
     "manual",  # Alias for disabling
     "msan",
+    "macos-26+",
+    "production",
     "system-darwin",
     "system-linux",
     "tsan",

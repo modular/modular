@@ -21,24 +21,44 @@ multiplication), as well as convenience methods like
 :func:`~max.graph.ops.constant` can also add constant values to your graph.
 
 When an operation receives inputs with different data types
-(:class:`~max.dtype.DType`), MAX promotes the output to a common type by
-picking the higher-ranked category (``bool < unsigned int < signed int <
-float``) and the larger bit width. The result is always one of the input types.
-Plainly, the promotion rule for two values ``x`` and ``y`` is:
+(:class:`~max.dtype.DType`), MAX promotes them to a common type before
+computing the result. To avoid silently widening a type and hurting
+performance, the common type is always one of the input types; MAX never
+invents a new, wider type.
 
-.. code-block:: python
+To choose between the input types, MAX ranks each one along two axes:
 
-    max(category(x), category(y)), max(bitwidth(x), bitwidth(y))
+- Category, ordered ``bool < unsigned int < signed int < float``.
+- Bit width (for example, ``8``, ``16``, ``32``, or ``64`` bits).
 
-If any input can't be safely represented in the chosen type, MAX raises an
-error. For example, MAX fails to promote ``uint8`` and ``int8`` to ``int8``,
-since ``int8`` can't represent all ``uint8`` values."""
+The common type is the input type with the highest category and the largest
+bit width. For example, promoting ``int8`` and ``float16`` yields ``float16``:
+``float`` outranks ``signed int``, and ``16`` bits is wider than ``8``.
+
+If an input can't be safely represented in the chosen type, MAX raises an
+error rather than widening to a different type. For example, promoting
+``uint8`` and ``int8`` selects ``int8`` (``signed int`` outranks
+``unsigned int`` at the same bit width), but ``int8`` can't represent the
+largest ``uint8`` values, so MAX raises an error.
+
+When inputs have different shapes, MAX broadcasts them to a common shape.
+Shapes are aligned from the trailing dimension, and each pair of dimensions
+must either match exactly, be ``1``, or be absent. Size-1 dimensions (and
+any missing leading dimensions) are stretched to match the corresponding
+dimension of the other input. If the shapes can't be reconciled under
+these rules, MAX raises an error."""
 
 from __future__ import annotations
 
 # Import types for type annotations
 from ..value import TensorValue, TensorValueLike
-from . import allreduce, bundled_allreduce, random, reducescatter
+from . import (
+    allreduce,
+    bundled_allreduce,
+    distributed_ep,
+    random,
+    reducescatter,
+)
 from .allgather import allgather
 from .argsort import argsort
 from .band_part import band_part
@@ -65,16 +85,18 @@ from .elementwise import min as _elementwise_min
 from .flatten import flatten
 from .fold import fold
 from .gather import gather, gather_nd
+from .group_norm import group_norm
 from .hann_window import hann_window
 from .irfft import irfft
 from .layer_norm import layer_norm
 from .matmul import matmul
+from .nms import non_maximum_suppression
 from .nonzero import nonzero
 from .outer import outer
 from .pad import pad
 from .parallel import parallel
 from .permute import permute
-from .pooling import avg_pool2d, max_pool2d
+from .pooling import avg_pool2d, max_pool2d, roi_align
 from .quantized import dequantize, qmatmul
 from .range import range
 from .rebind import rebind
@@ -83,13 +105,26 @@ from .reduction import max as _reduce_max
 from .reduction import min as _reduce_min
 from .repeat_interleave import repeat_interleave
 from .reshape import reshape
-from .resize import InterpolationMode, resize, resize_linear
+from .resize import (
+    InterpolationMode,
+    resize,
+    resize_bicubic,
+    resize_linear,
+    resize_nearest,
+)
+from .rms_norm import rms_norm
 from .scatter import (
     masked_scatter,
     scatter,
     scatter_add,
+    scatter_max,
+    scatter_min,
+    scatter_mul,
     scatter_nd,
     scatter_nd_add,
+    scatter_nd_max,
+    scatter_nd_min,
+    scatter_nd_mul,
 )
 from .shape_to_tensor import shape_to_tensor
 from .shard_and_stack import shard_and_stack

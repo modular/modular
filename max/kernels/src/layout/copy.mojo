@@ -10,8 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides copy policy traits and utilities for layout memory operations."""
 
 from std.builtin.device_passable import DevicePassable
+from .layout_tensor import LayoutTensor
 
 
 trait CopyPolicy(DevicePassable, ImplicitlyCopyable):

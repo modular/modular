@@ -28,7 +28,6 @@ from std.ffi import (
     _CPointer,
 )
 from std.sys import CompilationTarget
-from std.memory._nonnull import NonNullUnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
@@ -48,18 +47,18 @@ def free(ptr: UnsafePointer[mut=True, NoneType, ...]):
 
 
 @always_inline
-def free(ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]):
+def free(ptr: OptionalUnsafePointer[mut=True, NoneType, ...]):
     """Frees memory previously allocated by `malloc`, `calloc`, or `realloc`.
 
-    This overload accepts an `_CPointer` because it is valid in C to call
-    `free` on a null pointer (it is a no-op).
+    This overload accepts an `Optional[UnsafePointer]` because it is valid in
+    C to call `free` on a null pointer (it is a no-op).
 
     Args:
-        ptr: A c-pointer to the memory to free.
+        ptr: A pointer to the memory to free.
     """
     free(
         UnsafePointer(to=ptr).bitcast[
-            UnsafePointer[NoneType, ExternalOrigin[mut=True]]
+            UnsafePointer[NoneType, UntrackedOrigin[mut=True]]
         ]()[]
     )
 
@@ -73,7 +72,7 @@ def exit(status: c_int):
 # stdio.h — input/output operations
 # ===-----------------------------------------------------------------------===#
 
-comptime FILE_ptr = _CPointer[NoneType, ExternalOrigin[mut=True]]
+comptime FILE_ptr = _CPointer[NoneType, UntrackedOrigin[mut=True]]
 
 
 @always_inline
@@ -137,9 +136,9 @@ def posix_spawnp[
     argv_origin: ImmutOrigin,
     //,
 ](
-    pid: NonNullUnsafePointer[mut=True, c_pid_t, _],
+    pid: UnsafePointer[mut=True, c_pid_t, _],
     file: CStringSlice[_],
-    argv: NonNullUnsafePointer[Optional[CStringSlice[argv_origin]], _],
+    argv: UnsafePointer[Optional[CStringSlice[argv_origin]], _],
     envp: _CPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin],
 ) -> c_int:
     """[`posix_spawn`](https://pubs.opengroup.org/onlinepubs/007904975/functions/posix_spawn.html)
@@ -156,11 +155,42 @@ def posix_spawnp[
     return external_call["posix_spawnp", c_int](
         pid,
         file,
-        _CPointer[NoneType, ExternalOrigin[mut=False]](),
-        _CPointer[NoneType, ExternalOrigin[mut=False]](),
+        _CPointer[NoneType, UntrackedOrigin[mut=False]](),
+        _CPointer[NoneType, UntrackedOrigin[mut=False]](),
         argv,
         envp,
     )
+
+
+@always_inline
+def _get_environ() -> (
+    _CPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin]
+):
+    """Returns the process environment pointer (POSIX `environ`).
+
+    Returns:
+        A pointer to the null-terminated array of environment strings,
+        suitable for passing as the `envp` argument to `posix_spawnp`.
+    """
+    comptime _EnvpType = _CPointer[
+        Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin
+    ]
+    comptime if CompilationTarget.is_macos():
+        # _NSGetEnviron() from <crt_externs.h> returns char ***,
+        # a pointer to the `environ` variable.
+        return external_call[
+            "_NSGetEnviron",
+            _CPointer[_EnvpType, UntrackedOrigin[mut=False]],
+        ]().value()[]
+    elif CompilationTarget.is_linux():
+        # On Linux, look up `environ` via dlsym(RTLD_DEFAULT, "environ").
+        # RTLD_DEFAULT is ((void *)0) on Linux.
+        return dlsym[_EnvpType](
+            _CPointer[NoneType, MutUntrackedOrigin](),
+            "environ".as_c_string_slice().unsafe_ptr(),
+        ).value()[]
+    else:
+        CompilationTarget.unsupported_target_error[operation="_get_environ"]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -292,21 +322,21 @@ def fcntl[*types: Intable](fd: c_int, cmd: c_int, *args: *types) -> c_int:
 
 
 @always_inline
-def dlerror(out result: _CPointer[c_char, MutExternalOrigin]):
+def dlerror(out result: _CPointer[c_char, MutUntrackedOrigin]):
     result = external_call["dlerror", type_of(result)]()
 
 
 @always_inline
 def dlopen(
-    filename: UnsafePointer[mut=False, c_char, _], flags: c_int
-) -> _CPointer[NoneType, MutExternalOrigin]:
-    return external_call["dlopen", _CPointer[NoneType, MutExternalOrigin]](
+    filename: OptionalUnsafePointer[c_char, _], flags: c_int
+) -> _CPointer[NoneType, MutUntrackedOrigin]:
+    return external_call["dlopen", _CPointer[NoneType, MutUntrackedOrigin]](
         filename, flags
     )
 
 
 @always_inline
-def dlclose(handle: OpaquePointer[mut=True, _]) -> c_int:
+def dlclose(handle: _CPointer[mut=True, NoneType, _]) -> c_int:
     return external_call["dlclose", c_int](handle)
 
 
@@ -315,9 +345,9 @@ def dlsym[
     # Default `dlsym` result is an OpaquePointer.
     result_type: AnyType = NoneType
 ](
-    handle: OpaquePointer,
+    handle: _CPointer[NoneType, _],
     name: UnsafePointer[mut=False, c_char, _],
-    out result: _CPointer[result_type, MutExternalOrigin],
+    out result: _CPointer[result_type, MutUntrackedOrigin],
 ):
     result = external_call["dlsym", type_of(result)](handle, name)
 
@@ -325,9 +355,9 @@ def dlsym[
 def realpath(
     path: UnsafePointer[mut=False, c_char, _],
     resolved_path: _CPointer[mut=True, c_char, _] = _CPointer[
-        c_char, MutExternalOrigin
+        c_char, MutUntrackedOrigin
     ](),
-    out result: _CPointer[c_char, MutExternalOrigin],
+    out result: _CPointer[c_char, MutUntrackedOrigin],
 ):
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a

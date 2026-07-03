@@ -20,7 +20,7 @@ from std.memory import bitcast
 """
 
 from std.sys import bit_width_of, is_amd_gpu, is_nvidia_gpu
-
+from std.builtin.simd_size import SIMDSize
 from std.builtin.dtype import _uint_type_of_width
 
 
@@ -32,15 +32,15 @@ from std.builtin.dtype import _uint_type_of_width
 @always_inline("nodebug")
 def bitcast[
     src_dtype: DType,
-    src_width: Int,
+    src_width: SIMDSize,
     //,
     dtype: DType,
-    width: Int = src_width,
+    width: SIMDSize = src_width,
 ](val: SIMD[src_dtype, src_width]) -> SIMD[dtype, width]:
     """Bitcasts a SIMD value to another SIMD value.
 
     For a discussion of byte order, see
-    [Converting data: bitcasting and byte order](/mojo/manual/pointers/unsafe-pointers#converting-data-bitcasting-and-byte-order)
+    [Converting data: bitcasting and byte order](/docs/manual/pointers/unsafe-pointers/#converting-data-bitcasting-and-byte-order)
     in the Mojo Manual.
 
     Examples:
@@ -132,10 +132,10 @@ def _llvm_bitwidth(dtype: DType) -> Int:
 
 @always_inline("nodebug")
 def pack_bits[
-    src_width: Int,
+    src_width: SIMDSize,
     //,
     dtype: DType = _uint_type_of_width[src_width](),
-    width: Int = 1,
+    width: SIMDSize = 1,
 ](val: SIMD[DType.bool, src_width]) -> SIMD[dtype, width]:
     """Packs a SIMD vector of `bool` values into an integer.
 

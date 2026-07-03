@@ -12,18 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up, ceildiv
-from std.os.atomic import Atomic
+from std.math.uutils import umod, ualign_up
+from std.atomic import Atomic
 from std.sys import size_of
 
 from std.gpu import NamedBarrierSemaphore
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host.info import H100
-from std.gpu import (
-    block_idx_uint as block_idx,
-    grid_dim_uint as grid_dim,
-    thread_idx_uint as thread_idx,
-)
-from layout import Layout, LayoutTensor, RuntimeLayout
+from std.gpu import block_idx, grid_dim, thread_idx
+from layout import Layout, LayoutTensor, RuntimeLayout, TensorLayout, TileTensor
 from std.bit import log2_floor
 
 from std.utils.index import Index, IndexList
@@ -87,6 +84,8 @@ struct ReductionMode(TrivialRegisterPassable):
 
 
 struct SplitKTileScheduler[
+    locks_origin: MutOrigin,
+    //,
     problem_shape_nk: IndexList[2],
     tile_shape: IndexList[3],
     splits: UInt32,
@@ -111,7 +110,7 @@ struct SplitKTileScheduler[
 
     var cluster_blk_major: UInt32
 
-    var locks_ptr: UnsafePointer[Int32, MutAnyOrigin]
+    var locks_ptr: UnsafePointer[Int32, Self.locks_origin]
 
     comptime k_tiles_per_output_tile = UInt32(
         ceildiv(Self.problem_shape_nk[1], Self.tile_shape[2])
@@ -134,7 +133,7 @@ struct SplitKTileScheduler[
         out self,
         prob_shape: IndexList[3],
         block_id_in_cluster: IndexList[2],
-        locks_ptr: UnsafePointer[mut=True, UInt8, _],
+        locks_ptr: UnsafePointer[UInt8, Self.locks_origin],
     ):
         _check_scheduler_constraints[
             Self.problem_shape_nk,
@@ -149,21 +148,18 @@ struct SplitKTileScheduler[
 
         self.prob_shape = prob_shape
         self.block_id_in_cluster = block_id_in_cluster
-
-        self.locks_ptr = rebind[UnsafePointer[Int32, MutAnyOrigin]](
-            locks_ptr.bitcast[Int32]()
-        )
+        self.locks_ptr = locks_ptr.bitcast[Int32]()
 
         var problem_blocks = Self.get_problem_blocks_shape(
             prob_shape, Self.tile_shape, Self.cluster_shape
         )
-        var problem_blocks_m = align_up(
-            UInt(problem_blocks[0]),
-            UInt(self.cluster_shape[0]),
+        var problem_blocks_m = ualign_up(
+            problem_blocks[0],
+            self.cluster_shape[0],
         )
-        var problem_blocks_n = align_up(
-            UInt(problem_blocks[1]),
-            UInt(self.cluster_shape[1]),
+        var problem_blocks_n = ualign_up(
+            problem_blocks[1],
+            self.cluster_shape[1],
         )
 
         comptime if Self.raster_order == RasterOrder.AlongN:
@@ -177,7 +173,7 @@ struct SplitKTileScheduler[
                 log2_floor(self.cluster_shape[0])
             )
             self.cluster_blk_major = UInt32(
-                problem_blocks_n >> UInt(self.log_cluster_shape_major)
+                problem_blocks_n >> Int(self.log_cluster_shape_major)
             )
 
         else:  # rasterize along M
@@ -191,7 +187,7 @@ struct SplitKTileScheduler[
                 log2_floor(self.cluster_shape[1])
             )
             self.cluster_blk_major = UInt32(
-                problem_blocks_m >> UInt(self.log_cluster_shape_major)
+                problem_blocks_m >> Int(self.log_cluster_shape_major)
             )
 
         self.blocks_per_problem = UInt32(problem_blocks_m) * UInt32(
@@ -427,15 +423,15 @@ struct SplitKTileScheduler[
             problem_shape, dyn_tile_shape, dyn_cluster_shape
         )
 
-        var problem_blocks_m = align_up(
-            UInt(problem_blocks[0]),
-            UInt(dyn_cluster_shape[0]),
+        var problem_blocks_m = ualign_up(
+            problem_blocks[0],
+            dyn_cluster_shape[0],
         )
-        var problem_blocks_n = align_up(
-            UInt(problem_blocks[1]),
-            UInt(dyn_cluster_shape[1]),
+        var problem_blocks_n = ualign_up(
+            problem_blocks[1],
+            dyn_cluster_shape[1],
         )
-        return Int(problem_blocks_m * problem_blocks_n)
+        return problem_blocks_m * problem_blocks_n
 
     @staticmethod
     @always_inline
@@ -516,6 +512,30 @@ struct SplitKTileScheduler[
     def reduction[
         accum_type: DType,
         c_reg_layout: Layout,
+        workspace_layout: TensorLayout,
+    ](
+        self,
+        reduction_workspace: TileTensor[
+            mut=True, accum_type, workspace_layout, _
+        ],
+        c_reg_tile: RegTile[accum_type, c_reg_layout],
+        work_tile_info: WorkInfo,
+        num_barriers: UInt32,
+        warp_group_local_idx: UInt32,
+    ):
+        var reduction_workspace_lt = reduction_workspace.to_layout_tensor()
+        self.reduction(
+            reduction_workspace_lt,
+            c_reg_tile,
+            work_tile_info,
+            num_barriers,
+            warp_group_local_idx,
+        )
+
+    @always_inline
+    def reduction[
+        accum_type: DType,
+        c_reg_layout: Layout,
         workspace_layout: Layout,
     ](
         self,
@@ -535,7 +555,7 @@ struct SplitKTileScheduler[
             reduction_tile_idx * num_barriers
         ) + warp_group_local_idx
 
-        var warp_group_thread_idx = thread_idx.x % UInt(WARPGROUP_SIZE)
+        var warp_group_thread_idx = umod(thread_idx.x, WARPGROUP_SIZE)
 
         if not self.is_last_split(work_tile_info):
             if work_tile_info.k_start == 0:
@@ -554,7 +574,7 @@ struct SplitKTileScheduler[
                     Self.wait_eq(
                         self.locks_ptr,
                         Int32(warp_group_local_idx),
-                        Int(warp_group_thread_idx),
+                        warp_group_thread_idx,
                         lock_idx,
                         work_tile_info.k_start,
                     )
@@ -563,7 +583,7 @@ struct SplitKTileScheduler[
                     Self.wait_lt(
                         self.locks_ptr,
                         Int32(warp_group_local_idx),
-                        Int(warp_group_thread_idx),
+                        warp_group_thread_idx,
                         lock_idx,
                         1,
                     )
@@ -581,7 +601,7 @@ struct SplitKTileScheduler[
             Self.arrive_set(
                 self.locks_ptr,
                 Int32(warp_group_local_idx),
-                Int(warp_group_thread_idx),
+                warp_group_thread_idx,
                 lock_idx,
                 increment,
             )
@@ -591,7 +611,7 @@ struct SplitKTileScheduler[
             Self.wait_eq(
                 self.locks_ptr,
                 Int32(warp_group_local_idx),
-                Int(warp_group_thread_idx),
+                warp_group_thread_idx,
                 lock_idx,
                 work_tile_info.k_start,
             )
@@ -607,7 +627,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @always_inline
     def wait_eq(
-        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
+        lock_ptr: UnsafePointer[mut=True, Int32, _],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -621,7 +641,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @always_inline
     def wait_lt(
-        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
+        lock_ptr: UnsafePointer[mut=True, Int32, _],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -635,7 +655,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @always_inline
     def arrive_set(
-        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
+        lock_ptr: UnsafePointer[mut=True, Int32, _],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,

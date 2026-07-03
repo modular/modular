@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Set
 from std.math import rsqrt
-from std.random import random_ui64, seed
+from std.random import seed
 
 from std.gpu.host import DeviceContext
+from kv_cache_test_utils import random_distinct
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -47,9 +47,6 @@ def execute_flash_attention[
     ctx: DeviceContext,
 ) raises:
     comptime num_blocks = 32
-    comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
-    ]
 
     debug_assert(
         batch_size < num_blocks,
@@ -71,10 +68,10 @@ def execute_flash_attention[
 
     # Define layouts for q tensor
     comptime q_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     var q_shape = IndexList[4](
-        batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
+        batch_size, max_prompt_len, num_q_heads, kv_params.head_size
     )
     var q_runtime_layout = RuntimeLayout[q_static_layout].row_major(q_shape)
 
@@ -95,10 +92,10 @@ def execute_flash_attention[
 
     # Define layouts for output tensors
     comptime output_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     var output_shape = IndexList[4](
-        batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
+        batch_size, max_prompt_len, num_q_heads, kv_params.head_size
     )
     var output_runtime_layout = RuntimeLayout[output_static_layout].row_major(
         output_shape
@@ -131,8 +128,8 @@ def execute_flash_attention[
         2,
         num_layers,
         max_seq_len,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block_runtime_layout = RuntimeLayout[
         kv_block_static_layout
@@ -154,16 +151,12 @@ def execute_flash_attention[
 
     # Initialize lookup table
     var lookup_table_host = lookup_table.tensor[update=False]()
-    # hacky way to get random block indices
-    var block_idx_set = Set[Int]()
-    var idx = 0
-    while len(block_idx_set) < batch_size:
-        var randval = Int(random_ui64(0, num_blocks - 1))
-        if randval in block_idx_set:
-            continue
-        block_idx_set.add(randval)
-        lookup_table_host[idx] = UInt32(randval)
-        idx += 1
+    # Assign each batch entry a distinct block. `random_ui64` is inclusive, so
+    # the original draw range `[0, num_blocks - 1]` is a population of
+    # `num_blocks` blocks.
+    var lut_blocks = random_distinct(num_blocks, batch_size)
+    for idx in range(batch_size):
+        lookup_table_host[idx] = UInt32(lut_blocks[idx])
 
     # Create layout tensors for GPU operations
     var q_tensor = q.device_tensor()
@@ -173,7 +166,9 @@ def execute_flash_attention[
     var kv_block_tensor = kv_block.device_tensor()
     var lookup_table_tensor = lookup_table.device_tensor()
 
-    var kv_collection_device = CollectionType(
+    var kv_collection_device = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params
+    ](
         kv_block_tensor,
         cache_lengths_device,
         lookup_table_tensor,
@@ -207,8 +202,8 @@ def execute_flash_attention[
         max_prompt_len,
         max_context_len,
         num_q_heads,
-        Int(kv_params.head_size),
-        num_q_heads // Int(kv_params.num_heads),
+        kv_params.head_size,
+        num_q_heads // kv_params.num_heads,
         ctx,
     )
 
@@ -221,8 +216,8 @@ def execute_flash_attention[
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
                     assert_almost_equal(
-                        ref_out_tensor[bs, s, h, Int(hd)],
-                        test_out_tensor[bs, s, h, Int(hd)],
+                        ref_out_tensor[bs, s, h, hd],
+                        test_out_tensor[bs, s, h, hd],
                         atol=1e-5,
                         rtol=rtol,
                     )

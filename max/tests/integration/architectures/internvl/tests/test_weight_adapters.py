@@ -18,6 +18,7 @@ import numpy as np
 from max.graph.weights import WeightData
 from max.pipelines.architectures.internvl.weight_adapters import (
     convert_internvl_language_model_state_dict,
+    convert_internvl_vision_model_state_dict,
 )
 
 
@@ -61,3 +62,28 @@ def test_weight_filtering_and_mapping() -> None:
     }
 
     assert set(result.keys()) == expected_outputs
+
+
+def test_vision_qkv_bias_maps_to_stacked_linear_bias() -> None:
+    """Vision qkv bias maps to qkv_proj.bias for stacked attention."""
+    test_weights = {
+        "vision_model.encoder.layers.0.attn.qkv.weight": MockWeight(
+            "qkv_weight"
+        ),
+        "vision_model.encoder.layers.0.attn.qkv.bias": MockWeight("qkv_bias"),
+        "vision_model.encoder.layers.0.attn.proj.weight": MockWeight(
+            "proj_weight"
+        ),
+    }
+
+    result = convert_internvl_vision_model_state_dict(
+        test_weights,  # type: ignore[arg-type]
+    )
+
+    assert "encoder_layers.0.attn.qkv_proj.weight" in result, (
+        "Expected qkv weight to map to StackedLinear weight"
+    )
+    assert "encoder_layers.0.attn.qkv_proj.bias" in result, (
+        "Expected qkv bias to map to StackedLinear bias"
+    )
+    assert "encoder_layers.0.attn.qkv_proj_bias" not in result

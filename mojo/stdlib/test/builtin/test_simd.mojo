@@ -15,6 +15,7 @@ from std.sys import size_of
 from std.sys.info import CompilationTarget, is_64bit
 
 from std.bit import count_leading_zeros
+from std.memory import alloc, dealloc, ThinAllocation, Layout
 from std.memory.unsafe import bitcast
 from std.builtin.simd import _modf
 from std.itertools import product
@@ -384,11 +385,11 @@ def test_simd_repr_and_write_repr_to() raises:
 def test_issue_1625() raises:
     var size = 16
     comptime simd_width = 8
-    var ptr = alloc[Int64](size)
+    var data = List(length=size, fill=Int64(0))
     for i in range(size):
-        ptr[i] = Int64(i)
+        data[i] = Int64(i)
 
-    var x = ptr.load[width=2 * simd_width](0)
+    var x = data.unsafe_ptr().load[width=2 * simd_width](0)
     var evens_and_odds = x.deinterleave()
 
     # FIXME (40568) should directly use the SIMD assert_equal
@@ -400,19 +401,23 @@ def test_issue_1625() raises:
         String(evens_and_odds[1]),
         String(SIMD[DType.int64, 8](1, 3, 5, 7, 9, 11, 13, 15)),
     )
-    ptr.free()
 
 
 def test_issue_20421() raises:
-    var a = alloc[UInt8](count=16 * 64, alignment=64)
+    var a_layout = Layout[UInt8](count=16 * 64, alignment=64)
+    var ptr = alloc(a_layout).unsafe_leak()
     for i in range(16 * 64):
-        a[i] = UInt8(i & 255)
-    var av16 = (a + 128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
+        ptr[i] = UInt8(i & 255)
+    var av16 = (
+        (ptr + 128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
+    )
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(a_layout)
+    )
     assert_equal(
         av16,
         SIMD[DType.int32, 4](-943274556, -875902520, -808530484, -741158448),
     )
-    a.free()
 
 
 def test_issue_30237() raises:
@@ -1119,17 +1124,17 @@ def test_shuffle() raises:
     )
 
     assert_equal(
-        vec._shuffle_list[width, StaticTuple[Int, width](3, 2, 1, 0)](vec),
+        vec._shuffle_list[width, StaticTuple[SIMDSize, width](3, 2, 1, 0)](vec),
         SIMD[dtype, width](103, 102, 101, 100),
     )
     assert_equal(
-        vec._shuffle_list[width, StaticTuple[Int, width](0, 2, 4, 6)](vec),
+        vec._shuffle_list[width, StaticTuple[SIMDSize, width](0, 2, 4, 6)](vec),
         SIMD[dtype, width](100, 102, 100, 102),
     )
 
     assert_equal(
         vec._shuffle_list[
-            2 * width, StaticTuple[Int, 2 * width](7, 6, 5, 4, 3, 2, 1, 0)
+            2 * width, StaticTuple[SIMDSize, 2 * width](7, 6, 5, 4, 3, 2, 1, 0)
         ](vec),
         SIMD[dtype, 2 * width](103, 102, 101, 100, 103, 102, 101, 100),
     )
@@ -1715,9 +1720,11 @@ def test_pow() raises:
 
     var f32x4_val = F32x4(0, 1, 2, 3)
     var f32x8_val = F32x8(0, 1, 2, 3, 4, 5, 6, 7)
-    assert_equal(f32x4_val.__pow__(10.0), F32x4(0.0, 1.0, 1024.0, 59049.0))
+    assert_equal(
+        f32x4_val.__pow__(Float32(10.0)), F32x4(0.0, 1.0, 1024.0, 59049.0)
+    )
     assert_almost_equal(
-        f32x8_val.__pow__(15.0),
+        f32x8_val.__pow__(Float32(15.0)),
         F32x8(
             0.0,
             1.0,
@@ -1730,15 +1737,19 @@ def test_pow() raises:
         ),
     )
     assert_almost_equal(
-        f32x4_val.__pow__(-1.0), F32x4(inf, 1.0, 0.5, 0.333333333)
+        f32x4_val.__pow__(Float32(-1.0)), F32x4(inf, 1.0, 0.5, 0.333333333)
     )
-    assert_equal(f32x4_val.__pow__(0.0), F32x4(1.0, 1.0, 1.0, 1.0))
-    assert_equal(F32x4(1, 1, 1, 1).__pow__(100.0), F32x4(1.0, 1.0, 1.0, 1.0))
+    assert_equal(f32x4_val.__pow__(Float32(0.0)), F32x4(1.0, 1.0, 1.0, 1.0))
     assert_equal(
-        String(F32x4(inf, -inf, nan, 1).__pow__(3.0)), "[inf, -inf, nan, 1.0]"
+        F32x4(1, 1, 1, 1).__pow__(Float32(100.0)), F32x4(1.0, 1.0, 1.0, 1.0)
+    )
+    assert_equal(
+        String(F32x4(inf, -inf, nan, 1).__pow__(Float32(3.0))),
+        "[inf, -inf, nan, 1.0]",
     )
     assert_almost_equal(
-        f32x4_val.__pow__(0.5), F32x4(0.0, 1.0, 1.414213562, 1.732050808)
+        f32x4_val.__pow__(Float32(0.5)),
+        F32x4(0.0, 1.0, 1.414213562, 1.732050808),
     )
 
     assert_almost_equal(
@@ -1751,7 +1762,7 @@ def test_pow() raises:
         F32x4(0.0, 0.0, 0.0, 0.0),
     )
     assert_equal(
-        f32x4_neg_zero.__pow__(3.0),
+        f32x4_neg_zero.__pow__(Float32(3.0)),
         F32x4(neg_zero, neg_zero, neg_zero, neg_zero),
     )
 
@@ -1761,7 +1772,8 @@ def test_pow() raises:
     )
 
     assert_equal(
-        F32x4(2.0, 3.0, 4.0, 5.0).__pow__(neg_zero), F32x4(1.0, 1.0, 1.0, 1.0)
+        F32x4(2.0, 3.0, 4.0, 5.0).__pow__(Float32(neg_zero)),
+        F32x4(1.0, 1.0, 1.0, 1.0),
     )
 
     assert_equal(
@@ -1782,7 +1794,7 @@ def test_pow() raises:
     comptime F64x4 = SIMD[DType.float64, 4]
 
     assert_equal(
-        F64x4(0, 1, 2, 3).__pow__(20.0),
+        F64x4(0, 1, 2, 3).__pow__(20),
         F64x4(0.0, 1.0, 1048576.0, 3486784401.0),
     )
 
@@ -1894,17 +1906,17 @@ def test_rpow() raises:
     var f32x4_val = F32x4(0, 1, 2, 3)
     var i32x4_val = I32x4(0, 1, 2, 3)
 
-    assert_equal(0**i32x4_val, I32x4(1, 0, 0, 0))
-    assert_equal(2**i32x4_val, I32x4(1, 2, 4, 8))
-    assert_equal((-1) ** i32x4_val, I32x4(1, -1, 1, -1))
+    assert_equal(I32x4(0) ** i32x4_val, I32x4(1, 0, 0, 0))
+    assert_equal(I32x4(2) ** i32x4_val, I32x4(1, 2, 4, 8))
+    assert_equal(I32x4(-1) ** i32x4_val, I32x4(1, -1, 1, -1))
 
-    assert_equal(Int32(Int(0)) ** i32x4_val, I32x4(1, 0, 0, 0))
-    assert_equal(Int32(Int(2)) ** i32x4_val, I32x4(1, 2, 4, 8))
-    assert_equal(Int32(Int(-1)) ** i32x4_val, I32x4(1, -1, 1, -1))
+    assert_equal(I32x4(0) ** i32x4_val, I32x4(1, 0, 0, 0))
+    assert_equal(I32x4(2) ** i32x4_val, I32x4(1, 2, 4, 8))
+    assert_equal(I32x4(-1) ** i32x4_val, I32x4(1, -1, 1, -1))
 
-    assert_almost_equal(1.0**f32x4_val, F32x4(1.0, 1.0, 1.0, 1.0))
-    assert_almost_equal(2.5**f32x4_val, F32x4(1.0, 2.5, 6.25, 15.625))
-    assert_almost_equal(3.0**f32x4_val, F32x4(1.0, 3.0, 9.0, 27.0))
+    assert_almost_equal(F32x4(1.0) ** f32x4_val, F32x4(1.0, 1.0, 1.0, 1.0))
+    assert_almost_equal(F32x4(2.5) ** f32x4_val, F32x4(1.0, 2.5, 6.25, 15.625))
+    assert_almost_equal(F32x4(3.0) ** f32x4_val, F32x4(1.0, 3.0, 9.0, 27.0))
 
 
 def test_modf() raises:

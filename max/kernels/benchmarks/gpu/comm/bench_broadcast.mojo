@@ -114,20 +114,24 @@ def bench_broadcast[
     var signal_buf_size = size_of[Signal]() + chunk_bytes
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
 
     # Multicast buffer for output (when use_multimem=True)
-    var out_multicast_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin]()
+    var out_multicast_ptr = Optional[
+        UnsafePointer[Scalar[dtype], MutAnyOrigin]
+    ]()
 
     # Initialize output and signal buffers for each GPU
     comptime if use_multimem:
         out_multicast_buf = DeviceMulticastBuffer[dtype](
             list_of_ctx.copy(), length
         )
-        out_multicast_ptr = out_multicast_buf.multicast_buffer_for(
-            list_of_ctx[0]
-        ).unsafe_ptr()
+        out_multicast_ptr = (
+            out_multicast_buf.multicast_buffer_for(list_of_ctx[0])
+            .unsafe_ptr()
+            .as_unsafe_any_origin()
+        )
 
         comptime for gpu_idx in range(ngpus):
             # For multimem, we use unicast buffers for verification/copy-back
@@ -145,7 +149,10 @@ def bench_broadcast[
                 signal_buffers[gpu_idx], 0
             )
             rank_sigs[gpu_idx] = (
-                signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+                signal_buffers[gpu_idx]
+                .unsafe_ptr()
+                .bitcast[Signal]()
+                .as_unsafe_any_origin()
             )
     else:
         comptime for gpu_idx in range(ngpus):
@@ -164,11 +171,14 @@ def bench_broadcast[
                 signal_buffers[gpu_idx], 0
             )
             rank_sigs[gpu_idx] = (
-                signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+                signal_buffers[gpu_idx]
+                .unsafe_ptr()
+                .bitcast[Signal]()
+                .as_unsafe_any_origin()
             )
 
     # Create and initialize host buffer for root with position-based values
-    var host_buffer = alloc[Scalar[dtype]](cb_in.alloc_size())
+    var host_buffer = List(length=cb_in.alloc_size(), fill=Scalar[dtype](0))
     for i in range(cb_in.alloc_size() // cb_in.stride):
         for j in range(length):
             host_buffer[i * cb_in.stride + j] = _input_value[dtype](root, j)
@@ -177,22 +187,24 @@ def bench_broadcast[
     list_of_ctx[root].enqueue_copy(cb_in.device_buffer(), host_buffer)
 
     # Create TileTensor wrappers for outputs
-    comptime OutputTileType = type_of(
-        TileTensor(out_bufs_list[0].unsafe_ptr(), row_major(Idx(length)))
-    )
+    comptime OutputTileType = TileTensor[
+        dtype, type_of(row_major(length)), MutAnyOrigin
+    ]
     var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
 
     comptime if use_multimem:
         # All GPUs use the same multicast pointer for output
         for i in range(ngpus):
+            # out_multicast_ptr is set when use_multimem == True
             out_tiles[i] = OutputTileType(
-                out_multicast_ptr, row_major(Idx(length))
+                out_multicast_ptr.unsafe_value(), row_major(length)
             )
             list_of_ctx[i].synchronize()
     else:
         for i in range(ngpus):
             out_tiles[i] = OutputTileType(
-                out_bufs_list[i].unsafe_ptr(), row_major(Idx(length))
+                out_bufs_list[i].unsafe_ptr().as_unsafe_any_origin(),
+                row_major(length),
             )
             # Ensure setup has propagated.
             list_of_ctx[i].synchronize()
@@ -219,7 +231,7 @@ def bench_broadcast[
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             var in_tile = TileTensor(
-                cb_in.offset_ptr(cache_iter), row_major(Idx(length))
+                cb_in.offset_ptr(cache_iter), row_major(length)
             ).as_immut()
 
             # Run broadcast - root's input goes to all outputs
@@ -282,7 +294,7 @@ def bench_broadcast[
 
     # Create input tile for verification (no cache offset)
     var in_tile_verify = TileTensor(
-        cb_in.unsafe_ptr(), row_major(Idx(length))
+        cb_in.device_buffer(), row_major(length)
     ).as_immut()
 
     # Run one broadcast for verification
@@ -321,9 +333,9 @@ def bench_broadcast[
                 raise Error("Verification failed")
 
     # Cleanup
-    host_buffer.free()
     _ = signal_buffers^
     _ = cb_in^
+    _ = host_buffer^
 
 
 def main() raises:

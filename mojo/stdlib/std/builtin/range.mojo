@@ -30,10 +30,10 @@ from std.utils._select import _select_register_value as select
 
 
 @always_inline
-def _sign(x: Int) -> Int:
-    var result = 0
-    result = select(x > 0, 1, result)
-    result = select(x < 0, -1, result)
+def _sign[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
+    var result = Scalar[dtype](0)
+    result = select(x > 0, Scalar[dtype](1), result)
+    result = select(x < 0, Scalar[dtype](-1), result)
     return result
 
 
@@ -81,7 +81,7 @@ struct _ZeroStartingRange(
 
     @always_inline
     def __reversed__(self) -> _StridedRange:
-        return range(self.end - 1, -1, -1)
+        return _StridedRange(self.end - 1, -1, -1)
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -127,7 +127,7 @@ struct _SequentialRange(
 
     @always_inline
     def __reversed__(self) -> _StridedRange:
-        return range(self.end - 1, self.start - 1, -1)
+        return _StridedRange(self.end - 1, self.start - 1, -1)
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -164,14 +164,6 @@ struct _StridedRangeIterator(
     def __next__(mut self) raises StopIteration -> Int:
         if self.__len__() <= 0:
             raise StopIteration()
-        var result = self.start
-        self.start += self.step
-        return result
-
-    # FIXME(GENAI-359): Opt'ing into old-style foreach code generation is
-    # necessary to get an AMD355 test working.
-    @always_inline
-    def __next_old__(mut self) -> Self.Element:
         var result = self.start
         self.start += self.step
         return result
@@ -243,7 +235,7 @@ struct _StridedRange(
         var start = shifted_end - ((shifted_end - self.start) % self.step)
         var end = self.start - self.step
         var step = -self.step
-        return range(start, end, step)
+        return _StridedRange(start, end, step)
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -302,6 +294,48 @@ def range[T: Indexer, //](start: T, end: T, step: T) -> _StridedRange:
     return _StridedRange(index(start), index(end), index(step))
 
 
+@always_inline
+def range(end: Int) -> _ZeroStartingRange:
+    """Constructs a [0; end) Range.
+
+    Args:
+        end: The end of the range.
+
+    Returns:
+        The constructed range.
+    """
+    return _ZeroStartingRange(end)
+
+
+@always_inline
+def range(start: Int, end: Int) -> _SequentialRange:
+    """Constructs a [start; end) Range.
+
+    Args:
+        start: The start of the range.
+        end: The end of the range.
+
+    Returns:
+        The constructed range.
+    """
+    return _SequentialRange(start, end)
+
+
+@always_inline
+def range(start: Int, end: Int, step: Int) -> _StridedRange:
+    """Constructs a [start; end) Range with a given step.
+
+    Args:
+        start: The start of the range.
+        end: The end of the range.
+        step: The step for the range.
+
+    Returns:
+        The constructed range.
+    """
+    return _StridedRange(start, end, step)
+
+
 # ===----------------------------------------------------------------------=== #
 # Range Scalar
 # ===----------------------------------------------------------------------=== #
@@ -318,7 +352,7 @@ def _scalar_range_bounds[
 
 
 struct _ZeroStartingScalarRange[dtype: DType](
-    Iterable, TrivialRegisterPassable, Iterator & ImplicitlyCopyable
+    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -339,17 +373,9 @@ struct _ZeroStartingScalarRange[dtype: DType](
     @always_inline
     def __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
         var curr = self.curr
+        self.curr = curr - 1
         if curr == 0:
             raise StopIteration()
-        self.curr = curr - 1
-        return self.end - curr
-
-    # FIXME(GENAI-359): Remove __next_old__ and __has_next__ once we figure out
-    # why doing so regresses code generation.
-    @always_inline
-    def __next_old__(mut self) -> Scalar[Self.dtype]:
-        var curr = self.curr
-        self.curr -= 1
         return self.end - curr
 
     @always_inline
@@ -429,7 +455,7 @@ struct _SequentialScalarRange[dtype: DType](
 
 @fieldwise_init
 struct _StridedScalarRange[dtype: DType](
-    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable
+    ImplicitlyCopyable, Iterable, Iterator, Sized, TrivialRegisterPassable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -461,11 +487,11 @@ struct _StridedScalarRange[dtype: DType](
         return result
 
     @always_inline
-    def __len__(self) -> Scalar[Self.dtype]:
+    def __len__(self) -> Int:
         comptime assert Self.dtype.is_integral(), "dtype must be integral"
 
         comptime if Self.dtype.is_unsigned():
-            return Scalar[Self.dtype](
+            return Int(
                 select(
                     self.start < self.end,
                     ceildiv(self.end - self.start, self.step),
@@ -473,9 +499,9 @@ struct _StridedScalarRange[dtype: DType](
                 )
             )
         else:  # is_signed
-            return Scalar[Self.dtype](
-                range(Int(self.start), Int(self.end), Int(self.step)).__len__()
-            )
+            return _StridedRange(
+                Int(self.start), Int(self.end), Int(self.step)
+            ).__len__()
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -483,8 +509,16 @@ struct _StridedScalarRange[dtype: DType](
 
     @always_inline
     def __getitem__(self, idx: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
-        assert idx < self.__len__(), "index out of range"
+        assert Int(idx) < self.__len__(), "index out of range"
         return self.start + idx * self.step
+
+    @always_inline
+    def __reversed__(self) -> Self:
+        var shifted_end = self.end - _sign(self.step)
+        var start = shifted_end - ((shifted_end - self.start) % self.step)
+        var end = self.start - self.step
+        var step = -self.step
+        return Self(start, end, step)
 
 
 @always_inline

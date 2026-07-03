@@ -12,10 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up, ceildiv
+from std.math.uutils import ufloordiv, ualign_up
 from std.collections import OptionalReg
 from std.sys import (
     CompilationTarget,
     align_of,
+    get_defined_bool,
     get_defined_int,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
@@ -42,10 +44,12 @@ from nn.attention.mha_mask import (
     MHAMask,
     NullMask,
     SlidingWindowCausalMask,
+    SlidingWindowNonCausalMask,
 )
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import min_or_neg_inf
+from std.gpu.primitives.grid_controls import PDLLevel
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -56,6 +60,16 @@ comptime is_sm90 = "sm_90" in _accelerator_arch()
 comptime is_sm100 = "sm_100" in _accelerator_arch() or "sm_103" in _accelerator_arch()
 comptime is_sm90or100 = is_sm90 or is_sm100
 
+# Programmatic Dependent Launch level for the split-K decode producer/consumer
+# (the split-K attention kernels and `mha_splitk_reduce`).  On by default so
+# back-to-back grids in the stream overlap launch/prologue latency; disable
+# with `-D MHA_PDL=false`.  When > OFF, those kernels emit
+# `wait_on_dependent_grids()` / `launch_dependent_grids()` and their dispatches
+# attach the PROGRAMMATIC_STREAM_SERIALIZATION launch attribute.
+comptime MHA_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
+    "MHA_PDL", True
+]() else PDLLevel.OFF
+
 
 @always_inline
 def as_dynamic_row_major_1d[
@@ -65,12 +79,12 @@ def as_dynamic_row_major_1d[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ) -> LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]:
-    return LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin](
-        tensor.ptr,
+    return {
+        tensor.ptr.as_immutable().as_unsafe_any_origin(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             tensor.get_shape()
         ),
-    )
+    }
 
 
 struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
@@ -103,7 +117,13 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
     def init(self, dtype: DType) -> Self:
         if self._value == -1:
             comptime if is_sm90or100:
-                return FlashAttentionAlgorithm(2 + Int(dtype.is_half_float()))
+                return FlashAttentionAlgorithm(
+                    2
+                    + Int(
+                        dtype.is_half_float()
+                        or (is_sm100 and dtype.is_float8())
+                    )
+                )
             else:
                 return FlashAttentionAlgorithm(2)
         else:
@@ -123,98 +143,94 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
             writer.write("invalid algorithm")
 
 
-@fieldwise_init
 struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
     # Q, K, V, output should have the same type.
-    var num_heads: UInt
-    var depth: UInt
-    var padded_depth: UInt
-    var num_queries_per_block: UInt
-    var num_keys_per_block: UInt
-    var BK: UInt  # tile size in depth dimension
-    var WM: UInt
-    var WN: UInt
-    var num_pipeline_stages: UInt
-    var k_group_size: UInt
+    var num_heads: Int
+    var depth: Int
+    var padded_depth: Int
+    var num_queries_per_block: Int
+    var num_keys_per_block: Int
+    var BK: Int  # tile size in depth dimension
+    var WM: Int
+    var WN: Int
+    var num_pipeline_stages: Int
+    var k_group_size: Int
+
     var algorithm: FlashAttentionAlgorithm
     var swizzle_mode: TensorMapSwizzle
 
-    def block_m(self) -> UInt:
+    def block_m(self) -> Int:
         return self.num_queries_per_block
 
-    def block_n(self) -> UInt:
+    def block_n(self) -> Int:
         return self.num_keys_per_block
 
-    def block_k(self) -> UInt:
+    def block_k(self) -> Int:
         return self.BK
 
-    def warp_m(self) -> UInt:
+    def warp_m(self) -> Int:
         return self.WM
 
-    def warp_n(self) -> UInt:
+    def warp_n(self) -> Int:
         return self.WN
 
-    def num_warps_m(self) -> UInt:
-        return self.block_m() // self.warp_m()
+    def num_warps_m(self) -> Int:
+        return ufloordiv(self.block_m(), self.warp_m())
 
-    def num_warps_n(self) -> UInt:
-        return self.block_n() // self.warp_n()
+    def num_warps_n(self) -> Int:
+        return ufloordiv(self.block_n(), self.warp_n())
 
-    def num_consumer_threads(self) -> UInt:
-        return self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE)
+    def num_consumer_threads(self) -> Int:
+        return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
 
     def num_producer_threads[
         producer_consumer_kernel: Bool = False
-    ](self) -> UInt:
-        return UInt(128) if (
-            producer_consumer_kernel and self.algorithm == 3
-        ) else UInt(0)
+    ](self) -> Int:
+        return 128 if (producer_consumer_kernel and self.algorithm == 3) else 0
 
-    def num_threads[producer_consumer_kernel: Bool = False](self) -> UInt:
+    def num_threads[producer_consumer_kernel: Bool = False](self) -> Int:
         return (
             self.num_consumer_threads()
             + self.num_producer_threads[producer_consumer_kernel]()
         )
 
-    def swizzle_granularity(self) -> UInt:
-        return UInt(self.swizzle_mode.bytes()) // UInt(size_of[self.dtype]())
+    def swizzle_granularity(self) -> Int:
+        return ufloordiv(self.swizzle_mode.bytes(), size_of[self.dtype]())
 
-    def q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> UInt:
+    def q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> Int:
         q_size = self.block_m() * self.padded_depth
         num_q = 2 if fa3 and persistent else 1
-        return UInt(num_q * Int(q_size))
+        return num_q * q_size
 
-    def kv_smem_size(self, fa3: Bool = False) -> UInt:
+    def kv_smem_size(self, fa3: Bool = False) -> Int:
         if fa3:
             return self.num_pipeline_stages * self.block_n() * self.padded_depth
         else:
             return self.block_n() * self.padded_depth
 
-    def k_smem_size(self, fa3: Bool = False) -> UInt:
+    def k_smem_size(self, fa3: Bool = False) -> Int:
         if fa3:
             return self.kv_smem_size(True)
         else:
             return self.block_n() * self.padded_depth
 
-    def v_smem_size(self, fa3: Bool = False) -> UInt:
+    def v_smem_size(self, fa3: Bool = False) -> Int:
         if fa3:
             return self.kv_smem_size(True)
         else:
             BN = self.block_n()
             return BN * BN
 
-    def p_smem_size(self) -> UInt:
+    def p_smem_size(self) -> Int:
         return self.block_m() * self.block_n()
 
-    def warp_scratch_smem_size(self) -> UInt:
-        n_warps_n = self.num_warps_n()
-        return UInt(
-            2 * Int(n_warps_n) * Int(self.block_m()) if n_warps_n > 1 else 0
-        )
+    def warp_scratch_smem_size(self) -> Int:
+        var n_warps_n = self.num_warps_n()
+        return 2 * n_warps_n * self.block_m() if n_warps_n > 1 else 0
 
     def shared_mem_bytes[
         shared_kv: Bool = False, sm_90: Bool = False
-    ](self) -> UInt:
+    ](self) -> Int:
         if not has_nvidia_gpu_accelerator():
             return 0
 
@@ -240,32 +256,34 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
-        num_smem_bytes = size_of[self.dtype]() * Int(num_smem_elements)
+        num_smem_bytes = size_of[self.dtype]() * num_smem_elements
         if sm_90_fa3:
             comptime i64_size = size_of[DType.int64]()
-            num_smem_bytes += (2 * Int(self.num_pipeline_stages)) * i64_size + (
+            num_smem_bytes += (2 * self.num_pipeline_stages) * i64_size + (
                 4 * i64_size + 2 * size_of[DType.uint32]() if persistent else 0
             )
-        return UInt(num_smem_bytes)
+        return num_smem_bytes
 
     def __init__(
         out self,
-        num_heads: UInt,
-        depth: UInt,
-        num_queries_per_block: Optional[UInt] = None,
-        num_keys_per_block: Optional[UInt] = None,
-        BK: Optional[UInt] = None,
-        WM: Optional[UInt] = None,
-        WN: Optional[UInt] = None,
-        num_pipeline_stages: UInt = 4,
-        k_group_size: UInt = 1,
+        num_heads: Int,
+        depth: Int,
+        num_queries_per_block: Optional[Int] = None,
+        num_keys_per_block: Optional[Int] = None,
+        BK: Optional[Int] = None,
+        WM: Optional[Int] = None,
+        WN: Optional[Int] = None,
+        num_pipeline_stages: Int = 4,
+        k_group_size: Int = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     ):
         self.num_heads = num_heads
         self.depth = depth
-        swizzle_granularity = swizzle_mode.bytes() // size_of[DType.bfloat16]()
-        self.padded_depth = align_up(depth, UInt(swizzle_granularity))
+        var swizzle_granularity = (
+            swizzle_mode.bytes() // size_of[DType.bfloat16]()
+        )
+        self.padded_depth = ualign_up(depth, swizzle_granularity)
         self.num_pipeline_stages = num_pipeline_stages
         self.k_group_size = k_group_size
         self.algorithm = algorithm.init(Self.dtype)
@@ -275,7 +293,10 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         # Currently, all are `OptionalReg` for consistency.
         if (
             is_sm90or100
-            and Self.dtype.is_half_float()
+            and (
+                Self.dtype.is_half_float()
+                or (is_sm100 and Self.dtype.is_float8())
+            )
             and self.algorithm == FlashAttentionAlgorithm(3)
         ):
             # BM
@@ -295,8 +316,8 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 # reg_per >= 16*BN//32 + 16*depth//32 + 16*BN//64 + 4
                 # (reg_per - depth//2 - 4) >= 3*BN//4
                 # BN <= (4*reg_per - 2*depth - 16)//3
-                reg_upper_bound = (4 * reg_per - 2 * Int(depth) - 16) // 3
-                comptime persistent = (
+                reg_upper_bound = (4 * reg_per - 2 * depth - 16) // 3
+                comptime persistent: Bool = (
                     get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
                 )
                 smem_total = 227000
@@ -306,23 +327,23 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 #        >= 2*depth*pipeline_stages*BN
                 # BN <= (smem_total//2 - BM*depth*(1+persistent) - 8*pipeline_stages
                 #        - 20*persistent) // (depth*pipeline_stages)
-                smem_upper_bound = (
+                var smem_upper_bound = (
                     smem_total // 2
-                    - Int(
+                    - (
                         self.num_queries_per_block
                         * depth
-                        * UInt(1 + Int(persistent))
+                        * (1 + Int(persistent))
                     )
-                    - 8 * Int(num_pipeline_stages)
+                    - 8 * num_pipeline_stages
                     - 20 * Int(persistent)
-                ) // Int(depth * num_pipeline_stages)
+                ) // (depth * num_pipeline_stages)
                 # divide and multiply by 16 to get a multiple of MMA_K
-                min_upper_bound = 16 * (
+                var min_upper_bound = 16 * (
                     min(reg_upper_bound, smem_upper_bound) // 16
                 )
                 # FIXME: add support for non-power-of-twos?
-                self.num_keys_per_block = UInt(
-                    max(prev_power_of_two(min_upper_bound), 64)
+                self.num_keys_per_block = max(
+                    prev_power_of_two(min_upper_bound), 64
                 )
             self.BK = BK.or_else(64)
             self.WN = WN.or_else(min(self.num_keys_per_block, 256))
@@ -330,31 +351,27 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             # BN
             self.num_keys_per_block = num_keys_per_block.or_else(
                 (
-                    UInt(32 if depth == 512 else 64)
+                    32 if depth == 512 else 64
                 ) if has_amd_gpu_accelerator() else depth
             )
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
-                UInt(
-                    32 if Self.dtype
-                    == DType.float32 else (
-                        128 if has_amd_gpu_accelerator() else 64
-                    )
-                )
+                32 if Self.dtype
+                == DType.float32 else (128 if has_amd_gpu_accelerator() else 64)
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
             var bk_type_factor = 1 if Self.dtype == DType.float32 else 2
             self.BK = BK.or_else(
-                UInt(16 * bk_arch_factor * bk_type_factor)
-            ) if has_nvidia_gpu_accelerator() else 32
+                16 * bk_arch_factor * bk_type_factor
+            ) if has_nvidia_gpu_accelerator() else BK.or_else(
+                64 if Self.dtype.is_float8() else 32
+            )
             self.WN = WN.or_else(
                 32 if Self.dtype == DType.float32 else self.num_keys_per_block
             )
         self.WM = WM.or_else(
-            UInt(
-                32 if Self.dtype
-                == DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
-            )
+            32 if Self.dtype
+            == DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
         )
 
     def write_to(self, mut writer: Some[Writer]):
@@ -374,7 +391,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
 
 @always_inline
 def _kernel_mask[
-    dtype: DType, width: Int
+    dtype: DType, width: SIMDSize
 ](
     coord: IndexList[2, ...], bound: IndexList[2, ...], vec: SIMD[dtype, width]
 ) -> SIMD[dtype, width]:
@@ -393,14 +410,14 @@ def _kernel_mask[
 
 @always_inline
 def _copy_frag_to_smem_nvidia[
-    BM: UInt,
-    BN: UInt,
-    BK: UInt,
-    WM: UInt,
-    WN: UInt,
-    MMA_M: UInt,
-    MMA_N: UInt,
-    frag_simd_width: UInt,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+    frag_simd_width: Int,
     *,
     type0: DType,
     layout0: Layout,
@@ -432,23 +449,21 @@ def _copy_frag_to_smem_nvidia[
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
+        mut=False,
         p_smem_iter.dtype,
-        Layout.row_major(Int(BM), Int(BN)),
-        ImmutAnyOrigin,
+        Layout.row_major(BM, BN),
         address_space=AddressSpace.SHARED,
-    ](p_smem_iter.ptr.as_immutable())
-    var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
-        Int(warp_y), Int(warp_x)
-    )
-    var p_reg_vecs = p_reg_tile.vectorize[1, Int(frag_simd_width)]()
+    ](p_smem_iter.ptr)
+    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
+    var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
 
-    comptime swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, Int(BK)]()
+    comptime swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, BK]()
 
     comptime for n_mma in range(num_n_mmas):
         comptime for m_mma in range(num_m_mmas):
-            var p_smem_mma_tile = p_smem_warp_tile.tile[Int(MMA_M), Int(MMA_N)](
-                Int(m_mma), Int(n_mma)
-            ).vectorize[1, Int(frag_simd_width)]()
+            var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
+                m_mma, n_mma
+            ).vectorize[1, frag_simd_width]()
             var p_smem_frag = p_smem_mma_tile.distribute[
                 Layout.row_major(8, 4)
             ](lane_id())
@@ -485,21 +500,21 @@ def _copy_frag_to_smem_nvidia[
                     )
                 )[]
                 comptime align = align_of[
-                    SIMD[p_smem_iter.dtype, Int(frag_simd_width)]
+                    SIMD[p_smem_iter.dtype, frag_simd_width]
                 ]()
                 tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)
 
 
 @always_inline
 def _copy_frag_to_smem_amd[
-    BM: UInt,
-    BN: UInt,
-    BK: UInt,
-    WM: UInt,
-    WN: UInt,
-    MMA_M: UInt,
-    MMA_N: UInt,
-    frag_simd_width: UInt,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+    frag_simd_width: Int,
     *,
     type0: DType,
     layout0: Layout,
@@ -528,22 +543,20 @@ def _copy_frag_to_smem_amd[
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
+        mut=False,
         p_smem_iter.dtype,
-        Layout.row_major(Int(BM), Int(BN)),
-        ImmutAnyOrigin,
+        Layout.row_major(BM, BN),
         address_space=AddressSpace.SHARED,
-    ](p_smem_iter.ptr.as_immutable())
+    ](p_smem_iter.ptr)
 
-    var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
-        Int(warp_y), Int(warp_x)
-    )
-    var p_reg_vecs = p_reg_tile.vectorize[1, Int(frag_simd_width)]()
+    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
+    var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
 
     comptime for n_mma in range(num_n_mmas):
         comptime for m_mma in range(num_m_mmas):
-            var p_smem_mma_tile = p_smem_warp_tile.tile[Int(MMA_M), Int(MMA_N)](
-                Int(m_mma), Int(n_mma)
-            ).vectorize[Int(frag_simd_width), 1]()
+            var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
+                m_mma, n_mma
+            ).vectorize[frag_simd_width, 1]()
             var p_smem_frag = p_smem_mma_tile.distribute[
                 Layout.row_major(4, 16)
             ](lane_id())
@@ -558,9 +571,9 @@ def _copy_frag_to_smem_amd[
                     offset_BMxBN // OffsetType(BN)
                 ) * OffsetType(BK) + offset_BMxBN % OffsetType(BK)
 
-                var vec = p_reg_vecs[n_mma * num_m_mmas + m_mma, 0][
-                    Int(i)
-                ].cast[p_smem_tile.dtype]()
+                var vec = p_reg_vecs[n_mma * num_m_mmas + m_mma, 0][i].cast[
+                    p_smem_tile.dtype
+                ]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
                     p_smem_iter.linear_uint_type(
@@ -572,14 +585,14 @@ def _copy_frag_to_smem_amd[
 
 @always_inline
 def _copy_frag_to_smem[
-    BM: UInt,
-    BN: UInt,
-    BK: UInt,
-    WM: UInt,
-    WN: UInt,
-    MMA_M: UInt,
-    MMA_N: UInt,
-    frag_simd_width: UInt,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+    frag_simd_width: Int,
     *,
     type0: DType,
     layout0: Layout,
@@ -615,6 +628,10 @@ def get_start_and_end_for_partitions[
 ](num_keys: Int, num_partitions: Int, partition_idx: Int) -> Tuple[Int, Int]:
     """Calculate start and end indices for a partition.
 
+    Non-empty partitions are packed at low indices `0..N-1` with
+    `partition_size = max(tile_size, align_up(ceildiv(num_keys, num_partitions),
+    tile_size))`; partitions `>= N` are empty (start == end == num_keys).
+
     Args:
         num_keys: Total number of keys (sequence length).
         num_partitions: Number of partitions to split keys into.
@@ -624,24 +641,14 @@ def get_start_and_end_for_partitions[
         Tuple of (start_idx, end_idx) for the partition, aligned to tile_size.
     """
     var num_keys_per_partition = ceildiv(num_keys, num_partitions)
-
-    # Align start to tile_size
-    var start = align_up(num_keys_per_partition * partition_idx, tile_size)
-    # If start is already beyond num_keys, return empty range
+    var partition_size = max(
+        tile_size, align_up(num_keys_per_partition, tile_size)
+    )
+    var start = partition_idx * partition_size
     if start >= num_keys:
         return (num_keys, num_keys)
-    var next_start = align_up(
-        num_keys_per_partition * (partition_idx + 1), tile_size
-    )
-    var end = min(num_keys, next_start)
+    var end = min(num_keys, start + partition_size)
     return (start, end)
-
-    # ^ may lead to non-uniform distribution of keys across partitions because of alignment requirement,
-    # we may want to use the following instead for non-paged kvcache but then we will have to know which cache is being used.
-    # Keep this here for now, can remove it later if we are only using paged kvcache.
-    # var start = num_keys_per_partition * partition_idx
-    # var end = min(num_keys, start + num_keys_per_partition)
-    # return (start, end)
 
 
 comptime callback_fn_type = def[mask_t: MHAMask](
@@ -675,6 +682,11 @@ def dispatch_mask[
             local_window_size > 0
         ), "You must specify local_window_size for SlidingWindowCausalMask"
         return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
+    elif MaskName.SLIDING_WINDOW_NONCAUSAL == mask_type:
+        comptime assert (
+            local_window_size > 0
+        ), "You must specify local_window_size for SlidingWindowNonCausalMask"
+        return outer_wrapper(SlidingWindowNonCausalMask[local_window_size]())
     elif MaskName.CHUNKED_CAUSAL == mask_type:
         comptime assert (
             local_window_size > 0
@@ -764,6 +776,15 @@ trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
     def num_partitions(self) -> UInt32:
         ...
 
+    # The number of partition CTAs the decode grid is launched with. This is an
+    # upper bound on num_partitions() that is independent of num_keys, so the
+    # launched grid shape is stable across num_keys (one CUDA graph per batch
+    # size). CTAs with partition index >= num_partitions() early-return. Equal
+    # to num_partitions() when the scheme does not over-launch.
+    @always_inline
+    def max_num_partitions(self) -> UInt32:
+        ...
+
     @always_inline
     def get_exp_sum_qk_max_pointer(
         self,
@@ -786,12 +807,16 @@ struct NoPartition[dtype: DType](
         return 1
 
     @always_inline
+    def max_num_partitions(self) -> UInt32:
+        return 1
+
+    @always_inline
     def get_exp_sum_qk_max_pointer(
         self,
     ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
-        return UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        return UnsafePointer[
+            Scalar[Self.accum_dtype], MutAnyOrigin
+        ].unsafe_dangling()
 
 
 struct SplitKPartition[dtype: DType](
@@ -799,24 +824,30 @@ struct SplitKPartition[dtype: DType](
 ):
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
+
+    @__allow_legacy_any_origin_fields
     var ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]
     var num_partitions_value: UInt32
+    var max_num_partitions_value: UInt32
 
     @always_inline
     def __init__(
         out self,
         ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
+        max_num_partitions_value: UInt32,
     ):
-        assert ptr != UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin](
-            _unsafe_null=()
-        )
         self.ptr = ptr
         self.num_partitions_value = num_partitions_value
+        self.max_num_partitions_value = max_num_partitions_value
 
     @always_inline
     def num_partitions(self) -> UInt32:
         return self.num_partitions_value
+
+    @always_inline
+    def max_num_partitions(self) -> UInt32:
+        return self.max_num_partitions_value
 
     @always_inline
     def get_exp_sum_qk_max_pointer(

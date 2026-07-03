@@ -448,7 +448,7 @@ def test_weight_scale_sharding_with_head_aware_columnwise() -> None:
     """Tests that weight_scale is replicated with head_aware_columnwise
     strategy.
     """
-    with Graph("test", input_types=[]) as graph:
+    with Graph("test", input_types=[]):
         num_heads = 30  # Not divisible by 4
         head_dim = 64
         hidden_size = num_heads * head_dim  # 1920

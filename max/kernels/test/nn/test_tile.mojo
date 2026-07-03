@@ -679,7 +679,7 @@ def test_tile_eg12() raises:
     print()
 
 
-# CHECK-LABE: test_tile_eg13
+# CHECK-LABEL: test_tile_eg13
 # CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
 # CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
@@ -761,7 +761,7 @@ def test_tile_eg13() raises:
     print()
 
 
-# CHECK-LABE: test_tile_eg14
+# CHECK-LABEL: test_tile_eg14
 # CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
 # CHECK: 0.0 ,1.0 ,0.0 ,1.0 ,0.0 ,1.0 ,

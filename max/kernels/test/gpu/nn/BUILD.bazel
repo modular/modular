@@ -3,12 +3,34 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 package(default_visibility = ["//max:consumers"])
 
 _EXTRA_CONSTRAINTS = {
+    "test_conv2d_im2col_apple.mojo": ["//:apple_gpu"],  # Apple M5 im2col conv2d — Metal only
+    "test_topk_gpu_fi.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: KERN-3121 — topk_topp_sampling_from_prob samples out-of-top-K index on Metal
+    # Bounded masked DRAM->SRAM copy proof; the masked `cp.async` zero-fill
+    # is NVIDIA-specific and verified on B200 only.
+    "scout_tt_bounded_copy.mojo": ["//:nvidia_gpu"],
     "test_mma_ws_ts.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # No SM100/B200-specific code; runs on any GPU. Apple is excluded because
+    # `_block_reduce_topk` uses MAX_BLOCK_SIZE == WARP_SIZE there, which the
+    # 128-thread block in the test would exceed.
+    "test_sparse_indexer_common.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
+    # 4-wave implicit-GEMM conv inherits the matmul's MI355X-only MFMA
+    # + chiplet/L2 swizzle; not compilable on other AMD parts.
+    "test_amd_4wave_conv_dtypes.mojo": ["//:mi355_gpu"],
+    "test_amd_4wave_conv_miopen.mojo": ["//:mi355_gpu"],
+    "test_amd_4wave_conv_residual.mojo": ["//:mi355_gpu"],
+    "test_amd_4wave_conv_rt_hw.mojo": ["//:mi355_gpu"],
+    "test_amd_4wave_conv3d.mojo": ["//:mi355_gpu"],
     "test_conv2d_sm100.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -17,10 +39,22 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_conv3d_qslice_sm100.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_conv_transposed_cudnn.mojo": ["//:nvidia_gpu"],
     "test_irfft.mojo": ["//:nvidia_gpu"],
     "test_flash_attention_amd.mojo": ["//:amd_gpu"],
-    "test_mha_causal_mask_amd.mojo": ["//:amd_gpu"],  # FIXME: KERN-1448, KERN-1437, KERN-1429
+    # Apple M5 (cc==5) FA2-prefill: the kernel uses the 16x16 simdgroup MMA
+    # (`MmaOpApple`) which only exists on M5, so these run on Apple GPU only.
+    "test_apple_fa_prefill.mojo": ["//:apple_gpu"],
+    "test_apple_fa_softmax_unit.mojo": ["//:apple_gpu"],
+    "test_mha_gemma4_global_decode_amd.mojo": ["//:amd_gpu"],
+    "test_mha_sink_weights.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_mha_operand_tma.mojo": select({
         "//:h100_gpu": [],
         "//:b200_gpu": [],
@@ -30,11 +64,13 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    "test_mla_decode_paged_variable.mojo": select({
+    "test_mla_decode_blockwise_fp8.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    "test_mla_decode_blockwise_fp8.mojo": select({
+    # Drives the SM100 MLA FP8-KV decode kernel (MLA_SM100_Decode_KV_FP8).
+    # SM100-only.
+    "test_mla_decode_kv_fp8_magnitude_stress.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -49,6 +85,7 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_mla_prefill_qkv_fp8.mojo": select({
         "//:b200_gpu": [],
+        "//:amd_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_prefill_per_token_scale_fp8.mojo": select({
@@ -56,6 +93,34 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_decode_qkv_fp8_per_token_scale_rope_aware.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_qkv_fp8_sliding_window.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_sparse.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_prefill_sparse.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_kv_fp8_smoke.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_kv_fp8.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_kv_bf16_smoke.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_kv_bf16.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -68,6 +133,14 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
+    "test_rms_norm_fused_residual_add.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: KERN-2651 — Metal threadgroup memory limit (33032 > 32768)
+    "test_mha_chunked_causal_mask.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: KERN-3062 — flash attention numerically diverges on Metal
     "test_argmaxmin_gpu.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -104,10 +177,11 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2489
-    "test_topk_gpu_fi.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2673
+    # The FI ternary samplers now run the search on a single thread on Apple
+    # (no in-loop block collectives that desync warps on Metal).
+    # `probe_block_scan_metal` is an Apple-only regression probe asserting
+    # block.sum/prefix_sum are correct at the ghost-warp geometry.
+    "probe_block_scan_metal.mojo": ["//:apple_gpu"],
     "test_fused_qk_rope.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -116,9 +190,57 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-3104
+    "test_gemv_partial_norm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Kernel uses device-scope atomics (_DEVICE_SCOPE) unsupported on Metal.
     "test_rope_split_store.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
+    }),
+    # SM100 FA4 1Q attention-sink double-count regression. SM100-only
+    # (exercises the FA4 `fa4_softmax` 1Q warp-specialized path).
+    "attention/test_mha_sm100_1q_sink.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d256_prefill.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d256_paged.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d512_prefill.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d128_decode.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d256_decode.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d512_decode.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d64_prefill.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d128_prefill.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # Tail-stress regression guard for the FA4 256x P-scale (engineered
+    # peaked softmax with an informative e4m3-underflow tail). SM100-only.
+    "attention/test_mha_sm100_qkv_fp8_d128_tail_stress.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     # TODO(KERN-2410): Investigate and enable on macOS
     "test_bicubic.mojo": select({
@@ -129,14 +251,30 @@ _EXTRA_CONSTRAINTS = {
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    # rope_ragged with position_ids hits the same broken-on-Metal path as
+    # test_rope_ragged above (the GPU output is all-zeros -- needs
+    # investigation); the position_ids marshalling fix here is necessary but
+    # not sufficient on its own.
+    "test_rope_ragged_position_ids.mojo": select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     # These tests fail on Apple GPU - needs investigation
     "test_pool_gpu.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    "test_spatial_merge.mojo": ["@platforms//:incompatible"],  #FIXME: KERN-2727
+    "test_spatial_merge.mojo": select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     # TODO(GEX-3342): Metal GPU sorting produces incorrect results
     "test_warp_bitonic_sort.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    # Block-wide bitonic sort top-k (topk_bitonic.mojo) — same constraint as above.
+    "test_topk_bitonic.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
@@ -144,6 +282,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
+    "test_apply_packed_bitmask.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_tpool_patch_merger.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -164,6 +306,16 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-3650 — NaN in BFloat16 top-p sampling on Apple GPU
+    "test_concat.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411 — segfaults on Apple GPU remote workers
+}
+
+_EXTRA_DEPS = {}
+
+_GPU_MEMORY = {
+    "test_cudnn_conv.mojo": "7",
 }
 
 _FILECHECK_TESTS = [
@@ -203,6 +355,7 @@ _FILECHECK_TESTS = [
             "//:amd_gpu": src not in [
                 "test_flash_attention.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
                 "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
+                "test_mha_sink_weights.mojo",  # KERN-2751: sink kernel triggers OOB on AMD
             ],
             # KERN-2339: H100 MLA kernel has OOB in LayoutTensor masking
             # infrastructure on boundary tiles (num_keys not aligned to BN).
@@ -215,7 +368,7 @@ _FILECHECK_TESTS = [
             ],
         }),
         exec_properties = {
-            "test.resources:gpu-memory": "3",
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "4"),
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
@@ -225,64 +378,266 @@ _FILECHECK_TESTS = [
             "//max:nn",
             "//max:testdata",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["**/*.mojo"],
         exclude = _FILECHECK_TESTS + [
             "test_mha_causal_mask.mojo",
+            "test_mha_causal_mask_amd.mojo",
+            "test_mla_decode_paged_variable.mojo",
+            "test_mla_prefill_generic_paged.mojo",
+            "test_mla_prefill_blockscale_paged.mojo",
+            "test_mla_prefill_blockscale_large_cache.mojo",
+            "test_mla_prefill_per_token_scale_paged.mojo",
+            "test_mla_prefill_vhead_repro.mojo",
+            "_paged_prefill_test_utils.mojo",
+            # Dtype-parameterized 4-wave conv test (explicit per-dtype
+            # targets are declared below).
+            "test_amd_4wave_conv_dtypes.mojo",
+            # Apple-only decode-attention correctness gate (needs the
+            # //max:kv_cache dep and an Apple-GPU-only constraint; declared
+            # explicitly below).
+            "attention/test_naive_fa_decode_apple.mojo",
+            # Apple-only decode-attention SINK regression (same deps as above).
+            "attention/test_naive_fa_decode_apple_sink.mojo",
+            # Apple-only PAGED-KV prefill correctness gate (needs //max:kv_cache
+            # for the PagedKVCacheCollection operand; declared explicitly below).
+            # Exercises both prefill kernels (no-SMEM + SMEM-staged) via one
+            # `staged` harness flag.
+            "test_apple_fa_prefill_paged.mojo",
         ],
     )
 ]
 
-# test_mha_causal_mask.mojo split by depth via -D depth=N.
-# Each depth gets its own target for parallel execution.
-# Depths and their GPU constraints:
-#   64, 128: all GPUs
-#   72, 80, 96, 256: H100 and B200 only
-#   512: B200 only (prefill-only support)
-_MHA_CAUSAL_MASK_DEPTHS = {
-    "64": [],
-    "128": [],
-    "72": select({
-        "//:h100_gpu": [],
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    "80": select({
-        "//:h100_gpu": [],
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    "96": select({
-        "//:h100_gpu": [],
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    "256": select({
-        "//:h100_gpu": [],
-        "//:b200_gpu": [],
-        "//:amd_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    "512": select({
-        "//:b200_gpu": [],
-        "//:amd_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-}
+# Ensure `naive_fa_decode_apple` matches `mha_gpu_naive` on a paged KV cache.
+# Apple GPU only; needs //max:kv_cache for the operand construction.
+mojo_test(
+    name = "attention/test_naive_fa_decode_apple.mojo.test",
+    srcs = ["attention/test_naive_fa_decode_apple.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:apple_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# Regression for the Apple decode attention-sink seed (split-0-only seeding of
+# the running softmax). Closed-form mass reference. Apple GPU only.
+mojo_test(
+    name = "attention/test_naive_fa_decode_apple_sink.mojo.test",
+    srcs = ["attention/test_naive_fa_decode_apple_sink.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:apple_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# Ensure the Apple M5 MMA prefill kernel (`fa_prefill_apple`) is correct on a
+# PAGED KV cache (`PagedKVCacheCollection`, page_size % 16 == 0) vs an
+# independent fp32 host attention reference -- the per-16-row-sub-tile page
+# resolution must interact correctly with page boundaries. Apple GPU only; needs
+# //max:kv_cache.
+mojo_test(
+    name = "test_apple_fa_prefill_paged.mojo.test",
+    srcs = ["test_apple_fa_prefill_paged.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:apple_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# Dtype-parameterized 4-wave conv correctness tests. Single source
+# file (`test_amd_4wave_conv_dtypes.mojo`); one `mojo_test` target per
+# dtype, each with `-D DTYPE=<dtype>`. Black-box correctness check of
+# `amd_4wave_conv` vs `structured_4wave_matmul` on a host-materialized
+# im2col matrix, asserting byte-identity across all supported dtypes
+# (FP8 + BF16 + FP16). MI355X only.
+[
+    mojo_test(
+        name = "test_amd_4wave_conv_dtypes_" + dtype + ".mojo.test",
+        size = "large",
+        srcs = ["test_amd_4wave_conv_dtypes.mojo"],
+        copts = [
+            "-D",
+            "DTYPE=" + dtype,
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": "3",
+        },
+        tags = ["gpu"],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:mi355_gpu",
+        ],
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:nn",
+            "//max:testdata",
+            "@mojo//:std",
+        ],
+    )
+    for dtype in [
+        "float8_e4m3fn",
+        "bfloat16",
+        "float16",
+    ]
+]
+
+# test_mha_causal_mask.mojo split by depth and optional pair-CTA flag.
+# Each (depth, pair_cta) combination gets its own target for parallel execution.
+# Pair-CTA requires SM100 (B200) and is valid for 64 < depth <= 128.
+#
+# GPU constraints per depth:
+#   64, 128:       all GPUs
+#   72, 80, 96:    H100 and B200 only
+#   256:           H100, B200, and AMD only
+#   512:           B200 and AMD only (prefill-only support)
+#   *_pair_cta:    B200 only (SM100-only feature)
+_MHA_CAUSAL_MASK_CONFIGS = [
+    # (depth, pair_cta, extra_constraints)
+    # FIXME: KERN-3062 — flash attention numerically diverges on Metal; the
+    # depth-64 and depth-128 configs are the only ones that target Apple GPU.
+    (
+        "64",
+        False,
+        select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+    ),
+    (
+        "128",
+        False,
+        select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+    ),
+    (
+        "128",
+        True,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "72",
+        False,
+        select({
+            "//:h100_gpu": [],
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "72",
+        True,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "80",
+        False,
+        select({
+            "//:h100_gpu": [],
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "80",
+        True,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "96",
+        False,
+        select({
+            "//:h100_gpu": [],
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "96",
+        True,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "256",
+        False,
+        select({
+            "//:h100_gpu": [],
+            "//:b200_gpu": [],
+            "//:amd_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "512",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//:amd_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+]
 
 [
     mojo_test(
-        name = "test_mha_causal_mask_depth_{}.mojo.test".format(depth),
+        name = "test_mha_causal_mask{}_depth_{}.mojo.test".format(
+            "_pair_cta" if pair_cta else "",
+            depth,
+        ),
         size = "large",
         srcs = ["test_mha_causal_mask.mojo"],
         copts = [
             "-D",
             "depth={}".format(depth),
-        ],
+        ] + ([
+            "-D",
+            "ENABLE_MHA_PREFILL_PAIR_CTA=True",
+        ] if pair_cta else []),
         exec_properties = {
-            "test.resources:gpu-memory": "3",
+            "test.resources:gpu-memory": "4",
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + constraints,
@@ -294,5 +649,211 @@ _MHA_CAUSAL_MASK_DEPTHS = {
             "@mojo//:std",
         ],
     )
-    for depth, constraints in _MHA_CAUSAL_MASK_DEPTHS.items()
+    for depth, pair_cta, constraints in _MHA_CAUSAL_MASK_CONFIGS
+]
+
+# test_mha_causal_mask_amd.mojo split by dtype via -D USE_FP8.
+# FP8 is prefill-only on AMD.
+_MHA_CAUSAL_MASK_AMD_DTYPES = {
+    "bf16": [],
+    "fp8": [
+        "-D",
+        "USE_FP8=True",
+    ],
+}
+
+[
+    mojo_test(
+        name = "test_mha_causal_mask_amd_{}.mojo.test".format(dtype),
+        size = "large",
+        srcs = ["test_mha_causal_mask_amd.mojo"],
+        copts = copts,
+        exec_properties = {
+            "test.resources:gpu-memory": "3",
+        },
+        tags = ["gpu"],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:amd_gpu",
+        ],
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:nn",
+            "//max:testdata",
+            "@mojo//:std",
+        ],
+    )
+    for dtype, copts in _MHA_CAUSAL_MASK_AMD_DTYPES.items()
+]
+
+# test_mla_decode_paged_variable.mojo split by page_size. Each page_size
+# gets its own target. The test runs the SM100 paged decode suite on B200
+# and the AMD MLA decode suite (S=1 paged decode + the FP8 MTP token fold
+# through the paged + ragged-layout path, including uniform multi-Q and M6
+# variable per-sequence query length, across single-partition and split-K)
+# on MI355 (gfx950); both page_size 128 and 256 are verified on AMD.
+#
+# page_size < 64 (the decode tile row count BK1=64) would exercise
+# multi-sub-tile TMA emission, but the decode TMA descriptor's `BN` is
+# currently hardcoded to BK1=64 (see create_tma_tile sites in
+# mla_decode_dispatch.mojo and the kernel struct signatures). Supporting
+# page_size < BK1 requires threading `kv_sub_tile_rows(BK1, page_size)`
+# through the kernel TMA signatures — follow-up work.
+_MLA_DECODE_PAGED_CONFIGS = [
+    "256",
+    "128",
+    # "64",  # QUA-375 / KERN-2912: disabled due to nondeterminism
+]
+
+[
+    mojo_test(
+        name = "test_mla_decode_paged_variable_ps{}.mojo.test".format(page_size),
+        size = "large",
+        srcs = ["test_mla_decode_paged_variable.mojo"],
+        copts = [
+            "-D",
+            "page_size={}".format(page_size),
+        ],
+        # The gfx950 backend crashes compiling the warp-local MLA-decode fold
+        # kernel with assertions enabled (machine scheduler emits illegal MIR
+        # -> "Found N machine code errors"); the no-assert / JIT build is fine.
+        # Mirrors test_flash_attention_amd.mojo (MSTDL-2240). NVIDIA keeps asserts.
+        enable_assertions = select({
+            "//:amd_gpu": False,
+            "//conditions:default": True,
+        }),
+        exec_properties = {
+            "test.resources:gpu-memory": "6",
+        },
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//:mi355_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+    )
+    for page_size in _MLA_DECODE_PAGED_CONFIGS
+]
+
+# MLA prefill paged-KV tests. These are a NEW set of tests that
+# exercise the production MLA prefill code path: ``flare_mla_prefill``
+# with a ``KVCacheT`` for K_rope, dispatched to ``mla_sm100_prefill_*``
+# on B200. The existing
+# ``test_mla.mojo``/``test_mla_prefill_*_fp8.mojo`` tests cover only the
+# contiguous K_rope path (``LayoutTensorMHAOperand``) and so do not
+# exercise the sub-tile TMA loops in the kernel.
+#
+# When ``page_size < BN`` (= 128 for MLA prefill) AND a tile's sub-tile
+# page indices exceed ``ceildiv(num_keys, page_size)``, the kernel emits
+# sub-tile TMAs whose comptime page loop reads stale lookup-table
+# entries past the end of the sequence (LUT padding slots) — the
+# silent partial-page bug. The kernel-side ``debug_assert`` in each
+# K_rope sub-tile loop fires on those configs pre-fix; post-fix, all
+# combinations pass.
+#
+# ``page_size`` is a compile-time parameter (it flows into
+# ``PagedKVCacheCollection[..., page_size]`` and the kernel's TMA
+# descriptors), so each value here gets its own binary. ``num_keys`` is
+# iterated at runtime — see ``num_keys_to_test`` in
+# ``_paged_prefill_test_utils.mojo``. Each binary tests the full
+# cartesian product {this page_size} × {all num_keys}.
+_MLA_PREFILL_PAGED_PAGE_SIZES = [
+    "16",
+    "32",
+    "64",
+    "128",
+    "256",
+]
+
+# (test_file, test_label_prefix, page_sizes, gpu_memory) — paged-prefill
+# tests share the same ``_paged_prefill_test_utils.mojo`` helper and the
+# same ``page_size`` parameterisation. Each variant has its own entry so
+# the BUILD rule only differs by srcs/name/page_sizes/memory.
+_MLA_PREFILL_PAGED_VARIANTS = [
+    (
+        "test_mla_prefill_generic_paged.mojo",
+        "test_mla_prefill_generic_paged",
+        _MLA_PREFILL_PAGED_PAGE_SIZES,
+        "6",
+    ),
+    (
+        "test_mla_prefill_blockscale_paged.mojo",
+        "test_mla_prefill_blockscale_paged",
+        _MLA_PREFILL_PAGED_PAGE_SIZES,
+        "6",
+    ),
+    (
+        "test_mla_prefill_per_token_scale_paged.mojo",
+        "test_mla_prefill_per_token_scale_paged",
+        _MLA_PREFILL_PAGED_PAGE_SIZES,
+        "6",
+    ),
+    # CENG-282 regression: dense MLA prefill must honor v_head_dim independently
+    # of qk_nope_head_dim. Runs CONTROL (v==nope), GLM (v<nope), and STRESS
+    # (v>nope) shapes, plus REAL GLM (v=256, the single-O fallback) across a
+    # seq_len sweep that crosses the single-O KV-tile boundaries (64/65/128/
+    # 129/256) — the >=2-KV-tile cases exercise the single-O serial P@V path
+    # that the earlier seq_len=64-only coverage missed (CUDA illegal-address
+    # at seq_len > 64). A small page_size set is enough (both the V/output
+    # geometry and the single-O boundary are page-size-independent).
+    (
+        "test_mla_prefill_vhead_repro.mojo",
+        "test_mla_prefill_vhead_repro",
+        [
+            "64",
+            "128",
+        ],
+        "6",
+    ),
+    # Large-cache_length finiteness sweep: production page_size (256) only,
+    # targeting the softmax-accumulator / scale-range / partition-count axis at
+    # cache_length up to 94715 (not the partial-page page_size < BN bug). Needs
+    # more GPU memory than the partial-page variants.
+    (
+        "test_mla_prefill_blockscale_large_cache.mojo",
+        "test_mla_prefill_blockscale_large_cache",
+        ["256"],
+        "10",
+    ),
+]
+
+[
+    mojo_test(
+        name = "{}_ps{}.mojo.test".format(label, page_size),
+        size = "large",
+        srcs = [
+            src,
+            "_paged_prefill_test_utils.mojo",
+        ],
+        copts = [
+            "-D",
+            "page_size={}".format(page_size),
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": gpu_memory,
+        },
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+    )
+    for (src, label, page_sizes, gpu_memory) in _MLA_PREFILL_PAGED_VARIANTS
+    for page_size in page_sizes
 ]

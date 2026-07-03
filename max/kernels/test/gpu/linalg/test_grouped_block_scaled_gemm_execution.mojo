@@ -44,6 +44,7 @@ from linalg.fp4_utils import (
 
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
@@ -89,39 +90,37 @@ def launch_grouped_gemm_with_templates[
 ) raises:
     """Create template TileTensors and launch grouped block-scaled GEMM."""
     # 3D template tensors with batch=1
-    var a_3d_shape = row_major(Coord(Idx[1](), Idx[M](), Idx[k_array_size]()))
+    var a_3d_shape = row_major(Coord(Idx[1], Idx[M], Idx[k_array_size]))
     var a_template = TileTensor(a_ptr, a_3d_shape)
 
-    var c_3d_shape = row_major(Coord(Idx[1](), Idx[M](), Idx[N]()))
+    var c_3d_shape = row_major(Coord(Idx[1], Idx[M], Idx[N]))
     var c_template = TileTensor(c_ptr, c_3d_shape)
 
     # 5D scale factor templates with batch=1 and merged last dims
     var sfa_5d_shape = row_major(
         Coord(
-            Idx[1](),
-            Idx[ceildiv(M, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(k_sf_size, sf_vector_size * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+            Idx[1],
+            Idx[ceildiv(M, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(k_sf_size, sf_vector_size * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1] * SF_ATOM_K],
         )
     )
     var sfa_template = TileTensor(sfa_ptr, sfa_5d_shape)
 
     var sfb_5d_shape = row_major(
         Coord(
-            Idx[1](),
-            Idx[ceildiv(N, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(k_sf_size, sf_vector_size * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+            Idx[1],
+            Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(k_sf_size, sf_vector_size * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1] * SF_ATOM_K],
         )
     )
     var sfb_template = TileTensor(sfb_ptr, sfb_5d_shape)
 
     comptime if transpose_b:
-        var b_3d_shape = row_major(
-            Coord(Idx[1](), Idx[N](), Idx[k_array_size]())
-        )
+        var b_3d_shape = row_major(Coord(Idx[1], Idx[N], Idx[k_array_size]))
         var b_template = TileTensor(b_ptr, b_3d_shape)
         grouped_block_scaled_matmul[
             transpose_b=transpose_b,
@@ -144,9 +143,7 @@ def launch_grouped_gemm_with_templates[
             ctx,
         )
     else:
-        var b_3d_shape = row_major(
-            Coord(Idx[1](), Idx[k_array_size](), Idx[N]())
-        )
+        var b_3d_shape = row_major(Coord(Idx[1], Idx[k_array_size], Idx[N]))
         var b_template = TileTensor(b_ptr, b_3d_shape)
         grouped_block_scaled_matmul[
             transpose_b=transpose_b,
@@ -191,11 +188,11 @@ def test_existing_kernel_single_group[
     print("\n--- Testing existing kernel (single group baseline) ---")
     print(
         "  M=",
-        m.value(),
+        Int(m.value()),
         " N=",
-        n.value(),
+        Int(n.value()),
         " K=",
-        k.value(),
+        Int(k.value()),
         " cta_group=",
         cta_group,
     )
@@ -206,82 +203,79 @@ def test_existing_kernel_single_group[
     var a_shape = row_major(Coord(m, k))
     var c_shape = row_major(Coord(m, n))
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = Int(n.value()) * Int(k.value())
+    var c_size = Int(m.value()) * Int(n.value())
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Scale factor shapes (5D)
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
     var a_scales_total = (
-        ceildiv(m.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        ceildiv(n.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        a_scales_total
+    )
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        b_scales_total
+    )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Initialize with random data
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
-    for i in range(c_size):
-        c_host_ptr[i] = 0
-        c_host_ref_ptr[i] = 0
+    rand(a_host_ptr.unsafe_ptr(), a_size)
+    rand(b_host_ptr.unsafe_ptr(), b_size)
 
     # Set scale factors to 1.0 (using cast from float32)
     var scale_one = Float32(1.0).cast[scales_dtype]()
@@ -312,11 +306,12 @@ def test_existing_kernel_single_group[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     comptime if transpose_b:
         var b_shape = row_major(Coord(n, k))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -335,7 +330,7 @@ def test_existing_kernel_single_group[
         ](c_tensor, a_tensor, b_tensor, a_scales_tensor, b_scales_tensor, ctx)
     else:
         var b_shape = row_major(Coord(k, n))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -389,14 +384,6 @@ def test_existing_kernel_single_group[
         )
         raise Error("Test failed - kernel output does not match cuBLAS")
 
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
-
 
 def test_grouped_kernel_single_group[
     MType: CoordLike,
@@ -419,11 +406,11 @@ def test_grouped_kernel_single_group[
     print("\n--- Testing grouped kernel (single group) ---")
     print(
         "  M=",
-        m.value(),
+        Int(m.value()),
         " N=",
-        n.value(),
+        Int(n.value()),
         " K=",
-        k.value(),
+        Int(k.value()),
         " cta_group=",
         cta_group,
     )
@@ -436,69 +423,66 @@ def test_grouped_kernel_single_group[
     var a_shape = row_major(Coord(m, k))
     var c_shape = row_major(Coord(m, n))
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = Int(n.value()) * Int(k.value())
+    var c_size = Int(m.value()) * Int(n.value())
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Scale factor shapes (5D)
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
     var a_scales_total = a_scales_shape.product()
     var b_scales_total = b_scales_shape.product()
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        a_scales_total
+    )
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        b_scales_total
+    )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Test with random data
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
-    for i in range(c_size):
-        c_host_ptr[i] = 0
-        c_host_ref_ptr[i] = 0
+    rand(a_host_ptr.unsafe_ptr(), a_size)
+    rand(b_host_ptr.unsafe_ptr(), b_size)
 
     # Set scale factors to 1.0
     var scale_one = Float32(1.0).cast[scales_dtype]()
@@ -521,7 +505,7 @@ def test_grouped_kernel_single_group[
 
     comptime if transpose_b:
         var b_shape = row_major(Coord(n, k))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -534,7 +518,7 @@ def test_grouped_kernel_single_group[
         )
     else:
         var b_shape = row_major(Coord(k, n))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -551,10 +535,14 @@ def test_grouped_kernel_single_group[
     print("  Setting up grouped kernel inputs...")
 
     # Problem sizes tensor: (max_groups, 4) with [M, N, K, L=1]
-    var problem_sizes_host = alloc[Int32](max_groups * 4)
-    problem_sizes_host[0] = Int32(m.value())  # M
-    problem_sizes_host[1] = Int32(n.value())  # N
-    problem_sizes_host[2] = Int32(k.value())  # K
+    var problem_sizes_host = ctx.enqueue_create_host_buffer[DType.int32](
+        max_groups * 4
+    )
+    for i in range(max_groups * 4):
+        problem_sizes_host[i] = Int32(0)
+    problem_sizes_host[0] = Int32(Int(m.value()))  # M
+    problem_sizes_host[1] = Int32(Int(n.value()))  # N
+    problem_sizes_host[2] = Int32(Int(k.value()))  # K
     problem_sizes_host[3] = 1  # L (batch=1)
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
@@ -564,13 +552,13 @@ def test_grouped_kernel_single_group[
     ctx.synchronize()
 
     # Create HOST-based problem_sizes TileTensor for host-side computations
-    var problem_sizes_tensor_host = TileTensor(
-        problem_sizes_host, row_major[max_groups, 4]()
-    )
+    # var problem_sizes_tensor_host = TileTensor(
+    #     problem_sizes_host, row_major[max_groups, 4]()
+    # )
 
     # Create DEVICE-based problem_sizes TileTensor for kernel
     var problem_sizes_tensor_device = TileTensor(
-        problem_sizes_device.unsafe_ptr(), row_major[max_groups, 4]()
+        problem_sizes_device, row_major[max_groups, 4]()
     )
 
     # Compute total tiles on HOST
@@ -587,11 +575,17 @@ def test_grouped_kernel_single_group[
     print("  Computed total_tiles on host:", total_tiles)
 
     # Pointer arrays: (max_groups, 1)
-    var a_ptrs_host = alloc[UInt64](max_groups)
-    var b_ptrs_host = alloc[UInt64](max_groups)
-    var c_ptrs_host = alloc[UInt64](max_groups)
-    var sfa_ptrs_host = alloc[UInt64](max_groups)
-    var sfb_ptrs_host = alloc[UInt64](max_groups)
+    var a_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var b_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var c_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    for i in range(max_groups):
+        a_ptrs_host[i] = UInt64(0)
+        b_ptrs_host[i] = UInt64(0)
+        c_ptrs_host[i] = UInt64(0)
+        sfa_ptrs_host[i] = UInt64(0)
+        sfb_ptrs_host[i] = UInt64(0)
 
     a_ptrs_host[0] = UInt64(Int(a_device.unsafe_ptr()))
     b_ptrs_host[0] = UInt64(Int(b_device.unsafe_ptr()))
@@ -612,20 +606,14 @@ def test_grouped_kernel_single_group[
     ctx.enqueue_copy(sfb_ptrs_device, sfb_ptrs_host)
     ctx.synchronize()
 
-    var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
+    var a_ptrs_tensor = TileTensor(a_ptrs_device, row_major[max_groups, 1]())
+    var b_ptrs_tensor = TileTensor(b_ptrs_device, row_major[max_groups, 1]())
+    var c_ptrs_tensor = TileTensor(c_ptrs_device, row_major[max_groups, 1]())
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfa_ptrs_device, row_major[max_groups, 1]()
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfb_ptrs_device, row_major[max_groups, 1]()
     )
 
     # Run the grouped kernel
@@ -641,6 +629,7 @@ def test_grouped_kernel_single_group[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     launch_grouped_gemm_with_templates[
@@ -665,8 +654,8 @@ def test_grouped_kernel_single_group[
         problem_sizes_tensor_device,
         num_groups,
         total_tiles,
-        k.value(),
-        k.value(),
+        Int(k.value()),
+        Int(k.value()),
         a_device.unsafe_ptr(),
         b_device.unsafe_ptr(),
         c_device.unsafe_ptr(),
@@ -713,19 +702,8 @@ def test_grouped_kernel_single_group[
         )
         raise Error("Grouped kernel output does not match cuBLAS")
 
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
-    problem_sizes_host.free()
-    a_ptrs_host.free()
-    b_ptrs_host.free()
-    c_ptrs_host.free()
-    sfa_ptrs_host.free()
-    sfb_ptrs_host.free()
+    # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
+    _ = UnsafePointer(to=a_ptrs_host).as_unsafe_any_origin()[]
 
 
 def test_grouped_kernel_multi_group_same_ptr[
@@ -754,11 +732,11 @@ def test_grouped_kernel_multi_group_same_ptr[
     )
     print(
         "  M=",
-        m.value(),
+        Int(m.value()),
         " N=",
-        n.value(),
+        Int(n.value()),
         " K=",
-        k.value(),
+        Int(k.value()),
         " num_groups=",
         num_groups,
         " cta_group=",
@@ -766,75 +744,74 @@ def test_grouped_kernel_multi_group_same_ptr[
     )
 
     # Allocate matrices (same as single-group)
-    var a_size = m.value() * k.value()
+    var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
-        k.value() * n.value() if not transpose_b else n.value() * k.value()
+        Int(k.value())
+        * Int(n.value()) if not transpose_b else Int(n.value())
+        * Int(k.value())
     )
-    var c_size = m.value() * n.value()
+    var c_size = Int(m.value()) * Int(n.value())
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     # Shapes
     var a_shape = row_major(Coord(m, k))
     var c_shape = row_major(Coord(m, n))
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    # var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Scale factor shapes (5D)
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
     var a_scales_total = a_scales_shape.product()
     var b_scales_total = b_scales_shape.product()
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        a_scales_total
+    )
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        b_scales_total
+    )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Test with random data
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
-    for i in range(c_size):
-        c_host_ptr[i] = 0
-        c_host_ref_ptr[i] = 0
+    rand(a_host_ptr.unsafe_ptr(), a_size)
+    rand(b_host_ptr.unsafe_ptr(), b_size)
 
     # Set scale factors to 1.0
     var scale_one = Float32(1.0).cast[scales_dtype]()
@@ -857,7 +834,7 @@ def test_grouped_kernel_multi_group_same_ptr[
 
     comptime if transpose_b:
         var b_shape = row_major(Coord(n, k))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -870,7 +847,7 @@ def test_grouped_kernel_multi_group_same_ptr[
         )
     else:
         var b_shape = row_major(Coord(k, n))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -889,11 +866,15 @@ def test_grouped_kernel_multi_group_same_ptr[
     comptime max_groups = num_groups
 
     # Problem sizes tensor: (max_groups, 4) with [M, N, K, L=1]
-    var problem_sizes_host = alloc[Int32](max_groups * 4)
+    var problem_sizes_host = ctx.enqueue_create_host_buffer[DType.int32](
+        max_groups * 4
+    )
+    for i in range(max_groups * 4):
+        problem_sizes_host[i] = Int32(0)
     for g in range(max_groups):
-        problem_sizes_host[g * 4 + 0] = Int32(m.value())  # M
-        problem_sizes_host[g * 4 + 1] = Int32(n.value())  # N
-        problem_sizes_host[g * 4 + 2] = Int32(k.value())  # K
+        problem_sizes_host[g * 4 + 0] = Int32(Int(m.value()))  # M
+        problem_sizes_host[g * 4 + 1] = Int32(Int(n.value()))  # N
+        problem_sizes_host[g * 4 + 2] = Int32(Int(k.value()))  # K
         problem_sizes_host[g * 4 + 3] = 1  # L (batch=1)
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
@@ -902,11 +883,17 @@ def test_grouped_kernel_multi_group_same_ptr[
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
     # Pointer tensors - ALL groups point to the SAME tensors
-    var a_ptrs_host = alloc[UInt64](max_groups)
-    var b_ptrs_host = alloc[UInt64](max_groups)
-    var c_ptrs_host = alloc[UInt64](max_groups)
-    var sfa_ptrs_host = alloc[UInt64](max_groups)
-    var sfb_ptrs_host = alloc[UInt64](max_groups)
+    var a_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var b_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var c_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    for i in range(max_groups):
+        a_ptrs_host[i] = UInt64(0)
+        b_ptrs_host[i] = UInt64(0)
+        c_ptrs_host[i] = UInt64(0)
+        sfa_ptrs_host[i] = UInt64(0)
+        sfb_ptrs_host[i] = UInt64(0)
 
     for g in range(max_groups):
         a_ptrs_host[g] = UInt64(Int(a_device.unsafe_ptr()))
@@ -933,26 +920,22 @@ def test_grouped_kernel_multi_group_same_ptr[
         problem_sizes_host, row_major[max_groups, 4]()
     )
 
-    var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
+    var a_ptrs_tensor = TileTensor(a_ptrs_device, row_major[max_groups, 1]())
+    var b_ptrs_tensor = TileTensor(b_ptrs_device, row_major[max_groups, 1]())
+    var c_ptrs_tensor = TileTensor(c_ptrs_device, row_major[max_groups, 1]())
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfa_ptrs_device, row_major[max_groups, 1]()
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfb_ptrs_device, row_major[max_groups, 1]()
     )
 
     # Calculate total tiles across all groups
     comptime BM = mma_shape[0] // cta_group
     comptime BN = mma_shape[1] // cta_group
-    var tiles_per_group = ceildiv(m.value(), BM) * ceildiv(n.value(), BN)
+    var tiles_per_group = ceildiv(Int(m.value()), BM) * ceildiv(
+        Int(n.value()), BN
+    )
     var total_tiles = tiles_per_group * num_groups
 
     print("  Total tiles across", num_groups, "groups:", total_tiles)
@@ -970,6 +953,7 @@ def test_grouped_kernel_multi_group_same_ptr[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     launch_grouped_gemm_with_templates[
@@ -994,8 +978,8 @@ def test_grouped_kernel_multi_group_same_ptr[
         problem_sizes_tensor_host,
         num_groups,
         total_tiles,
-        k.value(),
-        k.value(),
+        Int(k.value()),
+        Int(k.value()),
         a_device.unsafe_ptr(),
         b_device.unsafe_ptr(),
         c_device.unsafe_ptr(),
@@ -1031,19 +1015,8 @@ def test_grouped_kernel_multi_group_same_ptr[
             "Grouped kernel (multi-group same ptr) does not match cuBLAS"
         )
 
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
-    problem_sizes_host.free()
-    a_ptrs_host.free()
-    b_ptrs_host.free()
-    c_ptrs_host.free()
-    sfa_ptrs_host.free()
-    sfb_ptrs_host.free()
+    # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
+    _ = UnsafePointer(to=avg_diff).as_unsafe_any_origin()[]
 
 
 def test_grouped_kernel_two_groups_different_ptrs[
@@ -1068,11 +1041,11 @@ def test_grouped_kernel_two_groups_different_ptrs[
     print("\n--- Testing grouped kernel (2 groups, different ptrs) ---")
     print(
         "  M=",
-        m.value(),
+        Int(m.value()),
         " N=",
-        n.value(),
+        Int(n.value()),
         " K=",
-        k.value(),
+        Int(k.value()),
         " cta_group=",
         cta_group,
     )
@@ -1082,20 +1055,24 @@ def test_grouped_kernel_two_groups_different_ptrs[
     var num_groups = 2
 
     # Compute sizes
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = (
+        Int(n.value())
+        * Int(k.value()) if transpose_b else Int(k.value())
+        * Int(n.value())
+    )
+    var c_size = Int(m.value()) * Int(n.value())
 
     var a_scales_total = (
-        ceildiv(m.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        ceildiv(n.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
@@ -1106,30 +1083,30 @@ def test_grouped_kernel_two_groups_different_ptrs[
     var c_shape = row_major(Coord(m, n))
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
     # ========== Group 0 allocations ==========
-    var a0_host = alloc[Scalar[a_type]](a_size)
-    var b0_host = alloc[Scalar[b_type]](b_size)
-    var c0_host = alloc[Scalar[c_type]](c_size)
-    var c0_ref_host = alloc[Scalar[c_type]](c_size)
-    var sfa0_host = alloc[Scalar[scales_dtype]](a_scales_total)
-    var sfb0_host = alloc[Scalar[scales_dtype]](b_scales_total)
+    var a0_host = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b0_host = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c0_host = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c0_ref_host = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var sfa0_host = ctx.enqueue_create_host_buffer[scales_dtype](a_scales_total)
+    var sfb0_host = ctx.enqueue_create_host_buffer[scales_dtype](b_scales_total)
 
     var a0_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b0_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -1139,12 +1116,12 @@ def test_grouped_kernel_two_groups_different_ptrs[
     var sfb0_device = ctx.enqueue_create_buffer[scales_dtype](b_scales_total)
 
     # ========== Group 1 allocations ==========
-    var a1_host = alloc[Scalar[a_type]](a_size)
-    var b1_host = alloc[Scalar[b_type]](b_size)
-    var c1_host = alloc[Scalar[c_type]](c_size)
-    var c1_ref_host = alloc[Scalar[c_type]](c_size)
-    var sfa1_host = alloc[Scalar[scales_dtype]](a_scales_total)
-    var sfb1_host = alloc[Scalar[scales_dtype]](b_scales_total)
+    var a1_host = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b1_host = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c1_host = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c1_ref_host = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var sfa1_host = ctx.enqueue_create_host_buffer[scales_dtype](a_scales_total)
+    var sfb1_host = ctx.enqueue_create_host_buffer[scales_dtype](b_scales_total)
 
     var a1_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b1_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -1155,18 +1132,11 @@ def test_grouped_kernel_two_groups_different_ptrs[
 
     # Initialize with DIFFERENT random data for each group
     seed(42)  # Reproducible
-    rand(a0_host, a_size)
-    rand(b0_host, b_size)
+    rand(a0_host.unsafe_ptr(), a_size)
+    rand(b0_host.unsafe_ptr(), b_size)
     seed(123)  # Different seed for group 1
-    rand(a1_host, a_size)
-    rand(b1_host, b_size)
-
-    # Zero C outputs
-    for i in range(c_size):
-        c0_host[i] = 0
-        c0_ref_host[i] = 0
-        c1_host[i] = 0
-        c1_ref_host[i] = 0
+    rand(a1_host.unsafe_ptr(), a_size)
+    rand(b1_host.unsafe_ptr(), b_size)
 
     # Set scale factors to 1.0
     var scale_one = Float32(1.0).cast[scales_dtype]()
@@ -1194,23 +1164,23 @@ def test_grouped_kernel_two_groups_different_ptrs[
     ctx.synchronize()
 
     # Create TileTensors for cuBLAS
-    var a0_tensor = TileTensor(a0_device.unsafe_ptr(), a_shape)
-    var c0_ref_tensor = TileTensor(c0_ref_device.unsafe_ptr(), c_shape)
-    var sfa0_tensor = TileTensor(sfa0_device.unsafe_ptr(), a_scales_shape)
-    var sfb0_tensor = TileTensor(sfb0_device.unsafe_ptr(), b_scales_shape)
+    var a0_tensor = TileTensor(a0_device, a_shape)
+    var c0_ref_tensor = TileTensor(c0_ref_device, c_shape)
+    var sfa0_tensor = TileTensor(sfa0_device, a_scales_shape)
+    var sfb0_tensor = TileTensor(sfb0_device, b_scales_shape)
 
-    var a1_tensor = TileTensor(a1_device.unsafe_ptr(), a_shape)
-    var c1_ref_tensor = TileTensor(c1_ref_device.unsafe_ptr(), c_shape)
-    var sfa1_tensor = TileTensor(sfa1_device.unsafe_ptr(), a_scales_shape)
-    var sfb1_tensor = TileTensor(sfb1_device.unsafe_ptr(), b_scales_shape)
+    var a1_tensor = TileTensor(a1_device, a_shape)
+    var c1_ref_tensor = TileTensor(c1_ref_device, c_shape)
+    var sfa1_tensor = TileTensor(sfa1_device, a_scales_shape)
+    var sfb1_tensor = TileTensor(sfb1_device, b_scales_shape)
 
     # Run cuBLAS for each group separately
     print("  Running cuBLAS for group 0...")
 
     comptime if transpose_b:
         var b_shape = row_major(Coord(n, k))
-        var b0_tensor = TileTensor(b0_device.unsafe_ptr(), b_shape)
-        var b1_tensor = TileTensor(b1_device.unsafe_ptr(), b_shape)
+        var b0_tensor = TileTensor(b0_device, b_shape)
+        var b1_tensor = TileTensor(b1_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c0_ref_tensor,
@@ -1234,8 +1204,8 @@ def test_grouped_kernel_two_groups_different_ptrs[
         )
     else:
         var b_shape = row_major(Coord(k, n))
-        var b0_tensor = TileTensor(b0_device.unsafe_ptr(), b_shape)
-        var b1_tensor = TileTensor(b1_device.unsafe_ptr(), b_shape)
+        var b0_tensor = TileTensor(b0_device, b_shape)
+        var b1_tensor = TileTensor(b1_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c0_ref_tensor,
@@ -1263,11 +1233,15 @@ def test_grouped_kernel_two_groups_different_ptrs[
     print("  Setting up grouped kernel inputs...")
 
     # Problem sizes: both groups have same size
-    var problem_sizes_host = alloc[Int32](max_groups * 4)
+    var problem_sizes_host = ctx.enqueue_create_host_buffer[DType.int32](
+        max_groups * 4
+    )
+    for i in range(max_groups * 4):
+        problem_sizes_host[i] = Int32(0)
     for g in range(max_groups):
-        problem_sizes_host[g * 4 + 0] = Int32(m.value())
-        problem_sizes_host[g * 4 + 1] = Int32(n.value())
-        problem_sizes_host[g * 4 + 2] = Int32(k.value())
+        problem_sizes_host[g * 4 + 0] = Int32(Int(m.value()))
+        problem_sizes_host[g * 4 + 1] = Int32(Int(n.value()))
+        problem_sizes_host[g * 4 + 2] = Int32(Int(k.value()))
         problem_sizes_host[g * 4 + 3] = 1
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
@@ -1276,11 +1250,17 @@ def test_grouped_kernel_two_groups_different_ptrs[
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
     # Pointer arrays - DIFFERENT pointers per group
-    var a_ptrs_host = alloc[UInt64](max_groups)
-    var b_ptrs_host = alloc[UInt64](max_groups)
-    var c_ptrs_host = alloc[UInt64](max_groups)
-    var sfa_ptrs_host = alloc[UInt64](max_groups)
-    var sfb_ptrs_host = alloc[UInt64](max_groups)
+    var a_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var b_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var c_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    for i in range(max_groups):
+        a_ptrs_host[i] = UInt64(0)
+        b_ptrs_host[i] = UInt64(0)
+        c_ptrs_host[i] = UInt64(0)
+        sfa_ptrs_host[i] = UInt64(0)
+        sfb_ptrs_host[i] = UInt64(0)
 
     # Group 0 pointers
     a_ptrs_host[0] = UInt64(Int(a0_device.unsafe_ptr()))
@@ -1314,26 +1294,22 @@ def test_grouped_kernel_two_groups_different_ptrs[
         problem_sizes_host, row_major[max_groups, 4]()
     )
 
-    var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
+    var a_ptrs_tensor = TileTensor(a_ptrs_device, row_major[max_groups, 1]())
+    var b_ptrs_tensor = TileTensor(b_ptrs_device, row_major[max_groups, 1]())
+    var c_ptrs_tensor = TileTensor(c_ptrs_device, row_major[max_groups, 1]())
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfa_ptrs_device, row_major[max_groups, 1]()
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfb_ptrs_device, row_major[max_groups, 1]()
     )
 
     # Calculate total tiles
     comptime BM = mma_shape[0] // cta_group
     comptime BN = mma_shape[1] // cta_group
-    var tiles_per_group = ceildiv(m.value(), BM) * ceildiv(n.value(), BN)
+    var tiles_per_group = ceildiv(Int(m.value()), BM) * ceildiv(
+        Int(n.value()), BN
+    )
     var total_tiles = tiles_per_group * num_groups
 
     print("  Total tiles across 2 groups:", total_tiles)
@@ -1351,6 +1327,7 @@ def test_grouped_kernel_two_groups_different_ptrs[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     launch_grouped_gemm_with_templates[
@@ -1375,8 +1352,8 @@ def test_grouped_kernel_two_groups_different_ptrs[
         problem_sizes_tensor_host,
         num_groups,
         total_tiles,
-        k.value(),
-        k.value(),
+        Int(k.value()),
+        Int(k.value()),
         a0_device.unsafe_ptr(),
         b0_device.unsafe_ptr(),
         c0_device.unsafe_ptr(),
@@ -1426,25 +1403,8 @@ def test_grouped_kernel_two_groups_different_ptrs[
         print("  FAILED (group outputs do not match cuBLAS)")
         raise Error("Multi-group different pointers test failed")
 
-    # Cleanup
-    a0_host.free()
-    b0_host.free()
-    c0_host.free()
-    c0_ref_host.free()
-    sfa0_host.free()
-    sfb0_host.free()
-    a1_host.free()
-    b1_host.free()
-    c1_host.free()
-    c1_ref_host.free()
-    sfa1_host.free()
-    sfb1_host.free()
-    problem_sizes_host.free()
-    a_ptrs_host.free()
-    b_ptrs_host.free()
-    c_ptrs_host.free()
-    sfa_ptrs_host.free()
-    sfb_ptrs_host.free()
+    # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
+    _ = UnsafePointer(to=passed).as_unsafe_any_origin()[]
 
 
 def main() raises:
@@ -1470,7 +1430,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     print("\n--- Baseline test passed ---")
 
@@ -1486,9 +1446,9 @@ def main() raises:
         cluster_shape=Index(1, 1, 1),
     ](
         ctx,
-        Idx[256](),  # Same as baseline
-        Idx[256](),  # Same as baseline
-        Idx[128](),
+        Idx[256],  # Same as baseline
+        Idx[256],  # Same as baseline
+        Idx[128],
     )
 
     print("\n--- Additional test cases ---")
@@ -1503,7 +1463,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[512](), Idx[256](), Idx[128]())
+    ](ctx, Idx[512], Idx[256], Idx[128])
 
     # Test 4: Larger N dimension (more N tiles)
     test_grouped_kernel_single_group[
@@ -1515,7 +1475,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[512](), Idx[128]())
+    ](ctx, Idx[256], Idx[512], Idx[128])
 
     # Test 5: Larger K dimension (more K iterations)
     test_grouped_kernel_single_group[
@@ -1527,7 +1487,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[256]())
+    ](ctx, Idx[256], Idx[256], Idx[256])
 
     # Test 6: All dimensions larger
     test_grouped_kernel_single_group[
@@ -1539,7 +1499,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[512](), Idx[512](), Idx[256]())
+    ](ctx, Idx[512], Idx[512], Idx[256])
 
     # Test 7: Minimum tile size (single tile per dimension)
     test_grouped_kernel_single_group[
@@ -1551,7 +1511,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[128](), Idx[128](), Idx[128]())
+    ](ctx, Idx[128], Idx[128], Idx[128])
 
     # Test 8: Many K iterations
     test_grouped_kernel_single_group[
@@ -1563,7 +1523,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[512]())
+    ](ctx, Idx[256], Idx[256], Idx[512])
 
     print("\n--- Multi-group test (same pointers) ---")
 
@@ -1579,7 +1539,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     # Test 10: Four groups with same size and same pointers
     test_grouped_kernel_multi_group_same_ptr[
@@ -1592,7 +1552,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     print("\n--- Multi-group test (different pointers) ---")
 
@@ -1607,7 +1567,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     # 2SM tests - using run_2sm() production kernel
     print("\n--- 2SM (cta_group=2) tests ---")
@@ -1627,7 +1587,7 @@ def main() raises:
             256, 128, 32
         ),  # mma[0]=256 for BM=128, mma[1]=128 for BN=128
         cluster_shape=Index(2, 1, 1),  # 2 CTAs per cluster
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     # Test 13: 2SM with multiple tiles (512x512)
     test_grouped_kernel_single_group[
@@ -1639,7 +1599,7 @@ def main() raises:
         cta_group=2,
         mma_shape=Index(256, 128, 32),
         cluster_shape=Index(2, 1, 1),
-    ](ctx, Idx[512](), Idx[512](), Idx[256]())
+    ](ctx, Idx[512], Idx[512], Idx[256])
 
     # Test 14: 2SM multi-group (same pointers)
     test_grouped_kernel_multi_group_same_ptr[
@@ -1652,7 +1612,7 @@ def main() raises:
         cta_group=2,
         mma_shape=Index(256, 128, 32),
         cluster_shape=Index(2, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     # Test 15: 2SM multi-group (different pointers)
     test_grouped_kernel_two_groups_different_ptrs[
@@ -1664,7 +1624,7 @@ def main() raises:
         cta_group=2,
         mma_shape=Index(256, 128, 32),
         cluster_shape=Index(2, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     print("\n" + "=" * 60)
     print("All tests passed!")

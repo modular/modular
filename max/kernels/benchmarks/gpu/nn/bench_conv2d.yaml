@@ -1,0 +1,63 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_conv2d_wan
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_conv2d.mojo
+metadata:
+  model: wan-vae
+
+commons: &commons
+  dtype: DType.bfloat16
+  N: 1
+  R: 3
+  S: 3
+  $pad_h: 1
+  $pad_w: 1
+  $stride_h: 1
+  $stride_w: 1
+  impl: [naive, im2col, cudnn]  # 3 instances per shape
+
+params:
+
+# WAN level-3 residual: dominant Mojo 2D wall-time, 96->96 @ 240x416.
+- <<: *commons
+  H: 240
+  W: 416
+  C_in: 96
+  C_out: 96
+  $label: WAN_level3_res_96to96
+
+# WAN level-2 -> level-3 transition: non-aligned C_out, hits im2col.
+- <<: *commons
+  H: 240
+  W: 416
+  C_in: 192
+  C_out: 96
+  $label: WAN_level3_transition_192to96
+
+# WAN level-2 residual upsample: 192->192 @ 120x208.
+- <<: *commons
+  H: 120
+  W: 208
+  C_in: 192
+  C_out: 192
+  $label: WAN_level2_res_192to192
+
+# WAN conv_out (final RGB reduction): C_out=3 means K>=16 + R*S>1, so
+# im2col still qualifies.
+- <<: *commons
+  H: 240
+  W: 416
+  C_in: 96
+  C_out: 3
+  $label: WAN_conv_out_96to3

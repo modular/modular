@@ -1,0 +1,30 @@
+load("//bazel:api.bzl", "pkg_files")
+
+package(default_visibility = ["//max:consumers"])
+
+# graph_compiler sub-packages are Bazel packages but not direct children of
+# max/kernels/src, so the parent BUILD cannot discover them via subpackages().
+
+# Sub-packages excluded from the kernels docsite.
+_EXCLUDED_GRAPH_COMPILER_LIBS = (
+    "builtin_primitives",  # internal graph-compiler primitives
+)
+
+_GRAPH_COMPILER_LIBS = [
+    lib
+    for lib in subpackages(include = ["*"])
+    if lib not in _EXCLUDED_GRAPH_COMPILER_LIBS
+]
+
+pkg_files(
+    name = "docs",
+    srcs = [
+        "//max/kernels/src/graph_compiler/" + lib + ":" + lib + ".docs"
+        for lib in _GRAPH_COMPILER_LIBS
+    ],
+    renames = {
+        "//max/kernels/src/graph_compiler/" + lib + ":" + lib + ".docs": lib
+        for lib in _GRAPH_COMPILER_LIBS
+    },
+    tags = ["manual"],
+)

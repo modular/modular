@@ -15,7 +15,6 @@
 
 from std.collections import InlineArray
 from std.collections.optional import Optional
-from std.builtin.variadics import Variadic
 
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_layout import Layout
@@ -55,15 +54,14 @@ from .sync import (
 comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
 
 comptime elementwise_epilogue_type = def[
-    dtype: DType, width: Int, *, alignment: Int
+    dtype: DType, width: SIMDSize, *, alignment: Int
 ](Coord, SIMD[dtype, size=width]) capturing -> None
-
-comptime pdl_level = PDLLevel(0)
 
 
 @always_inline
 def _load_reduce[
     dtype: DType,
+    in_tile_layout: TensorLayout,
     //,
     ngpus: Int,
     simd_width: Int,
@@ -73,8 +71,8 @@ def _load_reduce[
     use_multimem: Bool = False,
 ](
     elem_idx: Int,
-    ptrs: InlineArray[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    in_tiles: InlineArray[
+        TileTensor[dtype, in_tile_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
 ) -> SIMD[dtype, simd_width]:
@@ -87,29 +85,32 @@ def _load_reduce[
             scope=Scope.GPU,
             consistency=Consistency.RELAXED,
             accum_type=accum_type,
-        ]((ptrs[0] + elem_idx).address_space_cast[AddressSpace.GLOBAL]())
+        ](
+            (in_tiles[0].ptr_at_offset(Coord(elem_idx))).address_space_cast[
+                AddressSpace.GLOBAL
+            ]()
+        )
     else:
         # Regular mode: manual accumulation
         # Initialize with first load to avoid extra zero-add operation
         var accum = (
-            ptrs[0]
+            in_tiles[0]
             .address_space_cast[_target_address_space]()
             .load[width=simd_width, alignment=alignment, invariant=True](
-                elem_idx
+                Coord(elem_idx)
             )
             .cast[accum_type]()
         )
 
         comptime for gpu_idx in range(1, ngpus):
             accum += (
-                ptrs[gpu_idx]
+                in_tiles[gpu_idx]
                 .address_space_cast[_target_address_space]()
                 .load[width=simd_width, alignment=alignment, invariant=True](
-                    elem_idx
+                    Coord(elem_idx)
                 )
                 .cast[accum_type]()
             )
-
         return accum.cast[dtype]()
 
 
@@ -202,69 +203,24 @@ struct ReduceScatterConfig[
 
 
 @always_inline
-def _reduce_scatter_flat_impl[
-    dtype: DType,
-    simd_width: Int,
-    alignment: Int,
-    accum_type: DType,
-    //,
-    ngpus: Int,
-    *,
-    output_lambda: elementwise_epilogue_type,
-    use_multimem: Bool = False,
-](
-    src_ptrs: InlineArray[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-        1 if use_multimem else ngpus,
-    ],
-    out_buf: TileTensor[mut=True, dtype, ...],
-    my_rank: Int,
-    config: ReduceScatterConfig[
-        dtype, ngpus, simd_width, alignment, accum_type
-    ],
-):
-    """Flat pointer-based reduce-scatter implementation.
-
-    Used by allreduce's 2-stage kernel and multimem paths.
-    """
-    for idx in range(
-        config.rank_start(my_rank) + config.thr_local_start(global_idx.x),
-        config.rank_end(my_rank),
-        config.stride,
-    ):
-        # float32 accumulator for numerical stability.
-        var reduced_result = _load_reduce[
-            ngpus,
-            simd_width=config.simd_width,
-            alignment=config.alignment,
-            accum_type=config.accum_type,
-            use_multimem=use_multimem,
-        ](idx, src_ptrs)
-
-        # Apply epilogue and store result.
-        output_lambda[width=config.simd_width, alignment=config.alignment](
-            out_buf.layout.idx2crd(idx - config.rank_start(my_rank)),
-            reduced_result,
-        )
-
-
-@always_inline
 def _reduce_scatter_impl[
     dtype: DType,
-    num_buffers: Int,
     in_tile_layout: TensorLayout,
     //,
+    ngpus: Int,
     *,
     output_lambda: elementwise_epilogue_type,
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
     alignment: Int = align_of[SIMD[dtype, simd_width]](),
     accum_type: DType = get_accum_type[dtype](),
+    use_multimem: Bool = False,
 ](
     in_tiles: InlineArray[
         TileTensor[dtype, in_tile_layout, ImmutAnyOrigin],
-        num_buffers,
+        1 if use_multimem else ngpus,
     ],
     out_buf: TileTensor[mut=True, dtype, ...],
+    # TODO(KERN-2526): pass config here
     num_elements: Int,
     thread_stride: Int,
 ):
@@ -275,43 +231,31 @@ def _reduce_scatter_impl[
     For 2D axis-0: also contiguous (reversed row-major = flat).
     For 2D axis-1: coalesced within stride-1 dimension strips.
     """
-    # Provide evidence that flat_rank >= 1 for the Coord(Idx(c)) loads below.
-    comptime assert (
-        TileTensor[dtype, in_tile_layout, ImmutAnyOrigin].flat_rank >= 1
-    )
     for c in range(
         global_idx.x * simd_width,
         num_elements,
         thread_stride,
     ):
-        var accum = (
-            in_tiles[0]
-            .address_space_cast[_target_address_space]()
-            .load[width=simd_width, alignment=alignment, invariant=True](
-                Coord(Idx(c))
-            )
-            .cast[accum_type]()
-        )
+        # wider accumulator (accum_type) for numerical stability.
+        var reduced_result = _load_reduce[
+            ngpus,
+            simd_width=simd_width,  # TODO(KERN-2526): config. on these 3
+            alignment=alignment,
+            accum_type=accum_type,
+            use_multimem=use_multimem,
+        ](c, in_tiles)
 
-        comptime for i in range(1, num_buffers):
-            accum += (
-                in_tiles[i]
-                .address_space_cast[_target_address_space]()
-                .load[width=simd_width, alignment=alignment, invariant=True](
-                    Coord(Idx(c))
-                )
-                .cast[accum_type]()
-            )
-
+        # Note idx2crd only works here because out_buf is compact
         output_lambda[width=simd_width, alignment=alignment](
             out_buf.layout.idx2crd(c),
-            accum.cast[dtype](),
+            reduced_result,
         )
 
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"reducescatter_{dtype}_{use_multimem}")
 def _reducescatter_kernel[
     dtype: DType,
     in_layout: TensorLayout,
@@ -322,6 +266,7 @@ def _reducescatter_kernel[
     BLOCK_SIZE: Int,
     output_lambda: elementwise_epilogue_type,
     use_multimem: Bool = False,
+    domain_id: Int = 0,
 ](
     in_bufs: InlineArray[
         TileTensor[dtype, in_layout, ImmutAnyOrigin],
@@ -340,6 +285,8 @@ def _reducescatter_kernel[
     When use_multimem is True, uses hardware-accelerated multimem reduction.
     """
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime num_buffers = 1 if use_multimem else ngpus
+
     var my_sig = rank_sigs[my_rank]
     var threads_per_gpu = grid_dim.x * BLOCK_SIZE
 
@@ -348,99 +295,89 @@ def _reducescatter_kernel[
     )
 
     with PDL():
-        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
+            rank_sigs, my_sig, my_rank
+        )
 
-        comptime if use_multimem:
-            # Multimem: single pointer, hardware-accelerated reduction.
-            var ptrs = InlineArray[
-                UnsafePointer[Scalar[dtype], ImmutAnyOrigin], 1
-            ](uninitialized=True)
-            ptrs[0] = in_bufs[0].ptr
-            _reduce_scatter_flat_impl[
-                ngpus, output_lambda=output_lambda, use_multimem=True
-            ](ptrs, out_buf, my_rank, config)
-        else:
-            # Round-robin access pattern to balance NVLink traffic across GPUs.
-            var reordered = InlineArray[
-                TileTensor[dtype, in_layout, ImmutAnyOrigin], ngpus
-            ](uninitialized=True)
+        # Round-robin access pattern to balance NVLink traffic across GPUs.
+        var reordered = InlineArray[
+            TileTensor[dtype, in_layout, ImmutAnyOrigin], num_buffers
+        ](uninitialized=True)
 
-            comptime for i in range(ngpus):
-                reordered[i] = in_bufs[circular_add[ngpus](my_rank, i)]
+        comptime for i in range(num_buffers):
+            reordered[i] = in_bufs[circular_add[num_buffers](my_rank, i)]
 
-            var u_start = config.rank_unit_start(my_rank)
-            var n_units = config.rank_units(my_rank)
-            var n_elements = config.rank_num_elements(my_rank)
+        var u_start = config.rank_unit_start(my_rank)
+        var n_units = config.rank_units(my_rank)
+        var n_elements = config.rank_num_elements(my_rank)
 
-            comptime if in_layout.rank == 1:
-                # Flat: construct sliced 1D tiles from input TileTensors (any rank).
-                comptime FlatLayout = type_of(row_major(Idx(n_elements)))
-                comptime FlatTile = TileTensor[
-                    dtype, FlatLayout, ImmutAnyOrigin
-                ]
-                var flat_tiles = InlineArray[FlatTile, ngpus](
-                    uninitialized=True
+        comptime if in_layout.rank == 1:
+            # Flat: construct sliced 1D tiles from input TileTensors (any rank).
+            comptime FlatLayout = type_of(row_major(n_elements))
+            comptime FlatTile = TileTensor[dtype, FlatLayout, ImmutAnyOrigin]
+            var flat_tiles = InlineArray[FlatTile, num_buffers](
+                uninitialized=True
+            )
+            var elem_start = u_start * config.unit_numel
+
+            comptime for i in range(num_buffers):
+                flat_tiles[i] = FlatTile(
+                    reordered[i].ptr + elem_start,
+                    row_major(n_elements),
                 )
-                var elem_start = u_start * config.unit_numel
 
-                comptime for i in range(ngpus):
-                    flat_tiles[i] = FlatTile(
-                        reordered[i].ptr + elem_start,
-                        row_major(Idx(n_elements)),
+            _reduce_scatter_impl[
+                ngpus, output_lambda=output_lambda, use_multimem=use_multimem
+            ](flat_tiles, out_buf, n_elements, config.stride)
+        else:
+            # 2D axis-aware: slice + reverse for coalesced access.
+            comptime InputTile = TileTensor[dtype, in_layout, ImmutAnyOrigin]
+            comptime DynShapeTypes = _CoordToDynamic[
+                InputTile.linear_idx_type, in_layout._shape_types
+            ]
+            comptime RevLayout = Layout[
+                DynShapeTypes.reverse(),
+                in_layout._stride_types.reverse(),
+            ]
+            comptime SlicedRevTile = TileTensor[
+                dtype, RevLayout, ImmutAnyOrigin
+            ]
+            var sliced_tiles = InlineArray[SlicedRevTile, num_buffers](
+                uninitialized=True
+            )
+
+            comptime if axis == 0:
+                # Scatter along rows.
+                var dim_1 = Int(reordered[0].dim[1]())
+                comptime for i in range(num_buffers):
+                    var sliced = reordered[i].slice(
+                        (u_start, u_start + n_units),
+                        (0, dim_1),
+                    )
+                    sliced_tiles[i] = SlicedRevTile(
+                        sliced.ptr, sliced.layout.reverse()
+                    )
+            else:
+                # axis == 1: scatter along columns.
+                var dim_0 = Int(reordered[0].dim[0]())
+                var col_start = u_start * simd_width
+                var col_end = col_start + n_units * simd_width
+                comptime for i in range(num_buffers):
+                    var sliced = reordered[i].slice(
+                        (0, dim_0),
+                        (col_start, col_end),
+                    )
+                    sliced_tiles[i] = SlicedRevTile(
+                        sliced.ptr, sliced.layout.reverse()
                     )
 
-                _reduce_scatter_impl[output_lambda=output_lambda](
-                    flat_tiles, out_buf, n_elements, config.stride
-                )
-            else:
-                # 2D axis-aware: slice + reverse for coalesced access.
-                comptime InputTile = TileTensor[
-                    dtype, in_layout, ImmutAnyOrigin
-                ]
-                comptime DynShapeTypes = _CoordToDynamic[
-                    InputTile.linear_idx_type, *in_layout._shape_types
-                ]
-                comptime RevLayout = Layout[
-                    Variadic.reverse[*DynShapeTypes],
-                    Variadic.reverse[*in_layout._stride_types],
-                ]
-                comptime SlicedRevTile = TileTensor[
-                    dtype, RevLayout, ImmutAnyOrigin
-                ]
-                var sliced_tiles = InlineArray[SlicedRevTile, ngpus](
-                    uninitialized=True
-                )
+            _reduce_scatter_impl[
+                ngpus, output_lambda=output_lambda, use_multimem=use_multimem
+            ](sliced_tiles, out_buf, n_elements, config.stride)
 
-                comptime if axis == 0:
-                    # Scatter along rows.
-                    var dim_1 = Int(reordered[0].dim[1]())
-                    comptime for i in range(ngpus):
-                        var sliced = reordered[i].slice(
-                            (u_start, u_start + n_units),
-                            (0, dim_1),
-                        )
-                        sliced_tiles[i] = SlicedRevTile(
-                            sliced.ptr, sliced.layout.reverse()
-                        )
-                else:
-                    # axis == 1: scatter along columns.
-                    var dim_0 = Int(reordered[0].dim[0]())
-                    var col_start = u_start * simd_width
-                    var col_end = col_start + n_units * simd_width
-                    comptime for i in range(ngpus):
-                        var sliced = reordered[i].slice(
-                            (0, dim_0),
-                            (col_start, col_end),
-                        )
-                        sliced_tiles[i] = SlicedRevTile(
-                            sliced.ptr, sliced.layout.reverse()
-                        )
-
-                _reduce_scatter_impl[output_lambda=output_lambda](
-                    sliced_tiles, out_buf, n_elements, config.stride
-                )
-
-        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
+            rank_sigs, my_sig, my_rank
+        )
 
 
 @always_inline
@@ -452,7 +389,9 @@ def _reducescatter_p2p[
     *,
     axis: Int = 0,
     output_lambda: elementwise_epilogue_type,
+    pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
+    domain_id: Int = 0,
 ](
     list_of_in_bufs: InlineArray[
         TileTensor[dtype, in_layout, in_origin],
@@ -462,6 +401,7 @@ def _reducescatter_p2p[
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
     ctx: DeviceContext,
+    my_rank: Int,
     axis_size: Int,
     unit_numel: Int,
 ) raises:
@@ -474,7 +414,10 @@ def _reducescatter_p2p[
         in_origin: Origin of the input TileTensors.
         axis: Scatter axis.
         output_lambda: Elementwise epilogue function to apply to reduced values.
+        pdl_level: Control PDL behavior for the kernel.
         use_multimem: Whether multimem optimization is enabled.
+        domain_id: Barrier counter bank to use (0 for full-world; a distinct
+            nonzero value for grouped collectives). See `_multi_gpu_barrier`.
 
     Args:
         list_of_in_bufs: Input buffers from all GPUs (peer access required).
@@ -482,6 +425,7 @@ def _reducescatter_p2p[
         rank_sigs: Signal pointers for synchronization.
         max_num_blocks: Maximum number of thread blocks to launch.
         ctx: Device context for THIS GPU.
+        my_rank: Rank of THIS GPU within the reduce-scatter group.
         axis_size: Number of units along the scatter axis.
         unit_numel: Number of elements per unit.
     """
@@ -509,7 +453,8 @@ def _reducescatter_p2p[
     )
     comptime for i in range(num_buffers):
         kernel_in_bufs[i] = KernelInputType(
-            list_of_in_bufs[i].ptr, list_of_in_bufs[i].layout
+            list_of_in_bufs[i].ptr.as_immutable().as_unsafe_any_origin(),
+            list_of_in_bufs[i].layout,
         )
 
     comptime kernel = _reducescatter_kernel[
@@ -521,16 +466,17 @@ def _reducescatter_p2p[
         BLOCK_SIZE=BLOCK_SIZE,
         output_lambda=output_lambda,
         use_multimem=use_multimem,
+        domain_id=domain_id,
     ]
 
     # Launch the kernel
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kernel_in_bufs,
         output_buffer,
         rank_sigs,
         axis_size,
         unit_numel,
-        Int(ctx.id()),
+        my_rank,
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
         attributes=pdl_launch_attributes(pdl_level),
@@ -544,9 +490,11 @@ def reducescatter[
     in_layout: TensorLayout,
     in_origin: Origin,
     output_lambda: Optional[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
     *,
     axis: Int = 0,
     use_multimem: Bool = False,
+    domain_id: Int = 0,
 ](
     input_buffers: InlineArray[
         TileTensor[dtype, in_layout, in_origin],
@@ -556,6 +504,7 @@ def reducescatter[
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
+    local_rank: Optional[Int] = None,
 ) raises:
     """Per-device reducescatter operation with axis-aware scatter.
 
@@ -569,10 +518,14 @@ def reducescatter[
         in_origin: Origin of the input TileTensors.
         output_lambda: Optional elementwise epilogue function. If not provided,
             reduced values are stored directly to output_buffer.
+        pdl_level: Control PDL behavior for the kernel.
         axis: Scatter axis. 0 to scatter along rows (default), 1 to scatter along columns.
             Requires 2D row-major inputs when axis >= 0.
         use_multimem: If True, use hardware-accelerated multimem reduction.
             Currently only valid with 1D input. TODO(KERN-2526): generalize.
+        domain_id: Barrier counter bank to use (0 for full-world; a distinct
+            nonzero value for grouped collectives sharing the same Signal
+            buffers). See `_multi_gpu_barrier`.
 
     Args:
         input_buffers: Input TileTensors from all GPUs (peer access required).
@@ -582,6 +535,8 @@ def reducescatter[
         ctx: Device context for THIS GPU.
         _max_num_blocks: Optional maximum number of thread blocks to launch.
             If not specified, uses MAX_NUM_BLOCKS_UPPER_BOUND.
+        local_rank: Optional rank of THIS GPU within the reduce-scatter group.
+            Defaults to the physical device id for full-world collectives.
 
     Raises:
         Error: If P2P access is not available between GPUs.
@@ -592,14 +547,10 @@ def reducescatter[
     comptime tensor_rank = in_layout.rank
 
     # Validate axis and rank combination.
-    # TODO(KERN-2526): generalize to higher dims & multimem support
+    # TODO(KERN-2526): generalize to higher dims
     comptime assert tensor_rank <= 2, "Currently only 1D and 2D input supported"
     comptime assert axis < tensor_rank, "Invalid scatter axis for given rank"
     comptime assert axis >= 0, "Scatter axis must be positive"
-    comptime if use_multimem:
-        comptime assert (
-            tensor_rank == 1
-        ), "use_multimem only supported for 1D tensors"
 
     # Return early if the input buffer is empty
     var num_elements = input_buffers[0].num_elements()
@@ -623,8 +574,8 @@ def reducescatter[
         unit_numel = simd_width
     elif axis == 0:
         # 2D axis-0: partition rows, unit = one row
-        var dim_0 = input_buffers[0].layout.shape[0]().value()
-        var dim_1 = input_buffers[0].layout.shape[1]().value()
+        var dim_0 = Int(input_buffers[0].layout.shape[0]().value())
+        var dim_1 = Int(input_buffers[0].layout.shape[1]().value())
         if dim_1 % simd_width != 0:
             raise Error(
                 "inner dimension (axis 1) must be a multiple of SIMD width"
@@ -634,8 +585,8 @@ def reducescatter[
         unit_numel = dim_1
     else:
         # axis == 1: partition column groups, unit = simd_width columns
-        var dim_0 = input_buffers[0].layout.shape[0]().value()
-        var dim_1 = input_buffers[0].layout.shape[1]().value()
+        var dim_0 = Int(input_buffers[0].layout.shape[0]().value())
+        var dim_1 = Int(input_buffers[0].layout.shape[1]().value())
         if dim_1 % simd_width != 0:
             raise Error(
                 "scatter dimension (axis 1) must be a multiple of SIMD width"
@@ -645,7 +596,7 @@ def reducescatter[
         unit_numel = dim_0 * simd_width
 
     # Validate output buffer shape for this rank's partition.
-    var my_rank = Int(ctx.id())
+    var my_rank = local_rank.value() if local_rank else Int(ctx.id())
     var config_check = ReduceScatterConfig[dtype, ngpus](
         axis_size, unit_numel, 0
     )
@@ -663,11 +614,11 @@ def reducescatter[
             output_buffer.rank == 2
         ), "axis >= 0 requires 2D output buffer"
         var n_units = config_check.rank_units(my_rank)
-        var expected_rows = (
-            n_units if axis == 0 else input_buffers[0].layout.shape[0]().value()
+        var expected_rows = n_units if axis == 0 else Int(
+            input_buffers[0].layout.shape[0]().value()
         )
         var expected_cols = (
-            input_buffers[0].layout.shape[1]().value() if axis
+            Int(input_buffers[0].layout.shape[1]().value()) if axis
             == 0 else n_units * simd_width
         )
         var out_rows = Int(output_buffer.dim[0]())
@@ -695,7 +646,7 @@ def reducescatter[
     @__copy_capture(output_buffer)
     def default_output_lambda[
         _dtype: DType,
-        _width: Int,
+        _width: SIMDSize,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -711,13 +662,16 @@ def reducescatter[
         ngpus,
         axis=axis,
         output_lambda=actual_output_lambda,
+        pdl_level=pdl_level,
         use_multimem=use_multimem,
+        domain_id=domain_id,
     ](
         input_buffers,
         output_buffer,
         rank_sigs,
         max_num_blocks,
         ctx,
+        my_rank,
         axis_size,
         unit_numel,
     )

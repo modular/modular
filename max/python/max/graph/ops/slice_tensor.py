@@ -19,8 +19,8 @@ from collections.abc import Iterable, Sequence
 from typing import TypeGuard, Union
 
 import numpy as np
+from max._core.dialects import kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from ..dim import Dim, DimLike, StaticDim
 from ..graph import Graph
@@ -295,10 +295,17 @@ def slice_arguments(
             )
 
         if isinstance(subslice, int):
-            # Create a single-element slice that will be squeezed later.
-            # Set stop to input dim when index is -1 since x[-1:0] is wrong.
-            stop = input_shape[i] if subslice == -1 else subslice + 1
-            subslice = slice(subslice, stop)
+            # Normalize negative integer indices to positive when the
+            # dimension is static, so that rmo.slice receives
+            # non-negative starts (stop = normalized + 1 <= dim).
+            if subslice < 0 and isinstance(input_shape[i], StaticDim):
+                subslice = int(input_shape[i]) + subslice
+            elif subslice == -1:
+                # For symbolic dims, -1+1=0 would give an empty slice
+                # instead of selecting the last element.  Use stop=dim.
+                subslice = slice(subslice, input_shape[i])
+            if isinstance(subslice, int):
+                subslice = slice(subslice, subslice + 1)
 
         step = subslice.step if subslice.step is not None else 1
         if not isinstance(step, int) or step <= 0:
@@ -375,12 +382,12 @@ def _slice_symbolic_tensor(
 
     starts, stops, steps = slice_arguments(indices, x.shape)
 
-    sliced_tensor = Graph.current._add_op(
-        rmo.slice,
-        x,
-        Shape(starts).to_mlir(),
-        Shape(stops).to_mlir(),
-        Shape(steps).to_mlir(),
+    sliced_tensor = Graph.current._add_op_generated(
+        rmo.SliceOp,
+        input=x,
+        starts=Shape(starts),
+        stops=Shape(stops),
+        steps=Shape(steps),
     )[0].tensor
 
     # Account for None entries in the slice indices by unsqueezing those dims.
@@ -429,6 +436,12 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
     assert_on_host(starts=starts, stops=stops, steps=steps)
 
     unsqueezed_type = TensorType(x.dtype, unsqueezed_shape, x.device)
-    return Graph.current._add_op(
-        rmo.mo_slice, unsqueezed_type.to_mlir(), x, starts, stops, steps
+    return Graph.current._add_op_generated(
+        rmo.MoSliceOp,
+        result=unsqueezed_type,
+        input=x,
+        start=starts,
+        stop=stops,
+        step=steps,
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor.reshape(squeezed_shape)

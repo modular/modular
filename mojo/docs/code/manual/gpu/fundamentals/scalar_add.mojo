@@ -70,7 +70,7 @@ def main() raises:
         ctx.synchronize()
 
         # Fill the host buffer with sequential numbers (0, 1, 2, ..., size-1).
-        iota(host_buffer.unsafe_ptr(), num_elements)
+        iota(host_buffer.as_span())
         print("Original host buffer:", host_buffer)
 
         # Create a buffer in device (GPU) memory to store data for computation.
@@ -80,7 +80,7 @@ def main() raises:
         ctx.enqueue_copy(src_buf=host_buffer, dst_buf=device_buffer)
 
         # Compile the scalar_add kernel function for execution on the GPU.
-        scalar_add_kernel = ctx.compile_function[scalar_add, scalar_add]()
+        scalar_add_kernel = ctx.compile_function[scalar_add]()
 
         # Launch the GPU kernel with the following arguments:
         #

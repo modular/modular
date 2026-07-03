@@ -34,11 +34,12 @@ optimizes memory access patterns for higher throughput.
 """
 
 from std.sys import simd_width_of, size_of
+from std.math.uutils import udivmod
 
 from std.bit import log2_floor
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 
-from .int_tuple import flatten
+from .int_tuple import flatten, IntTuple
 from .layout import Layout
 
 # ===-----------------------------------------------------------------------===#
@@ -305,7 +306,7 @@ def shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
 
 
 struct Swizzle(
-    Copyable, ImplicitlyDestructible, TrivialRegisterPassable, Writable
+    Copyable, ImplicitlyDeletable, TrivialRegisterPassable, Writable
 ):
     """Swizzle functor for memory access pattern optimization.
 
@@ -664,7 +665,7 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
 @always_inline
 def eval_composed[
     composed_layout: ComposedLayout
-](idx: UInt, offset: UInt = 0) -> UInt:
+](idx: Int, offset: Int = 0) -> Int:
     """Evaluate a composed layout with swizzle.
 
     Applies the base layout, adds an optional offset, and then applies
@@ -689,10 +690,10 @@ def eval_composed[
     comptime for i in range(len(stride_a)):
         comptime s = shape_a[i].value()
         comptime st = stride_a[i].value()
-        a_idx, coord_i = divmod(a_idx, UInt(s))
-        b_idx += Int(coord_i * UInt(st))
+        a_idx, coord_i = udivmod(a_idx, s)
+        b_idx += coord_i * st
 
-    b_idx += Int(offset)
+    b_idx += offset
 
     comptime layout_b = composed_layout.layout_b
-    return UInt(layout_b(b_idx))
+    return layout_b(b_idx)

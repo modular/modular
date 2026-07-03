@@ -29,7 +29,7 @@ def test_stat() raises:
     print(p.stat())  # os.stat_result(...)
 
 
-def test_exists() raises:
+def test_exists():
     from std.pathlib import Path
 
     var p = Path("./path/to/nowhere/does-not-exist")

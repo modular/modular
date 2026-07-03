@@ -45,6 +45,7 @@ def convert_qwen3_moe_state_dict(
     one-to-one to MAX's per-expert parameter names.
 
     HuggingFace Qwen3-MoE format (unchanged layout in MAX):
+
         - model.layers.{i}.mlp.experts.{j}.gate_proj.weight
         - model.layers.{i}.mlp.experts.{j}.up_proj.weight
         - model.layers.{i}.mlp.experts.{j}.down_proj.weight
@@ -52,6 +53,7 @@ def convert_qwen3_moe_state_dict(
 
     MAX Qwen3-MoE (base MoE with individual experts; legacy Linear uses
     ".weight" directly; router is gate.gate_score):
+
         - layers.{i}.mlp.experts.{j}.gate_proj.weight
         - layers.{i}.mlp.experts.{j}.up_proj.weight
         - layers.{i}.mlp.experts.{j}.down_proj.weight

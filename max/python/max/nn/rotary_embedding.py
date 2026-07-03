@@ -458,6 +458,127 @@ class DeepseekYarnRopeScalingParams:
     """Scaling factor applied to all dimensions."""
 
 
+def _yarn_get_mscale(scale: float = 1.0, mscale: float = 1.0) -> float:
+    """Computes the mscale factor for YaRN interpolation.
+
+    Args:
+        scale: The scaling factor for position embeddings.
+        mscale: The multiplier for the logarithmic scaling.
+
+    Returns:
+        The computed scaling factor. Returns ``1.0`` if ``scale <= 1``,
+        otherwise returns ``0.1 * mscale * log(scale) + 1.0``.
+    """
+    if scale <= 1:
+        return 1.0
+    return 0.1 * mscale * math.log(scale) + 1.0
+
+
+def _yarn_find_correction_dim(
+    num_rotations: TensorValue,
+    dim: int,
+    base: float,
+    max_position_embeddings: int,
+) -> TensorValue:
+    """Finds the correction dimension corresponding to a given number of rotations.
+
+    Args:
+        num_rotations: The number of rotations tensor.
+        dim: The embedding dimension.
+        base: The base for exponential frequency scaling.
+        max_position_embeddings: The maximum number of position embeddings.
+
+    Returns:
+        The correction dimension as a scalar tensor.
+    """
+    max_pos = ops.constant(
+        float(max_position_embeddings),
+        dtype=DType.float32,
+        device=DeviceRef.CPU(),
+    )
+    base_tensor = ops.constant(
+        float(base), dtype=DType.float32, device=DeviceRef.CPU()
+    )
+    dim_tensor = ops.constant(
+        float(dim), dtype=DType.float32, device=DeviceRef.CPU()
+    )
+
+    return (dim_tensor * ops.log(max_pos / (num_rotations * 2 * math.pi))) / (
+        2 * ops.log(base_tensor)
+    )
+
+
+def _yarn_find_correction_range(
+    low_rot: float | TensorValue,
+    high_rot: float | TensorValue,
+    dim: int,
+    base: float,
+    max_position_embeddings: int,
+) -> tuple[TensorValue, TensorValue]:
+    """Finds the low and high correction dimension range for YaRN.
+
+    Args:
+        low_rot: The low rotation boundary (scalar or tensor).
+        high_rot: The high rotation boundary (scalar or tensor).
+        dim: The embedding dimension.
+        base: The base for exponential frequency scaling.
+        max_position_embeddings: The maximum number of position embeddings.
+
+    Returns:
+        A tuple of ``(low, high)`` correction dimension tensors, clamped
+        to ``[0, dim - 1]``.
+    """
+    if not isinstance(low_rot, TensorValue):
+        low_rot = ops.constant(
+            low_rot, dtype=DType.float32, device=DeviceRef.CPU()
+        )
+    if not isinstance(high_rot, TensorValue):
+        high_rot = ops.constant(
+            high_rot, dtype=DType.float32, device=DeviceRef.CPU()
+        )
+    low = ops.floor(
+        _yarn_find_correction_dim(low_rot, dim, base, max_position_embeddings)
+    )
+    # TODO: we don't have ops.ceil, use ops.trunc + 1 instead
+    high = (
+        ops.trunc(
+            _yarn_find_correction_dim(
+                high_rot, dim, base, max_position_embeddings
+            )
+        )
+        + 1
+    )
+    return ops.max(low, 0), ops.min(high, dim - 1)
+
+
+def _yarn_linear_ramp_mask(
+    min_val: TensorValue, max_val: TensorValue, dim: int | Dim
+) -> TensorValue:
+    """Creates a linear ramp mask for frequency interpolation.
+
+    Args:
+        min_val: The minimum boundary tensor.
+        max_val: The maximum boundary tensor.
+        dim: The output dimension of the mask.
+
+    Returns:
+        A tensor of shape ``[dim]`` with values linearly interpolated
+        between ``0`` and ``1``.
+    """
+    diff = max_val - min_val
+    diff = ops.where(
+        diff == 0,
+        ops.constant(0.001, dtype=DType.float32, device=DeviceRef.CPU()),
+        diff,
+    )
+
+    linear_func = (
+        ops.range(0, dim, device=DeviceRef.CPU(), dtype=DType.float32) - min_val
+    ) / diff
+
+    return ops.min(ops.max(linear_func, 0), 1)
+
+
 class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
     """Applies Deepseek's YaRN (Yet another RoPE eNhancement) Rotary Position Embedding.
 
@@ -519,11 +640,11 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
             if self.scaling_params is None:
                 raise ValueError("scaling_params must be provided")
             _mscale = float(
-                self._yarn_get_mscale(
+                _yarn_get_mscale(
                     self.scaling_params.scaling_factor,
                     self.scaling_params.mscale,
                 )
-                / self._yarn_get_mscale(
+                / _yarn_get_mscale(
                     self.scaling_params.scaling_factor,
                     self.scaling_params.mscale_all_dim,
                 )
@@ -553,7 +674,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         """
         assert self.scaling_params
         scale = super().compute_scale(user_scale)
-        mscale = self._yarn_get_mscale(
+        mscale = _yarn_get_mscale(
             self.scaling_params.scaling_factor, self.scaling_params.mscale
         )
 
@@ -571,145 +692,22 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         freq_extra = 1.0 / freq_base
         freq_inter = 1.0 / (self.scaling_params.scaling_factor * freq_base)
 
-        low, high = self._yarn_find_correction_range(
-            ops.constant(
-                self.scaling_params.beta_fast,
-                dtype=DType.float32,
-                device=DeviceRef.CPU(),
-            ),
-            ops.constant(
-                self.scaling_params.beta_slow,
-                dtype=DType.float32,
-                device=DeviceRef.CPU(),
-            ),
+        low, high = _yarn_find_correction_range(
+            self.scaling_params.beta_fast,
+            self.scaling_params.beta_slow,
             self.dim,
-            int(self.theta),  # Explicitly convert base to int
+            int(self.theta),
             self.scaling_params.original_max_position_embeddings,
         )
 
         # Ensure the mask has the correct dimension
-        inv_freq_mask = 1.0 - self._yarn_linear_ramp_mask(
+        inv_freq_mask = 1.0 - _yarn_linear_ramp_mask(
             low, high, self.dim // 2
         ).cast(DType.float32)
 
         inv_freq = freq_inter * (1 - inv_freq_mask) + freq_extra * inv_freq_mask
 
         return inv_freq
-
-    def _yarn_get_mscale(
-        self, scale: float = 1.0, mscale: float = 1.0
-    ) -> float:
-        """Computes the mscale factor for YaRN interpolation.
-
-        Args:
-            scale: The scaling factor for position embeddings. Defaults to
-                ``1.0``.
-            mscale: The multiplier for the logarithmic scaling. Defaults to
-                ``1.0``.
-
-        Returns:
-            The computed scaling factor. Returns ``1.0`` if ``scale <= 1``,
-            otherwise returns ``0.1 * mscale * log(scale) + 1.0``.
-        """
-        if scale <= 1:
-            return 1.0
-        return 0.1 * mscale * math.log(scale) + 1.0
-
-    def _yarn_find_correction_range(
-        self,
-        low_rot: TensorValue,
-        high_rot: TensorValue,
-        dim: int,
-        base: float,
-        max_position_embeddings: int,
-    ) -> tuple[TensorValue, TensorValue]:
-        """Finds the low and high correction dimension range for YaRN.
-
-        Args:
-            low_rot: The low rotation boundary tensor.
-            high_rot: The high rotation boundary tensor.
-            dim: The embedding dimension.
-            base: The base for exponential frequency scaling.
-            max_position_embeddings: The maximum number of position embeddings.
-
-        Returns:
-            A tuple of ``(low, high)`` correction dimension tensors, clamped
-            to ``[0, dim - 1]``.
-        """
-        low = ops.floor(
-            self._yarn_find_correction_dim(
-                low_rot, dim, base, max_position_embeddings
-            )
-        )
-        # TODO: we don't have ops.ceil, use ops.trunc + 1 instead
-        high = (
-            ops.trunc(
-                self._yarn_find_correction_dim(
-                    high_rot, dim, base, max_position_embeddings
-                )
-            )
-            + 1
-        )
-        return ops.max(low, 0), ops.min(high, dim - 1)
-
-    # Inverse dim formula to find dim based on number of rotations
-    def _yarn_find_correction_dim(
-        self,
-        num_rotations: TensorValue,
-        dim: int,
-        base: float,
-        max_position_embeddings: int,
-    ) -> TensorValue:
-        """Finds the correction dimension corresponding to a given number of rotations.
-
-        Args:
-            num_rotations: The number of rotations tensor.
-            dim: The embedding dimension.
-            base: The base for exponential frequency scaling.
-            max_position_embeddings: The maximum number of position embeddings.
-
-        Returns:
-            The correction dimension as a scalar tensor.
-        """
-        # Convert all inputs to TensorValues with proper types
-        max_pos = ops.constant(
-            float(max_position_embeddings),
-            dtype=DType.float32,
-            device=DeviceRef.CPU(),
-        )
-        base_tensor = ops.constant(
-            float(base), dtype=DType.float32, device=DeviceRef.CPU()
-        )
-        dim_tensor = ops.constant(
-            float(dim), dtype=DType.float32, device=DeviceRef.CPU()
-        )
-
-        return (
-            dim_tensor * ops.log(max_pos / (num_rotations * 2 * math.pi))
-        ) / (2 * ops.log(base_tensor))
-
-    def _yarn_linear_ramp_mask(
-        self, min: TensorValue, max: TensorValue, dim: int
-    ) -> TensorValue:
-        """Creates a linear ramp mask for frequency interpolation.
-
-        Args:
-            min: The minimum boundary tensor.
-            max: The maximum boundary tensor.
-            dim: The output dimension of the mask.
-
-        Returns:
-            A tensor of shape ``[dim]`` with values linearly interpolated
-            between ``0`` and ``1``.
-        """
-        if min == max:
-            max += 0.001  # Prevent singularity
-
-        linear_func = (
-            ops.range(0, dim, device=DeviceRef.CPU(), dtype=DType.float32) - min
-        ) / (max - min)
-
-        return ops.min(ops.max(linear_func, 0), 1)
 
 
 @dataclass
@@ -780,14 +778,6 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
             interleaved,
         )
         self.scaling_params = scaling_params
-
-    def _compute_inv_freqs(self) -> TensorValue:
-        """Computes base inverse frequencies without LongRoPE scaling.
-
-        Scaling is applied dynamically in ``freqs_cis_base()`` based on
-        sequence length.
-        """
-        return super()._compute_inv_freqs()
 
     def _compute_scaled_inv_freqs_from_factors(
         self, factors: list[float]
@@ -946,11 +936,6 @@ class YarnRotaryEmbedding(RotaryEmbedding):
         interleaved: bool = True,
         scaling_params: YarnScalingParams | None = None,
     ) -> None:
-        # For YARN, we need to compute custom frequencies before calling super().__init__
-        if scaling_params is not None:
-            self.scaling_params = scaling_params
-            # We'll override freqs_cis_base to compute YARN frequencies
-
         super().__init__(
             dim,
             n_heads,
@@ -960,6 +945,7 @@ class YarnRotaryEmbedding(RotaryEmbedding):
             _freqs_cis,
             interleaved,
         )
+        self.scaling_params = scaling_params
 
     def freqs_cis_base(self) -> TensorValue:
         """Computes the frequency cosine-sine tensor with YARN scaling applied.
@@ -987,7 +973,7 @@ class YarnRotaryEmbedding(RotaryEmbedding):
             freqs = ops.outer(t, inv_freqs)
 
             # Unused in this type of RoPE
-            mscale = self._yarn_get_mscale(self.scaling_params.factor, 1.0)
+            mscale = _yarn_get_mscale(self.scaling_params.factor, 1.0)
 
             cos = ops.cos(freqs) * mscale
             sin = ops.sin(freqs) * mscale
@@ -1000,10 +986,7 @@ class YarnRotaryEmbedding(RotaryEmbedding):
         if self.scaling_params is None:
             raise ValueError("scaling_params must be provided for YARN")
 
-        # Calculate rope dimension (considering head_dim if provided)
-        rope_dim = (
-            self.dim // self.n_heads if self.head_dim is None else self.head_dim
-        )
+        rope_dim = self.head_dim
         dim_2 = Dim(rope_dim // 2)
 
         # Base frequencies
@@ -1024,7 +1007,7 @@ class YarnRotaryEmbedding(RotaryEmbedding):
         )
 
         # Find correction range
-        low, high = self._yarn_find_correction_range(
+        low, high = _yarn_find_correction_range(
             self.scaling_params.beta_fast,
             self.scaling_params.beta_slow,
             rope_dim,
@@ -1033,135 +1016,11 @@ class YarnRotaryEmbedding(RotaryEmbedding):
         )
 
         # Create interpolation mask
-        inv_freq_mask = 1.0 - self._yarn_linear_ramp_mask(
-            low, high, dim_2
-        ).cast(DType.float32)
+        inv_freq_mask = 1.0 - _yarn_linear_ramp_mask(low, high, dim_2).cast(
+            DType.float32
+        )
 
         # Interpolate between scaled and original frequencies
         inv_freq = freq_inter * (1 - inv_freq_mask) + freq_extra * inv_freq_mask
 
         return inv_freq
-
-    def _yarn_get_mscale(
-        self, scale: float = 1.0, mscale: float = 1.0
-    ) -> float:
-        """Computes the mscale factor for YARN interpolation."""
-        if scale <= 1:
-            return 1.0
-        return 0.1 * mscale * math.log(scale) + 1.0
-
-    def _yarn_find_correction_range(
-        self,
-        beta_fast: float,
-        beta_slow: float,
-        dim: int,
-        base: float,
-        original_max_position: int,
-    ) -> tuple[TensorValue, TensorValue]:
-        """Finds the low and high correction dimension range for YARN scaling.
-
-        Args:
-            beta_fast: The fast rotation boundary value.
-            beta_slow: The slow rotation boundary value.
-            dim: The embedding dimension.
-            base: The base for exponential frequency scaling.
-            original_max_position: The original maximum number of position
-                embeddings.
-
-        Returns:
-            A tuple of ``(low, high)`` correction dimension tensors, clamped
-            to ``[0, dim - 1]``.
-        """
-        # Convert to tensors
-        low_rot = ops.constant(
-            beta_fast, dtype=DType.float32, device=DeviceRef.CPU()
-        )
-        high_rot = ops.constant(
-            beta_slow, dtype=DType.float32, device=DeviceRef.CPU()
-        )
-
-        low = ops.floor(
-            self._yarn_find_correction_dim(
-                low_rot, dim, base, original_max_position
-            )
-        )
-        high = (
-            ops.trunc(
-                self._yarn_find_correction_dim(
-                    high_rot, dim, base, original_max_position
-                )
-            )
-            + 1
-        )
-
-        return ops.max(low, 0), ops.min(high, dim - 1)
-
-    def _yarn_find_correction_dim(
-        self,
-        num_rotations: TensorValue,
-        dim: int,
-        base: float,
-        max_position_embeddings: int,
-    ) -> TensorValue:
-        """Finds the correction dimension corresponding to a given number of rotations.
-
-        Args:
-            num_rotations: The number of rotations tensor.
-            dim: The embedding dimension.
-            base: The base for exponential frequency scaling.
-            max_position_embeddings: The maximum number of position embeddings.
-
-        Returns:
-            The correction dimension as a scalar tensor.
-        """
-        max_pos = ops.constant(
-            float(max_position_embeddings),
-            dtype=DType.float32,
-            device=DeviceRef.CPU(),
-        )
-        base_tensor = ops.constant(
-            float(base), dtype=DType.float32, device=DeviceRef.CPU()
-        )
-        dim_tensor = ops.constant(
-            float(dim), dtype=DType.float32, device=DeviceRef.CPU()
-        )
-
-        return (
-            dim_tensor * ops.log(max_pos / (num_rotations * 2 * math.pi))
-        ) / (2 * ops.log(base_tensor))
-
-    def _yarn_linear_ramp_mask(
-        self, min_val: TensorValue, max_val: TensorValue, dim: Dim
-    ) -> TensorValue:
-        """Creates a linear ramp mask for frequency interpolation.
-
-        Args:
-            min_val: The minimum boundary tensor.
-            max_val: The maximum boundary tensor.
-            dim: The output dimension of the mask.
-
-        Returns:
-            A tensor of shape ``[dim]`` with values linearly interpolated
-            between ``0`` and ``1``.
-        """
-        # Avoid division by zero
-        diff = max_val - min_val
-        diff = ops.where(
-            diff == 0,
-            ops.constant(0.001, dtype=DType.float32, device=DeviceRef.CPU()),
-            diff,
-        )
-
-        linear_func = (
-            ops.range(
-                0,
-                dim,
-                1,
-                out_dim=dim,
-                device=DeviceRef.CPU(),
-                dtype=DType.int64,
-            ).cast(DType.float32)
-            - min_val
-        ) / diff
-
-        return ops.min(ops.max(linear_func, 0), 1)

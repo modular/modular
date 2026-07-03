@@ -30,9 +30,9 @@ from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn.kv_cache import (
+    KVCacheInputs,
     KVCacheParamInterface,
     PagedCacheValues,
-    unflatten_ragged_attention_inputs,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 
@@ -266,11 +266,12 @@ class Llama3(Module[..., tuple[Tensor, ...]]):
         tokens: Tensor,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-        *variadic_args,
+        *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
-        kv_collections = unflatten_ragged_attention_inputs(
-            variadic_args, n_devices=self.kv_params.n_devices
-        )
+        kv_inputs = iter(x._graph_value for x in variadic_args)
+        symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
+        assert isinstance(symbolic_inputs, KVCacheInputs)
+        kv_collections = symbolic_inputs.inputs
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets
         )

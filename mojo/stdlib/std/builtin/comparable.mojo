@@ -10,13 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements comparison and equality traits for Mojo types."""
 
-from std.builtin.constrained import _constrained_field_conforms_to
+from std.builtin.constrained import _field_conforms_to_error
 from std.builtin.range import _ZeroStartingRange
-from std.reflection import struct_field_names, struct_field_types
+from std.reflection import reflect
 
 
-trait Equatable(ImplicitlyDestructible):
+trait Equatable:
     """A type which can be compared for equality with other instances of itself.
 
     The `Equatable` trait has a default implementation of `__eq__()` that uses
@@ -65,20 +66,18 @@ trait Equatable(ImplicitlyDestructible):
         """
 
         # Default implementation using reflection: compare all fields
-        comptime names = struct_field_names[Self]()
-        comptime types = struct_field_types[Self]()
+        comptime r = reflect[Self]
+        comptime names = r.field_names()
+        comptime types = r.field_types()
 
         comptime for i in range(names.size):
             comptime T = types[i]
-            _constrained_field_conforms_to[
-                conforms_to(T, Equatable),
+            comptime assert conforms_to(T, Equatable), _field_conforms_to_error[
                 Parent=Self,
                 FieldIndex=i,
                 ParentConformsTo="Equatable",
             ]()
-            if trait_downcast[Equatable](
-                __struct_field_ref(i, self)
-            ) != trait_downcast[Equatable](__struct_field_ref(i, other)):
+            if r.field_ref[i](self) != r.field_ref[i](other):
                 return False
         return True
 

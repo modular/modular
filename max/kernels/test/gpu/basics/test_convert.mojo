@@ -37,7 +37,7 @@ def test_convert_asm() raises:
         in _compile_code[
             my_cast[DType.float32, DType.float16],
             emission_kind="asm",
-            target=get_gpu_target["mi300x"](),
+            target=get_gpu_target["mi355x"](),
         ]()
     )
 
@@ -55,7 +55,7 @@ def test_convert_asm() raises:
         in _compile_code[
             my_cast[DType.float16, DType.float32],
             emission_kind="asm",
-            target=get_gpu_target["mi300x"](),
+            target=get_gpu_target["mi355x"](),
         ]()
     )
 
@@ -83,9 +83,7 @@ def test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     device_buf.enqueue_fill(0)
 
     comptime kernel = convert_kernel[src_type, dst_type, size]
-    ctx.enqueue_function_experimental[kernel](
-        device_buf, grid_dim=(1), block_dim=(1)
-    )
+    ctx.enqueue_function[kernel](device_buf, grid_dim=(1), block_dim=(1))
     with device_buf.map_to_host() as host_buf:
         for i in range(size):
             assert_equal(host_buf[i], Scalar[dst_type](i))

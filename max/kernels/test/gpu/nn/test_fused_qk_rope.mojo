@@ -186,15 +186,19 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         kv_block_device, kv_block_runtime_layout
     )
     var cache_lengths_tensor = LayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        Layout(UNKNOWN_VALUE),
     ](
-        cache_lengths_device.unsafe_ptr(),
+        cache_lengths_device,
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(cache_lengths_shape),
     )
     var lookup_table_tensor = LayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        Layout(UNKNOWN_VALUE),
     ](
-        lookup_table_device.unsafe_ptr(),
+        lookup_table_device,
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(lookup_table_shape),
     )
 
@@ -204,7 +208,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     var q_out_tensor = TileTensor(q_out_device, q_tile_layout)
 
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-        blocks=LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+        blocks=LayoutTensor[dtype, Layout.row_major[6]()](
             kv_block_tensor.ptr,
             RuntimeLayout[Layout.row_major[6]()].row_major(
                 kv_block_tensor.runtime_layout.shape.value
@@ -234,7 +238,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         for i in range(batch_size):
             valid_lengths_host[i] = UInt32(seq_len)
 
-    # Create valid_lengths TileTensor with RuntimeInt layout and MutAnyOrigin
+    # Create valid_lengths TileTensor with Scalar layout and MutAnyOrigin
     var valid_lengths_static = TileTensor(
         valid_lengths_device, valid_lengths_tile_layout
     )
@@ -263,13 +267,9 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
 
     # Compare output and expected query tensors.
     with q_out_device.map_to_host() as q_out_host:
-        var expected_q_out = TileTensor(
-            expected_q_out_buffer.unsafe_ptr(), q_tile_layout
-        )
         assert_almost_equal(
-            q_out_host.unsafe_ptr(),
-            expected_q_out.ptr,
-            q_shape.flattened_length(),
+            q_out_host.as_span(),
+            Span(expected_q_out_buffer)[: q_shape.flattened_length()],
         )
 
     # Compare output and expected key cache buffers.

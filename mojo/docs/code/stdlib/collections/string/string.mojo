@@ -35,9 +35,9 @@ def string_summary() raises:
     var text = "Hello"
 
     # String properties and indexing
-    print(len(text))  # 5
+    print(text.byte_length())  # 5
     print(text[byte=1])  # e
-    print(text[byte=-1])  # o
+    print(text[byte=text.byte_length() - 1])  # o
 
     # In-place concatenation
     text += " World"

@@ -30,30 +30,40 @@ import uvloop
 from max.driver import Device, DevicePinnedBuffer
 from max.driver.driver import load_device
 from max.dtype import DType
-from max.interfaces import (
-    BaseContextType,
+from max.experimental.nn._compilation_timer import collect_compilation_stats
+from max.pipelines.context import BaseContextType
+from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
+from max.pipelines.lib import PipelineConfig, PipelineModel
+from max.pipelines.lib.eplb_stats import EplbStatsAccumulator
+from max.pipelines.modeling.types import (
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
     PipelinesFactory,
 )
-from max.kv_cache import DummyKVCache, PagedKVCacheManager
-from max.pipelines.lib import PipelineConfig, PipelineModel
 from max.profiler import Tracer, traced
+from max.serve._exceptions import detect_and_wrap_ooms
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.exceptions import detect_and_wrap_oom
+from max.serve.pipelines.eplb_stats_rpc import (
+    EplbStatsBackend,
+    EplbStatsResetBackend,
+)
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
 from max.serve.telemetry.common import configure_logging, configure_metrics
+from max.serve.telemetry.gc_debug import install_gc_debugger
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 from max.serve.worker_interface import (
     ModelWorkerInterface,
     ModelWorkerProxy,
     sleep_with_backoff,
+)
+from max.serve.worker_interface.lora_request_processor import (
+    LoRARequestProcessor,
 )
 
 logger = logging.getLogger("max.serve")
@@ -63,6 +73,8 @@ GiB = 1024 * 1024 * 1024
 
 @runtime_checkable
 class SupportsGraphCaptureWarmup(Protocol):
+    max_batch_size: int
+
     def warmup_graph_capture(self) -> None: ...
 
 
@@ -87,6 +99,42 @@ def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
         return
     pinned = DevicePinnedBuffer(shape=(bytes,), dtype=DType.int8, device=device)
     del pinned
+
+
+def _get_eplb_stats_accumulator(
+    pipeline: Pipeline[Any, Any],
+    enabled: bool,
+) -> EplbStatsAccumulator | None:
+    """Retrieve the pipeline's pre-built EplbStatsAccumulator if profiling is on.
+
+    Args:
+        pipeline: The model pipeline running in this worker process.
+        enabled: pipeline_config.runtime.eplb_profile i.e. whether the user has opted in to EPLB profiling for this run.
+
+    Returns:
+        The accumulator constructed by the pipeline's load_model, or
+        None if profiling is disabled or the pipeline does not expose one.
+    """
+    if not enabled:
+        return None
+
+    pipeline_model = get_pipeline_model(pipeline)
+    accumulator = getattr(pipeline_model, "_eplb_stats_accumulator", None)
+    if accumulator is None:
+        logger.warning(
+            "MAX_SERVE_EPLB_PROFILE is enabled but pipeline %s does not "
+            "expose an EplbStatsAccumulator; routing histograms unavailable.",
+            type(pipeline_model).__name__ if pipeline_model else "None",
+        )
+        return None
+
+    logger.info(
+        "EPLB stats profiling enabled: %d MoE layers x %d logical experts (top-%d).",
+        accumulator.metadata.num_moe_layers,
+        accumulator.metadata.num_logical_experts,
+        accumulator.metadata.num_experts_per_token,
+    )
+    return accumulator
 
 
 def get_reset_prefix_cache_backend(
@@ -114,10 +162,7 @@ def get_reset_prefix_cache_backend(
 def get_pipeline_model(
     pipeline: Pipeline[Any, Any],
 ) -> PipelineModel[Any] | None:
-    if pipeline.__class__.__name__ == "AudioGeneratorPipeline":
-        return pipeline.speech_lm_pipeline._pipeline_model  # type: ignore
-    else:
-        return getattr(pipeline, "_pipeline_model", None)
+    return getattr(pipeline, "_pipeline_model", None)
 
 
 class ModelWorker:
@@ -167,6 +212,8 @@ class ModelWorker:
         model_worker_interface: ModelWorkerInterface[
             BaseContextType, PipelineOutputType
         ],
+        zmq_endpoint_base: str,
+        spawn_start_wall_ts: float | None = None,
     ) -> None:
         """Runs a model worker process.
 
@@ -179,10 +226,37 @@ class ModelWorker:
             pipeline_config: The config for the pipeline
             settings: Global server settings
             metric_client_factory: Factory function to create metric client
+            zmq_endpoint_base: Prefix for ZMQ IPC endpoints shared between
+                the API server process and this worker process.
+            spawn_start_wall_ts: ``time.time()`` recorded in the parent just
+                before spawning this worker. Used to log how long the worker
+                process took to start (Python imports + driver init), which
+                can dominate first-run startup on cold filesystem caches.
         """
         configure_logging(settings)
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
+
+        # Optionally instrument CPython garbage-collection pauses. Stop-the-
+        # world GC collections hold the GIL and can stall the scheduler thread,
+        # surfacing as large batch_execution_time_ms spikes (MXSERV-152).
+        install_gc_debugger(
+            enabled=settings.gc_debug,
+            min_duration_ms=settings.gc_debug_min_duration_ms,
+            top_objects=settings.gc_debug_top_objects,
+        )
+
+        run_start_s = time.monotonic()
+        spawn_duration_s = (
+            time.time() - spawn_start_wall_ts
+            if spawn_start_wall_ts is not None
+            else None
+        )
+        if spawn_duration_s is not None:
+            logger.info(
+                "Worker process startup took %.2fs (Python imports + driver init)",
+                spawn_duration_s,
+            )
 
         async with AsyncExitStack() as exit_stack:
             # Configure Metrics
@@ -192,35 +266,75 @@ class ModelWorker:
 
             ModelWorker._configure_metrics(settings, metric_client)
 
+            # improves diagnostic messages for gpu out-of-memory errors
+            exit_stack.enter_context(detect_and_wrap_ooms())
+
             # Prime the pinned memory cache in the model worker process.
             # The first DevicePinnedBuffer allocation per GPU triggers
             # heavyweight driver context initialization that can take
             # seconds. Doing it here at startup avoids that latency
             # hitting the first real request.
             # Use any model's device_specs — all components share the same device.
+            prime_start_s = time.monotonic()
             any_model = next(iter(pipeline_config.models.values()))
             first_device = load_device(any_model.device_specs[0])
             _prime_pinned_memory_cache(first_device)
-            # This crashes on 8xMI355. TODO(GEX-3321)
-            if first_device.api == "cuda":
+            if first_device.api in ("cuda", "hip"):
                 for spec in any_model.device_specs[1:]:
                     _prime_pinned_memory_cache(load_device(spec))
+            prime_duration_s = time.monotonic() - prime_start_s
+            logger.info(
+                "Pinned memory cache primed in %.2fs",
+                prime_duration_s,
+            )
 
             # Initialize token generator.
-            with record_ms(METRICS.model_load_time), Tracer("model_factory"):
+            logger.info("Initializing model pipeline...")
+            factory_start_s = time.monotonic()
+            with (
+                record_ms(METRICS.model_load_time),
+                Tracer("model_factory"),
+                collect_compilation_stats() as compile_stats,
+            ):
                 pipeline = model_factory()
+            factory_duration_s = time.monotonic() - factory_start_s
+            other_s = max(
+                0.0,
+                factory_duration_s
+                - compile_stats.build_seconds
+                - compile_stats.compile_seconds
+                - compile_stats.init_seconds,
+            )
+            unaccounted_compile_s = max(
+                0.0,
+                compile_stats.compile_seconds
+                - compile_stats.labeled_compile_seconds,
+            )
+            unaccounted_init_s = max(
+                0.0,
+                compile_stats.init_seconds - compile_stats.labeled_init_seconds,
+            )
+            logger.info(
+                "Model pipeline initialized in %.1fs "
+                "(graph build: %.1fs, graph compile: %.1fs "
+                "[unaccounted: %.1fs], init: %.1fs [unaccounted: %.1fs], "
+                "other: %.1fs)",
+                factory_duration_s,
+                compile_stats.build_seconds,
+                compile_stats.compile_seconds,
+                unaccounted_compile_s,
+                compile_stats.init_seconds,
+                unaccounted_init_s,
+                other_s,
+            )
 
+            warmup_duration_s = 0.0
             with Tracer("graph_capture_warmup"):
                 if pipeline_config.runtime.device_graph_capture:
                     if not isinstance(pipeline, SupportsGraphCaptureWarmup):
                         raise ValueError(
                             "device_graph_capture is enabled but the pipeline "
                             "does not support graph-capture warmup."
-                        )
-                    max_batch_size = pipeline_config.runtime.max_batch_size
-                    if max_batch_size is None:
-                        raise ValueError(
-                            "device_graph_capture requires max_batch_size to be set."
                         )
                     warmup_start_s = time.monotonic()
                     pipeline.warmup_graph_capture()
@@ -230,8 +344,48 @@ class ModelWorker:
                         "(model=%s, max_batch_size=%d).",
                         warmup_duration_s,
                         pipeline_config.models.main_architecture_name,
-                        max_batch_size,
+                        pipeline.max_batch_size,
                     )
+
+            total_in_run_s = time.monotonic() - run_start_s
+            spawn_str = (
+                f"spawn: {spawn_duration_s:.1f}s, "
+                if spawn_duration_s is not None
+                else ""
+            )
+            logger.info(
+                "Model worker startup total: %.1fs — %sdriver: %.1fs, "
+                "compile: %.1fs [unaccounted: %.1fs], init: %.1fs "
+                "[unaccounted: %.1fs], other: %.1fs, warmup: %.1fs",
+                (spawn_duration_s or 0.0) + total_in_run_s,
+                spawn_str,
+                prime_duration_s,
+                compile_stats.build_seconds + compile_stats.compile_seconds,
+                unaccounted_compile_s,
+                compile_stats.init_seconds,
+                unaccounted_init_s,
+                other_s,
+                warmup_duration_s,
+            )
+
+            # Emit the same per-phase breakdown on the model_load_time
+            # histogram so pod startup time can be tracked in production.
+            # One metric split by the 'component' tag keeps the dashboard
+            # aligned with the logs above; the untagged record_ms() above
+            # remains the model-factory aggregate. Values are converted to
+            # milliseconds to match the metric's unit.
+            METRICS.model_load_time(compile_stats.build_seconds * 1e3, "build")
+            METRICS.model_load_time(
+                compile_stats.compile_seconds * 1e3, "compile"
+            )
+            METRICS.model_load_time(compile_stats.init_seconds * 1e3, "init")
+            METRICS.model_load_time(warmup_duration_s * 1e3, "graph_capture")
+            METRICS.model_load_time(prime_duration_s * 1e3, "pinned_memory")
+            if spawn_duration_s is not None:
+                METRICS.model_load_time(spawn_duration_s * 1e3, "spawn")
+            METRICS.model_load_time(
+                ((spawn_duration_s or 0.0) + total_in_run_s) * 1e3, "total"
+            )
 
             # Boot up the api worker comms
             worker_queues = await exit_stack.enter_async_context(
@@ -248,18 +402,44 @@ class ModelWorker:
 
             # Get the reset prefix cache backend.
             reset_prefix_cache_backend, kv_cache = (
-                get_reset_prefix_cache_backend(
-                    pipeline, pipeline_config.runtime.zmq_endpoint_base
+                get_reset_prefix_cache_backend(pipeline, zmq_endpoint_base)
+            )
+
+            # Get the EPLB stats accumulator (None unless profiling is
+            # enabled and the pipeline supports it).
+            eplb_stats_accumulator = _get_eplb_stats_accumulator(
+                pipeline, settings.eplb_profile
+            )
+
+            eplb_stats_backend = (
+                EplbStatsBackend(
+                    zmq_endpoint_base,
+                    eplb_stats_accumulator,
                 )
+                if eplb_stats_accumulator is not None
+                else None
+            )
+
+            eplb_stats_reset_backend = (
+                EplbStatsResetBackend(
+                    zmq_endpoint_base,
+                    eplb_stats_accumulator,
+                )
+                if eplb_stats_accumulator is not None
+                else None
             )
 
             # Maybe retrieve LoRA manager.
-            lora_manager = None
+            lora_request_processor = None
             pipeline_model = get_pipeline_model(pipeline)
             if pipeline_config.lora:
                 assert pipeline_model is not None
                 lora_manager = pipeline_model.lora_manager
                 assert lora_manager is not None
+                lora_request_processor = LoRARequestProcessor(
+                    lora_manager,
+                    zmq_endpoint_base,
+                )
 
             # Mark the start of the process, and run the scheduler.
             logger.debug("Started model worker!")
@@ -268,8 +448,8 @@ class ModelWorker:
             while True:
                 alive.set()
                 # Checks for new LoRA requests and processes them.
-                if lora_manager is not None:
-                    lora_manager.process_lora_requests()
+                if lora_request_processor is not None:
+                    lora_request_processor.process_lora_requests()
                 # Check for request to reset prefix cache.
                 if (
                     reset_prefix_cache_backend is not None
@@ -277,6 +457,14 @@ class ModelWorker:
                 ):
                     assert kv_cache is not None
                     kv_cache.reset_prefix_cache()
+
+                # Serve any pending EP stats requests.
+                if eplb_stats_backend is not None:
+                    eplb_stats_backend.serve_pending_requests()
+
+                if eplb_stats_reset_backend is not None:
+                    eplb_stats_reset_backend.serve_pending_requests()
+
                 # This method must terminate in a reasonable amount of time
                 # so that the ProcessMonitor heartbeat is periodically run.
                 progress = scheduler.run_iteration()
@@ -301,6 +489,8 @@ class ModelWorker:
         model_worker_interface: ModelWorkerInterface[
             BaseContextType, PipelineOutputType
         ],
+        zmq_endpoint_base: str,
+        spawn_start_wall_ts: float | None = None,
     ) -> None:
         """Primary entry point for running a ModelWorker process.
 
@@ -314,6 +504,8 @@ class ModelWorker:
             pipeline_config: The config for the pipeline
             settings: Global server settings
             metric_client_factory: Factory for creating metric client instances
+            zmq_endpoint_base: Prefix for ZMQ IPC endpoints shared between
+                the API server process and this worker process.
         """
         try:
             uvloop.run(
@@ -324,14 +516,12 @@ class ModelWorker:
                     settings,
                     metric_client_factory,
                     model_worker_interface,
+                    zmq_endpoint_base,
+                    spawn_start_wall_ts,
                 )
             )
         except KeyboardInterrupt:
             pass  # suppress noisy stack traces for user abort
-        except Exception as e:
-            logger.exception("Model worker crashed")
-            detect_and_wrap_oom(e)
-            raise
 
 
 @asynccontextmanager
@@ -343,6 +533,7 @@ async def start_model_worker(
     model_worker_interface: ModelWorkerInterface[
         BaseContextType, PipelineOutputType
     ],
+    zmq_endpoint_base: str,
 ) -> AsyncGenerator[ModelWorkerProxy[BaseContextType, PipelineOutputType]]:
     """Starts a model worker and associated process.
 
@@ -351,6 +542,9 @@ async def start_model_worker(
         pipeline_config: The config for the pipeline
         settings: Global server settings
         metric_client: Metric client for recording metrics
+        model_worker_interface: Interface for communicating with the worker
+        zmq_endpoint_base: Prefix for ZMQ IPC endpoints shared between
+            the API server process and the worker process.
 
     Returns:
         AsyncIterator[Worker]: Iterator to model worker.
@@ -364,6 +558,7 @@ async def start_model_worker(
     mp = multiprocessing.get_context("spawn")
     async with subprocess_manager("Model Worker") as proc:
         alive = mp.Event()
+        spawn_start_wall_ts = time.time()
         proc.start(
             ModelWorker(),
             alive,
@@ -372,6 +567,8 @@ async def start_model_worker(
             settings,
             metric_client.cross_process_factory(settings),
             model_worker_interface,
+            zmq_endpoint_base,
+            spawn_start_wall_ts,
         )
 
         logger.info("Waiting for model worker readiness")

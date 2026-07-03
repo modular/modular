@@ -78,7 +78,7 @@ class SonnetBenchmarkDataset(LocalBenchmarkDataset):
             poem_lines = f.readlines()
 
         # Tokenize the poem lines.
-        poem_token_ids = tokenizer(poem_lines).input_ids
+        poem_token_ids = [tokenizer.encode(line) for line in poem_lines]
         average_poem_len = sum(
             len(token_ids) for token_ids in poem_token_ids
         ) / len(poem_token_ids)
@@ -94,7 +94,7 @@ class SonnetBenchmarkDataset(LocalBenchmarkDataset):
         base_prompt_formatted = tokenizer.apply_chat_template(
             base_message, add_generation_prompt=True, tokenize=False
         )
-        base_prompt_offset = len(tokenizer(base_prompt_formatted).input_ids)
+        base_prompt_offset = len(tokenizer.encode(base_prompt_formatted))
 
         assert input_len > base_prompt_offset, (
             f"input_len must be greater than {base_prompt_offset}."
@@ -134,7 +134,7 @@ class SonnetBenchmarkDataset(LocalBenchmarkDataset):
             )
             # TODO: Figure out why MyPy can't figure this type out otherwise
             assert isinstance(prompt_formatted, str)
-            prompt_len = len(tokenizer(prompt_formatted).input_ids)
+            prompt_len = len(tokenizer.encode(prompt_formatted))
             prompt_out = prompt_formatted if apply_chat_template else prompt
             output_len = None if output_lengths is None else output_lengths[i]
             sampled_requests.append(

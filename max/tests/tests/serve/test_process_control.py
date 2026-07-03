@@ -23,6 +23,14 @@ from typing import NoReturn, ParamSpec, TypeVar
 import pytest
 from max.serve.process_control import SubprocessExit, subprocess_manager
 
+# FIXME: SERVSYS-1275 — subprocess-control tests hang past their timeout on
+# contended macOS CI workers, pushing the macOS job past its 2h cap. Skip on
+# macOS until the serve-test slowness is addressed.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="SERVSYS-1275: too slow on macOS CI; exceeds the 2h job timeout",
+)
+
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
@@ -79,8 +87,9 @@ async def test_ready_and_finish() -> None:
         alive = ctx.Event()
         task = proc.start(work, alive, reps=3, pause=0)
         await proc.ready(alive, timeout=10)
-        res = await asyncio.wait_for(task, timeout=10)
-        assert res == 123
+        # Subprocess return value isn't propagated -- the lifecycle
+        # task just completes when the subprocess exits cleanly.
+        await asyncio.wait_for(task, timeout=10)
 
 
 @async_timeout(30)
@@ -102,8 +111,7 @@ async def test_heartbeat_good() -> None:
         task = proc.start(work, alive, reps=10, pause=0.5)
         await proc.ready(alive, timeout=10)
         proc.watch_heartbeat(alive, timeout=2)
-        res = await asyncio.wait_for(task, timeout=10)
-        assert res == 123
+        await asyncio.wait_for(task, timeout=10)
 
 
 @async_timeout(30)
@@ -119,10 +127,14 @@ async def test_heartbeat_bad() -> None:
 
 @async_timeout(30)
 async def test_exception_propagate() -> None:
-    with pytest.raises(ValueError, match="KABOOM!"):
+    # The subprocess's original exception is logged by the child via the
+    # standard `multiprocessing` mechanism but isn't passed back across
+    # the process boundary; the parent only learns that the worker
+    # exited with a non-zero code.
+    with pytest.raises(SubprocessExit):
         async with subprocess_manager("test1") as proc:
             alive = ctx.Event()
-            task = proc.start(run_exception, alive)
+            proc.start(run_exception, alive)
             await proc.ready(alive, timeout=10)
             await asyncio.sleep(11)
             raise AssertionError("Should not reach here")
@@ -136,7 +148,7 @@ async def test_segfault() -> None:
     with pytest.raises(SubprocessExit):
         async with subprocess_manager("test1") as proc:
             alive = ctx.Event()
-            task = proc.start(run_segfault, alive)
+            proc.start(run_segfault, alive)
             await proc.ready(alive, timeout=50)
             raise AssertionError("Should not reach here")
 
@@ -146,7 +158,7 @@ async def test_hard_exit() -> None:
     with pytest.raises(SubprocessExit, match="1"):
         async with subprocess_manager("test1") as proc:
             alive = ctx.Event()
-            task = proc.start(run_exit, alive)
+            proc.start(run_exit, alive)
             await proc.ready(alive, timeout=10)
             await asyncio.sleep(11)
             raise AssertionError("Should not reach here")

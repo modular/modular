@@ -97,7 +97,7 @@ def test_failed_mojo_object_creation_does_not_del() -> None:
 
     # Test that an error is raised if passing any arguments to the initializer
     with pytest.raises(ValueError) as cm:
-        result = feature_overview.FailToInitialize("illegal argument")
+        feature_overview.FailToInitialize("illegal argument")
 
     assert cm.value.args == (
         (
@@ -163,7 +163,9 @@ def test_case_mutate_wrapped_object() -> None:
         feature_overview.incr_int("string")
 
     assert cm.value.args == (
-        ("TypeError: incr_int() expected Mojo 'Int' type argument, got 'str'"),
+        (
+            "TypeError: incr_int() expected Mojo 'SIMD[DType.int, 1]' type argument, got 'str'"
+        ),
     )
 
 
@@ -187,7 +189,7 @@ def test_case_mojo_value_convert_from_python() -> None:
     assert cm.value.args == (
         (
             "TypeError: add_to_int() expected argument at position 1 to be "
-            "instance of (or convertible to) Mojo 'Int'; got 'str'. "
+            "instance of (or convertible to) Mojo 'SIMD[DType.int, 1]'; got 'str'. "
             "(Note: attempted conversion failed due to: invalid literal for "
             "int() with base 10: 'foo')"
         ),

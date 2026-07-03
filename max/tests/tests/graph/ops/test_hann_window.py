@@ -86,7 +86,7 @@ def test_hann_window_negative_length_raises(
 ) -> None:
     """Test that negative window_length raises ValueError."""
     with pytest.raises(ValueError):
-        with graph_builder(input_types=[]) as graph:
+        with graph_builder(input_types=[]):
             ops.hann_window(
                 window_length=window_length,
                 device=DeviceRef.CPU(),
@@ -100,7 +100,7 @@ def test_hann_window_negative_length_error_message(
 ) -> None:
     """Test specific error message for negative window_length."""
     with pytest.raises(ValueError, match="window_length must be non-negative"):
-        with graph_builder(input_types=[]) as graph:
+        with graph_builder(input_types=[]):
             ops.hann_window(
                 window_length=-1,
                 device=DeviceRef.CPU(),
@@ -114,7 +114,7 @@ def test_hann_window_non_integer_length_raises(
 ) -> None:
     """Test that non-integer window_length raises TypeError."""
     with pytest.raises(TypeError):
-        with graph_builder(input_types=[]) as graph:
+        with graph_builder(input_types=[]):
             ops.hann_window(
                 window_length=5.5,  # type: ignore  # float instead of int
                 device=DeviceRef.CPU(),
@@ -130,7 +130,7 @@ def test_hann_window_non_integer_length_error_message(
     with pytest.raises(
         TypeError, match="window_length must be an integer, got float"
     ):
-        with graph_builder(input_types=[]) as graph:
+        with graph_builder(input_types=[]):
             ops.hann_window(
                 window_length=5.5,  # type: ignore
                 device=DeviceRef.CPU(),

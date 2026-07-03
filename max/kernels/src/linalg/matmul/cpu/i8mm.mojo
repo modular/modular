@@ -16,8 +16,8 @@ from std.sys import prefetch
 from std.sys.info import align_of
 from std.sys.intrinsics import PrefetchOptions
 
-from buffer.buffer import partial_simd_load, partial_simd_store
-from layout import LayoutTensor, RuntimeTuple, TileTensor
+from linalg.utils import partial_simd_load, partial_simd_store
+from layout import Coord, Idx, TileTensor
 
 from std.utils.index import Index, IndexList
 
@@ -149,8 +149,8 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         simd_size: Int, kernel_rows: Int, kernel_cols: Int
     ](
         self,
-        a: LayoutTensor,
-        b_packed: LayoutTensor,
+        a: TileTensor,
+        b_packed: TileTensor,
         mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
@@ -168,18 +168,15 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
 
         var n_outer_idx = tile_n_k_idx[0] // (kernel_cols // 2)
         var kl = tile_n_k_idx[1]
 
-        var b_offset = b_packed.runtime_layout(
-            RuntimeTuple[b_packed.layout.shape](Index(n_outer_idx, kl // 8, 0))
-        )
-        var b_ptr = b_packed.ptr + b_offset
+        var b_ptr = b_packed.ptr_at_offset(Coord(n_outer_idx, kl // 8, Idx[0]))
 
         # This inner kernels works with non-transposed A.
-        var K = a.dim(1)
+        var K = Int(a.dim[1]())
         var a_ptr = a.ptr + (global_offset.M * K + 2 * global_offset.K + 2 * kl)
 
         # Prefetch B matrix.
@@ -198,9 +195,11 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         comptime for idx0 in range(kernel_rows):
             comptime for idx1 in range(kernel_cols // simd_size):
                 comptime alignment = align_of[SIMD[c_local.dtype, simd_size]]()
-                var a_val = a_ptr.load[width=simd_size * 4](2 * idx0 * K)
+                var a_val = a_ptr.load[width=SIMDSize(simd_size) * 4](
+                    2 * idx0 * K
+                )
                 var b_val = (b_ptr + 16 * idx1).load[
-                    width=simd_size * 4, alignment=alignment
+                    width=SIMDSize(simd_size) * 4, alignment=alignment
                 ]()
                 var c_val = c_local[idx0, idx1]
                 c_val = _neon_matmul(c_val, a_val, b_val)
@@ -225,10 +224,6 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         (kernel_rows2, TileN, TileK) tile.
         """
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
-
-        # Convert to LayoutTensor for _accumulate which uses runtime_layout.
-        var a_lt = a.to_layout_tensor()
-        var b_lt = b_packed.to_layout_tensor()
 
         comptime kernel_rows2 = kernel_rows // 2 if kernel_rows != 1 else kernel_rows
         comptime single_row = (kernel_rows == 1)
@@ -262,8 +257,8 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
             var kl = align_up(tile_n_k[1], 8)
             for idx_k in range(0, kl, 8):
                 self._accumulate[simd_size, kernel_rows2, kernel_cols](
-                    a_lt,
-                    b_lt,
+                    a,
+                    b_packed,
                     acc.output_tile,
                     global_offset,
                     Index(idx_n, idx_k),

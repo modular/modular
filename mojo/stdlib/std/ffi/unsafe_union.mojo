@@ -26,11 +26,14 @@ type-checked sum types.
 """
 
 from std.builtin.rebind import downcast
-from std.builtin.variadics import Variadic
 from std.format._utils import FormatStruct, Named, TypeNames
-from std.memory import UnsafePointer
+from std.memory import (
+    UnsafePointer,
+    is_trivially_copyable,
+    is_trivially_deletable,
+    is_trivially_movable,
+)
 from std.sys import align_of, size_of
-from std.sys.intrinsics import _type_is_eq
 
 
 # ===----------------------------------------------------------------------=== #
@@ -44,9 +47,9 @@ def _all_types_unique[*Ts: AnyType]() -> Bool:
     Returns True if no type appears more than once, False otherwise.
     """
 
-    comptime for i in range(Variadic.size_types[Ts]):
-        comptime for j in range(i + 1, Variadic.size_types[Ts]):
-            if _type_is_eq[Ts[i], Ts[j]]():
+    comptime for i in range(Ts.size):
+        comptime for j in range(i + 1, Ts.size):
+            if Ts[i] == Ts[j]:
                 return False
     return True
 
@@ -54,11 +57,8 @@ def _all_types_unique[*Ts: AnyType]() -> Bool:
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial destructors."""
 
-    comptime for i in range(Variadic.size_types[Ts]):
-        comptime if conforms_to(Ts[i], ImplicitlyDestructible):
-            if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
-                return False
-        else:
+    comptime for i in range(Ts.size):
+        if not is_trivially_deletable[Ts[i]]():
             return False
     return True
 
@@ -66,9 +66,9 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial copy constructors."""
 
-    comptime for i in range(Variadic.size_types[Ts]):
+    comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Copyable):
-            if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
+            if not is_trivially_copyable[Ts[i]]():
                 return False
         else:
             return False
@@ -78,9 +78,9 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial move constructors."""
 
-    comptime for i in range(Variadic.size_types[Ts]):
+    comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Movable):
-            if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
+            if not is_trivially_movable[Ts[i]]():
                 return False
         else:
             return False
@@ -96,9 +96,7 @@ def _check_union_types[*Ts: AnyType]():
     - All types must be unique (no duplicates)
     - All types must have trivial copy, move, and destroy operations
     """
-    comptime assert (
-        Variadic.size_types[Ts] > 0
-    ), "UnsafeUnion requires at least one type"
+    comptime assert Ts.size > 0, "UnsafeUnion requires at least one type"
     comptime assert _all_types_unique[
         *Ts
     ](), "UnsafeUnion requires all types to be unique"
@@ -155,6 +153,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     Example for C FFI:
 
     ```mojo
+    from std.ffi import UnsafeUnion
+
     # Matches C: union { int32_t i; float f; }
     comptime CUnion = UnsafeUnion[Int32, Float32]
 
@@ -181,7 +181,11 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
 
     # Use pop.union directly for C-compatible memory layout
     comptime _union_type = __mlir_type[
-        `!pop.union<[rebind(:`, type_of(Self.Ts), ` `, Self.Ts, `)]>`
+        `!pop.union<[rebind(:`,
+        type_of(Self.Ts.values),
+        ` `,
+        Self.Ts.values,
+        `)]>`,
     ]
     var _storage: Self._union_type
 
@@ -214,6 +218,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         Example:
 
         ```mojo
+        from std.ffi import UnsafeUnion
+
         var u = UnsafeUnion[Int32, Float32](Int32(42))
         ```
         """
@@ -234,15 +240,15 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         self._storage = copy._storage
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Move initializer for the union.
 
         Args:
-            take: The union to move from.
+            move: The union to move from.
         """
         # Bitwise move of the raw storage
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        self._storage = take._storage
+        self._storage = move._storage
 
     # Note: No __del__ - UnsafeUnion doesn't know what type is stored, so it
     # cannot call destructors. Users must manually manage destruction if needed.
@@ -253,14 +259,20 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    def _get_ptr[T: AnyType](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
+    def _get_ptr[
+        origin: Origin, address_space: AddressSpace, //, T: AnyType
+    ](ref[origin, address_space] self) -> UnsafePointer[
+        T, origin, address_space=address_space
+    ]:
         """Get a pointer to the storage interpreted as type T."""
         comptime assert Self._is_element[
             T
         ](), "type is not a union element type"
         var ptr = UnsafePointer(to=self._storage).address
         var typed_ptr = __mlir_op.`pop.union.bitcast`[
-            _type=UnsafePointer[T, origin_of(self)]._mlir_type,
+            _type=UnsafePointer[
+                T, origin, address_space=address_space
+            ]._mlir_type,
         ](ptr)
         return typed_ptr
 
@@ -269,7 +281,9 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    def unsafe_get[T: AnyType](ref self) -> ref[self] T:
+    def unsafe_get[
+        origin: Origin, address_space: AddressSpace, //, T: AnyType
+    ](ref[origin, address_space] self) -> ref[origin, address_space] T:
         """Get a reference to the stored value as type T.
 
         Parameters:
@@ -285,6 +299,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         Example:
 
         ```mojo
+        from std.ffi import UnsafeUnion
+
         var u = UnsafeUnion[Int32, Float32](Int32(42))
         ref val = u.unsafe_get[Int32]()
         print(val)  # => 42
@@ -305,6 +321,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         Example:
 
         ```mojo
+        from std.ffi import UnsafeUnion
+
         var u = UnsafeUnion[Int32, Float32](Int32(42))
         print(u)  # => UnsafeUnion[Int32, Float32](size=4, align=4)
         ```
@@ -351,6 +369,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         Example:
 
         ```mojo
+        from std.ffi import UnsafeUnion
+
         var u = UnsafeUnion[Int32, Float32](Int32(42))
         var val = u.unsafe_take[Int32]()  # val = 42, u is now uninitialized
         ```
@@ -377,6 +397,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         Example:
 
         ```mojo
+        from std.ffi import UnsafeUnion
+
         var u = UnsafeUnion[Int32, Float32](Int32(0))
         u.unsafe_set(Float32(3.14))
         ```
@@ -388,8 +410,10 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
 
     @always_inline("nodebug")
     def unsafe_ptr[
-        T: AnyType
-    ](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
+        origin: Origin, address_space: AddressSpace, //, T: AnyType
+    ](ref[origin, address_space] self) -> UnsafePointer[
+        T, origin, address_space=address_space
+    ]:
         """Get a pointer to the storage interpreted as type T.
 
         This allows direct manipulation of the union's storage. Useful for
@@ -408,6 +432,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         Example:
 
         ```mojo
+        from std.ffi import UnsafeUnion
+
         var u = UnsafeUnion[Int32, Float32](Int32(0))
         var ptr = u.unsafe_ptr[Int32]()
         ptr[] = 42
@@ -425,4 +451,4 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
 
         Returns True if found, False otherwise.
         """
-        return Variadic.contains[type=T, element_types=Self.Ts]
+        return Self.Ts.contains[T]()

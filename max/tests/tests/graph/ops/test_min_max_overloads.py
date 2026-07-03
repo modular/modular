@@ -110,7 +110,7 @@ def test_min_fail__y_and_axis_provided(
     with graph_builder(input_types=input_types) as graph:
         x, y = graph.inputs
         with pytest.raises(ValueError):
-            result = ops.min(x, y, axis=axis)
+            ops.min(x, y, axis=axis)
 
 
 @example(
@@ -129,4 +129,4 @@ def test_max_fail__y_and_axis_provided(
     with graph_builder(input_types=input_types) as graph:
         x, y = graph.inputs
         with pytest.raises(ValueError):
-            result = ops.max(x, y, axis=axis)
+            ops.max(x, y, axis=axis)

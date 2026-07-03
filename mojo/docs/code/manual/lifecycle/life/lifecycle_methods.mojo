@@ -29,12 +29,12 @@ struct MyPet(Copyable):
         self.name = copy.name
         self.age = copy.age
 
-    def __init__(out self, *, deinit take: Self):
-        self.name = take.name^
-        self.age = take.age
+    def __init__(out self, *, deinit move: Self):
+        self.name = move.name^
+        self.age = move.age
 
 
-def main() raises:
+def main():
     pet = MyPet("Fido", 3)
     pet2 = pet.copy()
     print(pet2.name)

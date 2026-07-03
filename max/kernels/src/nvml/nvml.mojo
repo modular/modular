@@ -16,8 +16,13 @@ from std.collections.string.string_slice import _to_string_list
 from std.os import abort
 from std.pathlib import Path
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
-from std.ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
-from std.memory._nonnull import NonNullUnsafePointer
+from std.ffi import (
+    CStringSlice,
+    _Global,
+    OwnedDLHandle,
+    _try_find_dylib,
+    c_char,
+)
 
 from std.memory import stack_allocation
 
@@ -56,7 +61,7 @@ def _init_dylib() -> OwnedDLHandle:
     try:
         var dylib = _try_find_dylib(_get_nvml_library_paths())
         _check_error(
-            dylib._handle.get_function[def() -> Result]("nvmlInit_v2")()
+            dylib.get_function[def() thin abi("C") -> Result]("nvmlInit_v2")()
         )
         return dylib^
     except e:
@@ -338,7 +343,7 @@ struct ClockType(Equatable, TrivialRegisterPassable):
 
 @fieldwise_init
 struct _DeviceImpl(Defaultable, ImplicitlyCopyable, RegisterPassable):
-    var handle: Optional[NonNullUnsafePointer[NoneType, MutAnyOrigin]]
+    var handle: Optional[UnsafePointer[NoneType, MutUntrackedOrigin]]
 
     @always_inline
     def __init__(out self):
@@ -358,7 +363,9 @@ struct Device(Writable):
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetHandleByIndex_v2",
-                def(UInt32, UnsafePointer[_DeviceImpl, MutAnyOrigin]) -> Result,
+                def(
+                    UInt32, UnsafePointer[_DeviceImpl, origin_of(device)]
+                ) thin -> Result,
             ]()(UInt32(idx), UnsafePointer(to=device))
         )
         self.idx = idx
@@ -376,11 +383,13 @@ struct Device(Writable):
         _check_error(
             _get_dylib_function[
                 "nvmlSystemGetDriverVersion",
-                def(UnsafePointer[c_char, MutAnyOrigin], UInt32) -> Result,
+                def(
+                    UnsafePointer[c_char, MutUntrackedOrigin], UInt32
+                ) thin -> Result,
             ]()(driver_version_buffer, UInt32(max_length))
         )
         var driver_version_list = StringSlice(
-            unsafe_from_utf8_ptr=driver_version_buffer
+            unsafe_from_utf8=CStringSlice(unsafe_from_ptr=driver_version_buffer)
         ).split(".")
         return DriverVersion(_to_string_list(driver_version_list))
 
@@ -390,8 +399,10 @@ struct Device(Writable):
             _get_dylib_function[
                 "nvmlDeviceGetMaxClockInfo",
                 def(
-                    _DeviceImpl, ClockType, UnsafePointer[UInt32, MutAnyOrigin]
-                ) -> Result,
+                    _DeviceImpl,
+                    ClockType,
+                    UnsafePointer[UInt32, origin_of(clock)],
+                ) thin -> Result,
             ]()(self.device, clock_type, UnsafePointer(to=clock))
         )
         return Int(clock)
@@ -409,13 +420,13 @@ struct Device(Writable):
             "nvmlDeviceGetSupportedMemoryClocks",
             def(
                 _DeviceImpl,
-                UnsafePointer[UInt32, MutAnyOrigin],
-                UnsafePointer[UInt32, MutAnyOrigin],
-            ) -> Result,
+                UnsafePointer[UInt32, origin_of(num_clocks)],
+                Optional[UnsafePointer[UInt32, MutUntrackedOrigin]],
+            ) thin abi("C") -> Result,
         ]()(
             self.device,
             UnsafePointer(to=num_clocks),
-            UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+            None,
         )
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
@@ -427,9 +438,9 @@ struct Device(Writable):
                 "nvmlDeviceGetSupportedMemoryClocks",
                 def(
                     _DeviceImpl,
-                    UnsafePointer[UInt32, MutAnyOrigin],
-                    UnsafePointer[UInt32, MutAnyOrigin],
-                ) -> Result,
+                    UnsafePointer[UInt32, origin_of(num_clocks)],
+                    UnsafePointer[UInt32, origin_of(clocks)],
+                ) thin -> Result,
             ]()(self.device, UnsafePointer(to=num_clocks), clocks.unsafe_ptr())
         )
 
@@ -447,14 +458,14 @@ struct Device(Writable):
             def(
                 _DeviceImpl,
                 UInt32,
-                UnsafePointer[UInt32, MutAnyOrigin],
-                UnsafePointer[UInt32, MutAnyOrigin],
-            ) -> Result,
+                UnsafePointer[UInt32, origin_of(num_clocks)],
+                Optional[UnsafePointer[UInt32, MutUntrackedOrigin]],
+            ) thin abi("C") -> Result,
         ]()(
             self.device,
             UInt32(memory_clock_mhz),
             UnsafePointer(to=num_clocks),
-            UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+            None,
         )
 
         if result == Result.SUCCESS:
@@ -471,9 +482,9 @@ struct Device(Writable):
                 def(
                     _DeviceImpl,
                     UInt32,
-                    UnsafePointer[UInt32, MutAnyOrigin],
-                    UnsafePointer[UInt32, MutAnyOrigin],
-                ) -> Result,
+                    UnsafePointer[UInt32, origin_of(num_clocks)],
+                    UnsafePointer[UInt32, origin_of(clocks)],
+                ) thin -> Result,
             ]()(
                 self.device,
                 UInt32(memory_clock_mhz),
@@ -492,7 +503,7 @@ struct Device(Writable):
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceSetApplicationsClocks",
-                def(_DeviceImpl, UInt32, UInt32) -> Result,
+                def(_DeviceImpl, UInt32, UInt32) thin -> Result,
             ]()(self.device, UInt32(mem_clock), UInt32(graphics_clock))
         )
 
@@ -509,9 +520,9 @@ struct Device(Writable):
                 "nvmlDeviceGetAutoBoostedClocksEnabled",
                 def(
                     _DeviceImpl,
-                    UnsafePointer[_EnableState, MutAnyOrigin],
-                    UnsafePointer[_EnableState, MutAnyOrigin],
-                ) -> Result,
+                    UnsafePointer[_EnableState, origin_of(is_enabled)],
+                    UnsafePointer[_EnableState, origin_of(default_is_enabled)],
+                ) thin -> Result,
             ]()(
                 self.device,
                 UnsafePointer(to=is_enabled),
@@ -529,7 +540,7 @@ struct Device(Writable):
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceSetAutoBoostedClocksEnabled",
-                def(_DeviceImpl, _EnableState) -> Result,
+                def(_DeviceImpl, _EnableState) thin -> Result,
             ]()(
                 self.device,
                 _EnableState.ENABLED if enabled else _EnableState.DISABLED,
@@ -547,8 +558,9 @@ struct Device(Writable):
             _get_dylib_function[
                 "nvmlDeviceGetPersistenceMode",
                 def(
-                    _DeviceImpl, UnsafePointer[_EnableState, MutAnyOrigin]
-                ) -> Result,
+                    _DeviceImpl,
+                    UnsafePointer[_EnableState, origin_of(is_enabled)],
+                ) thin -> Result,
             ]()(
                 self.device,
                 UnsafePointer(to=is_enabled),
@@ -565,7 +577,7 @@ struct Device(Writable):
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceSetPersistenceMode",
-                def(_DeviceImpl, _EnableState) -> Result,
+                def(_DeviceImpl, _EnableState) thin -> Result,
             ]()(
                 self.device,
                 _EnableState.ENABLED if enabled else _EnableState.DISABLED,
@@ -575,18 +587,19 @@ struct Device(Writable):
     def set_max_gpu_clocks(device: Device) raises:
         var max_mem_clock = device.mem_clocks()
         sort(max_mem_clock)
+        var max_mem = max_mem_clock[len(max_mem_clock) - 1]
 
-        var max_graphics_clock = device.graphics_clocks(max_mem_clock[-1])
+        var max_graphics_clock = device.graphics_clocks(max_mem)
         sort(max_graphics_clock)
 
         for clock_val in reversed(max_graphics_clock):
             try:
-                device.set_clock(max_mem_clock[-1], clock_val)
+                device.set_clock(max_mem, clock_val)
                 print(
                     "the device clocks for device=",
                     device,
                     " were set to mem=",
-                    max_mem_clock[-1],
+                    max_mem,
                     " and graphics=",
                     clock_val,
                     sep="",

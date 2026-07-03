@@ -2,10 +2,10 @@ import DocLink from '@site/src/components/DocLink';
 
 const macDetails = (
   <ul>
-    <li>macOS Ventura (13) or later</li>
+    <li>macOS Sequoia (15) or later</li>
     <li>Apple silicon (M1 - M5 processor)</li>
     <li>Python 3.10 - 3.14</li>
-    <li>Xcode or Xcode Command Line Tools</li>
+    <li>Xcode or Xcode Command Line Tools 16 or later</li>
   </ul>
 );
 
@@ -30,14 +30,14 @@ const wslDetails = (
 
 const gpuDetails = (
   <ul>
-    <li>NVIDIA B200, H100, H200, A100, A10, L4, L40, RTX 50XX, RTX 40XX, and RTX 30XX
+    <li>NVIDIA B200, H100, H200, A100, A10, L4, L40, RTX 50XX, RTX 40XX, RTX 30XX
       <ul>
-        <li>NVIDIA GPU driver 580 or higher</li>
+        <li>NVIDIA GPU driver 580 or later</li>
       </ul>
     </li>
-    <li>AMD MI355X, MI325X, and MI300X
+    <li>AMD Instinct MI355X, MI300X, MI325X
       <ul>
-        <li>AMD GPU driver 6.3.3 or higher</li>
+        <li>AMD GPU driver 6.3.3 or later</li>
       </ul>
     </li>
   </ul>

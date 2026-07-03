@@ -24,9 +24,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.kv_cache.paged_kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs, MHAKVCacheParams
 from max.pipelines.architectures.llama3.model import Llama3Inputs
+from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManager
 from max.pipelines.lib import ModelOutputs
 from test_common.context_utils import create_text_context
 from test_common.mocks import DummyPipelineConfig
@@ -95,7 +95,9 @@ def make_pipeline_config(
 
 
 @pytest.fixture
-def make_kv_inputs(hf_config: LlamaConfig) -> Callable[..., KVCacheInputs]:
+def make_kv_inputs(
+    hf_config: LlamaConfig,
+) -> Callable[..., KVCacheInputs[Buffer, Buffer]]:
     """Factory that creates KVCacheInputs."""
 
     def _make(
@@ -107,7 +109,7 @@ def make_kv_inputs(hf_config: LlamaConfig) -> Callable[..., KVCacheInputs]:
         num_replicas: int = 1,
         total_num_pages: int = 1,
         input_seq_len: int = 3,
-    ) -> KVCacheInputs:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         kv_params_kwargs = dict(
             dtype=pipeline_config.model.kv_cache._cache_dtype,
             num_layers=hf_config.num_hidden_layers,
@@ -118,7 +120,7 @@ def make_kv_inputs(hf_config: LlamaConfig) -> Callable[..., KVCacheInputs]:
         if data_parallel_degree is not None:
             kv_params_kwargs["data_parallel_degree"] = data_parallel_degree
 
-        kv_params = KVCacheParams(**kv_params_kwargs)
+        kv_params = MHAKVCacheParams(**kv_params_kwargs)
         kv_manager = PagedKVCacheManager(
             params=kv_params,
             total_num_pages=total_num_pages,
@@ -131,15 +133,11 @@ def make_kv_inputs(hf_config: LlamaConfig) -> Callable[..., KVCacheInputs]:
         for i in range(num_replicas):
             ctx = create_text_context(np.empty(input_seq_len, dtype=np.int64))
             kv_manager.claim(ctx.request_id, replica_idx=i)
-            kv_manager.alloc(ctx, replica_idx=i, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=i)
             contexts.append(ctx)
             batches.append([ctx])
 
-        runtime_inputs = kv_manager.runtime_inputs(batches)
-        kv_inputs: KVCacheInputs
-        kv_inputs = runtime_inputs
-
-        return kv_inputs
+        return kv_manager.runtime_inputs_for_leaf(batches)
 
     return _make
 
@@ -150,7 +148,7 @@ def make_inputs() -> Callable[..., Llama3Inputs]:
 
     def _make(
         devices: list[Device],
-        kv_inputs: KVCacheInputs,
+        kv_inputs: KVCacheInputs[Buffer, Buffer],
         *,
         input_seq_len: int = 3,
         num_batches: int = 1,

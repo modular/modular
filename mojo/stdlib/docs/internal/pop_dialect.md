@@ -41,9 +41,9 @@ The pop dialect solves two problems in Mojo:
    Examples:
 
    ```mlir
-   !pop.simd<4, si32> // A SIMD vector type of 4 signed 32-bit integers
+   !kgen.simd<4, si32> // A SIMD vector type of 4 signed 32-bit integers
 
-   !pop.simd<size, dtype> // A parameterized SIMD type
+   !kgen.simd<size, dtype> // A parameterized SIMD type
    ```
 
 2. `array` - Parameterized array type
@@ -79,10 +79,10 @@ The pop dialect solves two problems in Mojo:
    integer size for compile time computations.
 
 5. `float_literal` - Arbitrary-precision float type for literals
-    The `!pop.float_literal` type is for use in arbitrary precision
-    compile time computations. They are implemented as infinite precision
-    rational number values. It can't be materialized, but allows for
-    arbitrary precision for compile time computations.
+   The `!pop.float_literal` type is for use in arbitrary precision
+   compile time computations. They are implemented as infinite precision
+   rational number values. It can't be materialized, but allows for
+   arbitrary precision for compile time computations.
 
 ### Type Conversions
 
@@ -92,35 +92,35 @@ The dialect provides various type conversion operations:
   - The `pop.cast_to_builtin` operation casts a POP type to an MLIR builtin
     type. If the types have the same underlying implementation, then this
     operation is a no-op adaptor between two type systems. It can, for example,
-    cast a `!pop.scalar` to an MLIR builtin integer or float type, or a
+    cast a `!kgen.scalar` to an MLIR builtin integer or float type, or a
     `pop.simd` to a `vector.
 
     Example:
 
     ```mlir
-    kgen.func @llvm_ops(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-     %0 = pop.cast_to_builtin %arg0 : !pop.scalar<f32> to f32
+    kgen.func @llvm_ops(%arg0: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
+     %0 = pop.cast_to_builtin %arg0 : !kgen.scalar<f32> to f32
      %1 = llvm.fadd %0, %0 : f32
-     %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<f32>
-     kgen.return %2 : !pop.scalar<f32>
+     %2 = pop.cast_from_builtin %1 : f32 to !kgen.scalar<f32>
+     kgen.return %2 : !kgen.scalar<f32>
     }
     ```
 
 - `cast_from_builtin` - Converts MLIR builtin types to POP types
-    The `pop.cast_from_builtin` operation casts an MLIR builtin type to a POP
-    type. If the types have the same underlying implementation, then this
-    operation is a no-op adaptor between two type systems. It can, for example,
-    cast an MLIR builtin integer or float type to a `!pop.scalar`, or a 1-D
-    vector to `!pop.simd`.
+  The `pop.cast_from_builtin` operation casts an MLIR builtin type to a POP
+  type. If the types have the same underlying implementation, then this
+  operation is a no-op adaptor between two type systems. It can, for example,
+  cast an MLIR builtin integer or float type to a `!kgen.scalar`, or a 1-D
+  vector to `!kgen.simd`.
 
     Example:
 
     ```mlir
-    kgen.func @llvm_ops(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-      %0 = pop.cast_to_builtin %arg0 : !pop.scalar<f32> to f32
+    kgen.func @llvm_ops(%arg0: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
+      %0 = pop.cast_to_builtin %arg0 : !kgen.scalar<f32> to f32
       %1 = llvm.fadd %0, %0 : f32
-      %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<f32>
-      kgen.return %2 : !pop.scalar<f32>
+      %2 = pop.cast_from_builtin %1 : f32 to !kgen.scalar<f32>
+      kgen.return %2 : !kgen.scalar<f32>
     }
     ```
 
@@ -130,28 +130,28 @@ The dialect provides various type conversion operations:
     Example:
 
     ```mlir
-    kgen.generator @addN<N: si32>(%arg0: !pop.scalar<si32>)
-        -> !pop.scalar<si32> {
+    kgen.generator @addN<N: si32>(%arg0: !kgen.scalar<si32>)
+        -> !kgen.scalar<si32> {
       %N = kgen.param.constant: si32 = <N>
-      %rhs = pop.cast_from_builtin %N : si32 to !pop.scalar<si32>
-      %result = pop.add %arg0, %rhs : !pop.scalar<f32>
-      kgen.return %result : !pop.scalar<f32>
+      %rhs = pop.cast_from_builtin %N : si32 to !kgen.scalar<si32>
+      %result = pop.add %arg0, %rhs : !kgen.scalar<f32>
+      kgen.return %result : !kgen.scalar<f32>
     }
     ```
 
 - `bitcast` - Performs bitwise reinterpretation between types
-    Bitcast an integer or floating point value to an integer or floating point
-    value of equal bit width. The bitcast operation should not be used to cast
-    between pointer types. For conversion between pointer types one should use
-    `pop.pointer.bitcast`.
+  Bitcast an integer or floating point value to an integer or floating point
+  value of equal bit width. The bitcast operation should not be used to cast
+  between pointer types. For conversion between pointer types one should use
+  `pop.pointer.bitcast`.
 
     Example:
 
     ```mlir
-    %0 = pop.bitcast %a : !pop.scalar<si32> to !pop.scalar<f32>
-    %1 = pop.bitcast %b : !pop.scalar<ui64> to !pop.scalar<si64>
-    %2 = pop.bitcast %c : !pop.simd<4, f64> to !pop.simd<4, si64>
-    %3 = pop.bitcast %d : !pop.simd<2, f64> to !pop.simd<4, f32>
+    %0 = pop.bitcast %a : !kgen.scalar<si32> to !kgen.scalar<f32>
+    %1 = pop.bitcast %b : !kgen.scalar<ui64> to !kgen.scalar<si64>
+    %2 = pop.bitcast %c : !kgen.simd<4, f64> to !kgen.simd<4, si64>
+    %3 = pop.bitcast %d : !kgen.simd<2, f64> to !kgen.simd<4, f32>
     ```
 
 ## Operations
@@ -229,8 +229,8 @@ The dialect supports various comparison operations:
 
 ```mlir
 // SIMD arithmetic
-%c = pop.add %a, %b : !pop.scalar<f32>
-%d = pop.mul %c, %c : !pop.simd<4, f32>
+%c = pop.add %a, %b : !kgen.scalar<f32>
+%d = pop.mul %c, %c : !kgen.simd<4, f32>
 
 // Array operations
 %arr = pop.array.create %x, %y, %z : !pop.array<3, f32>

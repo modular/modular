@@ -13,7 +13,7 @@ compiler technologies, and more. As such, Mojo also has a lot in common with
 languages like C++ and Rust.
 
 If you prefer to learn by doing, follow the [Get started with
-Mojo](/mojo/manual/get-started) tutorial.
+Mojo](/docs/manual/get-started) tutorial.
 
 On this page, we'll introduce the essential Mojo syntax, so you can start
 coding quickly and understand other Mojo code you encounter. Subsequent
@@ -25,7 +25,7 @@ Let's get started! 🔥
 :::note
 
 Mojo is a young language and there are many [features still
-missing](/mojo/roadmap). As such, Mojo is currently **not** meant for
+missing](/docs/roadmap). As such, Mojo is currently **not** meant for
 beginners. Even this basics section assumes some programming experience.
 However, throughout the Mojo Manual, we try not to assume experience with any
 particular language.
@@ -37,7 +37,7 @@ particular language.
 Here's the traditional "Hello world" program in Mojo:
 
 ```mojo
-def main() raises:
+def main():
     print("Hello, world!")
 ```
 
@@ -54,7 +54,7 @@ In Mojo, you can declare a variable by simply assigning a value to
 a new named variable:
 
 ```mojo
-def main() raises:
+def main():
     x = 10
     y = x * x
     print(y)
@@ -70,7 +70,7 @@ When declaring a variable with `var`, you can also declare a variable type, with
 or without an assignment:
 
 ```mojo
-def main() raises:
+def main():
     var x: Int = 10
     var sum: Int
     sum = x + x
@@ -87,7 +87,7 @@ x = "Foo" # Error: Cannot convert "StringLiteral" value to "Int"
 ```
 
 For more details, see the page about
-[variables](/mojo/manual/variables).
+[variables](/docs/manual/variables/).
 
 ## Blocks and statements
 
@@ -95,7 +95,7 @@ Code blocks such as functions, conditions, and loops are defined
 with a colon followed by indented lines. For example:
 
 ```mojo
-def loop() raises:
+def loop():
     for x in range(5):
         if x % 2 == 0:
             print(x)
@@ -109,7 +109,7 @@ multiple lines if you indent the following lines. For example, this long string
 spans two lines:
 
 ```mojo
-def print_line() raises:
+def print_line():
     long_text = "This is a long line of text that is a lot easier to read if"
                 " it is broken up across two lines instead of one long line."
     print(long_text)
@@ -118,13 +118,13 @@ def print_line() raises:
 And you can chain function calls across lines:
 
 ```mojo
-def print_hello() raises:
+def print_hello():
     text = ",".join("Hello", " world!")
     print(text)
 ```
 
 For more information on loops and conditional statements, see
-[Control flow](/mojo/manual/control-flow).
+[Control flow](/docs/manual/control-flow/).
 
 ## Functions
 
@@ -133,7 +133,7 @@ following uses the `def` keyword to define a function named `greet`
 that requires a single `String` argument and returns a `String`:
 
 ```mojo
-def greet(name: String) raises -> String:
+def greet(name: String) -> String:
     return "Hello, " + name + "!"
 ```
 
@@ -165,14 +165,14 @@ def print(x: String):
 
 Documenting your code with these kinds of comments (known as "docstrings")
 is a topic we've yet to fully specify, but you can generate an API reference
-from docstrings using the [`mojo doc` command](/mojo/cli/doc).
+from docstrings using the [`mojo doc` command](/docs/cli/doc/).
 
 :::note
 
 Technically, docstrings aren't _comments_, they're a special use of Mojo's
 syntax for multi-line string literals. For details, see
-[String literals](/mojo/manual/types#string-literals) in the page on
-[Types](/mojo/manual/types).
+[String literals](/docs/manual/types/#string-literals) in the page on
+[Types](/docs/manual/types/).
 
 :::
 
@@ -201,14 +201,14 @@ struct MyPair(Copyable):
         self.first = copy.first
         self.second = copy.second
 
-    def dump(self) raises:
+    def dump(self):
         print(self.first, self.second)
 ```
 
 And here's how you can use it:
 
 ```mojo
-def use_mypair() raises:
+def use_mypair():
     var mine = MyPair(2, 4)
     mine.dump()
 ```
@@ -230,12 +230,12 @@ struct MyPair(Copyable):
     var first: Int
     var second: Int
 
-    def dump(self) raises:
+    def dump(self):
         print(self.first, self.second)
 ```
 
 For more details, see the page about
-[structs](/mojo/manual/structs).
+[structs](/docs/manual/structs/).
 
 ### Traits
 
@@ -303,7 +303,7 @@ can accept any type for `x` as long as it conforms to (it "implements")
 `SomeTrait`. Thus, `fun_with_traits()` is known as a "generic function" because
 it accepts a _generalized_ type instead of a specific type.
 
-For more details, see the page about [traits](/mojo/manual/traits).
+For more details, see the page about [traits](/docs/manual/traits/).
 
 ## Parameterization
 
@@ -318,12 +318,12 @@ talking about these compile-time parameters. Whereas, a function "argument" is
 a runtime value that's declared in parentheses.
 
 Parameterization is a complex topic that's covered in much more detail in the
-[Metaprogramming](/mojo/manual/parameters/) section, but we want to break the
+[Metaprogramming](/docs/manual/parameters/) section, but we want to break the
 ice just a little bit here. To get you started, let's look at a parametric
 function:
 
 ```mojo
-def repeat[count: Int](msg: String) raises:
+def repeat[count: Int](msg: String):
     # evaluate the following for loop at compile time
     comptime for i in range(count):
         print(msg)
@@ -334,7 +334,7 @@ This function has one parameter of type `Int` and one argument of type
 argument:
 
 ```mojo
-def call_repeat() raises:
+def call_repeat():
     repeat[3]("Hello")
     # Prints "Hello" 3 times
 ```
@@ -353,7 +353,7 @@ you to define variants of that type at compile-time, depending on the parameter
 values.
 
 For more detail on parameters, see the section on
-[Metaprogramming](/mojo/manual/parameters/).
+[Metaprogramming](/docs/manual/parameters/).
 
 ## Python integration
 
@@ -376,7 +376,7 @@ You must have the Python module (such as `numpy`) installed in the environment
 where you're using Mojo.
 
 For more details, see the page on
-[Python integration](/mojo/manual/python/).
+[Python integration](/docs/manual/python/).
 
 ## Next steps
 
@@ -384,11 +384,11 @@ Hopefully this page has given you enough information to start experimenting with
 Mojo, but this is only touching the surface of what's available in Mojo.
 
 If you're in the mood to read more, continue through each page of this
-Mojo Manual—the next page from here is [Functions](/mojo/manual/functions).
+Mojo Manual—the next page from here is [Functions](/docs/manual/functions/).
 
 Otherwise, here are some other resources to check out:
 
-- See [Get started with Mojo](/mojo/manual/get-started) for a hands-on
+- See [Get started with Mojo](/docs/manual/get-started/) for a hands-on
   tutorial that will get you up and running with Mojo.
 
 - If you want to experiment with some code, clone [our GitHub
@@ -399,8 +399,8 @@ Otherwise, here are some other resources to check out:
   ```
 
   ```sh
-  cd max/examples/mojo
+  cd mojo/examples
   ```
 
 - To see all the available Mojo APIs, check out the [Mojo standard library
-  reference](/mojo/lib).
+  reference](/docs/std).

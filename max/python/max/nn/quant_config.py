@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, DimLike, Shape, TensorType
 
@@ -69,10 +70,25 @@ class QuantFormat(Enum):
     """Identifies the quantization format of a model checkpoint."""
 
     COMPRESSED_TENSORS_FP8 = "compressed-tensors-fp8"
+    """FP8 quantization using the compressed-tensors format."""
+
     FBGEMM_FP8 = "fbgemm-fp8"
+    """FP8 quantization using the FBGEMM format."""
+
     BLOCKSCALED_FP8 = "blockscaled-fp8"
+    """FP8 quantization with block-level scaling."""
+
+    MXFP8 = "mxfp8"
+    """Microscaling FP8 (MX) quantization: ``float8_e4m3fn`` data with E8M0
+    block scales at a 32-element K granularity. Uses the SM100 block-scaled
+    tensor-core MMA (``KIND_MXF8F6F4``) rather than the 128-granularity
+    blockwise-FP8 path."""
+
     NVFP4 = "nvfp4"
+    """NVIDIA FP4 quantization format."""
+
     MXFP4 = "mxfp4"
+    """Microscaling FP4 (MX) quantization format."""
 
 
 @dataclass
@@ -169,7 +185,43 @@ class InputScaleSpec:
 
 @dataclass
 class QuantConfig:
-    """Configures scaled quantization settings for a layer or model section."""
+    """Configures scaled quantization settings for a layer or model section.
+
+    For example, to configure NVFP4 block-scaled quantization for all layers
+    in a 19-layer model:
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.nn import QuantConfig, QuantFormat
+        from max.nn.quant_config import (
+            InputScaleSpec,
+            ScaleGranularity,
+            ScaleOrigin,
+            WeightScaleSpec,
+        )
+
+        all_layers = set(range(19))
+
+        input_spec = InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.STATIC,
+            dtype=DType.float32,
+            block_size=(1, 16),
+        )
+        weight_spec = WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float8_e4m3fn,
+            block_size=(1, 8),
+        )
+        config = QuantConfig(
+            input_scale=input_spec,
+            weight_scale=weight_spec,
+            mlp_quantized_layers=all_layers,
+            attn_quantized_layers=all_layers,
+            format=QuantFormat.NVFP4,
+        )
+    """
 
     input_scale: InputScaleSpec
     """:class:`~max.nn.quant_config.InputScaleSpec` for input activation scaling."""
@@ -180,17 +232,17 @@ class QuantConfig:
     mlp_quantized_layers: set[int]
     """Set of layer indices with quantized MLPs.
 
-    MLPs are considered to be either "all quantized" or all not quantized per
-    layer.
-    So either all of gate proj, down proj, and up proj are quantized, or all bfloat16.
+    MLPs are quantized on an all-or-nothing basis per layer: either all of
+    ``gate_proj``, ``down_proj``, and ``up_proj`` are quantized, or all three
+    remain in ``bfloat16``.
     """
 
     attn_quantized_layers: set[int]
-    """Set of layer indices with quantized attention QKV projections.
+    """Set of layer indices with quantized attention projections.
 
-    QKV projections are considered to be either "all quantized" or all not
-    quantized per layer.
-    So either all of {q,k,v,o}_proj are quantized, or all bfloat16.
+    Attention projections are quantized on an all-or-nothing basis per layer:
+    either all of ``q_proj``, ``k_proj``, ``v_proj``, and ``o_proj`` are
+    quantized, or all four remain in ``bfloat16``.
     """
 
     format: QuantFormat
@@ -199,11 +251,44 @@ class QuantConfig:
     embedding_output_dtype: DType | None = None
     """The :class:`~max.dtype.DType` of the output from the embedding layer."""
 
+    shared_experts_weight_dtype: DType | None = None
+    """Weight storage dtype for MoE shared-expert MLPs when they differ from routed experts.
+
+    When ``None``, shared experts use the same dtype and quantization as routed experts.
+    When set (e.g. :class:`~max.dtype.DType.bfloat16` for mixed Kimi K2.6 NVFP4
+    checkpoints), shared-expert linears omit ``quant_config`` while routed experts
+    remain quantized.
+    """
+
     bias_dtype: DType | None = None
     """The :class:`~max.dtype.DType` of bias weights."""
 
     can_use_fused_mlp: bool = False
     """Whether the quantization scales can be used with fused MLP operations."""
+
+    can_use_fused_swiglu: bool = False
+    """Whether to use the fused grouped matmul + SwiGLU + NVFP4/MXFP4/MXFP8 quant
+    SM100 kernel for the MoE gate/up projection. When ``True``, the MoE layer
+    pre-permutes ``gate_up_proj`` and its scales on the N axis
+    (``sigma(2i)=i, sigma(2i+1)=D+i``) and dispatches the internal
+    ``grouped_matmul_blocked_swiglu`` kernel wrapper. Defaults to ``False``
+    so the chained (matmul -> BF16 -> SwiGLU+quant) path is unchanged."""
+
+    scales_pre_interleaved: bool = False
+    """Whether weight scales in the checkpoint are already stored in the 5D
+    TCGEN-interleaved layout expected by the FP4 matmul kernel (NVFP4 only).
+    Note that scales in the 5D TCGEN-interleaved layout are typically flattened
+    to 2D ``[M, K//16]`` in the checkpoint."""
+
+    mxfp4_preshuffled_b: bool = False
+    """Whether MXFP4 weight ``B`` is preshuffled into the 5D layout that the
+    AMD preb kernel reads (produced by ``Shuffler.preshuffle_b_5d``). When
+    True, ``MoEQuantized`` dispatches the grouped matmul to the
+    ``mxfp4_grouped_matmul_amd_preb`` kernel variant; when False (default)
+    it dispatches to the dense row-major ``mxfp4_grouped_matmul_amd``
+    kernel. Must be set in lockstep with the weight loader actually
+    applying the preshuffle (e.g. Kimi K2.5's
+    ``weight_adapters.py:_shuffle_group``)."""
 
     @property
     def scales_granularity_mnk(self) -> tuple[int, int, int]:
@@ -267,16 +352,40 @@ class QuantConfig:
         return self.format == QuantFormat.MXFP4
 
     @property
+    def is_mxfp8(self) -> bool:
+        """Returns ``True`` if this config represents MXFP8 quantization."""
+        return self.format == QuantFormat.MXFP8
+
+    @property
     def is_fp4(self) -> bool:
         """``True`` if this config represents any FP4 variant (NVFP4 or MXFP4)."""
         return self.is_nvfp4 or self.is_mxfp4
+
+    def shared_experts_dtype(self, routed_weight_dtype: DType) -> DType:
+        """Resolve weight dtype for MoE shared-expert MLPs."""
+        if self.shared_experts_weight_dtype is not None:
+            return self.shared_experts_weight_dtype
+        return routed_weight_dtype
+
+    def shared_experts_use_quant(self, routed_weight_dtype: DType) -> bool:
+        """Whether shared experts use the same quantized weights as routed experts."""
+        return (
+            self.shared_experts_dtype(routed_weight_dtype)
+            == routed_weight_dtype
+        )
 
     def quantized_scales_type(
         self, quantized_shape: Shape, device_ref: DeviceRef
     ) -> TensorType:
         """The :class:`~max.graph.TensorType` of the scales tensor after dynamic quantization."""
         if self.is_nvfp4:
-            return _nvfp4_scales_type(quantized_shape, device_ref)
+            return _nvmxf4f8_scales_type(
+                quantized_shape, device_ref, DType.float8_e4m3fn, 16
+            )
+        elif self.is_mxfp4:
+            return _mxfp4_scales_type(quantized_shape, device_ref)
+        elif self.is_mxfp8:
+            return _mxfp8_scales_type(quantized_shape, device_ref)
         elif (
             self.input_scale.block_size is not None
             and self.input_scale.block_size == (1, 128)
@@ -320,13 +429,17 @@ def _blockwise_fp8_scales_type(
     )
 
 
-def _nvfp4_scales_type(
-    quantized_shape: Shape, device_ref: DeviceRef
+def _nvmxf4f8_scales_type(
+    quantized_shape: Shape,
+    device_ref: DeviceRef,
+    scales_dtype: DType,
+    sf_vector_size: int,
 ) -> TensorType:
-    """Returns the TensorType of the NVFP4 scales tensor."""
-    # Nvidia NVFP4 format requires the scales tensor to be in a 128x4 tiled
-    # layout. The follow constant needs to be in sync with those defined in
-    # `max/kernels/src/linalg/fp4_utils.mojo`.
+    """Returns the TensorType of the NVFP4/MXFP4/MXFP8 scales tensor on NVIDIA
+    GPUs."""
+    # Nvidia NVFP4/MXFP4/MXFP8 format requires the scales tensor to be in a
+    # 128x4 tiled layout. The follow constant needs to be in sync with those
+    # defined in `max/kernels/src/linalg/fp4_utils.mojo`.
     #
     # References:
     # - https://docs.nvidia.com/cuda/cublas/#d-block-scaling-factors-layout
@@ -334,12 +447,10 @@ def _nvfp4_scales_type(
     SF_ATOM_M = [32, 4]
     SF_ATOM_K = 4
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
-    NVFP4_SF_VECTOR_SIZE = 16
-
     scales_dim_0 = ceildiv(quantized_shape[0], SF_MN_GROUP_SIZE)
-    scales_dim_1 = ceildiv(quantized_shape[1], NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
+    scales_dim_1 = ceildiv(quantized_shape[1], sf_vector_size * SF_ATOM_K)
     return TensorType(
-        dtype=DType.float8_e4m3fn,
+        dtype=scales_dtype,
         shape=(
             scales_dim_0,
             scales_dim_1,
@@ -349,3 +460,35 @@ def _nvfp4_scales_type(
         ),
         device=device_ref,
     )
+
+
+def _mxfp4_scales_type(
+    quantized_shape: Shape, device_ref: DeviceRef
+) -> TensorType:
+    """Returns the TensorType of the MXFP4 scales tensor."""
+    api_name = accelerator_api()
+    if api_name == "cuda":
+        return _nvmxf4f8_scales_type(
+            quantized_shape, device_ref, DType.float8_e8m0fnu, 32
+        )
+    elif api_name == "hip":
+        return TensorType(
+            dtype=DType.float8_e8m0fnu,
+            shape=(quantized_shape[0], ceildiv(quantized_shape[1], 32)),
+            device=device_ref,
+        )
+    else:
+        raise ValueError(f"Unsupported accelerator API: {api_name}")
+
+
+def _mxfp8_scales_type(
+    quantized_shape: Shape, device_ref: DeviceRef
+) -> TensorType:
+    """Returns the TensorType of the MXFP8 scales tensor."""
+    api_name = accelerator_api()
+    if api_name == "cuda":
+        return _nvmxf4f8_scales_type(
+            quantized_shape, device_ref, DType.float8_e8m0fnu, 32
+        )
+    else:
+        raise ValueError(f"Unsupported accelerator API: {api_name}")

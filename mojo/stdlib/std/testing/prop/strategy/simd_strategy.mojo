@@ -10,7 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the SIMD strategy for generating random `SIMD` values in property tests."""
 
+from . import Strategy
 from std.testing.prop.random import Rng
 
 

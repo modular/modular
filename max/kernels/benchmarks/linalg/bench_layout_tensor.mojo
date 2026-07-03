@@ -31,7 +31,7 @@ comptime dtype = DType.float32
 
 
 struct Matrix[rows: Int, cols: Int]:
-    var data: UnsafePointer[Scalar[dtype], MutAnyOrigin]
+    var data: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]
 
     # Initialize zeroeing all values
     def __init__(out self):
@@ -39,7 +39,9 @@ struct Matrix[rows: Int, cols: Int]:
         memset_zero(self.data, Self.rows * Self.cols)
 
     # Initialize taking a pointer, don't set any elements
-    def __init__(out self, data: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
+    def __init__(
+        out self, data: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]
+    ):
         self.data = data
 
     ## Initialize with random values
@@ -104,9 +106,7 @@ def matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
 
                     def dot[
                         simd_size: Int
-                    ](n: Int) unified {
-                        mut C, mut A_val, read B, read m, mut x, mut k
-                    }:
+                    ](n: Int) {x, mut C, mut A_val, read B, read m, mut k}:
                         var idx = n + x
                         C.store(
                             m,
@@ -154,7 +154,7 @@ def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
                     comptime for k in range(tile_k):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
-                        def dot[simd_size: Int](n: Int) unified {mut}:
+                        def dot[simd_size: Int](n: Int) {mut}:
                             comptime assert (
                                 type_of(dst_view).layout.stride[1] == 1
                             ), "elements of dst should be contiguous"
@@ -181,7 +181,7 @@ def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
 
 def alloc_aligned_tile[
     M: Int, N: Int, dtype: DType
-]() -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+]() -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
     comptime alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
     comptime cache_width = ((N + alignment - 1) // alignment) * alignment
     return alloc[Scalar[dtype]](M * cache_width, alignment=alignment)
@@ -220,7 +220,7 @@ def matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
                     comptime for k in range(tile_k):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
-                        def dot[simd_size: Int](n: Int) unified {mut}:
+                        def dot[simd_size: Int](n: Int) {mut}:
                             comptime assert (
                                 type_of(dst_view).layout.stride[1] == 1
                             ), "elements of dst should be contiguous"
@@ -284,7 +284,7 @@ def matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
                     for var n in range(tile_n):
                         var sum = SIMD[dtype, vec_size](0)
 
-                        def dot[simd_size: Int](k: Int) unified {mut}:
+                        def dot[simd_size: Int](k: Int) {mut}:
                             sum = std.math.fma(
                                 lhs_cache.load[vec_size](m, k),
                                 rhs_cache.aligned_load[vec_size](n, k),
@@ -305,7 +305,7 @@ def matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
 
 @always_inline
 def bench[
-    func: def(mut Matrix, Matrix, Matrix) -> None, name: StaticString
+    func: def(mut Matrix, Matrix, Matrix) thin -> None, name: StaticString
 ]() raises:
     var A = Matrix[M, K].rand()
     var B = Matrix[K, N].rand()
@@ -330,7 +330,7 @@ def bench[
 
 @always_inline
 def test_matrix_equal[
-    func: def(mut Matrix, Matrix, Matrix) -> None
+    func: def(mut Matrix, Matrix, Matrix) thin -> None
 ](mut C: Matrix, A: Matrix, B: Matrix) raises -> Bool:
     """Runs a matmul function on A and B and tests the result for equality with
     C on every element.

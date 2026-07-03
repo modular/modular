@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import TensorLayout, TileTensor, coord
+from layout import TensorLayout, TileTensor
 
+from std.utils.coord import dyn_coord
 from std.utils.index import IndexList
 
 
@@ -136,11 +137,11 @@ struct ImageData[
             data layout.
         """
         if self.get_image_layout() == Image2DLayout.NCHW:
-            return Int(self.data.layout(coord[DType.int64]((n, c, h, w))))
+            return Int(self.data.layout(dyn_coord[DType.int64]((n, c, h, w))))
 
         if self.get_image_layout() == Image2DLayout.RSCF:
-            return Int(self.data.layout(coord[DType.int64]((h, w, c, n))))
-        return Int(self.data.layout(coord[DType.int64]((n, h, w, c))))
+            return Int(self.data.layout(dyn_coord[DType.int64]((h, w, c, n))))
+        return Int(self.data.layout(dyn_coord[DType.int64]((n, h, w, c))))
 
     def get_flat_index(self, n: Int, c: Int, h: Int, w: Int) -> Int:
         """Converts the dimension index to the flat index of the underlying
@@ -243,7 +244,7 @@ struct ImageData[
         Returns:
             The value stored at the given index position.
         """
-        return self.data.ptr[self._get_index(n, c, h, w)]
+        return self.data.raw_load(self._get_index(n, c, h, w))
 
     def __setitem__(
         self, n: Int, c: Int, h: Int, w: Int, value: Scalar[Self.dtype]
@@ -258,7 +259,7 @@ struct ImageData[
             w: Index on the width dimension.
             value: The value to store at the given index position.
         """
-        self.data.ptr[self._get_index(n, c, h, w)] = value
+        self.data.raw_store(self._get_index(n, c, h, w), value)
 
     def num_elements(self) -> Int:
         return self.data.num_elements()

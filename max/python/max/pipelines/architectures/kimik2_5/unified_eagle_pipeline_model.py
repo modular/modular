@@ -18,23 +18,30 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, fields, replace
 from typing import Any
-from unittest.mock import MagicMock
 
-import numpy as np
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, Value
+from max.graph import BufferValue, Graph, Module, TensorValue, Value
 from max.graph.weights import WeightData, load_weights
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.kimik2_5.context import (
     KimiK2_5TextAndVisionContext,
 )
-from max.pipelines.lib import CompilationTimer, ModelInputs
-from max.pipelines.lib.interfaces import UnifiedEagleOutputs
+from max.pipelines.lib import CompilationTimer
+from max.pipelines.lib.interfaces import (
+    UnifiedSpecDecodeInputs,
+)
+from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
+    _UnifiedSpecDecodeModelMixin,
+)
 from typing_extensions import override
 
 from ..deepseekV3.model_config import DeepseekV3Config
@@ -51,36 +58,63 @@ logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
-class Eagle3KimiK25Inputs(KimiK2_5ModelInputs):
+class Eagle3KimiK25Inputs(UnifiedSpecDecodeInputs, KimiK2_5ModelInputs):
     """Inputs for the Eagle3 + Kimi K2.5 model.
 
-    Same as ``KimiK2_5ModelInputs`` but skips the vision related inputs.
+    Inherits all of ``KimiK2_5ModelInputs`` so vision inputs
+    (``language_image_embeddings`` / ``language_image_token_indices``) flow
+    through to the unified Eagle graph, which scatters them into the merged
+    token embedding before the target forward. The spec-decode fields and
+    trailing buffer packing come from :class:`UnifiedSpecDecodeInputs`; the
+    graph binds the per-row ``in_thinking_phase`` flag.
     """
-
-    draft_tokens: Buffer | None = None
-    draft_kv_blocks: list[Buffer] | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        # Ordering must match ``Eagle3KimiK25Unified.input_types``: tokens,
+        # then per-device image_embeddings, per-device image_token_indices,
+        # then the rest of the inputs.
+        #
+        # ``language_image_embeddings`` / ``language_image_token_indices``
+        # are populated only when ``enable_vision=True`` was passed to
+        # ``Eagle3KimiK25Unified``. They must arrive here in matching
+        # pairs; with ``enable_vision=False`` upstream callers leave
+        # both lists empty so the splat below contributes zero
+        # elements. We can't assert the
+        # ``enable_vision``-and-empty-implication directly because the
+        # flag isn't plumbed onto this dataclass; the length-parity
+        # check below catches the common asymmetric-construction bug
+        # and the model's input_types() validates the remaining shape
+        # invariants.
+        assert len(self.language_image_embeddings) == len(
+            self.language_image_token_indices
+        ), (
+            "language_image_embeddings and language_image_token_indices "
+            "must have the same length"
+        )
         buffers = (
             self.tokens,
+            *self.language_image_embeddings,
+            *self.language_image_token_indices,
             self.input_row_offsets,
             self.host_input_row_offsets,
             self.return_n_logits,
             self.data_parallel_splits,
             *self.signal_buffers,
-            *(self.kv_cache_inputs or ()),
+            *(
+                self.kv_cache_inputs.flatten()
+                if self.kv_cache_inputs is not None
+                else ()
+            ),
             *self.batch_context_lengths,
             *self.ep_inputs,
         )
-        if self.draft_tokens is not None:
-            buffers += (self.draft_tokens,)
-        if self.draft_kv_blocks is not None:
-            buffers += tuple(self.draft_kv_blocks)
-        return buffers
+        return buffers + self._spec_decode_tail_buffers(
+            include_in_thinking_phase=True
+        )
 
 
-class Eagle3KimiK25Model(KimiK2_5Model):
+class Eagle3KimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
     """Eagle3 + Kimi K2.5: target + draft in one compiled graph.
 
     Loads target weights from the main Kimi K2.5 checkpoint and draft weights
@@ -93,28 +127,11 @@ class Eagle3KimiK25Model(KimiK2_5Model):
 
     def __init__(self, *args, **kwargs):
         kwargs["return_logits"] = ReturnLogits.VARIABLE
-        kwargs["return_hidden_states"] = ReturnHiddenStates.EAGLE3
+        kwargs["return_hidden_states"] = ReturnHiddenStates.SELECTED_LAYERS
         super().__init__(*args, **kwargs)
 
     @override
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        dp_size = self.pipeline_config.model.data_parallel_degree
-        max_batch_size *= dp_size
-
-        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        )
-        self._device_input_row_offsets_prealloc = (
-            self._host_input_row_offsets_prealloc.to(self.devices[0])
-        )
-        self._batch_context_lengths_prealloc_cpu = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(len(self.devices))
-        ]
-
         if self.adapter:
             target_state_dict = self.adapter(
                 dict(self.weights.items()),
@@ -126,6 +143,9 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                 key: value.data() for key, value in self.weights.items()
             }
 
+        # ``_create_model_config`` may mutate the state dictionary.
+        config = self._create_model_config(target_state_dict)
+
         vision_state_dict: dict[str, WeightData] = {}
         llm_state_dict: dict[str, WeightData] = {}
         for key, value in target_state_dict.items():
@@ -135,8 +155,6 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                 "language_"
             ):
                 llm_state_dict[key] = value
-
-        config = self._create_model_config(target_state_dict)
 
         # The target HF config doesn't carry eagle_config; propagate from draft.
         if config.eagle_aux_hidden_state_layer_ids is None:
@@ -180,17 +198,32 @@ class Eagle3KimiK25Model(KimiK2_5Model):
             draft_config.ep_config.node_id = config.ep_config.node_id
 
         assert isinstance(self.kv_params, KVCacheParams)
-        self._draft_kv_params = replace(self.kv_params, num_layers=1)
+        target_kv_params = self.kv_params
+        self._draft_kv_params = replace(target_kv_params, num_layers=1)
+        self.kv_params = MultiKVCacheParams.from_params(
+            {"target": target_kv_params, "draft": self._draft_kv_params}
+        )
 
         draft_config.return_hidden_states = ReturnHiddenStates.LAST
 
-        nn_model = Eagle3KimiK25Unified(config, draft_config)
+        assert self.pipeline_config.speculative is not None
+        nn_model = Eagle3KimiK25Unified(
+            config,
+            draft_config,
+            speculative_config=self.pipeline_config.speculative,
+            enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
+            enable_vision=True,
+        )
 
         # Share embed_tokens before loading so the graph sees a single
-        # Weight object for the shared embedding.  norm and lm_head are
-        # loaded independently from the draft checkpoint.
+        # Weight object for the shared embedding.  norm is loaded
+        # independently from the draft checkpoint; lm_head is shared from
+        # the target when absent from the draft checkpoint (e.g.
+        # nvidia/Kimi-K2.6-Eagle3 omits lm_head.weight).
         assert nn_model.draft is not None
         nn_model.draft.embed_tokens = nn_model.target.embed_tokens
+        if "lm_head.weight" not in draft_state_dict:
+            nn_model.draft.lm_head = nn_model.target.lm_head
 
         target_llm_sd = {
             k[len("language_model.") :]: v
@@ -207,7 +240,7 @@ class Eagle3KimiK25Model(KimiK2_5Model):
 
         draft_expected = set(nn_model.draft.raw_state_dict().keys())
         draft_provided = set(draft_state_dict.keys())
-        shared_prefixes = ("embed_tokens.",)
+        shared_prefixes = ("embed_tokens.", "lm_head.")
         missing = {
             k
             for k in draft_expected - draft_provided
@@ -221,21 +254,18 @@ class Eagle3KimiK25Model(KimiK2_5Model):
         if extra:
             logger.warning(f"Draft state_dict has unused keys: {sorted(extra)}")
 
-        # Build the weights registry with "draft." prefix for non-shared
-        # draft weights.  Must call state_dict() before renaming because
-        # state_dict() resets weight.name to the module-path key.
-        self.state_dict = {}
-        for k, v in nn_model.target.state_dict().items():
-            self.state_dict[k] = v
-        for k, v in nn_model.draft.state_dict().items():
-            if k.startswith("embed_tokens."):
-                continue
-            self.state_dict[f"draft.{k}"] = v
+        # Capture concrete draft weights before renaming; ``state_dict()``
+        # resets weight.name back to the module-path key.
+        draft_weights_registry = nn_model.draft.state_dict()
+
+        draft_lm_head_shared = "lm_head.weight" not in draft_state_dict
 
         # Rename non-shared draft Weights so graph-level names are unique
         # (e.g. "draft.norm.weight" vs "norm.weight" from target).
         for name, weight in nn_model.draft.raw_state_dict().items():
             if name.startswith("embed_tokens."):
+                continue
+            if draft_lm_head_shared and name.startswith("lm_head."):
                 continue
             weight.name = f"draft.{name}"
 
@@ -251,42 +281,49 @@ class Eagle3KimiK25Model(KimiK2_5Model):
         self.nn_model.load_state_dict(
             target_state_dict, weight_alignment=1, strict=False
         )
-        vision_sd = {
-            k: v
-            for k, v in self.nn_model.state_dict().items()
-            if k.startswith("vision_encoder.")
-        }
-        self.state_dict.update(vision_sd)
+        # The vision graph loads from the regular Kimi registry
+        # (``vision_encoder.*`` / ``language_model.*``), while the unified
+        # Eagle graph also needs target-only keys plus ``draft.*`` weights.
+        self.state_dict = dict(self.nn_model.state_dict())
+        self.state_dict.update(nn_model.target.state_dict())
+        for k, v in draft_weights_registry.items():
+            if k.startswith("embed_tokens."):
+                continue
+            if draft_lm_head_shared and k.startswith("lm_head."):
+                continue
+            self.state_dict[f"draft.{k}"] = v
 
-        # TODO: Add support for vision model in unified model
-        # with CompilationTimer("eagle3_vision_model") as timer:
-        #     vision_graph = self._build_vision_graph(
-        #         kimik2_5_config, vision_state_dict
-        #     )
-        #     timer.mark_build_complete()
-        #     vision_model = session.load(
-        #         vision_graph, weights_registry=self.state_dict
-        #     )
-        logger.warning(
-            "Skipping compilation of vision model. Vision support is not yet implemented for Kimi Eagle."
-        )
-        vision_model = MagicMock(spec=Model)
-
-        with CompilationTimer("eagle3_language_model") as timer:
+        with CompilationTimer("vision + eagle3 language model") as timer:
+            graph_module = Module()
+            vision_graph = self._build_vision_graph(
+                kimik2_5_config, vision_state_dict, module=graph_module
+            )
             with Graph(
                 "eagle3_kimik25_graph",
-                input_types=nn_model.input_types(
-                    self.kv_params, self._draft_kv_params
-                ),
+                input_types=nn_model.input_types(self.kv_params),
+                module=graph_module,
             ) as graph:
                 (
                     tokens,
-                    devices_input_row_offsets,
-                    host_input_row_offsets,
-                    return_n_logits,
-                    data_parallel_splits,
-                    *variadic_args,
+                    *rest_inputs,
                 ) = graph.inputs
+
+                rest_iter = iter(rest_inputs)
+                n_devices = len(self.devices)
+                # Image embeddings + scatter indices (per device) appear
+                # right after ``tokens`` in the graph's input_types. Match
+                # the same ordering when destructuring inputs here.
+                image_embeddings_in = [
+                    next(rest_iter).tensor for _ in range(n_devices)
+                ]
+                image_token_indices_in = [
+                    next(rest_iter).tensor for _ in range(n_devices)
+                ]
+                devices_input_row_offsets = next(rest_iter)
+                host_input_row_offsets = next(rest_iter)
+                return_n_logits = next(rest_iter)
+                data_parallel_splits = next(rest_iter)
+                variadic_args = list(rest_iter)
 
                 variadic_args_iter = iter(variadic_args)
                 signal_buffers = [
@@ -294,10 +331,8 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                     for _ in range(len(self.devices))
                 ]
 
-                fetch_types = self.kv_params.get_symbolic_inputs()[0]
-                len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
-                kv_caches_per_dev = self._unflatten_kv_inputs(
-                    [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
+                kv_caches_per_dev, draft_kv_collections = (
+                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
                 )
 
                 batch_context_lengths = [
@@ -314,26 +349,29 @@ class Eagle3KimiK25Model(KimiK2_5Model):
 
                 draft_tokens = next(variadic_args_iter).tensor
 
-                # Draft KV: only kv_blocks per device; cache_lengths reused
-                # from target (same token count, just fewer layers).
-                draft_kv_collections: list[PagedCacheValues] = []
-                for dev_idx in range(len(self.devices)):
-                    draft_kv_blocks = next(variadic_args_iter).buffer
-                    draft_kv_collections.append(
-                        PagedCacheValues(
-                            kv_blocks=draft_kv_blocks,
-                            cache_lengths=kv_caches_per_dev[
-                                dev_idx
-                            ].cache_lengths,
-                            lookup_table=kv_caches_per_dev[
-                                dev_idx
-                            ].lookup_table,
-                            max_lengths=kv_caches_per_dev[dev_idx].max_lengths,
-                            dispatch_metadata=kv_caches_per_dev[
-                                dev_idx
-                            ].dispatch_metadata,
-                        )
-                    )
+                seed = next(variadic_args_iter).tensor
+                temperature = next(variadic_args_iter).tensor
+                top_k = next(variadic_args_iter).tensor
+                max_k = next(variadic_args_iter).tensor
+                top_p = next(variadic_args_iter).tensor
+                min_top_p = next(variadic_args_iter).tensor
+                in_thinking_phase = next(variadic_args_iter).tensor
+
+                # Optional bitmask input(s) — present only when structured
+                # output is enabled (matches the conditional in
+                # input_types()). When the overlap path is on, the single
+                # device-side bitmask tensor is replaced by a (pinned,
+                # wait_payload, device_scratch) triple consumed by the
+                # in-graph wait + H2D.
+                pinned_bitmask_graph: TensorValue | None = None
+                wait_payload_graph: BufferValue | None = None
+                device_bitmask_scratch_graph: BufferValue | None = None
+                if nn_model.enable_structured_output:
+                    pinned_bitmask_graph = next(variadic_args_iter).tensor
+                    wait_payload_graph = next(variadic_args_iter).buffer
+                    device_bitmask_scratch_graph = next(
+                        variadic_args_iter
+                    ).buffer
 
                 outputs = nn_model(
                     tokens=tokens.tensor,
@@ -345,36 +383,43 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                     host_input_row_offsets=host_input_row_offsets.tensor,
                     data_parallel_splits=data_parallel_splits.tensor,
                     batch_context_lengths=batch_context_lengths,
+                    seed=seed,
+                    temperature=temperature,
+                    top_k=top_k,
+                    max_k=max_k,
+                    top_p=top_p,
+                    min_top_p=min_top_p,
+                    in_thinking_phase=in_thinking_phase,
+                    image_embeddings=image_embeddings_in,
+                    image_token_indices=image_token_indices_in,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
+                    pinned_bitmask=pinned_bitmask_graph,
+                    wait_payload=wait_payload_graph,
+                    device_bitmask_scratch=device_bitmask_scratch_graph,
                 )
                 graph.output(*outputs)
 
             timer.mark_build_complete()
-            language_model = session.load(
-                graph, weights_registry=self.state_dict
+            models = session.load_all(
+                graph_module, weights_registry=self.state_dict
             )
+            vision_model = models[vision_graph.name]
+            language_model = models[graph.name]
 
         return vision_model, language_model
 
-    def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
-        """Execute and return all graph outputs for speculative decoding."""
-        model_outputs = self.language_model.execute(*model_inputs.buffers)
-        assert len(model_outputs) == 3, (
-            f"Expected 3 outputs, got {len(model_outputs)}"
-        )
-
-        return UnifiedEagleOutputs(
-            num_accepted_draft_tokens=model_outputs[0],
-            next_tokens=model_outputs[1],
-            next_draft_tokens=model_outputs[2],
-        )
+    @property
+    def _spec_decode_model(self) -> Model:
+        return self.language_model
 
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
+        draft_tokens: Buffer | None = None,
+        **kwargs,
     ) -> Eagle3KimiK25Inputs:
         base = KimiK2_5Model.prepare_initial_token_inputs(
             self,
@@ -382,6 +427,10 @@ class Eagle3KimiK25Model(KimiK2_5Model):
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
         )
+        # The overlap pipeline assigns ``seed`` and the rest of the
+        # per-batch sampling buffers (temperature / top_k / top_p / max_k
+        # / min_top_p) on the returned inputs *after* this call returns —
+        # see ``OverlapTextGenerationPipeline._run_forward``.
         return Eagle3KimiK25Inputs(
             tokens=base.tokens,
             input_row_offsets=base.input_row_offsets,
@@ -392,14 +441,22 @@ class Eagle3KimiK25Model(KimiK2_5Model):
             return_n_logits=base.return_n_logits,
             data_parallel_splits=base.data_parallel_splits,
             ep_inputs=base.ep_inputs,
+            # Vision inputs computed by the base call's host-side encoder
+            # run (or empty placeholders when no images are present). The
+            # unified Eagle graph consumes these to scatter image
+            # embeddings into the merged token embedding.
+            image_token_indices=base.image_token_indices,
+            precomputed_image_embeddings=base.precomputed_image_embeddings,
+            pixel_values=base.pixel_values,
+            grid_thws=base.grid_thws,
+            cu_seqlens=base.cu_seqlens,
+            max_seqlen=base.max_seqlen,
+            vision_position_ids=base.vision_position_ids,
+            language_image_embeddings=base.language_image_embeddings,
+            language_image_token_indices=base.language_image_token_indices,
+            draft_tokens=draft_tokens,
+            structured_output=self.pipeline_config.needs_bitmask_constraints,
         )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> KimiK2_5ModelInputs:
-        raise NotImplementedError("Eagle does not support Multistep execution")
 
     def _create_draft_config(
         self,
@@ -435,12 +492,12 @@ class Eagle3KimiK25Model(KimiK2_5Model):
         # Eagle3 draft has BF16 dense MLP (not quantized, not MoE)
         if (
             draft_config.quant_config is not None
-            and draft_config.quant_config.is_nvfp4
-            and not any("weight_scale_2" in key for key in draft_state_dict)
+            and draft_config.quant_config.is_fp4
+            and not any("weight_scale" in key for key in draft_state_dict)
         ):
             logger.info(
-                "Eagle3 draft weights are BF16 (no weight_scale_2 found); "
-                "disabling NVFP4 config for draft."
+                "Eagle3 draft weights are BF16 (no weight_scale found); "
+                "disabling FP4 config for draft."
             )
             draft_config.quant_config = None
             draft_config.dtype = DType.bfloat16

@@ -18,11 +18,7 @@ from std.gpu.primitives.cluster import (
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
-from std.gpu import (
-    block_id_in_cluster,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-)
+from std.gpu import block_id_in_cluster, block_idx, lane_id
 from std.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
@@ -82,16 +78,21 @@ struct TileScheduler[
     var log_cluster_dim_n: FastDiv[DType.uint32]
     var log_cluster_dim_k: FastDiv[DType.uint32]
 
+    @__allow_legacy_any_origin_fields
     var clc_response: UnsafePointer[
         UInt128,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
+
+    @__allow_legacy_any_origin_fields
     var full_mbar: UnsafePointer[
         SharedMemBarrier,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
+
+    @__allow_legacy_any_origin_fields
     var empty_mbar: UnsafePointer[
         SharedMemBarrier,
         MutAnyOrigin,
@@ -124,9 +125,9 @@ struct TileScheduler[
         self.log_cluster_dim_m = FastDiv[DType.uint32](Int(cluster_dim[0]))
         self.log_cluster_dim_n = FastDiv[DType.uint32](Int(cluster_dim[1]))
         self.log_cluster_dim_k = FastDiv[DType.uint32](Int(cluster_dim[2]))
-        self.clc_response = clc_response_ptr
-        self.full_mbar = full_mbar_ptr
-        self.empty_mbar = empty_mbar_ptr
+        self.clc_response = clc_response_ptr.as_unsafe_any_origin()
+        self.full_mbar = full_mbar_ptr.as_unsafe_any_origin()
+        self.empty_mbar = empty_mbar_ptr.as_unsafe_any_origin()
 
     @always_inline
     @staticmethod
@@ -223,11 +224,11 @@ struct TileScheduler[
         return WorkInfo(
             m=UInt32(
                 Int(new_m_global) * Self.cluster_shape[0]
-                + Int(block_id_in_cluster.x)
+                + block_id_in_cluster.x
             ),
             n=UInt32(
                 Int(new_n_global) * Self.cluster_shape[1]
-                + Int(block_id_in_cluster.y)
+                + block_id_in_cluster.y
             ),
             k_start=work_info.k_start,
             is_valid_tile=work_info.is_valid_tile,
@@ -278,7 +279,7 @@ struct TileScheduler[
     ) -> PipelineState[Self.num_stages]:
         comptime multicast = True if Self.cluster_size > 1 else False
         var lane_id = lane_id()
-        var pred = UInt32(1) if lane_id < UInt(Self.cluster_size) else UInt32(0)
+        var pred = UInt32(1) if lane_id < Self.cluster_size else UInt32(0)
         self.empty_mbar[clc_state.index()].wait(clc_state.phase())
         self.full_mbar[clc_state.index()].arrive_and_expect_bytes(
             Int32(size_of[UInt128]()),

@@ -14,24 +14,16 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any, ClassVar
 
-import numpy as np
 from max.driver import Buffer, Device
-from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.graph.weights import (
-    SafetensorWeights,
-    Weights,
-    WeightsAdapter,
-)
-from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.graph import BufferType, Graph, TensorType
+from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -39,12 +31,15 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModelWithKVCache,
+)
+from max.pipelines.lib.utils import (
+    parse_state_dict_from_weights,
     upper_bounded_default,
 )
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.profiler import traced
 from transformers import AutoConfig
 
+from .batch_processor import MistralBatchProcessor
 from .distributed_mistral import DistributedMistral
 from .mistral import Mistral
 from .model_config import MistralConfig
@@ -70,6 +65,31 @@ class MistralInputs(ModelInputs):
 
 
 class MistralModel(PipelineModelWithKVCache[TextContext]):
+    model_config_cls: ClassVar[type[Any]] = MistralConfig
+    batch_processor_cls: ClassVar[type[MistralBatchProcessor]] = (
+        MistralBatchProcessor
+    )
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Bounds ``max_length`` by ``max_position_embeddings`` (config is permissive)."""
+        try:
+            return upper_bounded_default(
+                upper_bound=huggingface_config.max_position_embeddings,
+                default=pipeline_config.model.max_length,
+            )
+        except ValueError as e:
+            raise ValueError(
+                f"Unable to infer max_length for {cls.__qualname__}, "
+                f"the provided max_length ({pipeline_config.model.max_length}) "
+                f"exceeds the model's max_position_embeddings "
+                f"({huggingface_config.max_position_embeddings})."
+            ) from e
+
     model: Model
     """Compiled and initialized model ready for inference."""
 
@@ -85,6 +105,7 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -94,6 +115,7 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
             weights,
             adapter,
             return_logits,
+            max_batch_size=max_batch_size,
         )
         self.model = self.load_model(session)
 
@@ -101,155 +123,27 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
         """Runs the graph."""
         assert isinstance(model_inputs, MistralInputs)
 
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs
+        assert curr_kv_cache_inputs is not None
 
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
             *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs,
+            *curr_kv_cache_inputs.flatten(),
         )
-        if len(model_outputs) == 3:
-            assert isinstance(model_outputs[0], Buffer)
-            assert isinstance(model_outputs[1], Buffer)
-            assert isinstance(model_outputs[2], Buffer)
-            return ModelOutputs(
-                next_token_logits=model_outputs[0],
-                logits=model_outputs[1],
-                logit_offsets=model_outputs[2],
-            )
-        else:
-            assert isinstance(model_outputs[0], Buffer)
-            return ModelOutputs(
-                next_token_logits=model_outputs[0],
-                logits=model_outputs[0],
-            )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int = 1,
-    ) -> MistralInputs:
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-
-        # Get input_row_offsets: start and end position of each batch in the
-        # combined total_seq_len dimension.
-        input_row_offsets = Buffer.from_numpy(
-            np.cumsum(
-                [0] + [ctx.tokens.active_length for ctx in context_batch],
-                dtype=np.uint32,
-            )
-        ).to(self.devices[0])
-
-        # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        next_tokens_batch = Buffer.from_numpy(
-            np.concatenate([ctx.tokens.active for ctx in context_batch])
-        ).to(self.devices[0])
-
-        return MistralInputs(
-            tokens=next_tokens_batch,
-            input_row_offsets=input_row_offsets,
-            signal_buffers=self.signal_buffers,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            kv_cache_inputs=kv_cache_inputs,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> MistralInputs:
-        assert isinstance(prev_model_inputs, MistralInputs)
-
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-
-        return MistralInputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            signal_buffers=self.signal_buffers,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return MistralConfig.construct_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for Mistral, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
+        assert self.batch_processor is not None
+        return self.batch_processor.process_outputs(model_outputs)
 
     def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
-        # Generate DeviceRef
-        device_ref = DeviceRef.from_device(self.devices[0])
-
-        # Construct general input types
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        kv_inputs = self.kv_params.get_symbolic_inputs().flatten()
-
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-
-        if len(self.devices) > 1:
-            # Flatten kv types for each device
-            signals = Signals(
-                devices=(DeviceRef(d.label, d.id) for d in self.devices)
+        assert self.batch_processor is not None
+        return tuple(
+            self.batch_processor.get_symbolic_inputs(
+                kv_params=self.kv_params,
+                device_refs=self.device_refs,
             )
-            return (
-                tokens_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                *signals.input_types(),
-                *kv_inputs,
-            )
-        else:
-            return (
-                tokens_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                *kv_inputs,
-            )
+        )
 
     @traced
     def _build_graph(
@@ -343,18 +237,6 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
             raise ValueError(
                 "Mistral model does not currently implement enable echo."
             )
-
-        # Pre-allocate a buffer for input_row_offsets in multistep execution.
-        # We do this to avoid materializing and copying a buffer with each multistep step
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
-                dtype=np.uint32,
-            )
-        ).to(self.devices[0])
 
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(

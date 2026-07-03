@@ -1,0 +1,50 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+name: gemma3_attention
+file: $BUILD_WORKSPACE_DIRECTORY/max/python/benchmarks/testbed/kbench_entrypoint.py
+single_invoke: true
+
+params:
+# gemma-3-1b-it global attention config (layer_idx=5, every 6th is global)
+- $harness: gemma3_attention
+  $model_name: gemma3-1b-global
+  $hidden_size: 1152
+  $n_heads: 4
+  $n_kv_heads: 1
+  $head_dim: 256
+  $max_seq_len: 32768
+  $rope_theta: 1000000.0
+  $qk_norm_eps: 1e-6
+  $sliding_window_pattern: 6
+  $local_window_size: 1024
+  $layer_idx: 5
+  $batch_size: [1, 8]
+  $seq_len: [1, 8192]
+  $ctx_len: [8192, 16384, 32768]
+
+# gemma-3-1b-it local (sliding window) attention config (layer_idx=0)
+- $harness: gemma3_attention
+  $model_name: gemma3-1b-local
+  $hidden_size: 1152
+  $n_heads: 4
+  $n_kv_heads: 1
+  $head_dim: 256
+  $max_seq_len: 32768
+  $rope_theta: 1000000.0
+  $qk_norm_eps: 1e-6
+  $sliding_window_pattern: 6
+  $local_window_size: 1024
+  $layer_idx: 0
+  $batch_size: [1, 8]
+  $seq_len: [1, 8192]
+  $ctx_len: [8192, 16384, 32768]

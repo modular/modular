@@ -28,6 +28,7 @@ def torch_moe(
     moe_weights: dict[str, torch.Tensor],
     topk_indices: torch.Tensor,
     topk_scores: torch.Tensor,
+    swiglu_limit: float = 0.0,
 ) -> torch.Tensor:
     assert input_token.shape[0] == 1, (
         "The naive MoE implementation only supports a single token at a time"
@@ -44,21 +45,31 @@ def torch_moe(
         up_weight = moe_weights[f"experts.{expert_idx}.up_proj.weight"]
         down_weight = moe_weights[f"experts.{expert_idx}.down_proj.weight"]
 
-        expert_gate = input_token @ gate_weight.T
+        expert_gate = torch.nn.functional.silu(input_token @ gate_weight.T)
         expert_up = input_token @ up_weight.T
-        expert_output = (
-            torch.nn.functional.silu(expert_gate) * expert_up
-        ) @ down_weight.T
+        if swiglu_limit > 0:
+            expert_gate = torch.clamp(expert_gate, max=swiglu_limit)
+            expert_up = torch.clamp(
+                expert_up, min=-swiglu_limit, max=swiglu_limit
+            )
+        expert_output = (expert_gate * expert_up) @ down_weight.T
 
         result += expert_output * scores
 
     shared_gate_weight = moe_weights["shared_experts.gate_proj.weight"]
     shared_up_weight = moe_weights["shared_experts.up_proj.weight"]
     shared_down_weight = moe_weights["shared_experts.down_proj.weight"]
-    shared_expert_gate = input_token @ shared_gate_weight.T
+    shared_expert_gate = torch.nn.functional.silu(
+        input_token @ shared_gate_weight.T
+    )
     shared_expert_up = input_token @ shared_up_weight.T
+    if swiglu_limit > 0:
+        shared_expert_gate = torch.clamp(shared_expert_gate, max=swiglu_limit)
+        shared_expert_up = torch.clamp(
+            shared_expert_up, min=-swiglu_limit, max=swiglu_limit
+        )
     shared_expert_output = (
-        torch.nn.functional.silu(shared_expert_gate) * shared_expert_up
+        shared_expert_gate * shared_expert_up
     ) @ shared_down_weight.T
     result += shared_expert_output
 
@@ -125,6 +136,74 @@ def test_ep_moe(
             moe_weights,
             all_topk_idxs[tok_idx : tok_idx + 1],
             all_topk_weights[tok_idx : tok_idx + 1],
+        )
+        torch.testing.assert_close(
+            all_outputs[tok_idx : tok_idx + 1],
+            torch_output,
+            rtol=3e-2,
+            atol=4e-2,
+        )
+
+
+@pytest.mark.parametrize(
+    "input_lengths",
+    [
+        [128, 128, 128, 128],  # Equal distribution
+        [64, 32, 16, 8],  # Decreasing distribution
+    ],
+)
+def test_ep_moe_swiglu_limit(
+    compiled_ep_models_swiglu: CompiledEPModels | None,
+    input_lengths: list[int],
+    moe_weights: dict[str, torch.Tensor],
+) -> None:
+    if compiled_ep_models_swiglu is None:
+        pytest.skip("NVSHMEM library requires H100 or H200 or B200")
+
+    n_devices = N_DEVICES
+    models = compiled_ep_models_swiglu
+    devices = models.devices
+
+    assert len(input_lengths) == n_devices, (
+        f"input_lengths length {len(input_lengths)} must match n_devices {n_devices}"
+    )
+    per_device_inputs_torch = [
+        torch.randn(
+            input_lengths[i],
+            HIDDEN_DIM,
+            dtype=torch.bfloat16,
+            device="cpu",
+        )
+        for i in range(n_devices)
+    ]
+
+    per_device_inputs = [
+        Buffer.from_dlpack(input).to(devices[i])
+        for i, input in enumerate(per_device_inputs_torch)
+    ]
+
+    result = models.moe_model.execute(
+        *per_device_inputs,
+        *models.ep_comm_init.model_inputs(),
+    )
+    torch_result = [torch.from_dlpack(x).to("cpu") for x in result]
+
+    gate_result = models.gate_model.execute(*per_device_inputs)
+    topk_idxs_weights = [torch.from_dlpack(x).to("cpu") for x in gate_result]
+
+    gpu = next(iter(moe_weights.values())).device
+    all_outputs = torch.cat(torch_result, dim=0).to(gpu)
+    all_inputs = torch.cat(per_device_inputs_torch, dim=0).to(gpu)
+    all_topk_idxs = torch.cat(topk_idxs_weights[::2], dim=0).to(gpu)
+    all_topk_weights = torch.cat(topk_idxs_weights[1::2], dim=0).to(gpu)
+
+    for tok_idx in range(all_inputs.shape[0]):
+        torch_output = torch_moe(
+            all_inputs[tok_idx : tok_idx + 1],
+            moe_weights,
+            all_topk_idxs[tok_idx : tok_idx + 1],
+            all_topk_weights[tok_idx : tok_idx + 1],
+            swiglu_limit=models.swiglu_limit,
         )
         torch.testing.assert_close(
             all_outputs[tok_idx : tok_idx + 1],

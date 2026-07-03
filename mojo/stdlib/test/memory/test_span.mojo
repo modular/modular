@@ -31,16 +31,16 @@ def test_span_list_int() raises:
     assert_equal(s2[1], l[3])
     assert_equal(s2[2], l[4])
     assert_equal(s2[3], l[5])
-    assert_equal(s[-1], l[-1])
+    assert_equal(s[len(s) - 1], l[len(l) - 1])
 
     # Test mutation
     s[0] = 9
     assert_equal(s[0], 9)
     assert_equal(l[0], 9)
 
-    s[-1] = 0
-    assert_equal(s[-1], 0)
-    assert_equal(l[-1], 0)
+    s[len(s) - 1] = 0
+    assert_equal(s[len(s) - 1], 0)
+    assert_equal(l[len(l) - 1], 0)
 
 
 def test_span_list_str() raises:
@@ -61,14 +61,14 @@ def test_span_list_str() raises:
     assert_equal(s[0], "h")
     assert_equal(l[0], "h")
 
-    s[-1] = "i"
-    assert_equal(s[-1], "i")
-    assert_equal(l[-1], "i")
+    s[len(s) - 1] = "i"
+    assert_equal(s[len(s) - 1], "i")
+    assert_equal(l[len(l) - 1], "i")
 
 
 def test_span_array_int() raises:
     var l: InlineArray[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
-    var s = Span[Int](array=l)
+    var s = Span(array=l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
         assert_equal(l[i], s[i])
@@ -84,14 +84,14 @@ def test_span_array_int() raises:
     assert_equal(s[0], 9)
     assert_equal(l[0], 9)
 
-    s[-1] = 0
-    assert_equal(s[-1], 0)
-    assert_equal(l[-1], 0)
+    s[len(s) - 1] = 0
+    assert_equal(s[len(s) - 1], 0)
+    assert_equal(l[len(l) - 1], 0)
 
 
 def test_span_array_str() raises:
     var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
-    var s = Span[String](array=l)
+    var s = Span(array=l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
         assert_equal(l[i], s[i])
@@ -107,14 +107,14 @@ def test_span_array_str() raises:
     assert_equal(s[0], "h")
     assert_equal(l[0], "h")
 
-    s[-1] = "i"
-    assert_equal(s[-1], "i")
-    assert_equal(l[-1], "i")
+    s[len(s) - 1] = "i"
+    assert_equal(s[len(s) - 1], "i")
+    assert_equal(l[len(l) - 1], "i")
 
 
 def test_indexing() raises:
     var l: InlineArray[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
-    var s = Span[Int](array=l)
+    var s = Span(array=l)
     assert_equal(s[Int(0)], 1)
     assert_equal(s[3], 4)
 
@@ -151,7 +151,7 @@ def test_copy_from() raises:
 
 def test_bool() raises:
     var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
-    var s = Span[String](l)
+    var s = Span(l)
     assert_true(s)
     assert_true(not s[0:0])
 
@@ -177,8 +177,8 @@ def test_contains_non_scalar() raises:
 def test_equality() raises:
     var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
     var l2 = [String("a"), "b", "c", "d", "e", "f", "g"]
-    var sp = Span[String](l)
-    var sp2 = Span[String](l)
+    var sp = Span(l)
+    var sp2 = Span(l)
     var sp3 = Span(l2)
     # same pointer
     assert_true(sp == sp2)
@@ -203,14 +203,14 @@ def test_fill() raises:
 
 def test_ref() raises:
     var l: InlineArray[Int, 3] = [1, 2, 3]
-    var s = Span[Int](array=l)
+    var s = Span(array=l)
     assert_true(s.as_ref() == Pointer(to=l.unsafe_ptr()[]))
 
 
 def test_reversed() raises:
     var forward: InlineArray[Int, 3] = [1, 2, 3]
     var backward: InlineArray[Int, 3] = [3, 2, 1]
-    var s = Span[Int](forward)
+    var s = Span(forward)
     var i = 0
     for num in reversed(s):
         assert_equal(num, backward[i])
@@ -254,7 +254,7 @@ def test_merge() raises:
     def inner(cond: Bool, mut a: List[Int], mut b: List[Int]):
         var either = Span(a) if cond else Span(b)
         either[0] = 0
-        either[-1] = 10
+        either[len(either) - 1] = 10
 
     inner(True, a, b)
     inner(False, a, b)
@@ -313,11 +313,11 @@ def test_reverse() raises:
 
 def test_apply() raises:
     @parameter
-    def _twice[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[D, w]:
+    def _twice[D: DType, w: SIMDSize](x: SIMD[D, w]) -> SIMD[D, w]:
         return x * 2
 
     @parameter
-    def _where[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
+    def _where[D: DType, w: SIMDSize](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
         return (x % 2).eq(0)
 
     def _test[D: DType]() raises:
@@ -372,17 +372,17 @@ def test_apply() raises:
 
 
 def test_count_func() raises:
-    def is_2[w: Int](v: SIMD[DType.uint8, w]) unified {} -> SIMD[DType.bool, w]:
+    def is_2[w: SIMDSize](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
         return v.eq(2)
 
-    var data = Span[Byte]([Byte(0), 1, 2, 1, 2, 1, 2])
+    var data = Span([Byte(0), 1, 2, 1, 2, 1, 2])
     assert_equal(3, Int(data.count(is_2)))
     assert_equal(2, Int(data[:-1].count(is_2)))
     assert_equal(1, Int(data[:3].count(is_2)))
 
 
 def test_unsafe_subspan() raises:
-    var data = Span[Int]([0, 1, 2, 3, 4])
+    var data = Span([0, 1, 2, 3, 4])
 
     var subspan1 = data.unsafe_subspan(offset=0, length=4)
     assert_equal(List(subspan1), [0, 1, 2, 3])
@@ -460,7 +460,7 @@ def test_binary_search_by_unified() raises:
 
     var seven = 7
 
-    def cmp_7(x: Int) unified {var} -> Int:
+    def cmp_7(x: Int) {var} -> Int:
         return x - seven
 
     var result = span.binary_search_by(cmp_7)
@@ -468,7 +468,7 @@ def test_binary_search_by_unified() raises:
 
     var six = 6
 
-    def cmp_6(x: Int) unified {var six} -> Int:
+    def cmp_6(x: Int) {var six} -> Int:
         return x - six
 
     var result2 = span.binary_search_by(cmp_6)
@@ -476,7 +476,7 @@ def test_binary_search_by_unified() raises:
 
     var one = 1
 
-    def cmp_1(x: Int) unified {var one} -> Int:
+    def cmp_1(x: Int) {var one} -> Int:
         return x - one
 
     var result3 = span.binary_search_by(cmp_1)
@@ -484,7 +484,7 @@ def test_binary_search_by_unified() raises:
 
     var thirteen = 13
 
-    def cmp_13(x: Int) unified {var thirteen} -> Int:
+    def cmp_13(x: Int) {var thirteen} -> Int:
         return x - thirteen
 
     var result4 = span.binary_search_by(cmp_13)
@@ -495,11 +495,13 @@ def test_iter() raises:
     var data = [1, 2, 3, 4, 5]
     var span = Span(data)
     var it = iter(span)
+    assert_equal(len(it), len(span))
     assert_equal(next(it), 1)
     assert_equal(next(it), 2)
     assert_equal(next(it), 3)
     assert_equal(next(it), 4)
     assert_equal(next(it), 5)
+    assert_equal(len(it), 0)
     with assert_raises():
         _ = it.__next__()  # raises StopIteration
 
@@ -545,14 +547,20 @@ def test_span_write_to() raises:
 def test_span_write_repr_to() raises:
     check_write_to(
         Span([1, 2, 3]),
-        expected="Span[mut=False, Int]([Int(1), Int(2), Int(3)])",
+        expected=(
+            "Span[mut=False, SIMD[DType.int, 1]]([Int(1), Int(2), Int(3)])"
+        ),
         is_repr=True,
     )
     check_write_to(
-        Span(List[Int]()), expected="Span[mut=False, Int]([])", is_repr=True
+        Span(List[Int]()),
+        expected="Span[mut=False, SIMD[DType.int, 1]]([])",
+        is_repr=True,
     )
     check_write_to(
-        Span([42]), expected="Span[mut=False, Int]([Int(42)])", is_repr=True
+        Span([42]),
+        expected="Span[mut=False, SIMD[DType.int, 1]]([Int(42)])",
+        is_repr=True,
     )
 
 
@@ -579,7 +587,7 @@ def test_span_hashable() raises:
 
 
 @fieldwise_init
-struct HashableOnly(Hashable, ImplicitlyDestructible, Movable):
+struct HashableOnly(Hashable, ImplicitlyDeletable, Movable):
     var value: Int
 
     def __hash__(self, mut hasher: Some[Hasher]):
@@ -614,6 +622,20 @@ def test_span_with_non_movable_type() raises:
     var ptr = alloc[NonMovable](1)
     var _span = Span(ptr=ptr, length=0)
     ptr.free()
+
+
+def test_span_iter_owned() raises:
+    var list = [10, 20, 30]
+    var result = List[Int]()
+    for elem in Span(list):
+        result.append(elem)
+
+    assert_equal(len(result), 3)
+    assert_equal(result[0], 10)
+    assert_equal(result[1], 20)
+    assert_equal(result[2], 30)
+    # Original list is still intact (Span doesn't own data).
+    assert_equal(len(list), 3)
 
 
 def main() raises:

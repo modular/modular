@@ -22,6 +22,8 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
+    MXFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
     get_scale_factor,
@@ -94,8 +96,8 @@ def test_block_scales_interleave_fp4[
 
     block_scales_interleave_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        lt_to_tt(input_scales_tensor).as_any_origin(),
-        lt_to_tt(output_scales_tensor).as_any_origin(),
+        lt_to_tt(input_scales_tensor).as_unsafe_any_origin(),
+        lt_to_tt(output_scales_tensor).as_unsafe_any_origin(),
     )
 
     ctx.synchronize()
@@ -115,21 +117,24 @@ def test_block_scales_interleave_fp4[
                     var swizzled_sf = get_scale_factor[
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE
                     ](
-                        output_host_tensor.as_any_origin(),
+                        output_host_tensor.as_unsafe_any_origin(),
                         row_idx,
                         col_idx * SF_VECTOR_SIZE,
                     )
                     if row_idx < m and col_idx < n:
-                        var ref_sf = rebind[Scalar[scales_dtype]](
-                            input_host_tensor[row_idx, col_idx]
-                        )
+                        var ref_sf = input_host_tensor[row_idx, col_idx]
                         assert_equal(
                             ref_sf.cast[DType.float64](),
                             swizzled_sf.cast[DType.float64](),
                         )
                     else:
+                        # Compare against the dtype's stored zero representation
+                        # instead of raw Float64(0.0). MXFP4's E8M0 scale format
+                        # round-trips a different exact bit pattern here.
+                        var zero_sf = Scalar[scales_dtype](0.0)
                         assert_equal(
-                            Float64(0.0), swizzled_sf.cast[DType.float64]()
+                            zero_sf.cast[DType.float64](),
+                            swizzled_sf.cast[DType.float64](),
                         )
 
 
@@ -152,4 +157,22 @@ def main() raises:
         ](ctx, 16384, 3328)
         test_block_scales_interleave_fp4[
             NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(1024)
+        ](ctx, 53248, 1024)
+        test_block_scales_interleave_fp4[
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(4)
+        ](ctx, 128, 4)
+        test_block_scales_interleave_fp4[
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(4)
+        ](ctx, 129, 4)
+        test_block_scales_interleave_fp4[
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(5)
+        ](ctx, 129, 5)
+        test_block_scales_interleave_fp4[
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(1024)
+        ](ctx, 1024, 1024)
+        test_block_scales_interleave_fp4[
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(3328)
+        ](ctx, 16384, 3328)
+        test_block_scales_interleave_fp4[
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(1024)
         ](ctx, 53248, 1024)

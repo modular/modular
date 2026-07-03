@@ -66,7 +66,7 @@ MAX_DTYPE = DType.bfloat16
 RTOL = 2e-2
 ATOL = 4 * torch.finfo(TORCH_DTYPE).eps
 
-HF_REPO_ID = "moonshotai/Kimi-K2.5"
+HF_REPO_ID = "nvidia/Kimi-K2.5-NVFP4"
 HF_REVISION = hf_repo_lock.revision_for_hf_repo(HF_REPO_ID)
 
 NUM_EVAL_IMAGES = 5

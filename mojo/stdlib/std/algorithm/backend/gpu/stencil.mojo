@@ -34,30 +34,34 @@ def _stencil_impl_gpu[
     simd_width: Int,
     dtype: DType,
     MapFnType: ImplicitlyCopyable
-    & def(IndexList[stencil_rank, ...]) unified register_passable -> Tuple[
+    & RegisterPassable
+    & def(IndexList[stencil_rank, ...]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ],
     MapStridesType: ImplicitlyCopyable
-    & def(dim: Int) unified register_passable -> Int,
+    & RegisterPassable
+    & def(dim: Int) -> Int,
     LoadFnType: ImplicitlyCopyable
-    & def[simd_width: Int, dtype: DType](
-        IndexList[rank, ...]
-    ) unified register_passable -> SIMD[dtype, simd_width],
-    ComputeInitFnType: ImplicitlyCopyable
-    & def[simd_width: Int]() unified register_passable -> SIMD[
+    & RegisterPassable
+    & def[simd_width: Int, dtype: DType](IndexList[rank, ...]) -> SIMD[
         dtype, simd_width
     ],
+    ComputeInitFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[simd_width: Int]() -> SIMD[dtype, simd_width],
     ComputeFnType: ImplicitlyCopyable
-    & def[simd_width: Int](
+    & RegisterPassable
+    & def[simd_width: SIMDSize](
         IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
-    ) unified register_passable -> SIMD[dtype, simd_width],
+    ) -> SIMD[dtype, simd_width],
     ComputeFinalizeFnType: ImplicitlyCopyable
-    & def[simd_width: Int](
+    & RegisterPassable
+    & def[simd_width: SIMDSize](
         IndexList[rank, ...], SIMD[dtype, simd_width]
-    ) unified register_passable -> None,
+    ) -> None,
 ](
     ctx: DeviceContext,
     shape: IndexList[rank, element_type=shape_element_type],
@@ -107,7 +111,7 @@ def _stencil_impl_gpu[
 
     # GPU kernel implementation
     @always_inline
-    def stencil_kernel() unified register_passable {
+    def stencil_kernel() {
         read shape,
         var input_shape,
         var map_func,

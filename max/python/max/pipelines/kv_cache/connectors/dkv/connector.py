@@ -1,0 +1,380 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""Distributed KV cache connector via the dKV service.
+
+A thin :class:`~max.pipelines.kv_cache.kv_connector.KVConnector` shim over the
+``dkv_connector`` Rust client (``dkv_connector.DkvConnector``). The Rust client
+owns the NIXL agent, all block transfers, the control-plane RPCs, inline
+reconnection, and metrics; this shim only adapts the MAX-side types (device
+``KVCacheMemory``, ``KVCacheMetrics``) to the client's API.
+
+Block-hash contract: the dkv wire format carries a ``uint64 seq_hash`` and is
+unchanged by this shim. Callers may pass either the 8-byte canonical encoding
+used by ``ahash64`` / ``sha256_64`` or the 32-byte canonical encoding used by
+full ``sha256``; in the 32-byte case the shim truncates to the first 8 bytes
+at the boundary. Truncation is byte-identical to the existing ``sha256_64``
+algorithm, so configuring MAX with ``sha256`` or ``sha256_64`` yields the
+same dkv key for the same logical digest.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from collections.abc import Sequence
+
+import msgspec
+from max.driver import Device
+from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
+from max.nn.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.profiler import traced
+
+# dKV keys every block under a composite (tp_shard_id, group_id, seq_hash). MAX's
+# paged KV cache is single-group (full attention) today; SWA/hybrid groups are not
+# yet wired through this connector (block_manager has no group dimension), so we key
+# all load/offload under the full-attention group. REVISIT when windowed-KV groups
+# land. Mirrors GroupId::FullAttention (== 1) in the dkv proto
+# (dkv/dkv-proto/src/gen/modular.dkv.v1.rs). GroupId::Unspecified (== 0) is rejected
+# server-side (no geometry), so 0 is never a valid substitute.
+_DKV_GROUP_FULL_ATTENTION = 1
+
+
+def _to_dkv_u64(h: bytes) -> int:
+    """Packs a connector-level block hash into the 64-bit dkv wire key.
+
+    The dkv proto stays ``uint64 seq_hash``. Accepts the canonical bytes
+    forms produced by :func:`max.pipelines.kv_cache.kv_connector.to_block_hash_bytes`:
+
+    * 8 bytes (``ahash64`` / ``sha256_64``): used as-is, big-endian unsigned.
+    * 32 bytes (full ``sha256``): truncated to the first 8 bytes (big-endian
+      unsigned). Byte-identical to ``sha256_64`` of the same digest, so the
+      same logical block collapses to the same dkv key under either algo.
+
+    Args:
+        h: Canonical block-hash bytes, length 8 or 32.
+
+    Returns:
+        Unsigned 64-bit integer the Rust client carries on the wire.
+
+    Raises:
+        ValueError: If ``h`` is not exactly 8 or 32 bytes long.
+    """
+    if len(h) not in (8, 32):
+        raise ValueError(
+            f"DKVConnector block hash must be 8 or 32 bytes, got {len(h)}"
+        )
+    return int.from_bytes(h[:8], "big", signed=False)
+
+
+class DKVExternalBlockMetadata(
+    msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
+):
+    """Marker that a block hash is referenced by the orchestrator hint.
+
+    The slim hint only carries ``seq_hash``; the dKV server resolves slab
+    location and length when the connector reads the block. We still wrap the
+    hash in a typed struct so the context payload survives the
+    API-server -> model-worker process boundary via msgspec's tagged-struct
+    serialization.
+
+    The struct is intentionally retained even though it degenerates to a single
+    ``seq_hash`` field today. The orchestrator's hint shape is expected to evolve
+    to mix blocks from multiple source dKV instances in a single hint (per-block
+    ``instance_name`` for routing); keeping the per-block container in place now
+    lets that land without re-introducing a context-side data structure.
+    """
+
+    seq_hash: int
+
+
+class DKVConnector:
+    """``KVConnector`` backed by the ``dkv_connector`` Rust client.
+
+    A single instance serves every DP replica. The underlying Rust client is
+    inherently per-replica (its ``load``/``offload`` reference block ids into
+    one replica's registered device buffers and carry no replica/group key), so
+    this shim owns one Rust client per replica and routes each call to the
+    client for the request's ``replica_idx``.
+    """
+
+    @traced
+    def __init__(
+        self,
+        replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
+        local_block_store_endpoint: str,
+        devices: Sequence[Device],
+    ) -> None:
+        # Deferred so importing this module (e.g. for DKVExternalBlockMetadata,
+        # or by non-dKV pipelines) does not require the optional, runtime-
+        # provided dkv_connector extension to be installed.
+        from dkv_connector import DkvConnector as _DkvConnectorClient
+
+        if not replica_kv_memory or not all(replica_kv_memory):
+            raise ValueError(
+                "DKVConnector requires at least one KV cache buffer per replica"
+            )
+
+        listen_port = int(os.getenv("MODULAR_DKV_NIXL_LISTEN_PORT", "0"))
+        backend = os.getenv("MODULAR_NIXL_TRANSFER_BACKEND") or None
+
+        # ``devices`` is the pipeline's flat, ordered device list across every
+        # replica; split it into each replica's canonical device order so a
+        # client can bind its shard ids to that order. This is the same split the
+        # cache manager applies, and it is sourced independently of
+        # ``to_memory``, so it is a real cross-check on the buffer ordering rather
+        # than a restatement of it.
+        devices_per_replica = split_into_groups(
+            list(devices), len(replica_kv_memory)
+        )
+
+        # One Rust client per replica, each registering only its replica's
+        # device buffers with NIXL, in that replica's canonical device order.
+        self._clients = [
+            self._make_client(
+                _DkvConnectorClient,
+                kv_memory,
+                local_block_store_endpoint,
+                listen_port,
+                backend,
+                replica_devices,
+            )
+            for kv_memory, replica_devices in zip(
+                replica_kv_memory, devices_per_replica, strict=True
+            )
+        ]
+
+    @staticmethod
+    def _make_client(
+        client_cls: type,
+        kv_memory: Sequence[KVCacheMemory],
+        local_block_store_endpoint: str,
+        listen_port: int,
+        backend: str | None,
+        expected_devices: Sequence[Device],
+    ) -> object:
+        # Per-buffer (ptr, byte length, device ordinal) for NIXL registration.
+        # Each KVCacheMemory wraps a ``[num_pages, bytes_per_page]`` uint8 device
+        # buffer; MLA caches (ReplicatedKVCacheMemory) also carry TP-peer replicas
+        # that hold identical data and must be registered too.
+        device_buffer_meta: list[tuple[int, int, int]] = []
+        device_ids: set[int] = set()
+        # MAX's compute stream per device ordinal, so the same-host offload can
+        # order each device's D2H after the forward pass that wrote its blocks
+        # via a CUDA event in that device's own context. Events and streams are
+        # per context, so multi-device TP needs a handle per device rather than
+        # one shared handle. A device whose stream has no native handle (e.g. a
+        # CPU stream) maps to 0, which routes that device's transfers over NIXL.
+        compute_streams: dict[int, int] = {}
+        is_mla = False
+        for mem in kv_memory:
+            buffers = mem.all_buffers
+            if len(buffers) > 1:
+                is_mla = True
+            for buffer in buffers:
+                device_buffer_meta.append(
+                    (
+                        buffer._data_ptr(),
+                        buffer.num_elements * buffer.dtype.size_in_bytes,
+                        buffer.device.id,
+                    )
+                )
+                device_ids.add(buffer.device.id)
+                compute_streams[buffer.device.id] = (
+                    buffer.device.default_stream.native_stream_handle
+                )
+
+        # The Rust client keys each block by its shard's position in
+        # ``device_buffer_meta`` (``tp_shard_id``), so that position must equal
+        # the shard's rank in the replica's canonical device order. The per-shard
+        # keying assumes exactly one buffer per device, so two layouts would
+        # break it and are rejected here rather than silently mis-keyed. A
+        # quantized cache appends its scale buffers after the value buffers, so
+        # each device appears twice and the scales would never be keyed or
+        # transferred, giving a wrong dequant. A ``MultiKVCacheBuffer`` (hybrid
+        # sliding and global, or speculative draft and target) concatenates
+        # several caches, so a device appears once per cache and ``tp_shard_id``
+        # stops equalling a device rank. Both show up as more registered buffers
+        # than distinct devices. dKV does not carry the extra buffers yet,
+        # tracked by CLIN-1460, so fail loudly.
+        if not is_mla and len(device_buffer_meta) != len(device_ids):
+            raise NotImplementedError(
+                "The dKV connector requires exactly one KV buffer per device for "
+                f"non-MLA TP, but got {len(device_buffer_meta)} buffers across "
+                f"{len(device_ids)} devices. Quantized (FP8 scale) caches and "
+                "multi-cache buffers (hybrid or speculative decoding) are not "
+                "supported on the dKV connector yet (CLIN-1460)."
+            )
+
+        # Bind ``tp_shard_id`` to device identity rather than to registration
+        # luck. A remote peer fetches a block by the ``(tp_shard_id, group,
+        # seq_hash)`` key, so its shard ids must line up with ours by device
+        # rank. ``expected_devices`` is the replica's device order sourced from
+        # the pipeline config, so comparing it against the order the buffers
+        # actually registered in catches a future ``to_memory`` change that
+        # reorders buffers before it silently shifts every key. First-occurrence
+        # order collapses an MLA replica's peer buffers and a quantized cache's
+        # scale buffers down to one entry per device.
+        registered_order = list(
+            dict.fromkeys(device_id for _, _, device_id in device_buffer_meta)
+        )
+        expected_order = [device.id for device in expected_devices]
+        if registered_order != expected_order:
+            raise ValueError(
+                "dKV registered KV buffers in device order "
+                f"{registered_order}, which does not match the replica's "
+                f"canonical device order {expected_order}. tp_shard_id is bound "
+                "to that order, so a mismatch would mis-key blocks across peers."
+            )
+
+        # ``total_num_pages`` is the buffer's physical page count
+        # (``buffer.shape[0]``), which already includes MAX's trailing "null"
+        # page beyond the logical block count. The Rust client divides the
+        # registered buffer length by this to derive the per-page byte stride,
+        # so it must be the physical count; valid-block offsets are unaffected
+        # since the null page is last and is never transferred.
+        total_num_pages = kv_memory[0].total_num_pages
+
+        return client_cls(
+            local_block_store_endpoint,
+            device_buffer_meta,
+            0,  # page_size (tokens): unused by the Rust client
+            total_num_pages,
+            len(device_ids),
+            is_mla,
+            listen_port=listen_port,
+            backend=backend,
+            compute_streams=compute_streams,
+        )
+
+    @property
+    def name(self) -> str:
+        return "dkv"
+
+    def load(
+        self,
+        device_block_ids: list[int],
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> int:
+        """Loads external blocks into ``replica_idx``'s device memory by hash.
+
+        Each ``block_hashes`` element must be canonical bytes from
+        :func:`to_block_hash_bytes`: 8 bytes for ``ahash64`` / ``sha256_64``
+        or 32 bytes for full ``sha256``. 32-byte digests are truncated to
+        their first 8 bytes at the dkv boundary (see :func:`_to_dkv_u64`).
+        """
+        return self._clients[replica_idx].load(
+            group_id=_DKV_GROUP_FULL_ATTENTION,
+            device_block_ids=device_block_ids,
+            block_hashes=[_to_dkv_u64(h) for h in block_hashes],
+        )
+
+    def offload(
+        self,
+        block_ids: list[int],
+        block_hashes: Sequence[bytes],
+        parent_seq_hash: bytes | None = None,
+        replica_idx: int = 0,
+    ) -> None:
+        """Offloads ``replica_idx``'s device blocks to the dkv service by hash.
+
+        Each ``block_hashes`` element follows the same 8-or-32 byte
+        contract as :meth:`load` (truncated to its first 8 bytes at the
+        dkv boundary; see :func:`_to_dkv_u64`).
+
+        ``parent_seq_hash`` is accepted for ``KVConnector`` protocol
+        compatibility but no longer forwarded: the dKV store now dedups
+        by composite key ``(tp_shard_id, group, seq_hash)`` and does not
+        chain blocks under a parent, so the Rust client builds the keys
+        (and the NUMA striping plan) from the hashes alone.
+        """
+        self._clients[replica_idx].offload(
+            group_id=_DKV_GROUP_FULL_ATTENTION,
+            block_ids=block_ids,
+            block_hashes=[_to_dkv_u64(h) for h in block_hashes],
+        )
+
+    def wait_for_loads(self) -> None:
+        for client in self._clients:
+            client.wait_for_loads()
+
+    def wait_for_offloads(self) -> None:
+        for client in self._clients:
+            client.wait_for_offloads()
+
+    def shutdown(self) -> None:
+        # No-op: the Rust client releases its NIXL agent, heartbeat poller, and
+        # RPC connection when the object is dropped (at process teardown).
+        # Per-batch transfer throughput is surfaced by the scheduler from
+        # ``metrics`` below, so no background logger is needed here.
+        pass
+
+    def reset_prefix_cache(self) -> None:
+        # No-op: dKV manages its own external block lifecycle server-side.
+        pass
+
+    @property
+    def num_host_blocks(self) -> int:
+        # BlockManager gates the load path on num_host_blocks > 0. dKV capacity
+        # is managed externally by the dKV service.
+        return sys.maxsize
+
+    @property
+    def num_used_host_blocks(self) -> int:
+        return 0
+
+    @property
+    def num_disk_blocks(self) -> int:
+        return 0
+
+    @property
+    def num_used_disk_blocks(self) -> int:
+        return 0
+
+    def reset_metrics(self) -> None:
+        """Clear Rust-side transfer counters after the scheduler samples a batch."""
+        for client in self._clients:
+            client.reset_metrics()
+
+    @property
+    def metrics(self) -> KVCacheMetrics:
+        total = KVCacheMetrics()
+        for client in self._clients:
+            m = client.metrics()
+            total = total + KVCacheMetrics(
+                nixl_read_blocks=m["read_blocks"],
+                nixl_write_blocks=m["write_blocks"],
+                nixl_read_bytes=m["read_bytes"],
+                nixl_write_bytes=m["write_bytes"],
+                nixl_read_latency_total_ms=m["read_transfer_latency_total_ms"],
+                nixl_read_latency_count=m["read_transfer_latency_count"],
+                nixl_write_latency_total_ms=m[
+                    "write_transfer_latency_total_ms"
+                ],
+                nixl_write_latency_count=m["write_transfer_latency_count"],
+            )
+        return total
+
+    @property
+    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
+        """Algos this connector accepts in :meth:`load` / :meth:`offload`.
+
+        Accepts the full ahash64-family set plus 32-byte ``sha256``: 32-byte
+        digests are truncated to their first 8 bytes at the boundary, which
+        is byte-identical to the ``sha256_64`` algo (see :func:`_to_dkv_u64`
+        and the module docstring). The dkv wire format stays ``uint64
+        seq_hash``.
+        """
+        return frozenset({"ahash64", "sha256", "sha256_64"})

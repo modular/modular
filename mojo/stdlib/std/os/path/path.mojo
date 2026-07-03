@@ -21,13 +21,13 @@ from std.os.path import isdir
 """
 
 from std.collections.string.string_slice import _unsafe_strlen
-from std.pwd import getpwuid
+from std.pwd import getpwuid, getpwnam
 from std.stat import S_ISDIR, S_ISLNK, S_ISREG
 from std.ffi import MAX_PATH, c_char, external_call, get_errno
 from std.sys import CompilationTarget
 from std.sys._libc import realpath as libc_realpath
 
-from .. import PathLike
+from .. import PathLike as stdPathLike, getuid
 from .._linux_aarch64 import _lstat as _lstat_linux_arm
 from .._linux_aarch64 import _stat as _stat_linux_arm
 from .._linux_x86 import _lstat as _lstat_linux_x86
@@ -72,11 +72,11 @@ def _get_lstat_st_mode(var path: String) raises -> Int:
 def _user_home_path(path: String) -> String:
     var user_end = path.find(sep, 1)
     if user_end < 0:
-        user_end = len(path)
+        user_end = path.byte_length()
     # Special POSIX syntax for ~[user-name]/path
-    if len(path) > 1 and user_end > 1:
+    if path.byte_length() > 1 and user_end > 1:
         try:
-            return pwd.getpwnam(String(path[byte=1:user_end])).pw_dir
+            return getpwnam(String(path[byte=1:user_end])).pw_dir
         except:
             return ""
     else:
@@ -84,13 +84,13 @@ def _user_home_path(path: String) -> String:
         # Fallback to password database if `HOME` not set
         if not user_home:
             try:
-                user_home = pwd.getpwuid(getuid()).pw_dir
+                user_home = getpwuid(getuid()).pw_dir
             except:
                 return ""
         return user_home
 
 
-def expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
+def expanduser[PathLike: stdPathLike, //](path: PathLike) raises -> String:
     """Expands a tilde "~" prefix in `path` to the user's home directory.
 
     For example, `~/folder` becomes `/home/current_user/folder`. On macOS and
@@ -118,10 +118,10 @@ def expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
     var userhome = _user_home_path(fspath)
     if not userhome:
         return fspath
-    var path_split = fspath.split(os.sep, 1)
+    var path_split = fspath.split(sep, 1)
     # If there is a properly formatted separator, return expanded fspath.
     if len(path_split) == 2:
-        return os.path.join(userhome, String(path_split[1]))
+        return join(userhome, String(path_split[1]))
     # Path was a single `~` character, return home path
     return userhome
 
@@ -129,7 +129,7 @@ def expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
 # ===----------------------------------------------------------------------=== #
 # isdir
 # ===----------------------------------------------------------------------=== #
-def isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def isdir[PathLike: stdPathLike, //](path: PathLike) -> Bool:
     """Return True if path is an existing directory. This follows
     symbolic links, so both islink() and isdir() can be true for the same path.
 
@@ -142,6 +142,14 @@ def isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     Returns:
         True if the path is a directory or a link to a directory and
         False otherwise.
+
+    Example:
+    ```mojo
+    from std.os.path import isdir
+
+    print(isdir("/tmp")) # True
+    print(isdir("noexist")) # False
+    ```
     """
     var fspath = path.__fspath__()
     try:
@@ -158,7 +166,7 @@ def isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-def isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def isfile[PathLike: stdPathLike, //](path: PathLike) -> Bool:
     """Test whether a path is a regular file.
 
     Parameters:
@@ -169,6 +177,14 @@ def isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 
     Returns:
         Returns True if the path is a regular file.
+
+    Example:
+    ```mojo
+    from std.os.path import isfile
+
+    print(isfile("/etc/hosts")) # True
+    print(isfile("/tmp")) # False (it's a directory)
+    ```
     """
     var fspath = path.__fspath__()
     try:
@@ -183,7 +199,7 @@ def isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 # islink
 # ===----------------------------------------------------------------------=== #
-def islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def islink[PathLike: stdPathLike, //](path: PathLike) -> Bool:
     """Return True if path refers to an existing directory entry that is a
     symbolic link.
 
@@ -195,6 +211,13 @@ def islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 
     Returns:
         True if the path is a link to a directory and False otherwise.
+
+    Example:
+    ```mojo
+    from std.os.path import islink
+
+    print(islink("/etc/hosts"))  # False (regular file, not a symlink)
+    ```
     """
     try:
         return S_ISLNK(_get_lstat_st_mode(path.__fspath__()))
@@ -207,7 +230,7 @@ def islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-def dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
+def dirname[PathLike: stdPathLike, //](path: PathLike) -> String:
     """Returns the directory component of a pathname.
 
     Parameters:
@@ -218,12 +241,20 @@ def dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
 
     Returns:
         The directory component of a pathname.
+
+    Example:
+    ```mojo
+    from std.os.path import dirname
+
+    print(dirname("/a/b/c.txt")) # "/a/b"
+    print(dirname("c.txt")) # ""
+    ```
     """
     var fspath = path.__fspath__()
-    var i = fspath.rfind(os.sep) + 1
+    var i = fspath.rfind(sep) + 1
     var head = String(fspath[byte=:i])
-    if head and head != os.sep * len(head):
-        return String(head.rstrip(os.sep))
+    if head and head != sep * head.byte_length():
+        return String(head.rstrip(sep))
     return head
 
 
@@ -233,7 +264,7 @@ def dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
 
 
 def realpath[
-    PathLike: os.PathLike & ImplicitlyDestructible, //
+    PathLike: stdPathLike & ImplicitlyDeletable, //
 ](path: PathLike) raises -> String:
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a
@@ -293,7 +324,7 @@ def realpath[
 # ===----------------------------------------------------------------------=== #
 
 
-def exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def exists[PathLike: stdPathLike, //](path: PathLike) -> Bool:
     """Return True if path exists.
 
     Parameters:
@@ -304,6 +335,14 @@ def exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 
     Returns:
         Returns True if the path exists and is not a broken symbolic link.
+
+    Example:
+    ```mojo
+    from std.os.path import exists
+
+    print(exists("/tmp")) # True
+    print(exists("noexist")) # False
+    ```
     """
     try:
         _ = _get_stat_st_mode(path.__fspath__())
@@ -317,7 +356,7 @@ def exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-def lexists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def lexists[PathLike: stdPathLike, //](path: PathLike) -> Bool:
     """Return True if path exists or is a broken symlink.
 
     Parameters:
@@ -341,7 +380,7 @@ def lexists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-def getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
+def getsize[PathLike: stdPathLike, //](path: PathLike) raises -> Int:
     """Return the size, in bytes, of the specified path.
 
     Parameters:
@@ -364,7 +403,7 @@ def getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-def is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def is_absolute[PathLike: stdPathLike, //](path: PathLike) -> Bool:
     """Return True if `path` is an absolute path name.
     On Unix, that means it begins with a slash.
 
@@ -376,6 +415,14 @@ def is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 
     Returns:
         Return `True` if path is an absolute path name.
+
+    Example:
+    ```mojo
+    from std.os.path import is_absolute
+
+    print(is_absolute("/usr/bin")) # True
+    print(is_absolute("relative")) # False
+    ```
     """
     return path.__fspath__().startswith(sep)
 
@@ -400,6 +447,14 @@ def join(var path: String, *paths: String) -> String:
 
     Returns:
         The joined path.
+
+    Example:
+    ```mojo
+    from std.os.path import join
+
+    print(join("a", "b", "c")) # "a/b/c"
+    print(join("a", "/b", "c")) # "/b/c" (absolute resets)
+    ```
     """
     var joined_path = path
 
@@ -419,7 +474,7 @@ def join(var path: String, *paths: String) -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-def split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
+def split[PathLike: stdPathLike, //](path: PathLike) -> Tuple[String, String]:
     """
     Split a given pathname into two components: head and tail. This is useful
     for separating the directory path from the filename. If the input path ends
@@ -436,22 +491,30 @@ def split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
 
     Returns:
         A tuple containing two strings: (head, tail).
+
+    Example:
+    ```mojo
+    from std.os.path import split
+
+    print(split("/a/b/c.txt")) # ("/a/b", "c.txt")
+    print(split("/a/b/")) # ("/a/b", "")
+    ```
     """
     var fspath = path.__fspath__()
-    var i = fspath.rfind(os.sep) + 1
+    var i = fspath.rfind(sep) + 1
     var head, tail = fspath[byte=:i], fspath[byte=i:]
-    if head and head != String(os.sep) * len(head):
+    if head and head != String(sep) * head.byte_length():
         head = head.rstrip(sep)
     return String(head), String(tail)
 
 
-def basename[PathLike: os.PathLike, //](path: PathLike) -> String:
+def basename[PathLike: stdPathLike, //](path: PathLike) -> String:
     """Returns the tail section of a path.
 
     ```mojo
     from std.os.path import basename
 
-    basename("a/path/foo.txt")  # returns "foo.txt"
+    print(basename("a/path/foo.txt")) # "foo.txt"
     ```
 
     Parameters:
@@ -464,15 +527,15 @@ def basename[PathLike: os.PathLike, //](path: PathLike) -> String:
         The basename from the path.
     """
     var fspath = path.__fspath__()
-    var i = fspath.rfind(os.sep) + 1
+    var i = fspath.rfind(sep) + 1
     var head = fspath[byte=i:]
-    if head and head != os.sep * len(head):
-        return String(head.rstrip(os.sep))
+    if head and head != sep * head.byte_length():
+        return String(head.rstrip(sep))
     return String(head)
 
 
 # TODO uncomment this when unpacking is supported
-# def join[PathLike: os.PathLike](path: PathLike, *paths: PathLike) -> String:
+# def join[PathLike: stdPathLike](path: PathLike, *paths: PathLike) -> String:
 #     """Join two or more pathname components, inserting '/' as needed.
 #     If any component is an absolute path, all previous path components
 #     will be discarded.  An empty last part will result in a path that
@@ -539,7 +602,7 @@ def _split_extension(
 
 
 def split_extension[
-    PathLike: os.PathLike, //
+    PathLike: stdPathLike, //
 ](path: PathLike) raises -> Tuple[String, String]:
     """Splits `path` into the root and extension.
 
@@ -554,6 +617,14 @@ def split_extension[
 
     Raises:
         If the operation fails.
+
+    Example:
+    ```mojo
+    from std.os.path import split_extension
+
+    print(split_extension("foo.tar.gz")) # ("foo.tar", ".gz")
+    print(split_extension("README")) # ("README", "")
+    ```
     """
     return _split_extension(path.__fspath__(), sep, "", ".")
 
@@ -564,7 +635,7 @@ def split_extension[
 
 
 def splitroot[
-    PathLike: os.PathLike, //
+    PathLike: stdPathLike, //
 ](path: PathLike) -> Tuple[String, String, String]:
     """Splits `path` into drive, root and tail. The tail contains anything after the root.
 
@@ -689,7 +760,7 @@ def _parse_variable_name[
     return StringSlice(unsafe_from_utf8=bytes[:i]), i
 
 
-def expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
+def expandvars[PathLike: stdPathLike, //](path: PathLike) -> String:
     """Replaces `${var}` or `$var` in the path with values from the current environment variables.
     Malformed variable names and references to non-existing variables are left unchanged.
 
@@ -725,7 +796,7 @@ def expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
                 buf.write_string(path_str[byte = j : j + 2])
             # Environment variable; expand it. If no value, write as is.
             else:
-                value = os.getenv(String(name))
+                value = getenv(String(name))
                 if value != "":
                     buf.write(value)
                 else:

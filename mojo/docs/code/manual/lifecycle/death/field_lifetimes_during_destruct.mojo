@@ -37,7 +37,7 @@ struct TwoStrings(Copyable):
         print("str2:", self.str2)
 
 
-def main() raises:
+def main():
     var two_strings = TwoStrings("foo", "bar")
     # end-field-lifetimes-during-destruct
     _ = two_strings^

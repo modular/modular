@@ -138,6 +138,29 @@ def random_ui64(min: UInt64, max: UInt64) -> UInt64:
 def randint[
     dtype: DType
 ](
+    span: Span[mut=True, Scalar[dtype], _],
+    low: Int,
+    high: Int,
+) where dtype.is_integral():
+    """Fills memory with uniformly distributed random integers in the range [low, high].
+
+    Constraints:
+        The type must be integral.
+
+    Parameters:
+        dtype: The dtype of the pointer.
+
+    Args:
+        span: The memory area to fill.
+        low: The inclusive lower bound.
+        high: The inclusive upper bound.
+    """
+    randint(span.unsafe_ptr(), len(span), low, high)
+
+
+def randint[
+    dtype: DType
+](
     ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     size: Int,
     low: Int,
@@ -161,14 +184,12 @@ def randint[
 
     ```mojo
     from std.random import randint, seed
-    from std.memory import alloc
     seed()
     var size: Int = 10
-    var ptr = alloc[Int32](size)
-    randint[DType.int32](ptr, size, -50, 50)
+    var data = List(length=size, fill=Int32(0))
+    randint(data, -50, 50)
     for i in range(size):
-        print(ptr[i])  # Random Int32 between -50 and 50
-    ptr.free()
+        print(data[i])  # Random Int32 between -50 and 50
     ```
     """
 
@@ -178,6 +199,36 @@ def randint[
     else:
         for ui in range(size):
             ptr[ui] = random_ui64(UInt64(low), UInt64(high)).cast[dtype]()
+
+
+def rand[
+    dtype: DType
+](
+    span: Span[mut=True, Scalar[dtype], _],
+    /,
+    *,
+    min: Float64 = 0.0,
+    max: Float64 = 1.0,
+    int_scale: Optional[Int] = None,
+):
+    """Fills memory with random values from a uniform distribution.
+
+    Behavior depends on the dtype:
+    - Floating-point types sample values uniformly from [min, max).
+    - Integral types sample values uniformly from [min, max],
+    clamped to the representable range of the dtype.
+
+    Parameters:
+        dtype: The dtype of the pointer.
+
+    Args:
+        span: The memory area to fill.
+        min: The lower bound of the range.
+        max: The upper bound of the range.
+        int_scale: Optional quantization scale for floating-point types.
+            When provided, values are quantized to increments of 2^(-int_scale).
+    """
+    rand(span.unsafe_ptr(), len(span), min=min, max=max, int_scale=int_scale)
 
 
 def rand[
@@ -213,15 +264,13 @@ def rand[
 
     ```mojo
     from std.random import rand, seed
-    from std.memory import alloc
 
     seed()
     var size: Int = 10
-    var ptr = alloc[Float32](size)
-    rand[DType.float32](ptr, size, min=0.0, max=1.0, int_scale=16)
+    var data = List(length=size, fill=Float32(0))
+    rand(data, min=0.0, max=1.0, int_scale=16)
     for i in range(size):
-        print(ptr[i])  # Random Float32 between 0.0 and 1.0
-    ptr.free()
+        print(data[i])  # Random Float32 between 0.0 and 1.0
     ```
     """
     var scale_val = int_scale.or_else(-1)
@@ -289,6 +338,29 @@ def randn_float64(
 def randn[
     dtype: DType
 ](
+    span: Span[mut=True, Scalar[dtype], _],
+    mean: Float64 = 0.0,
+    standard_deviation: Float64 = 1.0,
+):
+    """Fills memory with random values from a Normal distribution.
+
+    Constraints:
+        The type should be floating point.
+
+    Parameters:
+        dtype: The dtype of the pointer.
+
+    Args:
+        span: The memory area to fill.
+        mean: The mean of the normal distribution.
+        standard_deviation: The standard deviation of the normal distribution.
+    """
+    randn(span.unsafe_ptr(), len(span), mean, standard_deviation)
+
+
+def randn[
+    dtype: DType
+](
     ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
     size: Int,
     mean: Float64 = 0.0,
@@ -312,15 +384,13 @@ def randn[
 
     ```mojo
     from std.random import randn, seed
-    from std.memory import alloc
 
     seed()
     var size: Int = 10
-    var ptr = alloc[Float64](size)
-    randn[DType.float64](ptr, size, mean=0.0, standard_deviation=1.0)
+    var data = List(length=size, fill=Float64(0))
+    randn(data, mean=0.0, standard_deviation=1.0)
     for i in range(size):
-        print(ptr[i])  # Random Float64 from Normal(0.0, 1.0)
-    ptr.free()
+        print(data[i])  # Random Float64 from Normal(0.0, 1.0)
     ```
     """
 
@@ -344,7 +414,6 @@ def shuffle[T: Copyable, //](mut list: List[T]):
 
     ```mojo
     from std.random import shuffle
-    from std.collections.list import List
     var list: List[Int] = [0, 1, 2, 3, 4, 5]
     shuffle(list)
     print(list)  # The list elements are now in random order

@@ -31,6 +31,7 @@ from max.graph import (
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
 from max.nn.moe import MoEGate, MoEQuantized
+from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -38,9 +39,6 @@ from max.nn.quant_config import (
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
-)
-from max.nn.transformer.distributed_transformer import (
-    forward_sharded_layers,
 )
 from test_common.graph_utils import is_b100_b200, is_h100_h200
 
@@ -230,8 +228,7 @@ def test_ep_moe_fp8(
 
         ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
 
-        # Run MoE with EP
-        outputs = forward_sharded_layers(moe_shards, inputs_tensors)
+        outputs = forward_moe_sharded_layers(moe_shards, inputs_tensors)
 
         graph.output(*outputs)
 

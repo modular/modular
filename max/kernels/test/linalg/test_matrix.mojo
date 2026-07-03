@@ -37,7 +37,7 @@ def test_matrix_static():
     var data = InlineArray[Int32, 16](uninitialized=True)
     for i in range(16):
         data[i] = Int32(i)
-    test_matrix(data.unsafe_ptr().as_any_origin(), 4, 4)
+    test_matrix(data.unsafe_ptr().as_unsafe_any_origin(), 4, 4)
 
 
 def test_matrix_dynamic():
@@ -45,7 +45,7 @@ def test_matrix_dynamic():
     var data = InlineArray[Int32, 16](uninitialized=True)
     for i in range(16):
         data[i] = Int32(i)
-    test_matrix(data.unsafe_ptr().as_any_origin(), 4, 4)
+    test_matrix(data.unsafe_ptr().as_unsafe_any_origin(), 4, 4)
 
 
 def test_matrix_dynamic_shape():
@@ -53,7 +53,7 @@ def test_matrix_dynamic_shape():
     var data = InlineArray[Int32, 16](uninitialized=True)
     for i in range(16):
         data[i] = Int32(i)
-    test_matrix(data.unsafe_ptr().as_any_origin(), 4, 4)
+    test_matrix(data.unsafe_ptr().as_unsafe_any_origin(), 4, 4)
 
 
 def main():

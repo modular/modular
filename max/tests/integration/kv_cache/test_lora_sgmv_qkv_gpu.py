@@ -21,10 +21,15 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import sgmv_qkv_lora_kernel
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.pipelines.core import TextContext
+from max.nn.kv_cache import (
+    KVCacheBuffer,
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
+from max.pipelines.context import TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 
@@ -73,11 +78,15 @@ def dump_kv_cache_to_torch(
     device_id: int = 0,
 ) -> list[torch.Tensor]:
     """Extract K or V cache contents for each sequence in batch."""
-    torch_dtype = max_dtype_to_torch(cache.params.dtype)
-    device_buffer = cache.get_device_buffer(replica_idx=0).values[device_id]
+    kv_params = cache.params
+    assert isinstance(kv_params, KVCacheParams)
+    torch_dtype = max_dtype_to_torch(kv_params.dtype)
+    kv_buffer = cache.get_device_buffer(replica_idx=0)
+    assert isinstance(kv_buffer, KVCacheBuffer)
+    device_buffer = kv_buffer.values[device_id]
     device_buffer_torch = from_dlpack(device_buffer).to(torch_dtype).cpu()
     device_buffer_torch = device_buffer_torch[:, key_or_value, :, :, :, :]
-    page_size = cache.params.page_size
+    page_size = kv_params.page_size
 
     results = []
     for ctx in batch:
@@ -86,8 +95,8 @@ def dump_kv_cache_to_torch(
 
         result = torch.empty(
             seq_len,
-            cache.params.n_kv_heads_per_device,
-            cache.params.head_dim,
+            kv_params.n_kv_heads_per_device,
+            kv_params.head_dim,
             dtype=torch_dtype,
         )
 
@@ -286,7 +295,7 @@ def run_sgmv_qkv_lora_kernel(
         # V adapter IDs are offset by num_adapters
         grouped_ids_kv.append(id_ + num_adapters if id_ >= 0 else id_)
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DTYPE,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -306,16 +315,18 @@ def run_sgmv_qkv_lora_kernel(
     for seq_len in seq_lens:
         context = create_text_context(np.empty(seq_len))
         kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
         batch.append(context)
 
     # Zero the KV cache
-    cache_tensor = kv_manager.get_device_buffer(replica_idx=0).values[0]
+    kv_buffer = kv_manager.get_device_buffer(replica_idx=0)
+    assert isinstance(kv_buffer, KVCacheBuffer)
+    cache_tensor = kv_buffer.values[0]
     cache_tensor.inplace_copy_from(
         Buffer.zeros(cache_tensor.shape, dtype=DTYPE, device=device)
     )
 
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs().inputs[0]
 
     with Graph(
         "sgmv_qkv_lora_kernel_test",
@@ -344,7 +355,7 @@ def run_sgmv_qkv_lora_kernel(
             TensorType(
                 DType.uint32, ["lora_grouped_offsets_kv"], device=device_ref
             ),
-            *kv_symbolic_inputs,
+            *kv_symbolic_inputs.flatten(),
         ],
     ) as graph:
         (
@@ -369,7 +380,8 @@ def run_sgmv_qkv_lora_kernel(
             kv_blocks=kv_inputs[0].buffer,
             cache_lengths=kv_inputs[1].tensor,
             lookup_table=kv_inputs[2].tensor,
-            max_lengths=kv_inputs[3].tensor,
+            max_prompt_length=kv_inputs[3].tensor,
+            max_cache_length=kv_inputs[4].tensor,
         )
 
         q_out = sgmv_qkv_lora_kernel(
@@ -402,7 +414,7 @@ def run_sgmv_qkv_lora_kernel(
 
     batch_seq_len_arr = np.array([total_seq_len], dtype=np.int64)
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])
 
     rank = combined_rank // 3
     result = compiled.execute(
@@ -420,7 +432,7 @@ def run_sgmv_qkv_lora_kernel(
         Buffer.from_numpy(np.array(grouped_offsets_kv, dtype=np.uint32)).to(
             device
         ),
-        *kv_runtime_inputs,
+        *kv_runtime_inputs.flatten(),
     )
 
     q_output = from_dlpack(result[0])

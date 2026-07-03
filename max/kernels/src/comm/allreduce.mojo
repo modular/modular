@@ -55,9 +55,16 @@ The allreduce operation follows a per-device execution model:
    - The device context determines which GPU executes each instance.
 
 Limitations:
-- Number of elements must be a multiple of SIMD width.
 - Maximum of 8 GPUs supported.
+- Multimem mode still requires the element count to be a multiple of SIMD width.
 - All input/output buffers must have identical shapes.
+
+Non-multimem 1-stage P2P and naive epilogue accept arbitrary ``N``: when
+``N`` is a multiple of device SIMD width, the 1-stage kernel uses the same
+vectorized ``_load_reduce`` grid loop as before; otherwise it runs that loop on
+the SIMD-aligned prefix and finishes the last ``< simd_width`` elements with a
+grid-strided scalar reduce-store. The naive epilogue kernel uses the same
+SIMD-prefix + scalar-tail pattern for ``accum → out``.
 
 ## Visual Overview
 
@@ -67,12 +74,14 @@ Limitations:
    accumulates, then writes to its result using the epilogue:
 
        GPU r (result_r)
-       src_ptrs[0] ─┐
-       src_ptrs[1] ─┼──► Σ (high-precision accum) ──► output_lambda ──► result_r
+       src_tensors[0] ─┐
+       src_tensors[1] ─┼──► Σ (high-precision accum) ──► output_lambda ──► result_r
        ...         ─┘
 
    Notes:
-   - Vectorized loads from global memory on each GPU.
+   - Non-multimem: SIMD-vector ``_load_reduce`` on the aligned prefix; optional
+     scalar tail when ``N`` is not a multiple of SIMD width. Multimem: unchanged
+     full-vector loads (``N`` must be SIMD-aligned).
    - Good for small/latency-bound tensors.
 
 2) 2-Stage P2P (bandwidth-bound)
@@ -80,7 +89,7 @@ Limitations:
    Stage 1 (reduce-scatter): Each GPU r reduces its assigned partition and writes
    into its own signal payload (the bytes after the Signal header).
 
-       src_ptrs[*]  ──►  reduce(partition r)  ──►  rank_sigs[r].payload  (per-GPU)
+       src_tensors[*]  ──►  reduce(partition r)  ──►  rank_sigs[r].payload  (per-GPU)
 
    Stage 2 (all-gather): Each GPU r gathers all partitions from peers' payloads
    and writes them to its result using the epilogue.
@@ -91,17 +100,20 @@ For the naive allreduce (no P2P) per-device flow and staging details, see the
 `_allreduce_naive_single` docstring in this file.
 """
 
+from std.atomic import Atomic, Ordering, fence
 from std.collections import InlineArray
-from std.math import ceildiv
-from std.sys import align_of, simd_width_of, size_of
+from std.math import ceildiv, clamp
+from std.sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of, size_of
 
 from layout import Coord, Idx, TileTensor, row_major
 from layout.tile_layout import TensorLayout
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
+    barrier,
     block_dim,
     global_idx,
     grid_dim,
+    thread_idx,
 )
 from std.gpu.primitives.grid_controls import (
     PDL,
@@ -117,7 +129,7 @@ from std.collections.optional import Optional
 
 from .reducescatter import (
     ReduceScatterConfig,
-    _reduce_scatter_flat_impl,
+    _reduce_scatter_impl,
     _load_reduce,
     _target_address_space,
 )
@@ -129,89 +141,334 @@ from .sync import (
     circular_add,
     is_p2p_enabled,
 )
-from .device_query import dispatch_max_num_blocks, CommTuningConfig
+from .lamport import (
+    Lamport,
+    LamportGeneration,
+    has_neg_zero,
+    remove_neg_zero,
+    set_neg_zero,
+)
+from .device_query import (
+    dispatch_select_comm_config,
+    CommTuningConfig,
+    KB,
+    MB,
+    GB,
+)
 from internal_utils import Table
 
 comptime elementwise_epilogue_type = def[
-    dtype: DType, width: Int, *, alignment: Int
+    dtype: DType, width: SIMDSize, *, alignment: Int
 ](Coord, SIMD[dtype, size=width]) capturing -> None
 
 # Tuning table to get num_blocks for allreduce.
+
+
+@fieldwise_init
+struct AllReduceAlgorithm(TrivialRegisterPassable, Writable):
+    """Selects which P2P allreduce kernel `_allreduce_p2p` launches.
+
+    Replaces the former pair of `use_2stage` / `use_lamport` booleans with a
+    single mutually-exclusive selector (the booleans could encode nonsensical
+    combinations such as "2-stage and Lamport").
+    """
+
+    var _value: Int
+
+    comptime ONE_STAGE = Self(0)
+    """Latency-bound: every block reads all peers and reduces directly."""
+    comptime TWO_STAGE = Self(1)
+    """Bandwidth-bound: reduce-scatter into peer payloads, then all-gather."""
+    comptime LAMPORT = Self(2)
+    """Barrier-free negative-zero sentinel path (small messages only)."""
+
+    @always_inline
+    def __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    @always_inline
+    def __ne__(self, other: Self) -> Bool:
+        return self._value != other._value
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes the human-readable algorithm name.
+
+        Args:
+            writer: The writer to write to.
+        """
+        if self == Self.ONE_STAGE:
+            writer.write("1_stage")
+        elif self == Self.TWO_STAGE:
+            writer.write("2_stage")
+        else:
+            writer.write("lamport")
+
+
+@fieldwise_init
+struct AllReduceTuningConfig(CommTuningConfig, TrivialRegisterPassable):
+    """
+    Parameters:
+        ngpus: Number of GPUs for running allreduce.
+        num_bytes: Total number of input bytes supported by the config.
+        sm_version: SM version (as string).
+        num_blocks: Number of thread blocks for running allreduce.
+    """
+
+    var ngpus: Int
+    var num_bytes: Int
+    var sm_version: StaticString
+    var num_blocks: Int
+    var algorithm: AllReduceAlgorithm
+
+    def get_num_blocks(self) -> Int:
+        return self.num_blocks
+
+    def get_num_bytes(self) -> Int:
+        return self.num_bytes
+
+    def get_sm_version(self) -> StaticString:
+        return self.sm_version
+
+    def get_ngpus(self) -> Int:
+        return self.ngpus
+
+    def get_algorithm(self) -> AllReduceAlgorithm:
+        return self.algorithm
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes the tuning config as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
+            self.ngpus,
+            self.num_bytes,
+            self.sm_version,
+            self.num_blocks,
+            self.algorithm,
+        )
+
+
 # Arch-specific defaults use ngpus=-1, num_bytes=-1 with the arch's sm_version.
 # The global default (sm_version="default") is the ultimate fallback for
-# unknown architectures -- dispatch_max_num_blocks prefers arch-specific
+# unknown architectures -- dispatch_select_comm_config prefers arch-specific
 # defaults when available.
 comptime allreduce_tuning_table = Table(
     [
         # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="sm_90a", num_blocks=216
+        AllReduceTuningConfig(
+            ngpus=-1,
+            num_bytes=-1,
+            sm_version="sm_90a",
+            num_blocks=216,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
-        CommTuningConfig(
-            ngpus=4, num_bytes=(1 << 27), sm_version="sm_90a", num_blocks=232
+        # 2xH100: 1-stage wins across all measured sizes (16KB to 128MB);
+        # ratio 2/1 = 1.02 at 128MB, narrowing but no crossover.
+        AllReduceTuningConfig(
+            ngpus=2,
+            num_bytes=(2 * GB),
+            sm_version="sm_90a",
+            num_blocks=216,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
-        # default for sm100 (encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="sm_100a", num_blocks=512
+        # 4xH100 / 8xH100 thresholds: 1-stage wins below 1MB, 2-stage wins
+        # cleanly from 1MB upward (ratio 0.83 at 1MB / ngpus=4, 0.74 at
+        # 1MB / ngpus=8).
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(512 * KB),  # 512KB: largest size where 1-stage wins.
+            sm_version="sm_90a",
+            num_blocks=216,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
-        # Tuning results for sm100 (2xB200, 4xB200)
-        CommTuningConfig(
-            ngpus=2, num_bytes=(1 << 23), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(128 * MB),
+            sm_version="sm_90a",
+            num_blocks=232,
+            algorithm=AllReduceAlgorithm.TWO_STAGE,
         ),
-        CommTuningConfig(
-            ngpus=2, num_bytes=(1 << 24), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(2 * GB),
+            sm_version="sm_90a",
+            num_blocks=216,
+            algorithm=AllReduceAlgorithm.TWO_STAGE,
         ),
-        CommTuningConfig(
-            ngpus=2, num_bytes=(1 << 25), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=8,
+            num_bytes=(512 * KB),
+            sm_version="sm_90a",
+            num_blocks=216,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
-        CommTuningConfig(
-            ngpus=2, num_bytes=(1 << 26), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=8,
+            num_bytes=(2 * GB),
+            sm_version="sm_90a",
+            num_blocks=216,
+            algorithm=AllReduceAlgorithm.TWO_STAGE,
         ),
-        CommTuningConfig(
-            ngpus=2, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
+        # default for sm100 (encoded with ngpus=-1, num_bytes=-1).
+        AllReduceTuningConfig(
+            ngpus=-1,
+            num_bytes=-1,
+            sm_version="sm_100a",
+            num_blocks=512,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
-        CommTuningConfig(
-            ngpus=4, num_bytes=(1 << 23), sm_version="sm_100a", num_blocks=512
+        # B200 Lamport crossover (1 KiB - 8 MiB forced sweep): Lamport beats
+        # 1-stage by ~1.1-1.68x across the small-message range, reaching
+        # break-even at ~1 MiB (1-stage pulls ahead above it).
+        AllReduceTuningConfig(
+            ngpus=2,
+            num_bytes=(1 * MB),
+            sm_version="sm_100a",
+            num_blocks=512,
+            algorithm=AllReduceAlgorithm.LAMPORT,
         ),
-        CommTuningConfig(
-            ngpus=4, num_bytes=(1 << 24), sm_version="sm_100a", num_blocks=512
+        # 2xB200: 1-stage wins across all measured sizes (16KB to 256MB).
+        # The 2-stage curve approaches but does not cross 1-stage in the
+        # measured range (ratio 2/1 = 1.01 at 256MB).
+        AllReduceTuningConfig(
+            ngpus=2,
+            num_bytes=(2 * GB),
+            sm_version="sm_100a",
+            num_blocks=512,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
-        CommTuningConfig(
-            ngpus=4, num_bytes=(1 << 25), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(1 * MB),
+            sm_version="sm_100a",
+            num_blocks=512,
+            algorithm=AllReduceAlgorithm.LAMPORT,
         ),
-        CommTuningConfig(
-            ngpus=4, num_bytes=(1 << 26), sm_version="sm_100a", num_blocks=512
+        # 8xB200 / 4xB200 thresholds: 1-stage wins for latency-bound sizes,
+        # 2-stage wins where bandwidth dominates. The crossover is at a
+        # different size for each ngpus, so the boundary entries differ.
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(4 * MB),  # 4MB: 1-stage wins by 9% at 4MB; 2-stage
+            # wins by 25% at 8MB.
+            sm_version="sm_100a",
+            num_blocks=512,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
-        CommTuningConfig(
-            ngpus=4, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(2 * GB),
+            sm_version="sm_100a",
+            num_blocks=512,
+            algorithm=AllReduceAlgorithm.TWO_STAGE,
+        ),
+        AllReduceTuningConfig(
+            ngpus=8,
+            num_bytes=(1 * MB),
+            sm_version="sm_100a",
+            num_blocks=512,
+            algorithm=AllReduceAlgorithm.LAMPORT,
+        ),
+        AllReduceTuningConfig(
+            ngpus=8,
+            num_bytes=(2 * MB),  # 2MB: 1-stage and 2-stage are within 3%
+            # at 2MB; 2-stage wins by 37% at 4MB. 2MB stays in the 1-stage
+            # bucket as a noise margin for sub-2MB workloads.
+            sm_version="sm_100a",
+            num_blocks=512,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
+        ),
+        AllReduceTuningConfig(
+            ngpus=8,
+            num_bytes=(2 * GB),
+            sm_version="sm_100a",
+            num_blocks=512,
+            algorithm=AllReduceAlgorithm.TWO_STAGE,
         ),
         # default for sm103 (B300, encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="sm_103a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=-1,
+            num_bytes=-1,
+            sm_version="sm_103a",
+            num_blocks=512,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
         # default for CDNA3 (MI300X, encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="CDNA3", num_blocks=32
+        AllReduceTuningConfig(
+            ngpus=-1,
+            num_bytes=-1,
+            sm_version="CDNA3",
+            num_blocks=32,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
         # default for CDNA4 (MI355X, encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="CDNA4", num_blocks=64
+        AllReduceTuningConfig(
+            ngpus=-1,
+            num_bytes=-1,
+            sm_version="CDNA4",
+            num_blocks=64,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
-        CommTuningConfig(
-            ngpus=8, num_bytes=(1 << 20), sm_version="CDNA4", num_blocks=64
+        # 2xMI355: 1-stage and 2-stage are within noise across all measured
+        # sizes (busbw ~64 GB/s for both at 128MB -- XGMI bandwidth bound,
+        # not algorithm bound). Keep 1-stage to match arch convention.
+        AllReduceTuningConfig(
+            ngpus=2,
+            num_bytes=(2 * GB),
+            sm_version="CDNA4",
+            num_blocks=64,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
-        CommTuningConfig(
-            ngpus=8, num_bytes=(1 << 31), sm_version="CDNA4", num_blocks=44
+        # 4xMI355 / 8xMI355 thresholds: 256KB boundary. At 256KB, 1-stage
+        # ties or wins narrowly; at 512KB 2-stage starts winning (~8% on
+        # ngpus=4, tie on ngpus=8); from 1MB upward 2-stage wins decisively.
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(256 * KB),
+            sm_version="CDNA4",
+            num_blocks=64,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
+        ),
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(2 * GB),
+            sm_version="CDNA4",
+            num_blocks=64,
+            algorithm=AllReduceAlgorithm.TWO_STAGE,
+        ),
+        AllReduceTuningConfig(
+            ngpus=8,
+            num_bytes=(256 * KB),
+            sm_version="CDNA4",
+            num_blocks=64,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
+        ),
+        # Recovered from pre-refactor tuning table: 44 blocks was tuned for
+        # ngpus=8 / large sizes. Under the old hard-coded threshold ngpus=8 /
+        # >256KB used 2-stage, so this tuning belongs to the 2-stage entry.
+        AllReduceTuningConfig(
+            ngpus=8,
+            num_bytes=(2 * GB),
+            sm_version="CDNA4",
+            num_blocks=44,
+            algorithm=AllReduceAlgorithm.TWO_STAGE,
         ),
         # global default for unknown architectures
-        CommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="default", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=-1,
+            num_bytes=-1,
+            sm_version="default",
+            num_blocks=512,
+            algorithm=AllReduceAlgorithm.ONE_STAGE,
         ),
     ],
     "allreduce_table",
 )
 
 
+@__name(t"naive_reduce_{dtype}")
 def _naive_reduce_kernel[
     dtype: DType
 ](
@@ -240,29 +497,47 @@ def _naive_reduce_kernel[
         dst_buf[i] += src_buf[i]
 
 
+@__name(t"naive_reduce_with_lambda_{dtype}")
 def _naive_reduce_kernel_with_lambda[
     dtype: DType,
     out_layout: TensorLayout,
     *,
-    width: Int,
-    alignment: Int,
     output_lambda: elementwise_epilogue_type,
 ](
     dst_buf: TileTensor[dtype, out_layout, MutAnyOrigin],
     src_buf: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     num_elements: Int,
 ):
-    """Naive reduction kernel with elementwise lambda support."""
-    var tid = global_idx.x
-    var stride = grid_dim.x * block_dim.x
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    """Apply ``output_lambda`` from ``src_buf`` into ``dst_buf`` (naive epilogue).
 
-    for idx in range(tid, num_elements // simd_width, stride):
-        var elem_idx = idx * simd_width
-        output_lambda[width=simd_width, alignment=alignment](
-            dst_buf.layout.idx2crd(elem_idx),
-            src_buf.load[width=simd_width, alignment=alignment](elem_idx),
-        )
+    Uses device SIMD width loads on the aligned prefix (same pattern as the
+    pre-ragged vector epilogue), then grid-strided scalar loads for any tail when
+    ``num_elements`` is not a multiple of SIMD width.
+    """
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_align = align_of[SIMD[dtype, simd_width]]()
+    comptime scalar_align = align_of[SIMD[dtype, 1]]()
+    var global_tid = global_idx.x
+    var total_threads = grid_dim.x * Int(block_dim.x)
+    var num_simd_vectors = num_elements // simd_width
+    var simd_prefix_elems = num_simd_vectors * simd_width
+
+    if num_simd_vectors > 0:
+        for idx in range(global_tid, num_simd_vectors, total_threads):
+            var elem_idx = idx * simd_width
+            output_lambda[width=simd_width, alignment=simd_align](
+                dst_buf.layout.idx2crd(elem_idx),
+                src_buf.load[width=simd_width, alignment=simd_align](elem_idx),
+            )
+
+    if simd_prefix_elems < num_elements:
+        for elem_idx in range(
+            simd_prefix_elems + global_tid, num_elements, total_threads
+        ):
+            output_lambda[width=1, alignment=scalar_align](
+                dst_buf.layout.idx2crd(elem_idx),
+                src_buf.load[width=1, alignment=scalar_align](elem_idx),
+            )
 
 
 @always_inline
@@ -333,7 +608,6 @@ def _allreduce_naive_single[
     - Each op instance only writes to its own temporary buffer and its own
       output buffer (`out_r`).
     """
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime BLOCK_SIZE = 256
     var num_elements = list_of_in_tensors[0].num_elements()
 
@@ -362,12 +636,18 @@ def _allreduce_naive_single[
     var scratch = ctx.enqueue_create_buffer[dtype](num_elements)
 
     # Grid configuration for naive kernels.
-    var grid_size = min(max_num_blocks, ceildiv(num_elements, BLOCK_SIZE))
+    var grid_size = clamp(ceildiv(num_elements, BLOCK_SIZE), 1, max_num_blocks)
+    comptime simd_width_epi = simd_width_of[dtype, target=get_gpu_target()]()
+    var num_simd_vecs_epi = num_elements // simd_width_epi
+    var tail_elems_epi = num_elements - num_simd_vecs_epi * simd_width_epi
+    var grid_simd_epi = ceildiv(num_simd_vecs_epi, BLOCK_SIZE)
+    var grid_tail_epi = ceildiv(tail_elems_epi, BLOCK_SIZE)
+    var grid_epilogue = clamp(
+        max(grid_simd_epi, grid_tail_epi), 1, max_num_blocks
+    )
 
     # Reduce local buffer first.
-    ctx.enqueue_function[
-        _naive_reduce_kernel[dtype], _naive_reduce_kernel[dtype]
-    ](
+    ctx.enqueue_function[_naive_reduce_kernel[dtype]](
         accum,
         dev_inputs[my_rank],
         num_elements,
@@ -382,9 +662,7 @@ def _allreduce_naive_single[
 
         # Copy remote input into device-local scratch, then accumulate.
         ctx.enqueue_copy(scratch, dev_inputs[i])
-        ctx.enqueue_function[
-            _naive_reduce_kernel[dtype], _naive_reduce_kernel[dtype]
-        ](
+        ctx.enqueue_function[_naive_reduce_kernel[dtype]](
             accum,
             scratch,
             num_elements,
@@ -396,17 +674,13 @@ def _allreduce_naive_single[
     comptime naive_reduce_with_lambda_kernel = _naive_reduce_kernel_with_lambda[
         dtype,
         out_layout,
-        width=simd_width,
-        alignment=align_of[SIMD[dtype, simd_width]](),
         output_lambda=output_lambda,
     ]
-    ctx.enqueue_function[
-        naive_reduce_with_lambda_kernel, naive_reduce_with_lambda_kernel
-    ](
+    ctx.enqueue_function[naive_reduce_with_lambda_kernel](
         rebind[TileTensor[dtype, out_layout, MutAnyOrigin]](out_tensor),
         accum,
         num_elements,
-        grid_dim=grid_size,
+        grid_dim=grid_epilogue,
         block_dim=BLOCK_SIZE,
     )
 
@@ -414,9 +688,11 @@ def _allreduce_naive_single[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"allreduce_2stage_{dtype}_{use_multimem}")
 def _allreduce_2stage_kernel[
     dtype: DType,
     ngpus: Int,
+    in_layout: TensorLayout,
     out_layout: TensorLayout,
     *,
     BLOCK_SIZE: Int,
@@ -424,8 +700,8 @@ def _allreduce_2stage_kernel[
     use_multimem: Bool = False,
 ](
     result: TileTensor[dtype, out_layout, MutAnyOrigin],
-    src_ptrs: InlineArray[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    src_tensors: InlineArray[
+        TileTensor[dtype, in_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
@@ -440,6 +716,7 @@ def _allreduce_2stage_kernel[
     Parameters:
         dtype: Data dtype of tensor elements.
         ngpus: Number of GPUs participating.
+        in_layout: Layout of the input TileTensors.
         out_layout: Layout of the output TileTensor.
         BLOCK_SIZE: Number of threads per block.
         output_lambda: An elementwise output lambda function.
@@ -447,7 +724,7 @@ def _allreduce_2stage_kernel[
 
     Args:
         result: Output buffer for reduced values.
-        src_ptrs: Input buffers from all GPUs.
+        src_tensors: Input buffers from all GPUs.
         rank_sigs: Signal pointers for synchronization.
             IMPORTANT: the Signal pointers have trailing buffers for
             communication, which must be at least `ngpus * size_of(payload)`.
@@ -463,6 +740,8 @@ def _allreduce_2stage_kernel[
     var stride = grid_dim.x * BLOCK_SIZE
 
     var rs_config = ReduceScatterConfig[dtype, ngpus](num_elements, stride)
+
+    comptime num_tensors = 1 if use_multimem else ngpus
 
     with PDL():
         # --- Define tmp buffers by offsetting for Signal struct ---
@@ -481,18 +760,6 @@ def _allreduce_2stage_kernel[
         # Current rank's output buffer.
         var tmp_out = tmps[0]
 
-        # Round-robin access pattern to balance NVLink traffic across GPUs.
-        comptime num_tensors = 1 if use_multimem else ngpus
-        var ptrs = InlineArray[
-            UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_tensors
-        ](uninitialized=True)
-
-        comptime for i in range(num_tensors):
-            var target = 0 if num_tensors == 1 else circular_add[num_tensors](
-                my_rank, i
-            )
-            ptrs[i] = src_ptrs[target]
-
         # --- Stage 1: Reduce-Scatter Phase ---
         # Uses two-phase synchronization protocol with release-acquire semantics:
         # 1. Initial barrier establishes happens-before relationship.
@@ -502,7 +769,7 @@ def _allreduce_2stage_kernel[
         # TODO(KERN-2273): Remove this once temporary buffers removed
         # Output lambda for reduce-scatter: write to scratch buffer
         var tmp_buff = TileTensor[mut=True, dtype](
-            tmp_out, row_major(Idx(rs_config.rank_part(my_rank)))
+            tmp_out, row_major(rs_config.rank_part(my_rank))
         )
 
         @always_inline
@@ -510,7 +777,7 @@ def _allreduce_2stage_kernel[
         @__copy_capture(tmp_buff)
         def rs_output_lambda[
             _dtype: DType,
-            _width: Int,
+            _width: SIMDSize,
             *,
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -521,9 +788,27 @@ def _allreduce_2stage_kernel[
                 val.cast[dtype](),
             )
 
-        _reduce_scatter_flat_impl[
+        # Slice input tiles to this rank's partition for reduce-scatter.
+        var elem_start = rs_config.rank_start(my_rank)
+        var n_elements = rs_config.rank_num_elements(my_rank)
+        comptime SlicedTile = TileTensor[dtype, SlicedLayout, ImmutAnyOrigin]
+        comptime SlicedLayout = type_of(row_major(n_elements))
+        var sliced_tiles = InlineArray[SlicedTile, num_tensors](
+            uninitialized=True
+        )
+
+        comptime for i in range(num_tensors):
+            # Round-robin access pattern to balance NVLink traffic across GPUs.
+            var target = 0 if num_tensors == 1 else circular_add[num_tensors](
+                my_rank, i
+            )
+            sliced_tiles[i] = SlicedTile(
+                src_tensors[target].ptr + elem_start, row_major(n_elements)
+            )
+
+        _reduce_scatter_impl[
             ngpus, output_lambda=rs_output_lambda, use_multimem=use_multimem
-        ](ptrs, tmp_buff, my_rank, rs_config)
+        ](sliced_tiles, tmp_buff, n_elements, rs_config.stride)
 
         # Second barrier with memory ordering guarantees.
         _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
@@ -575,12 +860,55 @@ def _allreduce_2stage_kernel[
                 )
 
 
+@always_inline
+def _allreduce_1stage_reduce_store_one[
+    dtype: DType,
+    in_layout: TensorLayout,
+    out_layout: TensorLayout,
+    num_tensors: Int,
+    *,
+    accum_type: DType,
+    output_lambda: elementwise_epilogue_type,
+](
+    elem_idx: Int,
+    ptrs: InlineArray[
+        TileTensor[dtype, in_layout, ImmutAnyOrigin], num_tensors
+    ],
+    result: TileTensor[dtype, out_layout, MutAnyOrigin],
+) -> None:
+    """Load one element from every peer, reduce in ``accum_type``, epilogue store.
+    """
+    comptime scalar_align = align_of[SIMD[dtype, 1]]()
+    var accum = (
+        ptrs[0]
+        .address_space_cast[_target_address_space]()
+        .load[width=1, alignment=scalar_align, invariant=True](Coord(elem_idx))
+        .cast[accum_type]()
+    )
+    comptime for gpu_idx in range(1, num_tensors):
+        accum += (
+            ptrs[gpu_idx]
+            .address_space_cast[_target_address_space]()
+            .load[width=1, alignment=scalar_align, invariant=True](
+                Coord(elem_idx)
+            )
+            .cast[accum_type]()
+        )
+    var reduced = accum.cast[dtype]()
+    output_lambda[width=1, alignment=scalar_align](
+        result.layout.idx2crd(elem_idx),
+        reduced,
+    )
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"allreduce_1stage_{dtype}_{use_multimem}")
 def _allreduce_1stage_kernel[
     dtype: DType,
     ngpus: Int,
+    in_layout: TensorLayout,
     out_layout: TensorLayout,
     *,
     BLOCK_SIZE: Int,
@@ -588,8 +916,8 @@ def _allreduce_1stage_kernel[
     use_multimem: Bool = False,
 ](
     result: TileTensor[dtype, out_layout, MutAnyOrigin],
-    src_ptrs: InlineArray[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    src_tensors: InlineArray[
+        TileTensor[dtype, in_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
@@ -602,35 +930,44 @@ def _allreduce_1stage_kernel[
     Parameters:
         dtype: Data dtype of tensor elements.
         ngpus: Number of GPUs participating.
+        in_layout: Layout of the input TileTensors.
         out_layout: Layout of the output TileTensor.
         BLOCK_SIZE: Number of threads per block.
         output_lambda: An elementwise output lambda function.
         use_multimem: If True, use multi-memory space buffers for input.
 
     Args:
-        result: Output buffer for reduced values
-        src_ptrs: Input buffers from all GPUs
+        result: Output tensor for reduced values
+        src_tensors: Input tensors from all GPUs
         rank_sigs: Signal pointers for synchronization
         num_elements: Number of elements to reduce
         my_rank: Current GPU rank
 
     Uses P2P access to directly read from other GPU buffers and perform reduction.
     Synchronizes using _multi_gpu_barrier before and after reduction.
+
+    **Non-multimem path:** grid-strided loop over full SIMD vectors using
+    ``_load_reduce`` (same as historical 1-stage performance). If
+    ``num_elements`` is not divisible by ``simd_width``, the aligned prefix is
+    still processed as SIMD vectors; the remaining ``< simd_width`` scalars use
+    ``_allreduce_1stage_reduce_store_one``.
+
+    **Multimem path:** unchanged vectorized SIMD loads over full
+    ``simd_width`` vectors (input size must remain SIMD-aligned).
     """
     comptime accum_type = get_accum_type[dtype]()
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
     var global_tid = global_idx.x
-    var stride = grid_dim.x * BLOCK_SIZE
+    var total_threads = grid_dim.x * BLOCK_SIZE
     var my_sig = rank_sigs[my_rank]
-    var num_simd_vectors = num_elements // simd_width
 
     # Route input pointers according to round-robin pattern.
     # For 8 GPUs: Rank 0 accesses 0→1→2→...→7, Rank 1 accesses 1→2→...→7→0, etc.
     comptime num_tensors = 1 if use_multimem else ngpus
     var ptrs = InlineArray[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_tensors
+        TileTensor[dtype, in_layout, ImmutAnyOrigin], num_tensors
     ](uninitialized=True)
 
     # It's safe to prefetch the input pointers
@@ -638,28 +975,389 @@ def _allreduce_1stage_kernel[
         var target = 0 if num_tensors == 1 else circular_add[num_tensors](
             my_rank, i
         )
-        ptrs[i] = src_ptrs[target]
+        ptrs[i] = src_tensors[target]
 
     with PDL():
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
-        # Vectorized grid-strided loop with SIMD loads.
-        for idx in range(global_tid, num_simd_vectors, stride):
-            var elem_idx = idx * simd_width
-
-            var reduced_result = _load_reduce[
-                ngpus,
-                simd_width=simd_width,
-                alignment=alignment,
-                accum_type=accum_type,
-                use_multimem=use_multimem,
-            ](elem_idx, ptrs)
-
-            output_lambda[width=simd_width, alignment=alignment](
-                result.layout.idx2crd(elem_idx), reduced_result
-            )
+        comptime if use_multimem:
+            var num_simd_chunks = num_elements // simd_width
+            for idx in range(global_tid, num_simd_chunks, total_threads):
+                var elem_idx = idx * simd_width
+                var reduced_result = _load_reduce[
+                    ngpus,
+                    simd_width=simd_width,
+                    alignment=alignment,
+                    accum_type=accum_type,
+                    use_multimem=use_multimem,
+                ](elem_idx, ptrs)
+                output_lambda[width=simd_width, alignment=alignment](
+                    result.layout.idx2crd(elem_idx), reduced_result
+                )
+        else:
+            var ptrs_ngpus = rebind[
+                InlineArray[TileTensor[dtype, in_layout, ImmutAnyOrigin], ngpus]
+            ](ptrs)
+            var num_simd_vectors = num_elements // simd_width
+            var simd_prefix_elems = num_simd_vectors * simd_width
+            if num_simd_vectors > 0:
+                for idx in range(global_tid, num_simd_vectors, total_threads):
+                    var elem_idx = idx * simd_width
+                    var reduced_result = _load_reduce[
+                        ngpus,
+                        simd_width=simd_width,
+                        alignment=alignment,
+                        accum_type=accum_type,
+                        use_multimem=False,
+                    ](elem_idx, ptrs_ngpus)
+                    output_lambda[width=simd_width, alignment=alignment](
+                        result.layout.idx2crd(elem_idx), reduced_result
+                    )
+            if simd_prefix_elems < num_elements:
+                for elem_idx in range(
+                    simd_prefix_elems + global_tid,
+                    num_elements,
+                    total_threads,
+                ):
+                    _allreduce_1stage_reduce_store_one[
+                        dtype,
+                        in_layout,
+                        out_layout,
+                        ngpus,
+                        accum_type=accum_type,
+                        output_lambda=output_lambda,
+                    ](elem_idx, ptrs_ngpus, result)
 
         _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+
+
+@always_inline
+def _lamport_supported() -> Bool:
+    """Whether the current GPU target is cleared for the Lamport protocol.
+
+    The barrier-free Lamport allreduce relies on a naturally-aligned 128-bit
+    volatile load/store being a single, peer-visible transaction.
+    """
+    return is_nvidia_gpu() or is_amd_gpu()
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
+)
+@__name(t"allreduce_lamport_{dtype}_{use_fence}")
+def _allreduce_lamport_kernel[
+    dtype: DType,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    out_layout: TensorLayout,
+    *,
+    BLOCK_SIZE: Int,
+    output_lambda: elementwise_epilogue_type,
+    use_fence: Bool = False,
+](
+    result: TileTensor[dtype, out_layout, MutAnyOrigin],
+    src_tensors: InlineArray[
+        TileTensor[dtype, in_layout, ImmutAnyOrigin], ngpus
+    ],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    num_elements: Int,
+    my_rank: Int,
+):
+    """Barrier-free one-shot Lamport allreduce for small, latency-bound transfers.
+
+    Replaces the two cross-GPU counter barriers of `_allreduce_1stage_kernel`
+    with a push-then-poll protocol keyed on the negative-zero sentinel.
+
+    Per thread, over a grid-strided range of 128-bit packs:
+
+    1. load this rank's local input pack and `remove_neg_zero` (producer
+       sanitize -- the correctness linchpin); the local term is kept in-register
+       and seeds the sum, so this rank only touches the `ngpus - 1` REMOTE slots;
+    2. push the sanitized pack into each peer's generation buffer at this rank's
+       slot (skipping self), round-robin over peers (`circular_add`) for balance;
+    3. `comptime if use_fence`: emit a system-scope release `atomic.fence` after
+       the push (default off; slice 2 proved fenceless is correct on both
+       targets for the single-location sentinel scheme);
+    4. poll all `ngpus - 1` remote slots in this rank's own buffer, re-reading
+       until none still hold the sentinel (observes parallel arrival rather than
+       spinning on one peer at a time);
+    5. reduce the in-register local seed plus the arrived peers in
+       `get_accum_type[dtype]`, apply `output_lambda`, and write the result;
+    6. fused into the same loop, clear this pack's remote slots in the generation
+       reused two calls from now (`(flag+2)%3`) over the extent the previous
+       writer wrote (`prev_num_elements`), priming it for reuse (a short tail
+       loop covers any leftover when the previous call was larger);
+    7. advance this rank's generation counter exactly once (grid-barrier
+       epilogue), recording this call's size for the next call's clear.
+
+    The generation counter (`flag`) and clear extent (`prev_num_elements`) are
+    read from and advanced in this rank's device-resident `Signal.lamport_state`
+
+    Parameters:
+        dtype: Data dtype of tensor elements (bf16/fp16/fp32 transport).
+        ngpus: Number of GPUs participating.
+        in_layout: Layout of the input TileTensors.
+        out_layout: Layout of the output TileTensor.
+        BLOCK_SIZE: Number of threads per block.
+        output_lambda: An elementwise output lambda function.
+        use_fence: If True, emit a system-scope release fence after each push and
+            an acquire fence after each peer read. Default False (fenceless).
+
+    Args:
+        result: Output buffer for reduced values.
+        src_tensors: Input buffers from all GPUs.
+        rank_sigs: Signal pointers; the Lamport comm region and `lamport_state`
+            follow the header.
+        num_elements: Number of elements to reduce. Must be a multiple of the
+            128-bit pack width (the dispatch falls back to the 1-stage kernel
+            otherwise).
+        my_rank: Current GPU rank.
+    """
+    comptime assert (
+        _lamport_supported()
+    ), "Lamport allreduce support not established on this hardware."
+    comptime accum_type = get_accum_type[dtype]()
+    # Pin the pack to the 128-bit single-copy-atomic transaction width the
+    # sentinel protocol depends on, NOT the dtype's natural SIMD width (4xfp32 /
+    # 8xbf16). The atomicity guarantee that couples "data present" with
+    # "sentinel gone" holds only at exactly 16 bytes.
+    comptime atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
+    comptime assert (
+        atomic_width * size_of[dtype]() == 16
+    ), "Lamport pack must be exactly 16 bytes (the 128-bit atomic width)."
+    comptime alignment = align_of[SIMD[dtype, atomic_width]]()
+
+    var global_tid = global_idx.x
+    var total_threads = grid_dim.x * BLOCK_SIZE
+
+    # Whole 128-bit packs only; a scalar tail cannot carry the sentinel, so the
+    # dispatch routes non-pack-aligned sizes to the 1-stage path.
+    var num_packs = num_elements // atomic_width
+
+    # This rank's own comm region (where it polls for peer data).
+    var my_region = rank_sigs[my_rank][].lamport_region_ptr[dtype]()
+
+    # Peer comm-region bases in round-robin order (balances NVLink/XGMI traffic
+    # the same way the existing kernels do).
+    var peer_regions = InlineArray[
+        UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
+    ](uninitialized=True)
+    comptime for i in range(ngpus):
+        var target = circular_add[ngpus](my_rank, i)
+        peer_regions[i] = rank_sigs[target][].lamport_region_ptr[dtype]()
+
+    var sentinel = set_neg_zero[dtype, atomic_width]()
+
+    with PDL():
+        var state = rank_sigs[my_rank][].lamport_state_ptr()
+        var flag = Int(state.load[width=1, volatile=True](Lamport.STATE_FLAG))
+        var clear_size = Int(
+            state.load[width=1, volatile=True](Lamport.STATE_PREV_ELEMS)
+        )
+        # Packs to reset in the generation cleared this call
+        var clear_packs = clear_size // atomic_width
+
+        # Generation geometry. The per-generation stride is FIXED at the reserved
+        # capacity (`Lamport.MAX_PACKS` packs per rank slot), NOT this call's
+        # `num_packs`, so generation `g` always occupies the same buffer region
+        # regardless of message size and calls of different sizes never alias. Slot
+        # s of generation g starts at pack index
+        # `g * (ngpus * Lamport.MAX_PACKS) + s * Lamport.MAX_PACKS`.
+        comptime gen_stride_packs = ngpus * Lamport.MAX_PACKS
+        var data_gen = LamportGeneration.data_index(flag)
+        var clear_gen = LamportGeneration.clear_index(flag)
+        var data_gen_off = data_gen * gen_stride_packs
+        var clear_gen_off = clear_gen * gen_stride_packs
+
+        for pack in range(global_tid, num_packs, total_threads):
+            var elem_idx = pack * atomic_width
+
+            # (a) Load this rank's local input pack and producer-sanitize. The
+            # local contribution stays in-register and seeds the sum (e); it is
+            # never staged through the comm region, so this rank only pushes,
+            # polls, and clears the `ngpus - 1` REMOTE slots.
+            var local = remove_neg_zero[dtype, atomic_width](
+                src_tensors[my_rank]
+                .address_space_cast[_target_address_space]()
+                .load[width=atomic_width, alignment=alignment](Coord(elem_idx))
+            )
+
+            # (b) Push into each PEER's generation buffer at this rank's slot
+            # (skip self -- i in 1..ngpus-1; peer_regions is round-robin order so
+            # iterating i balances fabric traffic).
+            var push_off = data_gen_off + my_rank * Lamport.MAX_PACKS + pack
+            comptime for i in range(1, ngpus):
+                peer_regions[i].store[
+                    width=atomic_width, alignment=alignment, volatile=True
+                ](push_off * atomic_width, local)
+
+            # (c) Optional release fence (default off; see slice-2 result).
+            comptime if use_fence:
+                fence[ordering=Ordering.RELEASE, scope=StaticString("")]()
+
+            # (d) Poll all `ngpus - 1` remote slots in this rank's own buffer,
+            # re-reading every slot until none still hold the sentinel. This
+            # observes parallel arrival, unlike spinning on one peer at a time
+            # (which serializes the wait behind the slowest-ordered peer).
+            var peer_packs = InlineArray[SIMD[dtype, atomic_width], ngpus](
+                uninitialized=True
+            )
+            var done = False
+            while not done:
+                done = True
+                comptime for i in range(1, ngpus):
+                    var peer = circular_add[ngpus](my_rank, i)
+                    var slot_off = (
+                        data_gen_off + peer * Lamport.MAX_PACKS + pack
+                    )
+                    var p = my_region.load[
+                        width=atomic_width, alignment=alignment, volatile=True
+                    ](slot_off * atomic_width)
+                    peer_packs[i] = p
+                    if has_neg_zero[dtype, atomic_width](p):
+                        done = False
+            comptime if use_fence:
+                fence[ordering=Ordering.ACQUIRE, scope=StaticString("")]()
+
+            # (e) Reduce (in-register local seed + the arrived peers) and write.
+            var accum = local.cast[accum_type]()
+            comptime for i in range(1, ngpus):
+                accum += peer_packs[i].cast[accum_type]()
+            output_lambda[width=atomic_width, alignment=alignment](
+                result.layout.idx2crd(elem_idx), accum.cast[dtype]()
+            )
+
+            # (f) Fused clear: reset this pack's slots in the generation reused
+            # two calls from now (the `ngpus - 1` remote slots we poll) back to
+            # the sentinel, while still within the previous writer's extent.
+            # Fusing into the main loop avoids a separate full pass over the
+            # region (the dominant per-call overhead vs the 1-stage path).
+            if pack < clear_packs:
+                comptime for i in range(1, ngpus):
+                    var peer = circular_add[ngpus](my_rank, i)
+                    var clr_off = (
+                        clear_gen_off + peer * Lamport.MAX_PACKS + pack
+                    )
+                    my_region.store[
+                        width=atomic_width, alignment=alignment, volatile=True
+                    ](clr_off * atomic_width, sentinel)
+
+        # (f-tail) If the previous call was LARGER than this one, the fused clear
+        # only covered packs [0, num_packs); clear the leftover
+        # [num_packs, clear_packs) of the reused generation here. Empty (no
+        # second pass) in the common same-size case where clear_packs ==
+        # num_packs.
+        for cp in range(num_packs + global_tid, clear_packs, total_threads):
+            comptime for i in range(1, ngpus):
+                var peer = circular_add[ngpus](my_rank, i)
+                var clr_off = clear_gen_off + peer * Lamport.MAX_PACKS + cp
+                my_region.store[
+                    width=atomic_width, alignment=alignment, volatile=True
+                ](clr_off * atomic_width, sentinel)
+
+        # (g) Advance this rank's generation flag exactly once per call via an
+        # intra-GPU block-arrival counter.
+        barrier()
+        if thread_idx.x == 0:
+            var arrived = Atomic.fetch_add(
+                state + Lamport.STATE_ARRIVAL, UInt32(1)
+            )
+            if Int(arrived) == Int(grid_dim.x) - 1:
+                state.store[volatile=True](Lamport.STATE_FLAG, UInt32(flag + 1))
+                state.store[volatile=True](
+                    Lamport.STATE_PREV_ELEMS, UInt32(num_elements)
+                )
+                state.store[volatile=True](Lamport.STATE_ARRIVAL, UInt32(0))
+
+
+@always_inline
+def _allreduce_lamport_p2p[
+    dtype: DType,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    out_layout: TensorLayout,
+    output_lambda: elementwise_epilogue_type,
+    pdl_level: PDLLevel,
+    use_fence: Bool = False,
+](
+    list_of_in_tensors: InlineArray[
+        TileTensor[dtype, in_layout, in_origin], ngpus
+    ],
+    out_tensor: TileTensor[mut=True, dtype, out_layout, ...],
+    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    dispatch_config: AllReduceTuningConfig,
+    ctx: DeviceContext,
+) raises:
+    """Launches the barrier-free Lamport allreduce on this GPU.
+
+    Requires whole 128-bit packs (`num_elements % atomic_width == 0`) and a
+    per-rank message no larger than `Lamport.MAX_SMALL_MESSAGE_BYTES`; callers
+    that cannot meet these must route to `_allreduce_p2p` (the 1-stage fallback)
+    instead. The generation counter and clear extent are device-resident in each
+    rank's `Signal.lamport_state` (advanced in-kernel); the signal buffers must
+    have been sentinel-initialized once (e.g. via `Signals.buffers()` /
+    `init_signal_buffer`) before the first call.
+    """
+    # Pin to the 128-bit atomic width the kernel uses (not the natural SIMD
+    # width); see the kernel docstring.
+    comptime atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
+    var num_elements = list_of_in_tensors[0].num_elements()
+    if num_elements == 0:
+        return
+
+    var num_bytes = num_elements * size_of[dtype]()
+    if num_elements % atomic_width != 0:
+        raise Error(
+            "Lamport allreduce requires the element count to be a multiple of"
+            " the 128-bit pack width (whole 128-bit packs)"
+        )
+    if num_bytes > Lamport.MAX_SMALL_MESSAGE_BYTES:
+        raise Error(
+            "Lamport allreduce message exceeds reserved workspace ("
+            + String(num_bytes)
+            + " > "
+            + String(Lamport.MAX_SMALL_MESSAGE_BYTES)
+            + " bytes); route to the 1-stage path"
+        )
+
+    comptime FlatLayout = type_of(row_major(num_elements))
+    comptime FlatIn = TileTensor[dtype, FlatLayout, ImmutAnyOrigin]
+    var flat_inputs = InlineArray[FlatIn, ngpus](uninitialized=True)
+    comptime for i in range(ngpus):
+        flat_inputs[i] = FlatIn(
+            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                list_of_in_tensors[i].ptr
+            ),
+            row_major(num_elements),
+        )
+
+    comptime sm_version = ctx.default_device_info.version
+    comptime BLOCK_SIZE = 512 if sm_version == "CDNA4" else 256
+    var num_packs = num_elements // atomic_width
+    var grid_size = clamp(
+        ceildiv(num_packs, BLOCK_SIZE), 1, dispatch_config.num_blocks
+    )
+
+    comptime lamport_kernel = _allreduce_lamport_kernel[
+        dtype,
+        ngpus,
+        FlatLayout,
+        out_layout,
+        BLOCK_SIZE=BLOCK_SIZE,
+        output_lambda=output_lambda,
+        use_fence=use_fence,
+    ]
+    ctx.enqueue_function[lamport_kernel](
+        rebind[TileTensor[dtype, out_layout, MutAnyOrigin]](out_tensor),
+        flat_inputs,
+        rank_sigs,
+        num_elements,
+        Int(ctx.id()),
+        grid_dim=grid_size,
+        block_dim=BLOCK_SIZE,
+        attributes=pdl_launch_attributes(pdl_level),
+    )
 
 
 @always_inline
@@ -679,7 +1377,7 @@ def _allreduce_p2p[
     ],
     out_tensor: TileTensor[mut=True, dtype, out_layout, ...],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    max_num_blocks: Int,
+    dispatch_config: AllReduceTuningConfig,
     ctx: DeviceContext,
 ) raises:
     """
@@ -699,7 +1397,7 @@ def _allreduce_p2p[
         list_of_in_tensors: Input buffers from ALL GPUs (peer access required)
         out_tensor: Output buffer for THIS GPU
         rank_sigs: Signal pointers for synchronization
-        max_num_blocks: Maximum number of thread blocks to launch.
+        dispatch_config: Dispatch configuration defining block count, algorithm selection
         ctx: Device context for THIS GPU
 
     Launches P2P reduction kernel on the current GPU to perform direct reduction.
@@ -712,51 +1410,98 @@ def _allreduce_p2p[
     if num_elements == 0:
         return
 
-    if num_elements % simd_width != 0:
+    if use_multimem and num_elements % simd_width != 0:
         raise Error(
-            "non SIMD-width multiple number of elements unsupported by"
-            " allreduce"
+            "multimem allreduce requires the element count to be a multiple of"
+            " SIMD width"
         )
 
-    # Extract raw pointers from TileTensors for the device kernel.
-    var list_of_in_ptrs = InlineArray[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_tensors
-    ](uninitialized=True)
-
+    # Flatten inputs to 1D - allreduce does not need dimension info
+    comptime FlatLayout = type_of(row_major(num_elements))
+    comptime FlatIn = TileTensor[dtype, FlatLayout, ImmutAnyOrigin]
+    var flat_inputs = InlineArray[FlatIn, num_tensors](uninitialized=True)
     comptime for i in range(num_tensors):
-        list_of_in_ptrs[i] = rebind[
-            UnsafePointer[Scalar[dtype], ImmutAnyOrigin]
-        ](list_of_in_tensors[i].ptr)
+        flat_inputs[i] = FlatIn(
+            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                list_of_in_tensors[i].ptr
+            ),
+            row_major(num_elements),
+        )
 
+    var max_num_blocks = dispatch_config.num_blocks
+
+    # Barrier-free Lamport path. The tuning table selects Lamport by byte
+    # bucket, but the kernel additionally requires whole 128-bit packs and a
+    # per-rank message within the reserved small-message workspace, and it is
+    # incompatible with multimem.
+    comptime lamport_atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
+    comptime if not use_multimem:
+        if (
+            dispatch_config.algorithm == AllReduceAlgorithm.LAMPORT
+            and num_elements % lamport_atomic_width == 0
+            and num_elements * size_of[dtype]()
+            <= Lamport.MAX_SMALL_MESSAGE_BYTES
+        ):
+            return _allreduce_lamport_p2p[
+                dtype,
+                ngpus,
+                in_layout,
+                in_origin,
+                out_layout,
+                output_lambda=output_lambda,
+                pdl_level=pdl_level,
+            ](
+                rebind[
+                    InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus]
+                ](list_of_in_tensors),
+                out_tensor,
+                rank_sigs,
+                dispatch_config,
+                ctx,
+            )
+
+    # 1-stage unless the config explicitly selects 2-stage (a non-2-stage
+    # algorithm that reached here -- including a multimem Lamport fall-through --
+    # runs 1-stage).
+    var use_1stage = dispatch_config.algorithm != AllReduceAlgorithm.TWO_STAGE
     # TODO(KERN-2632): Incorporate this into dispatch table
     comptime sm_version = ctx.default_device_info.version
     comptime BLOCK_SIZE = 512 if sm_version == "CDNA4" else 256
 
-    comptime rank_4_byte_threshold = 512 * 1024
-    comptime rank_8_byte_threshold = 256 * 1024
-    var payload_bytecount = num_elements * size_of[dtype]()
+    # The 2-stage path partitions by full SIMD vectors only; use 1-stage when a
+    # scalar tail is present (unless multimem, which is rejected above).
+    use_1stage = use_1stage or (num_elements % simd_width != 0)
 
-    if (ngpus <= 4 and (payload_bytecount < rank_4_byte_threshold)) or (
-        ngpus <= 8 and (payload_bytecount < rank_8_byte_threshold)
-    ):
-        # Define grid size for 1-stage, which processes all elements.
-        var grid_size = min(
-            max_num_blocks,
-            ceildiv(num_elements // simd_width, BLOCK_SIZE),
-        )
+    if use_1stage:
+        var grid_size: Int
+        comptime if use_multimem:
+            var simd_chunks = num_elements // simd_width
+            var tail_elems_mm = num_elements - simd_chunks * simd_width
+            grid_size = clamp(
+                ceildiv(max(simd_chunks, tail_elems_mm), BLOCK_SIZE),
+                1,
+                max_num_blocks,
+            )
+        else:
+            var num_simd_vecs = num_elements // simd_width
+            var tail_elems = num_elements - num_simd_vecs * simd_width
+            var grid_simd = ceildiv(num_simd_vecs, BLOCK_SIZE)
+            var grid_tail = ceildiv(tail_elems, BLOCK_SIZE)
+            grid_size = clamp(max(grid_simd, grid_tail), 1, max_num_blocks)
 
         # Use the 1-stage allreduce when transfer is latency bound.
         comptime allreduce_1stage_kernel = _allreduce_1stage_kernel[
             dtype,
             ngpus,
+            FlatLayout,
             out_layout,
             BLOCK_SIZE=BLOCK_SIZE,
             output_lambda=output_lambda,
             use_multimem=use_multimem,
         ]
-        ctx.enqueue_function[allreduce_1stage_kernel, allreduce_1stage_kernel](
+        ctx.enqueue_function[allreduce_1stage_kernel](
             rebind[TileTensor[dtype, out_layout, MutAnyOrigin]](out_tensor),
-            list_of_in_ptrs,
+            flat_inputs,
             rank_sigs,
             num_elements,
             Int(ctx.id()),
@@ -767,23 +1512,25 @@ def _allreduce_p2p[
     else:
         # Define grid size for 2-stage, which processes 1/ngpus of the
         # number of elements.
-        var grid_size = min(
-            max_num_blocks,
+        var grid_size = clamp(
             ceildiv(num_elements // (simd_width * ngpus), BLOCK_SIZE),
+            1,
+            max_num_blocks,
         )
 
         # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
         comptime kernel = _allreduce_2stage_kernel[
             dtype,
             ngpus,
+            FlatLayout,
             out_layout,
             BLOCK_SIZE=BLOCK_SIZE,
             output_lambda=output_lambda,
             use_multimem=use_multimem,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             rebind[TileTensor[dtype, out_layout, MutAnyOrigin]](out_tensor),
-            list_of_in_ptrs,
+            flat_inputs,
             rank_sigs,
             num_elements,
             Int(ctx.id()),
@@ -878,7 +1625,7 @@ def allreduce[
     @__copy_capture(output_tensor)
     def default_output_lambda[
         _dtype: DType,
-        _width: Int,
+        _width: SIMDSize,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -891,17 +1638,19 @@ def allreduce[
     # TODO: check all devices have the same GPU sm_version
     comptime sm_version = ctx.default_device_info.version
     var num_bytes = num_elements * size_of[dtype]()
-    var max_num_blocks = _max_num_blocks.or_else(
-        dispatch_max_num_blocks[ngpus, sm_version, allreduce_tuning_table](
-            num_bytes
-        )
-    )
-    if max_num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND:
+    var dispatch_config = dispatch_select_comm_config[
+        ngpus, sm_version, allreduce_tuning_table
+    ](num_bytes)
+
+    if _max_num_blocks:
+        dispatch_config.num_blocks = _max_num_blocks.value()
+
+    if dispatch_config.num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND:
         raise Error(
-            "expected allreduce max_num_blocks less than upper bound: "
+            "expected allreduce num_blocks less than upper bound: "
             + String(MAX_NUM_BLOCKS_UPPER_BOUND)
             + " but got: "
-            + String(max_num_blocks)
+            + String(dispatch_config.num_blocks)
         )
 
     # Check P2P availability.
@@ -914,12 +1663,12 @@ def allreduce[
             ngpus=ngpus,
             output_lambda=actual_output_lambda,
             num_tensors=1 if use_multimem else ngpus,
-        ](input_tensors, output_tensor, max_num_blocks, ctx)
+        ](input_tensors, output_tensor, dispatch_config.num_blocks, ctx)
 
-    # P2P path: pass TileTensors directly.
+    # P2P path.
     return _allreduce_p2p[
         ngpus=ngpus,
         output_lambda=actual_output_lambda,
         pdl_level=pdl_level,
         use_multimem=use_multimem,
-    ](input_tensors, output_tensor, rank_sigs, max_num_blocks, ctx)
+    ](input_tensors, output_tensor, rank_sigs, dispatch_config, ctx)

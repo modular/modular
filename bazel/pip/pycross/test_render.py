@@ -86,6 +86,7 @@ def test_render_gpu_conditional_deps() -> None:
         "condition2": [
             ":qux",
         ],
+        "//conditions:default": [],
     })
 
 """
@@ -113,6 +114,7 @@ def test_render_gpu_conditional_only_deps() -> None:
         "condition2": [
             ":qux",
         ],
+        "//conditions:default": [],
     })
 
 """
@@ -145,6 +147,7 @@ def test_render_both_conditional_deps() -> None:
         "condition2": [
             ":qux",
         ],
+        "//conditions:default": [],
     })
 
 """

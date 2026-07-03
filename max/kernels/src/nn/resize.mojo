@@ -16,6 +16,7 @@ from std.math import ceil, floor
 
 from std.algorithm.functional import elementwise
 from std.algorithm.reduction import _get_nd_indices_from_flat_index
+from std.gpu.host import DeviceContext
 from layout import (
     Coord,
     TensorLayout,
@@ -138,8 +139,9 @@ def resize_nearest_neighbor[
     round_mode: RoundMode,
     dtype: DType,
 ](
-    input: TileTensor[dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
+    ctx: DeviceContext,
 ) raises:
     comptime assert (
         input.rank == output.rank
@@ -164,11 +166,9 @@ def resize_nearest_neighbor[
         else:
             comptime assert False, "round_mode not implemented"
 
-    @__copy_capture(scales)
-    @parameter
     def nn_interpolate[
-        simd_width: Int, _rank: Int, alignment: Int = 1
-    ](out_coords: IndexList[_rank]):
+        simd_width: Int, alignment: Int = 1
+    ](out_coords: Coord) {var}:
         var in_coords = IndexList[input.rank](0)
 
         comptime for i in range(input.rank):
@@ -176,7 +176,7 @@ def resize_nearest_neighbor[
                 Int(
                     round(
                         coord_transform[coordinate_transformation_mode](
-                            out_coords[i],
+                            Int(out_coords[i].value()),
                             Int(input.dim(i)),
                             Int(output.dim(i)),
                             scales[i],
@@ -187,14 +187,12 @@ def resize_nearest_neighbor[
             )
 
         var in_idx = input.layout(Coord(in_coords))
-        var out_idx = output.layout(Coord(out_coords))
+        var out_idx = output.layout(out_coords)
 
-        output.ptr[out_idx] = input.ptr[in_idx]
+        output.raw_store(out_idx, input.ptr[in_idx])
 
     # TODO (#21439): can use memcpy when scale on inner dimension is 1
-    elementwise[nn_interpolate, 1](
-        coord_to_index_list(output.layout.shape_coord())
-    )
+    elementwise[1](nn_interpolate, output.layout.shape_coord(), ctx)
 
 
 @always_inline
@@ -229,7 +227,7 @@ def interpolate_point_1d[
     out_coords: IndexList[InputLayoutType.rank],
     scale: Float32,
     input: TileTensor[
-        mut=True,
+        mut=False,
         dtype,
         InputLayoutType,
         address_space=AddressSpace.GENERIC,
@@ -260,13 +258,13 @@ def interpolate_point_1d[
         ) * ss
         var filter_coeff = interpolator.filter(dist_from_center).cast[dtype]()
         var in_idx = input.layout(Coord(in_coords))
-        acc += input.ptr[in_idx] * filter_coeff
+        acc += input.raw_load(in_idx) * filter_coeff
         sum += filter_coeff
 
     # normalize to handle cases near image boundary where only 1 point is used
     # for interpolation
     var out_idx = output.layout(Coord(out_coords))
-    output.ptr[out_idx] = acc / sum
+    output.raw_store(out_idx, acc / sum)
 
 
 def resize_linear[
@@ -336,37 +334,38 @@ def _resize[
             resize_dims.append(i)
     var interpolator = Interpolator[interpolation_mode]()
 
-    var in_ptr = input.ptr.unsafe_origin_cast[MutExternalOrigin]()
-    var out_ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
-        _unsafe_null=()
-    )
+    var in_ptr = input.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
+    # SAFETY: Placeholder; always overwritten below.
+    var out_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin].unsafe_dangling()
+
     var using_tmp1 = False
-    var tmp_buffer1 = UnsafePointer[Scalar[dtype], MutExternalOrigin](
-        _unsafe_null=()
-    )
-    var tmp_buffer2 = UnsafePointer[Scalar[dtype], MutExternalOrigin](
-        _unsafe_null=()
-    )
+    var tmp_buffer1 = List[Scalar[dtype]]()
+    var tmp_buffer2 = List[Scalar[dtype]]()
+
     # ping pong between using tmp_buffer1 and tmp_buffer2 to store outputs
     # of 1d interpolation pass across one of the dimensions
     if len(resize_dims) == 1:  # avoid allocating tmp_buffer
-        out_ptr = output.ptr.unsafe_origin_cast[MutExternalOrigin]()
+        out_ptr = output.ptr.unsafe_origin_cast[MutAnyOrigin]()
     if len(resize_dims) > 1:  # avoid allocating second tmp_buffer
-        tmp_buffer1 = alloc[Scalar[dtype]](tmp_dims.flattened_length())
-        out_ptr = tmp_buffer1
+        tmp_buffer1 = List[Scalar[dtype]](
+            unsafe_uninit_length=tmp_dims.flattened_length()
+        )
+        out_ptr = tmp_buffer1.unsafe_ptr().as_unsafe_any_origin()
         using_tmp1 = True
     if len(resize_dims) > 2:  # need a second tmp_buffer
         # TODO: if you are upsampling all dims, you can use the output in place of tmp_buffer2
         # as long as you make sure that the last iteration uses tmp1_buffer as the input
         # and tmp_buffer2 (output) as the output
-        tmp_buffer2 = alloc[Scalar[dtype]](tmp_dims.flattened_length())
+        tmp_buffer2 = List[Scalar[dtype]](
+            unsafe_uninit_length=tmp_dims.flattened_length()
+        )
     var in_shape = coord_to_index_list(input.layout.shape_coord())
     var out_shape = coord_to_index_list(input.layout.shape_coord())
     # interpolation is separable, so perform 1d interpolation across each
     # interpolated dimension
     for dim_idx in range(len(resize_dims)):
         if dim_idx == len(resize_dims) - 1:
-            out_ptr = output.ptr.unsafe_origin_cast[MutExternalOrigin]()
+            out_ptr = output.ptr.unsafe_origin_cast[MutAnyOrigin]()
         var resize_dim = resize_dims[dim_idx]
         out_shape[resize_dim] = Int(output.dim(resize_dim))
 
@@ -394,12 +393,12 @@ def _resize[
                 )
 
         in_shape = out_shape
-        in_ptr = out_ptr.unsafe_origin_cast[MutExternalOrigin]()
+        in_ptr = out_ptr.unsafe_origin_cast[MutUntrackedOrigin]()
 
-        out_ptr = tmp_buffer2 if using_tmp1 else tmp_buffer1
+        out_ptr = (
+            tmp_buffer2.unsafe_ptr() if using_tmp1 else tmp_buffer1.unsafe_ptr()
+        ).as_unsafe_any_origin()
         using_tmp1 = not using_tmp1
 
-    if tmp_buffer1._is_not_null():
-        tmp_buffer1.free()
-    if tmp_buffer2._is_not_null():
-        tmp_buffer2.free()
+    _ = tmp_buffer1^
+    _ = tmp_buffer2^

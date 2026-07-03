@@ -12,19 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 """TMA load warp logic for FA4 (SM100 Flash Attention)."""
 
+from std.math import ceildiv
 from std.sys import size_of
 from std.gpu.memory import CacheEviction
+from std.gpu.primitives.cluster import block_rank_in_cluster
+from layout.tma_async import SharedMemBarrier
 from layout import TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     elect,
+    expect_bytes_pred,
     KProducerPipeline,
     VProducerPipeline,
     StagedPipeline,
+    PagedRowIndices,
+    kv_sub_tile_rows,
+    kv_num_sub_tiles,
+    kv_tma_fold_chunks,
 )
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     KVTMATile,
     MHAPosition,
     OptionalPointer,
@@ -42,11 +50,14 @@ from .smem import SM100AttentionSMem
 @always_inline
 def fa4_load[
     KVLUTType: MHAOperand,
+    MaxSeqLenType: OptionallyStaticInt,
     MaskType: MHAMask,
+    //,
     config: FA4Config,
+    *,
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool,
-    MaxSeqLenType: OptionallyStaticInt,
+    is_leader: Bool,
 ](
     smem: SM100AttentionSMem[config],
     score_row: UInt32,
@@ -57,23 +68,24 @@ def fa4_load[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         config.swizzle_mode,
-        BM=config.BM // 2,
+        BM=config.BM // config.num_qo,
         depth=config.qk_depth,
         group=config.group,
         decoding=False,
+        fuse_gqa=config.fuse_gqa,
         num_qk_stages=config.num_qk_stages,
     ],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         config.swizzle_mode,
-        BN=config.BN,
+        BN=kv_sub_tile_rows(config.k_rows_per_cta(), KVLUTType.page_size),
         BK=config.BK0,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         config.swizzle_mode,
-        BN=config.BN,
-        BK=config.padded_ov_depth,
+        BN=kv_sub_tile_rows(config.BN, KVLUTType.page_size),
+        BK=config.v_cols_per_cta(),
     ],
     kv_lut: KVLUTType,
 ):
@@ -82,9 +94,44 @@ def fa4_load[
     comptime BM = config.BM
     comptime BN = config.BN
     comptime HalfBM = BM // 2
+    comptime num_qo: Int = config.num_qo
     comptime group = config.group
+    comptime fuse_gqa = config.fuse_gqa
+    # For pair-CTA, use PairBM so both CTAs make identical mask decisions.
+    comptime BM_mask: Int = config.PairBM_eff()
     comptime page_size = KVLUTType.page_size
+    # Alignment of `kv_row` values produced by mask-driven iteration.
+    # Used by `kv_lut.populate` to pick the largest legal SIMD chunk.
+    comptime base_alignment: Int = MaskType.start_column_alignment[
+        BM_mask, BN, page_size
+    ]()
     comptime ragged = not ValidLengthType.is_null
+    comptime cta_group: Int = config.cta_group()
+    comptime pair_cta: Bool = config.pair_cta
+    comptime assert pair_cta or is_leader
+
+    # Unified paged-rows type shared by fused-KV and split-KV: populate
+    # covers V's full tile so V can consume K's pre-populated indices
+    # with no lazy LUT lookup. In non-pair-CTA mode `num_pages` is
+    # simply `BN / eff_page`. In pair-CTA mode the struct's
+    # `is_leader`/`pair_cta` params select K's half at comptime (index
+    # shift for `num_pages >= 2`, intra-page row shift for
+    # `num_pages == 1`); storage is always V-sized so V reuses the same
+    # array without re-LUT.
+    comptime KVPagedRows = PagedRowIndices[
+        BN=BN,
+        page_size=page_size,
+        pair_cta=pair_cta,
+        is_leader=is_leader,
+    ]
+    # K's per-CTA TMA page count. Must derive from K's tile size
+    # (k_rows_per_cta) rather than `num_pages // 2`: when
+    # `page_size >= BN` (e.g. ps256 hs128), `num_pages = 1` but K's
+    # TMA still issues once per CTA (it covers BN/2 rows from a single
+    # page), so `k_pages_per_cta = 1`, not 0.
+    comptime k_pages_per_cta = kv_num_sub_tiles(
+        config.k_rows_per_cta(), page_size
+    )
 
     var mbars = smem.misc_mbars()
 
@@ -104,186 +151,597 @@ def fa4_load[
     # If two-qo, we produce qkv in a pattern of
     # q0 & k0, q1, v0, k1, v1, k2, v2...
     # TMA only uses .ptr — flat row_major TileTensor is sufficient.
-    comptime q_elems = type_of(q_tma_op).tile_shape[0] * type_of(
-        q_tma_op
-    ).tile_shape[1] * type_of(q_tma_op).tile_shape[2]
+    # Per-TMA-call element count. In 2Q (num_qo=2) this is HalfBM * BK0
+    # (one of two Q-half TMAs); in 1Q (num_qo=1) this is BM * BK0 (the
+    # single full-Q TMA). The two numerically coincide at 128 * BK0
+    # because BM=128 in 1Q and HalfBM=128 in 2Q, so q_bytes and the K0
+    # barrier's expect_bytes math are invariant between modes.
+    # (fused: BM//(2*group) * group * BK0 = HalfBM * BK0)
+    comptime q_elements = (BM // num_qo) * config.BK0
     comptime QType = TileTensor[
         KVLUTType.dtype,
-        type_of(tt_row_major[q_elems]()),
+        type_of(tt_row_major[q_elements]()),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
 
-    var kv_head_idx: UInt32 = seq_info.head_idx // UInt32(group)
+    var kv_head_idx: UInt32
+    comptime if fuse_gqa:
+        kv_head_idx = seq_info.head_idx
+    else:
+        kv_head_idx = seq_info.head_idx // UInt32(group)
 
     var q_smem = rebind[SharedMemPointer[Scalar[KVLUTType.dtype]]](
         smem.q_smem()
     )
-    comptime q_elements = HalfBM * config.BK0
-    comptime assert q_elements == q_elems
     comptime q_bytes = size_of[qkv_type]() * q_elements
 
     var q_gmem_row: UInt32 = PositionType.get_q_gmem_row[ragged=ragged](
         seq_info, max_seq_len
     )
-    var q_head_idx: UInt32 = seq_info.head_idx
+
+    # Pair-CTA: each CTA loads different Q positions and half of K/V.
+    var k_row_offset = UInt32(0)
+    var v_col_offset = 0
+    comptime if not is_leader:
+        q_gmem_row += UInt32(config.BM_eff())
+        k_row_offset = UInt32(BN // 2)
+        v_col_offset = config.v_cols_per_cta()
+
     e = elect()
 
-    var kv_row: UInt32 = mask.start_column[BM, BN, page_size](score_row)
-    var kv_gmem_row: UInt32 = kv_lut.row_idx(seq_info.prompt_idx, kv_row)
-    var iter_count: UInt32 = (
-        mask.last_masked_set_end[BM, BN, page_size](score_row, num_keys) - 1
+    # Default eviction_policy: pair-CTA disallows cache_hint with
+    # cta_group=2 in the stdlib TMA intrinsic, so we fall back to
+    # EVICT_NORMAL there. Non-pair-CTA keeps EVICT_FIRST (Q is read
+    # once per stage then discarded).
+    comptime q_default_eviction: CacheEviction = (
+        CacheEviction.EVICT_NORMAL if pair_cta else CacheEviction.EVICT_FIRST
     )
+
+    @parameter
+    @always_inline
+    def q_async_copy[
+        eviction_policy: CacheEviction = q_default_eviction,
+    ](
+        smem_dst: QType,
+        ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
+        depth_idx: UInt32 = 0,
+    ):
+        """Issue Q TMA elect-predicated on `e`. Caller no longer needs
+        `if e != 0:` around the call — the TMA fires only on the elected
+        lane via the PTX predicate inside `_elect`."""
+        comptime if fuse_gqa:
+            q_tma_op.async_copy_elect[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
+                smem_dst,
+                mbar,
+                StaticTuple[UInt32, 4](depth_idx, 0, kv_head_idx, q_gmem_row),
+                e,
+            )
+        else:
+            q_tma_op.async_copy_elect[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
+                smem_dst,
+                mbar,
+                StaticTuple[UInt32, 3](
+                    depth_idx, seq_info.head_idx, q_gmem_row
+                ),
+                e,
+            )
+
+    # Partial-page handling: when page_size < BN, a BN-sized tile may span
+    # more pages than the sequence has allocated. We detect this and use
+    # `tma_copy_{k,v}[needs_partial=True]` with a runtime-bounded page
+    # count to avoid OOB page lookups.
+    comptime needs_partial = page_size > 0 and page_size < BN
+    comptime k_bytes_pp = config.BK0 * KVPagedRows.eff_page * size_of[
+        qkv_type
+    ]()
+    comptime v_bytes_pp = config.v_cols_per_cta() * KVPagedRows.eff_page * size_of[
+        qkv_type
+    ]()
+
+    # Depth-chunk TMA fold (SM100). Fold the BK0 (K) / v_cols_per_cta (V) depth
+    # chunks into one rank-4 TMA when byte-equivalent. MUST use identical args to
+    # the matching `create_tma_tile[..., fold_chunks=...]` calls in
+    # `mha_sm100_dispatch` (single source of truth) so the baked descriptor rank
+    # and the issue-coord rank agree. The per-issue byte totals are unchanged: one
+    # folded TMA carries the same bytes as the N per-chunk TMAs.
+    #   K: smem_BN == k_rows_per_cta (K's per-CTA tile_rows; == BN single-CTA,
+    #      BN//2 pair-CTA). V: smem_BN == BN (V's tile_rows; num_v_sub_tiles == 1).
+    comptime k_row_major = config.k_row_major()
+    comptime k_fold_chunks = kv_tma_fold_chunks[
+        qkv_type,
+        config.swizzle_mode,
+        BK=config.BK0,
+        head_size=config.qk_depth,
+        box_rows=kv_sub_tile_rows(config.k_rows_per_cta(), page_size),
+        smem_BN=config.k_rows_per_cta(),
+        page_size=page_size,
+        row_major=k_row_major,
+    ]()
+    comptime v_row_major = config.v_row_major()
+    comptime v_fold_chunks = kv_tma_fold_chunks[
+        qkv_type,
+        config.swizzle_mode,
+        BK=config.v_cols_per_cta(),
+        head_size=config.ov_depth,
+        box_rows=kv_sub_tile_rows(BN, page_size),
+        smem_BN=BN,
+        page_size=page_size,
+        row_major=v_row_major,
+    ]()
+
+    @parameter
+    @always_inline
+    def _k_num_valid_pages(current_kv_row: UInt32) -> UInt32:
+        """Valid K sub-tile pages at `current_kv_row` (per-CTA range)."""
+        if current_kv_row >= num_keys:
+            return UInt32(0)
+        return min(
+            UInt32(k_pages_per_cta),
+            UInt32(
+                ceildiv(Int(num_keys - current_kv_row), KVPagedRows.eff_page)
+            ),
+        )
+
+    @parameter
+    @always_inline
+    def _v_num_valid_pages(current_kv_row: UInt32) -> UInt32:
+        """Valid V sub-tile pages at `current_kv_row` (full BN range)."""
+        return min(
+            UInt32(KVPagedRows.num_pages),
+            UInt32(
+                ceildiv(Int(num_keys - current_kv_row), KVPagedRows.eff_page)
+            ),
+        )
+
+    var kv_row: UInt32 = mask.start_column[BM_mask, BN, page_size](
+        seq_info.prompt_idx, score_row
+    )
+    var iter_count: UInt32 = (
+        mask.last_masked_set_end[BM_mask, BN, page_size](
+            seq_info.prompt_idx, score_row, num_keys
+        )
+        - 1
+    )
+
+    # Valid page counts for the first tile (shared between fused-KV and
+    # split-KV). When `needs_partial`, these reflect how many sub-tile
+    # pages are actually in-bounds for the sequence; otherwise every
+    # sub-tile is assumed fully populated.
+    #
+    # `k_nvp` is this CTA's count (the half it will TMA). `k_nvp_peer`
+    # holds the *other* CTA's count and is read only by the leader when
+    # it accumulates `expect_bytes` across the cluster's shared barrier.
+    # Non-leader keeps it at 0; the peer's `expect_bytes` branch is
+    # comptime-pruned so the value is dead there.
+    var k_nvp: UInt32 = UInt32(k_pages_per_cta)
+    var k_nvp_peer: UInt32 = UInt32(0)
+    var v_nvp: UInt32 = UInt32(KVPagedRows.num_pages)
+    comptime if needs_partial:
+        k_nvp = _k_num_valid_pages(kv_row + k_row_offset)
+        comptime if is_leader and pair_cta:
+            k_nvp_peer = _k_num_valid_pages(
+                kv_row + UInt32(config.k_rows_per_cta())
+            )
+        v_nvp = _v_num_valid_pages(kv_row)
+
+    # Full-tile expect_bytes (accounts for both CTAs in pair mode).
+    # Shared between fused-KV and split-KV: `KPipeType.bytes` and
+    # `VPipeType.bytes` resolve to the same per-CTA values, so we
+    # define them once here.
+    comptime k_per_cta_bytes = (
+        config.BK0 * config.k_rows_per_cta() * size_of[qkv_type]()
+    )
+    comptime v_per_cta_bytes = (
+        config.v_cols_per_cta() * BN * size_of[qkv_type]()
+    )
+    comptime k_expect_bytes = cta_group * k_per_cta_bytes
+    comptime v_expect_bytes = cta_group * v_per_cta_bytes
+    comptime qk_expect_bytes = cta_group * (q_bytes + k_per_cta_bytes)
+
+    # Mode-shared K/V producer closures. These cover both fused-KV and
+    # split-KV call sites (and the inlined main-loop / peeled-last V in
+    # split mode). Captures: `is_leader`, `e`, `cta_group`, `q_bytes`,
+    # `q_smem`, `q_elements`, `tt_row_major`, `QType`, `q_async_copy`,
+    # `k_bytes_pp`, `v_bytes_pp`, `k_per_cta_bytes`, `v_expect_bytes`,
+    # `k_nvp_peer`, `kv_head_idx`, `v_col_offset`, `k_tma_op`,
+    # `v_tma_op`, `config`. Caller owns `populate`, `smem_ptr`, and the
+    # producer-pipeline acquire/step lifecycle.
+    @parameter
+    @always_inline
+    def _produce_k[
+        partial: Bool,
+        qk_stage: Int = 0,
+        with_q: Bool = False,
+    ](
+        kv_paged_rows: KVPagedRows,
+        smem_ptr: SharedMemPointer[Scalar[qkv_type]],
+        mbar: SharedMemPointer[SharedMemBarrier],
+        k_num_valid_pages: UInt32,
+    ):
+        comptime d_idx = qk_stage * config.BK0
+        comptime if is_leader:
+            comptime q_term = (cta_group * q_bytes if with_q else 0)
+            var bytes: Int32 = Int32(q_term)
+            comptime if partial:
+                bytes += Int32(k_bytes_pp) * Int32(
+                    k_num_valid_pages + k_nvp_peer
+                )
+            else:
+                bytes += Int32(cta_group * k_per_cta_bytes)
+            expect_bytes_pred(mbar, bytes, e)
+        comptime if with_q:
+            # Elect-predicated in-PTX by q_async_copy; no if-guard here.
+            q_async_copy(
+                QType(
+                    q_smem + q_elements * qk_stage,
+                    tt_row_major[q_elements](),
+                ),
+                mbar[],
+                depth_idx=UInt32(d_idx),
+            )
+        kv_paged_rows.tma_copy_k[
+            needs_partial=partial,
+            smem_BN=config.k_rows_per_cta(),
+            fold_chunks=k_fold_chunks,
+            row_major=k_row_major,
+        ](
+            k_tma_op,
+            smem_ptr,
+            mbar[],
+            kv_head_idx=kv_head_idx,
+            elect=e,
+            k_num_valid_pages=k_num_valid_pages,
+            depth_offset=UInt32(d_idx),
+        )
+
+    @parameter
+    @always_inline
+    def _produce_v[
+        partial: Bool
+    ](
+        kv_paged_rows: KVPagedRows,
+        smem_ptr: SharedMemPointer[Scalar[qkv_type]],
+        mbar: SharedMemPointer[SharedMemBarrier],
+        v_num_valid_pages: UInt32,
+    ):
+        comptime if is_leader:
+            var v_bytes: Int32
+            comptime if partial:
+                v_bytes = Int32(cta_group * v_bytes_pp * Int(v_num_valid_pages))
+            else:
+                v_bytes = Int32(v_expect_bytes)
+            expect_bytes_pred(mbar, v_bytes, e)
+        kv_paged_rows.tma_copy_v[
+            needs_partial=partial,
+            fold_chunks=v_fold_chunks,
+            row_major=v_row_major,
+        ](
+            v_tma_op,
+            smem_ptr,
+            mbar[],
+            kv_head_idx=kv_head_idx,
+            elect=e,
+            num_valid_pages=v_num_valid_pages,
+            depth_offset=UInt32(v_col_offset),
+        )
 
     comptime if config.use_fused_kv:
         # ---- Fused KV mode ----
-        # Single StagedPipeline with alternating K and V stages.
-        # Stages: K0, V0, K1, V1, ...
+        # Single StagedPipeline alternating K and V stages.
+        # 2Q (num_qo=2): K0, V0, K1, V1, ... (one K/V per logical iter).
+        # 1Q (num_qo=1): K_e[0], K_o[0], V_e[0], V_o[0], K_e[1], K_o[1], ...
+        # (two K + two V per logical iter, matching mma_warp's
+        # Q@K_e->s0 / Q@K_o->s1 / P_e@V_e->o0 / P_o@V_o->o1 pattern).
         # For MHA: padded_qk_depth == padded_ov_depth, rope_depth == 0.
         # num_qk_stages=1 in fused mode.
 
         var kv_smem = rebind[SharedMemPointer[Scalar[KVLUTType.dtype]]](
             smem.k_smem_base()
         )
-        comptime kv_stage_elems = config.padded_ov_depth * BN
-        comptime k_elems = type_of(k_tma_op).tile_shape[0] * type_of(
-            k_tma_op
-        ).tile_shape[1] * type_of(k_tma_op).tile_shape[2]
-        comptime KType = TileTensor[
-            KVLUTType.dtype,
-            type_of(tt_row_major[k_elems]()),
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-        comptime v_elems = type_of(v_tma_op).tile_shape[0] * type_of(
-            v_tma_op
-        ).tile_shape[1] * type_of(v_tma_op).tile_shape[2]
-        comptime VType = TileTensor[
-            KVLUTType.dtype,
-            type_of(tt_row_major[v_elems]()),
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
-        comptime k_bytes = config.BK0 * BN * size_of[qkv_type]()
-        comptime v_bytes = config.padded_ov_depth * BN * size_of[qkv_type]()
-        comptime qk_fused_bytes = k_bytes + q_bytes
+        # Per-CTA SMEM: halved for pair-CTA.
+        comptime kv_stage_elems = (config.padded_ov_depth * BN // cta_group)
 
         comptime KVPipeType = StagedPipeline[config.num_kv_stages, 1]
         var kv_pipeline: KVPipeType = {mbars.get_k_mbars()}
         kv_pipeline.state._phase = 1  # producer starts at phase 1
 
-        # ---- Peeled: K0 + Q0 on same barrier ----
-        var k0_mbar = kv_pipeline.producer_mbar()
-        if e != 0:
-            k0_mbar[].expect_bytes(Int32(qk_fused_bytes))
-        # Copy Q0
-        if e != 0:
-            q_tma_op.async_copy[eviction_policy=CacheEviction.EVICT_FIRST](
-                QType(q_smem, tt_row_major[q_elems]()),
-                k0_mbar[],
-                StaticTuple[UInt32, 3](0, q_head_idx, q_gmem_row),
+        # Per-stage emit closures. Each bundles the KV producer-pipeline
+        # lifecycle (acquire / mbar / smem-offset / produce / step) that
+        # is otherwise repeated verbatim at every K and V slot in both
+        # the 1Q and 2Q producers. `producer_acquire` only reads `state`
+        # (never mutates it), so reading `producer_mbar()` / `state.index()`
+        # after the acquire is identical to the prior inline order. The
+        # first peeled K slot passes `acquire=False` (initial phase=1).
+        # The caller still owns `populate` (K computes `rows`, V reuses it)
+        # and any interleaved Q TMA.
+        @parameter
+        @always_inline
+        def _emit_k[
+            partial: Bool,
+            with_q: Bool = False,
+            acquire: Bool = True,
+        ](rows: KVPagedRows, k_num_valid_pages: UInt32):
+            comptime if acquire:
+                kv_pipeline.producer_acquire()
+            var mbar = kv_pipeline.producer_mbar()
+            var smem_ptr = kv_smem + kv_pipeline.state.index() * UInt32(
+                kv_stage_elems
             )
-        # Copy K0
-        if e != 0:
-            k_tma_op.async_copy(
-                KType(
-                    kv_smem
-                    + kv_pipeline.state.index() * UInt32(kv_stage_elems),
-                    tt_row_major[k_elems](),
-                ),
-                k0_mbar[],
-                StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
+            _produce_k[partial=partial, qk_stage=0, with_q=with_q](
+                rows, smem_ptr, mbar, k_num_valid_pages
             )
-        kv_pipeline.state.step()  # step -> stage 1
+            kv_pipeline.state.step()
 
-        # ---- Q1 (separate barrier) ----
-        q_gmem_row += UInt32(HalfBM)
-        var q1_mbar = mbars.q1_wait_mbar()
-        if e != 0:
-            q1_mbar[0].expect_bytes(Int32(q_bytes))
-        if e != 0:
+        @parameter
+        @always_inline
+        def _emit_v[
+            partial: Bool, acquire: Bool = True
+        ](rows: KVPagedRows, v_num_valid_pages: UInt32):
+            comptime if acquire:
+                kv_pipeline.producer_acquire()
+            var mbar = kv_pipeline.producer_mbar()
+            var smem_ptr = kv_smem + kv_pipeline.state.index() * UInt32(
+                kv_stage_elems
+            )
+            _produce_v[partial=partial](rows, smem_ptr, mbar, v_num_valid_pages)
+            kv_pipeline.state.step()
+
+        comptime if num_qo == 1:
+            # ---- 1Q fused-KV producer ----
+            # MMA consumes K_e, K_o, V_e, V_o per logical iter. Produce
+            # in matching slot order. No FULL_MASK skip in this path
+            # (deferred; standard masks in 1Q-eligible regimes have no
+            # mid-range FULL_MASK).
+            # pair_cta is always False in 1Q (dispatch guards), so
+            # k_row_offset == 0 and k_nvp_peer == 0; the peer branches
+            # of _produce_k comptime-prune.
+
+            var T: UInt32 = mask.last_masked_set_end[BM_mask, BN, page_size](
+                seq_info.prompt_idx, score_row, num_keys
+            )
+
+            # T == 1 fast path: produce K_e[0] (with Q) + V_e[0] only.
+            # mma_warp's matching T==1 fast path consumes those two
+            # slots then returns; softmax_warp's WG1 takes its no-op
+            # path at softmax_warp.mojo:1254-1257.
+            if T == UInt32(1):
+                var rows_e_t1 = kv_lut.populate[
+                    BN, base_alignment, pair_cta, is_leader
+                ](seq_info.prompt_idx, kv_row)
+                _emit_k[partial=needs_partial, with_q=True, acquire=False](
+                    rows_e_t1, k_nvp
+                )
+                _emit_v[partial=needs_partial](rows_e_t1, v_nvp)
+                return
+
+            # ---- Peel (T >= 2): K_e[0], K_o[0], V_e[0], V_o[0] ----
+            # k_nvp / v_nvp from the parent scope cover the K_e/V_e
+            # half (computed at kv_row + k_row_offset == kv_row).
+            # Compute the K_o/V_o (kv_row + BN) counts here.
+            var k_nvp_o: UInt32 = UInt32(k_pages_per_cta)
+            var v_nvp_o: UInt32 = UInt32(KVPagedRows.num_pages)
+            comptime if needs_partial:
+                k_nvp_o = _k_num_valid_pages(kv_row + UInt32(BN))
+                v_nvp_o = _v_num_valid_pages(kv_row + UInt32(BN))
+
+            # K_e[0] with Q (initial slot; no acquire — initial phase=1).
+            var rows_e = kv_lut.populate[
+                BN, base_alignment, pair_cta, is_leader
+            ](seq_info.prompt_idx, kv_row)
+            _emit_k[partial=needs_partial, with_q=True, acquire=False](
+                rows_e, k_nvp
+            )
+
+            # K_o[0]
+            var rows_o = kv_lut.populate[
+                BN, base_alignment, pair_cta, is_leader
+            ](seq_info.prompt_idx, kv_row + UInt32(BN))
+            _emit_k[partial=needs_partial](rows_o, k_nvp_o)
+
+            # V_e[0] (reuses rows_e)
+            _emit_v[partial=needs_partial](rows_e, v_nvp)
+
+            # V_o[0] (reuses rows_o)
+            _emit_v[partial=needs_partial](rows_o, v_nvp_o)
+
+            # ---- Loop bookkeeping ----
+            # T is total K-tiles. Peel consumed K_e[0] + K_o[0] (2 tiles)
+            # and V_e[0] + V_o[0] (2 tiles). Each main-loop iter
+            # consumes 2 K + 2 V (one full logical iter). Tail (T odd)
+            # produces a trailing K_e + V_e only.
+            var main_iters: UInt32 = (T - UInt32(2)) >> UInt32(1)
+            var has_tail: Bool = (T & UInt32(1)) == UInt32(1)
+            var has_peeled_last_full: Bool = False
+            comptime if needs_partial:
+                # When T is odd, the tail block (always run) handles
+                # the partial trailing K_e + V_e. When T is even and
+                # there is at least one main-loop pair, the terminal
+                # full pair is partial and reserved for peeled-last.
+                if not has_tail and main_iters > UInt32(0):
+                    main_iters -= UInt32(1)
+                    has_peeled_last_full = True
+
+            # ---- Main loop (full tiles) ----
+            while main_iters != UInt32(0):
+                main_iters -= UInt32(1)
+                kv_row += UInt32(2 * BN)
+
+                # K_e[n] (full)
+                rows_e = kv_lut.populate[
+                    BN, base_alignment, pair_cta, is_leader
+                ](seq_info.prompt_idx, kv_row)
+                _emit_k[partial=False](rows_e, UInt32(KVPagedRows.num_pages))
+
+                # K_o[n] (full)
+                rows_o = kv_lut.populate[
+                    BN, base_alignment, pair_cta, is_leader
+                ](seq_info.prompt_idx, kv_row + UInt32(BN))
+                _emit_k[partial=False](rows_o, UInt32(KVPagedRows.num_pages))
+
+                # V_e[n] (full, reuses rows_e)
+                _emit_v[partial=False](rows_e, UInt32(KVPagedRows.num_pages))
+
+                # V_o[n] (full, reuses rows_o)
+                _emit_v[partial=False](rows_o, UInt32(KVPagedRows.num_pages))
+
+            # ---- Tail K_e + V_e (T odd, any needs_partial) ----
+            # mma_warp's break-check at mma_warp.mojo:257-274 swaps
+            # s1/o1 onto s0/o0 and consumes one trailing K + V; that
+            # K and V come from this block.
+            if has_tail:
+                kv_row += UInt32(2 * BN)
+                var k_nvp_t: UInt32 = UInt32(k_pages_per_cta)
+                var v_nvp_t: UInt32 = UInt32(KVPagedRows.num_pages)
+                comptime if needs_partial:
+                    k_nvp_t = _k_num_valid_pages(kv_row)
+                    v_nvp_t = _v_num_valid_pages(kv_row)
+
+                var rows_t = kv_lut.populate[
+                    BN, base_alignment, pair_cta, is_leader
+                ](seq_info.prompt_idx, kv_row)
+                _emit_k[partial=needs_partial](rows_t, k_nvp_t)
+                _emit_v[partial=needs_partial](rows_t, v_nvp_t)
+
+            # ---- Peeled-last full pair (needs_partial && T even) ----
+            comptime if needs_partial:
+                if has_peeled_last_full:
+                    kv_row += UInt32(2 * BN)
+                    var k_nvp_pe = _k_num_valid_pages(kv_row)
+                    var k_nvp_po = _k_num_valid_pages(kv_row + UInt32(BN))
+                    var v_nvp_pe = _v_num_valid_pages(kv_row)
+                    var v_nvp_po = _v_num_valid_pages(kv_row + UInt32(BN))
+
+                    # K_e (partial)
+                    var rows_pe = kv_lut.populate[
+                        BN, base_alignment, pair_cta, is_leader
+                    ](seq_info.prompt_idx, kv_row)
+                    _emit_k[partial=True](rows_pe, k_nvp_pe)
+
+                    # K_o (partial)
+                    var rows_po = kv_lut.populate[
+                        BN, base_alignment, pair_cta, is_leader
+                    ](seq_info.prompt_idx, kv_row + UInt32(BN))
+                    _emit_k[partial=True](rows_po, k_nvp_po)
+
+                    # V_e (partial, reuses rows_pe)
+                    _emit_v[partial=True](rows_pe, v_nvp_pe)
+
+                    # V_o (partial, reuses rows_po)
+                    _emit_v[partial=True](rows_po, v_nvp_po)
+        else:
+            # ---- 2Q fused-KV producer (existing path, unchanged) ----
+
+            # ---- Peeled: K0 + Q0 on same barrier ----
+            var kv_paged_rows = kv_lut.populate[
+                BN, base_alignment, pair_cta, is_leader
+            ](seq_info.prompt_idx, kv_row)
+            _emit_k[partial=needs_partial, with_q=True, acquire=False](
+                kv_paged_rows, k_nvp
+            )  # step -> stage 1
+
+            # ---- Q1 (separate barrier) ----
+            comptime if fuse_gqa:
+                q_gmem_row += UInt32(HalfBM // group)
+            else:
+                q_gmem_row += UInt32(HalfBM)
+            var q1_mbar = mbars.q1_wait_mbar()
+            comptime if is_leader:
+                expect_bytes_pred(q1_mbar, Int32(cta_group * q_bytes), e)
+            # Elect-predicated in-PTX by q_async_copy; no if-guard here.
             comptime q1_smem_offset = q_elements * 1  # num_qk_stages=1
-            q_tma_op.async_copy(
-                QType(q_smem + q1_smem_offset, tt_row_major[q_elems]()),
+            q_async_copy(
+                QType(q_smem + q1_smem_offset, tt_row_major[q_elements]()),
                 q1_mbar[0],
-                StaticTuple[UInt32, 3](0, q_head_idx, q_gmem_row),
             )
 
-        # ---- V0 ----
-        kv_pipeline.producer_acquire()
-        var v0_mbar = kv_pipeline.producer_mbar()
-        if e != 0:
-            v0_mbar[].expect_bytes(Int32(v_bytes))
-        if e != 0:
-            v_tma_op.async_copy(
-                VType(
-                    kv_smem
-                    + kv_pipeline.state.index() * UInt32(kv_stage_elems),
-                    tt_row_major[v_elems](),
-                ),
-                v0_mbar[],
-                StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
-            )
-        kv_pipeline.state.step()
+            # ---- V0 (reuses kv_paged_rows from K0's populate) ----
+            _emit_v[partial=needs_partial](kv_paged_rows, v_nvp)
 
-        comptime check_mask = mask.nonfull_sets[BM, BN]()[
-            0
-        ] == TileMaskStatus.UNKNOWN_MASK
+            comptime check_mask = mask.nonfull_sets[BM_mask, BN]()[
+                0
+            ] == TileMaskStatus.UNKNOWN_MASK
 
-        # ---- KV producer loop ----
-        while iter_count != 0:
-            iter_count -= 1
-            kv_row += UInt32(config.BN)
+            # ---- KV producer loop ----
+            # Main body: always full-page (partial=False). When
+            # needs_partial, peel off the last iteration for
+            # runtime-bounded populate/TMA.
+            var main_iters = iter_count
+            comptime if needs_partial:
+                if main_iters > 0:
+                    main_iters -= 1
+            while main_iters != 0:
+                main_iters -= 1
+                kv_row += UInt32(config.BN)
 
-            comptime if check_mask:
-                if (
-                    mask.status(
-                        Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
-                        Index[dtype=DType.int32](BM, BN),
-                    )
-                    == TileMaskStatus.FULL_MASK
-                ):
-                    continue
-            kv_gmem_row = kv_lut.row_idx(seq_info.prompt_idx, kv_row)
-
-            # Produce Kn
-            kv_pipeline.producer_acquire()
-            var kn_mbar = kv_pipeline.producer_mbar()
-            if e != 0:
-                kn_mbar[].expect_bytes(Int32(k_bytes))
-            if e != 0:
-                k_tma_op.async_copy(
-                    KType(
-                        kv_smem
-                        + kv_pipeline.state.index() * UInt32(kv_stage_elems),
-                        tt_row_major[k_elems](),
-                    ),
-                    kn_mbar[],
-                    StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
+                comptime if check_mask:
+                    if (
+                        mask.status(
+                            seq_info.prompt_idx,
+                            Index[dtype=DType.int32](
+                                Int(score_row), Int(kv_row)
+                            ),
+                            Index[dtype=DType.int32](BM_mask, BN),
+                        )
+                        == TileMaskStatus.FULL_MASK
+                    ):
+                        continue
+                # Produce Kn (full, populate + K TMA)
+                kv_paged_rows = kv_lut.populate[
+                    BN, base_alignment, pair_cta, is_leader
+                ](seq_info.prompt_idx, kv_row)
+                _emit_k[partial=False](
+                    kv_paged_rows, UInt32(KVPagedRows.num_pages)
                 )
-            kv_pipeline.state.step()
-
-            # Produce Vn
-            kv_pipeline.producer_acquire()
-            var vn_mbar = kv_pipeline.producer_mbar()
-            if e != 0:
-                vn_mbar[].expect_bytes(Int32(v_bytes))
-            if e != 0:
-                v_tma_op.async_copy(
-                    VType(
-                        kv_smem
-                        + kv_pipeline.state.index() * UInt32(kv_stage_elems),
-                        tt_row_major[v_elems](),
-                    ),
-                    vn_mbar[],
-                    StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
+                # Produce Vn (full, reuses kv_paged_rows)
+                _emit_v[partial=False](
+                    kv_paged_rows, UInt32(KVPagedRows.num_pages)
                 )
-            kv_pipeline.state.step()
+
+            # ---- Peeled last iteration (partial pages) ----
+            comptime if needs_partial:
+                if iter_count > 0:
+                    kv_row += UInt32(config.BN)
+                    var _skip_last = False
+                    comptime if check_mask:
+                        if (
+                            mask.status(
+                                seq_info.prompt_idx,
+                                Index[dtype=DType.int32](
+                                    Int(score_row), Int(kv_row)
+                                ),
+                                Index[dtype=DType.int32](BM_mask, BN),
+                            )
+                            == TileMaskStatus.FULL_MASK
+                        ):
+                            _skip_last = True
+                    if not _skip_last:
+                        k_nvp = _k_num_valid_pages(kv_row + k_row_offset)
+                        comptime if is_leader and pair_cta:
+                            k_nvp_peer = _k_num_valid_pages(
+                                kv_row + UInt32(config.k_rows_per_cta())
+                            )
+                        v_nvp = _v_num_valid_pages(kv_row)
+                        # Produce Kn (partial, populate + K TMA)
+                        kv_paged_rows = kv_lut.populate[
+                            BN, base_alignment, pair_cta, is_leader
+                        ](seq_info.prompt_idx, kv_row)
+                        _emit_k[partial=True](kv_paged_rows, k_nvp)
+                        # Produce Vn (partial, reuses kv_paged_rows)
+                        _emit_v[partial=True](kv_paged_rows, v_nvp)
 
     else:
-        # ---- Split KV mode (original) ----
+        # ---- Split KV mode ----
+        # One `populate` per outer iteration yields a shared
+        # `kv_paged_rows` whose row-indices feed both the K and V TMA
+        # copies (`tma_copy_k` / `tma_copy_v`). K's per-CTA half and
+        # pair-CTA peer offsets are derived at comptime from
+        # `is_leader` inside KVPagedRows.
 
-        comptime qk_bytes = KPipeType.bytes + q_bytes
         var k_smem = rebind[SharedMemPointer[Scalar[KVLUTType.dtype]]](
             smem.k_smem_base()
         )
@@ -293,121 +751,171 @@ def fa4_load[
         var pipeline_k: KPipeType = {mbars.get_k_mbars(), k_smem}
         var pipeline_v: VPipeType = {mbars.get_v_mbars(), v_smem}
 
-        var mbark0: KPipeType.KPairType
+        # ---- First tile: K stage 0 (Q0 + populate + K TMA) ----
+        var mbark0 = pipeline_k.get_k[qk_stage=0]()  # no wait
+        var kv_paged_rows = kv_lut.populate[
+            BN, base_alignment, pair_cta, is_leader
+        ](seq_info.prompt_idx, kv_row)
+        _produce_k[partial=needs_partial, qk_stage=0, with_q=True](
+            kv_paged_rows, mbark0.smem.ptr, mbark0.mbar, k_nvp
+        )
 
-        mbark0 = pipeline_k.get_k[qk_stage=0]()  # no wait
-        # copy q0
-        if e != 0:
-            # Q0
-            mbark0.mbar[].expect_bytes(Int32(qk_bytes))
-        # copy q0
-        if e != 0:
-            q_tma_op.async_copy[eviction_policy=CacheEviction.EVICT_FIRST](
-                QType(q_smem, tt_row_major[q_elems]()),
-                mbark0.mbar[],
-                StaticTuple[UInt32, 3](0, q_head_idx, q_gmem_row),
-            )
-        # copy k0
-        if e != 0:  # K0
-            k_tma_op.async_copy(
-                mbark0.smem,
-                mbark0.mbar[],
-                StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
-            )
-
+        # ---- First tile: K stages 1..num_qk_stages-1 (Q + K TMA) ----
         comptime for qk_stage in range(1, config.num_qk_stages):
-            comptime d_idx = qk_stage * config.BK0
             mbark = pipeline_k.get_k[qk_stage=qk_stage]()  # no wait
-            if e != 0:
-                mbark.mbar[].expect_bytes(Int32(qk_bytes))
-            if e != 0:
-                q_tma_op.async_copy[eviction_policy=CacheEviction.EVICT_FIRST](
-                    QType(
-                        q_smem + q_elements * qk_stage, tt_row_major[q_elems]()
-                    ),
-                    mbark.mbar[],
-                    StaticTuple[UInt32, 3](
-                        UInt32(d_idx), q_head_idx, q_gmem_row
-                    ),
-                )
-            if e != 0:
-                k_tma_op.async_copy(
-                    mbark.smem,
-                    mbark.mbar[],
-                    StaticTuple[UInt32, 3](
-                        UInt32(d_idx), kv_head_idx, kv_gmem_row
-                    ),
-                )
+            _produce_k[partial=needs_partial, qk_stage=qk_stage, with_q=True](
+                kv_paged_rows, mbark.smem.ptr, mbark.mbar, k_nvp
+            )
 
         pipeline_k.commit_step()
-        # Q1
-        q_gmem_row += UInt32(HalfBM)
-        var q1_mbar = mbars.q1_wait_mbar()
 
-        comptime for qk_stage in range(config.num_qk_stages):
-            comptime q_smem_offset = q_elements * (
-                config.num_qk_stages + qk_stage
-            )
-            comptime d_idx = qk_stage * config.BK0
-            if e != 0:
-                q1_mbar[qk_stage].expect_bytes(Int32(q_bytes))
-            if e != 0:
-                q_tma_op.async_copy(
-                    QType(q_smem + q_smem_offset, tt_row_major[q_elems]()),
-                    q1_mbar[qk_stage],
-                    StaticTuple[UInt32, 3](
-                        UInt32(d_idx), q_head_idx, q_gmem_row
-                    ),
+        # Q1 (separate barriers, one per qk_stage).
+        # Skipped in 1Q: the peeled K0 issues above (with_q=True for
+        # stages 0..num_qk_stages-1) already loaded the full BM-row Q
+        # tile on the K mbars.
+        comptime if num_qo == 2:
+            comptime if fuse_gqa:
+                q_gmem_row += UInt32(HalfBM // group)
+            else:
+                q_gmem_row += UInt32(HalfBM)
+            var q1_mbar = mbars.q1_wait_mbar()
+
+            comptime for qk_stage in range(config.num_qk_stages):
+                comptime q_smem_offset = q_elements * (
+                    config.num_qk_stages + qk_stage
                 )
-        # copy v0
-        mbarv0 = pipeline_v.get_v(e)
-        if e != 0:
-            v_tma_op.async_copy(
-                mbarv0.smem,
-                mbarv0.mbar[],
-                StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
-            )
+                comptime d_idx = qk_stage * config.BK0
+                comptime if is_leader:
+                    expect_bytes_pred(
+                        q1_mbar + qk_stage, Int32(cta_group * q_bytes), e
+                    )
+                # Elect-predicated in-PTX by q_async_copy; no if-guard here.
+                q_async_copy(
+                    QType(q_smem + q_smem_offset, tt_row_major[q_elements]()),
+                    q1_mbar[qk_stage],
+                    depth_idx=UInt32(d_idx),
+                )
+
+        # ---- V0 (reuses kv_paged_rows from stage-0 populate) ----
+        mbarv0 = pipeline_v.get_tile[qk_stage=0]()
+        _produce_v[partial=needs_partial](
+            kv_paged_rows, mbarv0.smem.ptr, mbarv0.mbar, v_nvp
+        )
         pipeline_v.commit_step()
-        comptime check_mask = mask.nonfull_sets[BM, BN]()[
+
+        comptime check_mask = mask.nonfull_sets[BM_mask, BN]()[
             0
         ] == TileMaskStatus.UNKNOWN_MASK
-        # kv producer loop
-        while iter_count != 0:
-            iter_count -= 1
+
+        # ---- Main body + peeled last iteration ----
+        # Main body: always full tiles (partial=False). When
+        # needs_partial, peel off the last iteration for
+        # runtime-bounded populate/TMA.
+        var main_iters = iter_count
+        comptime if needs_partial:
+            if main_iters > 0:
+                main_iters -= 1
+        while main_iters != 0:
+            main_iters -= 1
             kv_row += UInt32(config.BN)
 
             comptime if check_mask:
                 if (
                     mask.status(
+                        seq_info.prompt_idx,
                         Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
-                        Index[dtype=DType.int32](BM, BN),
+                        Index[dtype=DType.int32](BM_mask, BN),
                     )
                     == TileMaskStatus.FULL_MASK
                 ):
                     continue
-            kv_gmem_row = kv_lut.row_idx(seq_info.prompt_idx, kv_row)
-
-            # produce k
-            comptime for k_stage in range(config.num_qk_stages):
+            # K stage 0 (full, populate + K TMA, no Q).
+            pipeline_k.acquire_k[qk_stage=0]()
+            mbark0 = pipeline_k.get_k[qk_stage=0]()
+            kv_paged_rows = kv_lut.populate[
+                BN, base_alignment, pair_cta, is_leader
+            ](seq_info.prompt_idx, kv_row)
+            _produce_k[partial=False, qk_stage=0](
+                kv_paged_rows,
+                mbark0.smem.ptr,
+                mbark0.mbar,
+                UInt32(k_pages_per_cta),
+            )
+            # K stages 1..num_qk_stages-1 (full, no Q, reuse rows).
+            comptime for k_stage in range(1, config.num_qk_stages):
                 pipeline_k.acquire_k[qk_stage=k_stage]()
-                mbarkn = pipeline_k.get_k[qk_stage=k_stage](e)
-                comptime d_idx = k_stage * config.BK0
-                if e != 0:
-                    k_tma_op.async_copy(
-                        mbarkn.smem,
-                        mbarkn.mbar[],
-                        StaticTuple[UInt32, 3](
-                            UInt32(d_idx), kv_head_idx, kv_gmem_row
-                        ),
-                    )
+                mbarkn = pipeline_k.get_k[qk_stage=k_stage]()
+                _produce_k[partial=False, qk_stage=k_stage](
+                    kv_paged_rows,
+                    mbarkn.smem.ptr,
+                    mbarkn.mbar,
+                    UInt32(k_pages_per_cta),
+                )
             pipeline_k.commit_step()
 
+            # V (full, reuses rows from K stage 0's populate).
             pipeline_v.acquire_v()
-            mbarvn = pipeline_v.get_v(e)
-            if e != 0:
-                v_tma_op.async_copy(
-                    mbarvn.smem,
-                    mbarvn.mbar[],
-                    StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
-                )
+            mbarvn = pipeline_v.get_tile[qk_stage=0]()
+            _produce_v[partial=False](
+                kv_paged_rows,
+                mbarvn.smem.ptr,
+                mbarvn.mbar,
+                UInt32(KVPagedRows.num_pages),
+            )
             pipeline_v.commit_step()
+
+        # ---- Peeled last iteration (partial pages) ----
+        comptime if needs_partial:
+            if iter_count > 0:
+                kv_row += UInt32(config.BN)
+                var _skip_last = False
+                comptime if check_mask:
+                    if (
+                        mask.status(
+                            seq_info.prompt_idx,
+                            Index[dtype=DType.int32](
+                                Int(score_row), Int(kv_row)
+                            ),
+                            Index[dtype=DType.int32](BM_mask, BN),
+                        )
+                        == TileMaskStatus.FULL_MASK
+                    ):
+                        _skip_last = True
+                if not _skip_last:
+                    k_nvp = _k_num_valid_pages(kv_row + k_row_offset)
+                    comptime if is_leader and pair_cta:
+                        k_nvp_peer = _k_num_valid_pages(
+                            kv_row + UInt32(config.k_rows_per_cta())
+                        )
+                    v_nvp = _v_num_valid_pages(kv_row)
+                    # K stage 0 (partial, populate + K TMA, no Q).
+                    pipeline_k.acquire_k[qk_stage=0]()
+                    mbark0 = pipeline_k.get_k[qk_stage=0]()
+                    kv_paged_rows = kv_lut.populate[
+                        BN, base_alignment, pair_cta, is_leader
+                    ](seq_info.prompt_idx, kv_row)
+                    _produce_k[partial=True, qk_stage=0](
+                        kv_paged_rows, mbark0.smem.ptr, mbark0.mbar, k_nvp
+                    )
+                    # K stages 1+ (partial, no Q).
+                    comptime for k_stage in range(1, config.num_qk_stages):
+                        pipeline_k.acquire_k[qk_stage=k_stage]()
+                        mbarkn = pipeline_k.get_k[qk_stage=k_stage]()
+                        _produce_k[partial=True, qk_stage=k_stage](
+                            kv_paged_rows,
+                            mbarkn.smem.ptr,
+                            mbarkn.mbar,
+                            k_nvp,
+                        )
+                    pipeline_k.commit_step()
+
+                    # V (partial, reuses rows).
+                    pipeline_v.acquire_v()
+                    mbarvn = pipeline_v.get_tile[qk_stage=0]()
+                    _produce_v[partial=True](
+                        kv_paged_rows,
+                        mbarvn.smem.ptr,
+                        mbarvn.mbar,
+                        v_nvp,
+                    )
+                    pipeline_v.commit_step()

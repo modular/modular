@@ -82,7 +82,7 @@ def _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
         out_host.create_sub_buffer[DType.int64](0, half_length)
     )
     # Using host pointer math
-    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr() + half_length)
+    first_out_dev.enqueue_copy_to(out_host.as_span()[half_length:])
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -124,7 +124,7 @@ def _run_fake_memcpy(
     in_host.enqueue_copy_to(in_dev)
     in_dev.enqueue_copy_to(out_dev)
 
-    var out_ptr: UnsafePointer[Int64, MutAnyOrigin]
+    var out_ptr: UnsafePointer[Int64, MutUntrackedOrigin]
     if use_take_ptr:
         out_ptr = out_dev.take_ptr()
     else:
@@ -144,7 +144,7 @@ def _run_fake_memcpy(
         out_host.create_sub_buffer[DType.int64](0, half_length)
     )
     # Using host pointer math
-    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr() + half_length)
+    first_out_dev.enqueue_copy_to(out_host.as_span()[half_length:])
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -185,6 +185,7 @@ def _run_cpu_ctx_memcpy_async(
 
     host_buf.enqueue_fill(12)
     cpu_ctx.enqueue_copy(host_buf, dev_buf)
+    cpu_ctx.synchronize()
 
     for i in range(length):
         assert_equal(host_buf[i], Int64(2 * i))

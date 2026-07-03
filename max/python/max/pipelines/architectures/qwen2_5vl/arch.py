@@ -12,11 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.core.exceptions import InputError
+from max.pipelines.context import (
+    PixelContext,
+    TextAndVisionContext,
+    TextContext,
+)
+from max.pipelines.context.exceptions import InputError
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .batch_processor import Qwen2_5VLBatchProcessor
 from .context import Qwen2_5VLTextAndVisionContext
 from .model import Qwen2_5VLModel
 from .model_config import Qwen2_5VLConfig
@@ -25,7 +31,7 @@ from .weight_adapters import convert_qwen2_5vl_model_state_dict
 
 
 def validate_qwen2_5vl_required_args(
-    context: TextContext | TextAndVisionContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that all required Qwen2.5VL arguments are present.
 
@@ -61,6 +67,7 @@ qwen2_5_vl_arch = SupportedArchitecture(
     ],
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding="bfloat16",
     supported_encodings={
         "float32",
@@ -71,6 +78,7 @@ qwen2_5_vl_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_qwen2_5vl_model_state_dict,
     },
     pipeline_model=Qwen2_5VLModel,
+    batching=Qwen2_5VLBatchProcessor,
     tokenizer=Qwen2_5VLTokenizer,
     context_type=Qwen2_5VLTextAndVisionContext,
     required_arguments={
@@ -80,4 +88,9 @@ qwen2_5_vl_arch = SupportedArchitecture(
         validate_qwen2_5vl_required_args,
     ],
     config=Qwen2_5VLConfig,
+    memory_planner=PagedMemoryPlanner.with_activation_reservation(
+        5 * 1024**3, always_signal_buffers=True
+    ),
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

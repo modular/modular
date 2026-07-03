@@ -81,9 +81,9 @@ from std.bit import bit_width, pop_count
 struct KeysContainer[KeyEndType: DType = DType.uint32](
     ImplicitlyCopyable, Sized
 ):
-    var keys: UnsafePointer[UInt8, MutAnyOrigin]
+    var keys: UnsafePointer[UInt8, MutUntrackedOrigin]
     var allocated_bytes: Int
-    var keys_end: UnsafePointer[Scalar[Self.KeyEndType], MutAnyOrigin]
+    var keys_end: UnsafePointer[Scalar[Self.KeyEndType], MutUntrackedOrigin]
     var count: Int
     var capacity: Int
 
@@ -116,7 +116,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
     @always_inline
     def add(mut self, key: StringSlice):
         var prev_end = 0 if self.count == 0 else self.keys_end[self.count - 1]
-        var key_length = len(key)
+        var key_length = key.byte_length()
         var new_end = prev_end + Scalar[Self.KeyEndType](key_length)
 
         var needs_realocation = False
@@ -148,13 +148,16 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         self.count = count
 
     @always_inline
-    def get(self, index: Int) -> StringSlice[ImmutAnyOrigin]:
+    def get(self, index: Int) -> StringSlice[ImmutOrigin(origin_of(self))]:
+        var keys_ptr = self.keys.as_immutable().unsafe_origin_cast[
+            origin_of(self)
+        ]()
         if index < 0 or index >= self.count:
-            return StringSlice(unsafe_from_utf8=Span(ptr=self.keys, length=0))
+            return StringSlice(unsafe_from_utf8=Span(ptr=keys_ptr, length=0))
         var start = 0 if index == 0 else Int(self.keys_end[index - 1])
         var length = Int(self.keys_end[index]) - start
         return StringSlice(
-            unsafe_from_utf8=Span(ptr=self.keys + start, length=length)
+            unsafe_from_utf8=Span(ptr=keys_ptr + start, length=length)
         )
 
     @always_inline
@@ -162,15 +165,17 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         self.count = 0
 
     @always_inline
-    def __getitem__(self, index: Int) -> StringSlice[ImmutAnyOrigin]:
+    def __getitem__(
+        self, index: Int
+    ) -> StringSlice[ImmutOrigin(origin_of(self))]:
         return self.get(index)
 
     @always_inline
     def __len__(self) -> Int:
         return self.count
 
-    def keys_vec(self) -> List[StringSlice[ImmutAnyOrigin]]:
-        var keys = List[StringSlice[ImmutAnyOrigin]](capacity=self.count)
+    def keys_vec(self, out result: List[StringSlice[origin_of(self)]]):
+        var keys = type_of(result)(capacity=self.count)
         for i in range(self.count):
             keys.append(self[i])
         return keys^
@@ -184,17 +189,19 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
 
 
 struct StringDict[
-    V: Copyable & ImplicitlyDestructible,
+    V: Copyable & ImplicitlyDeletable,
     KeyCountType: DType = DType.uint32,
     KeyOffsetType: DType = DType.uint32,
     destructive: Bool = True,
     caching_hashes: Bool = True,
 ](Sized):
     var keys: KeysContainer[Self.KeyOffsetType]
-    var key_hashes: UnsafePointer[Scalar[Self.KeyCountType], MutAnyOrigin]
+    var key_hashes: UnsafePointer[Scalar[Self.KeyCountType], MutUntrackedOrigin]
     var values: List[Self.V]
-    var slot_to_index: UnsafePointer[Scalar[Self.KeyCountType], MutAnyOrigin]
-    var deleted_mask: UnsafePointer[UInt8, MutAnyOrigin]
+    var slot_to_index: UnsafePointer[
+        Scalar[Self.KeyCountType], MutUntrackedOrigin
+    ]
+    var deleted_mask: UnsafePointer[UInt8, MutUntrackedOrigin]
     var count: Int
     var capacity: Int
 
@@ -372,7 +379,7 @@ struct StringDict[
         for i in range(old_capacity):
             if old_slot_to_index[i] == 0:
                 continue
-            var key_hash = Scalar[Self.KeyCountType](0)
+            var key_hash: Scalar[Self.KeyCountType]
 
             comptime if Self.caching_hashes:
                 key_hash = self.key_hashes[i]
@@ -427,7 +434,7 @@ struct StringDict[
     def upsert(
         mut self,
         key: StringSlice,
-        update: def(value: Optional[Self.V]) -> Self.V,
+        update: def(value: Optional[Self.V]) thin -> Self.V,
     ):
         var key_index = self._find_key_index(key)
         if key_index == 0:
@@ -492,7 +499,7 @@ def bench_dict_init_with_short_keys[file_name: String](mut b: Bencher) raises:
         var d = Dict[String, Int]()
         for i, key in enumerate(keys):
             d[key] = i
-        keep(d._ctrl)
+        keep(d._table._ctrl)
 
     b.iter[call_fn]()
 
@@ -507,7 +514,7 @@ def bench_dict_init_with_long_keys[file_name: String](mut b: Bencher) raises:
         var d = Dict[String, Int, default_hasher]()
         for i, key in enumerate(keys):
             d[key] = i
-        keep(d._ctrl)
+        keep(d._table._ctrl)
 
     b.iter[call_fn]()
 
