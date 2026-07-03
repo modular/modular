@@ -56,6 +56,9 @@ modular_py_test(
 _VALIDATE_EXCLUDE = [
     "tests/test_ftstrings.py",
     "tests/test_kwargs_brace_initializers.py",
+    # MLIR `__mlir_attr` samples need their dialect to `mojo build`; the test
+    # only exercises the formatter's backtick bracket-scan behavior.
+    "tests/test_backtick_bracket_scan.py",
 ]
 
 # Companion to `unit_tests` that compiles every sample with `mojo build`.

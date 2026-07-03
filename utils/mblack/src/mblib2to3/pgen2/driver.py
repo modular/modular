@@ -247,7 +247,7 @@ def _split_trailing_comment(line: str) -> tuple[str, str]:
         if c == "#":
             code = line[:i].rstrip()
             return code, line[len(code) :]
-        elif c in "\"'":
+        elif c in "\"'`":
             i = _skip_string_at(line, i)
             if i == -1:
                 return line, ""
@@ -295,7 +295,13 @@ def _opens_interp(line: str, end: int) -> bool:
 
 
 def _quote_at(line: str, i: int) -> str:
-    """The string delimiter opening at *i* -- a triple or single quote."""
+    """The string delimiter opening at *i* -- a triple or single quote, or a
+    backtick.
+
+    Mojo backticks quote raw identifiers / MLIR attributes, e.g.
+    ``__mlir_attr.`[#llvm.foo]```. Treating them as (non-interpolating) strings
+    keeps a ``#`` or bracket inside from desyncing the bracket depth.
+    """
     return line[i : i + 3] if line[i : i + 3] in ('"""', "'''") else line[i]
 
 
@@ -343,7 +349,7 @@ def _skip_interp(line: str, i: int) -> int:
         c = line[i]
         if c == "}":
             return i + 1
-        elif c in "\"'":
+        elif c in "\"'`":
             i = _skip_string_at(line, i)
             if i == -1:
                 return -1
@@ -385,7 +391,7 @@ def _scan_code_brackets(line: str, quote: str | None) -> tuple[int, str | None]:
         elif c in ")]}":
             delta -= 1
             i += 1
-        elif c in "\"'":
+        elif c in "\"'`":
             end = _skip_string_at(line, i)
             if end == -1:
                 # Unterminated: only a triple-quoted string carries over.
