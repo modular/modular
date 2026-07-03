@@ -228,3 +228,45 @@ def main():
 
 
 # CHECK: comptime member 'Value' type 'AnyStruct[Variant[T]]' does not conform to trait's required type 'Copyable'
+
+
+# ===========================================================================
+# Synthesized copy/move ctor failures driven by variadic helper constraints
+# ===========================================================================
+# A wrapper field whose type is conditionally Copyable/Movable through
+# all_conforms_to() should be rejected by synthesized copy/move when the
+# enclosing struct doesn't constrain its parameter accordingly.
+
+
+@fieldwise_init
+struct NegativeVariadicCopyField[*Ts: Movable](
+    Copyable where Ts.all_conforms_to[Copyable](),
+    ImplicitlyDeletable,
+    Movable,
+):
+    var tag: Int
+
+
+# CHECK: cannot synthesize copy constructor because field 'field' has non-copyable type
+struct UnsatisfiedVariadicCopySynthesis[T: ImplicitlyDeletable & Movable](
+    Copyable,
+    ImplicitlyDeletable,
+    Movable,
+):
+    var field: NegativeVariadicCopyField[Int, Self.T]
+
+
+@fieldwise_init
+struct NegativeVariadicMoveField[*Ts: AnyType](
+    ImplicitlyDeletable,
+    Movable where Ts.all_conforms_to[Movable](),
+):
+    var tag: Int
+
+
+# CHECK: cannot synthesize move constructor because field 'field' has non-movable and non-implicitly-copyable type
+struct UnsatisfiedVariadicMoveSynthesis[T: ImplicitlyDeletable](
+    ImplicitlyDeletable,
+    Movable,
+):
+    var field: NegativeVariadicMoveField[Int, Self.T]

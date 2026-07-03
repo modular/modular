@@ -500,7 +500,14 @@ FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
 
   TypedAttr typeValues =
       getCanonicalAttr(UpcastAttr::strip(conformsTo.getTypeValue()));
-  auto traitType = sugarDynCast<TraitType>(typeValues.getType());
+  Type valueType = typeValues.getType();
+  // A symbolic pack (e.g. `*Ts`) carries a param-list type; conformance of the
+  // whole pack is governed by its element trait bound, so consult the element
+  // type. A concrete list is disaggregated into scalar conjuncts upon
+  // construction and never reaches here as a list.
+  if (auto paramListType = sugarDynCast<ParamListType>(valueType))
+    valueType = paramListType.getElementType();
+  auto traitType = sugarDynCast<TraitType>(valueType);
   if (!traitType)
     return failure();
 

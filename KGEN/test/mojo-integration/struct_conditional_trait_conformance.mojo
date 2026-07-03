@@ -11,6 +11,10 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from std.builtin.variadics import TypeList
+from std.collections import Optional
+from std.utils import Variant
+
 # ===========================================================================
 # Basic Types for Testing
 # ===========================================================================
@@ -910,7 +914,7 @@ def test_comptime_if_guard():
 
 def repr_with_where[
     *types: Movable & Writable
-](t: Tuple[*types]) -> String where conforms_to(Tuple[*types], Writable):
+](t: Tuple[*types]) -> String where types.all_conforms_to[Writable]():
     return repr(t)
 
 
@@ -918,6 +922,154 @@ def test_where_clause_proves_variadic():
     var t = (1, "hello")
     # CHECK: where_variadic: Tuple[SIMD[DType.int, 1], String](Int(1), 'hello')
     print("where_variadic:", repr_with_where(t))
+
+
+# ===========================================================================
+# Dedicated variadic trait helper proposition
+# ===========================================================================
+# Regression coverage for variadic all-conformance helper constraints lowered
+# to `conforms_to(Ts.values, Trait)`. These cases require proving a Copyable
+# constraint from a symbolic pack trait bound rather than reducing a concrete
+# TypeList implementation.
+
+
+trait HasCopyableValue:
+    comptime Value: Copyable
+
+
+struct VariantFromCopyablePack[*T: Copyable](HasCopyableValue):
+    comptime Value = Variant[*Self.T]
+
+
+trait ProducesCopyable:
+    comptime Value: Copyable
+
+
+struct IntProducer(ProducesCopyable):
+    comptime Value = Int
+
+
+struct StringProducer(ProducesCopyable):
+    comptime Value = String
+
+
+comptime _ProducerValue[T: ProducesCopyable]: Copyable = T.Value
+
+
+struct VariantFromMappedPack[*P: ProducesCopyable](HasCopyableValue):
+    comptime Mapped = TypeList.of[Trait=ProducesCopyable, *Self.P]().map[
+        _ProducerValue
+    ]()
+    comptime Value = Variant[*Self.Mapped]
+
+
+def needs_copyable_value[T: HasCopyableValue]():
+    pass
+
+
+def test_variadic_trait_helper_attr():
+    needs_copyable_value[VariantFromCopyablePack[Int, String]]()
+    needs_copyable_value[VariantFromMappedPack[IntProducer, StringProducer]]()
+    # CHECK: variadic_trait_helper_attr: ok
+    print("variadic_trait_helper_attr: ok")
+
+
+# ===========================================================================
+# Derived-to-ancestor implication for variadic trait helpers
+# ===========================================================================
+# A struct that conditionally conforms to ImplicitlyCopyable where every Ts is
+# ImplicitlyCopyable should satisfy Copyable too, because ImplicitlyCopyable
+# refines Copyable and canonicalizeConformanceTraitSymbols expands the ancestor
+# traits before verifyDerivedAncestorImplication runs. This is precisely the
+# simplification that Tuple/Variant rely on after dropping the redundant
+# Copyable clause; pin it down independently so a regression here is caught
+# directly.
+
+
+@fieldwise_init
+struct AncestorImplicationBag[*Ts: ImplicitlyDeletable & Movable](
+    ImplicitlyCopyable where Ts.all_conforms_to[ImplicitlyCopyable](),
+    ImplicitlyDeletable,
+    Movable,
+):
+    var tag: Int
+
+
+def needs_implicitly_copyable[T: ImplicitlyCopyable](x: T):
+    pass
+
+
+def test_variadic_helper_ancestor_implication():
+    var bag = AncestorImplicationBag[Int, String](0)
+    needs_implicitly_copyable(bag)
+    # CHECK: variadic_helper_ancestor_implication: ok
+    print("variadic_helper_ancestor_implication: ok")
+
+
+# ===========================================================================
+# Synthesized copy/move through variadic helper constraints
+# ===========================================================================
+# A field whose type is conditionally copyable through all_conforms_to[Copyable]
+# should be accepted by synthesized copy when the enclosing copy constructor
+# assumes conforms_to(T, Copyable). This is the same proof shape as Optional's
+# Variant[_NoneType, T] field.
+
+
+@fieldwise_init
+struct VariadicCopyField[*Ts: Movable](
+    Copyable where Ts.all_conforms_to[Copyable](),
+    ImplicitlyDeletable,
+    Movable,
+):
+    var tag: Int
+
+
+struct VariadicCopyFieldWrapper[T: ImplicitlyDeletable & Movable](
+    Copyable where conforms_to(T, Copyable),
+    ImplicitlyDeletable,
+    Movable,
+):
+    comptime Field = VariadicCopyField[Int, Self.T]
+    var field: Self.Field
+
+    def __init__(out self, var field: Self.Field):
+        self.field = field^
+
+
+@fieldwise_init
+struct VariadicMoveField[*Ts: AnyType](
+    ImplicitlyDeletable,
+    Movable where Ts.all_conforms_to[Movable](),
+):
+    var tag: Int
+
+
+struct VariadicMoveFieldWrapper[T: ImplicitlyDeletable & Movable](Movable):
+    var field: VariadicMoveField[Int, Self.T]
+
+    def __init__(out self, var field: VariadicMoveField[Int, Self.T]):
+        self.field = field^
+
+
+def test_variadic_helper_synthesized_copy_move():
+    var copy_source = VariadicCopyFieldWrapper[CopyableType](
+        VariadicCopyField[Int, CopyableType](7)
+    )
+    var copy_result = copy_source.copy()
+    # CHECK: variadic_helper_synth_copy: 7
+    print("variadic_helper_synth_copy:", copy_result.field.tag)
+
+    var move_source = VariadicMoveFieldWrapper[CopyableType](
+        VariadicMoveField[Int, CopyableType](9)
+    )
+    var move_result = move_source^
+    # CHECK: variadic_helper_synth_move: 9
+    print("variadic_helper_synth_move:", move_result.field.tag)
+
+    var optional = Optional[Int](5)
+    var optional_copy = optional.copy()
+    # CHECK: optional_synth_copy: 5
+    print("optional_synth_copy:", optional_copy.value())
 
 
 # ===========================================================================
@@ -1366,6 +1518,9 @@ def main():
     test_guarded_conditional_call()
     test_comptime_if_guard()
     test_where_clause_proves_variadic()
+    test_variadic_trait_helper_attr()
+    test_variadic_helper_ancestor_implication()
+    test_variadic_helper_synthesized_copy_move()
     test_conforms_to_value_expression()
     test_metatype_upcast_with_scope()
     test_fn_conversion_with_scope()
