@@ -28,7 +28,7 @@ from extensibility import (
     OutputFusion,
 )
 from std.collections import InlineArray
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext, DeviceGraphBuilder
 from std.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
 from std.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from layout import (
@@ -59,6 +59,7 @@ from extensibility import (
 
 from std.utils import Index, IndexList, StaticTuple
 
+from .async_value import AnyAsyncValueRef
 from .buffer_plan import BufferPlanState, BufferPlanStats
 
 comptime MutByteBuffer = DynamicTensor[DType.int8, 1]
@@ -104,35 +105,37 @@ def create_i1_async(
     external_call["MGP_RT_CreateAsync_bool", NoneType](value, async_ptr)
 
 
-struct OwnedByteBuffer(Movable):
-    """Owning composite produced by `mgp.buffer.alloc`.
+struct OwnedByteBuffer(ImplicitlyCopyable, Movable):
+    """Owning composite for an `mgp.buffer` value: a non-owning `MutByteBuffer`
+    view (precomputed pointer + shape) plus an `AnyAsyncValueRef` storage handle
+    that keeps the backing memory alive.
 
-    Keeps the device memory alive via a live owning `DeviceBuffer` while exposing
-    a non-owning `MutByteBuffer` view (a precomputed pointer and shape, so the
-    pack site need not call the raising `unsafe_ptr()` again). It is confined to
-    the alloc op's own compiled region: at that region's pack site its owning
-    handle is transferred net-zero (no `addRef`) into a real `TensorBufferRef`
-    via `take_handle()`. Deliberately move-only: never copied, never
-    bitcast-unpacked, never passed whole into a kernel.
+    Structurally mirrors the C++ `TensorBufferRef` (`{data, size, storageRef}`).
+    Copying shares the backing memory (retains the storage); at the pack site the
+    storage is surrendered net-zero into a real `TensorBufferRef`.
     """
 
-    var dev_buffer: DeviceBuffer[DType.int8]
     var view: MutByteBuffer
+    var storage: AnyAsyncValueRef
 
-    def __init__(
-        out self,
-        var dev_buffer: DeviceBuffer[DType.int8],
-        view: MutByteBuffer,
-    ):
-        """Builds the composite from a live owning buffer and its view.
+    def __init__(out self, view: MutByteBuffer, var storage: AnyAsyncValueRef):
+        """Builds the composite from a view and its storage handle.
 
         Args:
-            dev_buffer: The live owning `DeviceBuffer` that keeps the memory
-                alive (taken by value; not copied).
-            view: A non-owning `MutByteBuffer` over the same memory.
+            view: A non-owning `MutByteBuffer` over the memory.
+            storage: The owning storage handle that keeps the memory alive.
         """
-        self.dev_buffer = dev_buffer^
         self.view = view
+        self.storage = storage^
+
+    def __init__(out self, *, copy: Self):
+        """Creates a copy sharing the same backing memory (retains the storage).
+
+        Args:
+            copy: The composite to copy.
+        """
+        self.view = copy.view
+        self.storage = copy.storage
 
     def unsafe_ptr(self) -> UnsafePointer[Scalar[DType.int8], MutAnyOrigin]:
         """Returns the view's raw device data pointer.
@@ -150,25 +153,13 @@ struct OwnedByteBuffer(Movable):
         """
         return self.view.size()
 
-    def buffer(deinit self) -> DeviceBuffer[DType.int8]:
-        """Hands the live owning `DeviceBuffer` to the pack site, consuming self.
+    def take_storage(deinit self) -> AnyAsyncValueRef:
+        """Hands the owning storage handle to the pack site, consuming self.
 
         Returns:
-            The owning `DeviceBuffer` moved out of the composite.
+            The storage handle moved out of the composite.
         """
-        return self.dev_buffer^
-
-
-@no_inline
-def create_buffer_ref_taking_handle_async(
-    handle: _DeviceBufferPtr[mut=True],
-    data: UnsafePointer[Scalar[DType.int8], MutAnyOrigin],
-    size: Int,
-    async_ptr: OpaquePointer[MutAnyOrigin],
-):
-    external_call["MGP_RT_CreateAsyncDeviceBufferRefByTakingHandle", NoneType](
-        handle, data, size, async_ptr
-    )
+        return self.storage^
 
 
 @no_inline
@@ -401,11 +392,13 @@ def mgp_buffer_alloc(
     # This primitive has a byte-size input, so always assume a byte format
     var shape = IndexList[1](byte_size)
     var buf = dev_context.enqueue_create_buffer[DType.int8](byte_size)
-    # Keep the live owning DeviceBuffer instead of severing it with take_ptr():
-    # build a non-owning view over the same memory and hand both to the pack
-    # site, which transfers the genuine handle (net-zero) into the runtime.
+    # Build a non-owning view over the memory, then wrap the live owning
+    # DeviceBuffer in an AsyncValue storage handle (net-zero take of the buffer's
+    # handle). The composite carries the view + storage, mirroring the C++
+    # TensorBufferRef; the pack site later surrenders the storage net-zero.
     var view = MutByteBuffer(buf.unsafe_ptr(), shape)
-    return OwnedByteBuffer(buf^, view)
+    var storage = AnyAsyncValueRef(storage_buf=buf^)
+    return OwnedByteBuffer(view, storage^)
 
 
 @register_internal("mgp.buffer.constant")
@@ -1177,18 +1170,21 @@ struct MoggAsyncPackHelper:
         async_ptr: AnyAsyncValueRefPtr,
     ):
         """
-        Packs an OwnedByteBuffer by transferring its live DeviceBuffer handle
-        (net-zero, no addRef) into a real TensorBufferRef. device_ctx_ptr is
-        unused: the take-handle entrypoint adopts the existing owner, so it
-        needs no DeviceContext.
+        Packs an OwnedByteBuffer by surrendering its storage handle (net-zero,
+        no addRef) into a real TensorBufferRef. device_ctx_ptr is unused: the
+        storage already owns the backing memory, so no DeviceContext is needed.
         """
         # Read the view metadata before consuming the composite.
         var ptr = data.unsafe_ptr()
         var n = data.size()
-        # Move the owning DeviceBuffer out, then move its handle out with no
-        # release; the runtime adopts that single reference net-zero.
-        var handle = data^.buffer().take_handle()
-        create_buffer_ref_taking_handle_async(handle, ptr, n, async_ptr)
+        # Move the owning storage handle out, then surrender its AsyncValue* with
+        # no release; the runtime adopts that single reference net-zero.
+        var storage = data^.take_storage()
+        # void MGP_RT_CreateAsyncBufferRefFromStorage(
+        #     AsyncValue *storage, void *data, size_t size, AnyAsyncValueRef *async)
+        external_call["MGP_RT_CreateAsyncBufferRefFromStorage", NoneType](
+            storage^.take_handle(), ptr, n, async_ptr
+        )
 
     def __init__(
         out self,
