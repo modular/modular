@@ -226,18 +226,30 @@ This version is still a work in progress.
   ```
 
   Now, if the type *conditionally* conforms to `ImplicitlyDeletable`, you may
-  omit redundantly writing `@explicit_destroy`:
+  omit redundantly writing `@explicit_destroy`. This works both for types
+  that are never `ImplicitlyDeletable` (`where False`) and for types that are
+  non-ImplicitlyDeletable based on a non trivial condition (`where <cond>`):
 
   ```mojo
   # no @explicit_destroy necessary
+  struct NeverDeletable(
+      ImplicitlyDeletable where False
+  ):
+      def destroy(deinit self):
+          pass
+
+  # no @explicit_destroy necessary
   struct Container[T: AnyType](
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
+      ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
   ):
       var value: Self.T
 
   comptime assert conforms_to(Container[Int], ImplicitlyDeletable)
   comptime assert not conforms_to(Container[NonDeletable], ImplicitlyDeletable)
   ```
+
+  `@explicit_destroy("custom error")` can still be used to provide additional
+  instruction to users when an instance cannot be deleted implicitly.
 
   This simplifies the language by replacing special decorator behavior with
   generalized struct conformance logic.
