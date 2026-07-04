@@ -223,6 +223,7 @@ def WrappedOriginFieldAttr : DialectAttribute<(attr
 
 def WrappedInteriorOriginAttr : DialectAttribute<(attr
   TypedAttr:$base,
+  TypedAttr:$userName,
   ConcreteType<"OriginType">:$type
 )>;
 

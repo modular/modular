@@ -95,15 +95,16 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
         origin_of(Self._mlir_origin, element._mlir_origin)
     ]
 
-
-comptime _lit_interior_origin[mut: Bool, //, base: Origin[mut=mut]] = Origin[
-    _mlir_origin=__mlir_attr[
-        `#lit.interior.origin<`,
-        base._mlir_origin,
-        `> : `,
-        type_of(base._mlir_origin),
-    ]
-]()
+    comptime get_unique_interior[name: StringLiteral] = Origin[
+        _mlir_origin=__mlir_attr[
+            `#lit.interior.origin<`,
+            Self._mlir_origin,
+            `, `,
+            name.value,
+            `> : `,
+            type_of(Self._mlir_origin),
+        ]
+    ]()
 
 
 trait Iterable:
@@ -1484,7 +1485,7 @@ struct UnsafePointer[
     def get_unique_item_ref[
         self_origin: Origin[]
     ](ref[self_origin] self, offset: Int = 0) -> ref[
-        _lit_interior_origin[self_origin].unsafe_mut_cast[True](),
+        self_origin.get_unique_interior["pointee"].unsafe_mut_cast[True](),
         Self.address_space,
     ] Self.type:
         while True:

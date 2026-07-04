@@ -1507,7 +1507,9 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
 
   if (auto interior = dyn_cast<InteriorOriginAttr>(param)) {
     printOriginParam(os, interior.getBase(), diagShared);
-    os << "[]";
+    os << "[";
+    printParam(os, interior.getUserName(), {diagShared});
+    os << "]";
     return;
   }
 

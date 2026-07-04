@@ -77,14 +77,14 @@ kgen.generator @field_attr<life: !lit.origin<false>>
 }
 
 // CHECK-LABEL: kgen.generator @interior_origin_attr<orig: origin<false>>(
-// CHECK-SAME: %arg0: !lit.ref<!lit.struct<@Foo>, imm orig[]->field>
-// CHECK-SAME: %arg1: !lit.ref<!lit.struct<@Foo>, imm orig[]->a[]>)
+// CHECK-SAME: %arg0: !lit.ref<!lit.struct<@Foo>, imm orig["interior"]->field>
+// CHECK-SAME: %arg1: !lit.ref<!lit.struct<@Foo>, imm orig["interior"]->a["pointee"]>)
 kgen.generator @interior_origin_attr<orig: !lit.origin<false>>
-(%arg0: !lit.ref<@Foo, imm orig[]->field>,
- %arg1: !lit.ref<@Foo, imm orig[]->a[]>) {
+(%arg0: !lit.ref<@Foo, imm orig["interior"]->field>,
+ %arg1: !lit.ref<@Foo, imm orig["interior"]->a["pointee"]>) {
 
-  // CHECK-NEXT: "verbose_attr"() {attr = #lit.interior.origin<#kgen.param.decl.ref<"orig"> : !lit.origin<false>> : !lit.origin<false>} : () -> ()
-  "verbose_attr"() {attr = #lit.interior.origin<#kgen.param.decl.ref<"orig"> : !lit.origin<false>> : !lit.origin<false>} : () -> ()
+  // CHECK-NEXT: "verbose_attr"() {attr = #lit.interior.origin<#kgen.param.decl.ref<"orig"> : !lit.origin<false>, "pointee" : !kgen.string> : !lit.origin<false>} : () -> ()
+  "verbose_attr"() {attr = #lit.interior.origin<#kgen.param.decl.ref<"orig"> : !lit.origin<false>, "pointee" : !kgen.string> : !lit.origin<false>} : () -> ()
   kgen.return
 }
 
