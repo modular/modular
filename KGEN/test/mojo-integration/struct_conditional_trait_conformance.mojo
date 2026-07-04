@@ -821,6 +821,23 @@ def test_conditional_implicitly_deletable():
     )
 
 
+# ===========================================================================
+# `ImplicitlyDeletable where False` opts out of implicit deletability
+# ===========================================================================
+
+
+struct WhereFalseOptOut(ImplicitlyDeletable where False):
+    pass
+
+
+def test_implicitly_deletable_where_false_opt_out():
+    # CHECK: where_false_opt_out_conforms: False
+    print(
+        "where_false_opt_out_conforms:",
+        conforms_to(WhereFalseOptOut, ImplicitlyDeletable),
+    )
+
+
 def all_copyable_from_param_list[*Ts: AnyType]() -> Bool:
     return conforms_to(Ts.values, Copyable)
 
@@ -1513,6 +1530,7 @@ def main():
     test_synth_copy_with_impl_copyable_type()
     test_conforms_to_evaluates_where_clause()
     test_conditional_implicitly_deletable()
+    test_implicitly_deletable_where_false_opt_out()
     test_conforms_to_param_list_checked_types()
     test_symbolic_conforms_to()
     test_guarded_conditional_call()

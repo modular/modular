@@ -447,6 +447,13 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   if (!op.getBody().front().empty())
     return success();
 
+  // A conformance whose where-clause is never satisfiable (e.g.
+  // `ImplicitlyDeletable where False`) is an opt-out: it is never active, so
+  // the struct need not implement the trait's requirements and no witnesses are
+  // built.
+  if (isTriviallyFalseConstraint(op.getConstraintAttr()))
+    return success();
+
   // Set up builder to insert witness entry. We install witness op in the
   // conformance op as we verifying such that get_witness will be folded
   // correctly by the evaluation context. This allows us to fold dependent decls

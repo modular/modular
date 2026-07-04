@@ -3383,10 +3383,20 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
           // set a generic default so that CheckLifetimes has a
           // diagnostic to emit when automatic destruction is unavailable.
           if (!structOp.getLinearTypeErrorMsg().has_value()) {
-            std::string defaultMsg =
-                "type '" + structOp.getDeclName().str() +
-                "' does not conditionally conform to "
-                "'ImplicitlyDeletable' for these parameters";
+            std::string defaultMsg = [&] {
+              if (isTriviallyFalseConstraint(traitConstraints[i])) {
+                // `ImplicitlyDeletable where False`: an unconditional opt-out.
+                return "type '" + structOp.getDeclName().str() +
+                       "' is not implicitly deletable and must be explicitly "
+                       "destroyed";
+              } else {
+                // `ImplicitlyDeletable where <cond>`: linear when unsatisfied.
+                return "type '" + structOp.getDeclName().str() +
+                       "' does not conditionally conform to "
+                       "'ImplicitlyDeletable' "
+                       "for these parameters";
+              }
+            }();
             structOp.setLinearTypeErrorMsg(
                 std::make_optional(llvm::StringRef(defaultMsg)));
           }

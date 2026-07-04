@@ -632,8 +632,7 @@ TraitType TraitType::canonicalizeAndGet(MLIRContext *context,
     return Base::get(context, symbols, constraints);
 
   // Canonicalize constraints:
-  // 1. False constraints (proposition = 0) remove the trait slot entirely
-  // 2. When all remaining constraints are trivially true, clear the array
+  // 1. When all remaining constraints are trivially true, clear the array
   SmallVector<SymbolRefAttr> canonSymbols;
   SmallVector<ConstraintAttr> canonConstraints;
   canonSymbols.reserve(symbols.size());
@@ -643,9 +642,6 @@ TraitType TraitType::canonicalizeAndGet(MLIRContext *context,
   bool hasAnyNonTrivialConstraint = false;
 
   for (auto [symbol, constraint] : llvm::zip(symbols, constraints)) {
-    // Skip slots with false constraints - they are never satisfiable.
-    if (isTriviallyFalseConstraint(constraint))
-      continue;
 
     canonSymbols.push_back(symbol);
 
