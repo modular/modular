@@ -573,7 +573,7 @@ def OriginFieldAttr : LITTypedAttr<"OriginField", "origin.field", [
 //===----------------------------------------------------------------------===//
 
 def InteriorOriginAttr : LITTypedAttr<"InteriorOrigin", "interior.origin",  [
-          DeclareAttrInterfaceMethods<ParameterAttrInterface>
+          DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>
   ]> {
   let summary = "Access an interior origin";
   let description = [{
@@ -585,23 +585,27 @@ def InteriorOriginAttr : LITTypedAttr<"InteriorOrigin", "interior.origin",  [
     specify fine-grained invalidation sets.
   }];
 
-  let parameters = (ins "TypedAttr":$base,
+  let parameters = (ins "TypedAttr":$base, "TypedAttr":$userName,
                         AttributeSelfTypeParameter<"", "OriginType">:$type);
 
-  let assemblyFormat = "`<` $base `>`";
+  let assemblyFormat = "`<` $base `,` $userName `>`";
 
   let skipDefaultBuilders = 1;
+  let genVerifyDecl = 1;
   let builders = [
     // These builders fold the request automatically.
     AttrBuilderWithInferredContext<(ins
-      "TypedAttr":$base), "", "TypedAttr">,
-    AttrBuilder<(ins "TypedAttr":$base, "OriginType":$type), [{
-      return get(base);
+      "TypedAttr":$base, "TypedAttr":$userName), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$base, "TypedAttr":$userName,
+                "OriginType":$type), [{
+      return get(base, userName);
     }], "TypedAttr">,
   ];
 
   let extraClassDeclaration = [{
-    static InteriorOriginAttr getFromBytecode(TypedAttr base, OriginType type);
+    static TypedAttr get(TypedAttr baseOrigin, llvm::StringRef userName);
+    static InteriorOriginAttr getFromBytecode(TypedAttr base,
+        TypedAttr userName, OriginType type);
   }];
 }
 

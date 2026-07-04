@@ -470,7 +470,13 @@ bool OriginFieldAttr::isLessThan(Attribute rhs) const {
 // InteriorOriginAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr InteriorOriginAttr::get(TypedAttr baseOrigin) {
+TypedAttr InteriorOriginAttr::get(TypedAttr baseOrigin, StringRef userName) {
+  auto *ctx = baseOrigin.getContext();
+  TypedAttr userNameAttr = StringAttr::get(userName, StringType::get(ctx));
+  return get(baseOrigin, userNameAttr);
+}
+
+TypedAttr InteriorOriginAttr::get(TypedAttr baseOrigin, TypedAttr userName) {
   // Check to see if there are any permutations we can fold.
 
   // If we have the global mutable origin, treat it conservatively by
@@ -482,7 +488,7 @@ TypedAttr InteriorOriginAttr::get(TypedAttr baseOrigin) {
   // We push any mutability casts outside of ourselves.
   //     mutcast(x)[] => mutcast(x[])
   if (auto mutCast = sugarDynCast<OriginMutCastAttr>(baseOrigin)) {
-    auto inner = InteriorOriginAttr::get(mutCast.getOperand());
+    auto inner = InteriorOriginAttr::get(mutCast.getOperand(), userName);
     return OriginMutCastAttr::get(inner, mutCast.getType());
   }
 
@@ -491,7 +497,7 @@ TypedAttr InteriorOriginAttr::get(TypedAttr baseOrigin) {
   if (auto unionAttr = sugarDynCast<OriginUnionAttr>(baseOrigin)) {
     SmallVector<TypedAttr> elts;
     for (auto elt : unionAttr.getOperands())
-      elts.push_back(InteriorOriginAttr::get(elt));
+      elts.push_back(InteriorOriginAttr::get(elt, userName));
     // Field accesses don't affect mutability, so we use the same type.
     return OriginUnionAttr::get(elts, unionAttr.getType());
   }
@@ -499,17 +505,34 @@ TypedAttr InteriorOriginAttr::get(TypedAttr baseOrigin) {
   // The result type is the same as baseOrigin's.
   auto baseType = ::cast<OriginType>(baseOrigin.getType());
   return InteriorOriginAttr::Base::get(baseOrigin.getContext(), baseOrigin,
-                                       baseType);
+                                       userName, baseType);
 }
 
 InteriorOriginAttr InteriorOriginAttr::getFromBytecode(TypedAttr base,
+                                                       TypedAttr userName,
                                                        OriginType type) {
-  return Base::get(type.getContext(), base, type);
+  return Base::get(type.getContext(), base, userName, type);
+}
+
+LogicalResult
+InteriorOriginAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                           TypedAttr base, TypedAttr userName,
+                           OriginType type) {
+  if (!isa<StringType>(userName.getType()))
+    return emitError() << "userName must be of `!kgen.string` type";
+  return success();
 }
 
 // Fields are simple constants if their base is.
 bool InteriorOriginAttr::isConstant() const {
   return ParameterAttr::isSimpleConstant(getBase());
+}
+
+bool InteriorOriginAttr::isLessThan(Attribute rhs) const {
+  auto rhsInterior = ::cast<InteriorOriginAttr>(rhs);
+  if (getBase() == rhsInterior.getBase())
+    return ParameterAttr::compare(getUserName(), rhsInterior.getUserName());
+  return ParameterAttr::compare(getBase(), rhsInterior.getBase());
 }
 
 //===----------------------------------------------------------------------===//

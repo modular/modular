@@ -872,9 +872,10 @@ OptionalParseResult OriginType::parseValue(AsmParser &p,
         continue;
       }
       if (succeeded(p.parseOptionalLSquare())) {
-        if (p.parseRSquare())
+        TypedAttr userName;
+        if (failed(parseStringParam(p, userName)) || p.parseRSquare())
           return failure();
-        result = InteriorOriginAttr::get(result);
+        result = InteriorOriginAttr::get(result, userName);
         continue;
       }
       // Otherwise, not a postfix thing.
@@ -1012,11 +1013,13 @@ LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
     return success();
   }
 
-  // Print field access with x.y[] notation.
+  // Print interior access with x[<string-param>] notation.
   if (auto interior = ::dyn_cast<InteriorOriginAttr>(value)) {
     if (failed(printValue(p, interior.getBase())))
       return failure();
-    p << "[]";
+    p << "[";
+    printParamValue(p, interior.getUserName());
+    p << "]";
     return success();
   }
 
