@@ -11,22 +11,22 @@
 # RUN: %parse-mojo-isolated %s | kgen-opt -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics | FileCheck %s
 
 
-struct MyList[T: ImplicitlyCopyable]:
+struct MyList[T: Movable]:
     var data: UnsafePointer[Self.T, UntrackedOrigin[mut=True]]
 
     def __init__(out self):
         self.data = UnsafePointer[Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
 
     def __del__(deinit self):
-        pass
+        pass # Explicit del so it isn't considered trivial and elided.
 
     def mutate(mut self):
         pass
 
     def __getitem__(
         ref self, idx: Int
-    ) -> ref[self.data.get_unique_item_ref(idx)] Self.T:
-        return self.data.get_unique_item_ref(idx)
+    ) -> ref[self.data.unsafe_origin_owned_rebase[origin_of(self), "element"](idx)[]] Self.T:
+        return self.data.unsafe_origin_owned_rebase[origin_of(self), "element"](idx)[]
 
 
 # CHECK-LABEL: lit.fn @"test0
@@ -35,9 +35,8 @@ def test0():
     var list = MyList[Int]()
 
     # CHECK: lit.call {{.*}}MyList::@"__getitem__
-    var ptr = Pointer(to=list[4])
-    # CHECK: lit.call {{.*}}MyList::@"__del__
+    ref elt = list[4]
 
-    # FIXME: This is not extending the lifetime of MyList
     # CHECK: lit.call {{.*}}Int::@"__iadd__
-    ptr[] += 4
+    elt += 4
+    # CHECK: lit.call {{.*}}MyList::@"__del__
