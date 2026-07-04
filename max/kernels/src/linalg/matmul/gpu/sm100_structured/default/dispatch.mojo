@@ -293,6 +293,7 @@ def matmul_dispatch_sm100[
     a_type: DType,
     b_type: DType,
     transpose_b: Bool = False,
+    use_tf32: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
@@ -385,7 +386,7 @@ def matmul_dispatch_sm100[
     # static_K>=2048 (enough K to hide the many-CTA launch). A fused epilogue
     # rides through as elementwise_lambda_wrapper (which already folds in any
     # compute lambda) and is applied per output element by the GEMV.
-    comptime if (
+    comptime has_precise_f32_gemv = (
         a_type == DType.float32
         and c_type == DType.float32
         and transpose_b
@@ -393,7 +394,21 @@ def matmul_dispatch_sm100[
         and static_N <= 256
         and static_K >= 2048
         and static_K % simd_width_of[a_type, target=get_gpu_target()]() == 0
-    ):
+    )
+
+    # use_tf32=False promises IEEE-fp32 multiplies, which the SM100 tensor
+    # core cannot deliver (tcgen05 has no fp32 UMMA kind) — the split-K GEMV
+    # is the only fp32-precise path, so the shape must satisfy its gate.
+    comptime assert (
+        use_tf32 or a_type != DType.float32 or has_precise_f32_gemv
+    ), (
+        "use_tf32=False requires the IEEE-fp32 split-K GEMV: an fp32"
+        " transpose_b matmul with static N <= 256 and static K >= 2048 (K a"
+        " multiple of the fp32 simd width); this shape has no fp32-precise"
+        " SM100 path"
+    )
+
+    comptime if has_precise_f32_gemv:
         # tile_m is a comptime kernel param, so each bucket instantiates a
         # distinct gemv_split_k; the runtime `m` selects the bucket.
         @parameter
@@ -411,7 +426,11 @@ def matmul_dispatch_sm100[
         elif m <= 12:
             _dispatch_split_k[2]()
             return
-        elif m <= 64:
+        # m > 64 normally crosses over to the UMMA tile GEMM, which truncates
+        # fp32 operands to TF32's 10-bit mantissa (accumulation stays fp32).
+        # use_tf32=False keeps every M on this IEEE-fp32 GEMV instead
+        # (KERN-3151), giving up tensor-core weight reuse at large M.
+        elif m <= 64 or not use_tf32:
             _dispatch_split_k[4]()
             return
 
