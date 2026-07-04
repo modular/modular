@@ -89,7 +89,7 @@ using WrappedOriginMutCastAttr = WrappedAttrType<OriginMutCastAttr>;
 using WrappedOriginSetAttr = WrappedAttrType<OriginSetAttr>;
 using WrappedOriginSetUnionAttr = WrappedAttrType<OriginSetUnionAttr>;
 using WrappedOriginFieldAttr = WrappedAttrType<OriginFieldAttr>;
-using WrappedIndirectOriginAttr = WrappedAttrType<IndirectOriginAttr>;
+using WrappedInteriorOriginAttr = WrappedAttrType<InteriorOriginAttr>;
 
 //===----------------------------------------------------------------------===//
 // Utilities

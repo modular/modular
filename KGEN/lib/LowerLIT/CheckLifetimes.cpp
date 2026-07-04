@@ -2026,7 +2026,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
       }
     }
 
-    // Process any indirect origins accessed.
+    // Process any interior origins accessed.
     for (auto origin : originEffects) {
       checkOriginEffect(origin, op);
       hasAnyOrigin |= sugarIsa<AnyOriginAttr>(origin);
@@ -3455,7 +3455,7 @@ void DestructorInsertion::scanBlock(Block &block) {
       }
     }
 
-    // Process any other indirect origins accessed.
+    // Process any other interior origins accessed.
     for (auto origin : originEffects)
       checkOriginEffect(origin, dtorInserter);
 

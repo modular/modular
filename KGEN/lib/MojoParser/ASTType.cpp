@@ -1109,9 +1109,9 @@ bool ASTType::containsUnmaterializableOrigins(SharedState &shared) const {
     if (sugarIsa<ParamDeclRefAttr, ImplicitOriginRefAttr>(o))
       continue;
 
-    // Ignore indirect origins.
+    // Ignore interior origins.
     // FIXME: figure out their semantics.
-    if (sugarIsa<IndirectOriginAttr>(o))
+    if (sugarIsa<InteriorOriginAttr>(o))
       continue;
 
     // Otherwise, it is something we can't track.

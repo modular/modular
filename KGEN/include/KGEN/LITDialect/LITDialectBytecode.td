@@ -221,7 +221,7 @@ def WrappedOriginFieldAttr : DialectAttribute<(attr
   ConcreteType<"OriginType">:$type
 )>;
 
-def WrappedIndirectOriginAttr : DialectAttribute<(attr
+def WrappedInteriorOriginAttr : DialectAttribute<(attr
   TypedAttr:$base,
   ConcreteType<"OriginType">:$type
 )>;
@@ -308,7 +308,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     UnavailableInfoAttr,
     ComptimeOriginAttr,
     StaticOriginAttr,
-    WrappedIndirectOriginAttr,
+    WrappedInteriorOriginAttr,
     ImplicitConversionKindAttr,
   ];
 }

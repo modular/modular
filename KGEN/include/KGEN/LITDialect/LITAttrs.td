@@ -569,20 +569,20 @@ def OriginFieldAttr : LITTypedAttr<"OriginField", "origin.field", [
 
 
 //===----------------------------------------------------------------------===//
-// IndirectOriginAttr
+// InteriorOriginAttr
 //===----------------------------------------------------------------------===//
 
-def IndirectOriginAttr : LITTypedAttr<"IndirectOrigin", "indirect.origin",  [
+def InteriorOriginAttr : LITTypedAttr<"InteriorOrigin", "interior.origin",  [
           DeclareAttrInterfaceMethods<ParameterAttrInterface>
   ]> {
-  let summary = "Access an indirectly defined origin";
+  let summary = "Access an interior origin";
   let description = [{
-    This attribute specifies an indirectly accessed memory location that is
-    usually (but not necessarily) a pointer indirection away from the base.  The
-    base origin controls invalidation of the indirect origin, and may either be
-    a "shared" base (which is used to model Mojo concepts like ArcPointer or
-    a "unique" base (used to model things like OwnedPointer, Variant, List,
-    etc).
+    This attribute specifies an interior memory location that is usually (but
+    not necessarily) a pointer indirection away from the base.  The base origin
+    controls invalidation of the interior origin.  The string name is used in
+    error messages when the interior origin is used after invalidation, and can
+    be used to identify the interior object when mojo gets the ability to
+    specify fine-grained invalidation sets.
   }];
 
   let parameters = (ins "TypedAttr":$base,
@@ -601,7 +601,7 @@ def IndirectOriginAttr : LITTypedAttr<"IndirectOrigin", "indirect.origin",  [
   ];
 
   let extraClassDeclaration = [{
-    static IndirectOriginAttr getFromBytecode(TypedAttr base, OriginType type);
+    static InteriorOriginAttr getFromBytecode(TypedAttr base, OriginType type);
   }];
 }
 
