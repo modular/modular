@@ -70,6 +70,14 @@ TriState LIT::canDischargeConstraints(
   assumptions.append(additionalAssumptions.begin(),
                      additionalAssumptions.end());
 
+  // If in a conformance op, use its known constraints as assumptions.
+  // FIXME(MOCO-4261): This shouldn't be needed - this should be passed down as
+  // 'additionalAssumptions', but OverloadSet isn't passing assumptions down
+  // correctly when doing overload ranking.
+  if (auto confOp =
+          dyn_cast_if_present<ConformanceOp>(declScope.getIfOperation()))
+    assumptions.push_back(confOp.getConstraint());
+
   SmallVector<TypedAttr> overallAssumptionOperands;
   for (ConstraintAttr assumption : assumptions) {
     TypedAttr prop = assumption.getProposition();

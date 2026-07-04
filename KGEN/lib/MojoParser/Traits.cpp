@@ -125,10 +125,6 @@ canDischargeMethodConstraints(FnOp method, ConstraintAttr conformanceConstraint,
     if (isTriviallyTrueProposition(methodProp))
       continue;
 
-    // Trivially false method constraint is always violated.
-    if (isTriviallyFalseProposition(methodProp))
-      return TriState::no();
-
     // Unconditional conformance can't prove a non-trivial constraint.
     if (isTriviallyTrueProposition(confProp)) {
       result &= TriState::unknown();
@@ -445,13 +441,6 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   // If the conformance table already has witnesses, it was pre-built (e.g., for
   // closure wrappers). Skip verification since conformance is already complete.
   if (!op.getBody().front().empty())
-    return success();
-
-  // A conformance whose where-clause is never satisfiable (e.g.
-  // `ImplicitlyDeletable where False`) is an opt-out: it is never active, so
-  // the struct need not implement the trait's requirements and no witnesses are
-  // built.
-  if (isTriviallyFalseConstraint(op.getConstraintAttr()))
     return success();
 
   // Set up builder to insert witness entry. We install witness op in the
