@@ -189,8 +189,8 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
       return getMojoDiag(loc);
     };
 
-    auto [argVal, _] = orValue->filterOverloadSetForValueType(
-        expectedType, getDeclScope(), emitError);
+    auto [argVal, _] =
+        orValue->filterOverloadSetForValueType(expectedType, emitError);
     if (!argVal)
       return failure();
     return SmartVariant<CValue, ASTType>(CValue(argVal));

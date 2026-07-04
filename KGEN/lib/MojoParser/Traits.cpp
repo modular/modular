@@ -61,7 +61,7 @@ collectMethodsWithNameFromDecls(ASTDecl &structDecl, StringAttr methodName,
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
 static std::pair<FnTypeGeneratorType, ParamBindings>
-getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
+getTraitFunctionSignature(ASTDecl &declScope, FnOp traitFn,
                           ASTType structSelfType, SymbolRefAttr traitSymbol,
                           const ExprNode *expr,
                           ParameterEvaluator &traitAliasReplacer) {
@@ -72,8 +72,8 @@ getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
 
   // Add trait's _Self param replacement.
   params.push_back(TypeParamAttr::get(structSelfType, trait));
-  auto bindings = ParamBindings::getForDeclaredType(emitter.getDeclScope(),
-                                                    structSelfType, expr);
+  auto bindings =
+      ParamBindings::getForDeclaredType(declScope, structSelfType, expr);
 
   // Only bind the `Self`, leave the rest unbound.
   bindings.relaxBindingKindTo(ParamBindings::kUnbindAll);
@@ -83,7 +83,7 @@ getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
     params.push_back(UnboundAttr::get(type));
 
   FnTypeGeneratorType newSignature = signature.getSpecializedGenerator(
-      params, &emitter.getDeclScope().getShared().getEvaluationContext());
+      params, &declScope.getShared().getEvaluationContext());
 
   newSignature = traitAliasReplacer.replace(newSignature);
   return {newSignature, std::move(bindings)};
@@ -211,7 +211,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 
     SyntheticNode syntheticNode(structDecl.getLoc());
     auto [wrapperSignature, bindings] = getTraitFunctionSignature(
-        emitter, traitFn, structSelfType, traitDecl.getSymbolRef(),
+        structDecl, traitFn, structSelfType, traitDecl.getSymbolRef(),
         &syntheticNode, traitAliasReplacer);
 
     // If a function with matching signature is defined in the same trait we're
@@ -254,8 +254,8 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     OverloadSet ov(name, structDefinesMethods, std::move(bindings),
                    CallSyntax::kMethodCallSynthetic);
 
-    auto [_, decl] = ov.filterOverloadSetForValueType(
-        wrapperSignature, emitter.getDeclScope(), nullptr);
+    auto [_, decl] =
+        ov.filterOverloadSetForValueType(wrapperSignature, nullptr);
     if (decl) {
       // Check if this method's constraints are valid for the conformance.
       // Following overload selection rules, we require constraints to be
@@ -441,7 +441,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 LogicalResult
 LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
                                std::optional<MojoInflightDiag> &diag,
-                               ConformanceOp op) {
+                               ConformanceOp op, ASTDecl &conformanceDecl) {
   // If the conformance table already has witnesses, it was pre-built (e.g., for
   // closure wrappers). Skip verification since conformance is already complete.
   if (!op.getBody().front().empty())
@@ -644,8 +644,9 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     }
 
     SyntheticNode syntheticNode(structDecl.getLoc());
-    auto [traitSignature, bindings] = getTraitFunctionSignature(
-        emitter, traitFn, selfType, parent, &syntheticNode, traitAliasReplacer);
+    auto [traitSignature, bindings] =
+        getTraitFunctionSignature(conformanceDecl, traitFn, selfType, parent,
+                                  &syntheticNode, traitAliasReplacer);
 
     // Get the conformance constraint for checking method constraints.
     ConstraintAttr conformanceConstraint = op.getConstraintAttr();
@@ -686,8 +687,8 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       OverloadSet unprovableOv(name, unprovableDecls,
                                std::move(unprovableBindings),
                                CallSyntax::kMethodCallSynthetic);
-      auto [unprovableResult, _] = unprovableOv.filterOverloadSetForValueType(
-          traitSignature, emitter.getDeclScope(), nullptr);
+      auto [unprovableResult, _] =
+          unprovableOv.filterOverloadSetForValueType(traitSignature, nullptr);
       if (unprovableResult) {
         // An unprovable candidate matches the signature - error.
         // This follows overload selection rules: we can't prove or disprove
@@ -709,8 +710,8 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
       return diag->attachNote(*traitFnDecl);
     };
-    auto [result, selectedStructMethod] = ov.filterOverloadSetForValueType(
-        traitSignature, emitter.getDeclScope(), emitError);
+    auto [result, selectedStructMethod] =
+        ov.filterOverloadSetForValueType(traitSignature, emitError);
 
     if (!result)
       return failure();
