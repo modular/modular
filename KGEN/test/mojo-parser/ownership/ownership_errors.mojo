@@ -504,7 +504,7 @@ def test38421():
     var reference = return_owned_arg_ref("abc")
 
     # This is an error since the rvalue temp slot is uninitialized here.
-    # expected-error @+1 {{potential indirect access to uninitialized value '(expression temporary)'}}
+    # expected-error @+1 {{use of uninitialized value '(expression temporary)'}}
     _ = reference[].__len__()
 
 

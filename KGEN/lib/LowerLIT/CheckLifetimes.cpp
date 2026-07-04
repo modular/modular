@@ -1500,7 +1500,7 @@ private:
   void checkLoopOp(Operation &loopOp);
   void checkTryOp(LIT::TryOp tryOp);
 
-  void diagnoseUsageError(ValueRef valueRef, Operation &op, bool isDef);
+  void diagnoseUsageError(ValueRef valueRef, Operation &op);
   void checkUse(Value value, Operation &op, bool isDeref);
   void checkDef(Value value, Operation &op, bool isDeref);
   void checkConsume(Value value, Operation &op, bool isDeref);
@@ -1656,15 +1656,14 @@ void UninitializedValueScan::checkUse(Value value, Operation &op,
   for (ValueRef access : accesses) {
     // The referenced value fields must be live.
     if (!access.isAllPresent(liveValues))
-      diagnoseUsageError(access, op, /*isDef=*/false);
+      diagnoseUsageError(access, op);
   }
 }
 
 /// One of the specified fields is missing, so emit an error about it.  This is
-/// largely to complain about incorrect 'uses' of a value, but When
-/// 'isDef' is true this is complaining about an indirect def of a value.
+/// to complain about incorrect accesses to an value.
 void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
-                                                Operation &op, bool isDef) {
+                                                Operation &op) {
   // Ok, it isn't, gear up to see how to best report the error.
   ValueInfo &valueInfo = valueSet.getValueInfo(valueRef.valueId);
 
@@ -1713,10 +1712,7 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
 
     diag << "return from this function";
   } else {
-    if (!isDef)
-      diag << "use of uninitialized value ";
-    else
-      diag << "potential indirect access to uninitialized value ";
+    diag << "use of uninitialized value ";
 
     // If some fields are present and others are missing, complain about the
     // first whole field that is missing.
@@ -1745,7 +1741,7 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
   for (auto access : accesses) {
     // The referenced value fields must be live.
     if (!access.isAllPresent(liveValues))
-      diagnoseUsageError(access, op, /*isDef=*/true);
+      diagnoseUsageError(access, op);
   }
 }
 
@@ -1767,7 +1763,7 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
   // The value must be completely live in order for us to consume it.  If not,
   // use "checkUse" to diagnose the problem.
   if (!valueRef.isAllPresent(liveValues))
-    diagnoseUsageError(valueRef, op, /*isDef*/ false);
+    diagnoseUsageError(valueRef, op);
 
   // If tracked, marks its value as dead.
   valueRef.markBits(liveValues, false);
@@ -1804,7 +1800,7 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
 
   // If not, then there is an error which we diagnose.
   if (!fullObjectBit.isAllPresent(liveValues)) {
-    diagnoseUsageError(fullObjectBit, op, /*isDef=*/false);
+    diagnoseUsageError(fullObjectBit, op);
     return;
   }
 
@@ -1815,14 +1811,11 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
 /// Check any unstructured origins that are accessed by the operation.
 void UninitializedValueScan::checkOriginEffect(TypedAttr origin,
                                                Operation &op) {
-  // We assume this may mutate the origin unless we know it is read-only.
-  bool isMutate = !OriginType::isMutableKnown(origin, false);
-
   SmallVector<ValueRef> accesses = valueSet.getValueRefsForOrigin(origin);
   for (auto access : accesses) {
     // The referenced value fields must be live.
     if (!access.isAllPresent(liveValues))
-      diagnoseUsageError(access, op, /*isDef=*/isMutate);
+      diagnoseUsageError(access, op);
   }
 }
 
