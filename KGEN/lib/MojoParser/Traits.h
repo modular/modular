@@ -30,7 +30,8 @@ class MojoInflightDiag;
 LogicalResult verifyAndBuildConformance(ASTDecl &structDecl,
                                         SymbolRefAttr parent,
                                         std::optional<MojoInflightDiag> &diag,
-                                        ConformanceOp op);
+                                        ConformanceOp op,
+                                        ASTDecl &conformanceDecl);
 
 /// Canonicalize the list of symbols that form a trait composition.
 void canonicalizeTraitCompositionSymbols(

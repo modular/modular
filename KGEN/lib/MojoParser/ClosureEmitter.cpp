@@ -3536,8 +3536,8 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
                  CallSyntax::kMethodCallSynthetic);
   /// Perform rebind on method that implements the trait function but with
   /// different argument names.
-  auto [newWitness, _] = ov.filterOverloadSetForValueType(
-      traitSignature, emitter.getDeclScope(), nullptr);
+  auto [newWitness, _] =
+      ov.filterOverloadSetForValueType(traitSignature, nullptr);
   if (newWitness) {
     if (rebind) {
       ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();

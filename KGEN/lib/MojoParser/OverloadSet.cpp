@@ -868,7 +868,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 }
 
 std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
-    ASTType functionType, ASTDecl &declScope,
+    ASTType functionType,
     function_ref<MojoInflightDiag &(SMLoc)> emitError) const {
 
   // If the target type is something weird then don't filter.  Let the error be
@@ -924,7 +924,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
     // function type.
     if (IREmitter::canImplicitlyConvertToType(
             {UnboundAttr::get(boundCandidateType), getExpr()}, functionType,
-            declScope))
+            getDeclScope()))
       return newBindings;
     return {};
   };
@@ -959,7 +959,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
     ASTDecl *selectedMethod = validCandidates.front();
 
     // Use an emitter with invalid context, since errors aren't expected.
-    IREmitter emitter(declScope, EC_OverloadResolution);
+    IREmitter emitter(getDeclScope(), EC_OverloadResolution);
     PValue callee = getCallee(selectedMethod, paramBindings, syntax,
                               candidateBindings.front());
     PValue result = emitter.emitPValue({callee, getExpr()},
@@ -1182,8 +1182,7 @@ PValue OverloadSet::lookupAndResolve(
 /// provided.  This emits errors if 'emitter' is non-null, but does not if it
 /// is null.
 PValue OverloadSet::getDirectSymbol(
-    ASTType expectedType, ASTDecl &declScope,
-    DeferredTypingContext *deferredTypingContext) const {
+    ASTType expectedType, DeferredTypingContext *deferredTypingContext) const {
   // Handle the case of a single candidate.
   if (fnDecls.size() == 1) {
     // Bind the parameters if there is any.
@@ -1197,8 +1196,7 @@ PValue OverloadSet::getDirectSymbol(
     auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
       return diag.emplace(getShared().emitError(loc));
     };
-    auto [result, _] =
-        filterOverloadSetForValueType(expectedType, declScope, emitError);
+    auto [result, _] = filterOverloadSetForValueType(expectedType, emitError);
     return result;
   }
 
@@ -1235,8 +1233,8 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
   // We allow unbound symbols here which can be emitted as an PValue.  In the
   // case where we are partially applying, that will force the unbound symbol
   // into a SRValue which will catch symbols that are not fully bound.
-  PValue directSymbolAttr = getDirectSymbol(
-      expectedType, emitter.getDeclScope(), emitter.deferredTypingContext);
+  PValue directSymbolAttr =
+      getDirectSymbol(expectedType, emitter.deferredTypingContext);
   if (!directSymbolAttr)
     return {};
 

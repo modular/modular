@@ -5020,7 +5020,7 @@ ParseResult DeclResolver::resolveBody(ConformanceOp op, ASTDecl &decl) {
          "ConformanceOps are only created inside structs or extensions");
 
   if (failed(verifyAndBuildConformance(*declToVerify, op.getTraitRefAttr(),
-                                       diag, op)))
+                                       diag, op, decl)))
     return failure();
 
   return success();

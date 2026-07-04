@@ -159,7 +159,7 @@ public:
   /// If `deferredTypingContext` is non-null, body-constraint inconclusiveness
   /// is handled via the context instead of being raised as a hard error.
   PValue
-  getDirectSymbol(ASTType expectedType, ASTDecl &declScope,
+  getDirectSymbol(ASTType expectedType,
                   DeferredTypingContext *deferredTypingContext = nullptr) const;
 
   /// Try to emit the overload set as a PValue.
@@ -183,7 +183,7 @@ public:
   /// pair of PValue for the callee (or null if not resolvable) and the selected
   /// method declaration (or null if no unique match).
   std::pair<PValue, ASTDecl *> filterOverloadSetForValueType(
-      ASTType functionType, ASTDecl &declScope,
+      ASTType functionType,
       function_ref<MojoInflightDiag &(llvm::SMLoc)> emitError) const;
 
   /// If the specified type can be constructed with the specified operands
