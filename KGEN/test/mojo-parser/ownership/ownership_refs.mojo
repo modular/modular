@@ -528,3 +528,35 @@ struct TestDict[K: AnyType, V: ImplicitlyDeletable]:
 
     def __setitem__(mut self, var value: Self.V):
         pass
+
+# ===----------------------------------------------------------------------=== #
+# Interior origins
+# ===----------------------------------------------------------------------=== #
+
+struct MyListInterior[T: Movable]:
+    var data: UnsafePointer[Self.T, UntrackedOrigin[mut=True]]
+
+    def __init__(out self):
+        self.data = UnsafePointer[Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
+
+    def __del__(deinit self):
+        pass # Explicit del so it isn't considered trivial and elided.
+
+    def mutate(mut self):
+        pass
+
+    def __getitem__(
+        ref self, idx: Int
+    ) -> ref[self.data.unsafe_origin_owned_rebase[origin_of(self), "element"](idx)[]] Self.T:
+        return self.data.unsafe_origin_owned_rebase[origin_of(self), "element"](idx)[]
+
+
+# CHECK-LABEL: lit.fn @"test_interior0
+def test_interior0():
+    # CHECK: lit.call {{.*}}MyListInterior::@"__init__
+    var list = MyListInterior[Int]()
+    # CHECK: lit.call {{.*}}MyListInterior::@"__getitem__
+    ref elt = list[4]
+    # CHECK: lit.call {{.*}}Int::@"__iadd__
+    elt += 4
+    # CHECK: lit.call {{.*}}MyListInterior::@"__del__
