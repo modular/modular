@@ -95,7 +95,7 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
         origin_of(Self._mlir_origin, element._mlir_origin)
     ]
 
-    comptime get_unique_interior[name: StringLiteral] = Origin[
+    comptime get_owned_interior[name: StringLiteral] = Origin[
         _mlir_origin=__mlir_attr[
             `#lit.interior.origin<`,
             Self._mlir_origin,
@@ -1476,20 +1476,20 @@ struct UnsafePointer[
             pass
 
     def store(self, offset: Int, value: Self.type):
-        while True:
-            pass
+        pass
 
-    # This returns a reference to an element with an origin specified by as a
-    # unique reference from this pointer.  The returned reference is always
-    # mutable.
-    def get_unique_item_ref[
-        self_origin: Origin[]
-    ](ref[self_origin] self, offset: Int = 0) -> ref[
-        self_origin.get_unique_interior["pointee"].unsafe_mut_cast[True](),
-        Self.address_space,
-    ] Self.type:
-        while True:
-            pass
+    # Returns this pointer value but with the origin rebased to be a unique
+    # reference off the specified base origin. This is used by collections that
+    # need to vend owned interior references.
+    def unsafe_origin_owned_rebase[
+        base_origin: Origin,
+        name: StringLiteral,
+    ](self, offset: Int = 0) -> UnsafePointer[
+        Self.type,
+        base_origin.get_owned_interior[name],
+        address_space=Self.address_space,
+    ]:
+        return {self.address}
 
     @always_inline
     def take_pointee[

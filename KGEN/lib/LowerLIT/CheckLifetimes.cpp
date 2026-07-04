@@ -1347,6 +1347,16 @@ ValueSet::getValueRefAndTypeForOrigin(TypedAttr origin) const {
             fieldDecl.getType()};
   }
 
+  // If this is an interior origin like `a.field["name"]`, then the interior
+  // origin isn't directly tracked, but the base origin is being treated as
+  // being accessed.
+  if (auto interior = sugarDynCast<InteriorOriginAttr>(origin)) {
+    auto [valueRef, type] = getValueRefAndTypeForOrigin(interior.getBase());
+    // Don't pass up a type; the indirected type isn't the same as the field we
+    // may be accessed from.
+    return {valueRef, {}};
+  }
+
   // Otherwise look up the base origin value.
   auto it = originToValueIndex.find(origin);
   if (it == originToValueIndex.end())
@@ -1432,7 +1442,7 @@ SmallVector<ValueRef> ValueSet::getValueRefsForOrigin(TypedAttr origin) {
 
   // Look through imm cast and unions to find the underlying attrs.
   processRawOrigin(getCanonicalAttr(origin), [&](TypedAttr raw) {
-    auto [valueRef, type] = getValueRefAndTypeForOrigin(raw);
+    auto [valueRef, _] = getValueRefAndTypeForOrigin(raw);
     if (valueRef) {
       result.push_back(valueRef);
       valueInfos[valueRef.valueId].isEverUsed = true;
@@ -2030,7 +2040,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
       }
     }
 
-    // Process any interior origins accessed.
+    // Process any origins accessed indirectly.
     for (auto origin : originEffects) {
       checkOriginEffect(origin, op);
       hasAnyOrigin |= sugarIsa<AnyOriginAttr>(origin);
@@ -3459,7 +3469,7 @@ void DestructorInsertion::scanBlock(Block &block) {
       }
     }
 
-    // Process any other interior origins accessed.
+    // Process any other origins accessed indirectly.
     for (auto origin : originEffects)
       checkOriginEffect(origin, dtorInserter);
 
