@@ -878,7 +878,7 @@ OptionalParseResult OriginType::parseValue(AsmParser &p,
       if (succeeded(p.parseOptionalLSquare())) {
         if (p.parseRSquare())
           return failure();
-        result = IndirectOriginAttr::get(result);
+        result = InteriorOriginAttr::get(result);
         continue;
       }
       // Otherwise, not a postfix thing.
@@ -1017,8 +1017,8 @@ LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
   }
 
   // Print field access with x.y[] notation.
-  if (auto indirect = ::dyn_cast<IndirectOriginAttr>(value)) {
-    if (failed(printValue(p, indirect.getBase())))
+  if (auto interior = ::dyn_cast<InteriorOriginAttr>(value)) {
+    if (failed(printValue(p, interior.getBase())))
       return failure();
     p << "[]";
     return success();

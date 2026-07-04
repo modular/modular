@@ -1505,8 +1505,8 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto indirect = dyn_cast<IndirectOriginAttr>(param)) {
-    printOriginParam(os, indirect.getBase(), diagShared);
+  if (auto interior = dyn_cast<InteriorOriginAttr>(param)) {
+    printOriginParam(os, interior.getBase(), diagShared);
     os << "[]";
     return;
   }

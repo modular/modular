@@ -96,9 +96,9 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
     ]
 
 
-comptime _lit_indirect_origin[mut: Bool, //, base: Origin[mut=mut]] = Origin[
+comptime _lit_interior_origin[mut: Bool, //, base: Origin[mut=mut]] = Origin[
     _mlir_origin=__mlir_attr[
-        `#lit.indirect.origin<`,
+        `#lit.interior.origin<`,
         base._mlir_origin,
         `> : `,
         type_of(base._mlir_origin),
@@ -1484,7 +1484,7 @@ struct UnsafePointer[
     def get_unique_item_ref[
         self_origin: Origin[]
     ](ref[self_origin] self, offset: Int = 0) -> ref[
-        _lit_indirect_origin[self_origin].unsafe_mut_cast[True](),
+        _lit_interior_origin[self_origin].unsafe_mut_cast[True](),
         Self.address_space,
     ] Self.type:
         while True:

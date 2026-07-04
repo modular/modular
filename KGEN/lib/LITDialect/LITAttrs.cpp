@@ -467,10 +467,10 @@ bool OriginFieldAttr::isLessThan(Attribute rhs) const {
 }
 
 //===----------------------------------------------------------------------===//
-// IndirectOriginAttr
+// InteriorOriginAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr IndirectOriginAttr::get(TypedAttr baseOrigin) {
+TypedAttr InteriorOriginAttr::get(TypedAttr baseOrigin) {
   // Check to see if there are any permutations we can fold.
 
   // If we have the global mutable origin, treat it conservatively by
@@ -482,7 +482,7 @@ TypedAttr IndirectOriginAttr::get(TypedAttr baseOrigin) {
   // We push any mutability casts outside of ourselves.
   //     mutcast(x)[] => mutcast(x[])
   if (auto mutCast = sugarDynCast<OriginMutCastAttr>(baseOrigin)) {
-    auto inner = IndirectOriginAttr::get(mutCast.getOperand());
+    auto inner = InteriorOriginAttr::get(mutCast.getOperand());
     return OriginMutCastAttr::get(inner, mutCast.getType());
   }
 
@@ -491,24 +491,24 @@ TypedAttr IndirectOriginAttr::get(TypedAttr baseOrigin) {
   if (auto unionAttr = sugarDynCast<OriginUnionAttr>(baseOrigin)) {
     SmallVector<TypedAttr> elts;
     for (auto elt : unionAttr.getOperands())
-      elts.push_back(IndirectOriginAttr::get(elt));
+      elts.push_back(InteriorOriginAttr::get(elt));
     // Field accesses don't affect mutability, so we use the same type.
     return OriginUnionAttr::get(elts, unionAttr.getType());
   }
 
   // The result type is the same as baseOrigin's.
   auto baseType = ::cast<OriginType>(baseOrigin.getType());
-  return IndirectOriginAttr::Base::get(baseOrigin.getContext(), baseOrigin,
+  return InteriorOriginAttr::Base::get(baseOrigin.getContext(), baseOrigin,
                                        baseType);
 }
 
-IndirectOriginAttr IndirectOriginAttr::getFromBytecode(TypedAttr base,
+InteriorOriginAttr InteriorOriginAttr::getFromBytecode(TypedAttr base,
                                                        OriginType type) {
   return Base::get(type.getContext(), base, type);
 }
 
 // Fields are simple constants if their base is.
-bool IndirectOriginAttr::isConstant() const {
+bool InteriorOriginAttr::isConstant() const {
   return ParameterAttr::isSimpleConstant(getBase());
 }
 

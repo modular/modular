@@ -1391,8 +1391,8 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
     // Static origins and subfields are ignorable.  Fields will have their bases
     // included.
     if (isa<StaticOriginAttr, OriginFieldAttr, ComptimeOriginAttr,
-            // TODO: Figure out IndirectOriginAttr semantics for this.
-            IndirectOriginAttr,
+            // TODO: Figure out InteriorOriginAttr semantics for this.
+            InteriorOriginAttr,
             // FIXME: Why is this coming through here??
             UnboundAttr>(origin))
       continue;
