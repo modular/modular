@@ -242,3 +242,33 @@ def testConditionalImplicitlyDeletableDefaultMessage():
 
     # expected-error @below {{abandoned without being explicitly destroyed: type 'CondImplicitlyDeletableDefault' does not conditionally conform to 'ImplicitlyDeletable' for these parameters}}
     _ = CondImplicitlyDeletableDefault[False]()
+
+
+# ===----------------------------------------------------------------------=== #
+# `ImplicitlyDeletable where False` opts out of implicit deletability (MOCO-4235)
+# ===----------------------------------------------------------------------=== #
+
+
+# An unsatisfiable where-clause opts the struct out of implicit deletability
+# entirely. A default linear-type error message is used when no custom one is
+# provided by `@explicit_destroy`.
+struct WhereFalseLinear(ImplicitlyDeletable where False):
+    def __init__(out self):
+        pass
+
+
+def testWhereFalseLinear():
+    # expected-error @below {{abandoned without being explicitly destroyed: type 'WhereFalseLinear' is not implicitly deletable and must be explicitly destroyed}}
+    _ = WhereFalseLinear()
+
+
+# A custom message via @explicit_destroy is used in preference to the default.
+@explicit_destroy("use consume()")
+struct WhereFalseCustom(ImplicitlyDeletable where False):
+    def __init__(out self):
+        pass
+
+
+def testWhereFalseCustomMessage():
+    # expected-error @below {{abandoned without being explicitly destroyed: use consume()}}
+    _ = WhereFalseCustom()

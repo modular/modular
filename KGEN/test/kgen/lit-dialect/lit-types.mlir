@@ -215,13 +215,13 @@ kgen.generator @trait_constraints<x: index>() {
   // CHECK: kgen.param.declare foldable_true: type = <trait<@MyTrait>>
   kgen.param.declare foldable_true: type = <!lit.trait<@MyTrait where #kgen.constraint<#kgen.param.expr<lt, 0 : index, 1 : index> : !kgen.scalar<bool>, loc("t":1:2)>>>
 
-  // False constraints remove the trait slot entirely.
-  // CHECK: kgen.param.declare false_removed: type = <trait<@Trait>>
+  // False constraints hold the trait slot, preventing future conformance.
+  // CHECK: kgen.param.declare false_removed: type = <trait<@MyTrait where #kgen.constraint<false, #loc6>, @Trait>>
   kgen.param.declare false_removed: type = <!lit.trait<@MyTrait where #kgen.constraint<false, loc("t":2:1)>, @Trait>>
 
   // Combined: foldable true (elided) + non-trivial (kept) + false (removed).
   // Result: @MyTrait (no constraint), @Trait with constraint. @TParam is removed.
-  // CHECK: kgen.param.declare combined: type = <trait<@MyTrait, @Trait where #kgen.constraint<{{.*}}>
+  // CHECK: kgen.param.declare combined: type = <trait<@MyTrait, @Trait where #kgen.constraint<{{.*}}, #loc7>, @TParam where #kgen.constraint<false, #loc8>>>
   kgen.param.declare combined: type = <!lit.trait<@MyTrait where #kgen.constraint<#kgen.param.expr<lt, 0 : index, 1 : index> : !kgen.scalar<bool>, loc("t":3:1)>, @Trait where #kgen.constraint<#kgen.param.expr<lt, 0 : index, #kgen.param.decl.ref<"x"> : index> : !kgen.scalar<bool>, loc("t":3:2)>, @TParam where #kgen.constraint<false, loc("t":3:3)>>>
 
   kgen.return

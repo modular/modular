@@ -536,7 +536,11 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
     // happens in LSP and lazy parsing situations.  We treat this as trivial
     // in this case.
     auto conformance = info.implicitlyDestructible;
-    if (!conformance) {
+    // A conformance whose where-clause is never satisfiable (e.g.
+    // `ImplicitlyDeletable where False`) is never active, so treat it like no
+    // conformance at all: the type is linear (or trivial if unmarked).
+    if (!conformance ||
+        isTriviallyFalseConstraint(conformance.getConstraint())) {
       // May also just be unconditionally linear.
       if (info.decl.getLinearTypeErrorMsg().value_or("") != "")
         return SpecialMemberInfo::unavailable(
