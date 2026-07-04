@@ -26,7 +26,11 @@ _APPLE_GPU_INCOMPATIBLE = select({
 _EXTRA_CONSTRAINTS = {
     "test_batch_kv_cache_flash_attention.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_kv_cache_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
-    "test_kv_cache_ragged_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+    "test_kv_cache_ragged_matmul.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: PRDT-506
+        "//:b200_gpu": ["@platforms//:incompatible"],  # FIXME: KERN-3152
+        "//conditions:default": [],
+    }),
     "test_batch_kv_cache_flash_attention_causal_mask.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_kv_cache_ragged_matmul_scale.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2318
     "test_fused_qkv_index_matmul_scale_mxfp8.mojo": select({
