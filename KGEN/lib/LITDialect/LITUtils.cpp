@@ -876,8 +876,6 @@ LIT::canDischargeConstraint(ParameterEvaluator &evaluator,
 
   if (isTriviallyTrueProposition(rebound))
     return TriState::yes();
-  if (isTriviallyFalseProposition(rebound))
-    return TriState::no();
 
   bool anyImplies = false;
   for (ConstraintAttr assumption : callerAssumptions) {

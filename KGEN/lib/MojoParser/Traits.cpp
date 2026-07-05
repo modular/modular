@@ -443,12 +443,6 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   if (!op.getBody().front().empty())
     return success();
 
-  // A conformance like e.g. `ImplicitlyDeletable where False` is an opt-out,
-  // so the struct need not implement the trait's requirements and no witnesses
-  // are built.
-  if (isTriviallyFalseConstraint(op.getConstraintAttr()))
-    return success();
-
   // Set up builder to insert witness entry. We install witness op in the
   // conformance op as we verifying such that get_witness will be folded
   // correctly by the evaluation context. This allows us to fold dependent decls
@@ -996,13 +990,13 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
   // Set up parameter evaluator if we have parameter bindings for constraint
   // evaluation. Uses the parser's evaluation context needed for folding
   // TypeConformsToTraitAttr.
-  std::optional<ParameterEvaluator> evaluator;
+  ParameterEvaluator evaluator;
   ArrayRef<TypedAttr> paramBindings =
       concreteType ? concreteType.getParamBindings() : ArrayRef<TypedAttr>{};
   if (!paramBindings.empty()) {
     if (auto structOp = dyn_cast_or_null<StructDeclOp>(this->getIfOperation()))
-      evaluator.emplace(shared.getParameterEvaluator(structOp.getInputParams(),
-                                                     paramBindings));
+      evaluator = shared.getParameterEvaluator(structOp.getInputParams(),
+                                               paramBindings);
   }
 
   ArrayRef<SymbolRefAttr> providedSymbolsArr = providedCanonTrait.getSymbols();
@@ -1028,18 +1022,8 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
         continue;
       }
 
-      if (isTriviallyFalseConstraint(constraint))
-        continue;
-
-      // If we have no evaluator (no param bindings), we can't evaluate
-      // constraints. Mark as unproven.
-      if (!evaluator) {
-        unprovenSymbols.insert(symbol);
-        continue;
-      }
-
       TriState constraintResult =
-          canDischargeConstraint(*evaluator, constraint, callerAssumptions);
+          canDischargeConstraint(evaluator, constraint, callerAssumptions);
       if (constraintResult.isTrue())
         provenSymbols.insert(symbol);
       else if (constraintResult.isUnknown())

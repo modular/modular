@@ -540,8 +540,7 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
     // conformance at all, and does not build witnesses, so we must bail out
     // here before the witness checks below incorrectly treat the missing
     // witness as a trivial destructor.
-    if (!conformance ||
-        isTriviallyFalseConstraint(conformance.getConstraint())) {
+    if (!conformance) {
       // May also just be unconditionally linear.
       if (info.decl.getLinearTypeErrorMsg().value_or("") != "")
         return SpecialMemberInfo::unavailable(

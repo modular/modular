@@ -38,10 +38,10 @@ using namespace M::KGEN::LIT;
 /// Returns the resolved TraitDeclOp on success (for reuse in code-gen),
 /// or a null TraitDeclOp if no conditional conformance was found.
 static TraitDeclOp
-fieldConditionallyConformsToBuiltin(Type fieldMLIRType, StringRef traitName,
+fieldConditionallyConformsToBuiltin(ASTType fieldType, StringRef traitName,
                                     SharedState &shared, ASTDecl &structDecl,
                                     ArrayRef<ConstraintAttr> bodyConstraints) {
-  auto paramType = dyn_cast<ParamType>(fieldMLIRType);
+  auto paramType = dyn_cast<ParamType>(fieldType);
   if (!paramType)
     return {};
 
@@ -743,12 +743,11 @@ FnOp StructEmitter::synthesizeEmptyDtor(ConstraintAttr conformanceConstraint) {
     TriState confResult =
         fieldType
             .conformsToBuiltinTrait("ImplicitlyDeletable", structDecl.getLoc(),
-                                    shared, {})
+                                    shared, constraints)
             .first;
     if (!confResult.isTrue() &&
-        !fieldConditionallyConformsToBuiltin(fieldType.mlirType,
-                                             "ImplicitlyDeletable", shared,
-                                             structDecl, constraints) &&
+        !fieldConditionallyConformsToBuiltin(fieldType, "ImplicitlyDeletable",
+                                             shared, structDecl, constraints) &&
         !fieldType.isTrivialRegisterType(structDecl.getLoc(), shared)) {
       emitError(fieldOp.getLoc())
           << "field '" << fieldOp.getName()
@@ -902,7 +901,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
           !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared,
                                           &fnDecl)) {
         conditionalTraitOp = fieldConditionallyConformsToBuiltin(
-            fieldType.mlirType, "Movable", shared, structDecl, bodyConstraints);
+            fieldType, "Movable", shared, structDecl, bodyConstraints);
         if (!conditionalTraitOp)
           return emitError(fieldASTDecl.getLoc())
                  << "cannot synthesize move constructor because field '"
@@ -921,7 +920,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared,
                                 isImplicitlyCopyableStruct, &fnDecl)) {
         conditionalTraitOp = fieldConditionallyConformsToBuiltin(
-            fieldType.mlirType,
+            fieldType,
             isImplicitlyCopyableStruct ? "ImplicitlyCopyable" : "Copyable",
             shared, structDecl, bodyConstraints);
         if (!conditionalTraitOp) {
