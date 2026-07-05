@@ -443,6 +443,12 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   if (!op.getBody().front().empty())
     return success();
 
+  // A conformance like e.g. `ImplicitlyDeletable where False` is an opt-out,
+  // so the struct need not implement the trait's requirements and no witnesses
+  // are built.
+  if (isTriviallyFalseConstraint(op.getConstraintAttr()))
+    return success();
+
   // Set up builder to insert witness entry. We install witness op in the
   // conformance op as we verifying such that get_witness will be folded
   // correctly by the evaluation context. This allows us to fold dependent decls
@@ -1021,6 +1027,9 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
         provenSymbols.insert(symbol);
         continue;
       }
+
+      if (isTriviallyFalseConstraint(constraint))
+        continue;
 
       // If we have no evaluator (no param bindings), we can't evaluate
       // constraints. Mark as unproven.
