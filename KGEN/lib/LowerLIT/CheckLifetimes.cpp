@@ -778,6 +778,12 @@ struct PerThreadCache {
 // ValueInfo / ValueSet tracking
 //===----------------------------------------------------------------------===//
 
+// CheckLifetimes scans each function and identifies all the values that need
+// to be tracked, in a field sensitive way.  The values are either directly
+// modeled (this is for non-trivial register passable values, e.g. returned as
+// owned from functions) or tracked as memory values. Memory values are tracked
+// field sensitively, using some number of bits to (recursively) handle all the
+// fields in the value.
 namespace {
 struct ValueRef;
 struct ValueInfo {
@@ -1473,6 +1479,123 @@ SmallVector<ValueRef> ValueSet::getValueRefsForAccess(Value value,
 }
 
 //===----------------------------------------------------------------------===//
+// InteriorOrigin tracking
+//===----------------------------------------------------------------------===//
+
+// These data structures keep track of all of the interior origins found in a
+// function. This allows us to use bitvector dataflow to push around their
+// liveness and allows us to understand what origins need to be invalidated when
+// something with an interior origin is mutated.
+//
+// For example consider:
+//    ref r1 = a.list[].first[].y
+//    ref r2 = a.list[].second.field[].z
+//
+// The "r1" reference must be invalided when any of "a", "a.list", or
+// "a.list[].first" are mutated. The "r2" reference must be invalidated when any
+// of "a", "a.list", "a.list[].second", or "a.list[].second.field" are mutated.
+//
+// In order to make this efficient, we keep invert the origin representation to
+// hold an 'interiorOriginInvalidationMap' indicating what to invalidate when
+// an origin is mutated that has derived interior origins. In this case, it has:
+//
+//    a.list[].first => { a.list[].first[] }
+//    a.list[].second => { a.list[].second.field[] }
+//    a.list[].second.field => { a.list[].second.field[] }
+//    a.list => { a.list[], a.list[].first[], a.list[].second.field[] }
+//
+// Note that the trailing field sensitivity information is not tracked since 'y'
+// and 'z' aren't special - all subfields of the final interior origin are
+// invalidated (or not) together.
+namespace {
+class InteriorOriginTracker {
+public:
+  InteriorOriginTracker(PerThreadCache &perThreadCache, FunctionLikeOp func);
+  InteriorOriginTracker(const InteriorOriginTracker &existing) = delete;
+
+  LLVM_DUMP_METHOD void dump() const;
+
+private:
+  /// Each interior origin we see is assigned a dense unique ID so we can use
+  /// bitvector dataflow to track their validity.
+  DenseMap<InteriorOriginAttr, size_t> interiorOriginID;
+
+  /// This is the counter for the next assigned ID.
+  size_t nextInteriorOriginID = 0;
+
+  /// This contains entries for origins that have derived interior origins,
+  /// indicating what to invalidate when that origin is mutated.
+  DenseMap<TypedAttr, BitVector> interiorOriginInvalidationMap;
+};
+} // namespace
+
+InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
+                                             FunctionLikeOp func) {
+
+  // The same types (eg none) are used over & over again, precache origin scan.
+  SmallPtrSet<Type, 32> visitedTypes;
+  SmallVector<Type, 32> collectedTypes;
+
+  auto collectType = [&](Type type) {
+    if (visitedTypes.insert(type).second)
+      collectedTypes.push_back(type);
+  };
+
+  // Scan the body region to find all the interior origins.
+  func.getBodyRegion().walk<mlir::WalkOrder::PreOrder>(
+      [&](Operation *op) -> WalkResult {
+        // Skip looking at nested functions, they are handled as separate
+        // contexts.
+        if (isa<FnOp>(op))
+          return WalkResult::skip();
+
+        // Interior origins can be found by scanning all the operation results
+        // and arguments.  We can ignore any operands because they'll be using
+        // the other things.
+        for (Type resultType : op->getResultTypes())
+          collectType(resultType);
+
+        // If there are any regions, check the block arguments for arguments.
+        for (auto &region : op->getRegions()) {
+          for (auto &block : region)
+            for (auto arg : block.getArguments())
+              collectType(arg.getType());
+        }
+
+        return WalkResult::advance();
+      });
+
+  // Given a set of origins used in the function, check for any interior.
+  for (TypedAttr origin :
+       perThreadCache.originFinder.findOriginsIn(collectedTypes)) {
+    // FIXME: Scan the structure of the origin.
+    if (auto interior = sugarDynCast<InteriorOriginAttr>(origin)) {
+      if (interiorOriginID.insert({interior, nextInteriorOriginID}).second)
+        ++nextInteriorOriginID;
+    }
+  }
+}
+
+void InteriorOriginTracker::dump() const {
+  static std::mutex dumpMutex;
+  std::lock_guard<std::mutex> lock(dumpMutex);
+
+  auto &os = llvm::errs();
+  if (nextInteriorOriginID == 0)
+    os << "Empty ";
+  os << "InteriorOriginTracker\n";
+
+  // Invert the map so we can print in order.
+  SmallVector<InteriorOriginAttr> invertedMap;
+  invertedMap.resize(nextInteriorOriginID);
+  for (auto &entry : interiorOriginID)
+    invertedMap[entry.second] = entry.first;
+
+  for (auto [idx, entry] : llvm::enumerate(invertedMap))
+    os << '#' << idx << " => " << entry << "\n";
+}
+
+//===----------------------------------------------------------------------===//
 // UninitializedValueScan
 //===----------------------------------------------------------------------===//
 
@@ -1484,7 +1607,9 @@ namespace {
 /// reachable from entry.  It is set to false after terminators so merge points
 /// known not to merge the values.
 struct UninitializedValueScan {
-  UninitializedValueScan(ValueSet &valueSet) : valueSet(valueSet) {}
+  UninitializedValueScan(ValueSet &valueSet,
+                         InteriorOriginTracker &interiorOriginTracker)
+      : valueSet(valueSet), interiorOriginTracker(interiorOriginTracker) {}
   UninitializedValueScan(const UninitializedValueScan &existing) = delete;
 
   void scanFunction(FunctionLikeOp func);
@@ -1510,6 +1635,9 @@ private:
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
+
+  /// This is information about all the interior origins used in the function.
+  InteriorOriginTracker &interiorOriginTracker;
 
   /// This is the set of values known to be live at this point.
   BitVector liveValues;
@@ -2248,7 +2376,7 @@ void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
 }
 
 void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
-  UninitializedValueScan bodySets(valueSet);
+  UninitializedValueScan bodySets(valueSet, interiorOriginTracker);
   // Loops are transparent to raise.
   bodySets.raiseEntryInfo = raiseEntryInfo;
 
@@ -2290,7 +2418,7 @@ void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
 }
 
 void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
-  UninitializedValueScan bodySets(valueSet);
+  UninitializedValueScan bodySets(valueSet, interiorOriginTracker);
   // Our current live-in set is live-in to the try body.
   bodySets.liveValues = liveValues;
 
@@ -4475,7 +4603,11 @@ LogicalResult CheckLifetimes::processFunction(FunctionLikeOp func,
 
   // Walk #2: Scan the function and identify any uses of values that are not
   // defined, emitting diagnostics as we go.
-  UninitializedValueScan(valueSet).scanFunction(func);
+  {
+    InteriorOriginTracker interiorOriginTracker(perThreadCache, func);
+    // interiorOriginTracker.dump();
+    UninitializedValueScan(valueSet, interiorOriginTracker).scanFunction(func);
+  }
 
   // Walk #3: Scan the function bottom-up, inserting destructor calls, inserting
   // lifetime markers, and eliding temporaries.
