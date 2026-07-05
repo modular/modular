@@ -394,17 +394,18 @@ def create_raising_task[
     _async_execute[type](task._handle._handle, desired_worker_id=-1)
 
 
-@explicit_destroy
-struct RaisingTask[type: Movable, origins: OriginSet]:
+struct RaisingTask[type: Movable, origins: OriginSet](
+    ImplicitlyDeletable where False,
+):
     """Represents an async task that may raise an error upon completion.
 
     Wraps a `RaisingCoroutine` that executes asynchronously and either
     produces a result value or raises an error. The error is propagated
     to the caller when `wait()` is called.
 
-    This type uses `@explicit_destroy` because only one of the result or
-    error slots is valid after completion. The caller must call `wait()`
-    or `force_destroy()` to consume the task.
+    This type does not conform to `ImplicitlyDeletable` because only one of the
+    result or error slots is valid after completion. The caller must call
+    `wait()` or `force_destroy()` to consume the task.
 
     Parameters:
         type: The type of value produced on success.

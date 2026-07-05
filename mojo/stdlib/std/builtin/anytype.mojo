@@ -41,7 +41,7 @@ trait AnyType:
     a `__del__()` implicit destructor.
 
     A type that conforms to `AnyType` but not to `ImplicitlyDeletable` is
-    called a linear type, also known as a non-implicitly-destructible type.
+    called a linear type, also known as a non-implicitly-deletable type.
 
     Generic code will commonly want to use `T: ImplicitlyDeletable` instead
     of `T: AnyType`.
@@ -93,14 +93,13 @@ trait AnyType:
     Linear types can act as a guard that some explicit action must be performed
     sometime "in the future" after initial object construction.
 
-    The following is a simple example of a non-implicitly-destructible type with
+    The following is a simple example of a non-implicitly-deletable type with
     a named destructor method:
 
     ```mojo
     from std.pathlib import Path
 
-    @explicit_destroy
-    struct FileBuffer:
+    struct FileBuffer(ImplicitlyDeletable where False):
         def __init__(out self, path: Path):
             pass  # ... open the file at the specified `path` ...
 
@@ -150,7 +149,9 @@ trait ImplicitlyDeletable:
     proper cleanup.
 
     By default, all Mojo types implement `ImplicitlyDeletable`, unless they
-    opt-in to explicit named destructor methods using `@explicit_destroy`.
+    opt-in to required explicit named destructor methods using a
+    `ImplicitlyDeletable where False`, or conditionally with
+    `ImplicitlyDeletable where <cond>`.
 
     Key aspects:
 
@@ -180,7 +181,8 @@ trait ImplicitlyDeletable:
 
     - Implement this trait when your type owns resources that need cleanup
     - Ensure the destructor properly frees all owned resources
-    - Consider using `@explicit_destroy` for types that should never have destructors
+    - Consider using a `ImplicitlyDeletable where False` conformance on types
+      that should never be deleted implicitly.
     - Use composition to automatically handle nested resource cleanup
     """
 

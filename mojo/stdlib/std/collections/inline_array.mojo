@@ -206,9 +206,8 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, size: Int](
 
 
 @explicit_destroy(
-    "An `InlineArray` of non-`ImplicitlyDeletable` elements must either be"
-    " explicitly destroyed with `destroy_with()`, or have its ownership passed"
-    " along by returning it or moving it into another function."
+    "Use `destroy_with()` to explicitly destroy an `InlineArray` of"
+    " non-`ImplicitlyDeletable` elements"
 )
 struct InlineArray[ElementType: Movable, size: Int](
     Copyable where conforms_to(ElementType, Copyable),

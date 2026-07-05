@@ -81,9 +81,9 @@ def _coro_resume_noop_callback(null: AnyCoroutine):
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy
 struct Coroutine[type: ImplicitlyDeletable, origins: OriginSet](
-    RegisterPassable
+    ImplicitlyDeletable where False,
+    RegisterPassable,
 ):
     """Represents a coroutine.
 
@@ -178,8 +178,10 @@ struct Coroutine[type: ImplicitlyDeletable, origins: OriginSet](
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy
-struct RaisingCoroutine[type: AnyType, origins: OriginSet](RegisterPassable):
+struct RaisingCoroutine[type: AnyType, origins: OriginSet](
+    ImplicitlyDeletable where False,
+    RegisterPassable,
+):
     """Represents a coroutine that can raise.
 
     Coroutines can pause execution saving the state of the program (including

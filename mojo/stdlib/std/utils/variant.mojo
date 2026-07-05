@@ -871,9 +871,8 @@ struct Variant[*Ts: Movable](
         """Destroy a value contained in this Variant in-place using a caller
         provided destructor function.
 
-        This method can be used to destroy types marked `@explicit_destroy`
-        in a `Variant` in-place, without requiring that they be
-        `ImplicitlyDeletable`.
+        This method can be used to destroy types that do not conform to
+        `ImplicitlyDeletable` in a `Variant` in-place.
 
         This method will abort if this variant does not current contain an
         element of the specified type `T`.

@@ -138,9 +138,8 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
 
 
 @explicit_destroy(
-    "A `List` of non-`ImplicitlyDeletable` elements must either be"
-    " explicitly destroyed with `destroy_with()`, or have its ownership passed"
-    " along by returning it or moving it into another function."
+    "Use `destroy_with()` to explicitly destroy a `List` of"
+    " non-`ImplicitlyDeletable` elements"
 )
 struct List[T: Movable](
     Boolable,

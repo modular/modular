@@ -243,8 +243,8 @@ struct _LinkedListIterOwned[T: Movable & ImplicitlyDeletable](
 
 
 @explicit_destroy(
-    "A `LinkedList` with non-`ImplicitlyDeletable` elements must be explicitly"
-    " destroyed with `destroy_with()`"
+    "Use `destroy_with()` to explicitly destroy a `LinkedList` with"
+    " non-`ImplicitlyDeletable` elements"
 )
 struct LinkedList[ElementType: Movable](
     Boolable,

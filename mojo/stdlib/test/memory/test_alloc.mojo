@@ -177,8 +177,8 @@ def test_deletable_allocation_into_allocation_round_trip() raises:
     var recovered = deletable^.into_allocation()
     var recovered_addr = Int(recovered.unsafe_ptr())
 
-    # `into_allocation` hands back an `@explicit_destroy` handle: dealloc it
-    # before the (raising) asserts so it can't be abandoned on a throw.
+    # `into_allocation` hands back an non-implicitly-deletable handle: dealloc
+    # it before the (raising) asserts so it can't be abandoned on a throw.
     dealloc(recovered^)
 
     assert_equal(deletable_addr, alloc_addr)

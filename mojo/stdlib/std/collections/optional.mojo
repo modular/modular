@@ -667,8 +667,7 @@ struct Optional[T: Movable](
         caller-provided destructor function.
 
         This method can be used to destroy `Optional` values whose element
-        type is not `ImplicitlyDeletable` (for example, types
-        marked `@explicit_destroy`). The `__del__` on `Optional`
+        type is not `ImplicitlyDeletable`. The `__del__` on `Optional`
         requires `T: ImplicitlyDeletable`, so explicit-destroy users must
         destroy an `Optional[T]` through this API instead.
 
@@ -685,9 +684,8 @@ struct Optional[T: Movable](
         Examples:
 
         ```mojo
-        @explicit_destroy
         @fieldwise_init
-        struct ExplicitDestroy(Movable):
+        struct ExplicitDestroy(Movable, ImplicitlyDeletable where False):
             var data: Int
 
             def destroy(deinit self):

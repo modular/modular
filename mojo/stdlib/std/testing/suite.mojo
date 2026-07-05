@@ -374,7 +374,7 @@ struct _Test(Copyable):
 
 
 @explicit_destroy("TestSuite must be destroyed via `run()`")
-struct TestSuite(Movable):
+struct TestSuite(ImplicitlyDeletable where False, Movable):
     """A suite of tests to run.
 
     You can automatically collect and register test functions starting with

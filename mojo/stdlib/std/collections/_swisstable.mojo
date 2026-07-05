@@ -225,8 +225,8 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 
 @fieldwise_init
 @explicit_destroy(
-    "A `SwissTableEntry` with non-`ImplicitlyDeletable` keys or values must be"
-    " explicitly destroyed with `destroy_with()`."
+    "Use `destroy_with()` to explicitly destroy a `SwissTableEntry` with"
+    " non-`ImplicitlyDeletable` keys or values"
 )
 struct SwissTableEntry[
     K: KeyElement,
@@ -331,8 +331,8 @@ struct SwissTableEntry[
 
 
 @explicit_destroy(
-    "A `SwissTable` with non-`ImplicitlyDeletable` keys or values must be"
-    " explicitly destroyed with `destroy_with()`."
+    "Use `destroy_with()` to explicitly destroy a `SwissTable` with"
+    " non-`ImplicitlyDeletable` keys or values"
 )
 struct SwissTable[
     K: KeyElement,
