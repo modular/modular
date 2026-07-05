@@ -624,15 +624,15 @@ constructor.
 ### Move constructor
 
 A move constructor is an `__init__` with a single
-keyword-only argument named `take`:
+keyword-only argument named `move`:
 
 ```mojo
 def __init__(out self, *, deinit move: Self):
-    self.x = take.x
-    self.y = take.y
+    self.x = move.x
+    self.y = move.y
 ```
 
-The `take` argument must use the `deinit` convention. Move
+The `move` argument must use the `deinit` convention. Move
 constructors can't raise.
 
 :::note
