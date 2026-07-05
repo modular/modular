@@ -627,7 +627,7 @@ A move constructor is an `__init__` with a single
 keyword-only argument named `take`:
 
 ```mojo
-def __init__(out self, *, deinit take: Self):
+def __init__(out self, *, deinit move: Self):
     self.x = take.x
     self.y = take.y
 ```

@@ -284,7 +284,7 @@ def main():
 
 ### Synthesized lifecycle methods
 
-If a struct conforms to `Movable` but doesn't define `__init__(take:)`, the
+If a struct conforms to `Movable` but doesn't define `__init__(move:)`, the
 compiler synthesizes one that moves each field. The same applies to
 `Copyable` and `__init__(copy:)`. Synthesis fails if any field can't
 support the operation:
