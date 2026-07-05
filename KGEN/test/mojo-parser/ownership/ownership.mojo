@@ -1507,7 +1507,6 @@ def test_is_trivial(var a0: OccasionallyTrivial[0],
 
 
 # CHECK-LABEL: lit.struct.decl @TestConditionallyLinearType
-@explicit_destroy
 struct TestConditionallyLinearType[T: Movable](
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
 ):
@@ -1523,7 +1522,6 @@ struct TestConditionallyLinearType[T: Movable](
 
 
 # CHECK-LABEL: lit.struct.decl @TestSynthesizedConditionalDtor
-@explicit_destroy
 struct TestSynthesizedConditionalDtor[T: Movable & ImplicitlyDeletable](
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
 ):

@@ -23,8 +23,7 @@ def testAffineThing():
 
 
 # CHECK-LABEL: lit.struct.decl @EmptyExplicit
-@explicit_destroy
-struct EmptyExplicit:
+struct EmptyExplicit(ImplicitlyDeletable where False):
     def __init__(out self):
         pass
 
@@ -47,7 +46,7 @@ def correctUseExample():
 
 # CHECK-LABEL: lit.struct.decl @ExplicitDestroyThrowing
 @explicit_destroy("end lifetime with foo()")
-struct ExplicitDestroyThrowing:
+struct ExplicitDestroyThrowing(ImplicitlyDeletable where False):
     var field: MyAffine
 
     # CHECK-LABEL: lit.fn @"foo

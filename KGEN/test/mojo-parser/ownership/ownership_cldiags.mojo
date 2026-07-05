@@ -607,7 +607,7 @@ def test_unused_var(mut mut_arg: Int):
 
 @explicit_destroy("Use `consume() method` to finalize")
 @fieldwise_init
-struct LinearType:
+struct LinearType(ImplicitlyDeletable where False):
     def consume(deinit self):
         pass
 
@@ -643,8 +643,7 @@ def test_linear_no_return_complex_lifetime(
 
 
 # Hard case for conditional lifetime analysis on abort.  This should compile.
-@explicit_destroy
-struct ReducedVariant:
+struct ReducedVariant(ImplicitlyDeletable where False):
     var _storage: ReducedStorage
 
     def take[T: Movable](deinit self, cond: Bool) -> T:
@@ -653,8 +652,7 @@ struct ReducedVariant:
         return self._storage^.take[T]()
 
 
-@explicit_destroy
-struct ReducedStorage:
+struct ReducedStorage(ImplicitlyDeletable where False):
     def take[U: Movable](deinit self) -> U:
         abort()
 
