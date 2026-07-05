@@ -11,7 +11,7 @@ from std.builtin.coroutine import Coroutine, RaisingCoroutine, AnyCoroutine
 
 
 @explicit_destroy("Must use consume!")
-struct EmptyExplicit:
+struct EmptyExplicit(ImplicitlyDeletable where False):
     def __init__(out self):
         pass
 
@@ -25,7 +25,9 @@ def errorExample():
 
 
 @explicit_destroy("Must use consume!")
-struct ImplicitlyDeletableContainerOfExplicitWithAutoDel:
+struct ImplicitlyDeletableContainerOfExplicitWithAutoDel(
+    ImplicitlyDeletable where False
+):
     var m: EmptyExplicit
 
     def __init__(out self):
@@ -82,7 +84,7 @@ def test_any_type_error[T: AnyType](var x: T):
 
 # CHECK-LABEL: lit.fn @"callsWith
 def callsWith():
-    # expected-error @below {{Unhandled explicit_destroy type Coroutine}}
+    # expected-error @below {{type 'Coroutine' is not implicitly deletable and must be explicitly destroy}}
     _ = testAsyncVoid()
     # CHECK-NOT: lit.call {{.*}}__del__
 
@@ -97,7 +99,7 @@ async def testAsyncVoid():
 
 # MOCO-2787 - Linear types do not error if they contain an explicit del
 @explicit_destroy("must use __del__() explicitly")
-struct ExplicitWithDel:
+struct ExplicitWithDel(ImplicitlyDeletable where False):
     def __init__(out self):
         pass
 
