@@ -44,6 +44,12 @@ def _coerce_dtype(value: Any) -> DType | Any:
 
 _CoercedDType = Annotated[DType, BeforeValidator(_coerce_dtype)]
 
+# Global default structured-output backend, used when neither the user nor the
+# resolved architecture specifies one. Single source of truth for the fallback
+# in ``PipelineConfig._resolve_default_structured_output_backend`` and
+# ``StructuredOutputHelper.from_tokenizer``.
+DEFAULT_STRUCTURED_OUTPUT_BACKEND = "xgrammar"
+
 
 class SamplingConfig(ConfigFileModel):
     """Configuration for the sampling stage of token generation."""
@@ -67,11 +73,14 @@ class SamplingConfig(ConfigFileModel):
         ),
     )
 
-    structured_output_backend: str = Field(
-        default="llguidance",
+    structured_output_backend: str | None = Field(
+        default=None,
         description=(
-            "Grammar backend for constrained decoding. One of ``llguidance`` "
-            "(default) or ``xgrammar``."
+            "Grammar backend for constrained decoding. One of ``xgrammar`` or "
+            "``llguidance``. When unset (``None``), resolved during "
+            "``PipelineConfig.resolve()`` to the architecture's default if it "
+            "declares one, else the global default ``xgrammar``. An explicit "
+            "value always wins."
         ),
     )
 

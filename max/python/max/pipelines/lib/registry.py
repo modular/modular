@@ -323,6 +323,17 @@ class SupportedArchitecture:
     opt in by setting ``runtime.reasoning_parser`` explicitly.
     """
 
+    default_structured_output_backend: str | None = None
+    """Optional default structured output backend for this architecture.
+
+    When set (e.g., ``"llguidance"`` or ``"xgrammar"``), the pipeline config
+    will use this value for ``sampling.structured_output_backend`` if the
+    user did not explicitly configure one. This allows architectures that
+    work better with a specific backend to override the global default.
+
+    If None, the global default from ``SamplingConfig`` is used.
+    """
+
     supports_overlap_scheduler: bool = True
     """Whether this architecture supports auto-enabling the overlap scheduler.
 

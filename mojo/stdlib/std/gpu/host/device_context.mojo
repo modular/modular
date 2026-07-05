@@ -3811,21 +3811,6 @@ struct DeviceExternalFunction:
         return Int(result)
 
 
-@doc_hidden
-struct _GraphArena(Movable):
-    """Per-scope identity anchor for `create_device_graph`.
-
-    Exists only to give the borrow checker a stable, fresh-per-call origin
-    that brands the builder and every node produced within one
-    `create_device_graph` scope. Because the brand origin is universally
-    quantified in the callback and unnameable outside it, node handles cannot
-    escape the scope. Carries no state.
-    """
-
-    def __init__(out self):
-        pass
-
-
 @fieldwise_init
 struct DeviceGraphNode[arena_origin: ImmutOrigin](
     TrivialRegisterPassable, Writable
@@ -4023,11 +4008,6 @@ struct DeviceGraphBuilder[arena_origin: ImmutOrigin](Movable):
     var _ctx: DeviceContext
     """The backing device context used to create the builder."""
 
-    var _arena: Pointer[_GraphArena, Self.arena_origin]
-    """Borrowed reference to the per-scope arena. Carries no data; its sole
-    purpose is to anchor `arena_origin` so the borrow checker keeps the scope
-    alive for as long as any node handle or the builder is live."""
-
     var _implicit_deps: List[Self.Node]
     """Ambient predecessor edges injected into every node added while a
     `region` scope is active.
@@ -4042,13 +4022,11 @@ struct DeviceGraphBuilder[arena_origin: ImmutOrigin](Movable):
     @doc_hidden
     def __init__(
         out self,
-        ref[Self.arena_origin] arena: _GraphArena,
         handle: _DeviceGraphBuilderPtr[mut=True],
         ctx: DeviceContext,
     ):
         self._handle = handle
         self._ctx = ctx
-        self._arena = Pointer(to=arena)
         self._implicit_deps = []
 
     @doc_hidden
@@ -8894,8 +8872,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 self._handle,
             )
         )
-        var arena = _GraphArena()
-        var builder = DeviceGraphBuilder(arena, result, self)
+        var arena = 0
+        # Note: Parameterize `DeviceGraphBuilder` on an origin that outlives the
+        #   builder itself, but that from the perspective of `build()`, does not
+        #   outlive the return from `build()`, preventing construction logic
+        #   from holding onto `Node` values outside of the ephemeral period in
+        #   which the graph is being built.
+        var builder = DeviceGraphBuilder[origin_of(arena)](result, self)
         build(builder)
         return builder^.instantiate()
 

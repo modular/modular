@@ -42,6 +42,7 @@ from max.pipelines.lib.tool_parsing import (
 )
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.types import RequestID
+from max.pipelines.sampling import DEFAULT_STRUCTURED_OUTPUT_BACKEND
 from max.profiler import Tracer, traced
 from max.support.math import ceildiv
 from transformers import AutoConfig
@@ -455,7 +456,7 @@ class StructuredOutputHelper:
         tokenizer: PipelineTokenizer[Any, Any, Any],
         enable_structured_output: bool,
         tool_parser_name: str | None = None,
-        backend_name: str = "llguidance",
+        backend_name: str | None = None,
     ) -> StructuredOutputHelper:
         """Create a helper from a tokenizer.
 
@@ -465,8 +466,9 @@ class StructuredOutputHelper:
                 (e.g. to constrain to response format json_schema).
             tool_parser_name: Name of the registered tool parser. Used to extract
                 structural tags for tool call start/end markers.
-            backend_name: Structured-output backend to use (default
-                ``"llguidance"``).
+            backend_name: Structured-output backend to use. ``None`` (the
+                default, i.e. an unresolved ``SamplingConfig``) falls back to
+                ``"xgrammar"``.
 
         Returns:
             A configured StructuredOutputHelper instance.
@@ -479,7 +481,9 @@ class StructuredOutputHelper:
         vocab_size = len(tokenizer_delegate)
 
         backend = make_grammar_backend(
-            backend_name, tokenizer_delegate, vocab_size
+            backend_name or DEFAULT_STRUCTURED_OUTPUT_BACKEND,
+            tokenizer_delegate,
+            vocab_size,
         )
 
         # Extract structural tags from tool parser if available

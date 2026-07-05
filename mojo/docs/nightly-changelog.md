@@ -10,16 +10,6 @@ This version is still a work in progress.
 
 ## Language enhancements
 
-- `coord` is now a comptime expression, and `coord[DType]()` has been renamed
-  to `dyn_coord[DType]()`.
-  Now one can just write:
-
-   ```mojo
-   var my_coord = coord[1, 2, 3]
-   ```
-
-   to create a `Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]]`
-
 - Mojo now support `==` and `!=` for type equality check, and `_type_is_eq` is
   removed.
 
@@ -112,6 +102,30 @@ This version is still a work in progress.
   To check several distinct standalone types against a trait, conjoin scalar
   checks, for example `conforms_to(T, Trait) and conforms_to(U, Trait)`.
 
+- Mojo has improved its tracking of import locations and is now able to show
+  where a package containing a diagnostic was first introduced into the program:
+
+  ```text
+  Included from /bug.mojo:2:
+  Included from /foo/__init__.mojo:3:
+  Included from /foo/nested_pkg/__init__.mojo:4:
+  /foo/nested_pkg/my_module.mojo:1:5: note: candidate not viable: unexpected argument
+  def bar(): pass
+      ^
+  ```
+
+  Compared to the previous:
+
+  ```text
+  Included from /foo/nested_pkg/__init__.mojo:1:
+  Included from /foo/nested_pkg/__init__.mojo:4:
+  /foo/nested_pkg/my_module.mojo:1:5: note: candidate not viable: unexpected argument
+  def bar(): pass
+      ^
+  ```
+
+  Note that this is only possible for source packages for now
+
 ## Language changes
 
 - Relative imports must now use `from` (`from . import foo`); the `import .foo`
@@ -196,6 +210,50 @@ This version is still a work in progress.
   module1.bar()
   ```
 
+- The `@explicit_destroy` decorator is no longer required on structs that
+  conditionally conform to `ImplicitlyDeletable`.
+
+  By default, all Mojo structs implicitly conform to `ImplicitlyDeletable`.
+  As before, a type author can opt-out of that implicit conformance using the
+  `@explicit_destroy` decorator:
+
+  ```mojo
+  @explicit_destroy
+  struct FileHandle:
+      pass
+
+  comptime assert not conforms_to(FileHandle, ImplicitlyDeletable)
+  ```
+
+  Now, if the type *conditionally* conforms to `ImplicitlyDeletable`, you may
+  omit redundantly writing `@explicit_destroy`. This works both for types
+  that are never `ImplicitlyDeletable` (`where False`) and for types that are
+  non-ImplicitlyDeletable based on a non trivial condition (`where <cond>`):
+
+  ```mojo
+  # no @explicit_destroy necessary
+  struct NeverDeletable(
+      ImplicitlyDeletable where False
+  ):
+      def destroy(deinit self):
+          pass
+
+  # no @explicit_destroy necessary
+  struct Container[T: AnyType](
+      ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
+  ):
+      var value: Self.T
+
+  comptime assert conforms_to(Container[Int], ImplicitlyDeletable)
+  comptime assert not conforms_to(Container[NonDeletable], ImplicitlyDeletable)
+  ```
+
+  `@explicit_destroy("custom error")` can still be used to provide additional
+  instruction to users when an instance cannot be deleted implicitly.
+
+  This simplifies the language by replacing special decorator behavior with
+  generalized struct conformance logic.
+
 - `where` clauses inside a parameter list (for example,
   `[x: Int where x > 0]`) are no longer supported, following a period of
   deprecation. Use a trailing `where` clause after the signature instead:
@@ -208,6 +266,11 @@ This version is still a work in progress.
   fn foo[x: Int]() where x > 0:
       pass
   ```
+
+## Library stabilizations
+
+- The traits `ImplicitlyDeletable`, `Movable`, `Copyable`, and
+  `ImplicitlyCopyable` are now stable.
 
 ## Library changes
 
@@ -250,6 +313,54 @@ This version is still a work in progress.
 - `chdir` has been added to the `std.os` module and an `fchdir` method has been
   added to `io.FileDescriptor`. These are wrappers for the corresponding POSIX
   functions.
+
+- `TypeList.all_conforms_to()` is now implemented in terms of `conforms_to()`,
+  which supports parameter-list operands like `Ts.values`. As a result,
+  `all_conforms_to()` constraints preserve the same proof structure as direct
+  `conforms_to(Ts.values, Trait)` constraints, so the compiler can use them in
+  conditional conformance implication checks and type refinement.
+
+  This means conditional conformances can rely on trait hierarchy relationships
+  for an entire type parameter pack. Previously, a type that conditionally
+  conformed to `JsonSerializable` would also need to repeat the inherited
+  `Serializable` condition:
+
+  ```mojo
+  trait Serializable:
+      pass
+
+  trait JsonSerializable(Serializable):
+      pass
+
+  struct Packet[*Ts: Movable](
+      Serializable where Ts.all_conforms_to[Serializable](),
+      JsonSerializable where Ts.all_conforms_to[JsonSerializable](),
+      Movable,
+  ):
+      pass
+  ```
+
+  Now the `JsonSerializable` condition is enough for the compiler to prove the
+  inherited `Serializable` conformance:
+
+  ```diff
+   struct Packet[*Ts: Movable](
+  -    Serializable where Ts.all_conforms_to[Serializable](), 
+       JsonSerializable where Ts.all_conforms_to[JsonSerializable](),
+       Movable,
+   ):
+       pass
+  ```
+
+  The same constraints now refine each element of a variadic type parameter
+  pack inside `where`, `comptime assert`, and `comptime if` contexts:
+
+  ```mojo
+  def write_all[*Ts: Movable](mut writer: Some[Writer], *args: *Ts):
+      comptime if Ts.all_conforms_to[Writable]():
+          comptime for i in range(args.__len__()):
+              args[i].write_to(writer)
+  ```
 
 - `ImplicitlyDestructible` has been renamed to `ImplicitlyDeletable`, for better
   name consistency with its required `__del__()` "delete" special method.
@@ -383,8 +494,15 @@ This version is still a work in progress.
     )
     ```
 
-- The traits `ImplicitlyDeletable`, `Movable`, `Copyable`, and
-  `ImplicitlyCopyable` are now stable.
+- `coord` is now a comptime expression, and `coord[DType]()` has been renamed
+  to `dyn_coord[DType]()`.
+  Now one can just write:
+
+   ```mojo
+   var my_coord = coord[1, 2, 3]
+   ```
+
+   to create a `Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]]`
 
 - Removed `trait_downcast_var()`. Improvements to type refinement based on
   `where conforms_to(..)` and `comptime assert conforms_to(..)` make explicit
