@@ -224,6 +224,11 @@ def blah[b_t: SameEntryDeclB](b: b_t):
     b.foo()
 
 
+# ===----------------------------------------------------------------------=== #
+# Synthesized __del__
+# ===----------------------------------------------------------------------=== #
+
+
 # MOCO-4252
 struct CondDeletableField1[T: AnyType](
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
@@ -241,3 +246,12 @@ struct CondDeletableField3[T: AnyType, X: Int](
     ImplicitlyDeletable where X > 10,
 ):
     var value: Self.T  # expected-error {{field 'value' has non-implicitly deletable type 'T'}}
+
+
+# MOCO-4262
+struct NeverDeletableInner(ImplicitlyDeletable where False):
+    pass
+
+
+struct NeverDeletableOuter(ImplicitlyDeletable where False):
+    var m: NeverDeletableInner
