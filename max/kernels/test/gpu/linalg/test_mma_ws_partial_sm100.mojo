@@ -2122,12 +2122,14 @@ def _ts_launch[
     NUM_STAGES: Int = 1,
 ](
     ctx: DeviceContext,
-    q_inp: ManagedLayoutTensor[TS_OP_TYPE, Layout.row_major(TS_ROWS, TS_COLS)],
-    k_inp: ManagedLayoutTensor[
+    mut q_inp: ManagedLayoutTensor[
+        TS_OP_TYPE, Layout.row_major(TS_ROWS, TS_COLS)
+    ],
+    mut k_inp: ManagedLayoutTensor[
         TS_OP_TYPE, Layout.row_major(TS_K_ROWS, TS_K_COLS)
     ],
     valid: UInt32,
-    p_out_buf: ManagedLayoutTensor[
+    mut p_out_buf: ManagedLayoutTensor[
         TS_ACCUM_TYPE, Layout.row_major(TS_P_ROWS, TS_P_COLS)
     ],
 ) raises:

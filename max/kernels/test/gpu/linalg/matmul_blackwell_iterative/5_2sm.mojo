@@ -487,9 +487,9 @@ def blackwell_kernel_5[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
 ](
-    c: LayoutTensor[c_type, c_layout, MutUntrackedOrigin],
-    a: LayoutTensor[a_type, a_layout, MutUntrackedOrigin],
-    b: LayoutTensor[b_type, b_layout, MutUntrackedOrigin],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()

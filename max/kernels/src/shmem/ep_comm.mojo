@@ -1608,7 +1608,7 @@ struct EPLocalSyncCounters[n_experts: Int](
         ]().address_space_cast[AddressSpace.GENERIC]()
 
     @always_inline
-    def __init__(out self, buffer: DeviceBuffer[DType.int32]):
+    def __init__(out self, mut buffer: DeviceBuffer[DType.int32]):
         self.ptr = buffer.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
 
     def _to_device_type(

@@ -510,7 +510,12 @@ def main() raises:
         ]:
             var dev_buf = ctx.enqueue_create_buffer[DType.uint32](1)
             ctx.enqueue_memset(dev_buf, val)
-            return {dev_buf.unsafe_ptr()}
+            # TODO(KERN-3155): This is a bug!
+            # The returned device buffer will have its deleter run
+            # before the return potentially causing a read/writer-after-free.
+            return {
+                dev_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+            }
 
         # valid_length == num_keys (equivalent to CausalMask).
         var vl_128_t = make_vl(128, ctx)

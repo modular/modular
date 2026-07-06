@@ -49,7 +49,7 @@ def _launch[
     a_type: DType, transpose_b: Bool, c_type: DType = DType.float32
 ](
     ctx: DeviceContext,
-    d_dev: DeviceBuffer[c_type],
+    mut d_dev: DeviceBuffer[c_type],
     a_dev: DeviceBuffer[a_type],
     b_dev: DeviceBuffer[a_type],
     M: Int,

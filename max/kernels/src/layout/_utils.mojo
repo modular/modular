@@ -139,7 +139,7 @@ struct ManagedLayoutTensor[
 
     def device_tensor[
         update: Bool = True
-    ](self) raises -> Self.layout_tensor_type:
+    ](mut self) raises -> Self.layout_tensor_type:
         assert (
             self.ctx.api() != "cpu"
         ), "device_tensor cannot be constructed for host only tensor."

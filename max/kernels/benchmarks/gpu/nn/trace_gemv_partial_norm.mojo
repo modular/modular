@@ -127,7 +127,9 @@ def main() raises:
             eps,
             counter_buf.unsafe_ptr().as_unsafe_any_origin(),
             ctx,
-            trace_buf=GmemTrace(trace_buf.unsafe_ptr()),
+            trace_buf=GmemTrace(
+                trace_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+            ),
         )
         ctx.synchronize()
 

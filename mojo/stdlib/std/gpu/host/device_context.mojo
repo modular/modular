@@ -999,9 +999,14 @@ struct DevicePointer[
         """
         # TODO: GEX-3693: Assert/raise when target doesn't support raw device
         # pointer access
+        # `DeviceBuffer.unsafe_ptr()` now ties its mutability to the borrow of
+        # the buffer; force mutable to preserve this helper's `MutAnyOrigin`
+        # contract.
         return (
-            self._buffer[].unsafe_ptr() + self._offset
-        ).as_unsafe_any_origin()
+            (self._buffer[].unsafe_ptr() + self._offset)
+            .unsafe_mut_cast[True]()
+            .as_unsafe_any_origin()
+        )
 
     # ===------------------------------------------------------------------=== #
     # Pointer arithmetic
@@ -1834,19 +1839,27 @@ struct DeviceBuffer[dtype: DType](
         return self._handle
 
     @always_inline
-    def unsafe_ptr(
-        self,
-    ) -> Self._DevicePtr:
+    def unsafe_ptr[
+        mut: Bool,
+        //,
+        origin: Origin[mut=mut],
+    ](ref[origin] self,) -> UnsafePointer[Scalar[Self.dtype], origin]:
         """Returns the raw device pointer without transferring ownership.
 
         This method provides direct access to the underlying device pointer
         for advanced use cases. The buffer retains ownership of the pointer.
 
+        Parameters:
+            mut: The mutability of this `DeviceBuffer`.
+            origin: The origin of this `DeviceBuffer`.
+
         Returns:
             The raw device pointer owned by this buffer.
         """
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
-        return self._device_ptr
+        return self._device_ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[
+            origin
+        ]()
 
     def device_ptr(
         ref self,

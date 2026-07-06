@@ -111,7 +111,7 @@ struct test_matmul[
             self.c_device_buffer_ref.unsafe_ptr(),
         )
 
-    def run_test[gemm: run_gemm_kernel_type](self, mut m: Bench) raises:
+    def run_test[gemm: run_gemm_kernel_type](mut self, mut m: Bench) raises:
         print("=== test_matmul")
 
         var ctx = self.ctx

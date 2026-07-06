@@ -176,9 +176,18 @@ def reducescatter_test[
     comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
-    # Create input buffers
+    # Create input buffers.
+    # The input/output tile types are built once (`type_of`) then constructed
+    # from pointers into different buffers (per-GPU list entries, multicast
+    # buffers). `DeviceBuffer.unsafe_ptr()` now returns a tracked origin, so
+    # each buffer's pointer has a distinct origin; opt out to `AnyOrigin` so the
+    # tile type is origin-agnostic (and the `StaticTuple` writes don't trip a
+    # false-positive aliasing exclusivity check).
     comptime InputTileType = type_of(
-        TileTensor[mut=False](in_bufs_list[0].unsafe_ptr(), row_major(shape))
+        TileTensor[mut=False](
+            in_bufs_list[0].unsafe_ptr().as_unsafe_any_origin(),
+            row_major(shape),
+        )
     )
     comptime num_input_bufs = 1 if use_multimem else ngpus
     var in_bufs = InlineArray[InputTileType, num_input_bufs](uninitialized=True)
@@ -191,13 +200,15 @@ def reducescatter_test[
             var unicast_buf = multicast_buf.unicast_buffer_for(list_of_ctx[i])
             list_of_ctx[i].enqueue_copy(unicast_buf, host_in[i])
         in_bufs[0] = InputTileType(
-            multicast_buf.multicast_buffer_for(list_of_ctx[0]).unsafe_ptr(),
+            multicast_buf.multicast_buffer_for(list_of_ctx[0])
+            .unsafe_ptr()
+            .as_unsafe_any_origin(),
             row_major(shape),
         )
     else:
         comptime for i in range(ngpus):
             in_bufs[i] = InputTileType(
-                in_bufs_list[i].unsafe_ptr(),
+                in_bufs_list[i].unsafe_ptr().as_unsafe_any_origin(),
                 row_major(shape),
             )
 
@@ -205,7 +216,7 @@ def reducescatter_test[
 
     comptime OutputTileType = type_of(
         TileTensor[mut=True](
-            out_bufs_list[0].unsafe_ptr(),
+            out_bufs_list[0].unsafe_ptr().as_unsafe_any_origin(),
             row_major(shape_type()),
         )
     )
@@ -234,7 +245,7 @@ def reducescatter_test[
                 ](config.rank_units(i) * simd_width)
 
         out_bufs[i] = OutputTileType(
-            out_bufs_list[i].unsafe_ptr(),
+            out_bufs_list[i].unsafe_ptr().as_unsafe_any_origin(),
             row_major(runtime_shape),
         )
 
@@ -454,13 +465,13 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
     comptime shape_type = DynamicCoord[DType.int, rank]
     comptime InputTileType = type_of(
         TileTensor[mut=False](
-            in_bufs_list[0].unsafe_ptr(),
+            in_bufs_list[0].unsafe_ptr().as_unsafe_any_origin(),
             row_major(shape_type()),
         )
     )
     comptime OutputTileType = type_of(
         TileTensor[mut=True](
-            out_bufs_list[0].unsafe_ptr(),
+            out_bufs_list[0].unsafe_ptr().as_unsafe_any_origin(),
             row_major(shape_type()),
         )
     )
@@ -478,7 +489,7 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
         )
         input_shape[1] = _coerce_dynamic[input_shape.element_types[1]](D)
         in_bufs._unsafe_ref(gpu_idx) = InputTileType(
-            in_bufs_list[gpu_idx].unsafe_ptr(),
+            in_bufs_list[gpu_idx].unsafe_ptr().as_unsafe_any_origin(),
             row_major(input_shape),
         )
 
@@ -488,7 +499,7 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
         )
         output_shape[1] = _coerce_dynamic[output_shape.element_types[1]](D)
         out_bufs._unsafe_ref(gpu_idx) = OutputTileType(
-            out_bufs_list[gpu_idx].unsafe_ptr(),
+            out_bufs_list[gpu_idx].unsafe_ptr().as_unsafe_any_origin(),
             row_major(output_shape),
         )
 

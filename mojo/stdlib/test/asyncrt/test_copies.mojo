@@ -128,7 +128,7 @@ def _run_fake_memcpy(
     if use_take_ptr:
         out_ptr = out_dev.take_ptr()
     else:
-        out_ptr = out_dev.unsafe_ptr()
+        out_ptr = out_dev.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
 
     var first_out_dev = DeviceBuffer[DType.int64](
         ctx, out_ptr, half_length, owning=use_take_ptr

@@ -157,7 +157,7 @@ def amd_4wave_split_k_matmul[
     c: TileTensor[mut=True, c_type, ...],
     ctx: DeviceContext,
     *,
-    workspace: SplitKWorkspace[num_splits],
+    mut workspace: SplitKWorkspace[num_splits],
 ) raises:
     """Launches the single-launch split-K 4-wave matmul on the device.
 
