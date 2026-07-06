@@ -18,8 +18,7 @@ from std.memory import UnsafePointer, alloc
 # ============================================================================
 @fieldwise_init
 struct PtrInt32Struct(TrivialRegisterPassable):
-    @__allow_legacy_any_origin_fields
-    var p: UnsafePointer[Int32, MutAnyOrigin]
+    var p: UnsafePointer[Int32, MutUntrackedOrigin]
     var i: Int32
 
 
@@ -44,14 +43,11 @@ def test_ptr_int32():
 # ============================================================================
 @fieldwise_init
 struct ThreePtrStruct(TrivialRegisterPassable):
-    @__allow_legacy_any_origin_fields
-    var a: UnsafePointer[Int32, MutAnyOrigin]
+    var a: UnsafePointer[Int32, MutUntrackedOrigin]
 
-    @__allow_legacy_any_origin_fields
-    var b: UnsafePointer[Int32, MutAnyOrigin]
+    var b: UnsafePointer[Int32, MutUntrackedOrigin]
 
-    @__allow_legacy_any_origin_fields
-    var c: UnsafePointer[Int32, MutAnyOrigin]
+    var c: UnsafePointer[Int32, MutUntrackedOrigin]
 
 
 def test_three_ptr():
