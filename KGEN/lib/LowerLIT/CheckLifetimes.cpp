@@ -1447,7 +1447,7 @@ SmallVector<ValueRef> ValueSet::getValueRefsForOrigin(TypedAttr origin) {
   SmallVector<ValueRef> result;
 
   // Look through imm cast and unions to find the underlying attrs.
-  processRawOrigin(getCanonicalAttr(origin), [&](TypedAttr raw) {
+  processOriginUnionElts(getCanonicalAttr(origin), [&](TypedAttr raw) {
     auto [valueRef, _] = getValueRefAndTypeForOrigin(raw);
     if (valueRef) {
       result.push_back(valueRef);
@@ -1963,7 +1963,7 @@ void UninitializedValueScan::handleAnyOriginUse(
   SmallPtrSet<Attribute, 8> definedOriginSet;
   for (auto elt : definedOrigins) {
     // Look through imm cast and unions to find the underlying attrs.
-    processRawOrigin(getCanonicalAttr(elt), [&](TypedAttr raw) {
+    processOriginUnionElts(getCanonicalAttr(elt), [&](TypedAttr raw) {
       // Ignore field sensitivity of the use: if we have a def of a subfield of
       // the value then we treat it as defining the value.
       while (auto field = dyn_cast<OriginFieldAttr>(raw))

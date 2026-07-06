@@ -746,7 +746,7 @@ static bool handleOriginAttr(TypedAttr attr,
   bool foundAny = false;
 
   // Look through unions to find the values referenced.
-  processRawOrigin(attr, [&](TypedAttr raw) {
+  processOriginUnionElts(attr, [&](TypedAttr raw) {
     // FIXME(origins): This shouldn't happen; UncheckedCallEmission isn't
     // forming captures correctly for async functions with implicit origin
     // refs.
