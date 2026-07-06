@@ -123,6 +123,7 @@ class NemotronHModel(LlamaModelBase):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -133,11 +134,19 @@ class NemotronHModel(LlamaModelBase):
             adapter,
             return_logits,
             return_hidden_states,
+            max_batch_size=max_batch_size,
         )
 
     @traced
     def load_model(self, session: InferenceSession) -> Model:
+        # Use the resolved batch size forwarded from the memory plan via
+        # __init__ (stored on self by the base PipelineModel). The user-facing
+        # pipeline_config.runtime.max_batch_size is only the requested cap and
+        # is often None here; self.max_batch_size is the authoritative value.
         max_batch_size = self.max_batch_size
+        assert max_batch_size is not None, (
+            "max_batch_size must be set in runtime config"
+        )
 
         with CompilationTimer("model") as timer:
             graph = self._build_graph(self.weights, self.adapter)
