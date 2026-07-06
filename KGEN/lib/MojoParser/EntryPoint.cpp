@@ -465,16 +465,25 @@ OwningOpRef<ModuleOp> LIT::cloneDeclModuleForCompilation(ASTDecl &decl,
                         /*preserveClosureTraitMethods=*/false);
   sortValueUses(*newModule);
 
-  // Mark any lit.fn with an empty body region as external. These are lazy
-  // bytecode stubs: the LSP skips resolveBody on imported FnOps to avoid
-  // pulling in expensive transitive imports, leaving them with 0-block body
-  // regions and no `external` attribute. Normal compilation never hits this
-  // because finalizeImportedBytecodeModules erases all stubs before the
-  // pipeline runs, but the LSP clones the module and runs the pipeline on the
-  // clone, which still contains the stubs.
+  // Give any lit.fn with an empty body region a placeholder entry block and
+  // mark it external. These are lazy bytecode stubs: the LSP skips
+  // resolveBody on imported FnOps to avoid pulling in expensive transitive
+  // imports, so their 0-block bodies survive into the cloned module the check
+  // pipeline runs on (normal compilation never sees this because
+  // finalizeImportedBytecodeModules erases stubs first). The block must be
+  // shaped like the real signature via addEntryBlock() -- lit.fn's body is a
+  // SizedRegion<1>, and FnOp::print indexes the block's arguments per
+  // parameter -- terminated by an `unresolved` lit.end_fn, the same
+  // placeholder the parser emits for an unresolved body (ParserStmts.cpp).
+  // The check pipeline skips external functions, so this body is never
+  // lowered, only verified structurally.
   newModule->walk([](LIT::FnOp func) {
-    if (func.getBodyRegion().empty())
-      func.setExternal(true);
+    if (!func.getBodyRegion().empty())
+      return;
+    func.setExternal(true);
+    Block *body = func.addEntryBlock();
+    OpBuilder builder = OpBuilder::atBlockEnd(body);
+    LIT::EndFnOp::create(builder, func.getLoc(), /*unresolved=*/true);
   });
 
   return newModule;
