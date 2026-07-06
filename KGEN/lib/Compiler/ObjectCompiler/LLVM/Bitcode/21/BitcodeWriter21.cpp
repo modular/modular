@@ -1604,8 +1604,13 @@ void ModuleBitcodeWriter::writeModuleInfo() {
   const std::string &DL = M.getDataLayoutStr();
   if (!DL.empty())
     writeStringRecord(Stream, bitc::MODULE_CODE_DATALAYOUT, DL, 0 /*TODO*/);
-  if (!M.getModuleInlineAsm().empty())
-    writeStringRecord(Stream, bitc::MODULE_CODE_ASM, M.getModuleInlineAsm(),
+  // LLVM now stores module-level inline asm as a list of fragments; concatenate
+  // them back into a single string to preserve this writer's record format.
+  std::string ModuleInlineAsm;
+  for (const auto &AsmFragment : M.getModuleInlineAsm())
+    ModuleInlineAsm += AsmFragment.Asm;
+  if (!ModuleInlineAsm.empty())
+    writeStringRecord(Stream, bitc::MODULE_CODE_ASM, ModuleInlineAsm,
                       0 /*TODO*/);
 
   // Emit information about sections and GC, computing how many there are. Also
