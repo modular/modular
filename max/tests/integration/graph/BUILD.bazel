@@ -39,6 +39,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_graph_telemetry.py",
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
+    "test_rowwise_reductions.py",
     "test_runtime_source_notes.py",
     "test_scatter.py",
 ]
@@ -264,6 +265,29 @@ modular_py_test(
     ],
     deps = [
         ":modular_graph_test",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Row-wise reduction correctness tests (CPU). Each of the ~31 parametrizations
+# builds and compiles one symbolic-dimension graph, so the wall time is
+# compile-dominated; shard_count parallelizes those compiles across CI workers
+# (see the "Avoid Per-Test Graph Recompilation" guidance in max/CLAUDE.md).
+modular_py_test(
+    name = "test_rowwise_reductions",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_rowwise_reductions.py",
+    ],
+    shard_count = 4,
+    deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
