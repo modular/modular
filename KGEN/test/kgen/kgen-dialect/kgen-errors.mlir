@@ -60,7 +60,7 @@ kgen.generator @scalar_params_verbose<n>(%x :
 
 // -----
 
-// expected-error @+1 {{invalid use of parameter with no declaration "abc"}}
+// expected-error @+1 {{funcTypeGenerator is not self-contained: it references parameter 'abc' by name instead of by index}}
 kgen.generator @scalar_params_verbose(%x : !kgen.scalar<abc>) {
   kgen.return
 }
@@ -166,7 +166,7 @@ kgen.generator @region_cycle() {
 
 // -----
 
-// expected-error @below {{'kgen.generator' op invalid use of parameter with no declaration "ty2"}}
+// expected-error @below {{'kgen.generator' op funcTypeGenerator is not self-contained: it references parameter 'ty2' by name instead of by index}}
 kgen.generator @badTypes<ty1 : dtype>(%a : !kgen.scalar<ty2>) {
   kgen.return
 }
@@ -189,7 +189,7 @@ kgen.func @test() {  // expected-note {{within 'kgen.func' @test}}
 
 // -----
 
-// expected-error @below {{invalid use of parameter with no declaration "dt"}}
+// expected-error @below {{funcTypeGenerator is not self-contained: it references parameter 'dt' by name instead of by index}}
 kgen.generator @region_params<r3: () -> !kgen.scalar<dt>>() {
   kgen.return
 }

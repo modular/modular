@@ -465,6 +465,27 @@ LogicalResult GeneratorOp::verify() {
     return emitOpError("LLVMArgMetadataArray size does not equal number of "
                        "arguments, got ")
            << argsArray.size();
+
+  // The `funcTypeGenerator` must be self-contained: a by-name
+  // `ParamDeclRefAttr` only resolves against this op's `inputParams`, so it
+  // must not appear. `SugarAttr` subtrees are skipped: a `SugarAttr` retains
+  // the original sugared form of an alias, which embeds a `ParamDeclRefAttr`
+  // purely as a display label (paired with the resolved value), not as a real
+  // reference. The walk must be pre-order so the skip prunes the subtree before
+  // its refs are visited.
+  ParamDeclRefAttr byNameRef;
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([](SugarAttr) { return WalkResult::skip(); });
+  walker.addWalk([&](ParamDeclRefAttr ref) {
+    byNameRef = ref;
+    return WalkResult::interrupt();
+  });
+  walker.walk<mlir::WalkOrder::PreOrder>(getFuncTypeGenerator());
+  if (byNameRef)
+    return emitOpError("funcTypeGenerator is not self-contained: it references "
+                       "parameter '")
+           << byNameRef.getName().getValue() << "' by name instead of by index";
+
   return success();
 }
 
