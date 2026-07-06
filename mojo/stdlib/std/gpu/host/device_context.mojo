@@ -8260,6 +8260,57 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             ](self._handle, other._handle)
         )
 
+    def num_streams(self) -> Int:
+        """Returns the number of streams available on this device context.
+
+        Returns:
+            The number of streams available on this device context.
+        """
+        # int AsyncRT_DeviceContext_numStreams(const DeviceContext *ctx)
+        return Int(
+            external_call[
+                "AsyncRT_DeviceContext_numStreams",
+                Int32,
+            ](self._handle)
+        )
+
+    def select_stream(self, stream_id: Int) raises -> DeviceContext:
+        """Returns a view of this device context bound to the given stream.
+
+        The returned context shares this context's full stream set, driver
+        context, and device memory pool; only the current-stream selector
+        differs, so work enqueued on it runs on stream `stream_id`. Stream 0 is
+        the base/default stream. Backends without a multi-stream model return a
+        view equivalent to this context.
+
+        Args:
+            stream_id: Index of the stream the returned view submits to.
+
+        Returns:
+            A device context view bound to stream `stream_id`.
+
+        Raises:
+            If the stream cannot be selected or created.
+        """
+        # const char *AsyncRT_DeviceContext_selectStream(
+        #     const DeviceContext **result, const DeviceContext *ctx,
+        #     unsigned int stream_id)
+        var result: _DeviceContextPtr[mut=True] = {}
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_selectStream",
+                _CString[],
+                UnsafePointer[_DeviceContextPtr[mut=True], origin_of(result)],
+                _DeviceContextPtr[mut=True],
+                c_uint,
+            ](UnsafePointer(to=result), self._handle, c_uint(stream_id))
+        )
+        # The runtime transferred ownership of the view's reference to us, so
+        # the wrapper must own it (and release on destruction).
+        var view = DeviceContext(result)
+        view._owning = True
+        return view^
+
     @always_inline
     def get_api_version(self) raises -> Int:
         """Returns the API version associated with this device.
