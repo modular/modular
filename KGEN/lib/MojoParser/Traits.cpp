@@ -1158,7 +1158,9 @@ Type LIT::mergeTwoMetaTypeBounds(SharedState &shared, ASTType typeA,
 
   auto [traitA, structA] = extractTraitBound(shared, typeA);
   auto [traitB, structB] = extractTraitBound(shared, typeB);
-  if (traitA == traitB)
+  // Constraints are scope-dependent, even when constraints expr appears the
+  // same, they might be evaluated to different value depending on the scope.
+  if (traitA == traitB && traitA.getConstraints().empty())
     return traitA;
 
   auto populateReplacer = [&](StructDeclOp structDecl,
