@@ -44,17 +44,19 @@ static constexpr StringRef liveValueIdsAfterNoReturnCallAttrName =
     ".mojo.live.valueids.after.no.return.call";
 
 namespace {
-/// A simple raise set linked list
+/// A simple raise set linked list. The elements are either BitVector (for dtor
+/// analysis) or TrackedAndInteriorLiveness (for uninit pass).
+template <typename ElementType>
 struct RaiseSetEntry {
   StringAttr label;
-  /// When analyzing the body of a try, this bitset indicates what a 'raise'
-  /// should produce based on its surrounding 'try's except block's
+  /// When analyzing the body of a try, this set element indicates what a
+  /// 'raise' should produce based on its surrounding 'try's except block's
   /// expectation with the matching label.
-  BitVector *raiseSet;
+  ElementType *raiseSet;
   // A linked list to the previous entry.
-  RaiseSetEntry *prev;
+  RaiseSetEntry<ElementType> *prev;
 
-  RaiseSetEntry *getMatchingRaiseSet(StringAttr label) {
+  RaiseSetEntry<ElementType> *getMatchingRaiseSet(StringAttr label) {
     auto matchingSet = this;
     while (matchingSet && matchingSet->label != label)
       matchingSet = matchingSet->prev;
@@ -1515,6 +1517,10 @@ public:
 
   LLVM_DUMP_METHOD void dump() const;
 
+  /// Print the interior origin IDs set as `{ #N ... }`.
+  static void printBV(const BitVector &interiorOriginBits,
+                      llvm::raw_ostream &os);
+
   /// This returns the number of distinct interior origins in the function.
   size_t getNumInteriorOrigins() const { return nextInteriorOriginID; }
 
@@ -1652,6 +1658,15 @@ void InteriorOriginTracker::addInteriorOrigin(InteriorOriginAttr interior) {
     addInteriorOrigin(nextInterior);
 }
 
+void InteriorOriginTracker::printBV(const BitVector &interiorOriginBits,
+                                    llvm::raw_ostream &os) {
+  os << "{";
+  for (int id = interiorOriginBits.find_first(); id >= 0;
+       id = interiorOriginBits.find_next(id))
+    os << " #" << id;
+  os << " }";
+}
+
 void InteriorOriginTracker::dump() const {
   static std::mutex dumpMutex;
   std::lock_guard<std::mutex> lock(dumpMutex);
@@ -1676,11 +1691,9 @@ void InteriorOriginTracker::dump() const {
   if (!interiorOriginInvalidationMap.empty()) {
     os << "Invalidation map:\n";
     for (auto &entry : interiorOriginInvalidationMap) {
-      os << "  " << entry.first << " => {";
-      for (int id = entry.second.find_first(); id >= 0;
-           id = entry.second.find_next(id))
-        os << " #" << id;
-      os << " }\n";
+      os << "  " << entry.first << " => ";
+      printBV(entry.second, os);
+      os << "\n";
     }
   }
   os << "\n";
@@ -1691,6 +1704,61 @@ void InteriorOriginTracker::dump() const {
 //===----------------------------------------------------------------------===//
 
 namespace {
+/// Liveness state for tracked values and interior origins at a program point.
+struct TrackedAndInteriorLiveness {
+  /// Bitvector of tracked value/field liveness.  Slot #0 is a reachability
+  /// sentinel used by control-flow merge.
+  BitVector tracked;
+
+  /// Bitvector of interior-origin validity (parallel to interior origin IDs).
+  BitVector interior;
+
+  TrackedAndInteriorLiveness(size_t numTrackedBits, size_t numInteriorBits)
+      : tracked(numTrackedBits), interior(numInteriorBits) {}
+
+  static TrackedAndInteriorLiveness
+  getEmptyWithMatchingSize(const TrackedAndInteriorLiveness &other) {
+    return TrackedAndInteriorLiveness(other.tracked.size(),
+                                      other.interior.size());
+  }
+
+  size_t countNumValuesLive() const { return tracked.count(); }
+  bool isReachable() const { return tracked[0]; }
+  void markReachable(bool value) { tracked[0] = value; }
+
+  /// Merge \p other into this state at a control-flow join.
+  void mergeWith(const TrackedAndInteriorLiveness &other) {
+    if (!other.isReachable())
+      return;
+    if (isReachable()) {
+      tracked &= other.tracked;
+      interior &= other.interior;
+    } else {
+      tracked = other.tracked;
+      interior = other.interior;
+    }
+  }
+
+  void swap(TrackedAndInteriorLiveness &other) {
+    tracked.swap(other.tracked);
+    interior.swap(other.interior);
+  }
+
+  /// Print tracked value liveness and, when present, interior-origin validity.
+  raw_ostream &print(const ValueSet &valueSet, raw_ostream &os) const {
+    valueSet.printBV(tracked, os);
+    if (!interior.empty()) {
+      os << ", interior = ";
+      InteriorOriginTracker::printBV(interior, os);
+    }
+    return os;
+  }
+
+  LLVM_DUMP_METHOD void dump(const ValueSet &valueSet) const {
+    print(valueSet, llvm::errs());
+  }
+};
+
 /// This helper class implements the second pass over a function body, which
 /// identifies and complains about uses of uninitialized values.
 ///
@@ -1700,7 +1768,9 @@ namespace {
 struct UninitializedValueScan {
   UninitializedValueScan(ValueSet &valueSet,
                          InteriorOriginTracker &interiorOriginTracker)
-      : valueSet(valueSet), interiorOriginTracker(interiorOriginTracker) {}
+      : valueSet(valueSet), interiorOriginTracker(interiorOriginTracker),
+        liveness(valueSet.getNumTotalBits(),
+                 interiorOriginTracker.getNumInteriorOrigins()) {}
   UninitializedValueScan(const UninitializedValueScan &existing) = delete;
 
   void scanFunction(FunctionLikeOp func);
@@ -1730,19 +1800,20 @@ private:
   /// This is information about all the interior origins used in the function.
   InteriorOriginTracker &interiorOriginTracker;
 
-  /// This is the set of values known to be live at this point.
-  BitVector liveValues;
+  /// This is the set of values and interior origins known to be live at this
+  /// point.
+  TrackedAndInteriorLiveness liveness;
 
   /// When analyzing the body of a loop, this bitset indicates what a 'continue'
   /// should intersect with.
-  BitVector *continueSet = nullptr;
+  TrackedAndInteriorLiveness *continueSet = nullptr;
   /// When analyzing the body of a loop, this bitset indicates what a 'break'
   /// should intersect with.
-  BitVector *breakSet = nullptr;
+  TrackedAndInteriorLiveness *breakSet = nullptr;
   /// When analyzing the body of a try, this bitset indicates what a
   /// 'raise' should intersect with.
   /// TODO: raise set should understand raise label target.
-  RaiseSetEntry *raiseEntryInfo = nullptr;
+  RaiseSetEntry<TrackedAndInteriorLiveness> *raiseEntryInfo = nullptr;
 };
 } // namespace
 
@@ -1756,24 +1827,25 @@ private:
   os << "UninitializedValueScan for ";
   valueSet.printFuncName(os);
   os << "\n  live = ";
-  valueSet.printBV(liveValues, os) << "\n  mutated = ";
+  liveness.print(valueSet, os);
+  os << "\n  mutated = ";
 
-  RaiseSetEntry *curr = raiseEntryInfo;
+  RaiseSetEntry<TrackedAndInteriorLiveness> *curr = raiseEntryInfo;
   os << " raise: {";
   while (curr) {
     os << curr->label << " : ";
-    valueSet.printBV(*curr->raiseSet, os) << "\n";
+    curr->raiseSet->print(valueSet, os) << "\n";
     curr = curr->prev;
   }
   os << " }";
 
   if (breakSet) {
     os << " break: ";
-    valueSet.printBV(*breakSet, os) << "\n";
+    breakSet->print(valueSet, os) << "\n";
   }
   if (continueSet) {
     os << " continue: ";
-    valueSet.printBV(*continueSet, os) << "\n";
+    continueSet->print(valueSet, os) << "\n";
   }
   os.flush();
 }
@@ -1874,7 +1946,7 @@ void UninitializedValueScan::checkUse(Value value, Operation &op,
 
   for (ValueRef access : accesses) {
     // The referenced value fields must be live.
-    if (!access.isAllPresent(liveValues))
+    if (!access.isAllPresent(liveness.tracked))
       diagnoseUsageError(access, op);
   }
 }
@@ -1907,7 +1979,7 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
   std::string valueName = valueInfo.getName().str();
   if (valueRef.isIndirect && valueRef.endBit == valueInfo.endValueBit &&
       valueRef.getSubfield(0, valueRef.getNumBits() - 1)
-          .isAllPresent(liveValues) &&
+          .isAllPresent(liveness.tracked) &&
       valueRef.getNumBits() != 1) {
     diag << "'" << valueName
          << "' used with all fields manually initialized "
@@ -1920,7 +1992,7 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
   // Specialize diagnostics for returns because it can be confusing why they are
   // "using" argument values otherwise.
   if (isa<KGEN::ReturnOp>(op)) {
-    addBadValueNameToDiag(valueRef, liveValues, valueSet, diag);
+    addBadValueNameToDiag(valueRef, liveness.tracked, valueSet, diag);
     diag << " is uninitialized at ";
 
     // Diagnostics with implicit function returns can be confusing because the
@@ -1935,7 +2007,7 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
 
     // If some fields are present and others are missing, complain about the
     // first whole field that is missing.
-    addBadValueNameToDiag(valueRef, liveValues, valueSet, diag);
+    addBadValueNameToDiag(valueRef, liveness.tracked, valueSet, diag);
   }
   diag.attachNote(valueInfo.value.getLoc())
       << "'" << valueName << "' declared here";
@@ -1948,7 +2020,7 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
   if (ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref)) {
     // Finally, marks its value live so any use after this isn't treated as
     // uninitialized.
-    valueRef.markBits(liveValues, true);
+    valueRef.markBits(liveness.tracked, true);
     return;
   }
 
@@ -1959,7 +2031,7 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
       valueSet.getValueRefsForAccess(value, isDeref);
   for (auto access : accesses) {
     // The referenced value fields must be live.
-    if (!access.isAllPresent(liveValues))
+    if (!access.isAllPresent(liveness.tracked))
       diagnoseUsageError(access, op);
   }
 }
@@ -1981,11 +2053,11 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
 
   // The value must be completely live in order for us to consume it.  If not,
   // use "checkUse" to diagnose the problem.
-  if (!valueRef.isAllPresent(liveValues))
+  if (!valueRef.isAllPresent(liveness.tracked))
     diagnoseUsageError(valueRef, op);
 
   // If tracked, marks its value as dead.
-  valueRef.markBits(liveValues, false);
+  valueRef.markBits(liveness.tracked, false);
 }
 
 /// The lit.ownership.mark_destroyed op consumes the whole object bit of
@@ -2009,7 +2081,7 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
 
   // Ignore a mark_destroyed if the whole value is already destroyed. This can
   // happen when a deinit method transfers self to another deinit method.
-  if (access.isAllMissing(liveValues)) {
+  if (access.isAllMissing(liveness.tracked)) {
     op.setAttr(unusedMarkDestroyName, UnitAttr::get(op.getContext()));
     return;
   }
@@ -2018,13 +2090,13 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
   ValueRef fullObjectBit = access.getSubfield(access.getNumBits() - 1, 1);
 
   // If not, then there is an error which we diagnose.
-  if (!fullObjectBit.isAllPresent(liveValues)) {
+  if (!fullObjectBit.isAllPresent(liveness.tracked)) {
     diagnoseUsageError(fullObjectBit, op);
     return;
   }
 
   // From this point on, the whole value is uninitialized.
-  access.markBits(liveValues, false);
+  access.markBits(liveness.tracked, false);
 }
 
 /// Check any unstructured origins that are accessed by the operation.
@@ -2033,7 +2105,7 @@ void UninitializedValueScan::checkOriginEffect(TypedAttr origin,
   SmallVector<ValueRef> accesses = valueSet.getValueRefsForOrigin(origin);
   for (auto access : accesses) {
     // The referenced value fields must be live.
-    if (!access.isAllPresent(liveValues))
+    if (!access.isAllPresent(liveness.tracked))
       diagnoseUsageError(access, op);
   }
 }
@@ -2074,7 +2146,7 @@ void UninitializedValueScan::handleAnyOriginUse(
       continue;
 
     // Can't be a use if the value isn't fully alive here.
-    if (!valueSet.getFullValueRef(i).isAllPresent(liveValues))
+    if (!valueSet.getFullValueRef(i).isAllPresent(liveness.tracked))
       continue;
 
     // Check to see if the operation directly initializes this origin
@@ -2110,17 +2182,17 @@ void UninitializedValueScan::handleAnyOriginUse(
 }
 
 void UninitializedValueScan::scanFunction(FunctionLikeOp func) {
-  // Initialize the BitVector with all the elements that are live-in. The
+  // Initialize the 'liveness' with all the elements that are live-in. The
   // sentinel slot #0 is treated by OriginTrackable as live-in and dead-out
-  // which naturally works with our terminators.
-  liveValues.resize(valueSet.getNumTotalBits());
+  // which naturally works with our terminators.  The bits are already allocated
+  // by our constructor.
   for (const ValueInfo &info : valueSet.getValueInfos())
     if (!info.startsUninit) {
       // If the whole value is live on entry, notice that.
-      liveValues.set(info.startValueBit, info.endValueBit);
+      liveness.tracked.set(info.startValueBit, info.endValueBit);
     } else if (info.isFullObjectLiveOnEntry) {
       // If /just/ the full object bit is live on entry, set it.
-      liveValues.set(info.endValueBit - 1);
+      liveness.tracked.set(info.endValueBit - 1);
     }
 
   // Scan the body of the function.
@@ -2327,8 +2399,8 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
         // object is live then something consumed the full object bit, so we
         // also don't want partial destruction.
         if (isa<LIT::ErrorReturnOp>(op) && valueInfo.isFullObjectLiveOnEntry &&
-            !valueInfo.getFullValueRef(0).isAllMissing(liveValues) &&
-            !valueInfo.getFullValueRef(0).isAllPresent(liveValues))
+            !valueInfo.getFullValueRef(0).isAllMissing(liveness.tracked) &&
+            !valueInfo.getFullValueRef(0).isAllPresent(liveness.tracked))
           op.setAttr(selfPartiallyInitializedAttrName,
                      UnitAttr::get(op.getContext()));
         continue;
@@ -2362,7 +2434,7 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
       SmallVector<int32_t> liveValueIds;
       for (unsigned i = 0, e = valueSet.getValueInfos().size(); i != e; ++i) {
         const auto &valueInfo = valueSet.getValueInfo(i);
-        if (valueInfo.getFullValueRef(i).isAllPresent(liveValues))
+        if (valueInfo.getFullValueRef(i).isAllPresent(liveness.tracked))
           liveValueIds.push_back(i);
       }
       if (!liveValueIds.empty())
@@ -2373,20 +2445,7 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
 
   // Indicate that this block is no longer live, so no values from it get merged
   // at "if" joins etc.
-  liveValues[0] = false;
-}
-
-// When merging a control flow join, the result is the intersection of the two
-// branches, but only if they're both live. Otherwise take the live one (if
-// present).
-static void mergeLiveValues(BitVector &liveValues, const BitVector &mergeWith) {
-  // If both are dead, we don't care which one we end up with.
-  if (!mergeWith[0])
-    return;
-  if (liveValues[0])
-    liveValues &= mergeWith;
-  else
-    liveValues = mergeWith;
+  liveness.markReachable(false);
 }
 
 /// This is HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, which all
@@ -2394,22 +2453,23 @@ static void mergeLiveValues(BitVector &liveValues, const BitVector &mergeWith) {
 void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   if (isa<HLCF::BreakOp, ParamForBreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
-    mergeLiveValues(*breakSet, liveValues);
+    breakSet->mergeWith(liveness);
   } else if (isa<HLCF::ContinueOp, ParamForContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
-    mergeLiveValues(*continueSet, liveValues);
+    continueSet->mergeWith(liveness);
   } else {
     StringAttr label = cast<LIT::TryRaiseOp>(op).getLabelAttr();
-    RaiseSetEntry *matchingSet = raiseEntryInfo->getMatchingRaiseSet(label);
+    RaiseSetEntry<TrackedAndInteriorLiveness> *matchingSet =
+        raiseEntryInfo->getMatchingRaiseSet(label);
     //  lower-semantic-cf should guarantee there is a matching set.
     assert(matchingSet && "No matching 'try'?");
     // Only merges the set with the matching label.
-    mergeLiveValues(*matchingSet->raiseSet, liveValues);
+    matchingSet->raiseSet->mergeWith(liveness);
   }
 
   // Indicate that all values are live after the terminator so an 'if' will get
   // properly intersected with the other side of the branch.
-  liveValues[0] = false;
+  liveness.markReachable(false);
 }
 
 /// This is HLCF::IfOp or ParamIfOp, which are all if-like.
@@ -2421,11 +2481,11 @@ void UninitializedValueScan::checkIfLikeOp(Operation &op) {
          op.getRegion(1).hasOneBlock() &&
          "if-like op should have two single-block regions");
 
-  BitVector liveValuesCopy = liveValues;
+  TrackedAndInteriorLiveness livenessCopy = liveness;
   scanBlock(op.getRegion(0).front());
-  liveValuesCopy.swap(liveValues);
+  livenessCopy.swap(liveness);
   scanBlock(op.getRegion(1).front());
-  mergeLiveValues(liveValues, liveValuesCopy);
+  liveness.mergeWith(livenessCopy);
 }
 
 // This is used for the HLCF::ElifOp.
@@ -2439,23 +2499,24 @@ void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
   // The ultimate live-out set is the intersection of each of the "then" blocks,
   // along with the live-out set of the ultimate else.  Start assuming this set
   // isn't reachable.
-  BitVector thenLiveOutValues(liveValues.size());
-  BitVector scratchSet;
+  auto thenLiveOutValues =
+      TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
+  TrackedAndInteriorLiveness scratchSet = thenLiveOutValues;
 
   for (size_t nextElIfRegion = 0, e = ifRegions.size(); nextElIfRegion != e;
        nextElIfRegion += 2) {
-    // Check the next condition accumulating into liveValues.
+    // Check the next condition accumulating into liveness.
     scanBlock(ifRegions[nextElIfRegion].front());
     // Save the live set after the condition but before the 'then' block.
-    scratchSet = liveValues;
+    scratchSet = liveness;
 
     // Scan the "then" block for this condition, the result is the exit set for
     // this case.
     scanBlock(ifRegions[nextElIfRegion + 1].front());
-    mergeLiveValues(thenLiveOutValues, liveValues);
+    thenLiveOutValues.mergeWith(liveness);
 
     // Restore the live-in set to the set of things before the 'then' block.
-    std::swap(liveValues, scratchSet);
+    std::swap(liveness, scratchSet);
   }
 
   // After each of the cases has been evaluated, check the 'else' block.
@@ -2463,7 +2524,7 @@ void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
 
   // The live out set of the whole 'elif' is the intersection of the output set
   // of the else as well as all the 'then' blocks.
-  mergeLiveValues(liveValues, thenLiveOutValues);
+  liveness.mergeWith(thenLiveOutValues);
 }
 
 void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
@@ -2474,11 +2535,12 @@ void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   // The default continueSet is the live-in set of values.  This can lose
   // values if some 'continue' path through the body of the loop consumes a
   // value.
-  BitVector continueSet(liveValues);
+  TrackedAndInteriorLiveness continueSet = liveness;
   bodySets.continueSet = &continueSet;
 
   // The 'breakSet' of the loop body will be the live outs of the loop.
-  BitVector breakSet(liveValues.size());
+  auto breakSet =
+      TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
   bodySets.breakSet = &breakSet;
 
   // Iteratively scan the loop body until the live-in set converges.  This is
@@ -2486,15 +2548,15 @@ void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   // this will terminate.
   size_t numLiveIn;
   do {
-    numLiveIn = continueSet.count();
+    numLiveIn = continueSet.countNumValuesLive();
     // Scan the body: any breaks will intersect their live-out set with
     // 'breakSet', and any continues will intersect their live-out set with
     // 'continueSet'.
-    bodySets.liveValues = continueSet;
+    bodySets.liveness = continueSet;
     bodySets.scanBlock(loopOp.getRegion(0).front());
 
     // If any bits got cleared from the continueSet then we need to iterate.
-  } while (continueSet.count() != numLiveIn);
+  } while (continueSet.countNumValuesLive() != numLiveIn);
   // Any code after the loop continues on with the breaks valid.
 
   // If the loop has an 'else' region, scan it and then intersect with the loop
@@ -2502,16 +2564,16 @@ void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   // because LowerSemanticCF already processed them.
   if (loopOp.getNumRegions() == 2 && !isa<ParamForOp>(loopOp)) {
     scanBlock(loopOp.getRegion(1).front());
-    mergeLiveValues(liveValues, breakSet);
+    liveness.mergeWith(breakSet);
   } else {
-    liveValues = std::move(breakSet);
+    liveness = std::move(breakSet);
   }
 }
 
 void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
   UninitializedValueScan bodySets(valueSet, interiorOriginTracker);
   // Our current live-in set is live-in to the try body.
-  bodySets.liveValues = liveValues;
+  bodySets.liveness = liveness;
 
   // Try is transparent to break/continue.
   bodySets.continueSet = continueSet;
@@ -2519,10 +2581,11 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
 
   // We capture all the common values live-out of raise's as being the live-in
   // to the except block.
-  BitVector exceptSet(liveValues.size());
+  auto exceptSet =
+      TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
   // Attach a new entry to the try scope, such that the inner try op only merge
   // the exceptSet with the matching label.
-  RaiseSetEntry exceptInfo = {
+  RaiseSetEntry<TrackedAndInteriorLiveness> exceptInfo = {
       tryOp.getLabelAttr(),
       &exceptSet,
       raiseEntryInfo,
@@ -2531,7 +2594,7 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
   bodySets.scanBlock(tryOp.getTryRegion().front());
 
   // The live-ins to the except block are the exceptSet.
-  liveValues = std::move(exceptSet);
+  liveness = std::move(exceptSet);
   scanBlock(tryOp.getExceptRegion().front());
 
   // The live-out set of the bodySet is the live-in to the else block, but
@@ -2541,7 +2604,7 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
 
   // The fall through live values are the intersection from the except and
   // else blocks.
-  mergeLiveValues(liveValues, bodySets.liveValues);
+  liveness.mergeWith(bodySets.liveness);
 }
 
 //===----------------------------------------------------------------------===//
@@ -3462,7 +3525,7 @@ private:
 
   /// When analyzing the body of a try, this bitset indicates what a
   /// 'raise' should intersect with.
-  RaiseSetEntry *raiseEntryInfo = nullptr;
+  RaiseSetEntry<BitVector> *raiseEntryInfo = nullptr;
 
   /// When analyzing the body of a loop, these bitset indicates what a 'break'
   /// or 'continue' should produce based on its consumed value set for the
@@ -3491,7 +3554,7 @@ private:
   os << "\n  ";
   valueSet.printBV(consumedValues, os) << "\n";
 
-  RaiseSetEntry *curr = raiseEntryInfo;
+  RaiseSetEntry<BitVector> *curr = raiseEntryInfo;
   os << " raise: {";
   while (curr) {
     os << curr->label << " : ";
@@ -4121,7 +4184,7 @@ void DestructorInsertion::checkTryOp(LIT::TryOp tryOp) {
   // Ok, finally we process the try body.  Any 'raise's within the try body
   // use the consumed values set on entry to the except block.
   // Attach current raise set info to the list as we get one scope deeper.
-  RaiseSetEntry curInfo = {
+  RaiseSetEntry<BitVector> curInfo = {
       tryOp.getLabelAttr(),
       &exceptSets.consumedValues,
       raiseEntryInfo,
