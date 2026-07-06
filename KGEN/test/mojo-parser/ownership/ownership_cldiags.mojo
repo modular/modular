@@ -488,7 +488,7 @@ def bad_addr_space[
     addr_space: AddressSpace
 ](ptr: UnsafePointer[MemExample, address_space=addr_space, ...]):
     # expected-error @+1 {{cannot destroy value in non-default address space}}
-    _ = __get_address_as_owned_value(ptr.address)
+    _ = __get_address_as_owned_value(ptr._get_kgen_pointer())
 
 
 # Returning a reference to the caller's stack.
