@@ -1139,24 +1139,44 @@ SmallVector<ConstraintAttr> LIT::canonicalizeTraitSymbolsAndConstraints(
   return constraints;
 }
 
+static std::pair<TraitType, StructDeclOp> extractTraitBound(SharedState &shared,
+                                                            ASTType type) {
+  if (auto anyTrait = dyn_cast<AnyTraitType>(type.extractMetaType()))
+    return {anyTrait.getTraitType(), nullptr};
+  if (isa<KGEN::NonStructTypeType>(type))
+    return extractTraitBound(shared, shared.getBuiltinStubsMLIRType(SMLoc()));
+
+  ASTDecl *decl = type.getDecl(shared);
+  auto structDecl = cast<StructDeclOp>(decl->getIfOperation());
+  return {structDecl.getCanonicalTrait(), structDecl};
+}
+
 Type LIT::mergeTwoMetaTypeBounds(SharedState &shared, ASTType typeA,
                                  ASTType typeB) {
   if (typeA.isEqualCanon(typeB))
     return typeA;
 
-  auto extractTraitBound = [&](ASTType type) -> TraitType {
-    if (auto anyTrait = dyn_cast<AnyTraitType>(type.extractMetaType()))
-      return anyTrait.getTraitType();
-
-    ASTDecl *decl = type.getDecl(shared);
-    auto structDecl = cast<StructDeclOp>(decl->getIfOperation());
-    return structDecl.getCanonicalTrait();
-  };
-
-  TraitType traitA = extractTraitBound(typeA);
-  TraitType traitB = extractTraitBound(typeB);
+  auto [traitA, structA] = extractTraitBound(shared, typeA);
+  auto [traitB, structB] = extractTraitBound(shared, typeB);
   if (traitA == traitB)
     return traitA;
+
+  auto populateReplacer = [&](StructDeclOp structDecl,
+                              StructMetaType structType) -> ParameterEvaluator {
+    ParameterEvaluator replacer = shared.getParameterEvaluator();
+    ArrayRef<ParamDeclAttr> paramDecls = structDecl.getInputParams();
+    for (auto [decl, param] :
+         llvm::zip_equal(paramDecls, structType.getParamValues())) {
+      replacer.setDeclBinding(decl, param);
+    }
+    return replacer;
+  };
+
+  std::optional<ParameterEvaluator> replacerA, replacerB;
+  if (auto metaA = sugarDynCast<StructMetaType>(typeA); metaA && structA)
+    replacerA = populateReplacer(structA, metaA);
+  if (auto metaB = sugarDynCast<StructMetaType>(typeB); metaB && structB)
+    replacerB = populateReplacer(structB, metaB);
 
   llvm::SmallDenseSet<SymbolRefAttr> symbolsA(traitA.getSymbols().begin(),
                                               traitA.getSymbols().end());
@@ -1175,10 +1195,18 @@ Type LIT::mergeTwoMetaTypeBounds(SharedState &shared, ASTType typeA,
     for (SymbolRefAttr commonTrait : symbolsA) {
       // The original constraints for the common trait.
       SmallVector<ConstraintAttr, 2> origCons;
-      if (!traitA.getConstraints().empty())
-        origCons.push_back(findConstraint(traitA, commonTrait));
-      if (!traitB.getConstraints().empty())
-        origCons.push_back(findConstraint(traitB, commonTrait));
+      if (!traitA.getConstraints().empty()) {
+        ConstraintAttr consA = findConstraint(traitA, commonTrait);
+        if (replacerA)
+          consA = cast<ConstraintAttr>(replacerA->getReboundAttribute(consA));
+        origCons.push_back(consA);
+      }
+      if (!traitB.getConstraints().empty()) {
+        ConstraintAttr consB = findConstraint(traitB, commonTrait);
+        if (replacerB)
+          consB = cast<ConstraintAttr>(replacerB->getReboundAttribute(consB));
+        origCons.push_back(consB);
+      }
 
       assert(!origCons.empty());
       // Conjunct the constraints.

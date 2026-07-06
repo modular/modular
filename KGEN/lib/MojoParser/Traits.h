@@ -57,6 +57,8 @@ TraitType getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
 
 /// Merge two meta-type values `typeA` and `typeB` into a single meta-type whose
 /// trait bound is the common (intersection) bound of the two inputs.
+/// Assumption: TypeA and TypeB must be the first level meta type, i.e., either
+/// a trait type or a struct meta type.
 Type mergeTwoMetaTypeBounds(SharedState &shared, ASTType typeA, ASTType typeB);
 
 FnTypeGeneratorType specializeSignature(FnOp traitFn, ASTType newSelfType,
