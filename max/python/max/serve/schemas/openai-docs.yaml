@@ -1105,6 +1105,21 @@ components:
           type: boolean
           description: |
             Whether to return log probabilities of the output tokens or not.
+        cache_salt:
+          type: string
+          maxLength: 512
+          description: |
+            Per-request salt that isolates this prompt's prefix-cache
+            entries in multi-tenant deployments. Requires
+            `kv_cache_hash_algo=sha256` or `sha256_64`.
+        reasoning_split:
+          type: boolean
+          default: true
+          description: |
+            Controls whether reasoning text is returned in a separate
+            `reasoning` field. Setting `false` folds reasoning into
+            `content` wrapped in `<think>...</think>` and is honored only
+            by MiniMax M3.
         response_format:
           type: object
           description: |
