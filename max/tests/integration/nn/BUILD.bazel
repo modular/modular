@@ -108,6 +108,7 @@ modular_py_test(
             "bench_row_mean_of_squares_gpu.py",
             "test_conv_transpose_gpu.py",
             "test_grouped_matmul_swiglu_nvfp4_gpu.py",
+            "test_int8_w8a8_apple_gpu.py",
             "test_linear_fp8_amd_gpu.py",
             "test_linear_nvfp4_apple_gpu.py",
             "test_lora_kernels_gpu.py",
@@ -347,6 +348,7 @@ modular_py_test(
     size = "large",
     srcs = [
         "conftest.py",
+        "test_int8_w8a8_apple_gpu.py",
         "test_linear_nvfp4_apple_gpu.py",
     ],
     exec_properties = {

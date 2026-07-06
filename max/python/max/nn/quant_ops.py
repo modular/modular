@@ -15,6 +15,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
 from .kernels import (
+    _apple_int8_w8a8_matmul,
     _apple_weight_only_block_scaled_matmul,
     _fused_qkv_index_ragged_matmul_scaled_mxfp8,
     _fused_qkv_ragged_matmul_scaled_float4,
@@ -357,6 +358,38 @@ def _matmul_float8(
     )
 
 
+def _matmul_int8(
+    x: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    bias: TensorValue | None = None,
+) -> TensorValue:
+    """Computes x @ weight.T (+bias) with symmetric int8 W8A8 quant (Apple M5).
+
+    The activation ``x`` (bf16) is dynamically quantized to int8 per token and
+    the pre-quantized int8 ``weight`` (per-output-channel ``weight_scale``) is
+    fed to the int8 widening-MMA GEMM. Apple M5 only -- there is no
+    NVIDIA/AMD int8 W8A8 dense path here.
+
+    Args:
+        x: The bf16 input activation, shape ``[M, K]``.
+        weight: The int8 weight, shape ``[N, K]`` (RTN-quantized at load).
+        weight_scale: The fp32 per-output-channel weight scale, ``[N, 1]``.
+        bias: Optional per-output-channel bias, shape ``[N]``; fused into the
+            dequant epilogue (added after dequant) instead of a separate add.
+
+    Returns:
+        The output tensor in bf16, shape ``[M, N]``.
+    """
+    if not _is_apple_gpu():
+        raise NotImplementedError(
+            "int8 W8A8 dense matmul is only implemented for Apple M5 GPUs"
+        )
+    return _apple_int8_w8a8_matmul(
+        x, weight, weight_scale, bias=bias, out_type=DType.bfloat16
+    )
+
+
 def quantized_matmul(
     x: TensorValue,
     weight: TensorValue,
@@ -364,6 +397,7 @@ def quantized_matmul(
     input_scale: TensorValue | None,
     quant_config: QuantConfig,
     weight_scale_2: TensorValue | None = None,
+    bias: TensorValue | None = None,
 ) -> TensorValue:
     """Single entry point for all quantized dense matmuls.
 
@@ -378,6 +412,8 @@ def quantized_matmul(
             static FP8).
         quant_config: The quantization configuration.
         weight_scale_2: Additional weight scale factor (NVFP4 only).
+        bias: Optional bias tensor. Only the int8 W8A8 (Apple M5) path fuses it
+            into the matmul epilogue; other formats leave the caller to add it.
 
     Returns:
         The output tensor.
@@ -418,6 +454,8 @@ def quantized_matmul(
                 input_scale,
                 quant_config,
             )
+        case QuantFormat.INT8_W8A8:
+            return _matmul_int8(x, weight, weight_scale, bias=bias)
         case _:
             raise ValueError(
                 f"Unsupported quantization format for dense matmul: {quant_config.format}"

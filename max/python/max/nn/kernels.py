@@ -6333,6 +6333,92 @@ def _apple_weight_only_block_scaled_matmul(
     return result
 
 
+def _apple_int8_w8a8_matmul(
+    a: TensorValue,
+    b: TensorValue,
+    b_scale: TensorValue,
+    bias: TensorValue | None = None,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Apple M5 int8 W8A8 matmul: ``out = dequant(quant(a) @ b^T)``.
+
+    Fused single graph op wrapping ``int8_matmul.mojo``: the bf16 activation
+    ``a`` is dynamically quantized to int8 (symmetric per-token absmax/127)
+    *inside* the op, matmul'd against the pre-quantized int8 weight ``b`` on the
+    int8 widening-MMA datapath (int32 accumulate), then dequantized by the
+    per-token activation scale times the per-output-channel weight scale (with
+    an optional bias added after dequant). Keeping the activation quant inside
+    the op avoids materializing the int8 activation + its scales as separate
+    graph values (and the extra per-Linear dispatches that entails).
+
+    Args:
+        a: The bf16 activation, shape ``[M, K]``.
+        b: The int8 weight, shape ``[N, K]`` (``transpose_b``; RTN-quantized
+            per output channel at load).
+        b_scale: The fp32 per-output-channel weight scale, shape ``[N, 1]`` or
+            ``[N]``.
+        bias: Optional bias in ``out_type``, shape ``[N]``; added after dequant.
+        out_type: The output dtype (``bfloat16``, ``float16``, or ``float32``).
+
+    Returns:
+        The matmul result, shape ``[M, N]``.
+    """
+    if a.rank != 2 or b.rank != 2:
+        raise ValueError("Both a and b must be rank 2 tensors")
+    if a.dtype != DType.bfloat16:
+        raise ValueError(f"activation a must be bfloat16, got {a.dtype}")
+    if b.dtype != DType.int8:
+        raise ValueError(f"weight b must be int8, got {b.dtype}")
+    if a.shape[1] != b.shape[1]:
+        raise ValueError("a and b must share the K dimension (a[M,K], b[N,K])")
+
+    # The kernel narrows the B row stride (K) and the tile-count math (N) to
+    # UInt16 (``MmaOpApple``); K or N > 65535 silently overflows and corrupts
+    # the output. The in-kernel ``debug_assert`` is a release no-op, so gate it
+    # here at graph build (always on). K and N are static for FLUX Linears.
+    n_dim, k_dim = b.shape[0], b.shape[1]
+    if isinstance(k_dim, StaticDim) and int(k_dim) > 65535:
+        raise ValueError(
+            "Apple int8 W8A8 matmul: K (b.shape[1]) must be <= 65535 "
+            f"(UInt16 stride limit), got {int(k_dim)}"
+        )
+    if isinstance(n_dim, StaticDim) and int(n_dim) > 65535:
+        raise ValueError(
+            "Apple int8 W8A8 matmul: N (b.shape[0]) must be <= 65535 "
+            f"(UInt16 stride limit), got {int(n_dim)}"
+        )
+
+    # The kernel reads a flat per-channel scale ``[N]``; accept the rowwise
+    # ``[N, 1]`` weight-scale layout and squeeze it.
+    b_scale = b_scale.to(a.device)
+    if b_scale.rank == 2:
+        b_scale = ops.reshape(b_scale, [b_scale.shape[0]])
+    if b_scale.dtype != DType.float32:
+        b_scale = ops.cast(b_scale, DType.float32)
+
+    # Custom-op input arity is fixed per registration, so the optional bias is
+    # a separate op name (`.bias`), the same idiom as the FP8 fused-QKV op --
+    # not a comptime flag on one op.
+    op_name = "mo.matmul.int8.w8a8.apple"
+    values = [a, b, b_scale]
+    if bias is not None:
+        op_name += ".bias"
+        values.append(ops.cast(bias.to(a.device), out_type))
+
+    result = ops.custom(
+        op_name,
+        device=a.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=out_type, shape=[a.shape[0], b.shape[0]], device=a.device
+            )
+        ],
+    )[0].tensor
+
+    return result
+
+
 def dynamic_block_scaled_matmul_mxfp4(
     a: TensorValue,
     b: TensorValue,

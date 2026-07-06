@@ -39,7 +39,10 @@ from max.profiler import traced
 
 from ..flux2 import Flux2Transformer2DModel
 from ..model_config import Flux2Config
-from ..weight_adapters import adapt_weights
+from ..weight_adapters import (
+    adapt_weights,
+    verify_int8_quantization_consistency,
+)
 
 
 class DenoiseStep(Module):
@@ -217,6 +220,12 @@ class Denoiser(CompiledComponent):
         raw_state_dict = adapt_weights(
             raw_state_dict, transformer_config.quant_config
         )
+        # ``weights`` caches every materialized source buffer in its shared
+        # ``_st_weight_map`` and is unused past this point. Drop it so the
+        # int8 W8A8 path (which quantizes the bf16 Linears away in
+        # ``adapt_weights``) actually releases the original bf16 buffers rather
+        # than keeping stale refs alongside the int8 weights.
+        del weights
 
         has_guidance_embedder = any(
             "time_guidance_embed.guidance_embedder." in k
@@ -239,6 +248,12 @@ class Denoiser(CompiledComponent):
         state_dict: dict[str, Any] = {
             f"transformer.{key}": value for key, value in raw_state_dict.items()
         }
+        # For int8 W8A8, reconcile the RTN-quantized weights against the
+        # model's int8 Linears so a whitelist/resolve drift fails here with a
+        # named layer, not later as a cryptic dtype error in the matmul op.
+        qc = transformer_config.quant_config
+        if qc is not None and qc.is_int8_w8a8:
+            verify_int8_quantization_consistency(fused, state_dict)
         fused.load_state_dict(state_dict, weight_alignment=1)
 
         # Build and compile graph. When running multi-device, append

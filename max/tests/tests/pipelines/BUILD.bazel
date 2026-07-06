@@ -15,6 +15,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental/torch",
         "//max/python/max/nn",
@@ -29,6 +30,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/step3p5",
         "//max/python/max/pipelines/weights",
         # TODO(GEX-2238): replace data field in WeightData with driver tensor.
+        requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),
     ],

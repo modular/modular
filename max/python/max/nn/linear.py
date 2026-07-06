@@ -127,12 +127,14 @@ class Linear(Module, Shardable):
         self.clip_weight = clip_weight
         self.quant_config = quant_config
 
-        # Packed FP4 weights are stored as uint8 (two values per byte).
-        weight_dtype = (
-            DType.uint8
-            if quant_config is not None and quant_config.is_fp4
-            else dtype
-        )
+        # Packed FP4 weights are stored as uint8 (two values per byte); int8
+        # W8A8 weights are stored as int8 (RTN-quantized at load).
+        weight_dtype = dtype
+        if quant_config is not None:
+            if quant_config.is_fp4:
+                weight_dtype = DType.uint8
+            elif quant_config.is_int8_w8a8:
+                weight_dtype = DType.int8
 
         if not is_sharding:
             self.weight = Weight(
@@ -518,6 +520,20 @@ class Linear(Module, Shardable):
         if self.clip_weight:
             weight = clamp(weight, -self.clip_weight, self.clip_weight)
 
+        # The int8 W8A8 (Apple M5) matmul fuses the bias into its dequant
+        # epilogue; hand it in so the `.bias` op fires instead of a separate
+        # add. Every other path still adds the bias below.
+        fuse_bias = (
+            self.bias is not None
+            and self.quant_config is not None
+            and self.quant_config.is_int8_w8a8
+        )
+        fused_bias = (
+            self.bias.to(x.device)
+            if fuse_bias and self.bias is not None
+            else None
+        )
+
         res = linear(
             x,
             weight,
@@ -526,9 +542,10 @@ class Linear(Module, Shardable):
             self.input_scale,
             self.weight_scale,
             self.weight_scale_2,
+            bias=fused_bias,
         )
 
-        if self.bias is not None:
+        if self.bias is not None and not fuse_bias:
             res += self.bias.to(res.device)
         return res
 
@@ -541,8 +558,14 @@ def linear(
     input_scale: TensorValue | None = None,
     weight_scale: TensorValue | None = None,
     weight_scale_2: TensorValue | None = None,
+    bias: TensorValue | None = None,
 ) -> TensorValue:
-    """Computes x @ weight.T with quantization support."""
+    """Computes x @ weight.T (+bias) with quantization support.
+
+    ``bias`` is only consumed by the int8 W8A8 (Apple M5) path, which fuses it
+    into the matmul dequant epilogue; for every other path it is ignored and
+    the caller is responsible for adding it.
+    """
     if quantization_encoding is not None:
         return ops.qmatmul(quantization_encoding, None, x, weight)
     elif quant_config:
@@ -567,6 +590,7 @@ def linear(
             input_scale,
             quant_config,
             weight_scale_2,
+            bias=bias,
         )
 
         if leading_dims is not None:

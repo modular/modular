@@ -90,6 +90,13 @@ class QuantFormat(Enum):
     MXFP4 = "mxfp4"
     """Microscaling FP4 (MX) quantization format."""
 
+    INT8_W8A8 = "int8-w8a8"
+    """Symmetric int8 W8A8: per-output-channel (rowwise) int8 weight scales and
+    per-token (dynamic rowwise) int8 activation scales, both symmetric
+    absmax/127. Weights are RTN-quantized at load (no pre-quantized checkpoint).
+    Apple M5 only: routes to the int8 widening-MMA GEMM
+    (``int8_matmul.mojo``)."""
+
 
 @dataclass
 class WeightScaleSpec:
@@ -360,6 +367,11 @@ class QuantConfig:
     def is_fp4(self) -> bool:
         """``True`` if this config represents any FP4 variant (NVFP4 or MXFP4)."""
         return self.is_nvfp4 or self.is_mxfp4
+
+    @property
+    def is_int8_w8a8(self) -> bool:
+        """``True`` if this config represents symmetric int8 W8A8."""
+        return self.format == QuantFormat.INT8_W8A8
 
     def shared_experts_dtype(self, routed_weight_dtype: DType) -> DType:
         """Resolve weight dtype for MoE shared-expert MLPs."""
