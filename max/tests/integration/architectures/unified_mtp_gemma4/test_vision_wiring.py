@@ -70,6 +70,21 @@ def test_unified_mtp_gemma4_arch_is_multimodal() -> None:
     assert unified_mtp_gemma4_arch.pipeline_model is UnifiedMTPGemma4Model
 
 
+def test_unified_mtp_gemma4_pins_llguidance_backend() -> None:
+    """The MTP arch must pin the llguidance structured-output backend.
+
+    gemma4's tool parser emits llguidance-format grammars xgrammar cannot
+    compile. gemma4 + MTP speculative decoding resolves the target to this
+    arch (see ``test_config_pure.py::TestSpeculativeArchitectureOverride``), so
+    without the pin the backend silently defaults to xgrammar and the worker
+    crashes on the first tool-call grammar.
+    """
+    assert (
+        unified_mtp_gemma4_arch.default_structured_output_backend
+        == "llguidance"
+    )
+
+
 def test_mtp_graph_declares_per_device_vision_inputs() -> None:
     """The fused MTP graph signature must carry vision inputs.
 

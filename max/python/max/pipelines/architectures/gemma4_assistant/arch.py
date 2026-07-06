@@ -42,4 +42,8 @@ gemma4_assistant_arch = SupportedArchitecture(
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         0, always_signal_buffers=True
     ),
+    # Pin to llguidance (see UnifiedMTPGemma4ForCausalLM): the gemma4 tool
+    # parser emits llguidance-format grammars xgrammar cannot compile. Guards
+    # the case where this draft checkpoint is served as a standalone target.
+    default_structured_output_backend="llguidance",
 )

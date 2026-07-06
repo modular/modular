@@ -1202,6 +1202,13 @@ class PipelineConfig(ConfigFileModel):
         self.sampling.structured_output_backend = (
             DEFAULT_STRUCTURED_OUTPUT_BACKEND
         )
+        logger.info(
+            "Defaulting structured output backend to the global default %r "
+            "(architecture %s declares no default). Override with "
+            "--structured-output-backend.",
+            DEFAULT_STRUCTURED_OUTPUT_BACKEND,
+            arch.name if arch is not None else None,
+        )
 
     def _validate_and_resolve_overlap_scheduler(
         self, arch: Any = None, max_batch_size: int = 1
