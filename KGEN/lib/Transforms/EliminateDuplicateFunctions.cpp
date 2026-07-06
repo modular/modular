@@ -114,6 +114,10 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
 
   void startDeduplication();
 
+  /// Once all equivalence classes are formed, redirect every callsite to the
+  /// lexicographically smallest symbol in its callee's class
+  void replaceCallSitesWithLexMin();
+
   void finishHandleNode(CallGraphNode *node) {
     node->doneDedup.copy().emplace();
     if (numWorkItems.fetch_sub(1) == 1)
@@ -139,7 +143,12 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
 
   // Map from the target FuncOp to callsites that need to be redirected.
   DenseSet<FuncOp, DuplicateFuncOpEquivalenceInfo> uniqueFuncSet;
-  // The mutex to protect uniqueFuncSet accesses.
+
+  // Maps each class representative's symbol name to the lexicographically
+  // smallest symbol of that class.
+  DenseMap<StringAttr, FuncOp> representativeToLexMin;
+
+  // Guards `uniqueFuncSet` and `representativeToLexMin`.
   std::mutex setAccessMutex;
 
   // Number of deduplicated functions
@@ -229,7 +238,10 @@ void CallGraph::deduplicateNode(CallGraphNode *node) {
     // Done rewriting the FuncOp, now updates the map.
     {
       std::lock_guard<std::mutex> lock(setAccessMutex);
-      uniqueFuncSet.insert(node->func);
+      auto [representative, inserted] = uniqueFuncSet.insert(node->func);
+      FuncOp &lexMin = representativeToLexMin[representative->getSymNameAttr()];
+      if (inserted || node->func.getSymName() < lexMin.getSymName())
+        lexMin = node->func;
     }
 
     // Mark the node as ready.
@@ -247,6 +259,25 @@ void CallGraph::startDeduplication() {
   MLRT::await(done);
 }
 
+void CallGraph::replaceCallSitesWithLexMin() {
+  MLRT::ForkJoin state(cpuDevice);
+  for (CallGraphNode *node : workItems) {
+    state.fork([node, this] {
+      for (auto [call, _] : node->callsites) {
+        SymbolRefAttr calleeSymbol = call.getCalleeSymbol();
+        if (!calleeSymbol)
+          continue;
+        auto it = representativeToLexMin.find(calleeSymbol.getLeafReference());
+        // Callees that are external or part of a cycle are not deduplicated.
+        if (it == representativeToLexMin.end())
+          continue;
+        call.setCalleeAttr(SymbolConstantAttr::get(it->second));
+      }
+    });
+  }
+  state.join();
+}
+
 void EliminateDuplicateFunctionsPass::runOnOperation() {
   VerboseCompilerTimeTraceScope traceScope("eliminateDuplicateFunctions");
 
@@ -257,6 +288,7 @@ void EliminateDuplicateFunctionsPass::runOnOperation() {
 
   CallGraph cg(module, symtab, cpuDevice);
   cg.startDeduplication();
+  cg.replaceCallSitesWithLexMin();
   this->numDeduped = cg.numDeduped;
   // NOTE: We do not erase the duplicated function in the pass but rely later
   // passes to cleanup. A duplicate function is not always a dead symbol as it
