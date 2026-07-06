@@ -13,6 +13,7 @@
 
 from std.random import random_ui64, seed
 from std.math.uutils import udivmod
+from std.sys.defines import get_defined_string
 
 from std.gpu.host import DeviceBuffer, DeviceContext
 from kv_cache.types import (
@@ -1166,69 +1167,76 @@ def execute_cont_batch_fused_qkv_matmul[
 
 
 # TODO implement fused qkv matmul for paged
-def execute_fused_matmul_suite(ctx: DeviceContext) raises:
-    comptime dtypes_tolerances = ((DType.float32, 1e-3), (DType.bfloat16, 1e-2))
+def execute_fused_matmul_suite[
+    dtype: DType, rtol: Float64
+](ctx: DeviceContext) raises:
+    for bs in [1, 16]:
+        ce_cache_sizes = List[Int]()
+        ce_seq_lens = List[Int]()
+        tg_cache_sizes = List[Int]()
+        tg_seq_lens = List[Int]()
+        for _ in range(bs):
+            tg_seq_lens.append(1)
+            # TODO increase sizes here to ensure we cross page boundary.
+            tg_cache_sizes.append(Int(random_ui64(512, 700)))
+            ce_seq_lens.append(Int(random_ui64(512, 700)))
+            ce_cache_sizes.append(0)
 
-    comptime for dtype_idx in range(2):
-        comptime dtype = dtypes_tolerances[dtype_idx][0]
-        comptime rtol = dtypes_tolerances[dtype_idx][1]
+        # llama3 context encoding
+        execute_cont_batch_fused_qkv_matmul[
+            llama_num_q_heads, dtype, kv_params_llama3, rtol
+        ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
+        execute_paged_fused_qkv_matmul[
+            llama_num_q_heads, dtype, kv_params_llama3, rtol
+        ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
+        execute_matmul_kv_cache_ragged[
+            llama_num_q_heads, dtype, kv_params_llama3, rtol
+        ](
+            ce_seq_lens,
+            max_seq_length_cache=1024,
+            cache_sizes=ce_cache_sizes,
+            num_layers=4,
+            layer_idx=1,
+            ctx=ctx,
+        )
+        execute_matmul_k_cache_ragged[
+            llama_num_q_heads, dtype, kv_params_llama3, rtol
+        ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
 
-        for bs in [1, 16]:
-            ce_cache_sizes = List[Int]()
-            ce_seq_lens = List[Int]()
-            tg_cache_sizes = List[Int]()
-            tg_seq_lens = List[Int]()
-            for _ in range(bs):
-                tg_seq_lens.append(1)
-                # TODO increase sizes here to ensure we cross page boundary.
-                tg_cache_sizes.append(Int(random_ui64(512, 700)))
-                ce_seq_lens.append(Int(random_ui64(512, 700)))
-                ce_cache_sizes.append(0)
-
-            # llama3 context encoding
-            execute_cont_batch_fused_qkv_matmul[
-                llama_num_q_heads, dtype, kv_params_llama3, rtol
-            ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
-            execute_paged_fused_qkv_matmul[
-                llama_num_q_heads, dtype, kv_params_llama3, rtol
-            ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
-            execute_matmul_kv_cache_ragged[
-                llama_num_q_heads, dtype, kv_params_llama3, rtol
-            ](
-                ce_seq_lens,
-                max_seq_length_cache=1024,
-                cache_sizes=ce_cache_sizes,
-                num_layers=4,
-                layer_idx=1,
-                ctx=ctx,
-            )
-            execute_matmul_k_cache_ragged[
-                llama_num_q_heads, dtype, kv_params_llama3, rtol
-            ](ce_seq_lens, 1024, ce_cache_sizes, 4, 1, ctx)
-
-            # llama3 token gen
-            execute_cont_batch_fused_qkv_matmul[
-                llama_num_q_heads, dtype, kv_params_llama3, rtol
-            ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
-            execute_paged_fused_qkv_matmul[
-                llama_num_q_heads, dtype, kv_params_llama3, rtol
-            ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
-            execute_matmul_kv_cache_ragged[
-                llama_num_q_heads, dtype, kv_params_llama3, rtol
-            ](
-                tg_seq_lens,
-                max_seq_length_cache=1024,
-                cache_sizes=tg_cache_sizes,
-                num_layers=4,
-                layer_idx=3,
-                ctx=ctx,
-            )
-            execute_matmul_k_cache_ragged[
-                llama_num_q_heads, dtype, kv_params_llama3, rtol
-            ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
+        # llama3 token gen
+        execute_cont_batch_fused_qkv_matmul[
+            llama_num_q_heads, dtype, kv_params_llama3, rtol
+        ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
+        execute_paged_fused_qkv_matmul[
+            llama_num_q_heads, dtype, kv_params_llama3, rtol
+        ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
+        execute_matmul_kv_cache_ragged[
+            llama_num_q_heads, dtype, kv_params_llama3, rtol
+        ](
+            tg_seq_lens,
+            max_seq_length_cache=1024,
+            cache_sizes=tg_cache_sizes,
+            num_layers=4,
+            layer_idx=3,
+            ctx=ctx,
+        )
+        execute_matmul_k_cache_ragged[
+            llama_num_q_heads, dtype, kv_params_llama3, rtol
+        ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
 
 
 def main() raises:
     seed(42)
+
+    comptime test_dtype = get_defined_string["test_dtype", "all"]()
+    comptime assert (
+        test_dtype == "all"
+        or test_dtype == "bfloat16"
+        or test_dtype == "float32"
+    ), "test_dtype must be one of: all, bfloat16, float32"
+
     with DeviceContext() as ctx:
-        execute_fused_matmul_suite(ctx)
+        comptime if test_dtype == "all" or test_dtype == "float32":
+            execute_fused_matmul_suite[DType.float32, 1e-3](ctx)
+        comptime if test_dtype == "all" or test_dtype == "bfloat16":
+            execute_fused_matmul_suite[DType.bfloat16, 1e-2](ctx)
