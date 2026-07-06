@@ -4,6 +4,8 @@ sidebar_label: Cheat sheets
 description: Quick reference cards for Mojo essentials.
 ---
 
+import useBaseUrl from '@docusaurus/useBaseUrl';
+
 <!-- markdownlint-disable MD033 -->
 
 import {useColorMode} from '@docusaurus/theme-common';
@@ -100,11 +102,6 @@ export const Preview = ({sheet, alt}) => {
   );
 };
 
-{/* PNG/PDF resolve via require() of co-located ./assets files. SVG can't be
-    co-located (SVGR turns a bundled .svg import into a React component, so
-    there's no URL). Host the SVGs in mojosite/static/img/cheatsheet-assets/,
-    add `import useBaseUrl from '@docusaurus/useBaseUrl';` up top, then uncomment
-    the SVG segment in each row below. */}
 export const DownloadRow = ({label, png, pdf, name}) => (
   <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem'}}>
     <span
@@ -117,9 +114,9 @@ export const DownloadRow = ({label, png, pdf, name}) => (
       {label}
     </span>
     <div className="button-group">
+      <a className="button button--sm button--outline button--primary" href={useBaseUrl(`/img/cheatsheet-assets/${name}.svg`)} download={`${name}.svg`}>SVG</a>
       <a className="button button--sm button--outline button--primary" href={png} download={`${name}.png`}>PNG</a>
       <a className="button button--sm button--outline button--primary" href={pdf} download={`${name}.pdf`}>PDF</a>
-      {/* <a className="button button--sm button--outline button--primary" href={useBaseUrl(`/img/cheatsheet-assets/${name}.svg`)} download={`${name}.svg`}>SVG</a> */}
     </div>
   </div>
 );
