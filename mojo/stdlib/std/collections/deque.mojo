@@ -287,7 +287,9 @@ struct Deque[ElementType: Movable](
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
             destroy_func(
-                __get_address_as_owned_value((self._data + offset).address)
+                __get_address_as_owned_value(
+                    (self._data + offset)._get_kgen_pointer()
+                )
             )
         self^._unsafe_assume_destroyed_and_deallocate()
 

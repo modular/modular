@@ -506,7 +506,9 @@ def _mbarrier_impl[
         or address_space == AddressSpace.GENERIC
     ):
         llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive", NoneType](
-            address.address_space_cast[AddressSpace.GENERIC]().address
+            address.address_space_cast[
+                AddressSpace.GENERIC
+            ]()._get_kgen_pointer()
         )
     else:
         comptime assert False, "invalid address space"

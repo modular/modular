@@ -80,22 +80,18 @@ struct _AsyncContext(ImplicitlyCopyable, RegisterPassable):
 
 
 def _init_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
-        chain.address
-    )
+    external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](chain)
 
 
 def _del_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](
-        chain.address
-    )
+    external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](chain)
 
 
 def _async_and_then(
     hdl: AnyCoroutine, chain: UnsafePointer[mut=True, _Chain, _]
 ):
     external_call["KGEN_CompilerRT_AsyncRT_AndThen", NoneType](
-        _coro_resume_fn, chain.address, hdl
+        _coro_resume_fn, chain, hdl
     )
 
 
@@ -106,18 +102,18 @@ def _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
 
 
 def _async_wait(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain.address)
+    external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain)
 
 
 def _async_complete(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain.address)
+    external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain)
 
 
 def _async_wait_timeout(
     chain: UnsafePointer[mut=True, _Chain, _], timeout: Int
 ) -> Bool:
     return external_call["KGEN_CompilerRT_AsyncRT_Wait_Timeout", Bool](
-        chain.address, timeout
+        chain, timeout
     )
 
 

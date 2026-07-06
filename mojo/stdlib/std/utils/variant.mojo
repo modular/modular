@@ -314,7 +314,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     def get_discriminant(ref self) -> ref[self] UInt8:
         var discr_ptr = __mlir_op.`pop.variant.discr_gep`[
             _type=__mlir_type.`!kgen.pointer<scalar<ui8>>`
-        ](UnsafePointer(to=self._impl).address)
+        ](UnsafePointer(to=self._impl)._get_kgen_pointer())
         return UnsafePointer[_, origin_of(self)](discr_ptr).bitcast[UInt8]()[]
 
     @always_inline("nodebug")
@@ -328,7 +328,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         return __mlir_op.`pop.variant.bitcast`[
             _type=UnsafePointer[T, origin_of(self)]._mlir_type,
             index=idx.__mlir_index__(),
-        ](UnsafePointer(to=self._impl).address)
+        ](UnsafePointer(to=self._impl)._get_kgen_pointer())
 
 
 # TODO(MOCO-3653): size_of[T]() == 0 does not work correctly in some cases when

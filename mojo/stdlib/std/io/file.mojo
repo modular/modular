@@ -674,7 +674,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         while total_written < len:
             var current_ptr = ptr + total_written
             var bytes_written = external_call["write", c_ssize_t](
-                fd, current_ptr.address, len - total_written
+                fd, current_ptr, len - total_written
             )
 
             if bytes_written < 0:

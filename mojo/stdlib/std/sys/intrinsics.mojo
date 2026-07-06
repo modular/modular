@@ -554,7 +554,7 @@ def masked_load[
         return addr.load() if mask else SIMD[dtype, size](passthrough[0])
 
     var result = llvm_intrinsic["llvm.masked.load", SIMD[dtype, size]](
-        addr.bitcast[NoneType]().address,
+        addr.bitcast[NoneType](),
         Int32(alignment),
         mask,
         passthrough,
@@ -598,7 +598,7 @@ def masked_store[
 
     llvm_intrinsic["llvm.masked.store", NoneType](
         value,
-        addr.bitcast[NoneType]().address,
+        addr.bitcast[NoneType](),
         Int32(alignment),
         mask,
     )
@@ -637,7 +637,7 @@ def compressed_store[
 
     llvm_intrinsic["llvm.masked.compressstore", NoneType](
         value,
-        addr.bitcast[NoneType]().address,
+        addr.bitcast[NoneType](),
         mask,
     )
 

@@ -1251,7 +1251,7 @@ struct VariadicList[
         ).unsafe_origin_cast[UntrackedOrigin[mut=False]]()
         var elt_ptr = UnsafePointer[_, UntrackedOrigin[mut=False]](
             __mlir_op.`pop.array.gep`(
-                array_up.address,
+                array_up._get_kgen_pointer(),
                 Int(0).__mlir_index__(),
             )
         ).bitcast[Self._EltPointerType]()
@@ -1301,7 +1301,9 @@ struct VariadicList[
             var ptr = UnsafePointer(to=self[i])
             # TODO: Cannot use UnsafePointer.take_pointee because it requires
             # the element to be Movable, which is not required here.
-            elt_handler(i, __get_address_as_owned_value(ptr.address))
+            elt_handler(
+                i, __get_address_as_owned_value(ptr._get_kgen_pointer())
+            )
 
     # FIXME: This is a hack to work around a miscompile, do not use.
     def _annihilate(deinit self):
@@ -1567,7 +1569,9 @@ struct VariadicPack[
             var ptr = UnsafePointer(to=self[i])
             # TODO: Cannot use UnsafePointer.take_pointee because it requires
             # the element to be Movable, which is not required here.
-            elt_handler[i](__get_address_as_owned_value(ptr.address))
+            elt_handler[i](
+                __get_address_as_owned_value(ptr._get_kgen_pointer())
+            )
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations

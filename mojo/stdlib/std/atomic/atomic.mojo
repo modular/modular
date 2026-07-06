@@ -266,7 +266,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         var result = __mlir_op.`pop.load`[
             ordering=ordering.__mlir_attr(),
             syncscope=_get_kgen_string[Self.scope](),
-        ](ptr.address)
+        ](ptr._get_kgen_pointer())
         comptime if Self.dtype.is_floating_point():
             _check_not_poison[Self.dtype, 1](result)
         return result
@@ -323,7 +323,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             syncscope=_get_kgen_string[Self.scope](),
             _type=Scalar[Self.dtype]._mlir_type,
         ](
-            ptr.bitcast[Scalar[Self.dtype]._mlir_type]().address,
+            ptr.bitcast[Scalar[Self.dtype]._mlir_type]()._get_kgen_pointer(),
             rhs._mlir_value,
         )
         return Scalar[Self.dtype](mlir_value=res)
@@ -363,7 +363,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             syncscope=_get_kgen_string[Self.scope](),
             _type=Scalar[Self.dtype]._mlir_type,
         ](
-            ptr.bitcast[Scalar[Self.dtype]._mlir_type]().address,
+            ptr.bitcast[Scalar[Self.dtype]._mlir_type]()._get_kgen_pointer(),
             value._mlir_value,
         )
         return Scalar[Self.dtype](mlir_value=res)
@@ -393,7 +393,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         __mlir_op.`pop.store`[
             ordering=ordering.__mlir_attr(),
             syncscope=_get_kgen_string[Self.scope](),
-        ](value._mlir_value, ptr.address)
+        ](value._mlir_value, ptr._get_kgen_pointer())
 
     @always_inline
     def store[
@@ -482,7 +482,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ordering=ordering.__mlir_attr(),
             syncscope=_get_kgen_string[Self.scope](),
             _type=Scalar[Self.dtype]._mlir_type,
-        ](value_addr.address, rhs._mlir_value)
+        ](value_addr._get_kgen_pointer(), rhs._mlir_value)
         return Scalar[Self.dtype](mlir_value=res)
 
     @always_inline
@@ -735,7 +735,7 @@ def _compare_exchange_integral_impl[
         success_ordering=success_ordering.__mlir_attr(),
         syncscope=_get_kgen_string[scope](),
     ](
-        atomic_ptr.bitcast[Scalar[dtype]._mlir_type]().address,
+        atomic_ptr.bitcast[Scalar[dtype]._mlir_type]()._get_kgen_pointer(),
         expected_ptr[]._mlir_value,
         desired._mlir_value,
     )
@@ -767,7 +767,7 @@ def _max_impl_base[
         ordering=ordering.__mlir_attr(),
         syncscope=_get_kgen_string[scope](),
         _type=Scalar[dtype]._mlir_type,
-    ](value_addr.address, rhs._mlir_value)
+    ](value_addr._get_kgen_pointer(), rhs._mlir_value)
 
 
 @always_inline
@@ -780,7 +780,7 @@ def _min_impl_base[
         ordering=ordering.__mlir_attr(),
         syncscope=_get_kgen_string[scope](),
         _type=Scalar[dtype]._mlir_type,
-    ](value_addr.address, rhs._mlir_value)
+    ](value_addr._get_kgen_pointer(), rhs._mlir_value)
 
 
 @always_inline

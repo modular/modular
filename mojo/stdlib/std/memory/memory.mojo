@@ -439,7 +439,7 @@ def _free(ptr: UnsafePointer[mut=True, ...]):
     comptime if is_gpu():
         libc.free(ptr.bitcast[NoneType]())
     else:
-        __mlir_op.`pop.aligned_free`(ptr.address)
+        __mlir_op.`pop.aligned_free`(ptr._get_kgen_pointer())
 
 
 @always_inline

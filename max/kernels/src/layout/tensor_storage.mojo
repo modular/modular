@@ -318,7 +318,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorStorage):
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type=type_of(result)._mlir_type,
-        ](storage.address)
+        ](storage._get_kgen_pointer())
 
     @staticmethod
     @always_inline
