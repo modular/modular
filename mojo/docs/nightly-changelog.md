@@ -274,6 +274,12 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `reversed()` now works on typed ranges such as
+  `reversed(range(Int16(1), 10, 2))`. The `ReversibleRange` trait gained an
+  associated `ReversedType` iterator instead of hard-coding its `__reversed__()`
+  return type, so every range flavor (including the typed scalar ranges) can
+  conform and return its own reversed iterator.
+
 - Added `to_numpy_array` and `from_numpy_array` to the new `python.numpy` module
   for moving flat numeric data between Mojo `Span`/`List` and NumPy arrays
   without hand-written `ctypes` plumbing:

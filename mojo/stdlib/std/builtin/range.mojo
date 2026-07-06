@@ -49,6 +49,7 @@ struct _ZeroStartingRange(
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Int
+    comptime ReversedType = _StridedRange
     var curr: Int
     var end: Int
 
@@ -96,6 +97,7 @@ struct _SequentialRange(
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Int
+    comptime ReversedType = _StridedRange
     var start: Int
     var end: Int
 
@@ -185,6 +187,7 @@ struct _StridedRange(
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _StridedRangeIterator
     comptime Element = Int
+    comptime ReversedType = _StridedRange
     var start: Int
     var end: Int
     var step: Int
@@ -352,12 +355,17 @@ def _scalar_range_bounds[
 
 
 struct _ZeroStartingScalarRange[dtype: DType](
-    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable
+    ImplicitlyCopyable,
+    Iterable,
+    Iterator,
+    ReversibleRange,
+    TrivialRegisterPassable,
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Scalar[Self.dtype]
+    comptime ReversedType = _StridedScalarRange[Self.dtype]
     var curr: Scalar[Self.dtype]
     var end: Scalar[Self.dtype]
 
@@ -406,12 +414,17 @@ struct _ZeroStartingScalarRange[dtype: DType](
 
 
 struct _SequentialScalarRange[dtype: DType](
-    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable
+    ImplicitlyCopyable,
+    Iterable,
+    Iterator,
+    ReversibleRange,
+    TrivialRegisterPassable,
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Scalar[Self.dtype]
+    comptime ReversedType = _StridedScalarRange[Self.dtype]
     var start: Scalar[Self.dtype]
     var end: Scalar[Self.dtype]
 
@@ -455,12 +468,18 @@ struct _SequentialScalarRange[dtype: DType](
 
 @fieldwise_init
 struct _StridedScalarRange[dtype: DType](
-    ImplicitlyCopyable, Iterable, Iterator, Sized, TrivialRegisterPassable
+    ImplicitlyCopyable,
+    Iterable,
+    Iterator,
+    ReversibleRange,
+    Sized,
+    TrivialRegisterPassable,
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime Element = Scalar[Self.dtype]
+    comptime ReversedType = Self
     var start: Scalar[Self.dtype]
     var end: Scalar[Self.dtype]
     var step: Scalar[Self.dtype]
