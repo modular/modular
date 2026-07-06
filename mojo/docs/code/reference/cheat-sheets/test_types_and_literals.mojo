@@ -19,6 +19,7 @@
 #   - nan == nan is False (nan construction left out to keep this portable)
 #   - Float8 needs a GPU; Int128 / Int256 are software-emulated
 from std.testing import assert_equal
+from std.sys.info import bit_width_of
 
 
 def test_simd_is_the_foundation() raises:
@@ -49,6 +50,11 @@ def test_float_to_int_truncates() raises:
 def test_bounds() raises:
     assert_equal(UInt8.MAX, UInt8(255))
     assert_equal(Int8.MIN, Int8(-128))
+
+
+def test_bit_width() raises:
+    # bit_width_of[Int]() from std.sys.info; 64 on this platform
+    assert_equal(bit_width_of[Int](), 64)
 
 
 def test_number_literals() raises:
@@ -104,6 +110,7 @@ def main() raises:
     test_integer_overflow_wraps()
     test_float_to_int_truncates()
     test_bounds()
+    test_bit_width()
     test_number_literals()
     test_triple_quote_keeps_layout()
     test_adjacent_literals_join()

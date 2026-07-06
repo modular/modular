@@ -87,11 +87,14 @@ def test_query_target() raises:
 
 # --- comptime members live on types ---
 struct Stack[T: Copyable]:
+    comptime Element = Self.T  # associated type (reached through Self)
     comptime capacity = 1024  # a compile-time value member
 
 
 def test_comptime_members() raises:
     assert_equal(Stack[Int].capacity, 1024)
+    var e: Stack[Int].Element = 5  # Element resolves to Int for Stack[Int]
+    assert_equal(e, 5)
 
 
 # --- comptime for: fully unrolled, index is a constant ---
