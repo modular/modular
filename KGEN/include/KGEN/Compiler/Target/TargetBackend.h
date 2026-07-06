@@ -221,6 +221,17 @@ public:
     return {};
   }
 
+  /// Whether custom (non-runtime) bitcode libraries should be linked
+  /// conservatively — pulling in only the symbols referenced by the module's
+  /// unresolved extern functions (`LinkOnlyNeeded`), and skipping the link
+  /// entirely when there are no such references. The default is true. Backends
+  /// whose bitcode library must be linked in full regardless of which symbols
+  /// are referenced (e.g. Hexagon, via its plugin backend) return false.
+  virtual bool onlyLinkExternFunctionsInBitcodeLibs(
+      const CompilationOptions &options) const {
+    return true;
+  }
+
   /// Attaches target-specific attributes to a kernel entry point.
   virtual void attachCodegenAttributes(llvm::Function *kernelEntry) const {}
 

@@ -138,6 +138,14 @@ public:
                               addPostLowerToLLVMPasses, M::ErrorOrSuccess,
                               mlir::OpPassManager &)
 
+  /// Plugin API for the custom bitcode-library linking policy: returns true if
+  /// only the symbols referenced by unresolved extern functions should be
+  /// linked (the default), false if the full library must be linked (e.g.
+  /// Hexagon). Plugins that don't provide the symbol fall back to the default.
+  REGISTER_GET_KGEN_PLUGIN_FN(OnlyLinkExternFunctionsInBitcodeLibs,
+                              onlyLinkExternFunctionsInBitcodeLibs,
+                              M::ErrorOr<bool>, CompilationOptions)
+
   const std::string &getSoPath() const { return soPath; }
 
 private:

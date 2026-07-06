@@ -688,8 +688,9 @@ linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
   // Vendor device/runtime bitcode is linked by the target backend; backends
   // without device libraries no-op. Then fall through to the standard logic
   // for our custom bitcode libraries.
-  if (const TargetBackend *backend = TargetBackendRegistry::get().lookup(
-          llvm::Triple(options.targetTriple))) {
+  const TargetBackend *backend =
+      TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
+  if (backend) {
     ErrorOrSuccess result =
         backend->linkRuntimeLibraries(loc, llvmModule, options);
     if (failed(result))
@@ -710,7 +711,14 @@ linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
       break;
     }
   }
-  if (!hasExternFunctions && !isHexagonBackend(options))
+
+  // By default a backend links only the bitcode-library symbols referenced by
+  // unresolved extern functions, and skips linking entirely when there are
+  // none. Some targets (e.g. Hexagon, via its plugin backend) must link the
+  // full library instead; they opt out through this backend policy.
+  bool onlyLinkExtern =
+      !backend || backend->onlyLinkExternFunctionsInBitcodeLibs(options);
+  if (!hasExternFunctions && onlyLinkExtern)
     return success();
 
   llvm::Linker linker(llvmModule);
@@ -723,9 +731,9 @@ linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
     if (libModule->getTargetTriple() != llvmModule.getTargetTriple())
       return success();
 
-    llvm::Linker::Flags linkerFlags = llvm::Linker::Flags::LinkOnlyNeeded;
-    if (isHexagonBackend(options))
-      linkerFlags = llvm::Linker::Flags::None;
+    llvm::Linker::Flags linkerFlags = onlyLinkExtern
+                                          ? llvm::Linker::Flags::LinkOnlyNeeded
+                                          : llvm::Linker::Flags::None;
 
     bool err = linker.linkInModule(
         std::move(libModule), linkerFlags,
