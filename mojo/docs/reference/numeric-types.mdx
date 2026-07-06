@@ -209,12 +209,11 @@ you assign an `Int`. It's the type behind loop counters, collection
 indices, and `len()` results:
 
 ```mojo
-from std.reflection import reflect
-
 def main():
     var a: Int = 42
 
-    comptime a_type = reflect[type_of(a)]().name()
+    # reflect is auto-imported via the prelude
+    comptime a_type = reflect[type_of(a)].name()
 
     print("a:", a_type) # a: Int
 ```
