@@ -188,15 +188,6 @@ print(response.choices[0].message.content)
 </TabItem>
 </Tabs>
 
-:::note Schema root type
-
-The root of a `json_schema` must resolve to an object. If the root omits `type`,
-MAX treats it as `type: object`. MAX also accepts root-level type unions that
-include `object`, such as `["object", "array", "string"]`. MAX rejects schemas
-whose root is constrained to a single non-object type (for example, `{"type": "string"}`).
-
-:::
-
 Instead of a typical text response from the model, the `response_format` schema
 defined above results in a JSON-formatted structured output such as the
 following:

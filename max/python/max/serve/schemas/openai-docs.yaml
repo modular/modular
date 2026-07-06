@@ -1127,8 +1127,23 @@ components:
           properties:
             type:
               type: string
-              enum: [text, json_object]
+              enum: [text, json_object, json_schema]
               description: The format type
+            json_schema:
+              type: object
+              description: |
+                Configuration for the `json_schema` format type. Set this when
+                `type` is `json_schema`.
+              properties:
+                schema:
+                  oneOf:
+                    - type: object
+                    - type: boolean
+                  description: |
+                    The JSON Schema that the output must match. This value can
+                    be a JSON Schema object or a boolean. `true` accepts any
+                    value. `false` can't be satisfied, so MAX returns a `400`
+                    error.
         stream:
           type: boolean
           default: false
