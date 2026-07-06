@@ -412,6 +412,7 @@ def _matmul_gpu[
     *,
     use_tensor_core: Bool = False,
     transpose_b: Bool = False,
+    use_tf32: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
@@ -425,6 +426,11 @@ def _matmul_gpu[
 ) raises:
     """GPU matmul dispatch entry point. Routes to the appropriate kernel
     based on hardware capabilities and tensor properties.
+
+    `use_tf32=False` requires IEEE-fp32 multiplies for fp32 inputs instead
+    of TF32 tensor-core truncation; it is implemented for the SM100 dispatch
+    only, and only for shapes the fp32 split-K GEMV supports (compile-time
+    error otherwise).
     """
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
@@ -436,6 +442,14 @@ def _matmul_gpu[
     comptime c_type = c.dtype
     comptime a_type = a.dtype
     comptime b_type = b.dtype
+
+    # Fail loudly instead of silently ignoring the precision request on
+    # targets whose fp32 matmul paths have no TF32 opt-out wired up.
+    comptime assert (
+        use_tf32
+        or a_type != DType.float32
+        or (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05())
+    ), "use_tf32=False is only implemented for the SM100 matmul dispatch"
 
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
@@ -629,6 +643,7 @@ def _matmul_gpu[
     comptime if (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()):
         return matmul_dispatch_sm100[
             transpose_b=transpose_b,
+            use_tf32=use_tf32,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_lambda_wrapper=elementwise_lambda_wrapper,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -1398,9 +1413,7 @@ def split_k_reduce[
     var N = Int(c.dim[1]())
 
     @always_inline
-    @__copy_capture(c, work_space, num_partitions)
-    @parameter
-    def _reduce[simd_width: Int, alignment: Int = 1](c_coord: Coord):
+    def _reduce[simd_width: Int, alignment: Int = 1](c_coord: Coord) {var}:
         var idx = Coord(Idx[0], c_coord[0], c_coord[1])
         var vec = work_space.load[width=simd_width](idx)
         for k in range(1, num_partitions):
@@ -1421,7 +1434,7 @@ def split_k_reduce[
                 (c_coord[0], c_coord[1]), vec.cast[c_type]()
             )
 
-    elementwise[_reduce, simd_width, target="gpu"]((M, N), ctx)
+    elementwise[simd_width, target="gpu"](_reduce, (M, N), ctx)
 
 
 def multistage_gemm[

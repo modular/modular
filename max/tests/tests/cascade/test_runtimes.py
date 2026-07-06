@@ -28,7 +28,11 @@ which forces the runtime to forward intermediate result IDs between workers
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import os
+import socket
 import sys
+import uuid
 from collections.abc import AsyncIterator, Callable
 
 import pytest
@@ -42,7 +46,16 @@ from max.experimental.cascade import (
 from max.experimental.cascade.core.pipeline_method import (
     _pipeline_method_scope,
 )
+from max.experimental.cascade.grpc_runtime import SubprocGrpcRuntimeClient
+from max.experimental.cascade.grpc_runtime import server as grpc_server
+from max.experimental.cascade.grpc_runtime.client import GrpcRuntimeClient
 from max.experimental.cascade.http_runtime import SubprocHttpRuntime
+from max.experimental.cascade.http_runtime import server as http_server
+from max.experimental.cascade.http_runtime.client import HttpRuntimeProxy
+from max.experimental.cascade.http_runtime.subproc import (
+    _wait_until_alive as _http_wait_until_alive,
+)
+from max.serve.process_control import subprocess_manager
 from max.tests.tests.cascade.dummy_textgen import (
     build_dummy_textgen_pipeline,
 )
@@ -52,6 +65,7 @@ from max.tests.tests.cascade.dummy_textgen import (
 # instance) keeps each test case lifecycle-isolated.
 _RUNTIME_FACTORIES: list[Callable[[], Runtime]] = [
     LocalRuntime,
+    SubprocGrpcRuntimeClient,
     SubprocHttpRuntime,
 ]
 
@@ -91,6 +105,9 @@ class _Failing(Worker):
 
     @worker_method()
     async def exit_hard(self) -> str:
+        # Ensure exit happens after server is setup, instead of
+        # racing between server shutdown and `sys.exit(1)`.
+        await asyncio.sleep(3)
         sys.exit(1)
 
     @worker_method()
@@ -157,6 +174,114 @@ async def test_textgen_different_lengths(runtime: Runtime) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Cross-runtime data forwarding
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_grpc_cross_runtime_result_forwarding() -> None:
+    """Two GrpcRuntimeClient instances on separate unix sockets communicate peer-to-peer.
+
+    Each server is a standalone subprocess; the clients are the bare
+    :py:class:`GrpcRuntimeClient` (no :py:class:`SubprocGrpcRuntimeClient`
+    wrapper). A ``Result`` produced on server A is forwarded as an arg to a
+    worker on server B; server B dials server A's socket directly to fetch
+    the value via :py:func:`dial` (an unentered ``GrpcRuntimeClient``).
+    """
+    sock_a = f"/tmp/max-test-{uuid.uuid4().hex[:8]}.sock"
+    sock_b = f"/tmp/max-test-{uuid.uuid4().hex[:8]}.sock"
+    bind_a, target_a = f"unix://{sock_a}", f"unix:{sock_a}"
+    bind_b, target_b = f"unix://{sock_b}", f"unix:{sock_b}"
+
+    try:
+        async with (
+            subprocess_manager("gRPC server A") as proc_a,
+            subprocess_manager("gRPC server B") as proc_b,
+        ):
+            proc_a.start(grpc_server.serve, bind_a)
+            proc_b.start(grpc_server.serve, bind_b)
+
+            async with (
+                GrpcRuntimeClient(target_a) as rt_a,
+                GrpcRuntimeClient(target_b) as rt_b,
+                _pipeline_method_scope(),
+            ):
+                worker_a = await rt_a.deploy(_Echo())
+                worker_b = await rt_b.deploy(_Echo())
+
+                result_on_a = await worker_a.add(10, 5)
+
+                # Server B's result store is empty — it cannot fetch a result
+                # that lives on server A.
+                with pytest.raises(RuntimeError):
+                    await rt_b.get_result(result_on_a.result_id)
+
+                # Pass the Result from server A as an arg to a worker on server B.
+                # Server B dials server A's unix socket to resolve it.
+                result_on_b = await worker_b.add(result_on_a, 3)
+                assert await result_on_b == 18
+    finally:
+        for path in (sock_a, sock_b):
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(path)
+
+
+@pytest.mark.asyncio
+async def test_http_cross_runtime_result_forwarding() -> None:
+    """Two HttpRuntimeProxy instances on separate TCP ports communicate peer-to-peer.
+
+    Each server is a standalone subprocess bound to a free loopback port;
+    the clients are the bare :py:class:`HttpRuntimeProxy` (no
+    :py:class:`SubprocHttpRuntime` wrapper). A ``Result`` produced on server A
+    is forwarded as an arg to a worker on server B; server B dials server A's
+    port to fetch the value (``SubprocHttpRuntime.__reduce__`` serializes to
+    just the address, so the ``Result`` is a plain URL + result_id pair).
+    """
+
+    def _free_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    addr_a = f"http://127.0.0.1:{_free_port()}"
+    addr_b = f"http://127.0.0.1:{_free_port()}"
+
+    async with (
+        subprocess_manager("HTTP server A") as proc_a,
+        subprocess_manager("HTTP server B") as proc_b,
+    ):
+        proc_a.start(http_server.serve, addr_a)
+        proc_b.start(http_server.serve, addr_b)
+
+        # HttpRuntimeProxy.__aenter__ opens the session but does not wait for
+        # the server — poll /alive manually before deploying workers.
+        async with (
+            HttpRuntimeProxy(addr_a) as rt_a,
+            HttpRuntimeProxy(addr_b) as rt_b,
+            _pipeline_method_scope(),
+        ):
+            async with rt_a.session() as s:
+                await _http_wait_until_alive(s, rt_a._base_url)
+            async with rt_b.session() as s:
+                await _http_wait_until_alive(s, rt_b._base_url)
+
+            worker_a = await rt_a.deploy(_Echo())
+            worker_b = await rt_b.deploy(_Echo())
+
+            result_on_a = await worker_a.add(10, 5)
+
+            # Server B's result store is empty — it cannot fetch a result
+            # that lives on server A.
+            with pytest.raises(KeyError):
+                await rt_b.get_result(result_on_a.result_id)
+
+            # Pass the Result from server A as an arg to a worker on server B.
+            # Server B dials server A's TCP port to resolve it.
+            result_on_b = await worker_b.add(result_on_a, 3)
+            assert await result_on_b == 18
+
+
+# ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
 
@@ -167,24 +292,33 @@ async def test_worker_exception(runtime: Runtime) -> None:
     async with _pipeline_method_scope():
         worker = await runtime.deploy(_Failing())
         handle = await worker.raise_value_error("kaboom")
-        with pytest.raises(ValueError, match="kaboom"):
+        # The HTTP protocol can raise specific errors since it is mostly for
+        # Python testing, but the GrpcRuntimeClient raises a generic
+        # RuntimeError because it has to serialize errors from
+        # workers implemented in other languages.
+        with pytest.raises((ValueError, RuntimeError), match="kaboom"):
             await handle
 
 
 @pytest.mark.asyncio
-async def test_worker_sys_exit() -> None:
+@pytest.mark.parametrize(
+    "runtime_cls",
+    [SubprocHttpRuntime, SubprocGrpcRuntimeClient],
+    ids=lambda c: c.__name__,
+)
+async def test_worker_sys_exit(runtime_cls: type) -> None:
     """A subprocess worker that calls ``sys.exit(1)`` surfaces an error.
 
-    Only tested against :py:class:`SubprocHttpRuntime` because
-    ``sys.exit`` in-process raises :py:class:`SystemExit` (a
-    :py:class:`BaseException`) which tears through the local task group
-    destructively. In the subprocess runtime the child dies and the HTTP
-    layer reports the failure as a normal exception.
+    Only tested against subprocess runtimes because ``sys.exit`` in-process
+    raises :py:class:`SystemExit` (a :py:class:`BaseException`) which tears
+    through the local task group destructively. In a subprocess runtime the
+    child dies and the transport layer reports the failure as a normal
+    exception.
     """
-    async with SubprocHttpRuntime() as rt, _pipeline_method_scope():
+    async with runtime_cls() as rt, _pipeline_method_scope():
         worker = await rt.deploy(_Failing())
-        handle = await worker.exit_hard()
         with pytest.raises(Exception):
+            handle = await worker.exit_hard()
             await handle
 
 
@@ -211,5 +345,9 @@ async def test_pipeline_exit_cancels_remote_work(runtime: Runtime) -> None:
     # Give the server time to detect the client disconnect
     await asyncio.sleep(1)
     # The remote result should be deleted now
-    with pytest.raises(KeyError, match="Unknown result id"):
+    # The HTTP protocol can raise specific errors since it is mostly for
+    # Python testing, but the GrpcRuntimeClient raises a generic
+    # RuntimeError because it has to serialize errors from
+    # workers implemented in other languages.
+    with pytest.raises((KeyError, RuntimeError), match="Unknown result id"):
         await handle

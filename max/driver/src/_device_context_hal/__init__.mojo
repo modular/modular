@@ -43,7 +43,6 @@ from _hal import (
     get_device_spec,
 )
 from _hal.event import EVENT_FLAG_CPU_VISIBLE
-from std.sys.intrinsics import _type_is_eq
 from std.builtin.variadics import TypeList
 
 from std.gpu.host.constant_memory_mapping import ConstantMemoryMapping
@@ -757,9 +756,8 @@ struct DeviceContext(
             If the operation fails.
         """
         self._stream[].copy_to_device(
-            dst_buf._inner[]._buffer,
+            dst_buf._inner[]._buffer.view(),
             src_ptr.bitcast[UInt8](),
-            dst_buf._inner[]._buffer.byte_size,
         )
 
     def enqueue_copy[
@@ -784,8 +782,7 @@ struct DeviceContext(
         """
         self._stream[].copy_from_device(
             dst_ptr.bitcast[UInt8](),
-            src_buf._inner[]._buffer,
-            src_buf._inner[]._buffer.byte_size,
+            src_buf._inner[]._buffer.view(),
         )
 
     def enqueue_copy[
@@ -806,9 +803,8 @@ struct DeviceContext(
             If the operation fails.
         """
         self._stream[].copy_intra_device(
-            dst_buf._inner[]._buffer,
-            src_buf._inner[]._buffer,
-            dst_buf._inner[]._buffer.byte_size,
+            dst_buf._inner[]._buffer.view(),
+            src_buf._inner[]._buffer.view(),
         )
 
     def enqueue_copy[
@@ -829,9 +825,8 @@ struct DeviceContext(
             If the operation fails.
         """
         self._stream[].copy_to_device(
-            dst_buf._inner[]._buffer,
+            dst_buf._inner[]._buffer.view(),
             src_buf.unsafe_ptr().bitcast[UInt8](),
-            dst_buf._inner[]._buffer.byte_size,
         )
 
     def enqueue_copy[
@@ -853,8 +848,7 @@ struct DeviceContext(
         """
         self._stream[].copy_from_device(
             dst_buf.unsafe_ptr().bitcast[UInt8](),
-            src_buf._inner[]._buffer,
-            src_buf._inner[]._buffer.byte_size,
+            src_buf._inner[]._buffer.view(),
         )
 
     def enqueue_copy[
@@ -879,9 +873,8 @@ struct DeviceContext(
             If the operation fails.
         """
         self._stream[].copy_to_device(
-            dst_buf._inner[]._buffer,
+            dst_buf._inner[]._buffer.view(),
             src_ptr.bitcast[UInt8](),
-            dst_buf._inner[]._buffer.byte_size,
         )
 
     def enqueue_copy[
@@ -906,8 +899,7 @@ struct DeviceContext(
         """
         self._stream[].copy_from_device(
             dst_ptr.bitcast[UInt8](),
-            src_buf._inner[]._buffer,
-            src_buf._inner[]._buffer.byte_size,
+            src_buf._inner[]._buffer.view(),
         )
 
     def enqueue_copy[
@@ -928,9 +920,8 @@ struct DeviceContext(
             If the operation fails.
         """
         self._stream[].copy_intra_device(
-            dst_buf._inner[]._buffer,
-            src_buf._inner[]._buffer,
-            dst_buf._inner[]._buffer.byte_size,
+            dst_buf._inner[]._buffer.view(),
+            src_buf._inner[]._buffer.view(),
         )
 
     def enqueue_copy[
@@ -1140,9 +1131,7 @@ struct DeviceFunction[
 
             def declared_arg_type_name() -> String:
                 comptime if conforms_to(declared_arg_type, DevicePassable):
-                    return downcast[
-                        declared_arg_type, DevicePassable
-                    ].get_type_name()
+                    return declared_arg_type.get_type_name()
                 else:
                     return reflect[declared_arg_type].name()
 
@@ -1150,9 +1139,7 @@ struct DeviceFunction[
                 declared_arg_type
             ]()
 
-            comptime if _type_is_eq[
-                actual_arg_type, actual_arg_type.device_type
-            ]():
+            comptime if actual_arg_type == actual_arg_type.device_type:
                 comptime assert is_convertible, String(
                     "argument #",
                     i,

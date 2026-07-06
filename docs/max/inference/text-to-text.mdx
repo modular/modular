@@ -6,7 +6,6 @@ description: Generate text using MAX with OpenAI-compatible chat and completion 
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import MDXListing from '@site/src/components/Listing/MDXListing';
 import InstallModular from '../../_includes/install-modular.mdx';
 import InstallOpenAI from '../../_includes/install-openai.mdx';
 import Requirements from '@site/src/components/Requirements';
@@ -279,9 +278,7 @@ For complete details on all available API endpoints and options, see the
 Now that you have successfully set up MAX with an OpenAI-compatible chat
 endpoint, check out additional serving optimizations specific to your use case.
 
-export const docs = [
-        '../../serve/structured-output.mdx',
-        '../../serve/prefix-caching.mdx'
-    ]
-
-<MDXListing mdxList={docs} />
+- [Structured output](/max/serve/structured-output): Enable structured output
+  with your GenAI deployments for predictable responses.
+- [Prefix caching with PagedAttention](/max/serve/prefix-caching): Use prefix
+  caching and PagedAttention when serving a model with the MAX CLI.

@@ -217,11 +217,12 @@ def elementwise[
     FuncType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int = 1](Coord) -> None,
+    //,
     simd_width: Int,
     *,
     target: StaticString = "cpu",
     _trace_description: StaticString = "elementwise",
-](func: FuncType, shape: Coord, context: DeviceContext,) raises:
+](func: FuncType, shape: Coord, context: DeviceContext) raises:
     """Unified-closure entry point for `elementwise` (DeviceContext).
 
     Accepts a parametric body (already in

@@ -400,10 +400,16 @@ async def benchmark(
     request_driver_class: type[RequestDriver] = get_request_driver_class(
         session.api_url, task=session.benchmark_task
     )
+    if args.extra_body and session.benchmark_task != "text-generation":
+        logger.warning(
+            "extra_body is ignored for %s; it only applies to "
+            "text-generation requests.",
+            session.benchmark_task,
+        )
     # Create a request driver instance without pbar for test prompt
     # (pbar will be set later for the actual benchmark runs)
     test_request_driver: RequestDriver = request_driver_class(
-        tokenizer=session.tokenizer
+        tokenizer=session.tokenizer, extra_body=args.extra_body
     )
 
     if args.warm_shared_prefix:
@@ -451,7 +457,9 @@ async def benchmark(
     logger.info(f"Burstiness factor: {args.burstiness} ({distribution})")
     logger.info(f"Maximum request concurrency: {max_concurrency}")
 
-    base_driver = request_driver_class(tokenizer=session.tokenizer)
+    base_driver = request_driver_class(
+        tokenizer=session.tokenizer, extra_body=args.extra_body
+    )
 
     # Warm up the initial-slot sessions before starting the timer.
     # pick_warmup_population assigns each picked session a random

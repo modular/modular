@@ -19,7 +19,8 @@ from .status import HALError, STATUS_SUCCESS
 from .plugin import FunctionHandle, RawDriver
 from .driver import Driver, get_device_spec
 from .device import Device
-from .context import Context, Buffer, RuntimeBundle
+from .buffer import Buffer, BufferView
+from .context import Context, RuntimeBundle
 from .event import Event
 from .queue import Queue
 from .stream import Stream

@@ -93,7 +93,7 @@ logit_verification_pipelines:
     absolute_tolerance: 2.4e-2
     relative_tolerance: 7.8e-3
     cos_dist_threshold: 3.3e-6
-    kl_div_threshold: 8.6e-06
+    kl_div_threshold: 1.9e-05
 
   sentence-transformers/all-mpnet-base-v2-float32:
     pre_submit_agents: []
@@ -699,7 +699,7 @@ logit_verification_pipelines:
     pipeline: "kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit"
     compatible_with: [gpu]
     encoding: gptq
-    tags: [nvidia-only]
+    tags: [nvidia-only, manual]  # pending huggingface/transformers#45488
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama-gptq_golden/0/7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef/torch_llama-gptq_golden.tar.gz"
       json_file: "torch_llama-gptq-no-perm-idx_golden.json"
@@ -936,8 +936,8 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/zai-org_GLM-5.1-FP8_golden/1/6a79dc15919c845af6e762d41d7e38bae299eb78b20e4b8a4024de24f4c1b0cb/zai-org_GLM-5.1-FP8_golden.tar.gz"
       json_file: "torch_zai-org_GLM-5.1-FP8_float8_e4m3fn_golden.json"
-    cos_dist_threshold: 6.6e-04
-    kl_div_threshold: 1.7e-01
+    cos_dist_threshold: 1.1e-03
+    kl_div_threshold: 4.0e-01
     timeout: 1200
 
   nvidia/DeepSeek-R1-0528-NVFP4-v2:

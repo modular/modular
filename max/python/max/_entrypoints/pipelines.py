@@ -235,7 +235,6 @@ def cli_serve(
     headless: bool,
     log_prefix: str | None,
     eplb_stats: str | None,
-    task: str,
     task_arg: tuple[str, ...],
     pretty_print_config: bool,
     **config_kwargs: Any,

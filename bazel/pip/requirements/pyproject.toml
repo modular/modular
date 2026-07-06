@@ -17,6 +17,7 @@ dependencies = [
   "codeowners",
   "cyclopts",
   "datasets",
+  "decord2>=3.4.0",  # MiniMax-M3 / qwen2.5-VL video decode (imported as `decord`)
   "device-smi",
   "diffusers==0.37.0",
   "docutils",
@@ -27,6 +28,7 @@ dependencies = [
   "flask",
   "fire ", # For mistral-evals.
   "gguf",
+  "grpcio",
   "hf-transfer",
   "httpx==0.27.2",
   "huggingface-hub[hf_xet]>=0.27.1",
@@ -96,6 +98,7 @@ dependencies = [
   "uvloop>=0.21.0",
   "uvicorn",
   "wheel",
+  "zstandard",
 
   # modeltool
   "google-auth>=2.48.0",

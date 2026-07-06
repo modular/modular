@@ -56,7 +56,6 @@ for squared in map[square](values):
 import std.memory
 from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
-from std.sys.intrinsics import _type_is_eq_parse_time
 
 
 from std.builtin.variadics import TypeList
@@ -207,19 +206,16 @@ trait Iterator(ImplicitlyDeletable, Movable):
         var missing = iter(l).nth(10)   # None
         ```
         """
+        # `Self.Element` is only declared `Movable` on the trait, so a
+        # bare `_ = self.__next__()` won't type-check without this assertion.
+        # Drop this workaround once MOCO-3947 lets us put the bound in a
+        # `where` clause on the method.
         comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+
         debug_assert[assert_mode="safe"](n.ge(0), "nth: n must be non-negative")
         try:
             for _ in range(n):
-                # `Self.Element` is only declared `Movable` on the trait, so a
-                # bare `_ = self.__next__()` won't type-check. Funnel the
-                # discard through the conformance we asserted above. Drop
-                # this workaround once MOCO-3947 lets us put the bound in a
-                # `where` clause on the method.
-                var elem = self.__next__()
-                _ = rebind_var[
-                    downcast[Self.Element, Movable & ImplicitlyDeletable]
-                ](elem^)
+                _ = self.__next__()
             return self.__next__()
         except StopIteration:
             return None
@@ -417,9 +413,7 @@ struct _Enumerate[InnerIteratorType: Iterator](
     def __init__(
         out self, *, copy: Self
     ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = rebind_var[Self.InnerIteratorType](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
+        self._inner = copy._inner.copy()
         self._count = copy._count
 
     def __iter__(
@@ -680,9 +674,7 @@ struct _MapIterator[
     def __init__(
         out self, *, copy: Self
     ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = rebind_var[Self.InnerIteratorType](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
+        self._inner = copy._inner.copy()
 
     def __iter__(
         ref self,
@@ -816,9 +808,7 @@ struct _PeekableIterator[InnerIterator: Iterator](
     ) where conforms_to(Self.InnerIterator, Copyable) and conforms_to(
         Self.InnerIterator.Element, Copyable
     ):
-        self._inner = rebind_var[Self.InnerIterator](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
+        self._inner = copy._inner.copy()
 
         comptime assert conforms_to(Self.Element, Copyable)
         self._next = copy._next.copy()
@@ -894,7 +884,7 @@ def peekable(
 
 comptime _all_yield_same_ref_condition[
     T0: Movable, origin: Origin, T: Iterable
-] = _type_is_eq_parse_time[T.IteratorType[origin].Element, T0]()
+] = T.IteratorType[origin].Element == T0
 
 comptime _all_yield_same_ref[
     origin: Origin, *Ts: Iterable
@@ -904,7 +894,7 @@ comptime _all_yield_same_ref[
 
 comptime _all_yield_same_owned_condition[
     T0: Movable, T: IterableOwned
-] = _type_is_eq_parse_time[T.IteratorOwnedType.Element, T0]()
+] = T.IteratorOwnedType.Element == T0
 
 comptime _all_yield_same_owned[*Ts: IterableOwned]: Bool = Ts.all_satisfies[
     _all_yield_same_owned_condition[Ts[0].IteratorOwnedType.Element, _]

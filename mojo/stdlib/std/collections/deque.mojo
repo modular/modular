@@ -247,14 +247,9 @@ struct Deque[ElementType: Movable](
         self._maxlen = copy._maxlen
         self._shrink = copy._shrink
 
-        comptime UnsafePointerType = UnsafePointer[
-            downcast[Self.ElementType, Copyable], MutUntrackedOrigin
-        ]
         for i in range(len(copy)):
             offset = copy._physical_index(copy._head + i)
-            rebind[UnsafePointerType](self._data + i).init_pointee_copy(
-                rebind[UnsafePointerType](copy._data + offset)[]
-            )
+            (self._data + i).init_pointee_copy((copy._data + offset)[])
 
         self._tail = len(copy)
 

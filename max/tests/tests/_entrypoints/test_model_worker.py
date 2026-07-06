@@ -26,12 +26,7 @@ from max.pipelines.context import (
     TextContext,
     TextGenerationOutput,
 )
-from max.pipelines.lib import (
-    PIPELINE_REGISTRY,
-    MAXModelConfig,
-    PipelineConfig,
-    PipelineRuntimeConfig,
-)
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.modeling.types import (
     Pipeline,
     PipelineTask,
@@ -47,46 +42,6 @@ from max.serve.process_control import SubprocessExit
 from max.serve.telemetry.metrics import NoopClient
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
-
-
-@pytest.fixture
-def mock_pipeline_config() -> PipelineConfig:
-    runtime = PipelineRuntimeConfig.model_construct(
-        max_batch_size=1,
-    )
-    pipeline_config = PipelineConfig.model_construct(
-        runtime=runtime,
-    )
-
-    model_config = MAXModelConfig.model_construct(served_model_name="echo")
-    pipeline_config.model = model_config
-    return pipeline_config
-
-
-@pytest.fixture(autouse=True)
-def patch_pipeline_registry_context_type(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Patch PIPELINE_REGISTRY.retrieve_context_type to always return TextContext.
-
-    The tests in this module use simple mock pipeline configs that do not
-    correspond to a registered architecture. The default implementation of
-    `retrieve_context_type` would raise in this case, but for these tests we
-    only care that a valid context type is provided, not which one.
-    """
-
-    def _mock_retrieve_context_type(
-        pipeline_config: PipelineConfig,
-        override_architecture: str | None = None,
-        task: PipelineTask | None = None,
-    ) -> type[TextContext]:
-        return TextContext
-
-    monkeypatch.setattr(
-        PIPELINE_REGISTRY,
-        "retrieve_context_type",
-        _mock_retrieve_context_type,
-    )
 
 
 @dataclass(frozen=True)

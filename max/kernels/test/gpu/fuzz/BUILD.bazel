@@ -176,6 +176,166 @@ mojo_test(
     ],
 )
 
+# Target: fused QK RMSNorm over Q + the newly-written K rows in the paged KV
+# cache (`fused_qk_rms_norm_ragged_paged` -> `_fused_qk_rms_norm_ragged_paged_gpu`,
+# the MiniMax-M3 per-head QK RMSNorm op `mo.fused_qk_rms_norm.ragged.paged`).
+# Distinct from the MLA `fused_rope_rmsnorm` target: standard MHA-style paged
+# cache (num_kv_heads > 1, K/V dim), full-head_dim RMSNorm of Q AND K (no RoPE),
+# `weight_offset` runtime (M3 = 1.0), `multiply_before_cast` compile-time True.
+# The ragged shape (batch, per-batch cache lengths driving the K-cache slot,
+# per-batch new-token counts) is the runtime fuzz axis; num_q_heads/num_kv_heads
+# are compile-time (`-D fqrn_num_q_heads=16|64 -D fqrn_num_kv_heads=4`, default
+# 16/4 for a fast ref oracle); head_dim fixed at the M3 dense 128. memory-safety
+# primary (the kernel reads+writes the paged K cache in place); `ref` (--check 1)
+# verifies the dense RMSNorm'd query AND the in-place-normalized K-cache rows.
+mojo_test(
+    name = "fuzz_fused_qk_rms_norm.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_fused_qk_rms_norm.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_fused_qk_rms_norm.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Target: fused QK RoPE over Q + the newly-written K rows in the paged KV cache
+# (`fused_qk_rope_ragged`, the MiniMax-M3 ragged RoPE op
+# `mo.fused_qk_rope.ragged.paged`). Distinct from the MLA combined
+# `fused_rope_rmsnorm` kernel: this is RoPE-only. M3 dense attention uses
+# INTERLEAVED full-head_dim RoPE (head_dim == rope_dim == 128). The ragged shape
+# (batch, per-batch cache lengths driving the freqs row + K-cache slot, per-batch
+# new-token counts) is the runtime fuzz axis; num_q_heads/num_kv_heads are
+# compile-time (`-D fqr_num_q_heads=16|64 -D fqr_num_kv_heads=4`, default 16/4
+# for a fast ref oracle); head_dim fixed at the M3 dense 128. memory-safety
+# primary (the kernel reads+writes the paged K cache in place and reads freqs at
+# the ragged-driven row); `ref` (--check 1) verifies the roped query AND the
+# in-place-roped K-cache rows.
+mojo_test(
+    name = "fuzz_fused_qk_rope.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_fused_qk_rope.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_fused_qk_rope.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Target: the MiniMax-M3-MXFP8 fused QKV projection
+# (`generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4`, the dual-mode
+# NVFP4/MXFP8 entry; op `mo.fused_qkv_matmul.ragged.paged.scale.mxfp8`). MXFP8:
+# float8_e4m3fn input + weights, float8_e8m0fnu (E8M0) block scales over 32-elem
+# K blocks in the rank-5 SF-atom layout, fp32 accum; computes hidden @ [Wq|Wk|Wv]^T,
+# returns Q (bf16) and SCATTERS K/V into the paged cache. The ragged shape (batch,
+# per-batch cache lengths driving the K/V scatter slot, per-batch new-token counts)
+# is the runtime fuzz axis (M = total tokens); num_q_heads/num_kv_heads/hidden are
+# compile-time (`-D g3_num_q_heads=.. -D g3_num_kv_heads=.. -D g3_hidden=..`,
+# default 8/1/256; the tuned SM100 matmul reads N/K from the static shape);
+# head_dim fixed at 128, every band a multiple of SF_MN_GROUP_SIZE=128.
+# memory-safety primary (the K/V cache scatter is the OOB-write risk); `ref`
+# (--check 1) is a host fp32-accum naive dequant GEMM (E8M0 block dequant), split
+# into Q (vs output) + K/V (vs the cache read-back). B200-only (SM100 + static N/K).
+mojo_test(
+    name = "fuzz_fused_qkv_matmul_mxfp8.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_fused_qkv_matmul_mxfp8.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_fused_qkv_matmul_mxfp8.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
+# Target: MiniMax-M3's 5-way dual-cache fused projection
+# (`generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4`; op
+# `mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8`). One MXFP8 block-scaled
+# GEMM over the concatenated weight [Wq|Wk|Wv|Wiq|Wik]: returns Q + IndexQ in a
+# combined output, scatters K/V into the MAIN (MHA) paged cache and IndexK into
+# the INDEX (MLA, single latent head, K only) paged cache. Bit-exactness vs
+# separate matmuls is conditional on every band landing on a 128-elem scale block
+# -- the flagged accuracy suspect -- so `ref` (--check 1, host fp32 dequant GEMM)
+# verifies BOTH outputs (Q + IndexQ) AND all three cache read-backs (main K, main
+# V, index K). The ragged shape (batch, per-batch cache lengths -> scatter slots,
+# per-batch new-token counts) is the runtime fuzz axis (M = total tokens);
+# head counts/hidden are compile-time (`-D g2_num_q_heads=.. g2_num_kv_heads=..
+# g2_num_index_heads=.. g2_hidden=..`, default 8/1/4/256); head_dim fixed at 128.
+# memory-safety primary (two cache scatters = OOB-write risk). B200-only.
+mojo_test(
+    name = "fuzz_fused_qkv_index_matmul_mxfp8.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_fused_qkv_index_matmul_mxfp8.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_fused_qkv_index_matmul_mxfp8.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
 # Minimal repro probe for the decode-path hang found by the Slice 0 fuzzer.
 # `num_keys` / `valid_length` come from argv (`--test_arg=`), so one build probes
 # many configs. Tagged `manual` (a hanging config TIMES OUT by design).
@@ -545,7 +705,8 @@ mojo_test(
 # cache_length) is a 1e4 poison sentinel. `ref` (--check) is an f64 block-max
 # softmax masking k_logical > cache_length -- a leaked tail blows O ~1e4 out of
 # band (the CENG-639 long-context decode runaway). head_dim/group compile-time
-# (`-D`, default 128/8). B200-only.
+# (`-D`, default 128/8). Dual-arch (B200 tensor-core + MI355 cooperative path),
+# via msa_amd_decode_dispatch on AMD.
 mojo_test(
     name = "fuzz_msa_decode.mojo.test",
     size = "large",
@@ -561,10 +722,54 @@ mojo_test(
         "gpu",
         "manual",
     ],
-    target_compatible_with = [
-        "//:has_gpu",
-        "//:b200_gpu",
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//Kernels/lib/msa",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
     ],
+)
+
+# Target: MiniMax-M3 block-sparse PREFILL ATTENTION (`msa_sm100_prefill_plan` +
+# `msa_sm100_prefill_run`, in //Kernels/lib/msa) -- the chunked-prefill kernel
+# that attends the indexer-selected blocks over a ragged Q batch via an
+# on-device reverse-CSR + block-major fwd + combine. Distinct from MSA decode
+# (single-token) and the indexer (block selection). Fuzzes the ragged shape
+# (batch, per-batch seqlen_q / seqlen_k driving the CSR work decomposition +
+# q-chunking) + the q2k block selection (incl. the C==0 empty-split edge);
+# topk/num_q_heads/group/causal are compile-time (`-D msap_topk=.. msap_num_q_heads=..
+# msap_group=.. msap_causal=..`, default 8/1/1/0); head_dim fixed at 128.
+# memory-safety primary (device CSR build + block-major scatter); `ref` (--check,
+# default) is the f64 block-sparse oracle from the kernel's authority test. Dual-arch
+# (B200 tensor-core + MI355 cooperative path), via msa_amd_prefill_run on AMD.
+mojo_test(
+    name = "fuzz_msa_prefill.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_msa_prefill.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_msa_prefill.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//Kernels/lib/msa",
         "//max:internal_utils",

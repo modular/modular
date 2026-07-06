@@ -81,6 +81,12 @@ from openai.types.completion_usage import (
 from openai.types.embedding_create_params import (
     EmbeddingCreateParams as _OpenAIEmbeddingParams,
 )
+from openai.types.shared_params.response_format_json_object import (
+    ResponseFormatJSONObject,
+)
+from openai.types.shared_params.response_format_text import (
+    ResponseFormatText,
+)
 
 # isort: on
 from pydantic import (
@@ -255,6 +261,29 @@ class ChatCompletionMessageParam(TypedDict):
 ChatCompletionMessageParam.__pydantic_config__ = ConfigDict(extra="allow")  # type: ignore[attr-defined]
 
 
+# Response-format ``json_schema`` arm, forked from OpenAI's to widen
+# ``schema``: a boolean is a valid JSON Schema (``true`` = any value,
+# ``false`` = none) and the route de-sugars it to the equivalent object
+# schema. Declaring the boolean here (not just coercing in a validator)
+# keeps the generated OpenAPI schema accurate about what is accepted. The
+# ``text``/``json_object`` arms are reused from the SDK unchanged.
+class JSONSchema(TypedDict, total=False):
+    name: str
+    description: str
+    schema: dict[str, object] | bool
+    strict: bool | None
+
+
+class ResponseFormatJSONSchema(TypedDict, total=False):
+    type: Literal["json_schema"]
+    json_schema: JSONSchema
+
+
+ResponseFormat = (
+    ResponseFormatText | ResponseFormatJSONObject | ResponseFormatJSONSchema
+)
+
+
 def _model_from_typeddict(name: str, td: type) -> type[BaseModel]:
     """Builds a pydantic ``BaseModel`` mirroring an OpenAI ``TypedDict``.
 
@@ -378,6 +407,11 @@ class CreateChatCompletionRequest(
 
     max_tokens: int | None = None
     max_completion_tokens: int | None = None
+
+    # Re-typed from the SDK union so the ``json_schema`` arm advertises a
+    # boolean ``schema`` (a valid JSON Schema). Pydantic emits a plain dict;
+    # the route reads it via dict access.
+    response_format: ResponseFormat | None = None
 
     # ``stream`` lives on the OpenAI streaming/non-streaming subclasses, not
     # on ``CompletionCreateParamsBase`` - declare it explicitly here.

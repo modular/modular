@@ -42,6 +42,8 @@ class RecordingConnector:
 
     def __init__(self) -> None:
         self.offloads: list[tuple[list[int], list[bytes], bytes | None]] = []
+        self._h2d_blocks_copied = 0
+        self._d2h_blocks_copied = 0
 
     @property
     def name(self) -> str:
@@ -91,7 +93,14 @@ class RecordingConnector:
 
     @property
     def metrics(self) -> KVCacheMetrics:
-        return KVCacheMetrics()
+        return KVCacheMetrics(
+            h2d_blocks_copied=self._h2d_blocks_copied,
+            d2h_blocks_copied=self._d2h_blocks_copied,
+        )
+
+    def reset_metrics(self) -> None:
+        self._h2d_blocks_copied = 0
+        self._d2h_blocks_copied = 0
 
 
 def _make_block_manager() -> tuple[BlockManager, RecordingConnector]:
@@ -178,3 +187,26 @@ def test_offload_preserves_multi_run_order() -> None:
         ([1, 2], [_b(111), _b(222)], None),
         ([3, 4], [_b(333), _b(444)], _b(222)),
     ]
+
+
+def test_reset_metrics_clears_connector_transfer_counters() -> None:
+    """Per-batch telemetry must reset connector H2D/D2H counters after sampling.
+
+    Without this, ``get_metrics_aggregated()`` returns lifetime cumulative
+    totals and Datadog counter.add() double-counts across batches (MXSERV-203).
+    """
+    bm, connector = _make_block_manager()
+    connector._d2h_blocks_copied = 5
+    connector._h2d_blocks_copied = 2
+
+    assert bm.metrics.d2h_blocks_copied == 5
+    assert bm.metrics.h2d_blocks_copied == 2
+
+    bm.reset_metrics()
+
+    assert bm.metrics.d2h_blocks_copied == 0
+    assert bm.metrics.h2d_blocks_copied == 0
+
+    connector._d2h_blocks_copied = 3
+    assert bm.metrics.d2h_blocks_copied == 3
+    assert bm.metrics.h2d_blocks_copied == 0

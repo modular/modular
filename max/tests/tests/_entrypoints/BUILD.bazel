@@ -9,7 +9,7 @@ package(default_visibility = [
 # TODO(SERVOPT-957): Re-enable on macOS once test timeout issue is fixed.
 modular_py_test(
     name = "tests",
-    srcs = ["test_model_worker.py"],
+    srcs = glob(["*.py"]),
     data = [
         "//max/tests/tests/serve/testdata",
     ],
@@ -30,5 +30,6 @@ modular_py_test(
         "//max/python/max/serve/worker_interface",
         requirement("pytest-asyncio"),
         requirement("fastapi"),
+        requirement("uvicorn"),
     ],
 )

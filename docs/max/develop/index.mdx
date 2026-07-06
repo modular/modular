@@ -4,9 +4,13 @@ description: Learn the process to bring a trained model from Hugging Face to MAX
 ---
 
 The **Model development** section explains how to write model architectures that
-MAX doesn't support out of the box. You'll learn how to use the MAX Model API to
-convert trained models from Hugging Face or PyTorch into models that MAX can
+MAX doesn't support out of the box. You'll learn how to use the MAX Python API
+to convert trained models from Hugging Face or PyTorch into models that MAX can
 serve.
+
+While MAX supports multiple modalities (including image and video generation),
+the guides in this section currently focus on transformer-based text generation
+models, as they follow the most stable and established implementation paradigms.
 
 :::note Stable and experimental APIs
 
@@ -87,6 +91,8 @@ You need a simple function that renames Hugging Face checkpoint keys to match
 your `Module` hierarchy. Usually this is simple string replacement: the Llama 3
 adapter just strips a `"model."` prefix. The adapter is registered in
 `SupportedArchitecture` and runs once when MAX loads the model.
+
+Learn more in [Weight adapters](/max/develop/weight-adapters/).
 
 ### Pipeline model
 

@@ -28,6 +28,7 @@ from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.speculative.config import SpeculativeMethod
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -96,6 +97,15 @@ class DeepseekV3_2Config(DeepseekV3Config):
             scale_dtype=DType.float32, quantization_granularity=32
         )
         assert isinstance(mla_kv_params, KVCacheParams)
+
+        speculative_method: SpeculativeMethod | None = None
+        num_draft_tokens: int = 0
+        if pipeline_config.speculative:
+            speculative_method = pipeline_config.speculative.speculative_method
+            num_draft_tokens = (
+                pipeline_config.speculative.num_speculative_tokens
+            )
+
         indexer_kv_params = kv_cache_config.to_params(
             dtype=indexer_cache_dtype,
             # Similar to MLA, the indexer's k-cache uses a single KV head.
@@ -108,6 +118,8 @@ class DeepseekV3_2Config(DeepseekV3Config):
             is_mla=True,
             num_q_heads=huggingface_config.num_attention_heads,
             kvcache_quant_config=indexer_kvcache_quant_config,
+            speculative_method=speculative_method,
+            num_draft_tokens=num_draft_tokens,
         )
         assert isinstance(indexer_kv_params, KVCacheParams)
         return MultiKVCacheParams.from_params(

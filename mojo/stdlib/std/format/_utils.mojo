@@ -215,13 +215,13 @@ struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
 @always_inline
 def write_repr_to[T: AnyType](t: T, mut writer: Some[Writer]):
     comptime assert conforms_to(T, Writable), "T must be Writable"
-    trait_downcast[Writable](t).write_repr_to(writer)
+    t.write_repr_to(writer)
 
 
 @always_inline
 def write_to[T: AnyType](t: T, mut writer: Some[Writer]):
     comptime assert conforms_to(T, Writable), "T must be Writable"
-    trait_downcast[Writable](t).write_to(writer)
+    t.write_to(writer)
 
 
 struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):

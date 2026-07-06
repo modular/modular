@@ -85,6 +85,12 @@ class PriorityExecutor:
         self._queue: queue.PriorityQueue[_WorkItem] = queue.PriorityQueue()
         self._counter = itertools.count()
         self._workers: list[threading.Thread] = []
+
+        # In-flight job count, so callers can drain the pool without retaining
+        # completed Futures (which would pile up and slow cyclic GC).
+        self._inflight = 0
+        self._idle = threading.Condition()
+
         for i in range(num_workers):
             t = threading.Thread(target=self._worker, args=(i,), daemon=True)
             t.start()
@@ -105,6 +111,8 @@ class PriorityExecutor:
             A Future that resolves when *fn* completes.
         """
         future: Future[None] = Future()
+        with self._idle:
+            self._inflight += 1
         self._queue.put(
             (priority, next(self._counter), fn, args, kwargs, future)
         )
@@ -122,6 +130,17 @@ class PriorityExecutor:
                 future.set_result(result)  # type: ignore[union-attr]
             except Exception as e:
                 future.set_exception(e)  # type: ignore[union-attr]
+            finally:
+                with self._idle:
+                    self._inflight -= 1
+                    if self._inflight == 0:
+                        self._idle.notify_all()
+
+    def wait_until_idle(self) -> None:
+        """Block until every submitted job has finished (success or failure)."""
+        with self._idle:
+            while self._inflight > 0:
+                self._idle.wait()
 
     def shutdown(self, wait: bool = True) -> None:
         """Shut down all worker threads.
@@ -137,8 +156,8 @@ class PriorityExecutor:
 
     @property
     def inflight_disk_ops(self) -> int:
-        """Number of in-flight disk operations."""
-        return self._queue.qsize()
+        """Number of submitted jobs not yet finished (queued or running)."""
+        return self._inflight
 
 
 class DiskTier:
@@ -236,10 +255,8 @@ class DiskTier:
         # which avoids a write/delete race over the same content-addressed file.
         self._pending_deletes: set[bytes] = set()
 
-        # Priority executor: reads preempt deletes preempt writes
+        # Priority executor: reads preempt deletes preempt writes.
         self._executor = PriorityExecutor(num_workers=num_workers)
-        self._write_futures: list[Future[None]] = []
-        self._evict_futures: list[Future[None]] = []
 
         self._hash_algo: KVHashAlgo = kv_hash_algo
         self._verify_or_record_algo()
@@ -333,13 +350,11 @@ class DiskTier:
         # preempt writes (DELETE_PRIORITY < WRITE_PRIORITY) so freed space is
         # reclaimed promptly.
         for evicted_hash, path in evictions:
-            self._evict_futures.append(
-                self._executor.submit(
-                    PriorityExecutor.DELETE_PRIORITY,
-                    self._delete_block_sync,
-                    evicted_hash,
-                    path,
-                )
+            self._executor.submit(
+                PriorityExecutor.DELETE_PRIORITY,
+                self._delete_block_sync,
+                evicted_hash,
+                path,
             )
 
         future = self._executor.submit(
@@ -348,7 +363,6 @@ class DiskTier:
             block_hash,
             src,
         )
-        self._write_futures.append(future)
         return future
 
     def remove(self, block_hash: bytes) -> None:
@@ -361,13 +375,8 @@ class DiskTier:
         self._hash_to_path(block_hash).unlink(missing_ok=True)
 
     def wait_for_writes(self) -> None:
-        """Block until all pending async writes and evictions complete."""
-        for f in self._write_futures:
-            f.result()
-        self._write_futures.clear()
-        for f in self._evict_futures:
-            f.result()
-        self._evict_futures.clear()
+        """Block until all in-flight disk I/O (writes, evictions, reads) completes."""
+        self._executor.wait_until_idle()
 
     def shutdown(self) -> None:
         """Wait for pending writes and shut down the executor."""

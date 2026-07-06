@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from .plugin import OpaquePointer, FunctionHandle, OutParam
-from .context import Context, Buffer
+from .buffer import BufferView
+from .context import Context
 from .queue import Queue
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable
 from .device import DeviceSpec
@@ -116,48 +117,56 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
 
     def copy_to_device(
         mut self,
-        dst: Buffer[Self.device_spec],
+        dst: BufferView,
         src: UnsafePointer[mut=False, UInt8, _],
-        size: UInt64,
     ) raises HALError:
         """Host-to-device copy. Runs after all previous Stream ops."""
         self._chain_wait()
-        self._queue[].copy_to_device(dst, src, size)
+        self._queue[].copy_to_device(dst, src)
         self._chain_signal()
 
     def copy_from_device(
         mut self,
         dst: UnsafePointer[mut=True, UInt8, _],
-        src: Buffer[Self.device_spec],
-        size: UInt64,
+        src: BufferView,
     ) raises HALError:
         """Device-to-host copy. Runs after all previous Stream ops."""
         self._chain_wait()
-        self._queue[].copy_from_device(dst, src, size)
+        self._queue[].copy_from_device(dst, src)
         self._chain_signal()
 
     def copy_intra_device(
         mut self,
-        dst: Buffer[Self.device_spec],
-        src: Buffer[Self.device_spec],
-        size: UInt64,
+        dst: BufferView,
+        src: BufferView,
     ) raises HALError:
         """Same-device buffer copy. Runs after all previous Stream ops."""
         self._chain_wait()
-        self._queue[].copy_intra_device(dst, src, size)
+        self._queue[].copy_intra_device(dst, src)
         self._chain_signal()
 
     def set_memory(
         mut self,
-        dst: Buffer[Self.device_spec],
-        size: UInt64,
+        dst: BufferView,
+        value: UInt8,
+    ) raises HALError:
+        """Set every byte of `dst` to `value`. Runs after all previous Stream
+        ops."""
+        self._chain_wait()
+        self._queue[].set_memory(dst, value)
+        self._chain_signal()
+
+    def fill(
+        mut self,
+        dst: BufferView,
         value: UInt64,
         value_size: UInt64,
     ) raises HALError:
-        """Fill `dst` with a repeated value. Runs after all previous Stream
-        ops."""
+        """Fill `dst` with a repeated `value_size`-byte value. Runs after all
+        previous Stream ops. `value_size` must be one of 1, 2, 4, or 8; a
+        `value_size` of 1 is equivalent to `set_memory`."""
         self._chain_wait()
-        self._queue[].set_memory(dst, size, value, value_size)
+        self._queue[].fill(dst, value, value_size)
         self._chain_signal()
 
     def record_event[

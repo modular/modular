@@ -38,6 +38,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
+from httpx import ConnectError, ReadTimeout
 from max.pipelines.context.exceptions import InputError
 from max.serve.config import Settings
 from max.serve.router import _image_resolution
@@ -312,6 +313,119 @@ async def test_http_within_cap_downloads_fully(monkeypatch) -> None:  # noqa: AN
     )
     assert out == b"abcdefghijkl"
     assert len(read_log) == 3
+
+
+# ---------------------------------------------------------------------------
+# Fix (PERF-2725): explicit fetch timeout + graceful timeout/transport handling.
+# A slow/stalled or failed download must raise a clean InputError (-> 400), not
+# an opaque ReadTimeout that surfaces as a 500 the client then retries.
+# ---------------------------------------------------------------------------
+
+
+class _TimeoutResponse(_FakeResponse):
+    """Streams one chunk, then raises ``ReadTimeout`` like a stalled download."""
+
+    async def aiter_bytes(
+        self, chunk_size: int | None = None
+    ) -> AsyncIterator[bytes]:
+        self._read_log.append(7)
+        yield b"partial"
+        raise ReadTimeout("simulated mid-stream stall")
+
+
+class _RaisingStream:
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    async def __aenter__(self) -> _FakeResponse:
+        raise self._exc
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+
+class _RaisingClient:
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    async def __aenter__(self) -> _RaisingClient:
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+    def stream(self, method: str, url: str, **_: Any) -> _RaisingStream:
+        return _RaisingStream(self._exc)
+
+
+async def test_http_read_timeout_raises_clean_input_error(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """A mid-stream stall (ReadTimeout) -> clean InputError, not an opaque 500."""
+    response = _TimeoutResponse(headers={}, chunks=[], read_log=[])
+    monkeypatch.setattr(
+        _image_resolution,
+        "AsyncClient",
+        lambda **kw: _FakeAsyncClient(response),
+    )
+    with pytest.raises(InputError, match="timed out fetching video"):
+        await resolve_image_from_url(
+            AnyUrl("https://example.com/slow.mp4"),
+            settings=Settings(),
+            max_bytes=_CAP,
+            media_kind="video",
+        )
+
+
+async def test_http_transport_error_raises_clean_input_error(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """A connect/transport failure -> clean InputError, not a 500."""
+    monkeypatch.setattr(
+        _image_resolution,
+        "AsyncClient",
+        lambda **kw: _RaisingClient(ConnectError("simulated connect failure")),
+    )
+    with pytest.raises(InputError, match="failed to fetch video"):
+        await resolve_image_from_url(
+            AnyUrl("https://example.com/unreachable.mp4"),
+            settings=Settings(),
+            max_bytes=_CAP,
+            media_kind="video",
+        )
+
+
+async def test_http_client_uses_explicit_non_default_timeout(
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    """The fetch client is built with an explicit timeout > httpx's 5s default.
+
+    The default httpx timeout (5s on every op) is too aggressive for media
+    downloads; this pins that an explicit, more generous read timeout is set.
+    """
+    captured: dict[str, Any] = {}
+
+    def _factory(**kw: Any) -> _FakeAsyncClient:
+        captured.update(kw)
+        return _FakeAsyncClient(
+            _FakeResponse(
+                headers={"content-length": "2"},
+                chunks=[b"ok"],
+                read_log=[],
+            )
+        )
+
+    monkeypatch.setattr(_image_resolution, "AsyncClient", _factory)
+    await resolve_image_from_url(
+        AnyUrl("https://example.com/ok.png"),
+        settings=Settings(),
+        max_bytes=_CAP,
+    )
+    assert "timeout" in captured, (
+        "fetch client must be given an explicit timeout"
+    )
+    read_timeout = getattr(captured["timeout"], "read", None)
+    assert read_timeout is not None and read_timeout > 5.0
 
 
 # ---------------------------------------------------------------------------

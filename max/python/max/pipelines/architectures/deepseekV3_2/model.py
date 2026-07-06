@@ -111,7 +111,8 @@ class DeepseekV3_2Model(DeepseekV3Model):
                     ep_kwargs["fused_shared_expert"] = True
                 else:
                     ep_kwargs["fused_shared_expert"] = (
-                        quant_config.shared_experts_weight_dtype is None
+                        quant_config.shared_experts_dtype(DType.bfloat16)
+                        == dtype
                     )
 
             if quant_config is not None:
@@ -147,6 +148,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
         model_config.graph_mode = graph_mode
         model_config.data_parallel_degree = data_parallel_degree
         model_config.return_logits = self.return_logits
+        model_config.return_hidden_states = self.return_hidden_states
 
         if ep_size > 1:
             attn_strategy = "TP" if data_parallel_degree == 1 else "DP"

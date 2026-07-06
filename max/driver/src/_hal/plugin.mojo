@@ -155,26 +155,42 @@ struct DriverVersion(TrivialRegisterPassable):
 # C API function pointer types
 # ===-----------------------------------------------------------------------===#
 
-comptime Handle[T: AnyType] = UnsafePointer[T, MutUntrackedOrigin]
-comptime OutParam[T: TrivialRegisterPassable] = UnsafePointer[
-    UnsafeMaybeUninit[T], MutAnyOrigin
+# A handle to memory the raw HAL plugin owns. This means ownership
+# lives outside of Mojo, so leans on UntrackedOrigin.
+comptime ExternalHandle[mut: Bool = False, //, T: AnyType] = UnsafePointer[
+    T, UntrackedOrigin[mut=mut]
 ]
 
-comptime DriverHandle = Handle[M_driver_driver]
-comptime DeviceHandle = Handle[M_driver_device]
-comptime ContextHandle = Handle[M_driver_context]
-comptime QueueHandle = Handle[M_driver_queue]
-comptime EventHandle = Handle[M_driver_event]
-comptime FunctionHandle = Handle[M_driver_function]
-comptime MemoryHandle = Handle[M_driver_memory]
-# Pick a sensible nominal origin for the plugin function pointer. `load_bundle` rebinds the
-# concrete bundle (whatever its asm origin) into this for the FFI call. See MOCO-3661.
-comptime StaticBundleHandle = Handle[
-    M_driver_static_bundle[StaticConstantOrigin]
+# A handle to a Mojo-owned value passed by pointer into a plugin FFI call.
+comptime InternalHandle[
+    mut: Bool = False, //, T: AnyType, origin: Origin[mut=mut]
+] = UnsafePointer[T, origin]
+
+comptime OutParam[
+    T: TrivialRegisterPassable, origin: MutOrigin
+] = UnsafePointer[UnsafeMaybeUninit[T], origin]
+
+comptime DriverHandle = ExternalHandle[M_driver_driver]
+comptime DeviceHandle = ExternalHandle[M_driver_device]
+comptime ContextHandle = ExternalHandle[M_driver_context]
+comptime QueueHandle = ExternalHandle[M_driver_queue]
+comptime EventHandle = ExternalHandle[M_driver_event]
+comptime FunctionHandle = ExternalHandle[M_driver_function]
+comptime MemoryHandle = ExternalHandle[M_driver_memory]
+comptime RuntimeBundleHandle = ExternalHandle[M_driver_runtime_bundle]
+
+
+@fieldwise_init
+struct M_driver_memory_view(Copyable, Movable):
+    var memory: MemoryHandle
+    var offset: UInt64
+    var size: UInt64
+
+
+comptime MemoryViewHandle[origin: ImmutOrigin] = ImmutPointer[
+    M_driver_memory_view, origin
 ]
-comptime RuntimeBundleHandle = Handle[M_driver_runtime_bundle]
-comptime ExecuteConfigHandle = Handle[M_driver_queue_execute_config]
-comptime CompilationOptionsHandle = Handle[M_driver_bundle_compilation_options]
+
 
 comptime PluginResultCode = Int64
 
@@ -398,8 +414,8 @@ struct RawDriver(Movable):
         var value = UnsafeMaybeUninit[T]()
         var status = self._raw.memory_property.f(
             mem,
-            rebind[CStringSlice[ImmutAnyOrigin]](name.as_c_string_slice()),
-            rebind[OpaquePointer[MutAnyOrigin]](OutParam[T](to=value)),
+            name.as_c_string_slice(),
+            OutParam[T](to=value).bitcast[NoneType](),
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -418,12 +434,13 @@ struct RawDriver(Movable):
     def copy_to_device(
         self,
         queue: QueueHandle,
-        dst: MemoryHandle,
+        dst: M_driver_memory_view,
         src: UnsafePointer[mut=False, UInt8, _],
-        size: UInt64,
     ) raises HALError:
         var status = self._raw.queue_copy_to_device.f(
-            queue, dst, src.as_unsafe_any_origin(), size
+            queue,
+            ImmutPointer(to=dst),
+            src,
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -436,11 +453,12 @@ struct RawDriver(Movable):
         self,
         queue: QueueHandle,
         dst: UnsafePointer[mut=True, UInt8, _],
-        src: MemoryHandle,
-        size: UInt64,
+        src: M_driver_memory_view,
     ) raises HALError:
         var status = self._raw.queue_copy_from_device.f(
-            queue, dst.as_unsafe_any_origin(), src, size
+            queue,
+            dst,
+            ImmutPointer(to=src),
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -452,11 +470,14 @@ struct RawDriver(Movable):
     def copy_intra_device(
         self,
         queue: QueueHandle,
-        dst: MemoryHandle,
-        src: MemoryHandle,
-        size: UInt64,
+        dst: M_driver_memory_view,
+        src: M_driver_memory_view,
     ) raises HALError:
-        var status = self._raw.queue_copy_intra_device.f(queue, dst, src, size)
+        var status = self._raw.queue_copy_intra_device.f(
+            queue,
+            ImmutPointer(to=dst),
+            ImmutPointer(to=src),
+        )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
             raise HALError(
@@ -467,19 +488,39 @@ struct RawDriver(Movable):
     def set_memory(
         self,
         queue: QueueHandle,
-        dst: MemoryHandle,
-        size: UInt64,
-        value: UInt64,
-        value_size: UInt64,
+        dst: M_driver_memory_view,
+        value: UInt8,
     ) raises HALError:
         var status = self._raw.queue_set_memory.f(
-            queue, dst, size, value, value_size
+            queue,
+            ImmutPointer(to=dst),
+            value,
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
             raise HALError(
                 err.status,
                 message=String(t"failed to set memory: {err.message}"),
+            )
+
+    def fill(
+        self,
+        queue: QueueHandle,
+        dst: M_driver_memory_view,
+        value: UInt64,
+        value_size: UInt64,
+    ) raises HALError:
+        var status = self._raw.queue_fill.f(
+            queue,
+            ImmutPointer(to=dst),
+            value,
+            value_size,
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to fill memory: {err.message}"),
             )
 
     def synchronize_queue(self, queue: QueueHandle) raises HALError:
@@ -567,7 +608,7 @@ struct RawDriver(Movable):
         num_events: UInt32,
     ) raises HALError:
         var status = self._raw.queue_wait_for_events.f(
-            queue, handles.as_unsafe_any_origin(), num_events
+            queue, handles, num_events
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -592,7 +633,7 @@ struct RawDriver(Movable):
         var status = self._raw.function_load.f(
             context,
             bundle,
-            rebind[CStringSlice[ImmutAnyOrigin]](name.as_c_string_slice()),
+            name.as_c_string_slice(),
             UInt64(name.byte_length()),
             OutParam[FunctionHandle](to=func),
         )
@@ -645,9 +686,9 @@ struct RawDriver(Movable):
         var status = self._raw.queue_execute.f(
             queue,
             func,
-            rebind[ExecuteConfigHandle](UnsafePointer(to=config)),
-            args.as_unsafe_any_origin(),
-            arg_sizes.as_unsafe_any_origin(),
+            UnsafePointer(to=config),
+            args,
+            arg_sizes,
             num_args,
         )
         if status != STATUS_SUCCESS:
@@ -667,7 +708,7 @@ struct RawDriver(Movable):
         var ret = self._raw.status_message.f(
             self._driver_handle,
             status,
-            MutPointer(to=buf.unsafe_ptr().as_unsafe_any_origin()[]),
+            MutPointer(to=buf.unsafe_ptr()[]),
             Int64(len(buf)),
         )
 
@@ -708,15 +749,15 @@ struct RawPlugin(Movable):
         def(
             driver: DriverHandle,
             status: Int64,
-            message_buffer: MutPointer[Int8, MutAnyOrigin],
+            message_buffer: MutPointer[Int8, _],
             message_buffer_size: Int64,
         ) thin -> PluginResultCode,
     ]
     var create: HALFunction[
         "M_driver_create",
         def(
-            version: ImmutPointer[DriverVersion, ImmutAnyOrigin],
-            driver: OutParam[DriverHandle],
+            version: ImmutPointer[DriverVersion, _],
+            driver: OutParam[DriverHandle, _],
         ) thin -> PluginResultCode,
     ]
     var destroy: HALFunction[
@@ -727,14 +768,14 @@ struct RawPlugin(Movable):
         "M_driver_property",
         def(
             handle: DriverHandle,
-            property_name: CStringSlice[ImmutAnyOrigin],
-            value: OutParam[OpaquePointer[ImmutUntrackedOrigin]],
+            property_name: CStringSlice[_],
+            value: OutParam[OpaquePointer[ImmutUntrackedOrigin], _],
         ) thin -> PluginResultCode,
     ]
     var device_count: HALFunction[
         "M_driver_device_count",
         def(
-            driver: DriverHandle, count: OutParam[Int64]
+            driver: DriverHandle, count: OutParam[Int64, _]
         ) thin -> PluginResultCode,
     ]
     var device_get: HALFunction[
@@ -742,13 +783,13 @@ struct RawPlugin(Movable):
         def(
             driver: DriverHandle,
             device_id: Int64,
-            device: OutParam[DeviceHandle],
+            device: OutParam[DeviceHandle, _],
         ) thin -> PluginResultCode,
     ]
     var context_create: HALFunction[
         "M_driver_context_create",
         def(
-            device: DeviceHandle, context: OutParam[ContextHandle]
+            device: DeviceHandle, context: OutParam[ContextHandle, _]
         ) thin -> PluginResultCode,
     ]
     var context_destroy: HALFunction[
@@ -760,7 +801,7 @@ struct RawPlugin(Movable):
         def(
             context: ContextHandle,
             size: UInt64,
-            memory: OutParam[MemoryHandle],
+            memory: OutParam[MemoryHandle, _],
         ) thin -> PluginResultCode,
     ]
     var memory_free_pinned: HALFunction[
@@ -775,7 +816,7 @@ struct RawPlugin(Movable):
         def(
             context: ContextHandle,
             size: UInt64,
-            memory: OutParam[MemoryHandle],
+            memory: OutParam[MemoryHandle, _],
         ) thin -> PluginResultCode,
     ]
     var memory_free_sync: HALFunction[
@@ -790,7 +831,7 @@ struct RawPlugin(Movable):
         def(
             queue: QueueHandle,
             size: UInt64,
-            memory: OutParam[MemoryHandle],
+            memory: OutParam[MemoryHandle, _],
         ) thin -> PluginResultCode,
     ]
     var memory_free_async: HALFunction[
@@ -803,7 +844,7 @@ struct RawPlugin(Movable):
     var queue_create: HALFunction[
         "M_driver_queue_create",
         def(
-            context: ContextHandle, queue: OutParam[QueueHandle]
+            context: ContextHandle, queue: OutParam[QueueHandle, _]
         ) thin -> PluginResultCode,
     ]
     var queue_destroy: HALFunction[
@@ -814,37 +855,51 @@ struct RawPlugin(Movable):
     ]
     var queue_copy_to_device: HALFunction[
         "M_driver_queue_copy_to_device",
-        def(
+        def[
+            dst_origin: ImmutOrigin, src_origin: ImmutOrigin
+        ](
             queue: QueueHandle,
-            dst: MemoryHandle,
-            src: UnsafePointer[UInt8, ImmutAnyOrigin],
-            size: UInt64,
+            dst: MemoryViewHandle[dst_origin],
+            src: UnsafePointer[UInt8, src_origin],
         ) thin -> PluginResultCode,
     ]
     var queue_copy_from_device: HALFunction[
         "M_driver_queue_copy_from_device",
-        def(
+        def[
+            dst_origin: MutOrigin, src_origin: ImmutOrigin
+        ](
             queue: QueueHandle,
-            dst: UnsafePointer[UInt8, MutAnyOrigin],
-            src: MemoryHandle,
-            size: UInt64,
+            dst: UnsafePointer[UInt8, dst_origin],
+            src: MemoryViewHandle[src_origin],
         ) thin -> PluginResultCode,
     ]
     var queue_copy_intra_device: HALFunction[
         "M_driver_queue_copy_intra_device",
-        def(
+        def[
+            dst_origin: ImmutOrigin, src_origin: ImmutOrigin
+        ](
             queue: QueueHandle,
-            dst: MemoryHandle,
-            src: MemoryHandle,
-            size: UInt64,
+            dst: MemoryViewHandle[dst_origin],
+            src: MemoryViewHandle[src_origin],
         ) thin -> PluginResultCode,
     ]
     var queue_set_memory: HALFunction[
         "M_driver_queue_set_memory",
-        def(
+        def[
+            dst_origin: ImmutOrigin
+        ](
             queue: QueueHandle,
-            dst: MemoryHandle,
-            size: UInt64,
+            dst: MemoryViewHandle[dst_origin],
+            value: UInt8,
+        ) thin -> PluginResultCode,
+    ]
+    var queue_fill: HALFunction[
+        "M_driver_queue_fill",
+        def[
+            dst_origin: ImmutOrigin
+        ](
+            queue: QueueHandle,
+            dst: MemoryViewHandle[dst_origin],
             value: UInt64,
             value_size: UInt64,
         ) thin -> PluginResultCode,
@@ -854,7 +909,7 @@ struct RawPlugin(Movable):
         def(
             context: ContextHandle,
             flags: UInt32,
-            event: OutParam[EventHandle],
+            event: OutParam[EventHandle, _],
         ) thin -> PluginResultCode,
     ]
     var event_destroy: HALFunction[
@@ -874,7 +929,7 @@ struct RawPlugin(Movable):
         def(
             context: ContextHandle,
             event: EventHandle,
-            is_ready: OutParam[Bool],
+            is_ready: OutParam[Bool, _],
         ) thin -> PluginResultCode,
     ]
     var function_load: HALFunction[
@@ -882,9 +937,9 @@ struct RawPlugin(Movable):
         def(
             context: ContextHandle,
             bundle: RuntimeBundleHandle,
-            function_name: CStringSlice[ImmutAnyOrigin],
+            function_name: CStringSlice[_],
             function_name_len: UInt64,
-            function: OutParam[FunctionHandle],
+            function: OutParam[FunctionHandle, _],
         ) thin -> PluginResultCode,
     ]
     var function_unload: HALFunction[
@@ -895,30 +950,38 @@ struct RawPlugin(Movable):
     ]
     var device_property: HALFunction[
         "M_driver_device_property",
-        def(
+        def[
+            value_origin: MutOrigin
+        ](
             device: DeviceHandle,
-            property_name: CStringSlice[ImmutAnyOrigin],
-            value: OpaquePointer[MutAnyOrigin],
+            property_name: CStringSlice[_],
+            value: OpaquePointer[value_origin],
         ) thin -> PluginResultCode,
     ]
     var memory_property: HALFunction[
         "M_driver_memory_property",
-        def(
+        def[
+            value_origin: MutOrigin
+        ](
             memory: MemoryHandle,
-            property_name: CStringSlice[ImmutAnyOrigin],
-            value: OpaquePointer[MutAnyOrigin],
+            property_name: CStringSlice[_],
+            value: OpaquePointer[value_origin],
         ) thin -> PluginResultCode,
     ]
     var queue_execute: HALFunction[
         "M_driver_queue_execute",
-        def(
+        def[
+            config_origin: MutOrigin,
+            args_origin: MutOrigin,
+            arg_sizes_origin: MutOrigin,
+        ](
             queue: QueueHandle,
             function: FunctionHandle,
-            config: ExecuteConfigHandle,
-            args: UnsafePointer[
-                OpaquePointer[MutUntrackedOrigin], MutAnyOrigin
+            config: InternalHandle[
+                M_driver_queue_execute_config, config_origin
             ],
-            arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
+            args: UnsafePointer[OpaquePointer[MutUntrackedOrigin], args_origin],
+            arg_sizes: UnsafePointer[UInt64, arg_sizes_origin],
             num_args: UInt32,
         ) thin -> PluginResultCode,
     ]
@@ -928,9 +991,11 @@ struct RawPlugin(Movable):
     ]
     var queue_wait_for_events: HALFunction[
         "M_driver_queue_wait_for_events",
-        def(
+        def[
+            events_origin: MutOrigin
+        ](
             queue: QueueHandle,
-            events: UnsafePointer[EventHandle, MutAnyOrigin],
+            events: UnsafePointer[EventHandle, events_origin],
             num_events: UInt32,
         ) thin -> PluginResultCode,
     ]
@@ -941,16 +1006,24 @@ struct RawPlugin(Movable):
     var queue_is_stream: HALFunction[
         "M_driver_queue_is_stream",
         def(
-            queue: QueueHandle, is_stream: OutParam[Bool]
+            queue: QueueHandle, is_stream: OutParam[Bool, _]
         ) thin -> PluginResultCode,
     ]
     var bundle_load: HALFunction[
         "M_driver_bundle_load",
-        def(
+        def[
+            bundle_origin: MutOrigin,
+            bundle_data_origin: ImmutOrigin,
+            opts_origin: MutOrigin,
+        ](
             context: ContextHandle,
-            bundle: StaticBundleHandle,
-            opts: CompilationOptionsHandle,
-            runtime_bundle: OutParam[RuntimeBundleHandle],
+            bundle: InternalHandle[
+                M_driver_static_bundle[bundle_data_origin], bundle_origin
+            ],
+            opts: InternalHandle[
+                M_driver_bundle_compilation_options, opts_origin
+            ],
+            runtime_bundle: OutParam[RuntimeBundleHandle, _],
         ) thin -> PluginResultCode,
     ]
     var bundle_unload: HALFunction[
@@ -1004,6 +1077,7 @@ struct RawPlugin(Movable):
             handle, so_path
         )
         self.queue_set_memory = type_of(self.queue_set_memory)(handle, so_path)
+        self.queue_fill = type_of(self.queue_fill)(handle, so_path)
         self.event_create = type_of(self.event_create)(handle, so_path)
         self.event_destroy = type_of(self.event_destroy)(handle, so_path)
         self.event_synchronize = type_of(self.event_synchronize)(
@@ -1037,7 +1111,7 @@ struct RawPlugin(Movable):
         )
 
         var status = self.create.f(
-            ImmutPointer(to=UnsafePointer(to=version).as_unsafe_any_origin()[]),
+            ImmutPointer(to=version),
             OutParam[DriverHandle](to=handle),
         )
         if status != STATUS_SUCCESS:

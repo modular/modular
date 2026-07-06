@@ -1638,11 +1638,9 @@ def block_scaled_matmul_with_epilogue[
                 simd_width_of[c_type, target=get_gpu_target()]()
             )
 
-            @parameter
-            @__copy_capture(c, n)
             def epilogue_wrapper[
                 simd_width: Int, alignment: Int = 1
-            ](idx: Coord):
+            ](idx: Coord) {var}:
                 var c_val = c.load[width=simd_width](idx)
                 epilogue[c_type, simd_width, alignment=alignment](
                     Index(idx[0].value(), idx[1].value()), c_val
@@ -1659,7 +1657,7 @@ def block_scaled_matmul_with_epilogue[
                 transpose_b=True,
                 c_row_major=True,
             )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"]((m, n), ctx)
+            elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)
 
 
 # ===----------------------------------------------------------------------=== #

@@ -122,3 +122,36 @@ def test_pipeline_runtime_config_eplb_profile_mirrors_env() -> None:
         assert PipelineRuntimeConfig().eplb_profile is True
     finally:
         del os.environ["MAX_SERVE_EPLB_PROFILE"]
+
+
+def test_graceful_shutdown_timeout_default() -> None:
+    from max.serve.config import Settings
+
+    settings = Settings()
+    assert settings.graceful_shutdown_timeout_s == 5
+
+
+def test_graceful_shutdown_timeout_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from max.serve.config import Settings
+
+    monkeypatch.setenv("MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S", "120")
+    settings = Settings()
+    assert settings.graceful_shutdown_timeout_s == 120
+
+
+def test_fastapi_config_wires_graceful_shutdown_timeout() -> None:
+    """The setting must reach uvicorn's timeout_graceful_shutdown.
+
+    This is the load-bearing property of the change: how long uvicorn waits for
+    in-flight requests on SIGTERM is governed by graceful_shutdown_timeout_s. The
+    graceful shutdown itself is uvicorn's behavior; we only verify the wiring,
+    with no model worker or server start required.
+    """
+    from fastapi import FastAPI
+    from max.serve.api_server import fastapi_config
+    from max.serve.config import Settings
+
+    config = fastapi_config(FastAPI(), Settings(graceful_shutdown_timeout_s=42))
+    assert config.timeout_graceful_shutdown == 42

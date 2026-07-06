@@ -3,21 +3,26 @@ title: Model pipeline
 description: Learn how to integrate your model into a pipeline for serving with MAX.
 ---
 
-When you build models in MAX, whether it's a GPT, Llama, or a
-custom architecture, you're creating the layers, attention mechanisms, and
-forward pass logic that define how the model processes inputs. But to actually
-serve that model as an endpoint that can handle production requests, you need
-to connect it to MAX's serving infrastructure. That's where an **inference
-pipeline** comes in.
+Implementing a model architecture in MAX involves more than just defining the
+layers and the forward pass. To serve your model, you must also integrate it
+into a pipeline that manages the entire inference lifecycle.
 
-A **pipeline** is the bridge between your model and MAX's serving framework.
-The pipeline performs any pre- and post-processing for the model and
-orchestrates the inference workflow. For example, the pipeline loads model
-weights, manages key-value caches, batches requests, and calls your tokenizer
-to encode/decode the inputs/outputs. You can use the
-[`pipelines`](/max/api/python/pipelines) API to make any model architecture
-compatible with MAX, whether you're adapting an existing model or
-implementing a new one from scratch.
+A _pipeline_ connects a model implementation to MAX's serving system. It's
+responsible for tasks such as preparing inputs, executing the model, managing
+inference state such as the KV cache, performing post-processing, and returning
+results.
+
+This page explains how the [`pipelines`](/max/api/python/pipelines) API works,
+how pipeline components work together, and when to customize pipelines.
+
+:::note
+
+Pipelines are task-specific. This page focuses mainly on text generation
+pipelines.
+
+:::
+
+## The pipeline system
 
 The pipeline system uses a registry pattern where model architectures register
 their capabilities, and the infrastructure handles the execution details. When
@@ -25,7 +30,7 @@ you point MAX at a model, the registry looks up the architecture, validates
 compatibility, downloads weights, compiles the model, and returns a ready-to-use
 pipeline.
 
-This architecture separates concerns cleanly:
+This separates concerns cleanly:
 
 - **Modules** define model architectures and hold weights.
 - **Pipelines** orchestrate the inference loop and manage state.
@@ -33,8 +38,8 @@ This architecture separates concerns cleanly:
 - **Compilation** transforms your model into optimized executables for the
   target device.
 
-Pipelines let you focus on model architecture while MAX handles the
-production infrastructure—batching, caching, compilation, and serving.
+Pipelines let you focus on model architecture while MAX handles the production
+infrastructure, including batching, caching, compilation, and serving.
 
 ## Building blocks
 

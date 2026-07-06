@@ -34,6 +34,7 @@ from max.nn.layer import Module
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
+    BatchProcessor,
     CompilationTimer,
     KVCacheConfig,
     ModelInputs,
@@ -74,7 +75,7 @@ class DeepseekV2Model(
     PipelineModelWithKVCache[TextContext],
 ):
     model_config_cls: ClassVar[type[Any]] = DeepseekV2Config
-    batch_processor_cls: ClassVar[type[DeepseekV2BatchProcessor]] = (
+    batch_processor_cls: ClassVar[type[BatchProcessor[Any, Any]]] = (
         DeepseekV2BatchProcessor
     )
 

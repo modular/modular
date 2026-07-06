@@ -427,7 +427,9 @@ class Gemma3_MultiModalModel(
             cu_seqlens_list = [inp.tensor for inp in all_inputs[:n_devices]]
             all_inputs = all_inputs[n_devices:]
 
-            pool_weights_list = [inp.tensor for inp in all_inputs[:n_devices]]
+            pool_gather_index_list = [
+                inp.tensor for inp in all_inputs[:n_devices]
+            ]
             all_inputs = all_inputs[n_devices:]
 
             max_seq_len = all_inputs[0].tensor
@@ -436,7 +438,7 @@ class Gemma3_MultiModalModel(
                 patches_flat_list,
                 pixel_position_ids_list,
                 cu_seqlens_list,
-                pool_weights_list,
+                pool_gather_index_list,
                 max_seq_len,
             )
             vision_graph.output(*outputs)
@@ -453,7 +455,7 @@ class Gemma3_MultiModalModel(
             *raw.patches_flat,
             *raw.pixel_position_ids,
             *raw.cu_seqlens,
-            *raw.pool_weights,
+            *raw.pool_gather_index,
             raw.max_seq_len,
         )
 

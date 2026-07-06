@@ -469,6 +469,7 @@ Format = Annotated[
 
 # Solve forward references
 if hasattr(BaseModel, "model_rebuild"):
+    OrFormat.model_rebuild()
     SequenceFormat.model_rebuild()
     TagFormat.model_rebuild()
     TriggeredTagsFormat.model_rebuild()
@@ -481,6 +482,7 @@ if hasattr(BaseModel, "model_rebuild"):
     DispatchFormat.model_rebuild()
     TokenDispatchFormat.model_rebuild()
 elif hasattr(BaseModel, "update_forward_refs"):
+    OrFormat.update_forward_refs()
     SequenceFormat.update_forward_refs()
     TagFormat.update_forward_refs()
     TriggeredTagsFormat.update_forward_refs()

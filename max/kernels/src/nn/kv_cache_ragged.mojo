@@ -14,6 +14,8 @@
 from std.sys.info import _current_target, simd_width_of
 from std.math import ceildiv
 from std.math.uutils import udivmod
+from std.memory import ThinAllocation, dealloc
+from std.memory.alloc import Layout as AllocLayout
 
 from std.algorithm.functional import elementwise, unswitch
 from std.gpu import global_idx
@@ -1811,6 +1813,10 @@ def _matmul_common[
 ) raises:
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
+
+    var c_alloc_layout = AllocLayout[Scalar[output_dtype]](
+        count=TOTAL_SEQ_LEN * N
+    )
     var c_nd: LayoutTensor[
         output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutUntrackedOrigin
     ]
@@ -1819,7 +1825,7 @@ def _matmul_common[
         # The CPU matmul codepath uses the C buffer as a workspace
         # even if an epilogue is provided, here we just allocate
         # something to ensure we don't segfault.
-        var c_ptr = alloc[Scalar[output_dtype]](TOTAL_SEQ_LEN * N)
+        var c_ptr = alloc(c_alloc_layout).unsafe_leak()
 
         c_nd = {
             c_ptr,
@@ -1842,7 +1848,11 @@ def _matmul_common[
     ](lt_to_tt(c_nd), lt_to_tt(hidden_state), lt_to_tt(weight), context)
 
     comptime if is_cpu[target]():
-        c_nd.ptr.free()
+        dealloc(
+            ThinAllocation(unsafe_assume_ownership=c_nd.ptr).unsafe_with_layout(
+                c_alloc_layout
+            )
+        )
 
 
 @always_inline
@@ -2995,7 +3005,9 @@ def _qmatmul_gguf_quantized_alloc_output[
     # The CPU matmul codepath uses the C buffer as a workspace
     # even if an epilogue is provided, here we just allocate
     # something to ensure we don't segfault.
-    var c_ptr = alloc[Float32](TOTAL_SEQ_LEN * N)
+    var c_ptr = alloc(
+        AllocLayout[Float32](count=TOTAL_SEQ_LEN * N)
+    ).unsafe_leak()
 
     c_nd = {
         c_ptr,
@@ -3006,7 +3018,11 @@ def _qmatmul_gguf_quantized_alloc_output[
         quantization_encoding, elementwise_lambda_fn
     ](hidden_state, weight, c_nd)
 
-    c_nd.ptr.free()
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=c_ptr).unsafe_with_layout(
+            AllocLayout[Float32](count=TOTAL_SEQ_LEN * N)
+        )
+    )
 
 
 @always_inline
@@ -3880,15 +3896,12 @@ def generic_flare_mla_prefill_ragged_paged_plan[
 ) raises:
     comptime assert is_gpu[target](), "Planning MLA is only supported on GPU"
 
-    var cuda_ctx = context
-
     var layer_idx_cast = Int(layer_idx)
 
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mla.prefill.ragged.paged.plan",
-        task_id=Int(context.id()),
+        "mo.mla.prefill.ragged.paged.plan", task_id=Int(context.id())
     ):
         mla_prefill_plan(
             lt_to_tt(buffer_row_offsets),
@@ -3897,7 +3910,7 @@ def generic_flare_mla_prefill_ragged_paged_plan[
             lt_to_tt(input_row_offsets),
             k,
             buffer_token_size,
-            cuda_ctx,
+            context,
         )
 
 
@@ -4004,7 +4017,6 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
     context: DeviceContext,
 ) raises:
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
-    var cuda_ctx = context
 
     var buffer_length_int = Int(buffer_length)
     var layer_idx_cast = Int(layer_idx)
@@ -4021,7 +4033,7 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
         k,
         Int32(buffer_length_int),
         k_latent_tile,
-        cuda_ctx,
+        context,
     )
 
     # rebind k_latent_buffer with dynamic dim
@@ -4045,14 +4057,11 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
         k_buffer.ptr, RuntimeLayout[k_layout].row_major(k_dynamic_shape)
     )
 
-    matmul[
-        target=target,
-        transpose_b=True,
-    ](
+    matmul[target=target, transpose_b=True](
         lt_to_tt(k_buffer_dynamic),
         lt_to_tt(k_latent_buffer_dynamic),
         lt_to_tt(weight),
-        Optional(cuda_ctx),
+        Optional(context),
     )
 
 
@@ -4270,6 +4279,10 @@ def generic_kv_cache_radd_dispatch[
     var k_cache = cache.get_key_cache(layer_idx_cast)
     var v_cache = cache.get_value_cache(layer_idx_cast)
 
+    # TODO: This elementwise body captures KV cache views (`CacheType`), which
+    # fail codegen when stored into a unified closure ('pop.store' pointer
+    # element-type verification). Keep using the deprecated parameter-closure
+    # overload until cache captures in unified closures are supported.
     @parameter
     @__copy_capture(k_cache, v_cache, input_row_offsets)
     def do_radd[width: Int, alignment: Int = 1](idx: Coord):
@@ -4352,6 +4365,10 @@ def kv_cache_store_ragged[
         " + 1,)`"
     )
 
+    # TODO: This elementwise body captures a KV cache view (`CacheType`), which
+    # fails codegen when stored into a unified closure ('pop.store' pointer
+    # element-type verification). Keep using the deprecated parameter-closure
+    # overload until cache captures in unified closures are supported.
     @parameter
     @__copy_capture(cache, input_row_offsets)
     def write_to_cache[
@@ -4412,6 +4429,10 @@ def kv_cache_store_padded[
         valid_lengths.layout.rank() == 1
     ), "Expected valid_lengths to be a 1D tensor of shape `(batch_size,)`"
 
+    # TODO: This elementwise body captures a KV cache view (`CacheType`), which
+    # fails codegen when stored into a unified closure ('pop.store' pointer
+    # element-type verification). Keep using the deprecated parameter-closure
+    # overload until cache captures in unified closures are supported.
     @parameter
     @__copy_capture(cache, valid_lengths)
     @always_inline
@@ -4513,6 +4534,10 @@ def kv_cache_2m_iadd_dispatch[
     # [2m, N]
     var elementwise_shape = IndexList[2](2 * m, kv_shape[1])
 
+    # TODO: This elementwise body captures KV cache views (`CacheType`), which
+    # fail codegen when stored into a unified closure ('pop.store' pointer
+    # element-type verification). Keep using the deprecated parameter-closure
+    # overload until cache captures in unified closures are supported.
     @parameter
     @__copy_capture(kv, k_cache, v_cache, input_row_offsets, m, M)
     def iadd[width: Int, alignment: Int = 1](idx: Coord):

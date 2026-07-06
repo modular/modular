@@ -22,7 +22,6 @@ from std.format._utils import (
     FormatStruct,
 )
 from std.hashlib.hasher import Hasher
-from std.sys.intrinsics import _type_is_eq
 
 from std.reflection.type_info import _unqualified_type_name
 
@@ -100,9 +99,7 @@ struct Tuple[*element_types: Movable](
                 "Tuple default-construction requires all element types to"
                 " conform to `Defaultable`"
             )
-            UnsafePointer(
-                to=trait_downcast[Defaultable & Movable](self[i])
-            ).init_pointee_move({})
+            UnsafePointer(to=self[i]).init_pointee_move({})
 
     @always_inline("nodebug")
     def __init__(out self, var *args: *Self.element_types):
@@ -136,9 +133,8 @@ struct Tuple[*element_types: Movable](
                 Element=TUnknown,
                 ParentConformsTo="ImplicitlyDeletable",
             ]()
-            UnsafePointer(
-                to=trait_downcast[ImplicitlyDeletable](self[i])
-            ).destroy_pointee()
+            comptime assert conforms_to(TUnknown, ImplicitlyDeletable)
+            UnsafePointer(to=self[i]).destroy_pointee()
 
     @always_inline("nodebug")
     def __init__(out self, *, copy: Self):
@@ -153,11 +149,10 @@ struct Tuple[*element_types: Movable](
         )
 
         comptime for i in range(Self.__len__()):
+            comptime assert conforms_to(Self.element_types[i], Copyable)
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
-            UnsafePointer(
-                to=trait_downcast[Copyable](self[i])
-            ).init_pointee_copy(trait_downcast[Copyable](copy[i]))
+            UnsafePointer(to=self[i]).init_pointee_copy(copy[i])
 
     @always_inline("nodebug")
     def __init__(out self, *, deinit move: Self):
@@ -244,7 +239,7 @@ struct Tuple[*element_types: Movable](
         """
 
         comptime for i in range(type_of(self).__len__()):
-            comptime if _type_is_eq[Self.element_types[i], T]():
+            comptime if Self.element_types[i] == T:
                 if rebind[T](self[i]) == value:
                     return True
 
@@ -263,9 +258,8 @@ struct Tuple[*element_types: Movable](
             True if this tuple is equal to the other tuple, False otherwise.
         """
         comptime for i in range(type_of(self).__len__()):
-            if trait_downcast[Equatable](self[i]) != trait_downcast[Equatable](
-                other[i]
-            ):
+            comptime assert conforms_to(Self.element_types[i], Equatable)
+            if self[i] != other[i]:
                 return False
         return True
 
@@ -281,7 +275,8 @@ struct Tuple[*element_types: Movable](
             hasher: The hasher instance.
         """
         comptime for i in range(type_of(self).__len__()):
-            trait_downcast[Hashable](self[i]).__hash__(hasher)
+            comptime assert conforms_to(Self.element_types[i], Hashable)
+            self[i].__hash__(hasher)
 
     @no_inline
     def _write_tuple_to[
@@ -300,10 +295,11 @@ struct Tuple[*element_types: Movable](
 
         @parameter
         def elements[i: Int](mut writer: Some[Writer]):
+            comptime assert conforms_to(Self.element_types[i], Writable)
             comptime if is_repr:
-                trait_downcast[Writable](self[i]).write_repr_to(writer)
+                self[i].write_repr_to(writer)
             else:
-                trait_downcast[Writable](self[i]).write_to(writer)
+                self[i].write_to(writer)
 
         write_sequence_to[
             size=Self.__len__(),
@@ -366,9 +362,10 @@ struct Tuple[*element_types: Movable](
         comptime min_length = min(self_len, other_len)
 
         comptime for i in range(min_length):
-            if trait_downcast[Comparable](self[i]) < other[i]:
+            comptime assert conforms_to(Self.element_types[i], Comparable)
+            if self[i] < other[i]:
                 return -1
-            if trait_downcast[Comparable](other[i]) < self[i]:
+            if other[i] < self[i]:
                 return 1
 
         comptime if self_len < other_len:

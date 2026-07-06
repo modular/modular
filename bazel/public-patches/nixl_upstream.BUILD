@@ -10,6 +10,7 @@
 # `etcd-cpp-api` here.
 
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -65,8 +66,8 @@ cc_library(
     ]),
     copts = [
         # Upstream's meson defines these on the command line.
-        '-DNIXL_VERSION=\\"1.1.0\\"',
-        '-DNIXL_GIT_HASH=\\"upstream-v1.1.0\\"',
+        '-DNIXL_VERSION=\\"1.3.0\\"',
+        '-DNIXL_GIT_HASH=\\"upstream-v1.3.0\\"',
     ],
     # Upstream's meson sets utils_inc_dirs=src/utils so `#include "common/..."`
     # works; but telemetry.cpp also uses bare `#include "util.h"` which
@@ -159,6 +160,11 @@ cc_library(
         "src/core/nixl_plugin_manager.cpp",
         "src/core/telemetry/buffer_exporter.cpp",
         "src/core/telemetry/buffer_plugin.cpp",
+        # nop_plugin.cpp defines createStaticNOPPlugin(), which
+        # nixl_plugin_manager.cpp references unconditionally via
+        # registerBuiltinPlugins() since upstream v1.3.0. Without it the
+        # consumer link fails with an undefined reference.
+        "src/core/telemetry/nop_plugin.cpp",
         "src/core/telemetry/telemetry.cpp",
     ],
     hdrs = glob([
@@ -424,6 +430,10 @@ cc_binary(
     name = "libnixl.so",
     linkopts = [
         "-Wl,-z,undefs",
+        # Set the SONAME so a downstream link records a clean `libnixl.so`
+        # DT_NEEDED (rather than the bazel link-time path) and the runtime
+        # loader keys off the SONAME.
+        "-Wl,-soname,libnixl.so",
     ],
     linkshared = True,
     linkstatic = True,
@@ -435,6 +445,7 @@ cc_binary(
     name = "libnixl_build.so",
     linkopts = [
         "-Wl,-z,undefs",
+        "-Wl,-soname,libnixl_build.so",
     ],
     linkshared = True,
     linkstatic = True,
@@ -446,11 +457,45 @@ cc_binary(
     name = "libnixl_common.so",
     linkopts = [
         "-Wl,-z,undefs",
+        "-Wl,-soname,libnixl_common.so",
     ],
     linkshared = True,
     linkstatic = True,
     target_compatible_with = _LINUX_X86,
     deps = [":nixl_common"],
+)
+
+# Dynamic-link import of libnixl.so for in-tree consumers (e.g. libmax) that
+# want a DT_NEEDED on libnixl.so instead of folding the NIXL core object code
+# into their own shared object. libnixl.so already folds the full transitive
+# symbol set (core + infra + common + serdes + stream via alwayslink), so a
+# single import resolves everything the `:nixl*` object libraries used to
+# provide. Pair this with `:nixl_api_headers` for the compile-side includes.
+cc_import(
+    name = "nixl_shared",
+    shared_library = ":libnixl.so",
+    target_compatible_with = _LINUX_X86,
+)
+
+# Consumption wrapper for in-tree consumers (libmax, MLRT tests): NIXL public
+# headers everywhere; on linux_x86_64 it also links libnixl.so (:nixl_shared)
+# and carries the dlopen'd transport plugins as runfiles. Degrades to
+# headers-only on macOS/aarch64 (the Linux-only targets enter the graph only via
+# the linux_x86_64 select arm) so downstream targets like libmax still build
+# there. This replaces the former //MLRT:Driver/NIXL wrapper.
+cc_library(
+    name = "nixl_runtime",
+    data = select({
+        "@@//:linux_x86_64": [
+            ":libplugin_LIBFABRIC.so",
+            ":libplugin_UCX.so",
+        ],
+        "//conditions:default": [],
+    }),
+    deps = [":nixl_api_headers"] + select({
+        "@@//:linux_x86_64": [":nixl_shared"],
+        "//conditions:default": [],
+    }),
 )
 
 # --- Install prefix -------------------------------------------------------

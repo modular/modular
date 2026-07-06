@@ -6,7 +6,6 @@ description: Implement OpenAI-compatible function calling and tool use for agent
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import MDXListing from '@site/src/components/Listing/MDXListing';
 import InstallModular from '../../_includes/install-modular.mdx';
 import InstallOpenAI from '../../_includes/install-openai.mdx';
 
@@ -393,9 +392,7 @@ send the function results back to the LLM as input, see the
 Now that you know the basics of function calling, you can get started with MAX
 on GPUs.
 
-export const docs = [
-  '../../serve/structured-output.mdx',
-  '../../deploy/local-to-cloud.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Structured output](/max/serve/structured-output): Enable structured output
+  with your GenAI deployments for predictable responses.
+- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+  Learn how to deploy MAX pipelines to cloud.

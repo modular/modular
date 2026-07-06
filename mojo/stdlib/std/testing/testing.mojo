@@ -559,7 +559,5 @@ struct assert_raises:
             comptime assert conforms_to(
                 E, Writable
             ), "assert_raises(contains=...) requires a Writable error type"
-            return self.message_contains.value() in String.write(
-                trait_downcast[Writable](error)
-            )
+            return self.message_contains.value() in String.write(error)
         return True

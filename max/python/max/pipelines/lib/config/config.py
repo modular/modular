@@ -39,7 +39,10 @@ from max.pipelines.lib.pipeline_runtime_config import (
 )
 from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.types.task import PipelineTask
-from max.pipelines.sampling import SamplingConfig
+from max.pipelines.sampling import (
+    DEFAULT_STRUCTURED_OUTPUT_BACKEND,
+    SamplingConfig,
+)
 from max.pipelines.speculative.config import SpeculativeConfig
 from pydantic import (
     BaseModel,
@@ -997,6 +1000,20 @@ class PipelineConfig(ConfigFileModel):
                 target_archs[0] = (
                     "UnifiedMTPMiniMaxM3SparseForConditionalGeneration"
                 )
+        if target_archs[0] == "GlmMoeDsaForCausalLM":
+            # GLM-5.2 bakes a NextN MTP layer into the target checkpoint, so
+            # there is no separate draft model. GLM-5.1 shares the arch name
+            # but has no MTP layer; only override when MTP weights exist.
+            has_mtp = (
+                getattr(
+                    self.model.huggingface_config,
+                    "num_nextn_predict_layers",
+                    0,
+                )
+                or 0
+            ) > 0
+            if self.draft_model is None and has_mtp:
+                target_archs[0] = "UnifiedMTPGlmMoeDsaForCausalLM"
 
     def resolve(
         self,
@@ -1070,6 +1087,7 @@ class PipelineConfig(ConfigFileModel):
 
         self._resolve_default_reasoning_parser(arch=arch)
         self._resolve_default_tool_parser(arch=arch)
+        self._resolve_default_structured_output_backend(arch=arch)
 
     def _resolve_default_reasoning_parser(self, arch: Any = None) -> None:
         """Apply the architecture's default reasoning parser when unset.
@@ -1140,6 +1158,49 @@ class PipelineConfig(ConfigFileModel):
             "to disable.",
             parser_name,
             arch.name,
+        )
+
+    def _resolve_default_structured_output_backend(
+        self, arch: Any = None
+    ) -> None:
+        """Resolve the structured output backend to a concrete value.
+
+        Resolution order (highest precedence first):
+
+        1. An explicit user choice (``sampling.structured_output_backend`` is
+           not ``None``) always wins -- including an explicit ``"xgrammar"`` on
+           an architecture that pins ``"llguidance"``.
+        2. Otherwise, if the resolved ``SupportedArchitecture`` declares a
+           ``default_structured_output_backend`` (e.g. Gemma 3 / MiniMax-M2 pin
+           ``"llguidance"``), use it.
+        3. Otherwise, fall back to the global default ``"xgrammar"``.
+
+        Runs unconditionally so the field is always a concrete ``str`` after
+        ``resolve()``. The ``None`` sentinel (unset) is what distinguishes an
+        explicit user value from the default -- mirroring the reasoning/tool
+        parser resolvers above.
+        """
+        if self.sampling.structured_output_backend is not None:
+            # Explicit user configuration always wins.
+            return
+
+        if (
+            arch is not None
+            and arch.default_structured_output_backend is not None
+        ):
+            self.sampling.structured_output_backend = (
+                arch.default_structured_output_backend
+            )
+            logger.info(
+                "Defaulting structured output backend to %r for architecture "
+                "%s. Override with --structured-output-backend.",
+                arch.default_structured_output_backend,
+                arch.name,
+            )
+            return
+
+        self.sampling.structured_output_backend = (
+            DEFAULT_STRUCTURED_OUTPUT_BACKEND
         )
 
     def _validate_and_resolve_overlap_scheduler(

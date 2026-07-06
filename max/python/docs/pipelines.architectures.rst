@@ -44,11 +44,13 @@ family.
    pipelines.architectures.laguna
    pipelines.architectures.lfm2
    pipelines.architectures.llama3
+   pipelines.architectures.llama4
    pipelines.architectures.mamba
    pipelines.architectures.minimax_m2
    pipelines.architectures.mistral
    pipelines.architectures.mistral3
    pipelines.architectures.mpnet
+   pipelines.architectures.nemotron_h
    pipelines.architectures.olmo
    pipelines.architectures.olmo2
    pipelines.architectures.olmo3
@@ -68,6 +70,7 @@ family.
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
    pipelines.architectures.unified_mtp_gemma4
+   pipelines.architectures.unified_mtp_glm5_2
    pipelines.architectures.wan
 
 Text generation
@@ -99,10 +102,12 @@ Text generation
    ~max.pipelines.architectures.laguna
    ~max.pipelines.architectures.lfm2
    ~max.pipelines.architectures.llama3
+   ~max.pipelines.architectures.llama4
    ~max.pipelines.architectures.mamba
    ~max.pipelines.architectures.minimax_m2
    ~max.pipelines.architectures.mistral
    ~max.pipelines.architectures.mistral3
+   ~max.pipelines.architectures.nemotron_h
    ~max.pipelines.architectures.olmo
    ~max.pipelines.architectures.olmo2
    ~max.pipelines.architectures.olmo3
@@ -119,6 +124,7 @@ Text generation
    ~max.pipelines.architectures.unified_eagle_llama3
    ~max.pipelines.architectures.unified_mtp_deepseekV3
    ~max.pipelines.architectures.unified_mtp_gemma4
+   ~max.pipelines.architectures.unified_mtp_glm5_2
 
 Embeddings
 ----------

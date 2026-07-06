@@ -14,10 +14,13 @@
 from std.algorithm.functional import unswitch
 from std.math import ceildiv, min
 from std.math.uutils import udivmod
-from std.sys.info import simd_width_of
-from std.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
+from std.memory import ThinAllocation, dealloc
+from std.memory.alloc import Layout as AllocLayout
+from std.sys.info import align_of, simd_width_of
+from std.gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
+from std.gpu.memory import AddressSpace
 from std.collections import OptionalReg
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -36,13 +39,20 @@ from layout import (
     UNKNOWN_VALUE,
     coord_to_index_list,
     lt_to_tt,
+    row_major,
+    stack_allocation,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.attention.cpu.mha import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
-from nn.fused_qk_rope import fused_qk_rope
+from nn.fused_qk_rope import (
+    fused_qk_rope,
+    get_identity_rope_coeff,
+    get_safetensors_idx,
+    rope_value,
+)
 from nn.attention.gpu.mha import flash_attention as gpu_flash_attention
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_utils import (
@@ -433,9 +443,11 @@ def _matmul_common[
     comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
 
     comptime if is_cpu[target]():
-        var c_ptr = alloc[Scalar[dtype]](BS * SEQ_LEN * N)
+        var c_alloc = alloc(
+            AllocLayout[Scalar[dtype]](count=BS * SEQ_LEN * N)
+        ).into_deletable()
         var c_nd = LayoutTensor[dtype, c_layout](
-            c_ptr,
+            c_alloc.unsafe_ptr(),
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
 
@@ -445,7 +457,7 @@ def _matmul_common[
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
 
-        c_nd.ptr.free()
+        dealloc(c_alloc^.into_allocation())
     else:
         # Allocate a device-local scratch for the matmul accumulator; the
         # epilogue lambda reads from it and scatters Q/K/V to the real
@@ -948,7 +960,7 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
     k_cache: cache_t,
     q_gamma: TileTensor[dtype, q_gamma_layout, q_gamma_origin],
     k_gamma: TileTensor[dtype, k_gamma_layout, k_gamma_origin],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[DType.uint32, offsets_layout, offsets_origin],
@@ -964,7 +976,6 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
     ), "input_row_offsets must be rank 1"
 
     comptime accum_type = get_accum_type[dtype]()
-    var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     var tid = thread_idx.x
@@ -1015,7 +1026,7 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
         idx,
         vec_data,
         gamma_val,
-        eps_accum,
+        epsilon,
         weight_offset_accum,
         num_cols,
     )
@@ -1060,7 +1071,7 @@ def fused_qk_rms_norm_ragged_paged[
     ],
     q_gamma: TileTensor[mut=False, dtype, ...],
     k_gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
@@ -1176,6 +1187,407 @@ def fused_qk_rms_norm_ragged_paged[
         )
 
 
+# ===-----------------------------------------------------------------------===#
+# Fused RMSNorm + RoPE
+# ===-----------------------------------------------------------------------===#
+
+
+@__name(
+    t"fused_qk_rms_norm_rope_ragged_paged_gpu_{dtype}_{multiply_before_cast}_{interleaved}"
+)
+def _fused_qk_rms_norm_rope_ragged_paged_gpu[
+    cache_t: KVCacheT,
+    q_out_layout: TensorLayout,
+    q_out_origin: Origin[mut=True],
+    q_layout: TensorLayout,
+    q_origin: Origin[mut=False],
+    q_gamma_layout: TensorLayout,
+    q_gamma_origin: Origin[mut=False],
+    k_gamma_layout: TensorLayout,
+    k_gamma_origin: Origin[mut=False],
+    freqs_layout: TensorLayout,
+    freqs_origin: Origin[mut=False],
+    offsets_layout: TensorLayout,
+    offsets_origin: Origin[mut=False],
+    dtype: DType,
+    freq_dtype: DType,
+    //,
+    simd_width: Int,
+    warps_per_block: Int,
+    multiply_before_cast: Bool,
+    interleaved: Bool,
+    has_nope_prefix: Bool,
+    rope_dim: Int,
+](
+    q_output: TileTensor[dtype, q_out_layout, q_out_origin],
+    q_proj: TileTensor[dtype, q_layout, q_origin],
+    k_cache: cache_t,
+    q_gamma: TileTensor[dtype, q_gamma_layout, q_gamma_origin],
+    k_gamma: TileTensor[dtype, k_gamma_layout, k_gamma_origin],
+    freqs_cis: TileTensor[freq_dtype, freqs_layout, freqs_origin],
+    epsilon: Float32,
+    weight_offset: Scalar[dtype],
+    total_seq_len: UInt32,
+    input_row_offsets: TileTensor[DType.uint32, offsets_layout, offsets_origin],
+    q_num_heads: Int,
+    num_cols: Int,
+):
+    comptime assert q_output.flat_rank == 3, "q_output must have rank 3"
+    comptime assert q_proj.flat_rank == 3, "q_proj must have rank 3"
+    comptime assert q_gamma.flat_rank == 1, "q_gamma must have rank 1"
+    comptime assert k_gamma.flat_rank == 1, "k_gamma must have rank 1"
+    comptime assert freqs_cis.flat_rank == 2, "freqs_cis must have rank 2"
+    comptime assert (
+        input_row_offsets.flat_rank == 1
+    ), "input_row_offsets must be rank 1"
+
+    comptime accum_type = get_accum_type[dtype]()
+    var weight_offset_accum = weight_offset.cast[accum_type]()
+
+    comptime head_dim = q_gamma.static_shape[0]
+    comptime assert head_dim != -1, "Need static shape for q_gamma"
+
+    var tid = thread_idx.x
+    var combined_row = Int(block_idx.x)
+    var q_rows = Int(total_seq_len) * q_num_heads
+    var is_k = combined_row >= q_rows
+
+    var global_token_idx: Int
+    var head_idx: Int
+    if is_k:
+        comptime k_num_heads = cache_t.kv_params.num_heads
+        var k_row = combined_row - q_rows
+        global_token_idx = k_row // k_num_heads
+        head_idx = k_row % k_num_heads
+    else:
+        global_token_idx = combined_row // q_num_heads
+        head_idx = combined_row % q_num_heads
+
+    var idx = tid * simd_width
+    var vec_data = SIMD[accum_type, simd_width](0)
+    var gamma_val = SIMD[dtype, simd_width](0)
+    if idx < num_cols:
+        if is_k:
+            var batch_idx = get_batch_from_row_offsets(
+                input_row_offsets, global_token_idx
+            )
+            var token_idx = Int(
+                UInt32(global_token_idx) - input_row_offsets[batch_idx]
+            )
+            var cache_token_idx = token_idx + k_cache.cache_length(batch_idx)
+            vec_data = k_cache.load[width=simd_width](
+                bs=batch_idx,
+                tok_idx=cache_token_idx,
+                head_idx=head_idx,
+                head_dim_idx=idx,
+            ).cast[accum_type]()
+            gamma_val = k_gamma.load[width=simd_width](Coord(idx))
+        else:
+            vec_data = q_proj.load[width=simd_width](
+                Coord(Index(global_token_idx, head_idx, idx))
+            ).cast[accum_type]()
+            gamma_val = q_gamma.load[width=simd_width](Coord(idx))
+
+    var norm_val = _rms_norm_warp_tiling_subkernel[
+        warps_per_block, multiply_before_cast
+    ](
+        combined_row,
+        idx,
+        vec_data,
+        gamma_val,
+        epsilon,
+        weight_offset_accum,
+        num_cols,
+    )
+
+    # Non-interleaved RoPE pairs column j with j + rope_dim/2, which belongs to
+    # a different thread's chunk, so the full normed row must be in shared memory
+    # before any thread reads its partner. The alignment must cover the widest
+    # vectorized store below; align_of[accum_type] alone (4 B for f32) is too
+    # narrow and causes MISALIGNED_ADDRESS faults.
+    comptime smem_align = align_of[SIMD[accum_type, simd_width]]()
+    var s_norm = stack_allocation[
+        accum_type,
+        address_space=AddressSpace.SHARED,
+        alignment=smem_align,
+    ](row_major[head_dim]())
+    if idx < num_cols:
+        s_norm.store[width=simd_width](Coord(idx), norm_val.cast[accum_type]())
+    barrier()
+
+    if idx >= num_cols:
+        return
+
+    var batch_idx = get_batch_from_row_offsets(
+        input_row_offsets, global_token_idx
+    )
+    var token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
+    var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
+
+    comptime width_2 = simd_width // 2
+
+    comptime if interleaved:
+        var freq_val = freqs_cis.load[width=simd_width](
+            Coord(Index(post_seq_idx, idx))
+        )
+        var val = s_norm.load[width=simd_width](Coord(idx))
+        var res = rope_value(val, freq_val.cast[accum_type]()).cast[dtype]()
+        if is_k:
+            k_cache.store(
+                bs=batch_idx,
+                tok_idx=post_seq_idx,
+                head_idx=head_idx,
+                head_dim_idx=idx,
+                val=res.cast[cache_t.dtype](),
+            )
+        else:
+            q_output.store[width=simd_width](
+                Coord(Index(global_token_idx, head_idx, idx)), res
+            )
+    else:
+        # Non-interleaved (safetensors). With has_nope_prefix the roped region
+        # is the prefix [0, rope_dim); the suffix [rope_dim, head_dim) is left
+        # un-roped (only normed). Without it, the whole head is roped.
+        comptime if has_nope_prefix:
+            if idx >= rope_dim:
+                var passthrough = s_norm.load[width=simd_width](
+                    Coord(idx)
+                ).cast[dtype]()
+                if is_k:
+                    k_cache.store(
+                        bs=batch_idx,
+                        tok_idx=post_seq_idx,
+                        head_idx=head_idx,
+                        head_dim_idx=idx,
+                        val=passthrough.cast[cache_t.dtype](),
+                    )
+                else:
+                    q_output.store[width=simd_width](
+                        Coord(Index(global_token_idx, head_idx, idx)),
+                        passthrough,
+                    )
+                return
+
+        comptime split_size = rope_dim if has_nope_prefix else head_dim
+        var freq_val = freqs_cis.load[width=simd_width](
+            Coord(Index(post_seq_idx, idx))
+        )
+
+        h_re, h_im = get_safetensors_idx(idx, split_size)
+
+        var val = rebind[SIMD[accum_type, simd_width]](
+            s_norm.load[width=width_2](Coord(h_re)).interleave(
+                s_norm.load[width=width_2](Coord(h_im))
+            )
+        )
+        var res = rope_value(val, freq_val.cast[accum_type]()).cast[dtype]()
+        # `deinterleave` yields `SIMD[dtype, simd_width / 2]`; let the stores
+        # infer their width from the value (matches `rope_q_proj` /
+        # `rope_k_cache`) rather than binding an explicit `width=width_2`, which
+        # the comptime ternary in `store`'s default would fail to unify.
+        output_re, output_im = res.deinterleave()
+
+        if is_k:
+            k_cache.store(
+                bs=batch_idx,
+                tok_idx=post_seq_idx,
+                head_idx=head_idx,
+                head_dim_idx=h_re,
+                val=output_re.cast[cache_t.dtype](),
+            )
+            k_cache.store(
+                bs=batch_idx,
+                tok_idx=post_seq_idx,
+                head_idx=head_idx,
+                head_dim_idx=h_im,
+                val=output_im.cast[cache_t.dtype](),
+            )
+        else:
+            q_output.store(
+                Coord(Index(global_token_idx, head_idx, h_re)), output_re
+            )
+            q_output.store(
+                Coord(Index(global_token_idx, head_idx, h_im)), output_im
+            )
+
+
+def fused_qk_rms_norm_rope_ragged_paged[
+    dtype: DType,
+    freq_dtype: DType,
+    params: KVCacheStaticParams,
+    page_size: Int,
+    cache_dtype: DType,
+    //,
+    target: StaticString,
+    multiply_before_cast: Bool,
+    interleaved: Bool,
+](
+    q_proj: TileTensor[mut=False, dtype, ...],
+    kv_collection: PagedKVCacheCollection[
+        cache_dtype,
+        params,
+        page_size,
+        ...,
+    ],
+    q_gamma: TileTensor[mut=False, dtype, ...],
+    k_gamma: TileTensor[mut=False, dtype, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
+    epsilon: Float32,
+    weight_offset: Scalar[dtype],
+    layer_idx: UInt32,
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    q_output: TileTensor[mut=True, dtype, ...],
+    context: DeviceContext,
+) raises:
+    """Fuses per-head RMSNorm and RoPE for Q and new K-cache entries.
+
+    This applies per-head RMSNorm to Q and the newly written key-cache entries,
+    then applies RoPE to the normalized values, in a single GPU launch. It is
+    the fusion of `fused_qk_rms_norm_ragged_paged` and `fused_qk_rope_ragged`,
+    saving one elementwise RoPE launch per QK group.
+
+    The RoPE dimension is taken from `freqs_cis.static_shape[1]`. When it is
+    smaller than the head dimension, RoPE is applied only to the prefix
+    `[0, rope_dim)` of each head (non-interleaved layout) and the suffix is left
+    un-roped, matching `fused_qk_rope_ragged`'s `has_nope_prefix` path.
+    """
+    comptime assert is_gpu[
+        target
+    ](), "fused_qk_rms_norm_rope_ragged_paged is GPU-only"
+    comptime assert q_proj.flat_rank == 3, "q_proj must be rank 3"
+    comptime assert q_output.flat_rank == 3, "q_output must be rank 3"
+    comptime assert q_gamma.flat_rank == 1, "q_gamma must be rank 1"
+    comptime assert k_gamma.flat_rank == 1, "k_gamma must be rank 1"
+    comptime assert freqs_cis.flat_rank == 2, "freqs_cis must be rank 2"
+    comptime assert (
+        input_row_offsets.flat_rank == 1
+    ), "input_row_offsets must be rank 1"
+    comptime assert cache_dtype == dtype, (
+        "fused_qk_rms_norm_rope_ragged_paged requires Q and K cache dtype to"
+        " match"
+    )
+
+    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+    var q_num_heads = Int(q_proj.dim[1]())
+    comptime rms_norm_cols = q_gamma.static_shape[0]
+    comptime k_rms_norm_cols = k_gamma.static_shape[0]
+    comptime assert rms_norm_cols != -1, "Need static shape for q_gamma"
+    comptime assert k_rms_norm_cols != -1, "Need static shape for k_gamma"
+    comptime assert (
+        rms_norm_cols == k_rms_norm_cols
+    ), "q_gamma and k_gamma must have the same static size"
+    comptime assert (
+        rms_norm_cols == params.head_size
+    ), "fused QK RMSNorm requires full per-head normalization"
+
+    comptime rope_dim = Int(freqs_cis.static_shape[1])
+    comptime assert rope_dim != -1, "Need static shape for freqs_cis"
+    comptime unroped_dim = rms_norm_cols - rope_dim
+    comptime has_nope = unroped_dim > 0
+    comptime assert rope_dim <= rms_norm_cols, "rope_dim must be <= head_size"
+    comptime has_nope_prefix = has_nope and not interleaved
+    comptime if has_nope and not interleaved:
+        comptime assert (
+            rope_dim % 2 == 0
+        ), "prefix partial RoPE rope_dim must be even for split layout"
+
+    var total_seq_len = UInt32(q_proj.dim[0]())
+    if total_seq_len == 0:
+        return
+
+    var q_rows = Int(total_seq_len) * q_num_heads
+    var k_rows = Int(total_seq_len) * params.num_heads
+    var rows = q_rows + k_rows
+
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        return (
+            trace_arg(
+                "q_proj", coord_to_index_list(q_proj.layout.shape_coord())
+            )
+            + ";layer_idx="
+            + String(layer_idx)
+            + ";num_heads="
+            + String(params.num_heads)
+            + ";head_size="
+            + String(params.head_size)
+            + ";rope_dim="
+            + String(rope_dim)
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qk_rms_norm_rope_ragged_paged_nhead_"
+        + String(params.num_heads)
+        + ".hdim_"
+        + String(params.head_size)
+        + ".rope_"
+        + String(rope_dim),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(context),
+    ):
+        comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+        comptime assert (
+            rms_norm_cols % simd_width == 0
+        ), "rms_norm_cols must be divisible by simd_width"
+        comptime assert (
+            rope_dim % simd_width == 0
+        ), "rope_dim must be divisible by simd_width"
+        comptime assert (
+            simd_width % 2 == 0
+        ), "simd_width must be even for the split RoPE layout"
+        comptime max_warps_per_block = (
+            context.default_device_info.max_thread_block_size // WARP_SIZE
+        )
+        comptime warps_per_block = ceildiv(
+            rms_norm_cols // simd_width, WARP_SIZE
+        )
+        comptime assert (
+            warps_per_block <= max_warps_per_block
+        ), "fused QK RMSNorm+RoPE block size exceeds device max warps per block"
+        var cols = Int(rms_norm_cols)
+        comptime block_dim_value = WARP_SIZE * warps_per_block
+        comptime kernel = _fused_qk_rms_norm_rope_ragged_paged_gpu[
+            cache_t=type_of(k_cache),
+            q_out_layout=q_output.LayoutType,
+            q_out_origin=q_output.origin,
+            q_layout=q_proj.LayoutType,
+            q_origin=q_proj.origin,
+            q_gamma_layout=q_gamma.LayoutType,
+            q_gamma_origin=q_gamma.origin,
+            k_gamma_layout=k_gamma.LayoutType,
+            k_gamma_origin=k_gamma.origin,
+            freqs_layout=freqs_cis.LayoutType,
+            freqs_origin=freqs_cis.origin,
+            offsets_layout=input_row_offsets.LayoutType,
+            offsets_origin=input_row_offsets.origin,
+            dtype=dtype,
+            freq_dtype=freq_dtype,
+            simd_width,
+            warps_per_block,
+            multiply_before_cast,
+            interleaved,
+            has_nope_prefix,
+            rope_dim,
+        ]
+        context.enqueue_function[kernel](
+            q_output,
+            q_proj,
+            k_cache,
+            q_gamma,
+            k_gamma,
+            freqs_cis,
+            epsilon,
+            weight_offset,
+            total_seq_len,
+            input_row_offsets,
+            q_num_heads,
+            cols,
+            grid_dim=rows,
+            block_dim=block_dim_value,
+        )
+
+
 def rms_norm_kv_cache_ragged_paged[
     dtype: DType,
     params: KVCacheStaticParams,
@@ -1193,7 +1605,7 @@ def rms_norm_kv_cache_ragged_paged[
         ...,
     ],
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
@@ -1385,7 +1797,7 @@ def rms_norm_value_cache_ragged_paged[
         ...,
     ],
     gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
@@ -1676,34 +2088,46 @@ def print_kv_cache_cont_batch_generic_gpu[
     var dev_ctx = context
 
     var n_blocks = kv_collection.blocks.num_elements()
-    var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
-    dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
+    var blocks_alloc = alloc(
+        AllocLayout[Scalar[dtype]](count=n_blocks)
+    ).into_deletable()
+    dev_ctx.enqueue_copy(
+        blocks_alloc.unsafe_ptr(), kv_collection.blocks.ptr, n_blocks
+    )
     var blocks_host = type_of(kv_collection.blocks).OriginCastType[_](
-        ptr=blocks_ptr,
+        ptr=blocks_alloc.unsafe_ptr(),
         layout=kv_collection.blocks.layout,
     )
 
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
-    var cache_lengths_ptr = alloc[UInt32](n_cache_lengths)
+    var cache_lengths_alloc = alloc(
+        AllocLayout[UInt32](count=n_cache_lengths)
+    ).into_deletable()
     dev_ctx.enqueue_copy(
-        cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
+        cache_lengths_alloc.unsafe_ptr(),
+        kv_collection.cache_lengths.ptr,
+        n_cache_lengths,
     )
     var cache_lengths_host = type_of(
         kv_collection.cache_lengths
     ).OriginCastType[mut=False, _](
-        ptr=cache_lengths_ptr,
+        ptr=cache_lengths_alloc.unsafe_ptr(),
         layout=kv_collection.cache_lengths.layout,
     )
 
     var n_lookup_table = kv_collection.lookup_table.num_elements()
-    var lookup_table_ptr = alloc[UInt32](n_lookup_table)
+    var lookup_table_alloc = alloc(
+        AllocLayout[UInt32](count=n_lookup_table)
+    ).into_deletable()
     dev_ctx.enqueue_copy(
-        lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
+        lookup_table_alloc.unsafe_ptr(),
+        kv_collection.lookup_table.ptr,
+        n_lookup_table,
     )
     var lookup_table_host = type_of(kv_collection.lookup_table).OriginCastType[
         mut=False, _
     ](
-        ptr=lookup_table_ptr,
+        ptr=lookup_table_alloc.unsafe_ptr(),
         layout=kv_collection.lookup_table.layout,
     )
 
@@ -1717,11 +2141,13 @@ def print_kv_cache_cont_batch_generic_gpu[
         kv_collection.max_cache_length,
     )
 
-    var valid_lengths_host_ptr = alloc[UInt32](valid_lengths.size())
+    var valid_lengths_host_alloc = alloc(
+        AllocLayout[UInt32](count=valid_lengths.size())
+    ).into_deletable()
     var valid_lengths_host_nd = LayoutTensor[
         valid_lengths.dtype, valid_lengths.layout
     ](
-        valid_lengths_host_ptr,
+        valid_lengths_host_alloc.unsafe_ptr(),
         RuntimeLayout[valid_lengths.layout].row_major(
             valid_lengths.runtime_layout.shape.value.canonicalize()
         ),
@@ -1754,10 +2180,10 @@ def print_kv_cache_cont_batch_generic_gpu[
         is_print_compact,
     )
 
-    blocks_ptr.free()
-    cache_lengths_ptr.free()
-    lookup_table_ptr.free()
-    valid_lengths_host_ptr.free()
+    dealloc(blocks_alloc^.into_allocation())
+    dealloc(cache_lengths_alloc^.into_allocation())
+    dealloc(lookup_table_alloc^.into_allocation())
+    dealloc(valid_lengths_host_alloc^.into_allocation())
 
 
 def print_kv_cache_paged_generic_gpu[
@@ -1782,34 +2208,46 @@ def print_kv_cache_paged_generic_gpu[
     var dev_ctx = context
 
     var n_blocks = kv_collection.blocks.num_elements()
-    var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
-    dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
+    var blocks_alloc = alloc(
+        AllocLayout[Scalar[dtype]](count=n_blocks)
+    ).into_deletable()
+    dev_ctx.enqueue_copy(
+        blocks_alloc.unsafe_ptr(), kv_collection.blocks.ptr, n_blocks
+    )
     var blocks_host = type_of(kv_collection.blocks).OriginCastType[_](
-        ptr=blocks_ptr,
+        ptr=blocks_alloc.unsafe_ptr(),
         layout=kv_collection.blocks.layout,
     )
 
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
-    var cache_lengths_ptr = alloc[UInt32](n_cache_lengths)
+    var cache_lengths_alloc = alloc(
+        AllocLayout[UInt32](count=n_cache_lengths)
+    ).into_deletable()
     dev_ctx.enqueue_copy(
-        cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
+        cache_lengths_alloc.unsafe_ptr(),
+        kv_collection.cache_lengths.ptr,
+        n_cache_lengths,
     )
     var cache_lengths_host = type_of(
         kv_collection.cache_lengths
     ).OriginCastType[mut=False, _](
-        ptr=cache_lengths_ptr,
+        ptr=cache_lengths_alloc.unsafe_ptr(),
         layout=kv_collection.cache_lengths.layout,
     )
 
     var n_lookup_table = kv_collection.lookup_table.num_elements()
-    var lookup_table_ptr = alloc[UInt32](n_lookup_table)
+    var lookup_table_alloc = alloc(
+        AllocLayout[UInt32](count=n_lookup_table)
+    ).into_deletable()
     dev_ctx.enqueue_copy(
-        lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
+        lookup_table_alloc.unsafe_ptr(),
+        kv_collection.lookup_table.ptr,
+        n_lookup_table,
     )
     var lookup_table_host = type_of(kv_collection.lookup_table).OriginCastType[
         mut=False, _
     ](
-        ptr=lookup_table_ptr,
+        ptr=lookup_table_alloc.unsafe_ptr(),
         layout=kv_collection.lookup_table.layout,
     )
 
@@ -1833,11 +2271,13 @@ def print_kv_cache_paged_generic_gpu[
         kv_collection.max_seq_length,
         kv_collection.max_cache_length,
     )
-    var valid_lengths_host_ptr = alloc[UInt32](valid_lengths.size())
+    var valid_lengths_host_alloc = alloc(
+        AllocLayout[UInt32](count=valid_lengths.size())
+    ).into_deletable()
     var valid_lengths_host_nd = LayoutTensor[
         valid_lengths.dtype, valid_lengths.layout
     ](
-        valid_lengths_host_ptr,
+        valid_lengths_host_alloc.unsafe_ptr(),
         RuntimeLayout[valid_lengths.layout].row_major(
             valid_lengths.runtime_layout.shape.value.canonicalize()
         ),
@@ -1870,10 +2310,10 @@ def print_kv_cache_paged_generic_gpu[
         is_print_compact,
     )
 
-    blocks_ptr.free()
-    cache_lengths_ptr.free()
-    lookup_table_ptr.free()
-    valid_lengths_host_ptr.free()
+    dealloc(blocks_alloc^.into_allocation())
+    dealloc(cache_lengths_alloc^.into_allocation())
+    dealloc(lookup_table_alloc^.into_allocation())
+    dealloc(valid_lengths_host_alloc^.into_allocation())
 
 
 # ===-----------------------------------------------------------------------===#

@@ -14,8 +14,7 @@
 
 from std.sys import size_of
 from std.sys.info import _TargetType
-from std.sys.intrinsics import _type_is_eq
-from std.builtin.rebind import downcast, trait_downcast
+from std.builtin.rebind import downcast
 from std.gpu.host.device_context import DeviceBuffer, DevicePointer
 from std.collections.inline_array import InlineArray
 from std.reflection import reflect
@@ -30,14 +29,12 @@ trait DevicePassable:
 
     @staticmethod
     def _is_convertible_to_device_type[SrcT: AnyType]() -> Bool:
-        comptime if not _type_is_eq[Self, Self.device_type]() and conforms_to(
+        comptime if Self != Self.device_type and conforms_to(
             Self.device_type, DevicePassable
         ):
-            return downcast[
-                Self.device_type, DevicePassable
-            ]._is_convertible_to_device_type[SrcT]()
+            return Self.device_type._is_convertible_to_device_type[SrcT]()
         else:
-            return _type_is_eq[SrcT, Self.device_type]()
+            return SrcT == Self.device_type
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
@@ -140,9 +137,7 @@ trait DeviceTypeEncoder:
 
         Constraints:
             - `ValueType` must conform to `DevicePassable` or `RegisterPassable`.
-            - `ValueType` must conform to
-              `ImplicitlyCopyable & ImplicitlyDeletable` or
-              `Copyable & ImplicitlyDeletable`.
+            - `ValueType` must conform to `Copyable & ImplicitlyDeletable`.
             - If `ValueType` is `DevicePassable`, it must be its own leaf
               `device_type`
               (`ValueType._is_convertible_to_device_type[ValueType]()`), since a
@@ -156,8 +151,7 @@ trait DeviceTypeEncoder:
         )
 
         comptime if conforms_to(ValueType, DevicePassable):
-            comptime DPType = downcast[ValueType, DevicePassable]
-            comptime assert DPType._is_convertible_to_device_type[
+            comptime assert ValueType._is_convertible_to_device_type[
                 ValueType
             ](), String(
                 t"encode: ValueType '{reflect[ValueType].base_name()}' being"
@@ -171,21 +165,12 @@ trait DeviceTypeEncoder:
                 t" between host-type and device-type size"
             )
 
-        comptime if conforms_to(
-            ValueType, ImplicitlyCopyable & ImplicitlyDeletable
-        ):
-            comptime T = downcast[
-                ValueType, ImplicitlyCopyable & ImplicitlyDeletable
-            ]
-            dst.bitcast[T]()[] = rebind[T](value)
-        elif conforms_to(ValueType, Copyable & ImplicitlyDeletable):
-            comptime T = downcast[ValueType, Copyable & ImplicitlyDeletable]
-            dst.bitcast[T]()[] = rebind[T](value).copy()
+        comptime if conforms_to(ValueType, Copyable):
+            dst.bitcast[ValueType]().init_pointee_copy(value)
         else:
             comptime assert False, String(
                 t"encode: ValueType '{reflect[ValueType].base_name()}' must"
-                t" conform to ImplicitlyCopyable & ImplicitlyDeletable or"
-                t" Copyable & ImplicitlyDeletable"
+                t" conform to Copyable"
             )
 
     def encode_closure_state[
@@ -218,7 +203,7 @@ trait DeviceTypeEncoder:
             ref field = UnsafePointer(to=value).bitcast[FieldType]()[]
 
             comptime if conforms_to(FieldType, DevicePassable):
-                trait_downcast[DevicePassable](field)._to_device_type(self, dst)
+                field._to_device_type(self, dst)
             elif _contains_device_passable_field[FieldType]():
                 self.encode_fields[FieldType](field, dst)
             else:
@@ -283,7 +268,7 @@ trait DeviceTypeEncoder:
         comptime if conforms_to(StructType, DevicePassable) and (
             base == "StaticTuple"
         ):
-            trait_downcast[DevicePassable](value)._to_device_type(self, dst)
+            value._to_device_type(self, dst)
             return
 
         comptime field_types = r.field_types()
@@ -295,7 +280,7 @@ trait DeviceTypeEncoder:
             var sub = (dst.bitcast[UInt8]() + offset).bitcast[NoneType]()
 
             comptime if conforms_to(FieldType, DevicePassable):
-                trait_downcast[DevicePassable](field)._to_device_type(self, sub)
+                field._to_device_type(self, sub)
             elif _contains_device_passable_field[FieldType]():
                 # Recurse so the nested `DevicePassable` member runs its
                 # own `_to_device_type` instead of being byte-copied.
@@ -353,7 +338,7 @@ trait DeviceTypeEncoder:
             ref elem = value._unsafe_ref(i)
 
             comptime if conforms_to(ElementType, DevicePassable):
-                trait_downcast[DevicePassable](elem)._to_device_type(self, sub)
+                elem._to_device_type(self, sub)
             elif _contains_device_passable_field[ElementType]():
                 self.encode_fields[ElementType](elem, sub)
             else:
@@ -407,7 +392,7 @@ trait DeviceTypeEncoder:
             ref elem = value.unsafe_get(i)
 
             comptime if conforms_to(ElementType, DevicePassable):
-                trait_downcast[DevicePassable](elem)._to_device_type(self, sub)
+                elem._to_device_type(self, sub)
             elif _contains_device_passable_field[ElementType]():
                 self.encode_fields[ElementType](elem, sub)
             else:

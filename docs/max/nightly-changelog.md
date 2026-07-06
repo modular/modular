@@ -12,6 +12,15 @@ This version is still a work in progress.
 
 - Added GLM-5.2 (`GlmMoeDsaForCausalLM`) support, extending the existing
   GLM-5.1 sparse-attention architecture with cross-layer index sharing.
+- Added multi-token prediction (MTP) speculative decoding for GLM-5.2
+  (`UnifiedMTPGlm5_2ForCausalLM`). The baked-in NextN layer is served as a
+  single-layer sparse-MLA draft (its own lightning indexer plus a paired
+  `{mla, indexer}` KV cache); per `index_share_for_mtp_iteration`, the draft
+  computes its top-k selection on the first MTP step and reuses it on the
+  rest. Enabled automatically for GLM checkpoints that ship a NextN layer when
+  speculative decoding is requested with no separate draft model. Validated on
+  `zai-org/GLM-5.2-FP8` and `nvidia/GLM-5.2-NVFP4` across 8 B200s
+  (`--speculative-method mtp`).
 - Added Laguna (`LagunaForCausalLM`), poolside's decoder-only sparse-MoE
   language model. It uses sigmoid expert routing with a per-expert
   score-correction bias, a per-element softplus attention-output gate, and
@@ -28,7 +37,25 @@ This version is still a work in progress.
   encoder/decoder block-diffusion text model that generates 256-token
   blocks per step via an inner denoising loop. Supports NVFP4 and bfloat16
   weights; text-only for now.
+- Added Nemotron-H (`NemotronHForCausalLM`), NVIDIA's hybrid Mamba-2 +
+  attention + relu-squared-MLP decoder, with modelopt per-tensor FP8. Adds a
+  new Mamba-2 SSD chunked-scan varlen prefill kernel (also used for decode as
+  length-1 sequences). Verified on `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on a
+  single B200: random-weight logit-verify cosine 0.9999 vs HuggingFace, GSM8K
+  strict-match ~0.70. Decode is optimized with an in-place SSM state-pool
+  read-modify-write that writes only the active slots (+52% output tok/s at
+  concurrency 32).
 - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
+- Added tool-calling, reasoning, and structured-output (`response_format`)
+  support to GLM-5.1 / GLM-5.2, enabled with
+  `--tool-parser glm45 --reasoning-parser glm45 --enable-structured-output`.
+  Reasoning uses `<think>`/`</think>`; tool calls use the model's native
+  `<tool_call>…<arg_key>…<arg_value>…</tool_call>` format. With constrained
+  decoding, tool-call arguments are constrained to each tool's JSON schema
+  (declared keys, `required` properties, and per-property types — including
+  nested objects/arrays, enums, numeric bounds, and string patterns), and the
+  call sequence terminates on the model's turn-ender so it can't loop. Validated
+  on `zai-org/GLM-5.2-FP8`.
 - Added support for the Ideogram 4 (`Ideogram4Pipeline`) text-to-image
   flow-matching diffusion transformer. The pipeline pairs a Qwen3-VL text
   encoder (run text-only, emitting concatenated intermediate hidden states)
@@ -43,9 +70,27 @@ This version is still a work in progress.
   the thinking back into the `content` field wrapped in `<think>...</think>`
   tags, matching the official MiniMax M3 endpoint. The field is a no-op for
   every other model.
+- FLUX.2 diffusion pipelines now support both denoising-cache backends to skip
+  redundant transformer passes during generation: `--taylorseer` (Taylor-series
+  step skipping — the recommended default, with `balanced` and `fast` presets)
+  and `--first-block-caching` (first-block-residual reuse — zero-tuning and
+  data-adaptive). The two are mutually exclusive and both off by default. See
+  the [image generation guide](/max/inference/image-generation).
+- Gemma 4 with multi-token prediction (MTP) speculative decoding
+  (`UnifiedMTPGemma4ForCausalLM`) now supports image and video input.
+  Previously this path was served text-only: image tokens were ingested by
+  the tokenizer but the vision encoder output never reached the language
+  model, so image prompts were answered as if the model were blind. The
+  vision encoder now runs during prefill and its projected soft-token
+  embeddings are merged into the target model, matching the non-MTP Gemma 4
+  path.
 
 ## MAX framework
 
+- Added `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` to control how long the server
+  waits for in-flight requests to finish after receiving `SIGTERM` before
+  exiting (default 5 seconds). Raise it so long-running requests are drained
+  rather than dropped during a rolling restart.
 - Data-parallel (DP) serving now shares the prefix cache across replicas, so a
   multi-turn conversation gets cache hits even when a later turn is scheduled on
   a different replica than the previous one. GPU prefix-cache hits are served by
@@ -110,6 +155,15 @@ This version is still a work in progress.
   the GPU. The packed `int32` bitmask is transferred to device as-is and
   unpacked and applied to the logits in a single fused kernel
   (`apply_packed_bitmask`), instead of unpacking to a `bool` tensor on the CPU.
+- Made numpy array transport across the API-server-to-model-worker request
+  queue zero-copy. Large arrays (notably multi-image or high-resolution vision
+  `pixel_values`) now ride out-of-band as their own ZMQ frame instead of being
+  copied into the message body and then again through the socket, and the
+  receiver decodes them as views with no copy. This is faster than both the
+  previous copy and shared-memory transports at every payload size (for example
+  ~5x faster than the copy path and ~2x faster than shared memory at 24-32 MiB
+  in the transport microbenchmark), and removes the per-request shared-memory
+  segment (and its sizing, leak, and page-fault costs) from this path entirely.
 - Fixed image requests failing with a 400 or 500 across all vision models. Two
   bugs in the shared image-resolution layer: `data:` URIs with unpadded or
   URL-safe base64 (sent routinely by clients and relays) were rejected by the
@@ -284,6 +338,12 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- GPU token sampling with `top_k >= 10` is now 2-4x faster. The softmax,
+  temperature scaling, and min-p masking steps are fused into the top-k/top-p
+  rejection-sampling kernel, eliminating an intermediate probability buffer
+  and two kernel launches per sampling call. The dispatch threshold between
+  the two-stage top-k kernel and the rejection-sampling kernel was lowered
+  from `top_k = 32` to `top_k = 10` to match the new performance crossover.
 - The `TileTensor` layout type no longer takes an `element_size` parameter. A
   tensor's logical element width is now carried by its `Storage` parameter via
   `PointerStorage[element_width]` (default `PointerStorage[1]`), and
@@ -317,11 +377,38 @@ This version is still a work in progress.
   invalid operand. The kernels now read the tensor-memory base once after it
   is published and carry it in a register, so there is no in-loop re-read to
   race.
+- Enabled the low-latency (Lamport) all-reduce on B200 for small messages
+  (up to 1 MiB at 2, 4, and 8 GPUs), where it beats the one-stage path by
+  roughly 1.1-1.68x. The barrier-free protocol marks unwritten slots with a
+  negative-zero sentinel, so its communication region is now initialized when
+  pipeline signal buffers are allocated; without that the region read as
+  already-written and produced non-deterministic results.
 
 ## Breaking changes
 
+- Removed `InferenceSession.use_old_top_k_kernel()` and the
+  `USE_OLD_TOP_K_KERNEL` environment variable. The legacy top-k sampling
+  kernel this fallback selected has been deleted; the current two-stage
+  top-k kernel is now used unconditionally.
+
 ## Fixes
 
+- Fixed a precision loss in the normalization ops where the `epsilon` value was
+  carried in the input's dtype (for example `bfloat16`) before use. A small
+  epsilon such as `1e-6` is not representable in `bfloat16`, so it was silently
+  rounded. The `epsilon` for `rms_norm`, `layer_norm`, `group_norm`, and the
+  fused residual, FP8-quantized, and distributed all-reduce variants is now
+  carried as `float32` end to end — from the graph op through the graph
+  compiler to the kernel. The Python `epsilon: float` argument is unchanged.
+- Fixed MAX Serve crashing the model worker on the first host KV-cache
+  offload/reload when run with `--kv-connector dkv`. The dKV connector had
+  drifted out of sync with its client and no longer passed the required
+  attention group on the load/offload path; it now supplies it, so the
+  same-host prefix-cache path completes instead of raising.
+- Fixed inflated `maxserve.cache.h2d_blocks_copied` and
+  `maxserve.cache.d2h_blocks_copied` telemetry on tiered and local KV cache
+  deployments. The scheduler now resets connector transfer counters after each
+  batch metrics sample so OpenTelemetry counters report per-batch deltas.
 - Fixed `max.nn.WeightNormConvTranspose1d` raising `AttributeError` when
   constructed with its default `has_bias=False`. The constructor
   unconditionally deleted the wrapped conv's `bias` attribute, which is only
@@ -343,5 +430,18 @@ This version is still a work in progress.
   matcher across certain tool-call structural tags (e.g.
   `<|tool_call_begin|>`). The walk now runs on a deep copy of the matcher,
   leaving the real matcher untouched.
+
+- Fixed slicing and `view()` on a `max.driver.DevicePinnedBuffer` silently
+  returning a plain `Buffer`. The decayed type lost the pinned buffer's
+  no-synchronization behavior, so a later `to_numpy()` on the slice triggered
+  an unexpected device synchronization. Slices and views now preserve the
+  `DevicePinnedBuffer` type.
+
+- Fixed DeepSeek-V3.1-NVFP4 multi-token prediction (MTP) failing to load with
+  `dispatch_quant_config must be specified when dispatch_dtype is not
+  bfloat16` when expert parallelism was enabled. When a quantized model has no
+  resolvable quantization config for its draft (BF16 NextN) weights, the draft
+  config is now built with a bfloat16 dispatch dtype instead of constructing an
+  invalid `EPConfig`.
 
 ## Mojo language

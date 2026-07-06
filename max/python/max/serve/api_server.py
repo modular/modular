@@ -417,7 +417,7 @@ def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
         loop="uvloop",
         host=server_settings.host,
         port=server_settings.port,
-        timeout_graceful_shutdown=5,
+        timeout_graceful_shutdown=server_settings.graceful_shutdown_timeout_s,
         # The serving lifespan (model worker, pipeline, telemetry) is entered
         # explicitly by the entrypoint around `server.serve()` so that a worker
         # crash cancels the serving task directly. Keep uvicorn out of the

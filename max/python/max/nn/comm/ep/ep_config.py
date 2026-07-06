@@ -120,6 +120,13 @@ class EPConfig:
     (``n_local_experts * align_up(max_recv_tokens_per_expert, 32)`` rows)
     instead of ``max_recv_tokens`` rows. Set by ``MoEQuantized`` when the MXFP4
     strategy uses preshuffled B. Only valid for MXFP4 dispatch."""
+    # In EPConfig, alongside n_experts / num_moe_layers / max_replicas:
+
+    num_logical_experts: int = 0
+    """Number of logical experts per layer. When EPLB is disabled this equals
+    ``n_experts``. When EPLB is enabled, ``n_experts`` is inflated to the
+    physical slot count and this preserves the original logical count, which
+    is the leading dim of ``log2phy`` / ``logcnt``."""
 
     def estimate_memory_usage(self) -> int:
         """Estimate the EP communication memory usage per device per buffer group.
@@ -159,6 +166,9 @@ class EPConfig:
             )
 
     def __post_init__(self):
+        if self.num_logical_experts == 0:
+            self.num_logical_experts = self.n_experts
+
         if self.dispatch_dtype != DType.bfloat16:
             if self.dispatch_quant_config is None:
                 raise ValueError(

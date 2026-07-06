@@ -682,6 +682,19 @@ class MAXModelConfig(MAXModelConfigBase):
                 encoding=self._applied_dtype_cast_from
             )
 
+        if not weight_files and self.quantization_encoding in (
+            "float16",
+            "bfloat16",
+        ):
+            # A float16/bfloat16 graph can load float32 weights cast at load
+            # time by the component's weight adapter.  This mirrors the
+            # architecture-aware path in ``_resolve_weight_path`` and is what
+            # lets a mixed-precision diffusion pipeline run, e.g., a bfloat16
+            # VAE whose checkpoint ships float32 safetensors.
+            weight_files = self.huggingface_weight_repo.files_for_encoding(
+                encoding="float32"
+            )
+
         # Prefer safetensors (reasonable default for diffuser components).
         if safetensors_files := weight_files.get(WeightsFormat.safetensors, []):
             self.weight_path = safetensors_files

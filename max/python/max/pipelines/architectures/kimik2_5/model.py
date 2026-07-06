@@ -65,6 +65,10 @@ from max.pipelines.lib.eplb_stats import (
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.pipelines.modeling.config_enums import is_float4_encoding
 from max.pipelines.request import RequestID
+from max.pipelines.weights.mxfp4_preshuffle import (
+    preshuffle_mxfp4_b_experts,
+    preshuffle_mxfp4_b_scales,
+)
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 
@@ -74,10 +78,6 @@ from .context import KimiK2_5TextAndVisionContext
 from .kimi_nvfp4_policy import infer_kimi_nvfp4_weight_flags
 from .kimik2_5 import KimiK2_5
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig
-from .weight_adapters import (
-    preshuffle_mxfp4_b_experts,
-    preshuffle_mxfp4_b_scales,
-)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -444,19 +444,6 @@ class KimiK2_5Model(
 
         # Create the LM model first
         config = self._create_model_config(state_dict)
-
-        self.ep_comm_initializer: EPCommInitializer | None = None
-        # Skip EP initialization in virtual device mode (compilation-only)
-        # since NVSHMEM functions cannot be linked without real GPU devices.
-        # We still keep ep_config to generate the correct graph structure.
-        if config.ep_config is not None and not is_virtual_device_mode():
-            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
-            self.ep_comm_initializer.ep_init(session)
-            if config.ep_config.node_id == -1:
-                raise ValueError(
-                    "EP node ID is not set. Please check if the EP initialization is successful."
-                )
-
         # ---- EPLB placement -----------------------------------------------------
         plan: EplbPlacement | None = None
         if config.ep_config is not None:
@@ -473,6 +460,7 @@ class KimiK2_5Model(
                 config.ep_config.eplb_enabled = True
                 config.ep_config.num_moe_layers = plan.phy2log.shape[0]
                 config.ep_config.max_replicas = plan.max_replicas
+                config.ep_config.num_logical_experts = plan.log2phy.shape[1]
                 config.ep_config.n_experts = plan.num_phy
                 config.ep_config.eplb_phy2log_plan = plan.phy2log
                 logger.info(
@@ -484,6 +472,17 @@ class KimiK2_5Model(
                     plan.phy2log.shape[0],
                 )
 
+        self.ep_comm_initializer: EPCommInitializer | None = None
+        # Skip EP initialization in virtual device mode (compilation-only)
+        # since NVSHMEM functions cannot be linked without real GPU devices.
+        # We still keep ep_config to generate the correct graph structure.
+        if config.ep_config is not None and not is_virtual_device_mode():
+            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
+            self.ep_comm_initializer.ep_init(session)
+            if config.ep_config.node_id == -1:
+                raise ValueError(
+                    "EP node ID is not set. Please check if the EP initialization is successful."
+                )
         # ------------------------------------------------------------------
         # Generate the full KimiK2_5Config from HuggingFace config and LM config
         kimik2_5_config = KimiK2_5Config.initialize_from_config(
@@ -876,4 +875,5 @@ class KimiK2_5Model(
             ep_size=ep_size,
             n_nodes=n_nodes,
             n_groups=n_groups,
+            eplb_replicas_per_gpu=self.pipeline_config.runtime.eplb_replicas_per_gpu,
         )

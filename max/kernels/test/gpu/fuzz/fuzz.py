@@ -253,6 +253,19 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "msa_prefill": FuzzTarget(
+        name="msa_prefill",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_msa_prefill.mojo.test",
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_msa_prefill.mojo.test",
+        description=(
+            "msa_sm100_prefill_plan + _run: MiniMax-M3 block-sparse PREFILL"
+            " attention (ragged Q, on-device reverse-CSR + block-major fwd +"
+            " combine). Fuzzes the ragged shape (per-batch seqlen_q/seqlen_k +"
+            " q2k selection incl. C==0). ref = f64 block-sparse oracle (the"
+            " kernel's authority); memcheck (CSR build + scatter OOB)"
+        ),
+        default_oracle="ref",
+    ),
     "mla_decode": FuzzTarget(
         name="mla_decode",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_mla_decode.mojo.test"),
@@ -277,6 +290,74 @@ _TARGETS: dict[str, FuzzTarget] = {
         description=(
             "mla_fused_rope_rmsnorm_quantization: fused MLA RoPE + KV-cache"
             " RMSNorm + quantize-write; ragged shape fuzz (memcheck/ref)"
+        ),
+        default_oracle="memcheck",
+    ),
+    "fused_qk_rms_norm": FuzzTarget(
+        name="fused_qk_rms_norm",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_fused_qk_rms_norm.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_fused_qk_rms_norm.mojo.test"
+        ),
+        description=(
+            "fused_qk_rms_norm_ragged_paged: MiniMax-M3 per-head QK RMSNorm of"
+            " Q + the in-place K rows of the paged KV cache (weight_offset"
+            " runtime, multiply_before_cast True). ragged shape fuzz;"
+            " memcheck/ref (verifies q_output + the in-place K-cache rows)"
+        ),
+        default_oracle="ref",
+    ),
+    "fused_qk_rope": FuzzTarget(
+        name="fused_qk_rope",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_fused_qk_rope.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/fuzz_fused_qk_rope.mojo.test"
+        ),
+        description=(
+            "fused_qk_rope_ragged: MiniMax-M3 interleaved full-head_dim RoPE of"
+            " Q + the in-place K rows of the paged KV cache. ragged shape fuzz;"
+            " memcheck/ref (verifies output + the in-place-roped K-cache rows)"
+        ),
+        default_oracle="ref",
+    ),
+    "fused_qkv_matmul_mxfp8": FuzzTarget(
+        name="fused_qkv_matmul_mxfp8",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_fused_qkv_matmul_mxfp8.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_fused_qkv_matmul_mxfp8.mojo.test"
+        ),
+        description=(
+            "generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4"
+            " (MXFP8): MiniMax-M3 fused QKV projection (e4m3 + E8M0 scales),"
+            " returns Q + scatters K/V into the paged cache. ragged shape fuzz;"
+            " memcheck (cache-scatter OOB) + ref (host dequant GEMM, Q + K/V)"
+        ),
+        default_oracle="memcheck",
+    ),
+    "fused_qkv_index_matmul_mxfp8": FuzzTarget(
+        name="fused_qkv_index_matmul_mxfp8",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:"
+            "fuzz_fused_qkv_index_matmul_mxfp8.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_fused_qkv_index_matmul_mxfp8.mojo.test"
+        ),
+        description=(
+            "generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4"
+            " (MXFP8): MiniMax-M3 5-way dual-cache fused projection. Returns Q +"
+            " IndexQ, scatters K/V to the MAIN cache + IndexK to the INDEX (MLA)"
+            " cache. ragged shape fuzz; memcheck (two cache-scatter OOB) + ref"
+            " (host dequant GEMM: Q+IndexQ + main K/V + index K)"
         ),
         default_oracle="memcheck",
     ),

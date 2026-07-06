@@ -11,6 +11,14 @@ modular_py_test(
     size = "small",
     srcs = glob(["*.py"]),
     imports = ["."],
+    # These are trivial pure-Python unit tests, but importing
+    # max.pipelines.architectures.laguna pulls in the heavy max.pipelines
+    # import chain, which times out during pytest collection on contended
+    # macOS BuildBuddy workers. macOS adds no coverage here, so skip it.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",

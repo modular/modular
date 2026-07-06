@@ -204,40 +204,6 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ctx.enqueue_copy(has_initial_state_device, has_initial_state_buf.ptr)
         ctx.enqueue_copy(conv_states_device, conv_states_buf.ptr)
 
-    # Create device LayoutTensors
-    var x_device_tensor = LayoutTensor[dtype, layout_2d](
-        x_device,
-        RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen)),
-    )
-    var weight_device_tensor = LayoutTensor[dtype, layout_2d](
-        weight_device,
-        RuntimeLayout[layout_2d].row_major(Index(dim, width)),
-    )
-    var bias_device_tensor = LayoutTensor[dtype, layout_1d](
-        bias_device,
-        RuntimeLayout[layout_1d].row_major(Index(dim)),
-    )
-    var query_start_loc_device_tensor = LayoutTensor[DType.int32, layout_1d](
-        query_start_loc_device,
-        RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
-    )
-    var cache_indices_device_tensor = LayoutTensor[DType.int32, layout_1d](
-        cache_indices_device,
-        RuntimeLayout[layout_1d].row_major(Index(batch)),
-    )
-    var has_initial_state_device_tensor = LayoutTensor[DType.bool, layout_1d](
-        has_initial_state_device,
-        RuntimeLayout[layout_1d].row_major(Index(batch)),
-    )
-    var conv_states_device_tensor = LayoutTensor[dtype, layout_3d](
-        conv_states_device,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
-    )
-    var output_device_tensor = LayoutTensor[dtype, layout_2d](
-        output_device,
-        RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen)),
-    )
-
     # Create TileTensors for GPU kernel
     var x_device_tt = TileTensor(
         x_device,
@@ -763,36 +729,6 @@ def run_varlen_causal_conv1d_update_gpu[
         ctx.enqueue_copy(conv_state_device, conv_state_gpu_buf.ptr)
         ctx.enqueue_copy(cache_seqlens_device, cache_seqlens_buf.ptr)
         ctx.enqueue_copy(conv_state_indices_device, conv_state_indices_buf.ptr)
-
-    # Create device LayoutTensors
-    var x_device_tensor = LayoutTensor[dtype, layout_3d](
-        x_device,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var weight_device_tensor = LayoutTensor[dtype, layout_2d](
-        weight_device,
-        RuntimeLayout[layout_2d].row_major(Index(dim, width)),
-    )
-    var bias_device_tensor = LayoutTensor[dtype, layout_1d](
-        bias_device,
-        RuntimeLayout[layout_1d].row_major(Index(dim)),
-    )
-    var conv_state_device_tensor = LayoutTensor[dtype, layout_3d](
-        conv_state_device,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
-    )
-    var cache_seqlens_device_tensor = LayoutTensor[DType.int32, layout_1d](
-        cache_seqlens_device,
-        RuntimeLayout[layout_1d].row_major(Index(batch)),
-    )
-    var conv_state_indices_device_tensor = LayoutTensor[DType.int32, layout_1d](
-        conv_state_indices_device,
-        RuntimeLayout[layout_1d].row_major(Index(batch)),
-    )
-    var output_device_tensor = LayoutTensor[dtype, layout_3d](
-        output_device,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
 
     # Create TileTensors for GPU kernel
     var x_upd_device_tt = TileTensor(

@@ -202,8 +202,15 @@ def register_all_models() -> None:
             ".llama3_modulev3",
             "llama_modulev3_arch",
         ),
+        _LazyArch("Llama4ForCausalLM", ".llama4", "llama4_arch"),
+        _LazyArch(
+            "Llama4ForConditionalGeneration",
+            ".llama4",
+            "llama4_conditional_arch",
+        ),
         _LazyArch("MambaForCausalLM", ".mamba", "mamba_arch"),
         _LazyArch("MiniMaxM2ForCausalLM", ".minimax_m2", "minimax_m2_arch"),
+        _LazyArch("NemotronHForCausalLM", ".nemotron_h", "nemotron_h_arch"),
         _LazyArch("MistralForCausalLM", ".mistral", "mistral_arch"),
         _LazyArch(
             "Mistral3ForConditionalGeneration", ".mistral3", "mistral3_arch"
@@ -296,6 +303,11 @@ def register_all_models() -> None:
             "UnifiedMTPGemma4ForCausalLM",
             ".unified_mtp_gemma4",
             "unified_mtp_gemma4_arch",
+        ),
+        _LazyArch(
+            "UnifiedMTPGlmMoeDsaForCausalLM",
+            ".unified_mtp_glm5_2",
+            "unified_mtp_glm5_2_arch",
         ),
         _LazyArch("WanPipeline", ".wan", "wan_arch"),
         _LazyArch("WanImageToVideoPipeline", ".wan", "wan_i2v_arch"),

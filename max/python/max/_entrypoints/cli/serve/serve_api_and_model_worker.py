@@ -125,8 +125,8 @@ def serve_api_server_and_model_worker(
                 app, settings, pipeline_settings, app.state.zmq_endpoint_base
             ):
                 await server.serve()
-        except SubprocessExit:
-            logger.error("Worker crashed, Shutting down...")
+        except SubprocessExit as e:
+            logger.error("Worker crashed (%s), shutting down...", e)
             # quietly unwind the api-server to keep logs cleaner
             # so users can focus on the real error printed by the subprocess
             raise SystemExit(1) from None

@@ -23,6 +23,7 @@ import msgspec
 import pytest
 from max.benchmark.benchmark_shared.datasets import (
     DATASET_REGISTRY,
+    ArtificialAnalysisBenchmarkDataset,
     ArxivSummarizationBenchmarkDataset,
     AxolotlBenchmarkDataset,
     BenchmarkDataset,
@@ -122,6 +123,7 @@ def test_dataset_registry_contents() -> None:
     """Test that the registry contains expected datasets."""
     expected_datasets = {
         "agentic-code",
+        "artificial-analysis",
         "arxiv-summarization",
         "chat-judge",
         "instruct-coder",
@@ -1404,3 +1406,107 @@ def test_anthropic_tool_to_openai_missing_fields() -> None:
             "parameters": {},
         },
     }
+
+
+# ===----------------------------------------------------------------------=== #
+# Artificial Analysis corpus generator
+# ===----------------------------------------------------------------------=== #
+
+
+def _prompt_text(req: SampledRequest) -> str:
+    """Narrow an AA text request's ``prompt_formatted`` to ``str``.
+
+    AA requests always carry a plain string prompt (no chat messages), so this
+    asserts the runtime type and satisfies MyPy for the ``str | list`` union.
+    """
+    assert isinstance(req.prompt_formatted, str)
+    return req.prompt_formatted
+
+
+def _make_aa_dataset(articles: list[str]) -> ArtificialAnalysisBenchmarkDataset:
+    """AA dataset with ``_iter_articles`` stubbed to a fixed article list."""
+    dataset = ArtificialAnalysisBenchmarkDataset()
+    dataset._iter_articles = lambda *a, **k: iter(articles)  # type: ignore[method-assign]
+    return dataset
+
+
+def test_aa_in_registry() -> None:
+    """The artificial-analysis dataset resolves through the registry."""
+    assert "artificial-analysis" in DATASET_REGISTRY
+    assert (
+        DATASET_REGISTRY["artificial-analysis"].class_name
+        == "ArtificialAnalysisBenchmarkDataset"
+    )
+
+
+def test_aa_requires_input_len() -> None:
+    """input_len is mandatory."""
+    dataset = _make_aa_dataset(["word " * 100])
+    with pytest.raises(ValueError, match="input_len is required"):
+        dataset.sample_requests(num_requests=1, tokenizer=_FakeTokenizer())
+
+
+def test_aa_sizes_prompts_to_budget_and_rotates_tasks() -> None:
+    """Prompts stay within the model-tokenizer budget and rotate tasks."""
+    # Plenty of long articles so each prompt can be filled to budget. The fake
+    # tokenizer counts ~1 token/char, so input_len must exceed the template
+    # overhead (a couple hundred chars).
+    articles = [f"alpha{i} " * 500 for i in range(20)]
+    dataset = _make_aa_dataset(articles)
+    input_len = 2000
+
+    samples = dataset.sample_requests(
+        num_requests=4,
+        tokenizer=_FakeTokenizer(),
+        output_lengths=[1000, 1500, 2000, 1000],
+        input_len=input_len,
+    )
+
+    requests = samples.requests
+    assert len(requests) == 4
+
+    # Balanced over AA's full task mix: distinct task prefixes per request.
+    leading_lines = {_prompt_text(r).split("\n", 1)[0] for r in requests}
+    assert len(leading_lines) == 4
+
+    for r, expected_out in zip(requests, [1000, 1500, 2000, 1000], strict=True):
+        # Whole prompt is sized to the model-tokenizer budget.
+        assert 0 < r.prompt_len <= input_len
+        # Output budget is honored and EOS is ignored to force min length.
+        assert r.output_len == expected_out
+        assert r.ignore_eos is True
+        assert r.encoded_images == []
+
+
+def test_aa_without_output_lengths_leaves_eos_enabled() -> None:
+    """With no output budget, requests don't force generation length."""
+    articles = [f"beta{i} " * 500 for i in range(8)]
+    dataset = _make_aa_dataset(articles)
+
+    samples = dataset.sample_requests(
+        num_requests=2,
+        tokenizer=_FakeTokenizer(),
+        input_len=2000,
+    )
+
+    for r in samples.requests:
+        assert r.output_len is None
+        assert r.ignore_eos is False
+
+
+def test_aa_sampled_output_len_caps_with_eos_enabled() -> None:
+    """A sampled output_len caps max tokens but leaves EOS enabled."""
+    articles = [f"gamma{i} " * 500 for i in range(8)]
+    dataset = _make_aa_dataset(articles)
+
+    samples = dataset.sample_requests(
+        num_requests=2,
+        tokenizer=_FakeTokenizer(),
+        input_len=2000,
+        output_len=50,  # constant distribution -> deterministic cap
+    )
+
+    for r in samples.requests:
+        # Output length is set (a runaway cap), but EOS is not ignored.
+        assert r.output_len == 50
+        assert r.ignore_eos is False
