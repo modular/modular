@@ -1022,12 +1022,18 @@ struct ValueSet {
   /// Given a origin attribute, return the value ref that defines it, and the
   /// known type of that value.  This can return a null type if we don't have
   /// field sensitive information.
-  std::pair<ValueRef, Type> getValueRefAndTypeForOrigin(TypedAttr origin) const;
+  std::pair<ValueRef, Type> getValueRefAndTypeForOrigin(
+      TypedAttr origin,
+      SmallVectorImpl<InteriorOriginAttr> &interiorOrigins) const;
 
   /// Look up all the value refs that an access with the specified Value and
   /// dereference bit touch.
-  SmallVector<ValueRef> getValueRefsForAccess(Value val, bool isDeref);
-  SmallVector<ValueRef> getValueRefsForOrigin(TypedAttr origin);
+  SmallVector<ValueRef>
+  getValueRefsForAccess(Value val, bool isDeref,
+                        SmallVectorImpl<InteriorOriginAttr> &interiorOrigins);
+  SmallVector<ValueRef>
+  getValueRefsForOrigin(TypedAttr origin,
+                        SmallVectorImpl<InteriorOriginAttr> &interiorOrigins);
 
   /// Given a tracked value that is being accessed by an operation, return
   /// the ValueRef for the object being tracked or null if untracked.
@@ -1315,8 +1321,9 @@ void ValueSet::eraseValueInfo(Value value) {
 /// Given a origin attribute, return the value ref that defines it, and the
 /// known type of that value.  This can return a null type if we don't have
 /// field sensitive information.
-std::pair<ValueRef, Type>
-ValueSet::getValueRefAndTypeForOrigin(TypedAttr origin) const {
+std::pair<ValueRef, Type> ValueSet::getValueRefAndTypeForOrigin(
+    TypedAttr origin,
+    SmallVectorImpl<InteriorOriginAttr> &interiorOrigins) const {
   // The mutability of the origin access doesn't affect what ValueRef is
   // accessed.
   origin = OriginMutCastAttr::strip(getCanonicalAttr(origin));
@@ -1324,7 +1331,8 @@ ValueSet::getValueRefAndTypeForOrigin(TypedAttr origin) const {
   // If the origin has one or more field specifiers like 'a.x.y.z', find
   // the ValueRef for the base and then refine it.
   if (auto field = sugarDynCast<OriginFieldAttr>(origin)) {
-    auto [valueRef, type] = getValueRefAndTypeForOrigin(field.getBase());
+    auto [valueRef, type] =
+        getValueRefAndTypeForOrigin(field.getBase(), interiorOrigins);
     // If we don't have field sensitive information then we cannot refine the
     // origin.  This also handles the null valueRef case.
     if (!type)
@@ -1333,10 +1341,8 @@ ValueSet::getValueRefAndTypeForOrigin(TypedAttr origin) const {
     assert(valueRef.isIndirect && "Cannot field refine SSA value access");
     auto fieldName = field.getField();
 
-    // FIXME: Field accesses can be compressed due to subtyping, and we don't
-    // keep track of where this happens in the origin, and we don't keep track
-    // of the full struct+symbol name for fields.  *This is a bug*.  Until we
-    // decide to fix this, this should work.
+    // TODO(field erasure): When we allow field accesses to be compressed due to
+    // subtyping/erasure we'll need to be more careful here.
     auto containerType = sugarDynCast<LIT::StructType>(type);
     if (!containerType)
       return {valueRef, Type()};
@@ -1359,9 +1365,11 @@ ValueSet::getValueRefAndTypeForOrigin(TypedAttr origin) const {
   // origin isn't directly tracked, but the base origin is being treated as
   // being accessed.
   if (auto interior = sugarDynCast<InteriorOriginAttr>(origin)) {
-    auto [valueRef, type] = getValueRefAndTypeForOrigin(interior.getBase());
-    // Don't pass up a type; the indirected type isn't the same as the field we
-    // may be accessed from.
+    interiorOrigins.push_back(interior);
+    auto [valueRef, _] =
+        getValueRefAndTypeForOrigin(interior.getBase(), interiorOrigins);
+    // Don't pass the type up; the indirected type isn't the same as the field
+    // we may be accessed from.
     return {valueRef, {}};
   }
 
@@ -1445,12 +1453,13 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
 
 /// Look up all the value refs that an access to the specified origin could
 /// touch.
-SmallVector<ValueRef> ValueSet::getValueRefsForOrigin(TypedAttr origin) {
+SmallVector<ValueRef> ValueSet::getValueRefsForOrigin(
+    TypedAttr origin, SmallVectorImpl<InteriorOriginAttr> &interiorOrigins) {
   SmallVector<ValueRef> result;
 
   // Look through imm cast and unions to find the underlying attrs.
   processOriginUnionElts(getCanonicalAttr(origin), [&](TypedAttr raw) {
-    auto [valueRef, _] = getValueRefAndTypeForOrigin(raw);
+    auto [valueRef, _] = getValueRefAndTypeForOrigin(raw, interiorOrigins);
     if (valueRef) {
       result.push_back(valueRef);
       valueInfos[valueRef.valueId].isEverUsed = true;
@@ -1462,8 +1471,9 @@ SmallVector<ValueRef> ValueSet::getValueRefsForOrigin(TypedAttr origin) {
 
 /// Look up all the value refs that an access with the specified Value and
 /// dereference bit touch.
-SmallVector<ValueRef> ValueSet::getValueRefsForAccess(Value value,
-                                                      bool isDeref) {
+SmallVector<ValueRef> ValueSet::getValueRefsForAccess(
+    Value value, bool isDeref,
+    SmallVectorImpl<InteriorOriginAttr> &interiorOrigins) {
   // If this is a direct reference to a value, return field sensitive info.
   if (ValueRef valueRef = getDirectValueRef(value, isDeref)) {
     SmallVector<ValueRef> result;
@@ -1474,7 +1484,8 @@ SmallVector<ValueRef> ValueSet::getValueRefsForAccess(Value value,
   // Otherwise, if indirect, this is an reference to one or more
   // origin-tracked values, figure out what they are.
   if (isDeref)
-    return getValueRefsForOrigin(cast<RefType>(value.getType()).getOrigin());
+    return getValueRefsForOrigin(cast<RefType>(value.getType()).getOrigin(),
+                                 interiorOrigins);
 
   // Otherwise it is a trivial or untracked value.
   return {};
@@ -1524,6 +1535,25 @@ public:
   /// This returns the number of distinct interior origins in the function.
   size_t getNumInteriorOrigins() const { return nextInteriorOriginID; }
 
+  /// Mark the given interior origin as live in the given bitvector.
+  void markInteriorOriginLive(InteriorOriginAttr o, BitVector &liveness) const {
+    auto it = interiorOriginID.find(o);
+    assert(it != interiorOriginID.end() && it->second < liveness.size() &&
+           "Unknown interior origin");
+    liveness.set(it->second);
+  }
+
+  bool isInteriorOriginLive(InteriorOriginAttr o, BitVector &liveness) const {
+    auto it = interiorOriginID.find(o);
+    assert(it != interiorOriginID.end() && it->second < liveness.size() &&
+           "Unknown interior origin");
+    return liveness[it->second];
+  }
+
+  bool originHasInteriorOrigins(TypedAttr origin) const {
+    return originWithInteriorOrigins.count(origin);
+  }
+
 private:
   /// This method is called whenever we discover an interior origin.
   void addInteriorOrigin(InteriorOriginAttr interior);
@@ -1538,6 +1568,11 @@ private:
   /// This contains entries for origins that have derived interior origins,
   /// indicating what to invalidate when that origin is mutated.
   DenseMap<TypedAttr, BitVector> interiorOriginInvalidationMap;
+
+  /// This contains entries for origins that have interior origins somewhere
+  /// inside of them. This allows us to filter out the majority of origins
+  /// references that don't.
+  SmallPtrSet<Attribute, 8> originWithInteriorOrigins;
 };
 } // namespace
 
@@ -1583,6 +1618,7 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
   for (TypedAttr origin :
        perThreadCache.originFinder.findOriginsIn(collectedTypes)) {
     // processRawOrigin looks through SugarAttr and UnionAttr.
+    bool hasInteriorOrigin = false;
     processOriginUnionElts(origin, [&](TypedAttr raw) {
       // Strip off things that might be outside an interior origin, since they
       // won't matter for our analysis.
@@ -1597,9 +1633,15 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
           break;
       }
       // If we find an interior origin inside, process it.
-      if (auto interior = sugarDynCast<InteriorOriginAttr>(raw))
+      if (auto interior = sugarDynCast<InteriorOriginAttr>(raw)) {
         addInteriorOrigin(interior);
+        hasInteriorOrigin = true;
+      }
     });
+    // Keep track of any origins that have interior origins, so we can rapidly
+    // ignore things that don't.
+    if (hasInteriorOrigin)
+      originWithInteriorOrigins.insert(origin);
   }
 
   // Now that we found all the interior origins, make sure all the bitvectors
@@ -1787,12 +1829,16 @@ private:
   void checkTryOp(LIT::TryOp tryOp);
 
   void diagnoseUsageError(ValueRef valueRef, Operation &op);
+  void diagnoseInteriorOriginUsageError(InteriorOriginAttr interior,
+                                        Operation &op);
   void checkUse(Value value, Operation &op, bool isDeref);
   void checkDef(Value value, Operation &op, bool isDeref);
   void checkConsume(Value value, Operation &op, bool isDeref);
   void checkMarkDestroyed(Value value, Operation &op);
-  void checkOriginEffect(TypedAttr origin, Operation &op);
+  void checkOriginAccesses(TypedAttr origin, Operation &op);
   void handleAnyOriginUse(Operation &op, ArrayRef<TypedAttr> definedOrigins);
+
+  void establishInteriorOriginsFromDef(Type type);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -1810,9 +1856,8 @@ private:
   /// When analyzing the body of a loop, this bitset indicates what a 'break'
   /// should intersect with.
   TrackedAndInteriorLiveness *breakSet = nullptr;
-  /// When analyzing the body of a try, this bitset indicates what a
-  /// 'raise' should intersect with.
-  /// TODO: raise set should understand raise label target.
+  /// When analyzing the body of a try, this stack indicates what a
+  /// 'raise' should intersect with. It is indexed with a raise label.
   RaiseSetEntry<TrackedAndInteriorLiveness> *raiseEntryInfo = nullptr;
 };
 } // namespace
@@ -1937,17 +1982,44 @@ static void addBadValueNameToDiag(ValueRef valueRef, const BitVector &bits,
   diag << "'";
 }
 
+void UninitializedValueScan::establishInteriorOriginsFromDef(Type type) {
+  // Don't scan anything if no interior origins are accessed.
+  if (liveness.interior.empty())
+    return;
+
+  for (auto origin :
+       valueSet.perThreadCache.originFinder.findOriginsIn(type, {})) {
+    // Ignore the vast majority of origins that don't have interior origins.
+    if (!interiorOriginTracker.originHasInteriorOrigins(origin))
+      continue;
+
+    // Given a def of something with an "a.list["x"].second.field["y"].z"
+    // origin, we need to mark the "x" and "y" interior origins live.
+    origin.walk([&](InteriorOriginAttr origin) {
+      interiorOriginTracker.markInteriorOriginLive(origin, liveness.interior);
+    });
+  }
+}
+
 /// Verify that the specified ValueRef is live at this point, diagnosing an
 /// error at the specified operation if not.
 void UninitializedValueScan::checkUse(Value value, Operation &op,
                                       bool isDeref) {
+  SmallVector<InteriorOriginAttr> interiorOrigins;
   SmallVector<ValueRef> accesses =
-      valueSet.getValueRefsForAccess(value, isDeref);
+      valueSet.getValueRefsForAccess(value, isDeref, interiorOrigins);
 
   for (ValueRef access : accesses) {
     // The referenced value fields must be live.
     if (!access.isAllPresent(liveness.tracked))
       diagnoseUsageError(access, op);
+  }
+
+  // Verify that any accessed interior origins are also live.
+  for (auto origin : interiorOrigins) {
+    // The referenced value fields must be live.
+    if (!interiorOriginTracker.isInteriorOriginLive(origin, liveness.interior))
+      diagnoseInteriorOriginUsageError(origin, op);
   }
 }
 
@@ -2013,6 +2085,15 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
       << "'" << valueName << "' declared here";
 }
 
+/// Complain about a use of an invalidated interior origin.
+void UninitializedValueScan::diagnoseInteriorOriginUsageError(
+    InteriorOriginAttr interior, Operation &op) {
+  // TODO: This error is not good enough.
+  // TODO: Add a bitvector to UVS to avoid redundant errors.
+  mlir::emitError(op.getLoc(), "use of uninitialized interior origin ")
+      << interior.getUserName();
+}
+
 void UninitializedValueScan::checkDef(Value value, Operation &op,
                                       bool isDeref) {
   // Direct accesses are handled in a field sensitive way, and this can count as
@@ -2021,19 +2102,29 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
     // Finally, marks its value live so any use after this isn't treated as
     // uninitialized.
     valueRef.markBits(liveness.tracked, true);
+
+    // Notice any interior origins that are embedded in the result type so we
+    // know they're alive at this point.
+    establishInteriorOriginsFromDef(
+        ValueRef::getDereferencedType(value.getType(), isDeref));
     return;
   }
 
   // If this is an indirect reference then a mutation will require that all
   // values being mutated are initialized, because we cannot perform field
   // sensitive initialization, only overwrite/mutate.
+  SmallVector<InteriorOriginAttr> interiorOrigins;
   SmallVector<ValueRef> accesses =
-      valueSet.getValueRefsForAccess(value, isDeref);
+      valueSet.getValueRefsForAccess(value, isDeref, interiorOrigins);
   for (auto access : accesses) {
     // The referenced value fields must be live.
     if (!access.isAllPresent(liveness.tracked))
       diagnoseUsageError(access, op);
   }
+
+  // Mark any defined interior origins as live.
+  for (auto origin : interiorOrigins)
+    interiorOriginTracker.markInteriorOriginLive(origin, liveness.interior);
 }
 
 void UninitializedValueScan::checkConsume(Value value, Operation &op,
@@ -2100,13 +2191,22 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
 }
 
 /// Check any unstructured origins that are accessed by the operation.
-void UninitializedValueScan::checkOriginEffect(TypedAttr origin,
-                                               Operation &op) {
-  SmallVector<ValueRef> accesses = valueSet.getValueRefsForOrigin(origin);
+void UninitializedValueScan::checkOriginAccesses(TypedAttr origin,
+                                                 Operation &op) {
+  SmallVector<InteriorOriginAttr> interiorOrigins;
+  SmallVector<ValueRef> accesses =
+      valueSet.getValueRefsForOrigin(origin, interiorOrigins);
   for (auto access : accesses) {
     // The referenced value fields must be live.
     if (!access.isAllPresent(liveness.tracked))
       diagnoseUsageError(access, op);
+  }
+
+  // Verify that any accessed interior origins are also live.
+  for (auto origin : interiorOrigins) {
+    // The referenced value fields must be live.
+    if (!interiorOriginTracker.isInteriorOriginLive(origin, liveness.interior))
+      diagnoseInteriorOriginUsageError(origin, op);
   }
 }
 
@@ -2288,6 +2388,10 @@ void UninitializedValueScan::scanBlock(Block &block) {
       switch (effect) {
       case ResultEffect::ignore:
         assert(!trackable && "Origin trackable and CheckLifetimes disagree");
+        // Ref results don't matter for tracking ownership, but they can return
+        // interior origins, which indicate they are alive.  Notice them.
+        if (auto refType = sugarDynCast<RefType>(result.getType()))
+          establishInteriorOriginsFromDef(refType);
         continue;
       case ResultEffect::regDefine:
         assert(trackable && !trackable.isIndirect && endsUninit &&
@@ -2326,7 +2430,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
 
     // Process any origins accessed indirectly.
     for (auto origin : originEffects) {
-      checkOriginEffect(origin, op);
+      checkOriginAccesses(origin, op);
       hasAnyOrigin |= sugarIsa<AnyOriginAttr>(origin);
     }
 
@@ -2501,7 +2605,7 @@ void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
   // isn't reachable.
   auto thenLiveOutValues =
       TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
-  TrackedAndInteriorLiveness scratchSet = thenLiveOutValues;
+  TrackedAndInteriorLiveness scratchSet(0, 0); // 0,0 because always overwritten
 
   for (size_t nextElIfRegion = 0, e = ifRegions.size(); nextElIfRegion != e;
        nextElIfRegion += 2) {
@@ -3498,7 +3602,7 @@ private:
   void checkUse(Value value, bool isDeref, DestructorInserter &dtorInserter);
   void checkDef(Value value, Operation &op, bool isDeref,
                 DestructorInserter &dtorInserter);
-  void checkOriginEffect(TypedAttr origin, DestructorInserter &dtorInserter);
+  void checkOriginAccesses(TypedAttr origin, DestructorInserter &dtorInserter);
   bool scheduleNeededDtors(ValueRef use, DestructorInserter &dtorInserter,
                            Value value = Value());
 
@@ -3523,8 +3627,8 @@ private:
   /// continue blocks before inserting destructors.
   bool dryRun = false;
 
-  /// When analyzing the body of a try, this bitset indicates what a
-  /// 'raise' should intersect with.
+  /// When analyzing the body of a try, this stack indicates what a
+  /// 'raise' should intersect with. It is indexed with a raise label.
   RaiseSetEntry<BitVector> *raiseEntryInfo = nullptr;
 
   /// When analyzing the body of a loop, these bitset indicates what a 'break'
@@ -3746,7 +3850,7 @@ void DestructorInsertion::scanBlock(Block &block) {
 
     // Process any other origins accessed indirectly.
     for (auto origin : originEffects)
-      checkOriginEffect(origin, dtorInserter);
+      checkOriginAccesses(origin, dtorInserter);
 
     // If the operation used a #lit.any.origin value, then we treat it as an
     // implicit use of all tracked values.  This ensures that the values are not
@@ -4278,7 +4382,9 @@ void DestructorInsertion::checkUse(Value value, bool isDeref,
   // We are not tracking this value directly, it could be tied to an origin
   // declared by a value we do track. If this is the case, check these values
   // for destruction.
-  for (ValueRef access : valueSet.getValueRefsForAccess(value, isDeref)) {
+  SmallVector<InteriorOriginAttr> interiorOrigins;
+  for (ValueRef access :
+       valueSet.getValueRefsForAccess(value, isDeref, interiorOrigins)) {
     // Do not pass "value" here, because it will refer to the reference, which
     // may not be to the actual tracked value for 'access'.  For example, in
     // 'use(cond ? a : b)' we want to think about "a" and "b".
@@ -4350,7 +4456,7 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
     // type captures, because the destructor may reference them.
     for (auto origin : valueSet.getOriginFinder().findOriginsIn(valueTy))
       if (!isa<AnyOriginAttr>(origin))
-        checkOriginEffect(origin, dtorInserter);
+        checkOriginAccesses(origin, dtorInserter);
 
     // Destructor call goes ahead of the mutation, not after.
     ImplicitLocOpBuilder builder(op.getLoc(), &op);
@@ -4362,10 +4468,11 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
 }
 
 /// Check any unstructured origins that are accessed by the operation.
-void DestructorInsertion::checkOriginEffect(TypedAttr origin,
-                                            DestructorInserter &dtorInserter) {
+void DestructorInsertion::checkOriginAccesses(
+    TypedAttr origin, DestructorInserter &dtorInserter) {
   // Iff this is the /last/ use of the value, emit a dtor for the value.
-  for (auto access : valueSet.getValueRefsForOrigin(origin))
+  SmallVector<InteriorOriginAttr> interiorOrigins;
+  for (auto access : valueSet.getValueRefsForOrigin(origin, interiorOrigins))
     (void)scheduleNeededDtors(access, dtorInserter);
 }
 
@@ -4573,7 +4680,7 @@ bool DestructorInsertion::scheduleNeededDtors(ValueRef use,
   // need to make sure to treat any destructions of the interesting pointer as a
   // use of the origins it may reference.
   for (auto origin : valueSet.getOriginFinder().findOriginsIn(valueUseType))
-    checkOriginEffect(origin, dtorInserter);
+    checkOriginAccesses(origin, dtorInserter);
 
   // Trivial types don't have __del__ methods and can't be tracked, so if
   // this is referring to one of them, make sure to clear the bits so we
