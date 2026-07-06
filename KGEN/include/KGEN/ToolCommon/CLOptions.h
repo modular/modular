@@ -42,6 +42,7 @@ enum class Command {
   kEmitLLVMOptBitcode,
   kEmitSharedObject,
   kExecute,
+  kLSP,
 };
 
 //===----------------------------------------------------------------------===//
@@ -573,7 +574,11 @@ private:
                      "exported functions."),
           clEnumValN(Command::kEmitSharedObject, "emit=shared-lib",
                      "Emit funcs as a shared object (ELF only)."),
-          clEnumValN(Command::kExecute, "execute", "Execute funcs.")),
+          clEnumValN(Command::kExecute, "execute", "Execute funcs."),
+          clEnumValN(Command::kLSP, "lsp",
+                     "Process the input as the language server does: lazy "
+                     "parse + check pipeline, printing the checked IR to "
+                     "stdout and reporting diagnostics on stderr.")),
       llvm::cl::location(options.cmd),
       llvm::cl::Required,
       llvm::cl::ValueOptional,

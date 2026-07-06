@@ -12,6 +12,8 @@
 #include "KGEN/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/MojoParser/EntryPoint.h"
+#include "KGEN/MojoTooling/ParserDriver.h"
+#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/Support/CLOptionUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Configuration.h"
@@ -30,6 +32,7 @@
 #include "Support/MDialect/MAttrs.h"
 #include "Support/Process.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Support/Timing.h"
 #include "llvm/ADT/StringExtras.h"
@@ -44,6 +47,23 @@ using namespace KGEN;
 using namespace mlir;
 
 namespace {
+
+/// Parser listener used for the `lsp` command: restricts interest to the main
+/// file's locations, mirroring how the language server parses an open document
+/// (and matching kgen-translate's -lsp listener). Installing a listener also
+/// exercises the parser's eager listener-driven resolution paths.
+class MainFileParserListener : public LIT::ParserListener {
+public:
+  explicit MainFileParserListener(const llvm::SourceMgr &sourceMgr)
+      : sourceMgr(sourceMgr) {}
+
+  bool isInterestedInLoc(llvm::SMLoc loc) override {
+    return sourceMgr.FindBufferContainingLoc(loc) == sourceMgr.getMainFileID();
+  }
+
+private:
+  const llvm::SourceMgr &sourceMgr;
+};
 
 class CLOptions : public KGENOptions {
 public:
@@ -309,6 +329,51 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     options.useParametricInterpreter = false;
 
   KGENCompiler compiler(*ctx, options, std::move(pmOptions));
+
+  // The `lsp` command reproduces how the language server processes an open
+  // document (MojoDocument::checkModuleSemantics), all in-process: the lazy,
+  // error-tolerant parse (parseFileForLSP) followed by the check pipeline
+  // (runCheckLITPipeline) on the cloned module. Diagnostics are reported on
+  // stderr and the resulting checked module IR is printed to stdout; it then
+  // returns before the normal import/elaborate/emit path (no elaboration or
+  // lowering happens, matching the server, which stops at semantic checking).
+  // Note: docstring code blocks are not checked here (that is the server's
+  // processDocStrings step).
+  if (clOptions.cmd == Command::kLSP) {
+    if (!inputFileName.ends_with(".mojo"))
+      return failure(
+          clOptions.reportError("lsp command requires a .mojo file"));
+
+    ctx->disableMultithreading();
+    // Route both parse and check diagnostics through one handler so they print
+    // to stderr with source locations, mirroring checkModuleSemantics.
+    mlir::SourceMgrDiagnosticHandler diagHandler(mgr, ctx);
+
+    LIT::ParserConfig config(ctx, options);
+    config.stripFilePrefix = clOptions.stripFilePrefix;
+    config.useMLIRDiagnostics = true;
+    config.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
+    MainFileParserListener lspListener(mgr);
+    config.parserListener = &lspListener;
+
+    MojoParserContext parserContext(mgr, config);
+    MojoASTDeclRef decl = parserContext.parseFileForLSP(mgr.getMainFileID());
+    parserContext.ensureSignaturesResolved();
+    if (!decl)
+      return failure(clOptions.reportError("could not parse the module"));
+
+    // Run the real check pipeline on the same DCE'd per-decl clone the server
+    // checks. Pipeline failure is non-fatal (the server only debug-logs it);
+    // the emitted diagnostics are the signal.
+    OwningOpRef<ModuleOp> clone = LIT::cloneDeclModuleForCompilation(*decl);
+    (void)compiler.runCheckLITPipeline(*clone);
+
+    // Print the checked module IR (post-check, pre-elaboration) to stdout. This
+    // is the final IR the LSP path produces; `print` omits a trailing newline.
+    clone->print(llvm::outs());
+    llvm::outs() << "\n";
+    return mlir::success();
+  }
 
   // The set of files included during processing, used to generate the
   // dependency file.
