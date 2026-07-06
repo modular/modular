@@ -42,28 +42,19 @@ SmallVector<VariadicKind>
 getContextualVariadicParams(ArrayRef<Operation *> ops);
 
 /// This digs in and unpacks all of the origin references in the specified
-/// TypedAttr unpacking unions, but maintaining mutability.  This typically
-/// will return ParamRefAttr's or ImmutCast(ParamRefAttr)'s if a mutable
-/// origin is accessed immutably.
+/// TypedAttr, unpacking unions.
 ///
 /// This invokes the specified closure on each origin element.
 template <typename T>
-static inline void processRawOrigin(TypedAttr origin, T &&fn) {
+static inline void processOriginUnionElts(TypedAttr origin, T &&fn) {
   if (auto sugar = dyn_cast<SugarAttr>(origin))
     origin = sugar.getCanonical();
 
   // Expand origin unions into their members, we know they will canonicalize
   // nested unions into a single one.
-  if (auto unionAttr =
-          dyn_cast<OriginUnionAttr>(OriginMutCastAttr::strip(origin))) {
-    // If we stripped a MutCastAttr off the outer union, put it onto each
-    // element we return.
-    bool needsImmutCast = TypedAttr(unionAttr) != origin;
-    for (auto elt : unionAttr.getOperands()) {
-      if (needsImmutCast)
-        elt = OriginMutCastAttr::get(elt, origin.getType());
+  if (auto unionAttr = dyn_cast<OriginUnionAttr>(origin)) {
+    for (auto elt : unionAttr.getOperands())
       fn(elt);
-    }
     return;
   }
 

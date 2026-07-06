@@ -816,9 +816,9 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   // track of the fully field sensitive origin, and the containing origins.
   SmallPtrSet<Attribute, 2> destOrigins, destContainerOrigins;
 
-  // processRawOrigin takes apart origin unions for us.
+  // processOriginUnionElts takes apart origin unions for us.
   auto refOrigin = sugarCast<RefType>(destBuffer.getType()).getOrigin();
-  processRawOrigin(getCanonicalAttr(refOrigin), [&](TypedAttr origin) {
+  processOriginUnionElts(getCanonicalAttr(refOrigin), [&](TypedAttr origin) {
     // AnyOrigin is assumed to be ok since it is used for
     // UnsafePointer etc.  We don't want to track it.
     if (sugarIsa<AnyOriginAttr>(origin))

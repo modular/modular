@@ -284,13 +284,13 @@ TypedAttr OriginUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
 
   SmallVector<TypedAttr> operands = operandSet.takeVector();
 
-  // Impose an ordering on the operands, sorting by name where possible - but
-  // predictably ordered w.r.t. each other.
-  llvm::stable_sort(operands, unionArgCompare);
-
   // If one result, use it.
   if (operands.size() == 1)
     return operands[0];
+
+  // Impose an ordering on the operands, sorting by name where possible - but
+  // predictably ordered w.r.t. each other.
+  llvm::stable_sort(operands, unionArgCompare);
 
   // Otherwise, for multiple elements actually form a union.
   return OriginUnionAttr::Base::get(type.getContext(), operands, type);
@@ -301,10 +301,14 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> origins) {
   if (origins.empty())
     return OriginUnionAttr::get(OriginType::get(ctx, /*mutable=*/false));
 
+  // Determine the overall mutability of the union, as the intersection of the
+  // mutabilities of the members.
   bool needMutCast = false;
   auto getMut = [&](TypedAttr origin) {
+    // If the type of a member is sugared, force cast it to a consistent origin
+    // type so printing and parsing will work correctly.
     if (!isa<OriginType>(origin.getType()))
-      needMutCast = true; // Notice sugar.
+      needMutCast = true;
 
     auto isMut = sugarCast<OriginType>(origin.getType()).getIsMutable();
     // Remove any sugar from the mutability to get a pure scalar<bool>.
@@ -325,14 +329,11 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> origins) {
   }
 
   auto resultType = OriginType::get(mutability);
-
+  // Add any OriginMutCastAttr wrappers as needed.
   SmallVector<TypedAttr> newOrigins;
   if (needMutCast) {
-    for (TypedAttr origin : origins) {
-      auto elt = OriginMutCastAttr::get(origin, mutability);
-      elt = ParamOperatorAttr::getRebind(elt, resultType);
-      newOrigins.push_back(elt);
-    }
+    for (TypedAttr origin : origins)
+      newOrigins.push_back(OriginMutCastAttr::get(origin, resultType));
     origins = newOrigins;
   }
 
@@ -363,9 +364,9 @@ OriginMutCastAttr OriginMutCastAttr::getFromBytecode(TypedAttr operand,
 }
 
 TypedAttr OriginMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
-  if (auto curTy = sugarDynCast<OriginType>(operand.getType()))
-    if (curTy.isMutable() == isMutable)
-      return operand;
+  auto curTy = sugarCast<OriginType>(operand.getType());
+  if (curTy.isMutable() == isMutable)
+    return operand;
 
   // Fold some common cases to canonicalize.
   // mutcast(mutcast(x)) -> mutcast(x), often canceling out.
@@ -401,9 +402,9 @@ TypedAttr OriginMutCastAttr::get(TypedAttr operand, Type type) {
 }
 
 TypedAttr OriginMutCastAttr::get(TypedAttr operand, bool isMutable) {
-  if (auto curTy = sugarDynCast<OriginType>(operand.getType()))
-    if (curTy.isMutableKnown(isMutable))
-      return operand;
+  auto curTy = sugarCast<OriginType>(operand.getType());
+  if (curTy.isMutableKnown(isMutable))
+    return operand;
   return get(operand, SIMDAttr::getScalarBool(operand.getContext(), isMutable));
 }
 
