@@ -41,7 +41,7 @@ lit.struct.decl @StructDuplicate {
 
 lit.struct.decl @SomeType<v, b> {}
 
-// expected-error @below {{'kgen.generator' op invalid use of parameter with no declaration "c"}}
+// expected-error @below {{'kgen.generator' op funcTypeGenerator is not self-contained: it references parameter 'c' by name instead of by index}}
 kgen.generator @InvalidTypeParamValue<a>(%arg0: !lit.struct<@SomeType<a, c>>) {
   kgen.return
 }
