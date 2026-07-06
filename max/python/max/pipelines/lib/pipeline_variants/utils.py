@@ -444,6 +444,12 @@ class StructuredOutputHelper:
             return (None, None)
 
         if parser_cls.SECTION_BEGIN and parser_cls.SECTION_END:
+            # Parsers that opt into enforcement-to-EOS get no end tag:
+            # enforcement stays on after the section closes, so the
+            # completed grammar masks everything but EOS and the turn
+            # ends with its single section (e.g. MiniMax-M3; CENG-718).
+            if parser_cls.ENFORCE_TOOL_REGION_TO_EOS:
+                return (parser_cls.SECTION_BEGIN, None)
             return (parser_cls.SECTION_BEGIN, parser_cls.SECTION_END)
         if parser_cls.CALL_BEGIN:
             return (parser_cls.CALL_BEGIN, None)
