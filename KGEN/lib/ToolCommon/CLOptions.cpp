@@ -176,6 +176,11 @@ bool KGENCLOptionsParser::parse(llvm::cl::Option &o, StringRef argName,
     val = Command::kExecute;
     return false;
   }
+
+  if (argName == "lsp") {
+    val = Command::kLSP;
+    return false;
+  }
   return o.error("unsupported option '" + argName + "'");
 }
 
