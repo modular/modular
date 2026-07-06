@@ -57,6 +57,50 @@ class Context:
     def alloc_host_pinned(self, byte_size: int) -> Buffer:
         return Buffer._wrap(self._inner.alloc_host_pinned(byte_size))
 
+    def wrap_memory(
+        self, address: int, byte_size: int, *, owning: bool = False
+    ) -> Buffer:
+        """Wraps an existing device memory region in a buffer handle.
+
+        With ``owning=False`` (the default) the region is externally
+        owned: the plugin never frees it, dropping the returned buffer
+        releases only the HAL's bookkeeping, and the caller must keep the
+        underlying allocation alive for the buffer's lifetime. With
+        ``owning=True`` the buffer frees the region through the plugin's
+        normal path — only valid for an address that came from this
+        plugin's own allocator (e.g. one released with
+        :meth:`unwrap_memory`).
+
+        Args:
+            address: Base address of the region, in the address space the
+                backing plugin uses for device memory.
+            byte_size: Size of the region in bytes.
+            owning: Whether dropping the buffer frees the region.
+
+        Returns:
+            A buffer handle over the region.
+        """
+        return Buffer._wrap(self._inner.wrap_memory(address, byte_size, owning))
+
+    def unwrap_memory(self, buffer: Buffer) -> int:
+        """Releases ownership of ``buffer``'s region and returns its address.
+
+        The inverse of :meth:`wrap_memory`: after this call the buffer is
+        non-owning — dropping it releases only the HAL's bookkeeping — and
+        the caller is responsible for the region at the returned address
+        (e.g. to hand it to a third-party library, or to re-adopt it with
+        ``wrap_memory(..., owning=True)``). Only device buffers can be
+        unwrapped: a wrapped handle always frees through the device path,
+        so host-pinned buffers are rejected.
+
+        Args:
+            buffer: The buffer to release ownership from.
+
+        Returns:
+            Base address of the underlying region.
+        """
+        return self._inner.unwrap_memory(buffer._inner)
+
     def memory_get_address(self, buf: Buffer) -> int:
         return self._inner.memory_get_address(buf._inner)
 
