@@ -10,11 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements a 'range' call.
+"""Defines Mojo's built-in `range()` function.
 
-These are Mojo built-ins, so you don't need to import them.
+In Mojo, ranges are values, not loop constructs, generators, or lists. Every
+range is a half-open interval, [start, end).
+
+The stand-alone `range()` function constructs zero-based, sequential, and
+strided ranges.
+
+`range()` is built in. You don't need to import it.
 """
-
 
 from std.math import ceildiv
 from std.sys.info import size_of
@@ -248,93 +253,233 @@ struct _StridedRange(
 
 @always_inline
 def range[T: Indexer, //](end: T) -> _ZeroStartingRange:
-    """Constructs a [0; end) Range.
+    """Returns the integer sequence `[0, end)`.
+
+    Integer ranges are values. They support `len()`, O(1) indexing, and
+    `reversed()` without allocating. `reversed(range(n))` iterates from
+    `n - 1` down to `0`.
 
     Parameters:
-        T: The type of the end value.
+        T: The type of the end value. Constrained to `Indexer`.
 
     Args:
-        end: The end of the range.
+        end: The exclusive upper bound. Negative values produce an empty range.
 
     Returns:
-        The constructed range.
+        A zero-based integer range over `[0, end)`.
+
+    Performance:
+        O(1) construction. O(1) indexing. No list allocation.
+
+    Examples:
+
+    ```mojo
+    for i in range(5):
+        print(i)  # 0, 1, 2, 3, 4
+
+    var steps = range(1000)
+    print(steps[499])  # 499
+    print(len(steps))  # 1000
+
+    for i in reversed(range(5)):
+        print(i)  # 4, 3, 2, 1, 0
+    ```
     """
     return _ZeroStartingRange(index(end))
 
 
 @always_inline
 def range[T: Indexer, //](start: T, end: T) -> _SequentialRange:
-    """Constructs a [start; end) Range.
+    """Returns the integer sequence `[start, end)`.
+
+    **The two-argument form never counts down.** `range(7, 3)` is empty,
+    not `[7, 6, 5, 4]`. Use the three-argument form with a negative step to
+    count downward. The range supports `len()`, O(1) indexing, and
+    `reversed()`.
 
     Parameters:
-        T: The type of the start and end values.
+        T: The type of the start and end values. Constrained to `Indexer`.
 
     Args:
-        start: The start of the range.
-        end: The end of the range.
+        start: The inclusive lower bound.
+        end: The exclusive upper bound. When `end <= start`, the range is empty.
 
     Returns:
-        The constructed range.
+        A sequential integer range over `[start, end)`.
+
+    Performance:
+        O(1) construction. O(1) indexing. No list allocation.
+
+    Examples:
+
+    ```mojo
+    for i in range(3, 7):
+        print(i)  # 3, 4, 5, 6
+
+    for i in range(-3, 4):
+        print(i)  # -3, -2, -1, 0, 1, 2, 3
+
+    print(len(range(7, 3)))  # 0
+    ```
     """
     return _SequentialRange(index(start), index(end))
 
 
 @always_inline
 def range[T: Indexer, //](start: T, end: T, step: T) -> _StridedRange:
-    """Constructs a [start; end) Range with a given step.
+    """Returns the integer sequence `[start, end)` with a given step.
+
+    When you don't know which bound is larger, choose the direction with an
+    inline conditional:
+
+    ```mojo
+    var step = 1 if end > start else -1
+    for i in range(start, end, step):
+        ...
+    ```
 
     Parameters:
-        T: The type of the start, end, and step values.
+        T: The type of the start, end, and step values. Constrained to
+            `Indexer`.
 
     Args:
-        start: The start of the range.
-        end: The end of the range.
-        step: The step for the range.
+        start: The inclusive lower bound when stepping forward, or the
+            inclusive upper bound when stepping backward.
+        end: The exclusive bound in the direction of the step.
+        step: The increment per iteration. A positive step counts up, and a
+            negative step counts down. A zero step produces an empty range.
 
     Returns:
-        The constructed range.
+        A strided integer range over `[start, end)` by `step`.
+
+    Performance:
+        O(1) construction. O(1) indexing. No list allocation.
+
+    Examples:
+
+    ```mojo
+    for i in range(0, 10, 2):
+        print(i)  # 0, 2, 4, 6, 8
+
+    for i in range(7, 3, -1):
+        print(i)  # 7, 6, 5, 4
+
+    var evens = range(0, 2_000_000, 2)
+    print(evens[999_999])  # 1_999_998
+    print(len(evens))      # 1_000_000
+    ```
     """
     return _StridedRange(index(start), index(end), index(step))
 
 
 @always_inline
 def range(end: Int) -> _ZeroStartingRange:
-    """Constructs a [0; end) Range.
+    """Returns the `Int` sequence `[0, end)`.
+
+    Integer ranges are values. They support `len()`, O(1) indexing, and
+    `reversed()` without allocating. `reversed(range(n))` iterates from
+    `n - 1` down to `0`.
 
     Args:
-        end: The end of the range.
+        end: The exclusive upper bound. Negative values produce an empty range.
 
     Returns:
-        The constructed range.
+        A zero-based integer range over `[0, end)`.
+
+    Performance:
+        O(1) construction. O(1) indexing. No list allocation.
+
+    Examples:
+
+    ```mojo
+    for i in range(5):
+        print(i)  # 0, 1, 2, 3, 4
+
+    var steps = range(1000)
+    print(steps[499])  # 499
+    print(len(steps))  # 1000
+
+    for i in reversed(range(5)):
+        print(i)  # 4, 3, 2, 1, 0
+    ```
     """
     return _ZeroStartingRange(end)
 
 
 @always_inline
 def range(start: Int, end: Int) -> _SequentialRange:
-    """Constructs a [start; end) Range.
+    """Returns the `Int` sequence `[start, end)`.
+
+    **The two-argument form never counts down.** `range(7, 3)` is empty,
+    not `[7, 6, 5, 4]`. Use the three-argument form with a negative step to
+    count downward. The range supports `len()`, O(1) indexing, and
+    `reversed()`.
 
     Args:
-        start: The start of the range.
-        end: The end of the range.
+        start: The inclusive lower bound.
+        end: The exclusive upper bound. When `end <= start`, the range is empty.
 
     Returns:
-        The constructed range.
+        A sequential integer range over `[start, end)`.
+
+    Performance:
+        O(1) construction. O(1) indexing. No list allocation.
+
+    Examples:
+
+    ```mojo
+    for i in range(3, 7):
+        print(i)  # 3, 4, 5, 6
+
+    for i in range(-3, 4):
+        print(i)  # -3, -2, -1, 0, 1, 2, 3
+
+    print(len(range(7, 3)))  # 0
+    ```
     """
     return _SequentialRange(start, end)
 
 
 @always_inline
 def range(start: Int, end: Int, step: Int) -> _StridedRange:
-    """Constructs a [start; end) Range with a given step.
+    """Returns the `Int` sequence `[start, end)` with a given step.
+
+    The range supports `len()`, O(1) indexing, and `reversed()`. When you
+    don't know which bound is larger, choose the direction with an inline
+    conditional:
+
+    ```mojo
+    var step = 1 if end > start else -1
+    for i in range(start, end, step):
+        ...
+    ```
 
     Args:
-        start: The start of the range.
-        end: The end of the range.
-        step: The step for the range.
+        start: The inclusive lower bound when stepping forward, or the
+            inclusive upper bound when stepping backward.
+        end: The exclusive bound in the direction of the step.
+        step: The increment per iteration. A positive step counts up, and a
+            negative step counts down. A zero step produces an empty range.
 
     Returns:
-        The constructed range.
+        A strided integer range over `[start, end)` by `step`.
+
+    Performance:
+        O(1) construction. O(1) indexing. No list allocation.
+
+    Examples:
+
+    ```mojo
+    for i in range(0, 10, 2):
+        print(i)  # 0, 2, 4, 6, 8
+
+    for i in range(7, 3, -1):
+        print(i)  # 7, 6, 5, 4
+
+    var evens = range(0, 2_000_000, 2)
+    print(evens[999_999])  # 1_999_998
+    print(len(evens))      # 1_000_000
+    ```
     """
     return _StridedRange(start, end, step)
 
@@ -544,16 +689,37 @@ struct _StridedScalarRange[dtype: DType](
 def range[
     dtype: DType, //
 ](end: Scalar[dtype]) -> _ZeroStartingScalarRange[dtype]:
-    """Constructs a [start; end) Range with a given step.
+    """Returns the scalar sequence `[0, end)` with elements of type `dtype`.
+
+    Use this overload when you need typed scalar elements.
+
+    The `dtype` is inferred from the argument, so `Int32(8)` produces
+    `Int32` elements. Scalar ranges support O(1) indexing.
+    Signed-integer and floating-point ranges can be reversed; reversing an
+    unsigned range is a compile-time error. This scalar form doesn't support
+    `len()`; only the strided (three-argument) form does.
 
     Parameters:
-        dtype: The range dtype.
+        dtype: The `DType` of the sequence elements. Inferred from `end`.
 
     Args:
-        end: The end of the range.
+        end: The exclusive upper bound. Negative values produce an empty range.
 
     Returns:
-        The constructed range.
+        A zero-based scalar range over `[0, end)`.
+
+    Performance:
+        O(1). No list allocation.
+
+    Examples:
+
+    ```mojo
+    for i in range(UInt8(4)):
+        print(i)  # 0, 1, 2, 3  — each value is UInt8
+
+    for x in range(Float64(4.0)):
+        print(x)  # 0.0, 1.0, 2.0, 3.0
+    ```
     """
     return _ZeroStartingScalarRange(end)
 
@@ -562,17 +728,34 @@ def range[
 def range[
     dtype: DType, //
 ](start: Scalar[dtype], end: Scalar[dtype]) -> _SequentialScalarRange[dtype]:
-    """Constructs a [start; end) Range with a given step.
+    """Returns the scalar sequence `[start, end)` with elements of type `dtype`.
+
+    **The two-argument form never counts down.** When `end <= start`, the
+    range is empty. Use the three-argument form with a negative step to
+    count downward. Scalar ranges support O(1) indexing. Signed-integer and
+    floating-point ranges can be reversed; reversing an unsigned range is a
+    compile-time error. This scalar form doesn't support `len()`; only the
+    strided (three-argument) form does.
 
     Parameters:
-        dtype: The range dtype.
+        dtype: The `DType` of the sequence elements. Inferred from the arguments.
 
     Args:
-        start: The start of the range.
-        end: The end of the range.
+        start: The inclusive lower bound.
+        end: The exclusive upper bound. When `end <= start`, the range is empty.
 
     Returns:
-        The constructed range.
+        A sequential scalar range over `[start, end)`.
+
+    Performance:
+        O(1). No list allocation.
+
+    Examples:
+
+    ```mojo
+    for i in range(Int32(3), Int32(7)):
+        print(i)  # 3, 4, 5, 6  — each value is Int32
+    ```
     """
     return _SequentialScalarRange(start, end)
 
@@ -583,17 +766,58 @@ def range[
 ](
     start: Scalar[dtype], end: Scalar[dtype], step: Scalar[dtype]
 ) -> _StridedScalarRange[dtype]:
-    """Constructs a [start; end) Range with a given step.
+    """Returns the scalar sequence `[start, end)` with a given step.
+
+    Integer scalar ranges support `len()`, O(1) indexing, and `reversed()`,
+    including unsigned ranges. Float scalar ranges step in both directions
+    but are iteration-only.
+
+    **Float endpoints are exclusive.** To include a specific endpoint, push
+    `end` past it by a fraction of the step:
+
+    ```mojo
+    # [0.0, 0.25, 0.5, 0.75] — 1.0 not included
+    for t in range(Float64(0.0), Float64(1.0), Float64(0.25)):
+        print(t)
+
+    # [0.0, 0.25, 0.5, 0.75, 1.0] — endpoint included
+    var tolerance = Float64(0.1)
+    for t in range(Float64(0.0), Float64(1) + tolerance, Float64(0.25)):
+        print(t)
+    ```
+
+    **Avoid a zero step.** For integer element types `len()` returns 0, but
+    iterating a zero-step range can loop forever, because the value never
+    advances toward `end`: a signed or float range with `end < start`, or an
+    unsigned range with `start < end`. Pass a nonzero step.
 
     Parameters:
-        dtype: The range dtype.
+        dtype: The `DType` of the sequence elements. Inferred from the arguments.
 
     Args:
-        start: The start of the range.
-        end: The end of the range.
-        step: The step for the range.  Defaults to 1.
+        start: The inclusive lower bound when stepping forward, or the
+            inclusive upper bound when stepping backward.
+        end: The exclusive bound in the direction of the step.
+        step: The increment per iteration. A positive step counts up, and a
+            negative step counts down. Avoid a zero step.
 
     Returns:
-        The constructed range.
+        A strided scalar range over `[start, end)` by `step`.
+
+    Performance:
+        O(1). No list allocation.
+
+    Examples:
+
+    ```mojo
+    # Walk t over [0, 1)
+    for t in range(Float64(0.0), Float64(1.0), Float64(0.25)):
+        print(t)  # 0.0, 0.25, 0.5, 0.75
+
+    # Integer scalar range — len() and indexed access work
+    var r = range(Int32(0), Int32(20), Int32(2))
+    print(len(r))       # 10
+    print(r[Int32(3)])  # 6
+    ```
     """
     return _StridedScalarRange(start, end, step)
