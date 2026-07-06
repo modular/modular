@@ -71,7 +71,7 @@ M::getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts,
   if (std::optional<llvm::AArch64::CpuInfo> cpuInfo =
           llvm::AArch64::parseCpu(cpu)) {
     std::vector<std::string> updatedFeaturesVec;
-    auto exts = cpuInfo->getImpliedExtensions();
+    auto exts = cpuInfo->DefaultExtensions;
     std::vector<StringRef> cpuFeats;
     llvm::AArch64::getExtensionFeatures(exts, cpuFeats);
     for (StringRef f : cpuFeats) {

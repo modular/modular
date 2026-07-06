@@ -220,7 +220,7 @@ static LLVMModuleAndContext readAndMaterializeDependencies(
           llvm::MemoryBufferRef(buf->getBuffer(), "<split-module>"), ctx,
           /*ShouldLazyLoadMetadata=*/false));
     });
-    result->setModuleInlineAsm("");
+    result->removeModuleInlineAsm();
   }
 
   SmallVector<unsigned> sortIndices =

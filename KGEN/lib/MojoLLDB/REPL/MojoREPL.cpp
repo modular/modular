@@ -284,7 +284,7 @@ llvm::Error MojoREPL::launchEntryPointProcess(
   // containing the REPL executable.
   launchInfo.GetEnvironment() = target.GetEnvironment();
   launchInfo.GetEnvironment()["LD_LIBRARY_PATH"] +=
-      (":" + exeModule->GetFileSpec().GetDirectory().GetStringRef()).str();
+      (":" + exeModule->GetFileSpec().GetDirectory()).str();
 
   // Launch the process synchronously, waiting for it to stop at the REPL
   // breakpoint.
