@@ -1515,7 +1515,13 @@ public:
 
   LLVM_DUMP_METHOD void dump() const;
 
+  /// This returns the number of distinct interior origins in the function.
+  size_t getNumInteriorOrigins() const { return nextInteriorOriginID; }
+
 private:
+  /// This method is called whenever we discover an interior origin.
+  void addInteriorOrigin(InteriorOriginAttr interior);
+
   /// Each interior origin we see is assigned a dense unique ID so we can use
   /// bitvector dataflow to track their validity.
   DenseMap<InteriorOriginAttr, size_t> interiorOriginID;
@@ -1565,15 +1571,85 @@ InteriorOriginTracker::InteriorOriginTracker(PerThreadCache &perThreadCache,
         return WalkResult::advance();
       });
 
-  // Given a set of origins used in the function, check for any interior.
+  // Given a set of origins used in the function, scan their structure for any
+  // interior origins (including ones nested in fields) and build the
+  // invalidation map.
   for (TypedAttr origin :
        perThreadCache.originFinder.findOriginsIn(collectedTypes)) {
-    // FIXME: Scan the structure of the origin.
-    if (auto interior = sugarDynCast<InteriorOriginAttr>(origin)) {
-      if (interiorOriginID.insert({interior, nextInteriorOriginID}).second)
-        ++nextInteriorOriginID;
+    // processRawOrigin looks through SugarAttr and UnionAttr.
+    processOriginUnionElts(origin, [&](TypedAttr raw) {
+      // Strip off things that might be outside an interior origin, since they
+      // won't matter for our analysis.
+      while (1) {
+        if (auto mutCast = dyn_cast<OriginMutCastAttr>(raw))
+          raw = mutCast.getOperand();
+        else if (auto field = dyn_cast<OriginFieldAttr>(raw))
+          raw = field.getBase();
+        else if (auto sugar = dyn_cast<SugarAttr>(origin))
+          origin = sugar.getCanonical();
+        else
+          break;
+      }
+      // If we find an interior origin inside, process it.
+      if (auto interior = sugarDynCast<InteriorOriginAttr>(raw))
+        addInteriorOrigin(interior);
+    });
+  }
+
+  // Now that we found all the interior origins, make sure all the bitvectors
+  // are the same length.
+  if (size_t numInteriorOrigins = getNumInteriorOrigins()) {
+    for (auto &bitVector : interiorOriginInvalidationMap)
+      bitVector.second.resize(numInteriorOrigins);
+  }
+}
+
+/// This method is called whenever we discover an interior origin.  This may
+/// have internal fields and other interior origins inside.  Enumerate it if it
+/// is the first time we've seen it and build the inv+alidation map for any
+/// nested origins.
+void InteriorOriginTracker::addInteriorOrigin(InteriorOriginAttr interior) {
+  // Only scan an interior origin the first time we see it.
+  if (!interiorOriginID.insert({interior, nextInteriorOriginID}).second)
+    return;
+  auto thisID = nextInteriorOriginID;
+  ++nextInteriorOriginID;
+
+  // Okay, we've found and numbered this interior origin, that may be rooted
+  // off a collection of other field references and interior origins. Process
+  // its body.
+  TypedAttr body = interior.getBase();
+
+  // If we have a nested interior origin, remember it.
+  InteriorOriginAttr nextInterior;
+  while (1) {
+    // When this attribute is mutated, we need to invalidate the interior
+    // origin.
+    auto &bitvector = interiorOriginInvalidationMap[body];
+    // This will always be the largest ID we've seen so far, since we just
+    // allocated it.
+    bitvector.resize(thisID + 1);
+    bitvector.set(thisID);
+
+    if (auto field = dyn_cast<OriginFieldAttr>(body))
+      body = field.getBase();
+    else if (auto interior = dyn_cast<InteriorOriginAttr>(body)) {
+      if (!nextInterior)
+        nextInterior = interior;
+      body = interior.getBase();
+    } else {
+      // Otherwise it must be a leaf. We're done.  Enumerate this to make sure
+      // we don't discover any other forms later.
+      assert(isa<ParamDeclRefAttr>(body) && "Unknown origin structure");
+      break;
     }
   }
+
+  // If there was an interior origin underneath this one, than recursively
+  // process it, which will recursively process any other nested ones under it.
+  //  ref r2 = a.list[].second.field[]  => a.list[]
+  if (nextInterior)
+    addInteriorOrigin(nextInterior);
 }
 
 void InteriorOriginTracker::dump() const {
@@ -1585,6 +1661,9 @@ void InteriorOriginTracker::dump() const {
     os << "Empty ";
   os << "InteriorOriginTracker\n";
 
+  if (nextInteriorOriginID == 0)
+    return;
+
   // Invert the map so we can print in order.
   SmallVector<InteriorOriginAttr> invertedMap;
   invertedMap.resize(nextInteriorOriginID);
@@ -1592,7 +1671,19 @@ void InteriorOriginTracker::dump() const {
     invertedMap[entry.second] = entry.first;
 
   for (auto [idx, entry] : llvm::enumerate(invertedMap))
-    os << '#' << idx << " => " << entry << "\n";
+    os << "  #" << idx << " => " << entry << "\n";
+
+  if (!interiorOriginInvalidationMap.empty()) {
+    os << "Invalidation map:\n";
+    for (auto &entry : interiorOriginInvalidationMap) {
+      os << "  " << entry.first << " => {";
+      for (int id = entry.second.find_first(); id >= 0;
+           id = entry.second.find_next(id))
+        os << " #" << id;
+      os << " }\n";
+    }
+  }
+  os << "\n";
 }
 
 //===----------------------------------------------------------------------===//
