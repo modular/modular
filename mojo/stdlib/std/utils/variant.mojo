@@ -33,7 +33,6 @@ from ._nicheable import (
 )
 from std.os import abort
 from std.sys import align_of, size_of
-from std.utils.type_functions import ConditionalType
 
 # ===----------------------------------------------------------------------=== #
 # Variant Storages
@@ -144,12 +143,9 @@ struct _CustomNicheStorage[Storage: UnsafeCustomNicheStorage](
         )
 
 
-comptime _NicheStorageFor[T: AnyType] = ConditionalType[
-    Trait=_NicheStorage,
-    If=conforms_to(T, UnsafeCustomNicheStorage),
-    Then=_CustomNicheStorage[downcast[T, UnsafeCustomNicheStorage]],
-    Else=_DefaultNicheStorage[T],
-]
+comptime _NicheStorageFor[T: AnyType] = _CustomNicheStorage[
+    downcast[T, UnsafeCustomNicheStorage]
+] if conforms_to(T, UnsafeCustomNicheStorage) else _DefaultNicheStorage[T]
 
 
 struct _NichedOptionalStorage[
@@ -351,27 +347,19 @@ comptime _IsNicheEligible[*Ts: AnyType]: Bool = (Ts.size == 2) and (
 """True if `Ts` qualifies for niche-optimized storage: exactly two types
 where one is `UnsafeNicheable` and the other is an empty type."""
 
-comptime _NichedStorageFor[*Ts: AnyType] = ConditionalType[
-    Trait=_VariantStorage,
-    If=conforms_to(Ts[0], UnsafeNicheable),
-    Then=_NichedOptionalStorage[
-        downcast[Ts[0], UnsafeNicheable],
-        downcast[Ts[1], TrivialRegisterPassable],
-    ],
-    Else=_NichedOptionalStorage[
-        downcast[Ts[1], UnsafeNicheable],
-        downcast[Ts[0], TrivialRegisterPassable],
-    ],
+comptime _NichedStorageFor[*Ts: AnyType] = _NichedOptionalStorage[
+    downcast[Ts[0], UnsafeNicheable],
+    downcast[Ts[1], TrivialRegisterPassable],
+] if conforms_to(Ts[0], UnsafeNicheable) else _NichedOptionalStorage[
+    downcast[Ts[1], UnsafeNicheable],
+    downcast[Ts[0], TrivialRegisterPassable],
 ]
 """Resolves to the concrete `_NichedOptionalStorage[T]` for the eligible type,
 regardless of which position the `UnsafeNicheable` type occupies in `Ts`."""
 
-comptime _VariantStorageFor[*Ts: AnyType] = ConditionalType[
-    Trait=_VariantStorage,
-    If=_IsNicheEligible[*Ts],
-    Then=_NichedStorageFor[*Ts],
-    Else=_DefaultVariantStorage[*Ts],
-]
+comptime _VariantStorageFor[*Ts: AnyType] = _NichedStorageFor[
+    *Ts
+] if _IsNicheEligible[*Ts] else _DefaultVariantStorage[*Ts]
 """Selects the storage strategy for `Variant[*Ts]`: niche-optimized storage
 when eligible, falling back to the general discriminant-tagged storage."""
 
