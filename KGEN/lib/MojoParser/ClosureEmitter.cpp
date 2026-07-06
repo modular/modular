@@ -1738,13 +1738,21 @@ static PromotedSignature buildPromotedSignature(
   // Step 2: prepend explicit params for each captured parameter.
   SmallVector<ParamDeclAttr> explicitPrependedParams(prependedParams.begin(),
                                                      prependedParams.end());
-  if (!explicitPrependedParams.empty())
+  std::optional<IndexRefRemapper> prependParamRefRemapper;
+  if (!explicitPrependedParams.empty()) {
+    prependParamRefRemapper =
+        std::make_optional<IndexRefRemapper>(explicitPrependedParams);
     sig = FnTypeGeneratorType::prependParams(sig, explicitPrependedParams);
+  }
 
   // Step 3: prepend the self runtime argument so it becomes arg[0].
   if (selfArg) {
+    Type selfArgType = selfArg->type;
+    if (prependParamRefRemapper)
+      selfArgType = prependParamRefRemapper->replace(selfArgType);
+
     Type selfRefType = RefType::get(
-        selfArg->type,
+        selfArgType,
         ImplicitOriginRefAttr::get(0, 0, selfImplicitOriginDecl.getType()));
     sig = addClosureSelfArgToFunctionSignature(selfRefType, selfArg->convention,
                                                sig);
