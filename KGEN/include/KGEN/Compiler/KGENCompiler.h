@@ -30,11 +30,9 @@ public:
   /// Run KGEN compilation pipeline, including pre-elaboration passes,
   /// elaboration, and post-elaboration pass. Get the theModule ready before
   /// llvm lowering.
-  ErrorOrSuccess runKGENPipeline(
-      ModuleOp theModule, TargetInfoAttr target,
-      RCRef<Cache::TransformCache> transformCache, AnyAsyncValueRef chain,
-      std::function<void(Operation *)> moreOnMiss = [](Operation *) {},
-      std::function<void(Operation *)> moreOnHit = [](Operation *) {});
+  ErrorOrSuccess runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
+                                 RCRef<Cache::TransformCache> transformCache,
+                                 AnyAsyncValueRef chain);
 
   ErrorOrSuccess runKGENPipeline(ModuleOp theModule, TargetInfoAttr target);
 

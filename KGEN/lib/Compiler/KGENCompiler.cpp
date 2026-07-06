@@ -889,10 +889,8 @@ ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
   auto transformCache =
       RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
 
-  return runKGENPipeline(
-      theModule, target, transformCache,
-      ctx->get<MLRT::CPUDevice>()->getReadyChain().copy(),
-      [](mlir::Operation *) {}, [](mlir::Operation *) {});
+  return runKGENPipeline(theModule, target, transformCache,
+                         ctx->get<MLRT::CPUDevice>()->getReadyChain().copy());
 }
 
 static mlir::PassManager
@@ -906,9 +904,7 @@ createPassManager(const std::optional<std::string> &operationName,
 ErrorOrSuccess
 KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
                               RCRef<Cache::TransformCache> transformCache,
-                              AnyAsyncValueRef chain,
-                              std::function<void(Operation *)> moreOnMiss,
-                              std::function<void(Operation *)> moreOnHit) {
+                              AnyAsyncValueRef chain) {
   // Set the target now, so it's included in the cache key.
   if (!getTargetInfo(theModule))
     setTargetInfo(theModule, target);
@@ -925,9 +921,8 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
   populateElaborateModulePasses(pm, target, options);
 
   // Run the passes as a cached transform.
-  MLRT::AnyAsyncValueRef ready =
-      Cache::cachedTransform(theModule, transformCache.copy(), std::move(chain),
-                             pm, std::move(moreOnMiss), std::move(moreOnHit));
+  MLRT::AnyAsyncValueRef ready = Cache::cachedTransform(
+      theModule, transformCache.copy(), std::move(chain), pm);
 
   // This await here is important since pm is local in this function.
   MLRT::await(ready);
