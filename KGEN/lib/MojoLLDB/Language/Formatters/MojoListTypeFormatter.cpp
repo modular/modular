@@ -87,10 +87,9 @@ MojoListSyntheticFrontEnd::parseList(lldb::ValueObjectSP valobj) {
     return {};
 
   // The REPL sees a struct around a pointer, but DWARF shows directly the
-  // pointer.
-  ValueObjectSP dataPointer = dataVal->IsPointerType()
-                                  ? dataVal
-                                  : dataVal->GetChildMemberWithName("address");
+  // pointer. Unwrap through the known UnsafePointer wrapper field names
+  // (`_mlir_value`, `address`, etc.) rather than hardcoding one.
+  ValueObjectSP dataPointer = unwrapToScalarOrPointer(dataVal);
 
   if (!dataPointer || !dataPointer->GetError().Success())
     return {};

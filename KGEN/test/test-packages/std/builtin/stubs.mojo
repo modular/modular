@@ -1228,7 +1228,7 @@ struct VariadicList[
         var array_up = UnsafePointer(to=Pointer(value)[])
         var elt_ptr = UnsafePointer[_, UntrackedOrigin[mut=False]](
             __mlir_op.`pop.array.gep`(
-                array_up.address,
+                array_up._get_kgen_pointer(),
                 Int(0)._mlir_value,
             )
         ).bitcast[Self._EltPointerType]()
@@ -1434,15 +1434,18 @@ struct UnsafePointer[
         Self.address_space._value._mlir_value,
         `>`,
     ]
-    var address: Self._mlir_type
+    var _mlir_value: Self._mlir_type
+
+    def _get_kgen_pointer(self) -> Self._mlir_type:
+        return self._mlir_value
 
     def __init__(out self):
-        self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
+        self._mlir_value = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
     @implicit
     @always_inline("builtin")
     def __init__(out self, value: Self._mlir_type):
-        self.address = value
+        self._mlir_value = value
 
     @always_inline("nodebug")
     def __init__(
@@ -1489,13 +1492,13 @@ struct UnsafePointer[
         base_origin.get_owned_interior[name],
         address_space=Self.address_space,
     ]:
-        return {self.address}
+        return {self._mlir_value}
 
     @always_inline
     def take_pointee[
         T: Movable, //
     ](self: UnsafePointer[T, _]) -> T where type_of(self).mut:
-        return __get_address_as_owned_value(self.address)
+        return __get_address_as_owned_value(self._mlir_value)
 
     @always_inline("builtin")
     def bitcast[
@@ -1507,7 +1510,7 @@ struct UnsafePointer[
                 Self.origin,
                 address_space=Self.address_space,
             ]._mlir_type,
-        ](self.address)
+        ](self._mlir_value)
 
     comptime _OriginCastType[
         target_mut: Bool, //, target_origin: Origin[mut=target_mut]
@@ -1525,7 +1528,7 @@ struct UnsafePointer[
             _type=Self._OriginCastType[
                 Self.origin.unsafe_mut_cast[target_mut]()
             ]._mlir_type,
-        ](self.address)
+        ](self._mlir_value)
 
     @always_inline("builtin")
     def unsafe_origin_cast[
@@ -1533,7 +1536,7 @@ struct UnsafePointer[
     ](self) -> Self._OriginCastType[target_origin]:
         return __mlir_op.`pop.pointer.bitcast`[
             _type=Self._OriginCastType[target_origin]._mlir_type,
-        ](self.address)
+        ](self._mlir_value)
 
     def as_immutable(
         self,
