@@ -30,16 +30,28 @@ same dkv key for the same logical digest.
 
 from __future__ import annotations
 
+import functools
+import hashlib
+import logging
+import math
 import os
 import sys
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 
 import msgspec
 from max.driver import Device
-from max.nn.kv_cache.cache_params import KVCacheMemory, KVHashAlgo
+from max.nn.kv_cache.cache_params import (
+    KVCacheMemory,
+    KVCacheParamInterface,
+    KVCacheParams,
+    KVHashAlgo,
+)
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
+
+_logger = logging.getLogger("max.pipelines")
 
 # dKV keys every block under a composite (tp_shard_id, group_id, seq_hash). MAX's
 # paged KV cache is single-group (full attention) today; SWA/hybrid groups are not
@@ -76,6 +88,325 @@ def _to_dkv_u64(h: bytes) -> int:
             f"DKVConnector block hash must be 8 or 32 bytes, got {len(h)}"
         )
     return int.from_bytes(h[:8], "big", signed=False)
+
+
+# Default wall-clock budget for admitting (connect + handshake) one per-replica
+# dKV client. dKV is co-located and usually up within seconds, but a still-
+# starting server (connection refused) or a cold slab warm-up (deferred region
+# carve) can take longer; admission retries transient failures until this budget
+# is spent, then fails model load. Override via MODULAR_DKV_ADMISSION_TIMEOUT_S.
+_DEFAULT_ADMISSION_TIMEOUT_S = 120.0
+_ADMISSION_INITIAL_BACKOFF_S = 1.0
+_ADMISSION_MAX_BACKOFF_S = 10.0
+
+
+def _dtype_tag(dtype: object) -> str:
+    """Returns a stable, restart-invariant text tag for a ``DType``.
+
+    Uses the enum member ``name`` (e.g. ``"bfloat16"``) when present, else
+    ``str(dtype)``. Never uses Python's per-process-randomized ``hash``, so the
+    fingerprint it feeds is identical across process restarts.
+    """
+    return getattr(dtype, "name", None) or str(dtype)
+
+
+def _kv_config_hash(params: KVCacheParams) -> int:
+    """Computes the stable 64-bit KV-cache layout fingerprint.
+
+    This is the producer of ``ExchangeMetadataRequest.kv_config_hash``. Two KV
+    shares hold byte-identical KV only when their ``(tenant_id, kv_config_hash,
+    kv_shard_id)`` all match, so this value must capture everything that makes
+    two KV blocks byte-incompatible and must be byte-stable across restarts (the
+    dKV reattach / compatibility consumer, CLIN-1474, compares it).
+
+    Contract (bump the ``v`` field on any change). The fields below are folded,
+    in this order, into a canonical newline-joined ``key=value`` UTF-8 string;
+    the hash is the first 8 bytes of that string's SHA-256 as a big-endian
+    unsigned integer — the same 64-bit convention as the dkv ``seq_hash`` and
+    :func:`_to_dkv_u64`:
+
+    * ``v`` — contract version (``1``).
+    * ``dtype`` / ``dtype_bytes`` — KV storage dtype name and byte width.
+    * ``kv_dim`` — 2 for MHA/GQA, 1 for MLA (the attention family).
+    * ``head_dim`` — per-head dimension.
+    * ``num_layers`` — transformer layer count.
+    * ``page_size`` — tokens per block/page.
+    * ``n_kv_heads_per_device`` — per-shard KV-head count (TP-sensitive).
+    * ``tensor_parallel_degree`` — with the per-shard head count pins the total.
+    * ``quant`` — ``"<scale_dtype>:<granularity>"`` when FP8-quantized, else
+      ``"none"``.
+    * ``block_value_bytes`` — per-shard value-block bytes
+      (``prod(shape_per_block) * dtype.size``); the geometry source, equal to the
+      connector's negotiated full-attention ``block_bytes`` (quant scales are
+      captured separately by ``quant``).
+
+    Model/weights identity is deliberately NOT folded here: a different model is
+    a different Mammoth deployment, hence a different ``tenant_id`` (already part
+    of the dedup key). Reattaching persisted shares across a same-``tenant_id``
+    weights swap (CLIN-1474) must additionally fold a weights/version fingerprint
+    threaded from the pipeline config — a documented follow-up, out of scope for
+    this handshake.
+
+    Args:
+        params: The single-group KV-cache parameters for this deployment.
+
+    Returns:
+        The 64-bit layout fingerprint.
+    """
+    quant = params.kvcache_quant_config
+    if params.quantized_kv_cache and quant is not None:
+        quant_desc = (
+            f"{_dtype_tag(quant.scale_dtype)}:{quant.quantization_granularity}"
+        )
+    else:
+        quant_desc = "none"
+    block_value_bytes = (
+        math.prod(params.shape_per_block) * params.dtype.size_in_bytes
+    )
+    fields = [
+        ("v", "1"),
+        ("dtype", _dtype_tag(params.dtype)),
+        ("dtype_bytes", str(params.dtype.size_in_bytes)),
+        ("kv_dim", str(params.kv_dim)),
+        ("head_dim", str(params.head_dim)),
+        ("num_layers", str(params.num_layers)),
+        ("page_size", str(params.page_size)),
+        ("n_kv_heads_per_device", str(params.n_kv_heads_per_device)),
+        ("tensor_parallel_degree", str(params.tensor_parallel_degree)),
+        ("quant", quant_desc),
+        ("block_value_bytes", str(block_value_bytes)),
+    ]
+    canonical = "\n".join(f"{k}={v}" for k, v in fields).encode("utf-8")
+    return int.from_bytes(
+        hashlib.sha256(canonical).digest()[:8], "big", signed=False
+    )
+
+
+def _resolve_kv_share_identity(
+    global_device_index: int,
+    tensor_parallel_degree: int,
+    replicates_kv_across_tp: bool,
+) -> tuple[int, int]:
+    """Resolves ``(kv_shard_id, replica_id)`` for one GPU's KV share.
+
+    ``global_device_index`` is the GPU's replica-major flat index in the
+    ``[dp][tp]`` device grid (``replica * tp + tp_rank``). The result names which
+    KV slice the GPU holds and which data-parallel copy of that slice it is,
+    mirroring
+    :func:`max.pipelines.kv_cache.paged_kv_cache.transfer_engine.resolve_peer_view`:
+
+    * ``replicates_kv_across_tp`` (MLA with TP>1): every TP rank holds a full,
+      byte-identical copy of the latent KV, so the grid flattens to
+      ``[dp*tp][1]`` — one shard (``kv_shard_id == 0``), each GPU its own replica
+      (``replica_id == global_device_index``); dedup group size ``dp*tp``.
+    * otherwise (MHA/GQA head-sharded, or TP==1): the TP rank is the shard and
+      the DP index is the replica — ``kv_shard_id == global_device_index % tp``,
+      ``replica_id == global_device_index // tp``; dedup group size ``dp``.
+
+    Invariant (the acceptance criterion): two GPUs get identical ``kv_shard_id``
+    exactly when they hold byte-identical KV. Replicated: all share
+    ``kv_shard_id == 0`` and all are byte-identical. Head-sharded: equal TP rank
+    holds the same head slice (byte-identical across DP replicas), a different
+    rank a different slice.
+
+    Args:
+        global_device_index: Replica-major flat GPU index in the ``[dp][tp]``
+            grid.
+        tensor_parallel_degree: TP degree (``n_devices // dp``).
+        replicates_kv_across_tp: Whether every TP rank holds identical KV.
+
+    Returns:
+        ``(kv_shard_id, replica_id)`` for the ``ExchangeMetadata`` handshake.
+    """
+    if tensor_parallel_degree < 1:
+        raise ValueError(
+            f"tensor_parallel_degree must be >= 1, got {tensor_parallel_degree}"
+        )
+    if global_device_index < 0:
+        raise ValueError(
+            f"global_device_index must be >= 0, got {global_device_index}"
+        )
+    if replicates_kv_across_tp:
+        return 0, global_device_index
+    replica_id, tp_rank = divmod(global_device_index, tensor_parallel_degree)
+    return tp_rank, replica_id
+
+
+def _validate_tenant_topology(
+    *, is_single_group: bool, tensor_parallel_degree: int
+) -> None:
+    """Guards the model topology a multi-tenant dKV handshake can represent.
+
+    The ``ExchangeMetadata`` identity fields (``kv_shard_id``, ``replica_id``,
+    ``device_id``, ``numa_node``) are scalars that name one GPU's share, and MAX
+    issues one handshake per DP replica. That faithfully carries per-GPU identity
+    only when each replica maps to exactly one GPU, i.e. ``TP == 1`` (which
+    covers the v1 target Kimi K2.5 at DP=8/TP=1, and any TP=1 deployment). For
+    ``TP > 1`` a replica spans several GPUs whose distinct per-GPU identities a
+    single request cannot carry, so a per-GPU handshake split is required — a
+    documented follow-up. (The general :func:`_resolve_kv_share_identity` rule
+    would also need refining for ``allow_kv_head_replication``, where distinct TP
+    ranks hold byte-identical GQA heads.) Multi-group caches (hybrid / SWA /
+    speculative) are likewise not yet wired through this connector.
+
+    Raises:
+        NotImplementedError: If the cache is multi-group, or ``TP != 1``.
+    """
+    if not is_single_group:
+        raise NotImplementedError(
+            "Multi-tenant dKV (MODULAR_DKV_TENANT_ID set) requires a single-group "
+            "KV cache; hybrid / sliding-window / speculative multi-cache models "
+            "are not wired through the dKV connector yet."
+        )
+    if tensor_parallel_degree != 1:
+        raise NotImplementedError(
+            "Multi-tenant dKV (MODULAR_DKV_TENANT_ID set) currently supports "
+            f"tensor_parallel_degree == 1 only, got {tensor_parallel_degree}. "
+            "Each DP replica must map to exactly one GPU so the per-replica "
+            "ExchangeMetadata handshake carries that GPU's scalar identity; a "
+            "per-GPU handshake split for TP>1 is a follow-up."
+        )
+
+
+def _resolve_replica_identities(
+    tenant_id: str,
+    num_replicas: int,
+    params: KVCacheParamInterface,
+) -> tuple[int, list[tuple[int, int]]]:
+    """Resolves the per-DP-replica dKV handshake identity.
+
+    Returns the shared ``kv_config_hash`` and, per DP replica in order, its
+    ``(kv_shard_id, replica_id)``:
+
+    * Legacy path (empty ``tenant_id``): all-zero identity, so the dKV server
+      collapses every replica to one store — unchanged from before.
+    * Multi-tenant path: guards the topology (:func:`_validate_tenant_topology`)
+      and maps each replica's one GPU (TP==1) to its share via
+      :func:`_resolve_kv_share_identity`, sharing the layout ``kv_config_hash``.
+
+    Args:
+        tenant_id: The resolved tenant identity (empty is the legacy path).
+        num_replicas: Number of DP replicas (one dKV client each).
+        params: KV-cache parameters (used only on the multi-tenant path).
+
+    Returns:
+        ``(kv_config_hash, [(kv_shard_id, replica_id), ...])``.
+
+    Raises:
+        NotImplementedError: If the multi-tenant topology is unsupported
+            (multi-group cache, or ``TP != 1``).
+        ValueError: If ``num_replicas`` disagrees with ``data_parallel_degree``.
+    """
+    if not tenant_id:
+        return 0, [(0, 0)] * num_replicas
+    _validate_tenant_topology(
+        is_single_group=isinstance(params, KVCacheParams),
+        tensor_parallel_degree=params.tensor_parallel_degree,
+    )
+    assert isinstance(params, KVCacheParams)  # narrowed by the guard above
+    if num_replicas != params.data_parallel_degree:
+        raise ValueError(
+            f"replica count {num_replicas} does not match data_parallel_degree "
+            f"{params.data_parallel_degree}; the replica-major device mapping "
+            "the identity rule relies on would be wrong"
+        )
+    tp = params.tensor_parallel_degree
+    replicates = params.replicates_kv_across_tp
+    # TP==1 (guarded), so the replica's one GPU has replica-major flat index
+    # ``idx * tp + 0 == idx``.
+    identities = [
+        _resolve_kv_share_identity(idx * tp, tp, replicates)
+        for idx in range(num_replicas)
+    ]
+    return _kv_config_hash(params), identities
+
+
+# Exception types that always signal a permanent config or programming bug in
+# the admission path, never a transient/connection failure. Retrying these just
+# burns the whole admission budget before a real bug surfaces, so they
+# short-circuit the retry loop. ``ValueError`` also covers the pyo3
+# ``ConnectorError::Config`` mapping and this module's own argument validation;
+# the rest are the shapes a bug inside ``_make_client`` raises (a bad attribute,
+# wrong call signature, undefined name, missing key, or a failed import).
+_PERMANENT_ADMISSION_EXC_TYPES: tuple[type[BaseException], ...] = (
+    ValueError,
+    TypeError,
+    AttributeError,
+    NameError,
+    KeyError,
+    ImportError,
+)
+
+
+def _is_permanent_admission_error(exc: Exception) -> bool:
+    """Returns whether an admission failure will not recover on retry.
+
+    Retrying is worthwhile for a still-starting dKV (connection refused),
+    ``NotReady`` timeouts, and transient transport errors; it is pointless for a
+    caller/config bug or a programming bug. A permanent failure is one of
+    :data:`_PERMANENT_ADMISSION_EXC_TYPES` — a config error (the pyo3
+    ``ConnectorError::Config`` maps to :class:`ValueError`) or a programming bug
+    such as :class:`AttributeError` / :class:`TypeError` raised inside
+    ``_make_client`` — or a runtime error the Rust layer tagged
+    ``[retriable=false]``. Everything else (including an untagged "failed to
+    connect to dKV" error) is treated as transient and retried.
+    """
+    if isinstance(exc, _PERMANENT_ADMISSION_EXC_TYPES):
+        return True
+    return "[retriable=false]" in str(exc)
+
+
+def _admit_with_retry(
+    factory: Callable[[], object],
+    *,
+    timeout_s: float,
+    label: str = "",
+    initial_backoff_s: float = _ADMISSION_INITIAL_BACKOFF_S,
+    max_backoff_s: float = _ADMISSION_MAX_BACKOFF_S,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> object:
+    """Calls ``factory`` until it succeeds, retrying transient failures.
+
+    Retries with exponential backoff (capped at ``max_backoff_s``) until
+    ``factory`` returns, a permanent error surfaces
+    (:func:`_is_permanent_admission_error`), or ``timeout_s`` is exhausted (the
+    last exception is then re-raised — the readiness gate: model load fails if a
+    replica never admits). ``monotonic`` and ``sleep`` are injectable for tests.
+
+    Args:
+        factory: Zero-arg callable performing one admission attempt.
+        timeout_s: Total wall-clock retry budget.
+        label: Short identifier for the retry log line (e.g. ``"replica 3"``).
+        initial_backoff_s: First backoff, doubled each retry.
+        max_backoff_s: Backoff ceiling.
+        monotonic: Monotonic clock source (injectable).
+        sleep: Sleep function (injectable).
+
+    Returns:
+        Whatever ``factory`` returns on success.
+    """
+    deadline = monotonic() + timeout_s
+    backoff = initial_backoff_s
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return factory()
+        except Exception as exc:
+            if _is_permanent_admission_error(exc):
+                raise
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise
+            _logger.warning(
+                "dKV admission%s attempt %d failed (%s); retrying",
+                f" ({label})" if label else "",
+                attempt,
+                exc,
+            )
+            sleep(min(backoff, max_backoff_s, remaining))
+            backoff *= 2
 
 
 class DKVExternalBlockMetadata(
@@ -115,7 +446,18 @@ class DKVConnector:
         replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
         local_block_store_endpoint: str,
         devices: Sequence[Device],
+        params: KVCacheParamInterface,
     ) -> None:
+        """Constructs and admits one dKV Rust client per DP replica.
+
+        Args:
+            replica_kv_memory: Per-replica offload-ready KV memory.
+            local_block_store_endpoint: Co-located dKV control-plane endpoint.
+            devices: The pipeline's flat, ordered device list across replicas.
+            params: KV-cache parameters, used to derive the multi-tenant
+                per-GPU identity (``kv_shard_id`` / ``replica_id`` /
+                ``kv_config_hash``) when ``MODULAR_DKV_TENANT_ID`` is set.
+        """
         # Deferred so importing this module (e.g. for DKVExternalBlockMetadata,
         # or by non-dKV pipelines) does not require the optional, runtime-
         # provided dkv_connector extension to be installed.
@@ -129,31 +471,80 @@ class DKVConnector:
         listen_port = int(os.getenv("MODULAR_DKV_NIXL_LISTEN_PORT", "0"))
         backend = os.getenv("MODULAR_NIXL_TRANSFER_BACKEND") or None
 
+        # Multi-tenant deployment identity (CLIN-1477). MODULAR_DKV_TENANT_ID is
+        # injected by the operator (the trust boundary — not a user-facing
+        # override flag, which would be forgeable). Unset/empty is the legacy
+        # single-tenant path: every handshake identity field stays default and
+        # the dKV server collapses all replicas to one store, unchanged from
+        # before. When set, each GPU sends a distinct identity so the server
+        # keys a distinct store per (tenant_id, kv_shard_id, replica_id).
+        tenant_id = os.getenv("MODULAR_DKV_TENANT_ID", "")
+        num_replicas = len(replica_kv_memory)
+        kv_config_hash, replica_identities = _resolve_replica_identities(
+            tenant_id, num_replicas, params
+        )
+
         # ``devices`` is the pipeline's flat, ordered device list across every
         # replica; split it into each replica's canonical device order so a
         # client can bind its shard ids to that order. This is the same split the
         # cache manager applies, and it is sourced independently of
         # ``to_memory``, so it is a real cross-check on the buffer ordering rather
         # than a restatement of it.
-        devices_per_replica = split_into_groups(
-            list(devices), len(replica_kv_memory)
+        devices_per_replica = split_into_groups(list(devices), num_replicas)
+
+        admission_timeout_s = float(
+            os.getenv(
+                "MODULAR_DKV_ADMISSION_TIMEOUT_S",
+                str(_DEFAULT_ADMISSION_TIMEOUT_S),
+            )
         )
 
         # One Rust client per replica, each registering only its replica's
         # device buffers with NIXL, in that replica's canonical device order.
-        self._clients = [
-            self._make_client(
+        # Each client's connect + handshake ("admission") is retried on transient
+        # failures (dKV still starting); model readiness is gated on ALL replicas
+        # admitting, so a client whose retry budget is exhausted raises here and
+        # fails model load rather than serving with a partial dKV.
+        self._clients = []
+        for idx, (
+            kv_memory,
+            replica_devices,
+            (kv_shard_id, replica_id),
+        ) in enumerate(
+            zip(
+                replica_kv_memory,
+                devices_per_replica,
+                replica_identities,
+                strict=True,
+            )
+        ):
+            factory = functools.partial(
+                self._make_client,
                 _DkvConnectorClient,
                 kv_memory,
                 local_block_store_endpoint,
                 listen_port,
                 backend,
                 replica_devices,
+                tenant_id=tenant_id,
+                kv_config_hash=kv_config_hash,
+                kv_shard_id=kv_shard_id,
+                replica_id=replica_id,
             )
-            for kv_memory, replica_devices in zip(
-                replica_kv_memory, devices_per_replica, strict=True
+            self._clients.append(
+                _admit_with_retry(
+                    factory,
+                    timeout_s=admission_timeout_s,
+                    label=f"replica {idx}",
+                )
             )
-        ]
+
+        if tenant_id:
+            _logger.info(
+                "dKV admitted all %d replica handshake(s) for tenant %r",
+                num_replicas,
+                tenant_id,
+            )
 
     @staticmethod
     def _make_client(
@@ -163,6 +554,11 @@ class DKVConnector:
         listen_port: int,
         backend: str | None,
         expected_devices: Sequence[Device],
+        *,
+        tenant_id: str,
+        kv_config_hash: int,
+        kv_shard_id: int,
+        replica_id: int,
     ) -> object:
         # Per-buffer (ptr, byte length, device ordinal) for NIXL registration.
         # Each KVCacheMemory wraps a ``[num_pages, bytes_per_page]`` uint8 device
@@ -256,6 +652,10 @@ class DKVConnector:
             listen_port=listen_port,
             backend=backend,
             compute_streams=compute_streams,
+            tenant_id=tenant_id,
+            kv_config_hash=kv_config_hash,
+            kv_shard_id=kv_shard_id,
+            replica_id=replica_id,
         )
 
     @property

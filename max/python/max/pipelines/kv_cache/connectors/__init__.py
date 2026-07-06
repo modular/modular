@@ -29,6 +29,7 @@ from max.driver import Device
 from max.nn.kv_cache.cache_params import (
     KVCacheBufferInterface,
     KVCacheMemory,
+    KVCacheParamInterface,
     KVConnectorType,
     KVHashAlgo,
 )
@@ -51,6 +52,7 @@ def create_connector(
     replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
     total_num_host_blocks: int,
     kv_hash_algo: KVHashAlgo,
+    params: KVCacheParamInterface,
 ) -> KVConnector:
     """Create a KV cache connector instance based on ``kv_connector``.
 
@@ -72,6 +74,8 @@ def create_connector(
         kv_hash_algo: KV-cache hash algorithm; forwarded to connectors that
             persist hash-keyed state on disk so they can refuse to start
             against a directory locked to a different algorithm.
+        params: KV-cache parameters; the ``dkv`` connector uses them to derive
+            its multi-tenant per-GPU handshake identity.
 
     Returns:
         A connector instance implementing the KVConnector protocol.
@@ -97,6 +101,7 @@ def create_connector(
             replica_kv_memory=replica_kv_memory,
             local_block_store_endpoint=kv_connector_config.block_store_endpoint,
             devices=devices,
+            params=params,
         )
 
     if connector == KVConnectorType.tiered:
