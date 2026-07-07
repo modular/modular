@@ -697,10 +697,10 @@ def naive_block_scaled_matmul_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, ImmutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, ImmutAnyOrigin],
     alpha: Float32,
 ):
     # Note: This is a naive kernel that emulates a block scaled matmul with TCGEN scale factors.
@@ -1708,9 +1708,10 @@ def block_scaled_matmul[
     comptime assert a_scales_device.rank == 5 and a_scales_device.flat_rank == 5
     comptime assert b_scales_device.rank == 5 and b_scales_device.flat_rank == 5
 
-    comptime assert (
-        ctx.default_device_info.compute == B200.compute
-    ), "This kernel is only supported on SM100"
+    # NVFP4 arch dispatch happens after the input tensors are set up below:
+    # B200 (compute 10.0) uses the SM100 warp-specialized path; consumer
+    # Blackwell (sm_120 / sm_121, compute >= 12.0) routes to the arch-agnostic
+    # naive kernel. Anything else is unsupported (asserted below).
 
     comptime assert transpose_b, "Only support transposed B"
 
@@ -1740,217 +1741,250 @@ def block_scaled_matmul[
     var a_scales = a_scales_device.as_unsafe_any_origin()
     var b_scales = b_scales_device.as_unsafe_any_origin()
 
-    comptime assert (
-        a_scales.static_shape[1] == b_scales.static_shape[1]
-    ), "Both A and B scales must have the same shape in K dimension"
-    comptime assert (
-        a_scales.static_shape[2] == b_scales.static_shape[2] == SF_ATOM_M[0]
-    ), ""
-    comptime assert (
-        a_scales.static_shape[3] == b_scales.static_shape[3] == SF_ATOM_M[1]
-    ), ""
-    comptime assert (
-        a_scales.static_shape[4] == b_scales.static_shape[4] == SF_ATOM_K
-    ), ""
-
-    var m = Int(c.dim[0]())
-    var n = Int(c.dim[1]())
-    var k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(a.dim[1]())
-
-    if m == 0 or n == 0:
-        return
-
-    logger.info(
-        "------ Dispatching to SM100 (B200+) Block Scaled matmul kernel ------"
-    )
-    logger.info(
-        "Input Data Types: ",
-        a_type,
-        ", ",
-        b_type,
-        " Output Data Type: ",
-        c_type,
-        " Problem Shape: MNK=[",
-        m,
-        ", ",
-        n,
-        ", ",
-        k,
-        "]",
-    )
-
-    comptime assert (
-        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
-    ), "Either the epilogue lambda or the compute lambda can be used"
-
-    # vendor block scaled matmul kernels don't support compute lambda, so we wrap it around an epilogue lambda instead.
-    @parameter
-    @always_inline
-    @__copy_capture(c)
-    def compute_lambda_wrapper[
-        _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[_dtype, _width]):
-        comptime if elementwise_compute_lambda_fn:
-            comptime compute_lambda = elementwise_compute_lambda_fn.value()
-            var output = compute_lambda(coords, val)
-            comptime assert (
-                output.dtype == c_type
-            ), "compute epilogue lambda output and c type mismatch"
-            c.store_linear[alignment=alignment * size_of[c_type]()](
-                coords, rebind[SIMD[c_type, _width]](output)
-            )
-
-    comptime elementwise_lambda_wrapper = Optional[elementwise_epilogue_type](
-        compute_lambda_wrapper
-    ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
-
-    comptime static_N = c_device.static_shape[1]
-    comptime static_K = a_device.static_shape[1] * (
-        2 if a_type == DType.uint8 else 1
-    )
-    comptime static_NK = Index(static_N, static_K)
-
-    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
-        comptime BM = get_defined_int["TUNE_BM", 128]()
-        comptime BN = get_defined_int["TUNE_BN", 128]()
-        comptime BK = (
-            TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
-        )
-        comptime MMA_K = 32
-        comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 2]()
-        comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
-        comptime CLUSTER_DIM_Z = get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()
-        comptime CLUSTER_DIM = Index(
-            CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
-        )
-        comptime BLOCK_SWIZZLE_SIZE = get_defined_int[
-            "TUNE_BLOCK_SWIZZLE_SIZE", 0
-        ]()
-        comptime RASTERIZE_ORDER = get_defined_int["TUNE_RASTER_ORDER", 1]()
-        comptime CTA_GROUP = get_defined_int["TUNE_CTA_GROUP", 2]()
-        comptime K_GROUP_SIZE = get_defined_int["TUNE_K_GROUP_SIZE", 1]()
-        comptime AB_SWAPPED = get_defined_bool["TUNE_AB_SWAPPED", False]()
-
-        comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
-
-        comptime config = BlockScaledMatmulConfig[
-            a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
-        ](
-            scaling_kind=get_scaling_kind[
-                a_type, scales_dtype, SF_VECTOR_SIZE
-            ](),
-            mma_shape=umma_shape,
-            cluster_shape=CLUSTER_DIM,
-            block_swizzle_size=BLOCK_SWIZZLE_SIZE,
-            raster_order=RasterOrder(Int32(RASTERIZE_ORDER)),
-            cta_group=CTA_GROUP,
-            AB_swapped=AB_SWAPPED,
-            k_group_size=K_GROUP_SIZE,
-        )
-
-        return blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-            transpose_b=transpose_b,
-            K=a_device.static_shape[1],
-            config=config,
-        ](c, a, b, a_scales, b_scales, ctx)
-
-    comptime if get_defined_bool[
-        "ENABLE_EXPERIMENTAL_SM100_BLOCK_SCALED_MATMUL", False
-    ]():
-        var status = heuristic_and_outliers_dispatch[
+    comptime if ctx.default_device_info.compute >= 12.0:
+        # Consumer Blackwell (sm_120 / sm_121, compute 12.x) lacks the SM100
+        # warp-specialized FP4 path; use the arch-agnostic CUDA-core naive
+        # kernel. (Datacenter Blackwell / B200 is compute 10.0, handled below.)
+        comptime assert (
+            elementwise_compute_lambda_fn is None
+        ), "compute-lambda epilogue not supported on the sm_121 NVFP4 path"
+        naive_block_scaled_matmul[
+            scaling_kind=UMMAKind.KIND_MXF4NVF4,
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c_device, a_device, b_device, a_scales, b_scales, tensor_sf, ctx)
+        ](
+            c.to_layout_tensor(),
+            a.to_layout_tensor(),
+            b.to_layout_tensor(),
+            a_scales.to_layout_tensor(),
+            b_scales.to_layout_tensor(),
+            ctx,
+            tensor_sf,
+        )
+    else:
+        comptime assert ctx.default_device_info.compute == B200.compute, (
+            "block_scaled_matmul is only supported on SM100 (B200) or sm_121"
+            " (consumer Blackwell / GB10)"
+        )
 
-        if status == DISPATCH_HIT:
-            logger.info("Executing SM100 Block Scaled matmul kernel")
+        comptime assert (
+            a_scales.static_shape[1] == b_scales.static_shape[1]
+        ), "Both A and B scales must have the same shape in K dimension"
+        comptime assert (
+            a_scales.static_shape[2] == b_scales.static_shape[2] == SF_ATOM_M[0]
+        ), ""
+        comptime assert (
+            a_scales.static_shape[3] == b_scales.static_shape[3] == SF_ATOM_M[1]
+        ), ""
+        comptime assert (
+            a_scales.static_shape[4] == b_scales.static_shape[4] == SF_ATOM_K
+        ), ""
+
+        var m = Int(c.dim[0]())
+        var n = Int(c.dim[1]())
+        var k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(
+            a.dim[1]()
+        )
+
+        if m == 0 or n == 0:
             return
-        else:
-            raise Error("Heuristic and outliers dispatch failed")
 
-    @always_inline
-    @parameter
-    def description_fn() -> String:
-        # fmt: off
-        return String(
-            "(",
-            target,
-            ";", trace_arg("A", IndexList[2](m, k), a_type),
-            ";", trace_arg("B", IndexList[2](k, n), b_type),
-            ";", trace_arg("C", IndexList[2](m, n), c_type),
-            ";A_scales=[", a_scales.dim[0](), ",", a_scales.dim[1](), ",", a_scales.dim[2](), ",", a_scales.dim[3](), ",", a_scales.dim[4](), "]",
-            ";B_scales=[", b_scales.dim[0](), ",", b_scales.dim[1](), ",", b_scales.dim[2](), ",", b_scales.dim[3](), ",", b_scales.dim[4](), "]",
-            ";transpose_a=", True,
-            ";transpose_b=", transpose_b,
-            ";tensor_sf=", tensor_sf,
-            ")"
+        logger.info(
+            "------ Dispatching to SM100 (B200+) Block Scaled matmul kernel"
+            " ------"
         )
-        # fmt: on
+        logger.info(
+            "Input Data Types: ",
+            a_type,
+            ", ",
+            b_type,
+            " Output Data Type: ",
+            c_type,
+            " Problem Shape: MNK=[",
+            m,
+            ", ",
+            n,
+            ", ",
+            k,
+            "]",
+        )
 
-    with Trace[TraceLevel.OP, target=target](
-        # Create a string literal so that the event label works with the
-        # AsyncRT profiler, whose event labels must be `StaticString`s.
-        get_static_string[
-            "block_scaled_matmul_",
-            String("nvfp4_" if a_type == DType.uint8 else "mxfp8_"),
-            String(SF_VECTOR_SIZE) + String("_sfvs"),
-            _trace_description if _trace_description else "",
-        ](),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=get_safe_task_id(ctx),
-    ):
-        # For these large-N shapes on B200, Mojo also wins at M=256.
-        comptime is_widened_shape = (
-            static_K == 7168 and static_N in (18432, 36864)
+        comptime assert (
+            elementwise_lambda_fn is None
+            or elementwise_compute_lambda_fn is None
+        ), "Either the epilogue lambda or the compute lambda can be used"
+
+        # vendor block scaled matmul kernels don't support compute lambda, so we wrap it around an epilogue lambda instead.
+        @parameter
+        @always_inline
+        @__copy_capture(c)
+        def compute_lambda_wrapper[
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
+            comptime if elementwise_compute_lambda_fn:
+                comptime compute_lambda = elementwise_compute_lambda_fn.value()
+                var output = compute_lambda(coords, val)
+                comptime assert (
+                    output.dtype == c_type
+                ), "compute epilogue lambda output and c type mismatch"
+                c.store_linear[alignment=alignment * size_of[c_type]()](
+                    coords, rebind[SIMD[c_type, _width]](output)
+                )
+
+        comptime elementwise_lambda_wrapper = Optional[
+            elementwise_epilogue_type
+        ](
+            compute_lambda_wrapper
+        ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
+
+        comptime static_N = c_device.static_shape[1]
+        comptime static_K = a_device.static_shape[1] * (
+            2 if a_type == DType.uint8 else 1
         )
-        comptime mojo_m_cap = 256 if is_widened_shape else 128
-        # MXFP8 always tries the Mojo block-scaled kernel first (its heuristic
-        # config table is tuned for the shapes we serve). On a dispatch miss it
-        # falls through to the vendor (cuBLASLt) block-scaled matmul below, the
-        # same fallback NVFP4 uses for large M.
-        if m <= mojo_m_cap or is_mxfp8_scaling:
+        comptime static_NK = Index(static_N, static_K)
+
+        comptime if get_defined_bool["AUTOTUNING_MODE", False]():
+            comptime BM = get_defined_int["TUNE_BM", 128]()
+            comptime BN = get_defined_int["TUNE_BN", 128]()
+            comptime BK = (
+                TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
+            )
+            comptime MMA_K = 32
+            comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 2]()
+            comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
+            comptime CLUSTER_DIM_Z = get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()
+            comptime CLUSTER_DIM = Index(
+                CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
+            )
+            comptime BLOCK_SWIZZLE_SIZE = get_defined_int[
+                "TUNE_BLOCK_SWIZZLE_SIZE", 0
+            ]()
+            comptime RASTERIZE_ORDER = get_defined_int["TUNE_RASTER_ORDER", 1]()
+            comptime CTA_GROUP = get_defined_int["TUNE_CTA_GROUP", 2]()
+            comptime K_GROUP_SIZE = get_defined_int["TUNE_K_GROUP_SIZE", 1]()
+            comptime AB_SWAPPED = get_defined_bool["TUNE_AB_SWAPPED", False]()
+
+            comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
+
+            comptime config = BlockScaledMatmulConfig[
+                a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
+            ](
+                scaling_kind=get_scaling_kind[
+                    a_type, scales_dtype, SF_VECTOR_SIZE
+                ](),
+                mma_shape=umma_shape,
+                cluster_shape=CLUSTER_DIM,
+                block_swizzle_size=BLOCK_SWIZZLE_SIZE,
+                raster_order=RasterOrder(Int32(RASTERIZE_ORDER)),
+                cta_group=CTA_GROUP,
+                AB_swapped=AB_SWAPPED,
+                k_group_size=K_GROUP_SIZE,
+            )
+
+            return blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b,
+                K=a_device.static_shape[1],
+                config=config,
+            ](c, a, b, a_scales, b_scales, ctx)
+
+        comptime if get_defined_bool[
+            "ENABLE_EXPERIMENTAL_SM100_BLOCK_SCALED_MATMUL", False
+        ]():
             var status = heuristic_and_outliers_dispatch[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
+            ](c_device, a_device, b_device, a_scales, b_scales, tensor_sf, ctx)
+
+            if status == DISPATCH_HIT:
+                logger.info("Executing SM100 Block Scaled matmul kernel")
+                return
+            else:
+                raise Error("Heuristic and outliers dispatch failed")
+
+        @always_inline
+        @parameter
+        def description_fn() -> String:
+            # fmt: off
+            return String(
+                "(",
+                target,
+                ";", trace_arg("A", IndexList[2](m, k), a_type),
+                ";", trace_arg("B", IndexList[2](k, n), b_type),
+                ";", trace_arg("C", IndexList[2](m, n), c_type),
+                ";A_scales=[", a_scales.dim[0](), ",", a_scales.dim[1](), ",", a_scales.dim[2](), ",", a_scales.dim[3](), ",", a_scales.dim[4](), "]",
+                ";B_scales=[", b_scales.dim[0](), ",", b_scales.dim[1](), ",", b_scales.dim[2](), ",", b_scales.dim[3](), ",", b_scales.dim[4](), "]",
+                ";transpose_a=", True,
+                ";transpose_b=", transpose_b,
+                ";tensor_sf=", tensor_sf,
+                ")"
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            # Create a string literal so that the event label works with the
+            # AsyncRT profiler, whose event labels must be `StaticString`s.
+            get_static_string[
+                "block_scaled_matmul_",
+                String("nvfp4_" if a_type == DType.uint8 else "mxfp8_"),
+                String(SF_VECTOR_SIZE) + String("_sfvs"),
+                _trace_description if _trace_description else "",
+            ](),
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(ctx),
+        ):
+            # For these large-N shapes on B200, Mojo also wins at M=256.
+            comptime is_widened_shape = (
+                static_K == 7168 and static_N in (18432, 36864)
+            )
+            comptime mojo_m_cap = 256 if is_widened_shape else 128
+            # MXFP8 always tries the Mojo block-scaled kernel first (its heuristic
+            # config table is tuned for the shapes we serve). On a dispatch miss it
+            # falls through to the vendor (cuBLASLt) block-scaled matmul below, the
+            # same fallback NVFP4 uses for large M.
+            if m <= mojo_m_cap or is_mxfp8_scaling:
+                var status = heuristic_and_outliers_dispatch[
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    pdl_level=pdl_level,
+                ](
+                    c_device,
+                    a_device,
+                    b_device,
+                    a_scales,
+                    b_scales,
+                    tensor_sf,
+                    ctx,
+                )
+                if status == DISPATCH_HIT:
+                    return
+
+            # Vendor (cuBLASLt) block-scaled fallback, used whenever the Mojo
+            # heuristic dispatch above has no config for this shape. This covers
+            # NVFP4 large-M shapes as well as MXFP8 shapes the heuristic config
+            # table does not enumerate (e.g. the 30k-token prefill in KERN-3024,
+            # whose M exceeds the table's M<=8192 build range).
+            #
+            # vendor matmul only supports epilogue lambda, so we wrap it around an
+            # epilogue lambda instead.
+            block_scaled_matmul_with_epilogue[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
             ](
-                c_device,
-                a_device,
-                b_device,
+                c,
+                a,
+                b,
                 a_scales,
                 b_scales,
                 tensor_sf,
                 ctx,
             )
-            if status == DISPATCH_HIT:
-                return
-
-        # Vendor (cuBLASLt) block-scaled fallback, used whenever the Mojo
-        # heuristic dispatch above has no config for this shape. This covers
-        # NVFP4 large-M shapes as well as MXFP8 shapes the heuristic config
-        # table does not enumerate (e.g. the 30k-token prefill in KERN-3024,
-        # whose M exceeds the table's M<=8192 build range).
-        #
-        # vendor matmul only supports epilogue lambda, so we wrap it around an
-        # epilogue lambda instead.
-        block_scaled_matmul_with_epilogue[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_wrapper,
-        ](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            tensor_sf,
-            ctx,
-        )
 
 
 @always_inline
