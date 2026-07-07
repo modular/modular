@@ -55,39 +55,6 @@ public:
           return replace(attr, TypeDomain::AsType);
         },
         TypeDomain::AsValue);
-
-    // param_list should always use the AsType domain: the parameter is always
-    // the param_list attr, never the param_list type.
-    //
-    // This is to mitigate the issue is that we allow ALL `__mlir_type` to be
-    // bound to
-    // ```
-    // struct __MLIRType[T: __mlir_type.`!kgen.non_struct_type`]
-    // ```
-    // When things like parametric function (a generator) with a param_list
-    // parameter is bound to this, the generator (as `T`) is then lowered in
-    // value domain, and the param_list will be lowered to
-    // `#kgen.type<param_list<type_value<#trait_ref>>>`
-    // ^ later lead to verification error, because the generator body type
-    // could be lowered in type domain, since
-    // ```
-    // addNonRecursiveReplacement(
-    // [&](TypedAttr attr) -> FailureOr<Attribute> {
-    //   return replace(attr, TypeDomain::AsType);
-    // },
-    // TypeDomain::AsValue);
-    //```
-    // We could also always lower generator parameter in type domain, but hard
-    // code to `ParamListType` for now.
-    //
-    // `__MLIRType` probably need a systematic fix as well, if we disallow
-    // generator to be bound to no_struct_type. The problem won't exist at the
-    // first place.
-    addNonRecursiveReplacement(
-        [&](ParamListType paramList) -> FailureOr<Type> {
-          return replace(paramList, TypeDomain::AsType);
-        },
-        TypeDomain::AsValue);
   }
 
   /// Add a replacement that skips recursing down the replaced result.
@@ -323,6 +290,13 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
       },
       TypeDomain::AsValue);
 
+  // The param types of a GeneratorType are always types, not values. Only the
+  // body is lowered in the enclosing domain, so a value-domain generator has
+  // value-domain argument/result types (its body) while its parameter decl
+  // types stay in the type domain. Keeping param decl types in the type domain
+  // matches how `ParamIndexRefAttr` types are lowered (always as types), so
+  // `verify-parameters` sees index references whose types agree with the
+  // parameter declarations they point to.
   for (TypeDomain domain : {TypeDomain::AsType, TypeDomain::AsValue}) {
     // Simply report the error after cycle detected.
     replacer.addCycleBreaker(
@@ -337,6 +311,34 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
           // Should be unreachable? must be a aggregated type in order to have
           // recursive reference.
           return std::nullopt;
+        },
+        domain);
+
+    auto replaceAsType = [&replacer](Type type) {
+      return replacer.replace(type, TypeDomain::AsType);
+    };
+    replacer.addNonRecursiveReplacement(
+        [domain, replaceAsType,
+         &replacer](GeneratorType gen) -> FailureOr<Type> {
+          SmallVector<FailureOr<Type>> inputParamTypesOr(
+              map_range(gen.getInputParamTypes(), replaceAsType));
+          if (llvm::any_of(inputParamTypesOr, failed))
+            return failure();
+
+          SmallVector<Type> inputParamTypes = llvm::map_to_vector(
+              inputParamTypesOr, [](FailureOr<Type> t) { return *t; });
+          Attribute metadata = gen.getMetadata();
+          if (metadata) {
+            auto metadataOr = replacer.replace(metadata, domain);
+            if (failed(metadataOr))
+              return failure();
+            metadata = *metadataOr;
+          }
+          auto bodyOr = replacer.replace(gen.getBody(), domain);
+          if (failed(bodyOr))
+            return failure();
+
+          return GeneratorType::get(inputParamTypes, *bodyOr, metadata);
         },
         domain);
   }

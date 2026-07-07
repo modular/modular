@@ -208,7 +208,17 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     // expand the snapshot (or add a parallel slot) and arrange for the
     // op's attribute dictionary to establish a contextual parametric
     // signature so `ParamIndexRefAttr`s in those fields can be verified.
-    OptionalAttr<KGEN_PogListAttr>:$sourceParamList
+    OptionalAttr<KGEN_PogListAttr>:$sourceParamList,
+    // Stable snapshot of the source `FuncTypeGeneratorType` (parameter types +
+    // body func type), captured during `LowerLIT` wrapped in a `TypeParamAttr`
+    // (`#kgen.type<...>`) so `LowerLITTypes` lowers it in the value domain: the
+    // snapshot's argument/result types (the generator body) come out in the
+    // value domain, which reflection clients need. Its POG metadata is stripped
+    // along with the live signature's; `sourceParamList` carries the
+    // names/kinds. Unlike the live `funcTypeGenerator`, which later transforms
+    // (e.g. `RemoveUnusedParams`) rewrite, this slot is left untouched and
+    // snapshots the original pre-pruning signature.
+    OptionalAttr<TypedAttrInterface>:$sourceFuncTypeGenerator
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -250,7 +260,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
             symName, sourceName, type, functionType, inputParams,
             /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
             /*external=*/false, inlinedForm, linkageNameAttr, llvmMetadataArray,
-            llvmArgMetadataArray, /*sourceParamList=*/PogListAttr());
+            llvmArgMetadataArray, /*sourceParamList=*/PogListAttr(),
+            /*sourceFuncTypeGenerator=*/TypedAttr());
     }]>,
     OpBuilder<(ins "StringAttr":$symName, "FuncTypeGeneratorType":$type), [{
       build($_builder, $_state, symName, StringAttr::get(symName.getContext()),
