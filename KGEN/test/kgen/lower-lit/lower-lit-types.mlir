@@ -609,8 +609,11 @@ kgen.generator @type_values() {
   // CHECK-SAME: ]>
   kgen.param.declare func_type: type = <#kgen.type<(index, !lit.struct<@Int>) -> !lit.struct<@StaticTuple<2, :type #kgen.type<@Int>>>>>
 
+  // A generator's parameter decl types stay in the type domain (so index
+  // references agree with their parameter declarations); only the body is
+  // lowered in the value domain.
   // CHECK-NEXT: kgen.param.declare gen_type: type = <[
-  // CHECK-SAME: <index, typevalue<#kgen.genref<@Int>>>typevalue<#kgen.genref<@StaticTuple<2, :type [typevalue<#kgen.genref<@Int>>, index]>>>
+  // CHECK-SAME: <index, index>typevalue<#kgen.genref<@StaticTuple<2, :type [typevalue<#kgen.genref<@Int>>, index]>>>
   // CHECK-SAME: <index, index>array<2, index>
   // CHECK-SAME: ]>
   kgen.param.declare gen_type: type = <#kgen.type<<index, !lit.struct<@Int>> !lit.struct<@StaticTuple<2, :type #kgen.type<@Int>>>>>

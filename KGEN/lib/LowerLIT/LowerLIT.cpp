@@ -371,6 +371,14 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
   auto inputParamsArr = ParamDeclArrayAttr::get(b.getContext(), inputParams);
   auto sigAttr = TypeAttr::get(signature);
 
+  // Snapshot the full source signature into `sourceFuncTypeGenerator`, wrapped
+  // in a `TypeParamAttr` so `LowerLITTypes` lowers it in the value domain (the
+  // snapshot's argument/result types come out in the value domain, which
+  // reflection clients need). `lowerAttributesAndTypes` strips its metadata
+  // like the live signature's, but it is left untouched by later transforms
+  // (e.g. `RemoveUnusedParams`) that rewrite the live one.
+  TypedAttr sourceFuncTypeGen = TypeParamAttr::get(signature, typeType);
+
   // Directly lower since these operations are exactly identical right now.
   OperationState state(func.getLoc(), GeneratorOp::getOperationName());
   GeneratorOp::build(b, state, func.getSymNameAttr(), func.getSourceNameAttr(),
@@ -379,7 +387,8 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
                      func.getExportKindAttr(), func.getExternalAttr(),
                      /*inlinedForm=*/nullptr, func.getLinkageNameAttr(),
                      func.getLLVMMetadataArray(),
-                     func.getLLVMArgMetadataArray(), sourceParamList);
+                     func.getLLVMArgMetadataArray(), sourceParamList,
+                     sourceFuncTypeGen);
 
   for (const NamedAttribute &attr : func->getDialectAttrs())
     state.attributes.push_back(attr);
