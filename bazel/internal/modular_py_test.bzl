@@ -1,14 +1,14 @@
 """A helper macro for running python tests with pytest"""
 
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", requirement = "pip_requirement")
 load("//bazel/pip/pydeps:pydeps_test.bzl", "pydeps_test")
-load(":modular_py_library.bzl", "modular_py_library")
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
+load(":py_imports.bzl", "compute_py_imports")
 load(":py_repl.bzl", "py_repl")
 load(":test_resources.bzl", "TEST_RESOURCES")
 
@@ -188,12 +188,12 @@ def modular_py_test(
 
     manual_srcs = _get_manual_srcs(tags, per_test_tags, srcs)
     if manual_srcs:
-        # TODO: Remove once we run mypy-style lints in a separate test target
-        modular_py_library(
+        # TODO: Remove once we run mypy-style lints in a separate test target.
+        # Raw py_library, not modular_py_library: the latter loads
+        # modular_py_test, so depending back on it would cycle.
+        py_library(
             name = name + ".mypy_library",
             data = data + extra_data,
-            toolchains = toolchains,
-            # Pydeps test is added below
             tags = [ALLOW_UNUSED_TAG, "no-pydeps"],
             deps = deps + [
                 requirement("pytest"),
@@ -202,8 +202,7 @@ def modular_py_test(
             testonly = True,
             srcs = manual_srcs + ["//bazel/internal:pytest_runner"],
             visibility = ["//visibility:private"],
-            imports = imports,
-            # NOTE: Intentionally exclude other attrs that shouldn't matter for mypy
+            imports = compute_py_imports(native.package_name(), imports),
         )
 
     if len(test_srcs) > 1:
