@@ -10,7 +10,6 @@
 #include "../Utils/Binary.h"
 #include "JITExecutionUnit.h"
 #include "Logging.h"
-#include "MLRT/AsyncRT/Runtime/Algorithms.h"
 #include "MojoDiagnostic.h"
 #include "MojoExpressionVariable.h"
 

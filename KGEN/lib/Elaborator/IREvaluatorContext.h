@@ -12,7 +12,6 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/Threading/Shared.h"
 

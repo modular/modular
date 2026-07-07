@@ -11,7 +11,6 @@
 #include "KGEN/TransformUtils/MemoryUtils.h"
 #include "KGEN/TransformUtils/SCCUtils.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 

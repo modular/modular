@@ -17,7 +17,6 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/SlicingUtils.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
 #include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "ObjectCompiler/KGENToLLVMPipeline.h"
