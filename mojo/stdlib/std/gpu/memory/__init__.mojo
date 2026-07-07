@@ -41,6 +41,7 @@ from .memory import (
     cp_async_bulk_shared_cluster_global,
     cp_async_bulk_tensor_2d_gather4,
     cp_async_bulk_tensor_global_shared_cta,
+    cp_async_bulk_tensor_global_shared_cta_elect,
     cp_async_bulk_tensor_reduce_global_shared_cta,
     cp_async_bulk_tensor_shared_cluster_global,
     cp_async_bulk_tensor_shared_cluster_global_elect,

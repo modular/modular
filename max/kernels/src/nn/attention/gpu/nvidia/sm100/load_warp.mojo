@@ -15,7 +15,7 @@
 from std.math import ceildiv
 from std.sys import size_of
 from std.gpu.memory import CacheEviction
-from std.gpu.primitives.cluster import block_rank_in_cluster
+from std.gpu.primitives.id import cluster_dim
 from layout.tma_async import SharedMemBarrier
 from layout import TileTensor
 from layout.tile_layout import row_major as tt_row_major
@@ -30,6 +30,8 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     PagedRowIndices,
     kv_sub_tile_rows,
     kv_num_sub_tiles,
+    splitk_window,
+    splitk_partition_idx,
     kv_tma_fold_chunks,
 )
 from nn.attention.gpu.nvidia.common import (
@@ -68,7 +70,7 @@ def fa4_load[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         config.swizzle_mode,
-        BM=config.BM // config.num_qo,
+        BM=config.BM // config.num_q,
         depth=config.qk_depth,
         group=config.group,
         decoding=False,
@@ -94,7 +96,7 @@ def fa4_load[
     comptime BM = config.BM
     comptime BN = config.BN
     comptime HalfBM = BM // 2
-    comptime num_qo: Int = config.num_qo
+    comptime num_q: Int = config.num_q
     comptime group = config.group
     comptime fuse_gqa = config.fuse_gqa
     # For pair-CTA, use PairBM so both CTAs make identical mask decisions.
@@ -151,13 +153,13 @@ def fa4_load[
     # If two-qo, we produce qkv in a pattern of
     # q0 & k0, q1, v0, k1, v1, k2, v2...
     # TMA only uses .ptr — flat row_major TileTensor is sufficient.
-    # Per-TMA-call element count. In 2Q (num_qo=2) this is HalfBM * BK0
-    # (one of two Q-half TMAs); in 1Q (num_qo=1) this is BM * BK0 (the
+    # Per-TMA-call element count. In 2Q (num_q=2) this is HalfBM * BK0
+    # (one of two Q-half TMAs); in 1Q (num_q=1) this is BM * BK0 (the
     # single full-Q TMA). The two numerically coincide at 128 * BK0
     # because BM=128 in 1Q and HalfBM=128 in 2Q, so q_bytes and the K0
     # barrier's expect_bytes math are invariant between modes.
     # (fused: BM//(2*group) * group * BK0 = HalfBM * BK0)
-    comptime q_elements = (BM // num_qo) * config.BK0
+    comptime q_elements = (BM // num_q) * config.BK0
     comptime QType = TileTensor[
         KVLUTType.dtype,
         type_of(tt_row_major[q_elements]()),
@@ -308,6 +310,47 @@ def fa4_load[
         - 1
     )
 
+    # Split-K (1Q): shift this CTA to its own tile window [cb, ce) of the
+    # combined range. Offset kv_row by cb*BN BEFORE the first-tile
+    # valid-page counts below (they key on kv_row), and stash the local
+    # tile count for the 1Q peel at the `T` site below. Same window as the
+    # other warps -- last_masked_set_end == total_iters for
+    # check_mask==False masks (mha_mask.mojo:641-644/...).
+    var part_first_tile: UInt32 = 0
+    var part_local_iters: UInt32 = 0
+    comptime if config.num_q == 1 and config.splitk_partitions > 1:
+        var _gT: UInt32 = mask.last_masked_set_end[BM_mask, BN, page_size](
+            seq_info.prompt_idx, score_row, num_keys
+        )
+        var _np: UInt32 = UInt32(cluster_dim.x)
+        var _w = splitk_window(
+            _gT,
+            _np,
+            splitk_partition_idx(_np),
+        )
+        part_first_tile = _w[0]
+        part_local_iters = _w[1] - _w[0]
+        kv_row += part_first_tile * UInt32(BN)
+        # Empty partition (front-load trailing window, T < num_partitions; or an
+        # M6 idle CTA): no tiles to load. Return before the peeled Q+K load and
+        # the first-tile valid-page counts -- the mma/correction warps take
+        # their matching empty-partition returns and softmax stages a neutral
+        # identity. The kernel terminal `cluster_sync()` still runs.
+        if part_local_iters == 0:
+            return
+        # Window the split-KV producer's loop count too. The fused-KV 1Q path
+        # below uses `T = part_local_iters` directly, but the split-KV path
+        # (num_qk_stages > 1, i.e. depth >= 128) drives its peel + main loop
+        # off `iter_count` (set above to the FULL last_masked_set_end - 1).
+        # Without windowing it, that producer emits the whole [0, T) range while
+        # mma/softmax/correction consume only this partition's part_local_iters
+        # tiles (they all window total_iters) -> the K/V pipeline producer
+        # over-fills and deadlocks on producer_acquire (the depth-128 split-K
+        # hang). `iter_count` is the post-first-peel main count, so set it to
+        # part_local_iters - 1: total emitted = first-peel(1) + main(iter_count)
+        # [+ last-peel(1) when needs_partial] == part_local_iters either way.
+        iter_count = part_local_iters - UInt32(1)
+
     # Valid page counts for the first tile (shared between fused-KV and
     # split-KV). When `needs_partial`, these reflect how many sub-tile
     # pages are actually in-bounds for the sequence; otherwise every
@@ -433,8 +476,8 @@ def fa4_load[
     comptime if config.use_fused_kv:
         # ---- Fused KV mode ----
         # Single StagedPipeline alternating K and V stages.
-        # 2Q (num_qo=2): K0, V0, K1, V1, ... (one K/V per logical iter).
-        # 1Q (num_qo=1): K_e[0], K_o[0], V_e[0], V_o[0], K_e[1], K_o[1], ...
+        # 2Q (num_q=2): K0, V0, K1, V1, ... (one K/V per logical iter).
+        # 1Q (num_q=1): K_e[0], K_o[0], V_e[0], V_o[0], K_e[1], K_o[1], ...
         # (two K + two V per logical iter, matching mma_warp's
         # Q@K_e->s0 / Q@K_o->s1 / P_e@V_e->o0 / P_o@V_o->o1 pattern).
         # For MHA: padded_qk_depth == padded_ov_depth, rope_depth == 0.
@@ -491,7 +534,7 @@ def fa4_load[
             _produce_v[partial=partial](rows, smem_ptr, mbar, v_num_valid_pages)
             kv_pipeline.state.step()
 
-        comptime if num_qo == 1:
+        comptime if num_q == 1:
             # ---- 1Q fused-KV producer ----
             # MMA consumes K_e, K_o, V_e, V_o per logical iter. Produce
             # in matching slot order. No FULL_MASK skip in this path
@@ -501,9 +544,15 @@ def fa4_load[
             # k_row_offset == 0 and k_nvp_peer == 0; the peer branches
             # of _produce_k comptime-prune.
 
-            var T: UInt32 = mask.last_masked_set_end[BM_mask, BN, page_size](
-                seq_info.prompt_idx, score_row, num_keys
-            )
+            var T: UInt32
+            comptime if config.splitk_partitions > 1:
+                # Per-partition local tile count (window + kv_row offset
+                # computed above). T==1 here means a single-tile partition.
+                T = part_local_iters
+            else:
+                T = mask.last_masked_set_end[BM_mask, BN, page_size](
+                    seq_info.prompt_idx, score_row, num_keys
+                )
 
             # T == 1 fast path: produce K_e[0] (with Q) + V_e[0] only.
             # mma_warp's matching T==1 fast path consumes those two
@@ -773,7 +822,7 @@ def fa4_load[
         # Skipped in 1Q: the peeled K0 issues above (with_q=True for
         # stages 0..num_qk_stages-1) already loaded the full BM-row Q
         # tile on the K mbars.
-        comptime if num_qo == 2:
+        comptime if num_q == 2:
             comptime if fuse_gqa:
                 q_gmem_row += UInt32(HalfBM // group)
             else:

@@ -54,6 +54,7 @@ from std.gpu.memory import (
     ReduceOp,
     async_copy,
     cp_async_bulk_tensor_global_shared_cta,
+    cp_async_bulk_tensor_global_shared_cta_elect,
     cp_async_bulk_tensor_reduce_global_shared_cta,
     cp_async_bulk_tensor_shared_cluster_global,
     cp_async_bulk_tensor_shared_cluster_global_elect,
@@ -5650,9 +5651,14 @@ struct RaggedTMA3DTile[
         ragged_idx: UInt32,
         dynamic_dim: UInt32,
         middle_idx: UInt32,
+        elect: Int32,
     ):
         """Copy a single swizzle_granularity-wide column chunk from smem to
         gmem.
+
+        The TMA store is PTX-predicated on `elect`, so call this unconditionally
+        from every lane (no warp-divergent `if elect != 0:` wrapper); only the
+        elected lane issues the copy.
 
         Parameters:
             col: Which column chunk (0-indexed, each chunk is
@@ -5667,6 +5673,8 @@ struct RaggedTMA3DTile[
             dynamic_dim: Number of rows (or seq positions when group > 1)
                 to copy.
             middle_idx: Index into the middle (generally head) dimension.
+            elect: `0` on non-elected lanes (skip the TMA), non-zero on the
+                single elected lane (issue the TMA).
         """
         comptime copy_offset = col * Self.BM * Self.swizzle_granularity
         # `merged` folds (middle_dim, rows) into the outermost descriptor dim.
@@ -5676,7 +5684,7 @@ struct RaggedTMA3DTile[
         comptime if Self.group > 1:
             var box_idx = Int(UInt32(Self.BM_seq) - dynamic_dim)
 
-            cp_async_bulk_tensor_global_shared_cta[
+            cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
@@ -5688,11 +5696,12 @@ struct RaggedTMA3DTile[
                     box_idx,
                     merged,
                 ),
+                elect,
             )
         else:
             var box_idx = Int(UInt32(Self.BM) - dynamic_dim)
 
-            cp_async_bulk_tensor_global_shared_cta[
+            cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
@@ -5703,6 +5712,7 @@ struct RaggedTMA3DTile[
                     box_idx,
                     merged,
                 ),
+                elect,
             )
 
     @always_inline
@@ -5718,6 +5728,7 @@ struct RaggedTMA3DTile[
         ragged_idx: UInt32,
         dynamic_dim: UInt32,
         middle_idx: UInt32,
+        elect: Int32,
     ):
         """Copy `tma_blocks_per_op` swizzle_granularity-wide column blocks from
         smem to gmem in a single TMA, starting at block `col_start`.
@@ -5727,6 +5738,10 @@ struct RaggedTMA3DTile[
         overruns the true block count, the TMA masks the overhang off (no gmem
         write). With the (middle_dim, rows) selector merge the descriptor is
         rank-4 for `group == 1` and rank-5 for `group > 1`.
+
+        The TMA store is PTX-predicated on `elect`, so call this unconditionally
+        from every lane (no warp-divergent `if elect != 0:` wrapper); only the
+        elected lane issues the copy.
 
         Parameters:
             col_start: First block (0-indexed, each block is swizzle_granularity
@@ -5739,6 +5754,8 @@ struct RaggedTMA3DTile[
             ragged_idx: Index into the ragged dimension.
             dynamic_dim: Number of rows (or seq positions when group > 1) to copy.
             middle_idx: Index into the middle (generally head) dimension.
+            elect: `0` on non-elected lanes (skip the TMA), non-zero on the
+                single elected lane (issue the TMA).
         """
         comptime assert (
             Self.tma_blocks_per_op > 0
@@ -5751,57 +5768,24 @@ struct RaggedTMA3DTile[
         comptime if Self.group > 1:
             var box_idx = Int(UInt32(Self.BM_seq) - dynamic_dim)
             # dims (inner->outer): (K, group, BM_seq, n_blocks, merged)
-            cp_async_bulk_tensor_global_shared_cta[
+            cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
                 UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                 Index(0, 0, box_idx, col_start, merged),
+                elect,
             )
         else:
             var box_idx = Int(UInt32(Self.BM) - dynamic_dim)
             # dims (inner->outer): (K, BM, n_blocks, merged)
-            cp_async_bulk_tensor_global_shared_cta[
+            cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
                 UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                 Index(0, box_idx, col_start, merged),
-            )
-
-    @always_inline
-    def async_copy_from[
-        eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
-    ](
-        self,
-        src: UnsafePointer[
-            Scalar[Self.dtype], _, address_space=AddressSpace.SHARED
-        ],
-        *,
-        ragged_idx: UInt32,
-        dynamic_dim: UInt32,
-        middle_idx: UInt32,
-    ):
-        """
-        Copy from the smem source to the `RaggedTMA3DTile` destination.
-
-        Args:
-            src: The source shared memory pointer from which we copy memory.
-            ragged_idx: Index into the ragged dimension.
-            dynamic_dim: Number of rows to copy.
-            middle_idx: Index into the middle (generally head) dimension.
-
-        Parameters:
-            eviction_policy: Optional cache eviction policy that controls how the data is handled
-                in the cache hierarchy. Defaults to EVICT_FIRST.
-        """
-
-        comptime for col in range(ceildiv(Self.BN, Self.swizzle_granularity)):
-            self.async_copy_from_col[col, eviction_policy](
-                src,
-                ragged_idx=ragged_idx,
-                dynamic_dim=dynamic_dim,
-                middle_idx=middle_idx,
+                elect,
             )
 
     @always_inline

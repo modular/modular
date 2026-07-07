@@ -354,17 +354,13 @@ def bench_max(
         torch.cuda.synchronize()
         return None
 
-    # Use bench_kineto_with_cupti_warmup to handle CUPTI warmup.
-    # Kernel names use the @__name decorator pattern, e.g.
-    # sm100_mha_2q_depth128_bfloat16_bfloat16_nqh32_nkvh32_<hash>.
-    # The substring "sm100_mha" matches all SM100 MHA prefill variants
-    # (1Q, 2Q, and depth-512).
     time_s = bench_kineto_with_cupti_warmup(
         run_kernel,
-        kernel_names="sm100_mha",
+        kernel_names="mha",
         num_tests=num_iters,
         suppress_kineto_output=True,
         flush_l2=True,
+        with_multiple_kernels=True,
     )
     assert isinstance(time_s, float)  # Single kernel_name returns float
 

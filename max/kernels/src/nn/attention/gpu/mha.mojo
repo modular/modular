@@ -759,7 +759,6 @@ def flash_attention_dispatch[
                             scale,
                             _optional_lt_to_tt(kv_input_row_offsets),
                             batch_size,
-                            NoPartition[get_accum_type[q.dtype]()](),
                             ctx,
                             _optional_lt_to_tt(sink_weights),
                         )

@@ -154,7 +154,7 @@ __extension SM100MLA:
         q_nope_tma_op: QTMATile[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
-            # `BM // num_qo` = 128 in both modes (one of two Q halves in
+            # `BM // num_q` = 128 in both modes (one of two Q halves in
             # 2Q, the single full-BM Q tile in 1Q), so the TMA-op type
             # folds across the 1Q/2Q configs.
             BM=Self.config.q_tile_rows(),
@@ -207,11 +207,11 @@ __extension SM100MLA:
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_dtype,
             Self.config.output_swizzle_mode,
-            # `// fa4_config.num_qo` instead of `// 2`: matches the
+            # `// fa4_config.num_q` instead of `// 2`: matches the
             # fa4_softmax / fa4_lse_combine_write signature so both the
             # 1Q and 2Q instantiations type-check under the unified
             # signature (128 in both modes).
-            BM=Self.config.fa4_config.BM // Self.config.fa4_config.num_qo,
+            BM=Self.config.fa4_config.BM // Self.config.fa4_config.num_q,
             BN=Self.config.fa4_config.ov_depth,
             middle_dim=Self.config.num_q_heads,
             group=config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
@@ -273,7 +273,7 @@ __extension SM100MLA:
                 Self._ndbuffer_mha_operand,
             ]
             # All eight TMA-op types fold between the 2Q and 1Q configs (Q
-            # nope/rope and the q_scale box use `BM // num_qo` = 128 in both;
+            # nope/rope and the q_scale box use `BM // num_q` = 128 in both;
             # K_nope/K_rope/V/k_scale and the ragged store are
             # BM-independent), but the parser sees distinct parameter
             # expressions, so `rebind`.
@@ -333,7 +333,7 @@ __extension SM100MLA:
                 Kernel1Q.output_dtype,
                 Kernel1Q.config.output_swizzle_mode,
                 BM=Kernel1Q.config.fa4_config.BM
-                // Kernel1Q.config.fa4_config.num_qo,
+                // Kernel1Q.config.fa4_config.num_q,
                 BN=Kernel1Q.config.fa4_config.ov_depth,
                 middle_dim=Kernel1Q.config.num_q_heads,
                 group=Kernel1Q.config.fa4_config.group if Kernel1Q.config.fa4_config.fuse_gqa else 1,
@@ -433,7 +433,7 @@ __extension SM100MLA:
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_dtype,
             Self.config.output_swizzle_mode,
-            BM=Self.config.fa4_config.BM // Self.config.fa4_config.num_qo,
+            BM=Self.config.fa4_config.BM // Self.config.fa4_config.num_q,
             BN=Self.config.fa4_config.ov_depth,
             middle_dim=Self.config.num_q_heads,
             group=config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
@@ -737,14 +737,14 @@ __extension SM100MLA:
         TMAs (K0 barrier for Q0, Q1Sync for Q1; single issue in 1Q);
         k_scale is loaded on every K barrier with staged buffer indexing.
         """
-        comptime num_qo = Self.config.num_qo()
+        comptime num_q = Self.config.num_q()
         # 1Q does not implement mid-range FULL_MASK tile skipping (the
         # `check_mask` slow path that e.g. MaterializedMask requires):
         # the load/mma/softmax warps would disagree on tile counts.
         # Dispatch must route such masks to 2Q. Range-bounded
         # early-skipping (e.g. sliding-window via `start_column` /
         # `last_masked_set_end`) is supported.
-        comptime if num_qo == 1:
+        comptime if num_q == 1:
             comptime assert not (
                 mask.nonfull_sets[Self.BM, Self.BN]()[0]
                 == TileMaskStatus.UNKNOWN_MASK
@@ -1227,7 +1227,7 @@ __extension SM100MLA:
                     k_nvp,
                 )
 
-            comptime if num_qo == 1:
+            comptime if num_q == 1:
                 # ---- 1Q fused-KV producer ----
                 # MMA consumes K_e, K_o, V_e, V_o per logical iter;
                 # produce in matching slot order (mirrors the generic
@@ -1791,7 +1791,7 @@ __extension SM100MLA:
             # Skipped in 1Q: the peeled K0 issue above (with_q=True)
             # already loaded the full BM-row Q tile + q_scale on the K
             # mbar.
-            comptime if num_qo == 2:
+            comptime if num_q == 2:
                 q_gmem_row += UInt32(Self.config.BM // 2)
                 var q1_mbar = mbars.q1_wait_mbar()
                 expect_bytes_pred(q1_mbar, Int32(q_bytes + q_scale_bytes), e)
@@ -2042,7 +2042,7 @@ def mla_sm100_prefill_per_token_scale[
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_dtype,
         fa4_config.output_swizzle_mode,
-        BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_qo,
+        BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_q,
         BN=ov_depth,
         middle_dim=fa4_config.num_q_heads,
         tma_blocks_per_op=store_blocks_per_op,
@@ -2116,7 +2116,7 @@ def mla_sm100_prefill_per_token_scale[
     # Launch the kernel built from `cfg` (the 2Q `fa4_config` or its 1Q
     # variant). All TMA-op types fold to identical values for both
     # configs (Q nope/rope TMAs, q_scale box, and ragged store use
-    # `BM // num_qo` = 128 in both modes; K/V/rope/k_scale TMA shapes
+    # `BM // num_q` = 128 in both modes; K/V/rope/k_scale TMA shapes
     # are BM-independent), so they are passed through unchanged.
     @parameter
     @always_inline
@@ -2202,9 +2202,9 @@ def mla_sm100_prefill_per_token_scale[
 
     # --- 1Q / 2Q dispatch (see the generic MLA dispatch for details) ---
     # Only when the selected config is the standard 2Q one; the single-O
-    # fallback is already num_qo=1 and launches directly.
-    comptime if fa4_config.fa4_config.num_qo == 2:
-        comptime cfg_1q = fa4_config.with_num_qo(1)
+    # fallback is already num_q=1 and launches directly.
+    comptime if fa4_config.fa4_config.num_q == 2:
+        comptime cfg_1q = fa4_config.with_num_q(1)
         comptime can_use_1q: Bool = (
             cfg_1q.supported()
             and cfg_1q.fa4_config.supported()

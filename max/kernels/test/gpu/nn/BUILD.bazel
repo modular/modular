@@ -204,6 +204,27 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # DSMEM (distributed shared memory) transport spike for the 1Q split-K
+    # in-cluster combine (M3/M4): clusters + `mapa.shared::cluster` are a B200
+    # feature.
+    "attention/test_dsmem_cluster_smoke.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # DYNAMIC-cluster-dim DSMEM spike (§6): one kernel, NO static
+    # `nvvm.cluster_dim` metadata, runtime `cluster_dim=` launch. Clusters +
+    # DSMEM are a B200 feature.
+    "attention/test_dsmem_dyncluster_smoke.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # Partial-warp cluster-mbarrier publish spike for the 1Q split-K combine
+    # (M4): cluster-scoped mbarriers (`mbarrier.arrive.shared::cluster`) are a
+    # B200 feature.
+    "attention/test_cluster_publish_smoke.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "attention/test_mha_sm100_qkv_fp8_d256_prefill.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -408,6 +429,261 @@ _FILECHECK_TESTS = [
             "test_apple_fa_prefill_paged.mojo",
         ],
     )
+]
+
+# SM100 FA4 num_q==1 split-K (M4.3 + M4.4): writer-combines-all cross-CTA O
+# combine, swept over (mask, depth, P). The in-cluster DSMEM combine is
+# unconditional for split-K; the writer (partition 0) emits the FULL combined O,
+# compared directly to `mha_gpu_naive` over the SAME mask + full key range.
+# `-D FA4_1Q_SPLITK_MASK` selects the mask (0=null,1=causal,2=chunked,
+# 3=swcausal,4=swnoncausal); `-D FA4_1Q_SPLITK_DEPTH` selects head_size.
+# Committed (gates the M4 sign-off): {null,causal} x {64,128} x P{2,4,8}.
+# Discovery (start_column>0; chunked@P8 also exercises M6 empty partitions):
+# {chunked,swcausal,swnoncausal} x {64} x P{2,4,8}.
+# depth=128 (M4.4 / #36): TWO independent depth-128 bugs, both now FIXED, so
+# ALL masks pass and are committed (no `manual` targets remain):
+#   1. The split-KV load path (num_qk_stages=2, depth>=128) did not window its
+#      per-partition tile count, so the producer over-filled the K/V pipeline vs
+#      the windowed consumers and deadlocked. Fixed in load_warp.mojo (window the
+#      iter count). This unhung {null,causal} x 128.
+#   2. `fa4_splitk_combine_write` sized its combined-O register buffer `o_final`
+#      for ONE depth-column, but depth 128 has iters_total==2, so the 2nd column
+#      clobbered the 1st (see the windowed-mask block below for the full writeup).
+#      This is what made the WINDOWED masks (chunked/SW) mismatch at depth 128.
+# {null,causal,chunked,swcausal,swnoncausal} x 128 x P all PASS at the bf16 floor
+# (0.0039). SM100-only (B200).
+[
+    mojo_test(
+        name = "attention/test_mha_sm100_1q_splitk_combine_{}_d{}_p{}.mojo.test".format(
+            cfg[1],
+            cfg[2],
+            cfg[3],
+        ),
+        size = "large",
+        srcs = ["attention/test_mha_sm100_1q_splitk_lse.mojo"],
+        # Shape-driven P: the dispatch auto-selects the partition count; we steer
+        # it via the cache length (cache = 512 * P => floor_pow2(cache//512) == P).
+        copts = [
+            "-D",
+            "FA4_1Q_SPLITK_CACHE={}".format(512 * cfg[3]),
+            "-D",
+            "FA4_1Q_SPLITK_MASK={}".format(cfg[0]),
+            "-D",
+            "FA4_1Q_SPLITK_DEPTH={}".format(cfg[2]),
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": "3",
+        },
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:testdata",
+            "@mojo//:std",
+        ],
+    )
+    # cfg = (mask_id, mask_name, depth, P)
+    for cfg in (
+        [
+            (
+                mask[0],
+                mask[1],
+                depth,
+                p,
+            )
+            for mask in [
+                (0, "null"),
+                (1, "causal"),
+            ]
+            for depth in [
+                64,
+                128,
+            ]
+            for p in [
+                2,
+                4,
+                8,
+            ]
+        ] + [
+            (
+                mask[0],
+                mask[1],
+                64,
+                p,
+            )
+            for mask in [
+                (2, "chunked"),
+                (3, "swcausal"),
+                (4, "swnoncausal"),
+            ]
+            for p in [
+                2,
+                4,
+                8,
+            ]
+        ]
+    )
+]
+
+# WINDOWED masks (chunked / sliding-window) at depth 128, swept over P{1,2,4,8}.
+# RESOLVED (#36 windowed@128, 2026-06-23): these mismatched vs `mha_gpu_naive`
+# (chunked 0.866, SW 0.043) until the depth-128 split-K combine bug was fixed.
+# Root cause was NOT empty-partitions or bf16 tolerance: `fa4_splitk_combine_write`
+# held its combined-O register fragment `o_final` for only ONE depth-column
+# (`reg_frag_len`), but at depth 128 `iters_total == 2`. Its Phase A reads ALL
+# columns into registers before Phase B writes bf16 (mandatory: the f32 stage
+# aliases the bf16 output), so the second column's `accumulate` clobbered the
+# first, and Phase B wrote the LAST column into BOTH gmem depth blocks -> gmem
+# depth [0,64) received depth [64,128)'s values. It hid on null/causal because
+# averaging over all 1026 keys makes O ~ 0 (block0 ~ block1, ~0.039 < atol); the
+# few-key chunked mask (O large) exposed it at 0.866. Fix: size `o_final` =
+# `reg_frag_len * iters_per_wg` + column-index accumulate/write_to_smem
+# (byte-identical at depth 64 where iters_per_wg == 1). All committed now.
+[
+    mojo_test(
+        name = "attention/test_mha_sm100_1q_splitk_combine_{}_d128_p{}.mojo.test".format(
+            cfg[0],
+            cfg[1],
+        ),
+        size = "large",
+        srcs = ["attention/test_mha_sm100_1q_splitk_lse.mojo"],
+        # Shape-driven P (cache = 512 * P => floor_pow2(cache//512) == P). At P=8
+        # the windowed mask still leaves trailing partitions empty (active tiles
+        # < P), so the M6 empty-partition + windowed-d128 combine path is covered.
+        copts = [
+            "-D",
+            "FA4_1Q_SPLITK_CACHE={}".format(512 * cfg[1]),
+            "-D",
+            "FA4_1Q_SPLITK_MASK={}".format(cfg[2]),
+            "-D",
+            "FA4_1Q_SPLITK_DEPTH=128",
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": "3",
+        },
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:testdata",
+            "@mojo//:std",
+        ],
+    )
+    # cfg = (mask_name, P, mask_id)
+    for cfg in [
+        (
+            mask[1],
+            p,
+            mask[0],
+        )
+        for mask in [
+            (2, "chunked"),
+            (3, "swcausal"),
+            (4, "swnoncausal"),
+        ]
+        for p in [
+            1,
+            2,
+            4,
+            8,
+        ]
+    ]
+]
+
+# EMPTY-PARTITION + SINK (M6): ChunkedMask[512] shrinks the kernel's active tile
+# count to ~1, so at P=8 only the front-loaded rank-0 writer is non-empty and the
+# 7 trailing partitions are EMPTY. With `-D FA4_1Q_SPLITK_SINK=True` the per-head
+# attention sink must still be folded into the cluster-global denominator EXACTLY
+# ONCE (by the non-empty writer), never by an empty partition. This is the
+# regression guard for empty-partition handling + the empty-writer-never-happens
+# (front-load) + sink-once invariants. Committed (depth-64). Shape-driven P:
+# cache=4096 => by_cache=8 => P=8 (the chunk still leaves ~1 active tile, so the
+# 7 trailing partitions remain empty regardless of the larger cache).
+mojo_test(
+    name = "attention/test_mha_sm100_1q_splitk_combine_chunked_sink_d64_p8.mojo.test",
+    size = "large",
+    srcs = ["attention/test_mha_sm100_1q_splitk_lse.mojo"],
+    copts = [
+        "-D",
+        "FA4_1Q_SPLITK_CACHE=4096",
+        "-D",
+        "FA4_1Q_SPLITK_MASK=2",
+        "-D",
+        "FA4_1Q_SPLITK_DEPTH=64",
+        "-D",
+        "FA4_1Q_SPLITK_SINK=True",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# Non-split regression guard. With shape-driven dispatch a tiny cache
+# (cache=512 => by_cache=1 => P=1) folds split-K away: P==1 routes to the 2Q
+# config, whose in-kernel 1Q switch runs the short prompt through the PLAIN 1Q
+# body (single partition -- no cluster, no DSMEM, no combine), validated over the
+# full key range vs `mha_gpu_naive`. d128 exercises the 1Q split-KV datapath
+# (num_qk_stages=2) via that switch (the split-K d128 P>=2 targets cover it too).
+# SM100-only (B200).
+[
+    mojo_test(
+        name = "attention/test_mha_sm100_1q_splitk_combine_null_d{}_p1.mojo.test".format(depth),
+        size = "large",
+        srcs = ["attention/test_mha_sm100_1q_splitk_lse.mojo"],
+        copts = [
+            "-D",
+            "FA4_1Q_SPLITK_CACHE=512",
+            "-D",
+            "FA4_1Q_SPLITK_MASK=0",
+            "-D",
+            "FA4_1Q_SPLITK_DEPTH={}".format(depth),
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": "3",
+        },
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:testdata",
+            "@mojo//:std",
+        ],
+    )
+    for depth in [
+        64,
+        128,
+    ]
 ]
 
 # Ensure `naive_fa_decode_apple` matches `mha_gpu_naive` on a paged KV cache.

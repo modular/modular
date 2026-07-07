@@ -23,10 +23,12 @@ This module contains generic SM100 (Blackwell) GPU primitives including:
 
 from std.math import ceildiv, exp2, align_up, iota
 from std.math.constants import log2e
-from std.sys import size_of
+from std.sys import size_of, _RegisterPackType
 from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import llvm_intrinsic
 from std.bit import prev_power_of_two, pop_count
+from std.gpu import block_idx
+from std.gpu.primitives.id import cluster_dim
 from std.gpu.globals import WARP_SIZE
 from std.gpu.primitives.warp import broadcast
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -313,6 +315,44 @@ def o_store_tma_blocks_per_op[
 
 
 @always_inline
+def pack_row[
+    n: Int, //, output_type: DType, w: Int, start: Int = 0
+](o_vals: InlineArray[Scalar[DType.float32], n]) -> SIMD[DType.uint32, 4]:
+    """Cast the `w` f32 O lanes `o_vals[start : start + w]` to `output_type` and
+    pack them into one 16 B SWIZZLE_NONE store register (exactly four u32).
+
+    `per_u32 = 4 // size_of[output_type]()` output elements pack into each u32
+    (2 for a 2-byte bf16/f16 output, 4 for a 1-byte fp8 output), so a full 16 B
+    block is `w == 4 * per_u32` f32 lanes (8 for bf16/f16, 16 for fp8). The
+    return width is a fixed 4 so the wide-store helper `st_shared_v4_b32` takes
+    it without a symbolic-width unification. Scale-free sibling of
+    `scale_pack_o_row`, used by the split-K combine where `o_final` is already
+    normalized.
+
+    `o_vals` is a `tcgen05_ld` / accumulator result; `start`/`w` window it. Each
+    u32 is built from an `SIMD[f32, per_u32]` chunk (f32x2 for bf16 -- wider SIMD
+    scalarizes; f32x4 for fp8, mirroring the MLA fp8 store path); only the packed
+    u32 store register is built wide.
+    """
+    comptime assert (
+        size_of[output_type]() == 1 or size_of[output_type]() == 2
+    ), "pack_row supports a 1-byte (fp8) or 2-byte (bf16/f16) output dtype"
+    comptime per_u32 = 4 // size_of[output_type]()
+    comptime assert w == 4 * per_u32, (
+        "pack_row packs exactly one 16 B SWIZZLE_NONE block (four u32); `w`"
+        " must equal 4 * (4 // size_of[output_type]()) -- 8 for bf16/f16, 16"
+        " for fp8."
+    )
+    var packed = SIMD[DType.uint32, 4]()
+    comptime for c in range(4):
+        var chunk = SIMD[DType.float32, per_u32]()
+        comptime for k in range(per_u32):
+            chunk[k] = o_vals[start + per_u32 * c + k]
+        packed[c] = bitcast[DType.uint32, 1](chunk.cast[output_type]())
+    return packed
+
+
+@always_inline
 def scale_pack_o_row[
     n: Int, //, output_type: DType, w: Int, start: Int = 0
 ](o_vals: InlineArray[Scalar[DType.float32], n], inv_row_sum: Float32) -> SIMD[
@@ -369,6 +409,42 @@ def combine_pack_o_row[
         ).cast[output_type]()
         packed[c] = bitcast[DType.uint32, 1](comb)
     return packed
+
+
+@always_inline
+def st_shared_v4_b32[
+    dtype: DType,
+    //,
+](
+    dst: UnsafePointer[
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
+    ],
+    elem_off: Int,
+    packed: SIMD[DType.uint32, 4],
+):
+    """Explicit 16 B `st.shared.v4.b32` (one `STS.128`) to `dst[elem_off]`.
+
+    Forces the wide vector store regardless of how `packed`'s four words were
+    produced. A plain `.store()` of a `SIMD[uint32, 4]` scalarizes to 4x
+    `STS.32` when the words come from a long-lived accumulator (the split-K
+    combine's `o_final`): ptxas cannot fuse the non-contiguous in-place `F2FP`
+    pack outputs, and the resulting 4 B stores hit only every 4th bank (4-way
+    conflict, 4x wavefronts). The `v4.b32` operand mandates a contiguous
+    register quad, so this stays one bank-conflict-free 16 B transaction.
+
+    `dtype` is the shared buffer's element type -- any 1-byte (fp8) or 2-byte
+    (bf16/f16) output; `elem_off` is in `dtype` elements. `packed` is a fixed
+    16 B (four u32) for every `dtype`: `pack_row` folds the per-u32 element count
+    (2 for bf16, 4 for fp8) into that width, so one call stores one SWIZZLE_NONE
+    block.
+    """
+    var dst_ptr = dst + elem_off
+    _ = inlined_assembly[
+        "st.shared.v4.b32 [$0], {$1, $2, $3, $4};",
+        NoneType,
+        constraints="l,r,r,r,r",
+        has_side_effect=True,
+    ](dst_ptr, packed[0], packed[1], packed[2], packed[3])
 
 
 @always_inline
@@ -1870,6 +1946,124 @@ def fma_ftz(
     ](a, b, c)
 
 
+def _mask_select8_asm[byte_idx: Int]() -> String:
+    """Builds the PTX body for `mask_select8`.
+
+    Emits bits 0-6 as 7 `and.b32` + `setp.eq.u32 ...,0` followed by 7
+    `selp.f32`, then bit 7 as a separate `and`/`setp`/`selp` that reuses %p0 — so
+    at most 7 predicates (the full P0-P6 file) are ever live, never 8. Everything
+    stays inside one `{ ... }` block so the bit-extraction is adjacent to the
+    selects. This mirrors the cold region ptxas already emits for this mask:
+    `R2P ...,0x7f` for the 7-bit group + `LOP3.LUT ...,0x80` for the 8th bit,
+    both consumed by `selp.f32 ...,0fC61C4000,score`.
+
+    Parameters:
+        byte_idx: Which mask byte (0..3) this block applies.
+
+    Returns:
+        The assembled PTX string.
+    """
+    # Bits 0-6: the R2P group. 7 (`and` + `setp.eq...,0`) then 7 `selp`, so at
+    # most 7 predicates are live; ptxas folds the 7 `setp` into `R2P ...,0x7f`.
+    var asm = String("{\n.reg .pred %p<7>;\n.reg .b32 %t<7>;\n")
+
+    comptime for j in range(7):
+        asm += String(
+            "and.b32 %t",
+            j,
+            ", $16, ",
+            hex(UInt32(1) << UInt32(8 * byte_idx + j)),
+            ";\nsetp.eq.u32 %p",
+            j,
+            ", %t",
+            j,
+            ", 0;\n",
+        )
+
+    comptime for j in range(7):
+        asm += String(
+            "selp.f32 $", j, ", 0fC61C4000, $", 8 + j, ", %p", j, ";\n"
+        )
+
+    # Bit 7 (the 8th lane): reuse %p0/%t0, free after the selps above, so this
+    # never pushes liveness to 8. This is the cold region's `LOP3.LUT ...,0x80`.
+    asm += String(
+        "and.b32 %t0, $16, ",
+        hex(UInt32(1) << UInt32(8 * byte_idx + 7)),
+        ";\nsetp.eq.u32 %p0, %t0, 0;\nselp.f32 $7, 0fC61C4000, $15, %p0;\n",
+    )
+
+    asm += "}"
+    return asm
+
+
+@always_inline
+def mask_select8[
+    byte_idx: Int
+](
+    s0: Float32,
+    s1: Float32,
+    s2: Float32,
+    s3: Float32,
+    s4: Float32,
+    s5: Float32,
+    s6: Float32,
+    s7: Float32,
+    mask_bits: UInt32,
+) -> _RegisterPackType[
+    Float32,
+    Float32,
+    Float32,
+    Float32,
+    Float32,
+    Float32,
+    Float32,
+    Float32,
+]:
+    """Masks 8 contiguous scores against one byte of a 32-column bitmask.
+
+    Lane `j` keeps its score if bit `8*byte_idx + j` of `mask_bits` is set,
+    otherwise it becomes `MASK_VALUE` (-10000). The 8 `and`/`setp`/`selp` are
+    confined to a single opaque PTX block so the bit-extraction sits adjacent to
+    the selects: the predicate live-set stays bounded (avoiding the wide
+    up-front bit pre-extraction that spills) and the shape stays `R2P`-eligible.
+
+    Parameters:
+        byte_idx: Which mask byte to apply (0..3), i.e. columns
+            `8*byte_idx .. 8*byte_idx + 7`.
+
+    Args:
+        s0: Already-scaled score for lane 0.
+        s1: Already-scaled score for lane 1.
+        s2: Already-scaled score for lane 2.
+        s3: Already-scaled score for lane 3.
+        s4: Already-scaled score for lane 4.
+        s5: Already-scaled score for lane 5.
+        s6: Already-scaled score for lane 6.
+        s7: Already-scaled score for lane 7.
+        mask_bits: Packed 32-column visibility mask.
+
+    Returns:
+        The 8 masked scores, register-packed (index `[0] .. [7]`).
+    """
+    comptime asm = _mask_select8_asm[byte_idx]()
+    return inlined_assembly[
+        asm,
+        _RegisterPackType[
+            Float32,
+            Float32,
+            Float32,
+            Float32,
+            Float32,
+            Float32,
+            Float32,
+            Float32,
+        ],
+        constraints="=f,=f,=f,=f,=f,=f,=f,=f,f,f,f,f,f,f,f,f,r",
+        has_side_effect=False,
+    ](s0, s1, s2, s3, s4, s5, s6, s7, mask_bits)
+
+
 @always_inline
 def exp2_emulation[
     use_exp2_emulation: Bool = True
@@ -2758,30 +2952,55 @@ def apply_mask[
                     (UInt32(1) << UInt32(n_valid_oob)) - UInt32(1)
                 ) if n_valid_oob < 32 else UInt32(0xFFFF_FFFF)
 
-            comptime for n in range(32 // simd_size):
-                comptime frag_col_simd = n + 32 * batch // simd_size
-                comptime frag_col = frag_col_simd * simd_size
-                var s: F32x2
+            comptime for byte_idx in range(4):
+                # One opaque `mask_select8` block per mask byte: 8 contiguous
+                # lanes `srow[base .. base+7]` gated by bits `8*byte_idx .. +7`.
+                # Confining each byte's bit-extraction + selects to one block
+                # keeps the predicate live-set bounded (the spill fix).
+                comptime base = 32 * batch + 8 * byte_idx
 
-                comptime if skip_scale:
-                    s = F32x2(srow[frag_col], srow[frag_col + 1])
-                else:
-                    s = mul_ftz(
-                        F32x2(srow[frag_col], srow[frag_col + 1]), scale_log2e
-                    )
+                # Gather + scale OUTSIDE the asm, reusing the x2 `mul_ftz` so the
+                # ftz scaling matches the scalar path byte-for-byte.
+                var p0: F32x2 = F32x2(srow[base + 0], srow[base + 1])
+                var p1: F32x2 = F32x2(srow[base + 2], srow[base + 3])
+                var p2: F32x2 = F32x2(srow[base + 4], srow[base + 5])
+                var p3: F32x2 = F32x2(srow[base + 6], srow[base + 7])
+                comptime if not skip_scale:
+                    p0 = mul_ftz(p0, scale_log2e)
+                    p1 = mul_ftz(p1, scale_log2e)
+                    p2 = mul_ftz(p2, scale_log2e)
+                    p3 = mul_ftz(p3, scale_log2e)
 
-                comptime for i in range(simd_size):
-                    comptime midx = n * simd_size + i
-                    comptime flag: UInt32 = UInt32(1 << midx)
-                    var in_bound: Bool = (mask_bits & flag) != UInt32(0)
-                    var val: Float32 = s[i]
-                    s[i] = val if in_bound else MASK_VALUE
+                var r = mask_select8[byte_idx](
+                    p0[0],
+                    p0[1],
+                    p1[0],
+                    p1[1],
+                    p2[0],
+                    p2[1],
+                    p3[0],
+                    p3[1],
+                    mask_bits,
+                )
 
+                var o0 = F32x2(r[0], r[1])
+                var o1 = F32x2(r[2], r[3])
+                var o2 = F32x2(r[4], r[5])
+                var o3 = F32x2(r[6], r[7])
                 comptime if MaskType.apply_log2e_after_mask:
-                    s = mul_ftz(s, log2e)
+                    o0 = mul_ftz(o0, log2e)
+                    o1 = mul_ftz(o1, log2e)
+                    o2 = mul_ftz(o2, log2e)
+                    o3 = mul_ftz(o3, log2e)
 
-                srow[frag_col] = s[0]
-                srow[frag_col + 1] = s[1]
+                srow[base + 0] = o0[0]
+                srow[base + 1] = o0[1]
+                srow[base + 2] = o1[0]
+                srow[base + 3] = o1[1]
+                srow[base + 4] = o2[0]
+                srow[base + 5] = o2[1]
+                srow[base + 6] = o3[0]
+                srow[base + 7] = o3[1]
 
     else:
         comptime block_size = BN // simd_size
@@ -2825,6 +3044,247 @@ def apply_mask[
             )
             srow[frag_col] = result[0]
             srow[frag_col + 1] = result[1]
+
+
+@always_inline
+def splitk_partition_idx(splitk_partitions: UInt32) -> UInt32:
+    """This CTA's split-K partition index `[0, splitk_partitions)`.
+
+    Derived from the grid coordinate (`block_idx.x % splitk_partitions`),
+    NOT `block_rank_in_cluster()`: the scheduler maps `block_idx.x //
+    cluster_size -> tile` (cluster_size == splitk_partitions for split-K,
+    since it forces pair_cta=False), so the low bits are the partition. This
+    is correct and CTA-uniform whether or not the launch forms a hardware
+    cluster -- M2 has no cross-CTA traffic, so it does not depend on cluster
+    co-residency. (M4's DSMEM combine will additionally require a real
+    cluster; that is where `block_rank_in_cluster()` / cluster co-residency
+    re-enters.)
+    """
+    return UInt32(block_idx.x) % splitk_partitions
+
+
+@always_inline
+def splitk_window(
+    T: UInt32, num_partitions: UInt32, partition_idx: UInt32
+) -> Tuple[UInt32, UInt32]:
+    """Front-loaded balanced split of the combined K-tile range `[0, T)`.
+
+    Partition `p` owns the BN-tile window `[cb, ce)` where the first
+    `r = T % num_partitions` partitions get `q+1 = ceil(T/P)` tiles and the
+    rest get `q = floor(T/P)`:
+
+        cb = p*q     + min(p,   r)
+        ce = (p+1)*q + min(p+1, r)
+
+    The chunks differ by at most one tile (balanced load), but tiles are
+    filled *leading* partition first: for `T >= 1` partition 0 is always
+    non-empty (it owns tile 0), and only *trailing* partitions go empty
+    (`cb == ce`) once `T < num_partitions`. Keeping the writer (rank 0)
+    non-empty lets the cross-CTA combine (which hardcodes own = rank 0) stay
+    valid; empty trailing partitions stage a neutral identity and the writer
+    weights them to zero. M6 routes idle CTAs (`partition_idx >=
+    num_partitions`) through that same neutral path.
+
+    `T` is a tile count (small) and `num_partitions <= 8`, so the products
+    cannot overflow `UInt32`. `num_partitions` is comptime at every call
+    site, so the `//`/`%` lower to multiply-shift, not real divides.
+    """
+    var q, r = divmod(T, num_partitions)
+    var cb: UInt32 = partition_idx * q + min(partition_idx, r)
+    var ce: UInt32 = (partition_idx + UInt32(1)) * q + min(
+        partition_idx + UInt32(1), r
+    )
+    return (cb, ce)
+
+
+# ===----------------------------------------------------------------------=== #
+# Distributed shared memory (DSMEM) cluster-peer access
+# ===----------------------------------------------------------------------=== #
+# These wrap the only in-tree mechanism for cross-CTA shared-memory access:
+# the `mapa.shared::cluster` PTX instruction (see `layout/tma_async.mojo`), which
+# rebases a local `.shared` address onto a peer CTA's window within the same
+# thread-block cluster. There is no high-level Mojo primitive for this, so the
+# helpers are thin inline-PTX wrappers. The split-K combine (M3/M4) uses these to
+# read peer partitions' `(max, sum)` and partial-O after a `cluster_sync()`.
+#
+# Peers are addressed by their *cluster rank* (`block_rank_in_cluster()`), which
+# is the rank the hardware cluster-shared instructions consume. For the split-K
+# `(P,1,1)` cluster shape this equals `block_idx.x % P` (see `splitk_partition_idx`).
+
+
+@always_inline
+def cluster_remote_smem_addr(local_addr: UInt32, peer_rank: UInt32) -> UInt32:
+    """Map a local `.shared` byte address to peer `peer_rank`'s window in the cluster.
+
+    Wraps `mapa.shared::cluster.u32`. `local_addr` is the 32-bit shared-state-space
+    address of an object in *this* CTA's shared memory (e.g. `UInt32(Int(ptr))`); the
+    result is the corresponding `.shared::cluster` address of the same object in CTA
+    `peer_rank`'s shared memory. Pure address arithmetic — no memory access.
+    """
+    return inlined_assembly[
+        "mapa.shared::cluster.u32 $0, $1, $2;",
+        UInt32,
+        constraints="=r,r,r",
+        has_side_effect=False,
+    ](local_addr, peer_rank)
+
+
+@always_inline
+def load_cluster_smem[
+    dtype: DType, width: Int
+](
+    local_ptr: UnsafePointer[
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
+    ],
+    peer_rank: UInt32,
+) -> SIMD[dtype, width]:
+    """Load `width` elements from peer `peer_rank`'s shared memory at `local_ptr`.
+
+    `local_ptr` is a pointer into *this* CTA's shared memory; the returned vector is
+    the value of the same shared object as it exists in CTA `peer_rank`. Must be
+    called after a `cluster_sync()` so the peer's writes are visible. Restricted to
+    32-bit element dtypes (covers f32/u32, all the split-K combine needs); moved
+    with the widest vectorized `ld.shared::cluster.{v4,v2,b32}` that fits `width`
+    (16 B groups first), so a `width`-element read costs ceil(width/4) memory ops.
+    """
+    comptime assert (
+        size_of[dtype]() == 4
+    ), "load_cluster_smem supports only 32-bit element dtypes"
+    var base: UInt32 = UInt32(Int(local_ptr))
+    var words: SIMD[DType.uint32, width] = {}
+    # Fuse `mapa` + `ld.shared::cluster.{v4,v2,b32}` into ONE asm block per group
+    # so the rebased `.shared::cluster` address stays in a `.reg` local and never
+    # round-trips through a Mojo SSA general register. The split form (a `mapa`
+    # returning a `UInt32`, then a separate `ld.shared::cluster`) verified OK in
+    # the trivial DSMEM smoke kernel but read garbage inside the register-dense
+    # FA4 kernel: ptxas loses the shared-state-space association of the address
+    # across the two asm blocks. One `mapa` per vector group keeps that property;
+    # the redundant address arithmetic is cheap. Emit the widest vector that
+    # fits -- v4 (16 B) groups, then a v2 (8 B), then a scalar -- so a `width`
+    # peer read costs ceil(width/4) memory ops, not `width`. Mirrors the in-tree
+    # idiom in `layout/tma_async.mojo`.
+    comptime ld_v4 = """{
+        .reg .b32 ra;
+        mapa.shared::cluster.u32 ra, $4, $5;
+        ld.shared::cluster.v4.b32 {$0, $1, $2, $3}, [ra];
+    }"""
+    comptime ld_v2 = """{
+        .reg .b32 ra;
+        mapa.shared::cluster.u32 ra, $2, $3;
+        ld.shared::cluster.v2.b32 {$0, $1}, [ra];
+    }"""
+    comptime ld_b32 = """{
+        .reg .b32 ra;
+        mapa.shared::cluster.u32 ra, $1, $2;
+        ld.shared::cluster.b32 $0, [ra];
+    }"""
+    comptime n4 = width // 4
+    comptime for g in range(n4):
+        comptime o = g * 4
+        var r4 = inlined_assembly[
+            ld_v4,
+            _RegisterPackType[UInt32, UInt32, UInt32, UInt32],
+            constraints="=r,=r,=r,=r,r,r",
+            has_side_effect=True,
+        ](base + UInt32(4 * o), peer_rank)
+        words[o] = r4[0]
+        words[o + 1] = r4[1]
+        words[o + 2] = r4[2]
+        words[o + 3] = r4[3]
+    comptime rem = width - n4 * 4
+    comptime o2 = n4 * 4
+    comptime if rem >= 2:
+        var r2 = inlined_assembly[
+            ld_v2,
+            _RegisterPackType[UInt32, UInt32],
+            constraints="=r,=r,r,r",
+            has_side_effect=True,
+        ](base + UInt32(4 * o2), peer_rank)
+        words[o2] = r2[0]
+        words[o2 + 1] = r2[1]
+    comptime if rem == 1 or rem == 3:
+        comptime o1 = o2 + (2 if rem == 3 else 0)
+        words[o1] = inlined_assembly[
+            ld_b32,
+            UInt32,
+            constraints="=r,r,r",
+            has_side_effect=True,
+        ](base + UInt32(4 * o1), peer_rank)
+    return bitcast[dtype, width](words)
+
+
+@always_inline
+def store_cluster_smem[
+    dtype: DType, width: Int
+](
+    local_ptr: UnsafePointer[
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
+    ],
+    peer_rank: UInt32,
+    val: SIMD[dtype, width],
+):
+    """Store `val` into peer `peer_rank`'s shared memory at `local_ptr`.
+
+    Symmetric to `load_cluster_smem`: writes the `width` elements into the same
+    shared object as it exists in CTA `peer_rank`. Bracket cross-CTA writes with
+    `cluster_sync()` so the peer observes them. 32-bit element dtypes only.
+    """
+    comptime assert (
+        size_of[dtype]() == 4
+    ), "store_cluster_smem supports only 32-bit element dtypes"
+    var base: UInt32 = UInt32(Int(local_ptr))
+    var words = bitcast[DType.uint32, width](val)
+    # Fused `mapa` + `st.shared::cluster.{v4,v2,b32}`, widest-first (see
+    # `load_cluster_smem` for why the split form is unsafe in the dense kernel;
+    # mirrors `layout/tma_async.mojo`).
+    comptime st_v4 = """{
+        .reg .b32 ra;
+        mapa.shared::cluster.u32 ra, $0, $1;
+        st.shared::cluster.v4.b32 [ra], {$2, $3, $4, $5};
+    }"""
+    comptime st_v2 = """{
+        .reg .b32 ra;
+        mapa.shared::cluster.u32 ra, $0, $1;
+        st.shared::cluster.v2.b32 [ra], {$2, $3};
+    }"""
+    comptime st_b32 = """{
+        .reg .b32 ra;
+        mapa.shared::cluster.u32 ra, $0, $1;
+        st.shared::cluster.b32 [ra], $2;
+    }"""
+    comptime n4 = width // 4
+    comptime for g in range(n4):
+        comptime o = g * 4
+        inlined_assembly[
+            st_v4,
+            NoneType,
+            constraints="r,r,r,r,r,r",
+            has_side_effect=True,
+        ](
+            base + UInt32(4 * o),
+            peer_rank,
+            words[o],
+            words[o + 1],
+            words[o + 2],
+            words[o + 3],
+        )
+    comptime rem = width - n4 * 4
+    comptime o2 = n4 * 4
+    comptime if rem >= 2:
+        inlined_assembly[
+            st_v2,
+            NoneType,
+            constraints="r,r,r,r",
+            has_side_effect=True,
+        ](base + UInt32(4 * o2), peer_rank, words[o2], words[o2 + 1])
+    comptime if rem == 1 or rem == 3:
+        comptime o1 = o2 + (2 if rem == 3 else 0)
+        inlined_assembly[
+            st_b32,
+            NoneType,
+            constraints="r,r,r",
+            has_side_effect=True,
+        ](base + UInt32(4 * o1), peer_rank, words[o1])
 
 
 @always_inline
@@ -2872,7 +3332,9 @@ struct FA4MiscMBars[
     use_order_barriers: Bool = True,
     use_fused_kv: Bool = False,
     pair_cta: Bool = False,
-    num_qo: Int = 2,
+    num_q: Int = 2,
+    splitk_partitions: Int = 1,
+    BM: Int = 128,
 ](TrivialRegisterPassable):
     """Manages all mbarrier resources for FA4.
 
@@ -2892,14 +3354,24 @@ struct FA4MiscMBars[
             warp group overlap. When False, order barriers are omitted.
         use_fused_kv: Whether the K and V share the same pipeline, or separate.
         pair_cta: Whether to use 1-cta or 2-cta implementation.
-        num_qo: Number of Q tiles per CTA. When 1, the `Q1Sync` slot is
+        num_q: Number of Q tiles per CTA. When 1, the `Q1Sync` slot is
             collapsed and `K_offset` shifts down by `num_qk_stages`. Must
             be 2 for any caller of `q1_wait_mbar()`.
+        splitk_partitions: Number of split-K partitions (P). When
+            `num_q == 1` and this exceeds 1, a single publish barrier is
+            added so the cross-CTA O combine writer observes all `P`
+            partitions' staged partials. Otherwise no extra barrier is
+            allocated, keeping a byte-identical mbar layout.
+        BM: Block size (rows per CTA). For 1Q split-K this is the number of
+            WG0 rows that each arrive on the publish barrier, so its count is
+            `BM * P` (every row of every partition). Only used to size the
+            publish barrier; defaults to 128 (== `WARPGROUP_SIZE` on the 1Q
+            path) for non-split-K callers.
 
     Memory layout (count=128 first, then count=1):
         [S0_cons] [S1_cons] [C0] [C1] [Order*] | [S0_prod] [S1_prod] [Q1Sync**] [K] [V] [O_prod]
         *Order barriers only present when use_order_barriers=True
-        **Q1Sync barriers only present when num_qo == 2
+        **Q1Sync barriers only present when num_q == 2
     """
 
     @__allow_legacy_any_origin_fields
@@ -2919,10 +3391,10 @@ struct FA4MiscMBars[
     # S producer barriers: 1 per warp group
     comptime S0_producer_offset = Self.order_offset + Self.num_order_barriers
     comptime S1_producer_offset = Self.S0_producer_offset + 1
-    # Q1Sync barriers (collapsed when num_qo == 1; q1_wait_mbar() is
+    # Q1Sync barriers (collapsed when num_q == 1; q1_wait_mbar() is
     # then unsafe to call — see the comptime assert in q1_wait_mbar().)
     comptime Q1SyncIdx = Self.S1_producer_offset + 1
-    comptime Q1Sync_count: Int = Self.num_qk_stages if Self.num_qo == 2 else 0
+    comptime Q1Sync_count: Int = Self.num_qk_stages if Self.num_q == 2 else 0
     # K pipeline barriers
     comptime K_offset = Self.Q1SyncIdx + Self.Q1Sync_count
     comptime K_barriers: Int = 2 * Self.num_qk_stages * Self.num_kv_stages
@@ -2931,9 +3403,17 @@ struct FA4MiscMBars[
     comptime V_barriers: Int = 0 if Self.use_fused_kv else 2 * Self.num_kv_stages
     # O producer barriers (count=1)
     comptime O_producer_offset = Self.V_offset + Self.V_barriers
+    # Split-K publish barrier (count=1 section, but count=P): one slot used by
+    # the 1Q split-K cross-CTA O combine so the writer observes all P partitions'
+    # staged partials. Present only for 1Q split-K; otherwise zero-sized so every
+    # other config keeps a byte-identical mbar layout.
+    comptime Publish_offset = Self.O_producer_offset + 2
+    comptime Publish_count: Int = (
+        1 if (Self.num_q == 1 and Self.splitk_partitions > 1) else 0
+    )
 
     # Total size includes all barriers
-    comptime size = Self.O_producer_offset + 2
+    comptime size = Self.Publish_offset + Self.Publish_count
     comptime number_warpgroup_count = Self.S0_producer_offset
 
     @always_inline
@@ -2961,6 +3441,23 @@ struct FA4MiscMBars[
         # C and Order barriers: CTA-local, always 128.
         if lane_idx < Int32(Self.number_warpgroup_count):
             return 128
+        # Split-K publish barrier: every WG0 row (BM of them) of every partition
+        # CTA arrives, so the COUNT is `BM * cluster_dim.x`. `cluster_dim.x` is
+        # the RUNTIME cluster size (== launch P), not the comptime P_MAX ceiling
+        # — else the barrier waits for arrivals that never come when launched at
+        # P < P_MAX (deadlock). Per-row (rather than one leader per CTA) lets the
+        # publish sites drop their CTA-local `named_barrier`: each row's arrive
+        # already happens-after that row's own staging write. The slot itself is
+        # gated comptime on Publish_count (= P_MAX>1). ONLY round-1 (phase 0) uses
+        # this barrier now -- it makes peers' staged O_cta + (max,sum) visible
+        # before the DSMEM reads. There is no round-2: the combine packs its bf16
+        # into its OWN-band dead f32 slice (no peer reads it), and the kernel's
+        # terminal `cluster_sync()` keeps the peer-read bands alive through reads.
+        # cluster.nctaid.x is a launch parameter readable here (init runs before
+        # cluster_sync), no hazard.
+        comptime if Self.Publish_count > 0:
+            if lane_idx == Int32(Self.Publish_offset):
+                return Int32(Self.BM * cluster_dim.x)
         return 1
 
     @always_inline
@@ -2979,9 +3476,13 @@ struct FA4MiscMBars[
             )
             # Wave 1: first 32 barriers (all lanes participate).
             self.mbar_base[lane_idx].init(Self._init_count(lane_idx))
-            # Wave 2: remaining barriers past index 32.
+            # Wave 2: remaining barriers past index 32. Use `_init_count` (not a
+            # hardcoded 1) so a count != 1 barrier that lands past index 32 — the
+            # split-K publish barrier (count=P) — is initialized correctly.
             if lane_idx < Int32(Self.size - WARP_SIZE):
-                self.mbar_base[Int32(WARP_SIZE) + lane_idx].init(1)
+                self.mbar_base[Int32(WARP_SIZE) + lane_idx].init(
+                    Self._init_count(Int32(WARP_SIZE) + lane_idx)
+                )
 
     # S pipeline type: 1 producer sub-stage, num_pv_stages consumer sub-stages
     comptime SPipelineProducer = RolePipeline[1, True, 1, Self.num_pv_stages]
@@ -3040,9 +3541,9 @@ struct FA4MiscMBars[
 
     @always_inline
     def q1_wait_mbar(self) -> MBarType:
-        comptime assert Self.num_qo == 2, (
-            "q1_wait_mbar() requires num_qo == 2; the Q1Sync slot is"
-            " collapsed when num_qo == 1."
+        comptime assert Self.num_q == 2, (
+            "q1_wait_mbar() requires num_q == 2; the Q1Sync slot is"
+            " collapsed when num_q == 1."
         )
         return self.mbar_base + Self.Q1SyncIdx
 
@@ -3119,6 +3620,18 @@ struct FA4MiscMBars[
             self.mbar_base + Self.O_producer_offset + 1,
             self.combined_p_o_consumer(1),
         }
+
+    @always_inline("nodebug")
+    def publish_mbar(self) -> MBarType:
+        """Split-K cross-CTA O-combine publish barrier (count=`BM * P`).
+
+        Every WG0 row of every partition CTA `arrive_cluster`s on every peer's
+        copy (BM rows × P partitions arrivals per copy); the softmax threads
+        `wait` on it before the writer's DSMEM peer reads. Per-row arrivals mean
+        the publish sites need no CTA-local `named_barrier` to collect rows. Only
+        present for 1Q split-K (`Publish_count > 0`).
+        """
+        return self.mbar_base + Self.Publish_offset
 
     @staticmethod
     @always_inline

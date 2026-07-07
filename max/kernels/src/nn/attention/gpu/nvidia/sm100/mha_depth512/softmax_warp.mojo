@@ -218,31 +218,29 @@ def depth512_scale_write_output[
     var local_warp_idx = (tid // UInt32(WARP_SIZE)) % 4
 
     if local_warp_idx == 0:
-        if e != 0:
-            fence_async_view_proxy()
+        fence_async_view_proxy()
         comptime if batched:
             # Single full-depth batched copy (no combine path). Covers fused GQA
             # too: the RaggedTMA3DTile selector merge keeps group>1 within the
             # 5D limit (rank-5; rank-4 for group==1).
-            if e != 0:
-                ragged_tma_store.async_copy_batched[0](
+            ragged_tma_store.async_copy_batched[0](
+                o_smem,
+                ragged_idx=out_row_idx,
+                dynamic_dim=UInt32(num_output_rows),
+                middle_idx=out_head_idx,
+                elect=e,
+            )
+        else:
+            # tma_bpo == 0: swizzled-output fallback -> one per-block TMA each.
+            comptime for col in range(n_blocks):
+                ragged_tma_store.async_copy_from_col[col](
                     o_smem,
                     ragged_idx=out_row_idx,
                     dynamic_dim=UInt32(num_output_rows),
                     middle_idx=out_head_idx,
+                    elect=e,
                 )
-        else:
-            # tma_bpo == 0: swizzled-output fallback -> one per-block TMA each.
-            comptime for col in range(n_blocks):
-                if e != 0:
-                    ragged_tma_store.async_copy_from_col[col](
-                        o_smem,
-                        ragged_idx=out_row_idx,
-                        dynamic_dim=UInt32(num_output_rows),
-                        middle_idx=out_head_idx,
-                    )
-        if e != 0:
-            cp_async_bulk_commit_group()
+        cp_async_bulk_commit_group()
 
     # Wait for all TMA stores to complete.
     cp_async_bulk_wait_group[0]()

@@ -219,7 +219,7 @@ struct Depth512SM100Config[
         return self.qk_depth - self.ov_depth
 
     @always_inline
-    def num_qo(self) -> Int:
+    def num_q(self) -> Int:
         return 1
 
     @always_inline

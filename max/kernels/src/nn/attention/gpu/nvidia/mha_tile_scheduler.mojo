@@ -19,6 +19,7 @@ import std.gpu.primitives.warp as warp
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.gpu.host.info import H100
 from std.gpu import block_idx, thread_idx
+from std.gpu.primitives.id import cluster_dim
 from std.gpu.sync import barrier, named_barrier
 from nn.attention.gpu.nvidia.common import NullPointer, OptionalPointer
 
@@ -413,9 +414,19 @@ struct TransientScheduler[
     num_heads: UInt32,
     flip_prompt_idx: Bool,
     pair_cta: Bool = False,
+    splitk_partitions: UInt32 = 1,
 ](Defaultable, MHATileScheduler, TrivialRegisterPassable):
     comptime may_advance: Bool = False
     comptime mha_schedule: MHASchedule = MHASchedule.DEFAULT
+
+    # CTAs per launch cluster: the pair-CTA 2-SM width (1 or 2) times the
+    # num_q==1 split-K partition count. Each cluster owns one Q-tile, so the
+    # grid is widened by this factor and `block_idx.x` is divided by it to
+    # recover the tile index. `pair_cta` and split-K are mutually exclusive,
+    # so this is `2` for pair-CTA, `P` for split-K, and `1` otherwise.
+    comptime cluster_size: UInt32 = (
+        UInt32(2) if Self.pair_cta else UInt32(1)
+    ) * Self.splitk_partitions
 
     comptime device_type: AnyType = Self
 
@@ -435,6 +446,8 @@ struct TransientScheduler[
             + String(Self.flip_prompt_idx)
             + ", pair_cta = "
             + String(Self.pair_cta)
+            + ", splitk_partitions = "
+            + String(Self.splitk_partitions)
             + "]"
         )
 
@@ -444,11 +457,18 @@ struct TransientScheduler[
 
     @always_inline
     def get_current_work_info(self, num_prompt_tiles: UInt32) -> WorkInfo:
+        # Each cluster of `cluster_size` CTAs owns one Q-tile; recover the tile
+        # index by dividing out the cluster. For the dynamic split-K path the
+        # cluster size is chosen at LAUNCH (one compiled kernel covers
+        # P in {2,4,8}), so divide by the runtime `cluster_dim.x` (a one-time
+        # u32 divide per CTA, off the hot path). Pair-CTA / non-split keep the
+        # comptime `cluster_size`, which folds to a shift (`>> 1` for pair-CTA,
+        # identity at 1) — zero blast radius for every non-split-K config.
         var raw_idx: UInt32
-        comptime if Self.pair_cta:
-            raw_idx = UInt32(block_idx.x) >> 1
+        comptime if Self.splitk_partitions > 1 and not Self.pair_cta:
+            raw_idx = UInt32(block_idx.x) // UInt32(cluster_dim.x)
         else:
-            raw_idx = UInt32(block_idx.x)
+            raw_idx = UInt32(block_idx.x) // Self.cluster_size
         var prompt_tile_idx: UInt32
         comptime if Self.flip_prompt_idx:
             prompt_tile_idx = num_prompt_tiles - 1 - raw_idx
@@ -489,18 +509,39 @@ struct TransientScheduler[
     def grid_dim(
         batch_size: UInt32, max_num_prompt_tiles: UInt32
     ) -> Tuple[Int, Int, Int]:
-        comptime if Self.pair_cta:
-            return (
-                Int(max_num_prompt_tiles * 2),
-                Int(Self.num_heads),
-                Int(batch_size),
-            )
+        # One cluster of `cluster_size` CTAs per Q-tile, so widen x by the
+        # cluster size (×2 for pair-CTA, ×P for split-K, ×1 otherwise). This is
+        # the `MHATileScheduler`-trait signature; the dynamic split-K launch
+        # uses the 3-arg overload below to widen by the RUNTIME partition count.
+        return (
+            Int(max_num_prompt_tiles * Self.cluster_size),
+            Int(Self.num_heads),
+            Int(batch_size),
+        )
+
+    @staticmethod
+    @always_inline
+    def grid_dim(
+        batch_size: UInt32,
+        max_num_prompt_tiles: UInt32,
+        num_partitions: UInt32,
+    ) -> Tuple[Int, Int, Int]:
+        # Dynamic split-K (Stage B): the cluster size is chosen at LAUNCH (one
+        # compiled kernel covers P in {2,4,8}), so widen x by the RUNTIME
+        # `num_partitions` rather than the comptime `cluster_size` (= P_MAX
+        # here). This MUST agree with the device tile divisor (`block_idx.x //
+        # cluster_dim.x`). Pair-CTA / non-split fall back to the comptime
+        # `cluster_size`, so this overload is correct to call unconditionally.
+        var x_width: UInt32
+        comptime if Self.splitk_partitions > 1 and not Self.pair_cta:
+            x_width = max_num_prompt_tiles * num_partitions
         else:
-            return (
-                Int(max_num_prompt_tiles),
-                Int(Self.num_heads),
-                Int(batch_size),
-            )
+            x_width = max_num_prompt_tiles * Self.cluster_size
+        return (
+            Int(x_width),
+            Int(Self.num_heads),
+            Int(batch_size),
+        )
 
     @always_inline
     def initial_state[
