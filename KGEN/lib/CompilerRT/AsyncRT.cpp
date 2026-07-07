@@ -8,11 +8,7 @@
 #include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MLRT/AsyncRT/Runtime/HostSystem.h"
 #include "MLRT/AsyncRT/Runtime/TimerHeap.h"
-#include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
-#include "Support/Context.h"
-#include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
-#include "llvm/ADT/StringRef.h"
 #include <memory>
 
 using namespace M;
@@ -167,30 +163,6 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint32_t
 KGEN_CompilerRT_AsyncRT_ParallelismLevel() {
   auto rt = CPUDevice::getCurrentCPUDeviceOrNull();
   return rt->getWorkQueue()->getParallelismLevel();
-}
-
-//===----------------------------------------------------------------------===//
-// Packing functions for creating async values
-//===----------------------------------------------------------------------===//
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error(
-    AsyncRTWrapper<AnyAsyncValueRef> *asyncs, size_t arrayLen,
-    const char *messagePtr, size_t messageLen) {
-  StringRef errorMsg(messagePtr, messageLen);
-  CPUDevice &cpuDevice = *CPUDevice::getCurrentCPUDeviceOrNull();
-  // Set all async value ref to error;
-  ArrayRef asyncArray(asyncs, arrayLen);
-  for (AsyncRTWrapper<AnyAsyncValueRef> async : asyncArray) {
-    AnyAsyncValueRef &value = unwrap(async);
-
-    EncodedDiagnostic diagnostic{Twine(errorMsg),
-                                 UnknownLocationDecoder::getEncodedLocation()};
-    if (value.getPointer() && value.getPointer()->isIndirect())
-      value.copy().setToError(std::move(diagnostic));
-    else
-      value = value.createError(cpuDevice, std::move(diagnostic));
-  }
 }
 
 //===----------------------------------------------------------------------===//

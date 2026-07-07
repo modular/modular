@@ -44,7 +44,6 @@ modular_cc_test(
             "PYTHONHOME": "/dev/null",  # Make sure python tests are added below instead
         },
         mojo_deps = [
-            "//max:extensibility",
             "@mojo//:std",
         ],
         deps = [
