@@ -63,7 +63,7 @@ def main():
         count=Int(3).__mlir_index__(),
         _type=__mlir_type[`!kgen.pointer<`, Int, `>`],
     ]()
-    var my_pointer = UnsafePointer[Int, MutAnyOrigin](buffer)
+    var my_pointer = UnsafePointer[Int, MutAnyOrigin](_mlir_value=buffer)
 
     var my_list = MyList(my_pointer, 3)
     my_list[0] = 25
