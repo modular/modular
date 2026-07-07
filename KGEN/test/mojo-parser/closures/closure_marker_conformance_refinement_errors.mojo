@@ -1,0 +1,64 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: %parse-mojo-isolated -verify-diagnostics %s
+
+# COM: Negative companion to closure_wrapper_marker_conformances.mojo
+# COM: (MOCO-4240). Marker-trait conformance on closure wrappers must stay
+# COM: gated on the closure's actual properties: a memory-convention closure
+# COM: is not RegisterPassable, and a closure move-capturing a non-copyable
+# COM: value is not ImplicitlyCopyable.
+
+
+# A plain (non-register-passable) struct: capturing it forces the closure to
+# the memory convention.
+struct MemOnly(Copyable, ImplicitlyCopyable, Movable, ImplicitlyDeletable):
+    var x: Int
+
+    def __init__(out self):
+        self.x = 0
+
+
+struct MoveOnly(Movable, ImplicitlyDeletable):
+    var x: Int
+
+    def __init__(out self):
+        self.x = 0
+
+
+# expected-note @below {{function declared here}}
+def needs_rp[
+    FuncType: def () -> Int,
+    # expected-note @below {{constraint declared here evaluated to False, expected 'conforms_to(FuncType, RegisterPassable)'}}
+](func: FuncType) -> Int where conforms_to(FuncType, RegisterPassable):
+    return func()
+
+
+# expected-note @below {{function declared here}}
+def needs_ic[
+    FuncType: def () -> Int,
+    # expected-note @below {{constraint declared here evaluated to False, expected 'conforms_to(FuncType, ImplicitlyCopyable)'}}
+](func: FuncType) -> Int where conforms_to(FuncType, ImplicitlyCopyable):
+    return func()
+
+
+def use_mem() -> Int:
+    var m = MemOnly()
+
+    def mem_closure() {var m} -> Int:
+        return m.x
+
+    # expected-error @below {{invalid call to 'needs_rp': violated constraint}}
+    return needs_rp(mem_closure)
+
+
+def use_move() -> Int:
+    var m = MoveOnly()
+
+    def move_closure() {var m^} -> Int:
+        return m.x
+
+    # expected-error @below {{invalid call to 'needs_ic': violated constraint}}
+    return needs_ic(move_closure)
