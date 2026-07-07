@@ -81,9 +81,9 @@ def _coro_resume_noop_callback(null: AnyCoroutine):
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy
-struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet](
-    RegisterPassable
+struct Coroutine[type: ImplicitlyDeletable, origins: OriginSet](
+    ImplicitlyDeletable where False,
+    RegisterPassable,
 ):
     """Represents a coroutine.
 
@@ -102,7 +102,7 @@ struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet](
     @always_inline
     def _get_ctx[
         ctx_type: AnyType
-    ](self) -> UnsafePointer[ctx_type, MutExternalOrigin]:
+    ](self) -> UnsafePointer[ctx_type, MutUntrackedOrigin]:
         """Returns the pointer to the coroutine context.
 
         Parameters:
@@ -178,8 +178,10 @@ struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet](
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy
-struct RaisingCoroutine[type: AnyType, origins: OriginSet](RegisterPassable):
+struct RaisingCoroutine[type: AnyType, origins: OriginSet](
+    ImplicitlyDeletable where False,
+    RegisterPassable,
+):
     """Represents a coroutine that can raise.
 
     Coroutines can pause execution saving the state of the program (including
@@ -197,7 +199,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](RegisterPassable):
     @always_inline
     def _get_ctx[
         ctx_type: AnyType
-    ](self) -> UnsafePointer[ctx_type, MutExternalOrigin]:
+    ](self) -> UnsafePointer[ctx_type, MutUntrackedOrigin]:
         """Returns the pointer to the coroutine context.
 
         Parameters:
@@ -258,10 +260,13 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](RegisterPassable):
         # Don't you dare copy this code! 😤
         var handle = self^._take_handle()
         var error: Error
-        if __mlir_op.`co.await`[_type=__mlir_type.i1](
-            handle,
-            __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
-            __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(error)),
+        if Bool(
+            # TODO: co.await should return scalar<bool>
+            __mlir_op.`co.await`[_type=__mlir_type.i1](
+                handle,
+                __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
+                __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(error)),
+            )
         ):
             __mlir_op.`lit.ownership.mark_initialized`(
                 __get_mvalue_as_litref(error)

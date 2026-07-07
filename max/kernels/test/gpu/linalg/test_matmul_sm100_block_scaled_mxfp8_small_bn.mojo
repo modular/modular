@@ -261,11 +261,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt.as_any_origin(),
+        c_ref_tensor_lt.as_unsafe_any_origin(),
         a_lt,
         b_lt,
-        a_scales=a_scales_lt.get_immutable().as_any_origin(),
-        b_scales=b_scales_lt.get_immutable().as_any_origin(),
+        a_scales=a_scales_lt.get_immutable().as_unsafe_any_origin(),
+        b_scales=b_scales_lt.get_immutable().as_unsafe_any_origin(),
         transpose_b=transpose_b,
         c_row_major=True,
     )
@@ -309,7 +309,11 @@ def main() raises:
                 comptime for mma_n in [
                     8,
                     16,
+                    24,
                     32,
+                    48,
+                    64,
+                    96,
                 ]:
                     comptime block_tile_shape = Index(
                         bm, mma_n // cta_group, BK

@@ -136,7 +136,7 @@ def bench_bmm[
     var a_device = TileTensor(
         a_device_buffer,
         row_major(Coord(b, m, k)),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
 
     var b_device = TileTensor(
         b_device_buffer,
@@ -147,11 +147,11 @@ def bench_bmm[
                 Idx[KType.static_value if transpose_b else NType.static_value],
             )
         ),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
     var c_device = TileTensor(
         c_device_buffer,
         row_major(Coord(b, m, n)),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
 
     # Initialize data on the device
     init_vector_launch[a_type](a_device_buffer, a_size, init_type, ctx)
@@ -174,9 +174,7 @@ def bench_bmm[
     comptime pack_size = simd_width_of[c_type, target=get_gpu_target()]()
 
     @always_inline
-    @__copy_capture(c_device, b, m, n)
-    @parameter
-    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         var val = c_device.load[width=simd_width](idx)
         comptime element_lambda = lambda_fn.value()
         var update_val = element_lambda(val)
@@ -265,7 +263,8 @@ def bench_bmm[
 
                 # Epilogue
                 comptime if lambda_fn:
-                    elementwise[func, pack_size, target="gpu"](
+                    elementwise[pack_size, target="gpu"](
+                        func,
                         (b, m, n),
                         ctx,
                     )

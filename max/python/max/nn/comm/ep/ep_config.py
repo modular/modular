@@ -15,6 +15,7 @@
 
 import os
 from dataclasses import dataclass
+from typing import Any
 
 from max.dtype import DType
 from max.nn.quant_config import QuantConfig
@@ -93,6 +94,39 @@ class EPConfig:
 
     use_allreduce: bool = False
     """Whether to use allreduce for the cross-device communication."""
+    # EPLB parameters (used only when eplb_enabled is True)
+    eplb_enabled: bool = False
+    """When true, EPBatchManager exposes log2phy / logcnt input buffer. """
+
+    num_moe_layers: int = 0
+    """Number of MoE layers; sizes the per layer EPLB buffer. """
+
+    max_replicas: int = 1
+    """Largest replica count across all (layer, logical) cells. Also the trailing dim of log2phy."""
+
+    eplb_phy2log_plan: Any = None
+    """Optional pre-computed EPLB plan (phy2log numpy array, shape
+    [num_moe_layers, num_phy]). When non-None, EPBatchManager picks it
+    up at construction time so that MoE.shard sees the plan during the
+    model's first __init__ pass (no re-shard needed).
+    """
+
+    mxfp4_a_scales_preshuffled: bool = False
+    """When True (KS224 up-proj fusion, MXFP4 preshuffled-B path on
+    AMD), the dispatch-wait kernel writes the per-token E8M0 activation scale
+    directly into the up-proj grouped-matmul's per-expert fixed-stride
+    ``scale_4d`` slot layout, so the standalone preshuffle kernel is dropped from
+    the decode critical path. The dispatch scales output is then slot-sized
+    (``n_local_experts * align_up(max_recv_tokens_per_expert, 32)`` rows)
+    instead of ``max_recv_tokens`` rows. Set by ``MoEQuantized`` when the MXFP4
+    strategy uses preshuffled B. Only valid for MXFP4 dispatch."""
+    # In EPConfig, alongside n_experts / num_moe_layers / max_replicas:
+
+    num_logical_experts: int = 0
+    """Number of logical experts per layer. When EPLB is disabled this equals
+    ``n_experts``. When EPLB is enabled, ``n_experts`` is inflated to the
+    physical slot count and this preserves the original logical count, which
+    is the leading dim of ``log2phy`` / ``logcnt``."""
 
     def estimate_memory_usage(self) -> int:
         """Estimate the EP communication memory usage per device per buffer group.
@@ -132,6 +166,9 @@ class EPConfig:
             )
 
     def __post_init__(self):
+        if self.num_logical_experts == 0:
+            self.num_logical_experts = self.n_experts
+
         if self.dispatch_dtype != DType.bfloat16:
             if self.dispatch_quant_config is None:
                 raise ValueError(

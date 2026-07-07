@@ -22,7 +22,7 @@
 #   - `comptime big = 2 ** 200` materialization (IntLiteral arbitrary
 #     precision; no straightforward runtime assertion)
 from std.testing import assert_equal
-
+from std.sys import bit_width_of
 
 # --- SIMD construction and broadcast multiply ---
 
@@ -140,7 +140,7 @@ def test_dtype_generic() raises:
 
 def test_int_constants() raises:
     # BITWIDTH is platform-dependent; on supported platforms today it's 64.
-    assert_equal(Int.BITWIDTH, 64)
+    assert_equal(bit_width_of[DType.int](), 64)
     assert_equal(Int.MAX, 9223372036854775807)
     assert_equal(Int.MIN, -9223372036854775808)
 

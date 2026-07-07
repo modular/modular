@@ -149,11 +149,11 @@ struct ManagedLayoutTensor[
 
         comptime if Self.layout.all_dims_known():
             return Self.layout_tensor_type(
-                self.device_data.value().unsafe_ptr(),
+                self.device_data.value().unsafe_ptr().as_unsafe_any_origin(),
             )
         else:
             return Self.layout_tensor_type(
-                self.device_data.value().unsafe_ptr(),
+                self.device_data.value().unsafe_ptr().as_unsafe_any_origin(),
                 self.runtime_layout,
             )
 

@@ -186,15 +186,19 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         kv_block_device, kv_block_runtime_layout
     )
     var cache_lengths_tensor = LayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        Layout(UNKNOWN_VALUE),
     ](
-        cache_lengths_device.unsafe_ptr(),
+        cache_lengths_device,
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(cache_lengths_shape),
     )
     var lookup_table_tensor = LayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        Layout(UNKNOWN_VALUE),
     ](
-        lookup_table_device.unsafe_ptr(),
+        lookup_table_device,
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(lookup_table_shape),
     )
 
@@ -204,7 +208,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     var q_out_tensor = TileTensor(q_out_device, q_tile_layout)
 
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-        blocks=LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+        blocks=LayoutTensor[dtype, Layout.row_major[6]()](
             kv_block_tensor.ptr,
             RuntimeLayout[Layout.row_major[6]()].row_major(
                 kv_block_tensor.runtime_layout.shape.value

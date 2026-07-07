@@ -44,6 +44,10 @@ def convert_safetensor_language_state_dict(
     new_state_dict: dict[str, WeightData] = {}
 
     for weight_name, value in state_dict.items():
+        # modelopt checkpoints may carry FP8 KV-cache scales (k_scale /
+        # v_scale) that MAX's BF16 KV cache does not consume; drop them.
+        if weight_name.endswith((".k_scale", ".v_scale")):
+            continue
         if not (
             weight_name.startswith("language_model.")
             or weight_name.startswith("model.language_model.")

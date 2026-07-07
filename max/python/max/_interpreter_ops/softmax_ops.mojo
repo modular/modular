@@ -34,7 +34,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-def PyInit_softmax_ops() -> PythonObject:
+def PyInit_softmax_ops() abi("C") -> PythonObject:
     """Create a Python module with softmax kernel function bindings."""
     try:
         var b = PythonModuleBuilder("softmax_ops")
@@ -60,8 +60,8 @@ def _softmax_cpu[
     dtype: DType,
     is_logsoftmax: Bool,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_dim: Int,
     axis_dim: Int,
 ) where dtype.is_floating_point():
@@ -113,8 +113,8 @@ def softmax_op[
     dtype: DType,
     is_logsoftmax: Bool,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[2],
     ctx: DeviceContext,
 ) raises where dtype.is_floating_point():

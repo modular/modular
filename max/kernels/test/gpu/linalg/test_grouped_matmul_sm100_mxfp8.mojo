@@ -414,7 +414,7 @@ def _test_kernel_impl[
                     Idx[SF_ATOM_K],
                 )
             ),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         var b_scales_tt = TileTensor(
             b_scales_device,
             row_major(
@@ -427,7 +427,7 @@ def _test_kernel_impl[
                     Idx[SF_ATOM_K],
                 )
             ),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         var expert_scales_tt = TileTensor(
             expert_scales_device,
             row_major(
@@ -435,7 +435,7 @@ def _test_kernel_impl[
                     Int64(num_experts),
                 )
             ),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
 
         grouped_matmul_block_scaled[
             transpose_b=transpose_b,

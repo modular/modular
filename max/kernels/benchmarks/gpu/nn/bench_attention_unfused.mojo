@@ -94,10 +94,10 @@ def bench_flash[
     cb_v.init_on_device(random_distribution, ctx)
 
     def _run_flash(
-        q_ptr: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
-        k_ptr: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
-        v_ptr: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
-        o_ptr: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
+        q_ptr: UnsafePointer[mut=False, Scalar[qkv_type], _],
+        k_ptr: UnsafePointer[mut=False, Scalar[qkv_type], _],
+        v_ptr: UnsafePointer[mut=False, Scalar[qkv_type], _],
+        o_ptr: UnsafePointer[mut=True, Scalar[qkv_type], _],
         ctx: DeviceContext,
     ) raises {read}:
         var q = TileTensor(
@@ -232,10 +232,10 @@ def bench_naive[
     cb_v.init_on_device(random_distribution, ctx)
 
     def _run_naive(
-        q_ptr: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
-        k_ptr: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
-        v_ptr: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
-        o_ptr: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
+        q_ptr: UnsafePointer[mut=False, Scalar[qkv_type], _],
+        k_ptr: UnsafePointer[mut=False, Scalar[qkv_type], _],
+        v_ptr: UnsafePointer[mut=False, Scalar[qkv_type], _],
+        o_ptr: UnsafePointer[mut=True, Scalar[qkv_type], _],
         ctx: DeviceContext,
     ) raises {read}:
         var q = TileTensor(
@@ -409,11 +409,11 @@ def bench_manual[
     )
 
     def _run_manual(
-        q_base: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
-        k_base: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
-        v_base: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
-        o_base: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
-        s_base: UnsafePointer[Scalar[qkv_type], MutAnyOrigin],
+        q_base: UnsafePointer[mut=False, Scalar[qkv_type], _],
+        k_base: UnsafePointer[mut=False, Scalar[qkv_type], _],
+        v_base: UnsafePointer[mut=False, Scalar[qkv_type], _],
+        o_base: UnsafePointer[mut=True, Scalar[qkv_type], _],
+        s_base: UnsafePointer[mut=True, Scalar[qkv_type], _],
         ctx: DeviceContext,
     ) raises {read}:
         # Step 1: Q @ K^T * scale  (per-head 2D matmul with compute

@@ -52,7 +52,7 @@ from std.sys.info import (
 from std.sys.intrinsics import _RegisterPackType
 
 from std.builtin.dtype import _uint_type_of_width
-from std.memory.pointer import AddressSpace, GPUAddressSpace
+from std.memory.pointer import AddressSpace
 from std.memory.unsafe import bitcast
 
 from std.utils import IndexList, StaticTuple
@@ -845,7 +845,7 @@ def external_memory[
     address_space: AddressSpace,
     alignment: Int,
     name: StaticString = "extern_ptr_syml",
-]() -> UnsafePointer[dtype, MutExternalOrigin, address_space=address_space]:
+]() -> UnsafePointer[dtype, MutUntrackedOrigin, address_space=address_space]:
     """Gets a pointer to dynamically allocated external memory.
 
     This function returns a pointer to external memory that can be used for dynamic
@@ -871,13 +871,13 @@ def external_memory[
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
     comptime PtrTy = UnsafePointer[
-        StaticTuple[dtype, 0], MutExternalOrigin, address_space=address_space
+        StaticTuple[dtype, 0], MutUntrackedOrigin, address_space=address_space
     ]
     var extern_ptr_symbol = PtrTy(
         __mlir_op.`pop.extern_ptr_symbol`[
             _type=PtrTy._mlir_type,
             name=_get_kgen_string[name](),
-            alignment=alignment._int_mlir_index(),
+            alignment=alignment.__mlir_index__(),
         ]()
     )
     return extern_ptr_symbol.bitcast[dtype]()
@@ -2508,10 +2508,29 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
     - The TMA descriptor must be properly initialized before use.
     - The reduction operation is performed atomically to ensure correctness.
     """
-    comptime assert rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"
+    comptime assert rank in (
+        1,
+        2,
+        3,
+    ), "Expecting rank-1, rank-2, or rank-3 tensors"
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
-    comptime if rank == 2:
+    comptime if rank == 3:
+        llvm_intrinsic[
+            "llvm.nvvm.cp.async.bulk.tensor.reduce."
+            + reduction_kind.mnemonic()
+            + ".tile.3d",
+            NoneType,
+        ](
+            src_mem,
+            tma_descriptor,
+            Int32(coords[0]),
+            Int32(coords[1]),
+            Int32(coords[2]),
+            UInt64(eviction_policy._value),
+            cache_hint,
+        )
+    elif rank == 2:
         llvm_intrinsic[
             "llvm.nvvm.cp.async.bulk.tensor.reduce."
             + reduction_kind.mnemonic()

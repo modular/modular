@@ -14,7 +14,7 @@
 """Unit tests for hash_image function."""
 
 import numpy as np
-from max.support.image import hash_image
+from max.support.image import hash_image, hash_video
 
 
 def test_hash_image_contiguous() -> None:
@@ -57,3 +57,17 @@ def test_hash_image_contiguous_vs_non_contiguous_same_data() -> None:
     h1 = hash_image(arr_t)
     h2 = hash_image(arr_t_copy)
     assert h1 == h2, "Contiguous and non-contiguous with same data should match"
+
+
+def test_hash_video_depends_on_pixels_and_grid() -> None:
+    pixels = np.arange(8 * 4, dtype=np.float32).reshape(8, 4)
+    grid = np.array([2, 2, 2], dtype=np.int32)
+
+    same = hash_video(pixels.copy(), grid.copy())
+    changed_pixels = pixels.copy()
+    changed_pixels[0, 0] += 1
+    changed_grid = np.array([1, 4, 2], dtype=np.int32)
+
+    assert hash_video(pixels, grid) == same
+    assert hash_video(pixels, grid) != hash_video(changed_pixels, grid)
+    assert hash_video(pixels, grid) != hash_video(pixels, changed_grid)

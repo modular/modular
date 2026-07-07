@@ -19,9 +19,12 @@ from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
+    ComptimeInt,
     Coord,
+    Idx,
     Layout,
     LayoutTensor,
+    RowMajorLayout,
     TileTensor,
     row_major,
 )
@@ -517,7 +520,7 @@ def compute_mla_dispatch_scalars[
     Returns ``(batch_size, q_max_seq_len, num_partitions)``.
     These three values are baked into the size-3 GPU buffer.
     ``effective_split_len`` is computed directly inside the MoGG ops from
-    ``max_lengths`` (``max_cache_valid_length + q_max_seq_len`` when
+    ``max_cache_length`` (``max_cache_valid_length + q_max_seq_len`` when
     ``_is_cache_length_accurate=False``, else ``max_cache_valid_length``),
     and no longer needs to be returned here.
     """
@@ -693,6 +696,16 @@ struct MLADispatchScalarArgs[
             rebind[UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]](
                 self.gpu_buf.unsafe_ptr()
             ),
+        )
+
+    def gpu_tile_tensor(
+        self,
+    ) -> TileTensor[DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin]:
+        return TileTensor(
+            rebind[UnsafePointer[Scalar[DType.int64], MutAnyOrigin]](
+                self.gpu_buf.unsafe_ptr()
+            ),
+            row_major((Idx[3],)),
         )
 
 
@@ -1023,7 +1036,10 @@ def _mla_decode_sm100_dispatch_impl[
             ),
         )
         var lse_accum_split_ptr: SplitAccumType = {
-            lse_accum_split.to_device_buffer(ctx).unsafe_ptr()
+            lse_accum_split.to_device_buffer(ctx)
+            .unsafe_ptr()
+            .as_immutable()
+            .as_unsafe_any_origin()
         }
 
         # Get input_row_offsets pointer for combine kernel's ragged output writes.
@@ -1516,7 +1532,9 @@ def mla_decode_sm100_sink_split_k[
                 ]() raises:
                     if ragged:
                         comptime ValidLengthType = NonNullPointer[DType.uint32]
-                        var valid_len: ValidLengthType = {valid_length.ptr}
+                        var valid_len: ValidLengthType = {
+                            valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                        }
                         launch_mla_sm100_decode_sparse_kv_bf16[
                             q_type=q_type,
                             KVLUTType=k_t,
@@ -1633,7 +1651,9 @@ def mla_decode_sm100_sink_split_k[
             ]() raises:
                 if ragged:
                     comptime ValidLengthType = NonNullPointer[DType.uint32]
-                    var valid_len: ValidLengthType = {valid_length.ptr}
+                    var valid_len: ValidLengthType = {
+                        valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                    }
                     launch_mla_sm100_decode_sparse_kv_fp8[
                         q_type=q_type,
                         KVLUTType=k_t,
@@ -1780,7 +1800,9 @@ def mla_decode_sm100_sink_split_k[
         ]() raises:
             if ragged:
                 comptime ValidLengthType = NonNullPointer[DType.uint32]
-                var valid_len: ValidLengthType = {valid_length.ptr}
+                var valid_len: ValidLengthType = {
+                    valid_length.ptr.as_immutable().as_unsafe_any_origin()
+                }
                 launch_mla_sm100_decode_sparse[
                     q_type=q_type,
                     KVLUTType=k_t,
@@ -1943,7 +1965,9 @@ def mla_decode_sm100_sink_split_k[
 
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
-            var valid_len: ValidLengthType = {valid_length.ptr}
+            var valid_len: ValidLengthType = {
+                valid_length.ptr.as_immutable().as_unsafe_any_origin()
+            }
             launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
                 q_type=q_type,
                 KVLUTType=k_t,
@@ -2057,7 +2081,9 @@ def mla_decode_sm100_sink_split_k[
 
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
-            var valid_len: ValidLengthType = {valid_length.ptr}
+            var valid_len: ValidLengthType = {
+                valid_length.ptr.as_immutable().as_unsafe_any_origin()
+            }
 
             @parameter
             @always_inline
@@ -2265,7 +2291,9 @@ def mla_decode_sm100_sink_split_k[
 
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
-            var valid_len: ValidLengthType = {valid_length.ptr}
+            var valid_len: ValidLengthType = {
+                valid_length.ptr.as_immutable().as_unsafe_any_origin()
+            }
             launch_mla_sm100_decode_enqueue_kernel[
                 q_type=q_type,
                 KVLUTType=k_t,

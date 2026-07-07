@@ -13,7 +13,8 @@
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import Coord, Idx, Layout, TensorLayout, TileTensor, row_major
+from std.math import align_up, ceildiv
 from layout.tma_async import SharedMemBarrier, PipelineState
 from std.utils.static_tuple import StaticTuple
 from structured_kernels.tile_types import (
@@ -26,6 +27,7 @@ from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.compute.arch.tcgen05 import *
 from std.bit import prev_power_of_two
 from std.math.uutils import ufloordiv, umod
+from std.utils.index import Index, IndexList
 
 from linalg.structuring import SMemPtr
 from .tmem import TmemAddress, TmemTensor
@@ -294,6 +296,7 @@ struct TileScheduler[
     comptime ClcBarrierArray = Self.UnderlyingScheduler.ClcBarrierArray
     comptime ThrottleBarrierArray = Self.UnderlyingScheduler.ThrottleBarrierArray
 
+    @__allow_legacy_any_origin_fields
     var locks_ptr: UnsafePointer[Int32, MutAnyOrigin]
     var scheduler: Self.UnderlyingScheduler
     var total_k_tiles: UInt32

@@ -10,7 +10,6 @@ modular_py_library(
         requirement("numpy"),
         requirement("msgspec"),
         requirement("pydantic"),
-        requirement("tqdm"),
         "//max/python/max:_core",
         "//max/python/max/_core_mojo",
         "//max/python/max/_distributed_ops",

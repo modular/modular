@@ -17,7 +17,7 @@ from std.testing import *
 
 @fieldwise_init
 @align(128)
-struct AlignedGeneric[T: Copyable & ImplicitlyDestructible]:
+struct AlignedGeneric[T: Copyable & ImplicitlyDeletable]:
     var value: Self.T
 
 

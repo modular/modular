@@ -15,7 +15,7 @@ from std.ffi import _Global
 from std.memory import (
     UnsafeMaybeUninit,
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
 )
 from std.os import abort
@@ -46,7 +46,7 @@ def _initialize_poison() -> Bool:
     return False
 
 
-def _poison_ptr() -> UnsafePointer[Bool, MutExternalOrigin]:
+def _poison_ptr() -> UnsafePointer[Bool, MutUntrackedOrigin]:
     try:
         return TEST_VARIANT_POISON.get_or_create_ptr()
     except:
@@ -64,7 +64,7 @@ struct Poison(ImplicitlyCopyable):
     def __init__(out self, *, copy: Self):
         _poison_ptr().init_pointee_move(True)
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         _poison_ptr().init_pointee_move(True)
 
     def __del__(deinit self):
@@ -253,13 +253,13 @@ def test_variant_trivial_del() raises:
     comptime yes = ConfigureTrivial[del_is_trivial=True]
     comptime no = ConfigureTrivial[del_is_trivial=False]
 
-    assert_true(is_trivially_destructible[Variant[yes]]())
-    assert_false(is_trivially_destructible[Variant[no]]())
-    assert_false(is_trivially_destructible[Variant[yes, no]]())
+    assert_true(is_trivially_deletable[Variant[yes]]())
+    assert_false(is_trivially_deletable[Variant[no]]())
+    assert_false(is_trivially_deletable[Variant[yes, no]]())
 
     # TODO (MOCO-3016):
     # check variant of linear type
-    # assert_false(is_trivially_destructible[Variant[LinearType]]())
+    # assert_false(is_trivially_deletable[Variant[LinearType]]())
 
 
 def test_variant_trivial_copyinit() raises:
@@ -299,9 +299,13 @@ def test_variant_write_to() raises:
 
 def test_variant_write_repr_to() raises:
     var v = Variant[Int, String](42)
-    check_write_to(v, expected="Variant[Int, String](Int(42))", is_repr=True)
+    check_write_to(
+        v, expected="Variant[SIMD[DType.int, 1], String](Int(42))", is_repr=True
+    )
     v = "hello"
-    check_write_to(v, expected="Variant[Int, String]('hello')", is_repr=True)
+    check_write_to(
+        v, expected="Variant[SIMD[DType.int, 1], String]('hello')", is_repr=True
+    )
 
 
 @fieldwise_init
@@ -413,7 +417,7 @@ def test_variant_hash() raises:
 
 @fieldwise_init
 struct _Bare(Movable):
-    """A `Movable & ImplicitlyDestructible` type that conforms to nothing
+    """A `Movable & ImplicitlyDeletable` type that conforms to nothing
     else — used to exercise the negative case of `Variant`'s conditional
     conformances."""
 

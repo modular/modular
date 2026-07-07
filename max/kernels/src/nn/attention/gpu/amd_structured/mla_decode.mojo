@@ -140,7 +140,10 @@ __extension Attention:
             self.k,
             self.batch_idx,
             self.kv_head_idx(),
-            KBufT.SmemParentType(self.k_smem_ptr, KBufT._SmemParentLayout()),
+            KBufT.SmemParentType(
+                self.k_smem_ptr.as_unsafe_any_origin(),
+                KBufT._SmemParentLayout(),
+            ),
             end,
             warp_id,
         )
@@ -149,6 +152,15 @@ __extension Attention:
         # per-warp V reader; no V DMA buffer.  MHA: output_depth == depth.
         # MLA: output_depth < depth (V-nope only; rope tail consumed in QK).
         comptime depth_per_warp = Self.output_depth // Self.num_warps_n
+        # `num_warps_n` must evenly split `output_depth`, and each slice must be
+        # `_bk_smem`-aligned (or smaller than one block) so `v_warp_smem_offset`
+        # lands on the K writer's block boundaries rather than aliasing wrong K
+        # bytes. Holds for num_warps_n in {1,2,4} (depth_per_warp {512,256,128},
+        # all 64-aligned); S=1 is num_warps_n=4.
+        comptime assert Self.output_depth % Self.num_warps_n == 0
+        comptime assert (depth_per_warp % _bk_smem == 0) or (
+            depth_per_warp < _bk_smem
+        )
         # SMEM block width seen by each warp.  Must be >= _bk_smem so the
         # blocked product layout has at least one repeat.
         comptime smem_depth_per_warp = max(depth_per_warp, _bk_smem)
@@ -188,7 +200,7 @@ __extension Attention:
             self.batch_idx,
             self.kv_head_idx(),
             VBufT.SmemParentType(
-                self.v_smem_ptr + v_warp_smem_offset,
+                (self.v_smem_ptr + v_warp_smem_offset).as_unsafe_any_origin(),
                 VBufT._SmemParentLayout(),
             ),
             end,

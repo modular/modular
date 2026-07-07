@@ -144,6 +144,7 @@ class PipelineClassName(str, Enum):
     FLUX2 = "Flux2Pipeline"
     FLUX2_KLEIN = "Flux2KleinPipeline"
     ZIMAGE = "ZImagePipeline"
+    IDEOGRAM4 = "Ideogram4Pipeline"
     WAN = "WanPipeline"
     WAN_I2V = "WanImageToVideoPipeline"
     QWEN_IMAGE_EDIT = "QwenImageEditPipeline"

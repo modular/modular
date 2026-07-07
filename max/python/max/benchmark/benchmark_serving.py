@@ -39,6 +39,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 import numpy as np
+import psutil
 import yaml
 from cyclopts import App, Parameter
 from cyclopts.config import Env
@@ -53,6 +54,7 @@ from max.benchmark.benchmark_shared.config import (
     CACHE_RESET_ENDPOINT_MAP,
     PIXEL_GENERATION_ENDPOINTS,
     PIXEL_GENERATION_TASKS,
+    VIDEO_GENERATION_TASKS,
     Backend,
     BenchmarkTask,
     Endpoint,
@@ -113,6 +115,7 @@ from max.benchmark.benchmark_shared.single_turn import (
 )
 from max.benchmark.benchmark_shared.utils import (
     argmedian,
+    fetch_server_max_model_len,
     get_tokenizer,
     is_castable_to_int,
     print_section,
@@ -141,6 +144,25 @@ BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _expand_pids(pids: list[int]) -> list[int]:
+    """Returns pids plus all their descendants."""
+    ppid_to_children: dict[int, list[int]] = {}
+    for proc in psutil.process_iter(["pid", "ppid"]):
+        ppid_to_children.setdefault(proc.info["ppid"], []).append(
+            proc.info["pid"]
+        )
+
+    result: set[int] = set()
+    queue = list(pids)
+    while queue:
+        pid = queue.pop()
+        if pid in result:
+            continue
+        result.add(pid)
+        queue.extend(ppid_to_children.get(pid, []))
+    return list(result)
 
 
 def parse_response_format(arg: str) -> ResponseFormat:
@@ -378,10 +400,16 @@ async def benchmark(
     request_driver_class: type[RequestDriver] = get_request_driver_class(
         session.api_url, task=session.benchmark_task
     )
+    if args.extra_body and session.benchmark_task != "text-generation":
+        logger.warning(
+            "extra_body is ignored for %s; it only applies to "
+            "text-generation requests.",
+            session.benchmark_task,
+        )
     # Create a request driver instance without pbar for test prompt
     # (pbar will be set later for the actual benchmark runs)
     test_request_driver: RequestDriver = request_driver_class(
-        tokenizer=session.tokenizer
+        tokenizer=session.tokenizer, extra_body=args.extra_body
     )
 
     if args.warm_shared_prefix:
@@ -429,7 +457,9 @@ async def benchmark(
     logger.info(f"Burstiness factor: {args.burstiness} ({distribution})")
     logger.info(f"Maximum request concurrency: {max_concurrency}")
 
-    base_driver = request_driver_class(tokenizer=session.tokenizer)
+    base_driver = request_driver_class(
+        tokenizer=session.tokenizer, extra_body=args.extra_body
+    )
 
     # Warm up the initial-slot sessions before starting the timer.
     # pick_warmup_population assigns each picked session a random
@@ -521,9 +551,12 @@ async def benchmark(
         cpu_collector = None
         if args.collect_cpu_stats:
             try:
-                pids = collect_pids_for_port(
-                    int(urlparse(session.api_url).port or 8000)
-                )
+                if args.server_pids:
+                    pids = _expand_pids(args.server_pids)
+                else:
+                    pids = collect_pids_for_port(
+                        int(urlparse(session.api_url).port or 8000)
+                    )
                 cpu_collector = benchmark_stack.enter_context(
                     CPUMetricsCollector(pids)
                 )
@@ -784,6 +817,7 @@ async def benchmark(
             collect_gpu_stats=args.collect_gpu_stats,
             metrics_by_endpoint=endpoint_metrics,
             spec_decode_stats=spec_decode_stats,
+            kv_block_size=args.kv_block_size,
         )
         if outputs_by_session is not None:
             text_result.session_server_stats = {
@@ -841,11 +875,11 @@ def validate_task_and_endpoint(
     elif benchmark_task in PIXEL_GENERATION_TASKS:
         if (
             endpoint in ("/v1/videos/sync", "/v1/videos")
-            and benchmark_task != "text-to-video"
+            and benchmark_task not in VIDEO_GENERATION_TASKS
         ):
             raise ValueError(
-                f"--endpoint {endpoint} is only valid for"
-                f" --benchmark-task text-to-video, got {benchmark_task!r}"
+                f"--endpoint {endpoint} is only valid for video tasks"
+                f" {VIDEO_GENERATION_TASKS}, got {benchmark_task!r}"
             )
         if endpoint not in PIXEL_GENERATION_ENDPOINTS:
             raise ValueError(
@@ -1141,11 +1175,26 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     tokenizer: PreTrainedTokenizerBase | None = None
 
     if benchmark_task == "text-generation":
+        model_max_length = args.model_max_length
+        if model_max_length is None and not args.dry_run:
+            # Best-effort: when the server is already up (e.g. benchmarking a
+            # running deployment), adopt its real context limit so the
+            # context-length guards derived from tokenizer.model_max_length
+            # bind even when the tokenizer reports the HF unbounded sentinel.
+            model_max_length = fetch_server_max_model_len(
+                base_url, model_id, timeout_s=2.0
+            )
+            if model_max_length is not None:
+                logger.info(
+                    "Using server-reported max_model_len=%d from %s/v1/models",
+                    model_max_length,
+                    base_url,
+                )
         logger.info(f"getting tokenizer. api url: {api_url}")
         tokenizer = get_tokenizer(
             tokenizer_id,
             revision=resolve_revision(tokenizer_id),
-            model_max_length=args.model_max_length,
+            model_max_length=model_max_length,
             trust_remote_code=args.trust_remote_code,
         )
 
@@ -1387,6 +1436,26 @@ def main_with_parsed_args(
         backend=args.backend,
         liveness_check=server_liveness,
     )
+
+    # The server may not have been up during session build (it is launched
+    # concurrently with dataset sampling). Now that it is ready, adopt its
+    # context limit when it is tighter than the tokenizer's, so the
+    # multi-turn max_chat_len guards bind to the real bound.
+    if args.model_max_length is None and session.tokenizer is not None:
+        max_model_len = fetch_server_max_model_len(
+            session.base_url, session.model_id
+        )
+        if (
+            max_model_len is not None
+            and max_model_len < session.tokenizer.model_max_length
+        ):
+            logger.info(
+                "Clamping tokenizer model_max_length %d to server-reported"
+                " max_model_len %d",
+                session.tokenizer.model_max_length,
+                max_model_len,
+            )
+            session.tokenizer.model_max_length = max_model_len
 
     yield from _run_benchmark_sweep(args, session, use_dynamic_num_prompts)
 

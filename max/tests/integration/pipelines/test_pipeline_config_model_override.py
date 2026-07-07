@@ -42,7 +42,7 @@ def test_main_override_revision_used_for_offline_cache_lookup() -> None:
         # from the fake path; what we care about is which revisions were
         # asked for during HuggingFaceRepo construction.
         try:
-            PipelineConfig(  # type: ignore[call-arg]
+            PipelineConfig.from_flat_kwargs(
                 model_path="some/repo",
                 model_override=[
                     f"main.huggingface_model_revision={PINNED_SHA}",

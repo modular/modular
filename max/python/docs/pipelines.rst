@@ -25,6 +25,7 @@ Submodules
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
    pipelines.lib.registry
+   pipelines.logging_utils
    pipelines.modeling.base
    pipelines.modeling.dataprocessing
    pipelines.modeling.types

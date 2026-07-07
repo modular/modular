@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import io
 import json
 import re
 from collections.abc import Sequence
@@ -33,14 +32,13 @@ from max.pipelines.context.context import GrammarEnforcementState
 from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.tokenizer import resolve_single_special_token
+from max.pipelines.lib.tokenizer import open_image, resolve_single_special_token
 from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
 from max.support.image import find_contiguous_ranges, hash_image
-from PIL import Image
 from transformers import AutoTokenizer, GenerationConfig
 
 from .context import Gemma4Context
@@ -60,6 +58,16 @@ class SpecialToken(str, Enum):
     TOOL_RESPONSE_END = "<tool_response|>"
     STRING_DELIM = '<|"|>'
     TURN_END = "<turn|>"
+
+
+# Reasoning-block opener Gemma 4 prefills on the generation turn (see
+# apply_chat_template). Single source of truth — the reasoning parser derives
+# its prefix from this too.
+REASONING_OPEN = "<|channel>thought\n"
+
+# Generation-turn header the chat template emits before the reasoning
+# channel; reused to re-open a turn after a tool result (apply_chat_template).
+MODEL_TURN_OPEN = "<|turn>model\n"
 
 
 class Gemma4Tokenizer(TextAndVisionTokenizer):
@@ -287,10 +295,36 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             **chat_template_options,
         )
         assert isinstance(templated_message, str)
+
+        # When thinking is on, force the reasoning channel open on the
+        # generation turn so the model reasons on *every* assistant turn,
+        # including after a tool result. Gemma otherwise only hints via
+        # <|think|> and skips thinking post-tool, which fails OpenRouter's
+        # reasoning+tool-call test and makes OR auto-disable tools.
+        # Match the chat template, which only reads ``enable_thinking``.
+        thinking_enabled = bool(chat_template_options.get("enable_thinking"))
+        if (
+            thinking_enabled
+            and chat_template_options.get("add_generation_prompt")
+            and not templated_message.rstrip("\n").endswith(
+                REASONING_OPEN.rstrip("\n")
+            )
+        ):
+            # After a tool result the template leaves the model mid-turn (no
+            # <|turn>model header), so REASONING_OPEN alone has no turn
+            # boundary and Gemma -- which only reasons at the start of a fresh
+            # model turn -- closes the channel empty. Re-open a turn first,
+            # matching the user-turn structure that does reason.
+            stripped = templated_message.rstrip("\n")
+            if stripped.endswith(SpecialToken.TOOL_RESPONSE_END.value):
+                templated_message = stripped + SpecialToken.TURN_END.value
+                templated_message += "\n" + MODEL_TURN_OPEN
+            templated_message += REASONING_OPEN
+
         return templated_message
 
     async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
     ) -> str:
         """Decode tokens, preserving tool-related special tokens.
 
@@ -298,6 +332,10 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         to selectively preserve them when skip_special_tokens=True by filtering
         unwanted special tokens before decoding.
         """
+        # Log-probability responses decode one token id (a plain int) at a
+        # time; match the text tokenizer's handling.
+        if isinstance(encoded, int):
+            encoded = np.array(encoded)
         skip_special_tokens = kwargs.get("skip_special_tokens", True)
 
         if not skip_special_tokens:
@@ -341,8 +379,8 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
 
         if request.images:
             images = [
-                to_rgb(Image.open(io.BytesIO(img_data)))
-                for img_data in request.images
+                to_rgb(open_image(image))
+                for image in request.images_for_processing()
             ]
             pixel_values_list, pixel_position_ids_list, num_soft_tokens = (
                 self.img_processor(images)
@@ -357,6 +395,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         video_num_soft_tokens: list[int] = []
 
         video_metadata_list: list[VideoMetadata] = []
+        video_hashes: list[int] = []
         if request.videos:
             (
                 padded_pvs,
@@ -373,6 +412,26 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
                     video_frame_pos_ids.append(pos[f, :n_real, :])
                     video_frame_patch_counts.append(n_real)
                     video_frame_soft_token_counts.append(n_real // (k * k))
+
+            if self.enable_vision_caching:
+                # Content hash per video: hash all real pixels, then fold in
+                # (n_frames, patches_per_frame) so clips with identical pixels
+                # but different sizes don't collide (same pattern as M3).
+                for pv, pos in zip(padded_pvs, padded_pos, strict=True):
+                    n_frames = pv.shape[0]
+                    real_mask = pos[:, :, 0] >= 0
+                    real_patches = np.concatenate(
+                        [pv[f, real_mask[f]] for f in range(n_frames)], axis=0
+                    )
+                    pixel_hash = hash_image(real_patches)
+                    video_hashes.append(
+                        hash_image(
+                            np.array(
+                                [pixel_hash, n_frames, int(real_mask[0].sum())],
+                                dtype=np.int64,
+                            )
+                        )
+                    )
 
         # Expand image placeholders
         if isinstance(prompt, str):
@@ -510,6 +569,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             video_frame_patch_counts=video_frame_patch_counts,
             video_frame_soft_token_counts=video_frame_soft_token_counts,
             video_token_ranges=video_token_ranges,
+            video_hashes=video_hashes,
             tokens=TokenBuffer(
                 array=encoded_prompt.astype(np.int64, copy=False),
             ),
@@ -519,6 +579,8 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             json_schema=json_schema,
             grammar=grammar,
             grammar_state=grammar_state,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             images=image_metadata,
             vision_token_ids=self.vision_token_ids,

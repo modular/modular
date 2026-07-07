@@ -116,8 +116,8 @@ def _run_block_scaled_mma_amd_smoke[
     ]
 
     ctx.enqueue_function[kernel](
-        baseline_tt.as_any_origin(),
-        scaled_tt.as_any_origin(),
+        baseline_tt.as_unsafe_any_origin(),
+        scaled_tt.as_unsafe_any_origin(),
         grid_dim=1,
         block_dim=WARP_SIZE,
     )

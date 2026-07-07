@@ -79,7 +79,7 @@ def _dispatch_float_dtype[T: Dispatchable](body: T, dtype: DType) raises:
 
 
 @export
-def PyInit_resize_ops() -> PythonObject:
+def PyInit_resize_ops() abi("C") -> PythonObject:
     """Create a Python module with resize kernel function bindings."""
     try:
         var b = PythonModuleBuilder("resize_ops")
@@ -117,8 +117,8 @@ def _resize_linear_impl[
     dtype: DType,
     rank: Int,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: InlineArray[Int, MAX_RANK],
     out_shape: InlineArray[Int, MAX_RANK],
 ) raises:
@@ -316,8 +316,8 @@ def _resize_nearest_impl[
     dtype: DType,
     rank: Int,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: InlineArray[Int, MAX_RANK],
     out_shape: InlineArray[Int, MAX_RANK],
     ctx: DeviceContext,
@@ -556,8 +556,8 @@ def resize_nearest_dispatcher(
 def _resize_bicubic_impl[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: InlineArray[Int, MAX_RANK],
     out_shape: InlineArray[Int, MAX_RANK],
 ) raises:

@@ -10,635 +10,620 @@ This version is still a work in progress.
 
 ## Language enhancements
 
-- Types can parameterize the `out` argument modifier when they want to be
-  bindable to alternate address spaces, e.g.:
+- Mojo now support `==` and `!=` for type equality check, and `_type_is_eq` is
+  removed.
+
+- Mojo now infers `Trait` for `TypeList.of` such that
 
   ```mojo
-  struct MemType(Movable):
-    # Can be constructed into any address space.
-    def __init__[addr_space: AddressSpace](out[addr_space] self):
-        ...
-
-    # Only constructable into GLOBAL address space.
-    def __init__(arg: Int, out[AddressSpace.GLOBAL] self):
-        ...
+  comptime TL = TypeList.of[Int, Bool]
+  # works without
+  comptime TL = TypeList.of[Trait = AnyType, Int, Bool]
   ```
 
-- Mojo now supports building types that support implicit conversions for
-  widening origins, allowing code like this to "just work" without rebind:
+- Mojo now warns about redundant trait composition
 
   ```mojo
-  def origin_superset_conversion(
-    a: String, b: String, c: Bool
-  ) -> Pointer[String, origin_of(a, b)]:
-    if c:  # These pointers implicitly convert.
-        return Pointer(to=a)
-    else:
-        return Pointer(to=b)
+  # Warning: Redundant trait composition: 'Copyable' already implies 'AnyType'
+  comptime T : AnyType & Copyable = xxx
   ```
 
-- Types may now be conditionally "ImplicitlyDestructible" with a where clause:
+- Keyword variadic arguments can now be forwarded to another function that takes
+  keyword variadics, using Python style `**` syntax:
 
   ```mojo
-  @explicit_destroy("Message when implicitly destroyed")
-  struct ConditionallyLinearType[T: AnyType](
-      ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible)
-  ):
-      var data: Self.T
+  def takes_them(**kwargs: Int): ...
+  def pass_them(**kwargs: Int):
+    takes_them(**kwargs^)
   ```
 
-- Trailing `where` clauses are now supported on struct declarations. Constraints
-  are part of the type and checked at every binding site:
+- Dynamic function pointers with unbound type parameters can now be called
+  directly. The compiler infers parameters from the call arguments and
+  specializes the callee before the indirect call. This capability only works
+  with a limited set of parameters - those which are specialized to a single
+  value. This notably enables origin parameters on runtime function calls,
+  which can also be implicit from variadics:
 
   ```mojo
-  struct SIMD[dtype: DType, size: Int]
-      where dtype != DType.invalid
-      where size.is_power_of_two():
-    ...
+  var fp1: def(*Int) thin -> None
+  var fp2: def[a: ImmutOrigin](ref [a] x: Int) thin -> None
+  ...
+  fp1(1, 2)
+  fp2(42)
   ```
 
-- Trailing `where` clauses are now supported on `comptime` alias declarations:
+- Struct fields are no longer allowed to hide `UnsafeAnyOrigin` within a
+  struct. For example, this is no longer accepted:
 
   ```mojo
-  comptime PositiveOnly[N: Int]: AnyType where N > 0 = ...
+  struct Example:
+    # error: cannot use UnsafeAnyOrigin in a struct field.
+    var ptr: UnsafePointer[Int, MutUnsafeAnyOrigin]
   ```
 
-- Trailing `where` clauses can now _discharge_ constraints from constrained
-  types appearing anywhere in a signature. A single trailing `where` will
-  simultaneously constrain the declaration and satisfy the requirements of types
-  used within the same signature:
+  This is because Mojo doesn't know that uses of `Example` contain an
+  `UnsafeAnyOrigin` and therefore doesn't do lifetime extension for values in
+  its context. The typical solution for this is to add an `Origin` parameter but
+  you can also use `UntrackedOrigin` if you explicitly manage the lifetime of
+  the underlying data:
 
   ```mojo
-  struct Matrix[m: Int, n: Int] where m > 0 where n > 0: ...
+  struct Example[origin: Origin]:
+    var ptr: UnsafePointer[Int, Self.origin]
 
-  def solve_linear_system[n: Int, a: Matrix[n, n], b: Vector[n]]() -> Vector[n]
-      where n > 0:
-    ...
+  # OR
+
+  struct Example:
+    var ptr: UnsafePointer[Int, MutUntrackedOrigin]
   ```
 
-  If no trailing `where` discharges a constraint, the compiler reports an error
-  and suggests the missing clause.
+  As a temporary workaround, you can decorate fields with
+  `@__allow_legacy_any_origin_fields` to ignore the compiler error, however this
+  decorator is not stable and will eventually be removed.
+
+- Import resolution behavior has been made consistent. When resolving an import
+  of a module or package, in any given directory the resolution in order of
+  preference is: source packages; precompiled `.mojoc` files; source modules;
+  legacy precompiled `.mojopkg` files.
+
+  Previously the behavior was unspecified and would pick whichever matching
+  name it found in the directory first.
+
+- Added support for checking variadic type-list operands with `conforms_to()`.
+  For example, a variadic parameter list can pass its type-list value directly:
+
+  ```mojo
+  def copy_variadic_elements[*Ts: AnyType](
+      *args: *Ts
+  ) where conforms_to(Ts.values, Copyable):
+      pass
+  ```
+
+  To check several distinct standalone types against a trait, conjoin scalar
+  checks, for example `conforms_to(T, Trait) and conforms_to(U, Trait)`.
+
+- Mojo has improved its tracking of import locations and is now able to show
+  where a package containing a diagnostic was first introduced into the program:
+
+  ```text
+  Included from /bug.mojo:2:
+  Included from /foo/__init__.mojo:3:
+  Included from /foo/nested_pkg/__init__.mojo:4:
+  /foo/nested_pkg/my_module.mojo:1:5: note: candidate not viable: unexpected argument
+  def bar(): pass
+      ^
+  ```
+
+  Compared to the previous:
+
+  ```text
+  Included from /foo/nested_pkg/__init__.mojo:1:
+  Included from /foo/nested_pkg/__init__.mojo:4:
+  /foo/nested_pkg/my_module.mojo:1:5: note: candidate not viable: unexpected argument
+  def bar(): pass
+      ^
+  ```
+
+  Note that this is only possible for source packages for now
 
 ## Language changes
 
-- Support for "set-only" accessors has been removed. You need to define a
-  `__getitem__` or `__getattr__` to use a type that defines the corresponding
-  setter. This eliminates a class of bugs determining the effective element
-  type.
+- Relative imports must now use `from` (`from . import foo`); the `import .foo`
+  form is no longer accepted.
 
-- Implicit `std` imports are now an error, following a period of deprecation.
-  Imports from the standard library must now be fully qualified. The compiler
-  thus no longer squats on these module names, paving the way for user modules
-  named `algorithm`, `memory`, etc.
+- Absolute imports `import a.b.c` now bind all of `a`, `a.b`, and `a.b.c` into
+  the scope, where previously only `a.b.c` was made available.
 
-- Specifying `ABI="C"` in an `@export` decorator is now deprecated; `abi("C")`
-  should be used instead.
+- A bug in import handling has been fixed where absolute imports of a package
+  followed by an import of one of its submodules no longer result in a compiler
+  error.
 
   ```mojo
-  @export("old", ABI="C")
-  def old(): pass
-
-  @export("new")
-  def new() abi("C"): pass
+  import a
+  import a.b  # fixed; was: "invalid redefinition of 'a'"
   ```
+
+- A bug in function-scoped imports has been fixed, allowing dotted imports:
+
+  ```mojo
+  def foo():
+    import a.b
+
+    a.b.foo() # fixed; was: "use of unknown declaration 'a'"
+  ```
+
+  Note that this was already working correctly for other forms of import
+  (`import a`, `from a import b`, `from a.b import c`, etc).
+
+- An imported package's submodules are now only accessible when the package's
+  `__init__.mojo` re-exports those submodules.
+
+  ```mojo
+  import pkg
+
+  # only ok if pkg/__init__.mojo re-exports 'sub'.
+  # Re-export submodules with, e.g.,
+  #   from . import sub
+  # Use relative imports to avoid importing system packages.
+  pkg.sub.foo()
+  ```
+
+  Note that absolute imports can always bring in that submodule, bypassing the
+  `__init__.mojo`:
+
+  ```mojo
+  # always ok, regardless of the package's __init__.mojo
+  import pkg.submodule
+
+  pkg.submodule.foo()
+  ```
+
+- Intra-package accesses without explicit `import`s are now deprecated and will
+  be removed in a future release:
+
+  ```mojo
+  package/
+      __init__.mojo:
+        # Exported or re-exported symbols
+        def foo(): pass
+
+      module1.mojo:
+        # Module-defined symbol
+        def bar(): pass
+
+      module2.mojo:
+        # Previously able to implicitly use either of the above symbols, e.g.,
+        foo()
+        module1.bar()
+  ```
+
+  With this change, `module2.mojo` above must explicitly import symbols from
+  elsewhere in the package:
+
+  ```mojo
+  # module2.mojo
+
+  from . import foo
+  from . import module1
+
+  foo()
+  module1.bar()
+  ```
+
+- The `@explicit_destroy` decorator is no longer required on structs that
+  conditionally conform to `ImplicitlyDeletable`.
+
+  By default, all Mojo structs implicitly conform to `ImplicitlyDeletable`.
+  As before, a type author can opt-out of that implicit conformance using the
+  `@explicit_destroy` decorator:
+
+  ```mojo
+  @explicit_destroy
+  struct FileHandle:
+      pass
+
+  comptime assert not conforms_to(FileHandle, ImplicitlyDeletable)
+  ```
+
+  Now, if the type *conditionally* conforms to `ImplicitlyDeletable`, you may
+  omit redundantly writing `@explicit_destroy`. This works both for types
+  that are never `ImplicitlyDeletable` (`where False`) and for types that are
+  non-ImplicitlyDeletable based on a non trivial condition (`where <cond>`):
+
+  ```mojo
+  # no @explicit_destroy necessary
+  struct NeverDeletable(
+      ImplicitlyDeletable where False
+  ):
+      def destroy(deinit self):
+          pass
+
+  # no @explicit_destroy necessary
+  struct Container[T: AnyType](
+      ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
+  ):
+      var value: Self.T
+
+  comptime assert conforms_to(Container[Int], ImplicitlyDeletable)
+  comptime assert not conforms_to(Container[NonDeletable], ImplicitlyDeletable)
+  ```
+
+  `@explicit_destroy("custom error")` can still be used to provide additional
+  instruction to users when an instance cannot be deleted implicitly.
+
+  This simplifies the language by replacing special decorator behavior with
+  generalized struct conformance logic.
+
+- `where` clauses inside a parameter list (for example,
+  `[x: Int where x > 0]`) are no longer supported, following a period of
+  deprecation. Use a trailing `where` clause after the signature instead:
+
+  ```mojo
+  # Old (no longer supported):
+  # fn foo[x: Int where x > 0]():
+
+  # New:
+  fn foo[x: Int]() where x > 0:
+      pass
+  ```
+
+## Library stabilizations
+
+- The traits `ImplicitlyDeletable`, `Movable`, `Copyable`, and
+  `ImplicitlyCopyable` are now stable.
 
 ## Library changes
 
-- The `axis` of the `nn.split` kernel is now a keyword-only compile-time
-  parameter instead of a runtime argument. Pass it in the parameter list,
-  e.g. `split[..., axis=axis](input, outputs, ctx)`.
-
-- `UnsafePointer` implicit constructor has been fixed. When a function took
-  an `UnsafePointer[mut=False, ...]`, and was passed a mutable pointer, the
-  incorrect constructor was chosen from overload resolution resulting in the
-  new origin being `ImmutableAnyOrigin`. This is an issue as it occasionally
-  hid mutability aliasing between pointers and hid some unused variables.
-  The constructor now correctly casts to `ImmutOrigin(Self.origin)`.
-
-- The reduction axis of the `std.algorithm` reductions (`sum`, `product`,
-  `mean`, `max`, `min`, and the underlying `_reduce_generator` plus the CPU
-  and GPU backends) is now a keyword-only compile-time parameter named
-  `reduce_dim` instead of a runtime argument. This covers the
-  `mo.reduce.{mean,add,mul,max,min,reduce_min_and_max}` ops. Pass it in the
-  parameter list, e.g. `sum[..., reduce_dim=axis](shape, ctx)`.
-
-- The `axis` of the `nn.cumsum` kernel is now a keyword-only compile-time
-  parameter instead of a runtime argument. Pass it in the parameter list,
-  e.g. `cumsum[dtype, exclusive, reverse, axis=axis](output, input)`.
-
-- The `ImplicitlyCopyable`, `Intable`, and `Equatable` traits no longer
-  inherit from `ImplicitlyDestructible`. Generic code that relied on
-  receiving the destructor bound transitively through these traits (or
-  through `Comparable`, which inherits from `Equatable`) must now spell it
-  out explicitly, for example
-  `T: ImplicitlyCopyable & ImplicitlyDestructible`. In practice, most
-  generic code should prefer `T: Copyable` instead, per the guidance in
-  `ImplicitlyCopyable`'s docstring.
-
-- Changed `Idx` to a `comptime` alias for `ComptimeInt`. Use `Idx[value]`
-  instead of `Idx[value]()` for compile-time coordinates.
-
-- Added `is_trivially_movable`, `is_trivially_copyable`, and
-  `is_trivially_destructible` to `std.memory`. These helper functions
-  return whether a type's move constructor, copy constructor, or destructor is
-  trivial (i.e., a bit-copy or a no-op).
-
-- Added `std.gpu.host.CompletionFlag`, a non-owning handle to an MLRT
-  `M::Driver::CompletionFlag` (an 8-byte slot in pinned host memory mapped
-  into a device's address space). Pairs with the new
-  `DeviceStream.wait_for_host_value(flag, value)` method, which stalls the
-  stream until the flag's 64-bit slot equals the given value. Corresponds to
-  CUDA's `cuStreamWaitValue64` and captures cleanly into a CUDA graph as a
-  wait-value node, letting a CPU thread (or an AsyncRT worker dispatched by
-  `enqueue_host_func`) gate a GPU stream on host-produced data without a
-  second stream or a blocking host-function callback. Currently CUDA-only;
-  other backends raise.
-
-- `Coord`, `coord()`, `Idx`, `ComptimeInt`, `RuntimeInt`, and related coordinate
-  helpers now live in the standard library module
-  [`std.utils.coord`](/docs/std/utils/coord/). The
-  [`layout.coord`](/docs/layout/coord/) module re-exports the same symbols for
-  layout and kernel code; `layout` also hoists the common names at package
-  scope for convenience.
-
-- Python -> Mojo FFI calls registered through `PythonModuleBuilder` and
-  `PythonTypeBuilder` have significantly reduced per-call overhead:
-
-  - Non-kwargs callables registered with `def_function` / `def_method` /
-    `def_staticmethod` now use CPython's `METH_FASTCALL` calling
-    convention rather than `METH_VARARGS`. Kwargs-accepting functions
-    still use `METH_VARARGS | METH_KEYWORDS`.
-
-  - `PythonObject.__del__` skips the `PyGILState_Ensure` /
-    `PyGILState_Release` round-trip when the current thread already
-    holds the GIL (checked via `PyGILState_Check`). On the common
-    Python -> Mojo FFI path (where CPython hands the callee an
-    already-held GIL) the destructor pays just the check and a direct
-    `Py_DecRef`. The public contract is unchanged - dropping a
-    `PythonObject` from a thread that does not hold the GIL remains
-    safe.
-
-  - `Int(py=obj)` and `Scalar[IntDType](py=obj)` fast-path exact
-    Python `int` via `PyLong_AsSsize_t`.
-
-- Added `TileTensor.copy_from()` and `TileTensor.split()` for copying between
-  compatible tile views and splitting tiles into static or runtime-sized
-  partitions.
-
-- `String.as_bytes_mut()` has been renamed to `String.unsafe_as_bytes_mut()`, to
-  reflect that writing invalid UTF-8 to the resulting `Span[Byte]` can lead to
-  later issues like out of bounds access.
-
-- A new `BinaryHeap` collection has been added to the `std.collections` module.
-  This is a list-backed binary max-heap.
-
-- The core collection types no longer require their element type to be
-  `Copyable` — `Movable & ImplicitlyDestructible` is now the minimum bound.
-  This applies to `List[T]`, `Deque[T]`, `LinkedList[T]`, `InlineArray[T,
-  size]`, both type parameters of `Dict[K, V, H]` (along with
-  `SwissTable`/`SwissTableEntry`/`OwnedKwargsDict` and the loosened
-  `KeyElement` trait), and `Set[T]`. Copy-requiring methods stay gated on
-  `Copyable`. `Counter[V]` is unchanged. `Dict.setdefault` and `Set.add`
-  now take their argument by `var T`; for move-only types call them as
-  `d.setdefault(key^, default)` or `set.add(value^)`.
-
-- `reflect[T]` is now a `comptime` alias for the `Reflected[T]` handle type
-  rather than a function returning a zero-sized handle instance. All methods on
-  `Reflected[T]` are `@staticmethod`s, and the type is no longer constructible.
-  Drop the parens at call sites:
+- Added `to_numpy_array` and `from_numpy_array` to the new `python.numpy` module
+  for moving flat numeric data between Mojo `Span`/`List` and NumPy arrays
+  without hand-written `ctypes` plumbing:
 
   ```mojo
-  # Before
-  comptime r = reflect[Point]()
-  print(r.field_count())
-  print(reflect[Point]().name())
-  comptime y_handle = reflect[Point]().field_type["y"]()
-  var v: y_handle.T = 3.14
+  from std.python.numpy import from_numpy_array, to_numpy_array
 
-  # After
-  comptime r = reflect[Point]
-  print(r.field_count())
-  print(reflect[Point].name())
-  comptime y_handle = reflect[Point].field_type["y"]
-  var v: y_handle.T = 3.14
+  var values: List[Float64] = [1.0, 2.0, 3.0]
+  var array = to_numpy_array(values)                 # NumPy array (copies)
+  var span = from_numpy_array[DType.float64](array)  # borrow array as a Span
   ```
 
-  `field_type[name]` is now a parametric `comptime` member alias that yields
-  `Reflected[FieldT]` directly — no trailing `()`, and the result is fully
-  composable (e.g. `reflect[T].field_type["x"].name()`). The previously
-  deprecated free functions `get_type_name`, `get_base_type_name`, and the
-  `struct_field_*` family (along with the `ReflectedType[T]` wrapper) have been
-  removed; use the corresponding methods on `reflect[T]`:
+  Both support the fixed-width numeric dtypes. `to_numpy_array` copies its
+  input into a new, independent array; `from_numpy_array` borrows the array's
+  buffer zero-copy.
 
-  | Removed                                 | Replacement                              |
-  |-----------------------------------------|------------------------------------------|
-  | `get_type_name[T]()`                    | `reflect[T].name()`                      |
-  | `get_base_type_name[T]()`               | `reflect[T].base_name()`                 |
-  | `is_struct_type[T]()`                   | `reflect[T].is_struct()`                 |
-  | `struct_field_count[T]()`               | `reflect[T].field_count()`               |
-  | `struct_field_names[T]()`               | `reflect[T].field_names()`               |
-  | `struct_field_types[T]()`               | `reflect[T].field_types()`               |
-  | `struct_field_index_by_name[T, name]()` | `reflect[T].field_index[name]()`         |
-  | `struct_field_type_by_name[T, name]()`  | `reflect[T].field_type[name]`            |
-  | `struct_field_ref[idx, T](s)`           | `reflect[T].field_ref[idx](s)`           |
-  | `offset_of[T, name=name]()`             | `reflect[T].field_offset[name=name]()`   |
-  | `offset_of[T, index=index]()`           | `reflect[T].field_offset[index=index]()` |
-  | `ReflectedType[T]`                      | `Reflected[T]`                           |
+- `Int` is now an alias for `Scalar[DType.int]` and integer literals materialize
+  to this `Scalar` type. Because of this some conversions have become more
+  strict.
 
-- Added `ReflectedFn[func]`, a function-side reflection handle accessed via
-  the `reflect_fn[func]` `comptime` alias. Exposes function introspection
-  through static methods, paralleling the type-side `Reflected[T]` API:
+  A new `SIMDSize` type has been added for the width of `SIMD` itself and must
+  be used when inferring a parameter based on a SIMD argument like so:
 
   ```mojo
-  from std.reflection import reflect_fn
-
-  def my_func(x: Int) -> Int:
-      return x + 1
-
-  def main():
-      print(reflect_fn[my_func].display_name())  # "my_func"
-      print(reflect_fn[my_func].linkage_name())  # mangled symbol name
+  def frob[w: SIMDSize](v: SIMD[DType.int, w]): ...
   ```
 
-- Added `alloc`, `free`, and `Layout` in `memory.alloc` for layout-aware memory
-  allocation. A `Layout[T]` bundles an element count and alignment into a
-  single value that is passed to both `alloc` and `free`, keeping size and
-  alignment requirements explicit and co-located at every call site.
+  Alternatively the width can be unbound if you simply want to be parametric
+  over any `SIMD` type:
 
   ```mojo
-  from memory import alloc, free, Layout
-
-  var layout = Layout[Int32](count=4)
-  var ptr = alloc(layout)
-  # ... initialize & use ptr ...
-  free(ptr, layout)
+  def frob(v: SIMD[DType.int, _])
   ```
 
-- The default `seed` for `random.Random`, `random.NormalRandom`, and the
-  internal `_PhiloxWrapper` has changed from `0` to `0x3D30F19CD101`
-  (67280421310721) to match PyTorch's `at::Philox4_32_10` default. Calls
-  that omitted the `seed` argument will now produce a different output
-  stream; pass `seed=0` explicitly to keep the previous behavior.
+  The new `Int` should still be used in all other situations.
 
-- Added `nth()` as a default method on the `Iterator` trait. It advances the
-  iterator by `n` elements (destroying them) and returns the next element, or
-  `None` if the iterator runs out before reaching index `n`.
+- `chdir` has been added to the `std.os` module and an `fchdir` method has been
+  added to `io.FileDescriptor`. These are wrappers for the corresponding POSIX
+  functions.
+
+- `TypeList.all_conforms_to()` is now implemented in terms of `conforms_to()`,
+  which supports parameter-list operands like `Ts.values`. As a result,
+  `all_conforms_to()` constraints preserve the same proof structure as direct
+  `conforms_to(Ts.values, Trait)` constraints, so the compiler can use them in
+  conditional conformance implication checks and type refinement.
+
+  This means conditional conformances can rely on trait hierarchy relationships
+  for an entire type parameter pack. Previously, a type that conditionally
+  conformed to `JsonSerializable` would also need to repeat the inherited
+  `Serializable` condition:
 
   ```mojo
-  var l = [10, 20, 30, 40]
-  print(iter(l).nth(0).value())   # 10
-  print(iter(l).nth(3).value())   # 40
-  var missing = iter(l).nth(10)   # None (Optional)
+  trait Serializable:
+      pass
+
+  trait JsonSerializable(Serializable):
+      pass
+
+  struct Packet[*Ts: Movable](
+      Serializable where Ts.all_conforms_to[Serializable](),
+      JsonSerializable where Ts.all_conforms_to[JsonSerializable](),
+      Movable,
+  ):
+      pass
   ```
 
-- `String` and `StringSlice` now expose a `bytes()` method that returns a new
-  `BytesIter`, an iterator over the raw UTF-8 bytes of the string. This
-  complements the existing `codepoints()` and `graphemes()` iterators by
-  operating at the byte level without interpreting multi-byte UTF-8 sequences.
+  Now the `JsonSerializable` condition is enough for the compiler to prove the
+  inherited `Serializable` conformance:
+
+  ```diff
+   struct Packet[*Ts: Movable](
+  -    Serializable where Ts.all_conforms_to[Serializable](), 
+       JsonSerializable where Ts.all_conforms_to[JsonSerializable](),
+       Movable,
+   ):
+       pass
+  ```
+
+  The same constraints now refine each element of a variadic type parameter
+  pack inside `where`, `comptime assert`, and `comptime if` contexts:
 
   ```mojo
-  var s = StringSlice("é")  # Encoded in UTF-8 as 0xC3 0xA9.
-  for b in s.bytes():
-      print(b)  # 195, 169
+  def write_all[*Ts: Movable](mut writer: Some[Writer], *args: *Ts):
+      comptime if Ts.all_conforms_to[Writable]():
+          comptime for i in range(args.__len__()):
+              args[i].write_to(writer)
   ```
 
-- `String` and `StringSlice` now have a keyword only `string[codepoint=...]`
-  that indexes by unicode codepoint offsets.
+- `ImplicitlyDestructible` has been renamed to `ImplicitlyDeletable`, for better
+  name consistency with its required `__del__()` "delete" special method.
 
-- Several `StringSlice` constructors are now deprecated.
+- `is_trivially_destructible()` has been renamed to `is_trivially_deletable()`,
+  for consistency with the `ImplicitlyDeletable` rename. It now also accepts any
+  type (`T: AnyType`) instead of requiring `T: ImplicitlyDeletable`, returning
+  `False` for non-`ImplicitlyDeletable` (linear) types.
 
-  - `StringSlice(ptr=..., length=...)` is deprecated; use
-    `StringSlice(unsafe_from_utf8=Span(...))` instead.
-  - `StringSlice(unsafe_from_utf8_ptr=...)` (taking a raw nul-terminated
-    `UnsafePointer[Byte]` or `UnsafePointer[c_char]`) is deprecated; construct
-    a `CStringSlice` from the pointer and use the new
-    `StringSlice(unsafe_from_utf8=CStringSlice(...))` constructor instead.
+- The `Reflected.field_type[name]` reflection member has been renamed to
+  `Reflected.field[name]`, because it returns a chainable `Reflected` handle
+  for the named field rather than the field's bare type, so the old name was
+  not accurate. Retrieve the field's type from the handle's `.T` member, as in
+  `reflect[T].field["x"].T`. Update call sites such as
+  `reflect[T].field_type["x"]` to `reflect[T].field["x"]`.
 
-- PythonObject convertibility got simplified and cleaned up. When working with
-  types that required custom conversions to `PythonObject`, we used to write
-  code like this:
+- Several collection types now *conditionally* conform to `ImplicitlyDeletable`,
+  conforming only when their element type does. This lets a collection hold
+  non-`ImplicitlyDeletable` elements at all (previously such a collection failed
+  to compile); a collection of non-deletable elements is itself linear and must
+  be drained explicitly with the new `destroy_with()` method, which calls a
+  closure on each element:
 
   ```mojo
-  struct MyCustomType(ConvertibleToPython, ImplicitlyCopyable):
-     def to_python_object(var self) raises -> PythonObject:
-        return PythonObject( ... custom logic ...)
-
-  def hi_python(a: Some[ImplicitlyCopyable & ConvertibleToPython]) raises:
-      print(t"Hi, {a.to_python_object()}!")
-
-  def example():
-      hi_python(MyCustomType())
+  collection^.destroy_with(my_destroy_closure)
   ```
 
-  This approach allows custom types to implement `ConvertibleToPython` to get a
-  domain specific encoding as a Python object. Mojo has simplified this by
-  making all `ConvertibleToPython` types implicitly convert to `PythonObject`,
-  so this can/should be simplified to:
+  Generic code that takes one of these collections by value may now need
+  `& ImplicitlyDeletable` added to its element bound so the collection can be
+  dropped:
 
   ```mojo
-  def hi_python(a: PythonObject) raises:
-      print(t"Hi, {a}!")
+  def foo[T: Movable & ImplicitlyDeletable, //](var arr: InlineArray[T, 3]):
+      pass
   ```
 
-- The CPython FFI bindings now carry the `abi("C")` effect. User-written Python
-  extension callbacks passed to `def_py_c_function`, `def_py_c_method`, or
-  `PyCapsule_New` must add `abi("C")` to their signatures, e.g.
-  `def my_func(self: PyObjectPtr, args: PyObjectPtr) abi("C") -> PyObjectPtr:`.
-  Functions registered through the higher-level `def_function`, `def_method`,
-  and `def_staticmethod` paths are unaffected.
+  Affected types:
 
-- Added `take()` and `drop()` iterator adapters to `std.itertools`.
-  `take(iter, n)` yields the first `n` elements, and
-  `drop(iter, n)` drops the first `n` elements. They compose
-  naturally to select sub-ranges of any iterable:
+  - `InlineArray[ElementType, size]`.
+  - `Deque[ElementType]`
+    - Element-destroying operations (`append`, `appendleft`, `extend`,
+      `extendleft`, `insert`, `clear`, `remove`, etc.) still require
+      `ElementType` to be `ImplicitlyDeletable`.
+    - Consuming iteration (`for x in deque^`, the `IterableOwned` conformance)
+      is likewise conditional, requiring `ElementType` to be
+      `ImplicitlyDeletable`; generic code bounded on `IterableOwned` now rejects
+      a non-conforming element type at the bound rather than failing later
+      inside `__iter__()`. For deletable element types (the common case) this is
+      transparent.
+  - `Dict[KeyType, ValueType, HasherType]`
+    - Element-destroying and key/value-copying operations (`__setitem__`,
+      `setdefault`, `fromkeys`, `update`, `__or__`, `__ior__`, `pop`, `clear`)
+      still require the `K` key and `V` value types to be `ImplicitlyDeletable`,
+      so a `Dict` with non-`ImplicitlyDeletable` keys or values can currently be
+      constructed and torn down with `destroy_with()` but not populated or
+      mutated. For deletable key/value types (the common case) this is
+      transparent.
+    - Consuming iteration (`for entry in dict^`) is likewise conditional,
+      requiring `ValueType` to be `ImplicitlyDeletable`.
+  - `LinkedList[ElementType]`
+    - Unlike `Dict`, a `LinkedList` with non-`ImplicitlyDeletable` elements can
+      be populated (`append`, `prepend`) and then torn down with
+      `destroy_with()`.
+    - Element-destroying operations (`insert`, `extend`, `clear`) still require
+      `ElementType` to be `ImplicitlyDeletable`. For deletable element types
+      (the common case) this is transparent.
+    - Consuming iteration (`for x in list^`, the `IterableOwned` conformance)
+      is likewise conditional, requiring `ElementType` to be
+      `ImplicitlyDeletable`.
+
+- Is is now possible to iterate over owned elements in
+  `List`, `Dict`, `InlineArray`, `LinkedList`, and `Set`
+  when the element type is not `Copyable`:
 
   ```mojo
-  from std.itertools import take, drop
-
-  var nums = [1, 2, 3, 4, 5]
-  for x in take(drop(nums, 1), 3):
-      print(x)  # 2, 3, 4
+  def iterate[T: Movable](var list: List[T]):
+    # Consume elements
+    for var x in list^:
+        pass
   ```
 
-- The `Indexer` trait no longer inherits from `ImplicitlyDestructible`.
-  Generic code that relied on receiving the destructor bound transitively
-  through this trait must now spell it out explicitly, for example
-  `T: Indexer & ImplicitlyDestructible`.
+  The `IterableOwned` conformance on several collections is now conditional
+  on the element type conforming to `Movable & ImplicitlyDeletable`, dropping
+  `Copyable`.
+
+  Additionally, generic code bounded on `IterableOwned` now rejects a collection
+  of non-conforming elements at the bound, rather than failing later inside
+  `__iter__()`.
+
+- The implicit conversion constructors that cast an `UnsafePointer` to
+  `MutUnsafeAnyOrigin` or `ImmutUnsafeAnyOrigin` are now deprecated and emit a
+  deprecation warning when used. `UnsafeAnyOrigin` is an unsafe escape hatch
+  that silently extends unrelated lifetimes and disables exclusivity checking,
+  so it should never be applied implicitly. Prefer keeping a concrete origin;
+  if you must discard it, make the cast explicit with the
+  `as_unsafe_any_origin()` method.
+
+- Added `reflect[T].field_at[idx]` to the reflection API, the by-index dual
+  of `reflect[T].field[name]`. It returns the reflection handle for the
+  type of the field at `idx`, so a field's concrete type can be recovered while
+  iterating fields by index (where the name is not available as a literal):
+
+  ```mojo
+  comptime y_type = reflect[Point].field_at[1]
+  var v: y_type.T = 3.14  # y_type.T is the concrete field type
+  ```
+
+- Removed the implicit constructors that converted an `UnsafePointer` into an
+  `Optional[UnsafePointer[..., UnsafeAnyOrigin]]`. Constructing an
+  `Optional[UnsafePointer]` now preserves the pointer's real origin instead of
+  silently widening it to `UnsafeAnyOrigin`. Two call-site updates may be
+  needed:
+
+  - Passing a concrete pointer where the parameter's origin is a genuinely
+    fixed `MutAnyOrigin`/`ImmutAnyOrigin` (typically C-FFI signatures) now
+    requires an explicit `as_unsafe_any_origin()`.
+
+  - Because origins are now preserved, exclusivity checking applies to
+    `memcpy()` (and similar) calls whose `dest` and `src` derive from the same
+    buffer. An intra-buffer copy that previously compiled now errors with
+    "argument of 'memcpy' call allows writing a memory location previously
+    writable through another aliased argument". Opt out by making one argument
+    an unsafe any-origin (the non-overlap of `dest` and `src` is already a
+    `memcpy()` precondition):
+
+    ```mojo
+    memcpy(
+        dest=buf + dst_off,
+        src=(buf + src_off).as_unsafe_any_origin(),
+        count=n,
+    )
+    ```
+
+- `coord` is now a comptime expression, and `coord[DType]()` has been renamed
+  to `dyn_coord[DType]()`.
+  Now one can just write:
+
+   ```mojo
+   var my_coord = coord[1, 2, 3]
+   ```
+
+   to create a `Coord[ComptimeInt[1], ComptimeInt[2], ComptimeInt[3]]`
+
+- Removed `trait_downcast_var()`. Improvements to type refinement based on
+  `where conforms_to(..)` and `comptime assert conforms_to(..)` make explicit
+  value trait downcasting no longer necessary.
+
+- Added `raise_python_exception()` to `std.python.bindings`, which translates a
+  Mojo `Error` into a Python exception via `PyErr_SetString` and returns a null
+  `PyObjectPtr`.
+
+- Iterating over a `String`, `StringSlice`, or `StringLiteral` now yields
+  grapheme clusters by default. Their `__iter__()` and `__reversed__()` methods
+  return a `GraphemeSliceIter`, so `for c in my_string:` produces what a user
+  perceives as a single "character" on screen. The lower-level views remain
+  available when you want them: `codepoints()` or `codepoint_slices()` for
+  Unicode scalars, and `bytes()` for raw UTF-8 bytes.
 
 ## Tooling changes
 
-- Importing a Mojo module from Python no longer fails when the module lives in a
-  read-only directory (for example, a Mojo extension installed into a read-only
-  `site-packages`). Previously the importer always tried to write its compiled
-  artifacts to a `__mojocache__` directory next to the source, which raised an
-  `OSError` on a read-only file system. The importer now keeps that in-tree
-  behavior when the source directory is writable, and otherwise redirects the
-  cache to the Modular cache folder. That location honors the standard Modular
-  configuration: the `cache_dir` key in `modular.cfg`, the `MODULAR_CACHE_DIR`
-  and `MODULAR_HOME` environment variables, and the XDG base directory
-  specification.
-
-- The `mojo` compiler will now print the filename and line number in diagnostics
-  that point to inaccessible source locations (e.g., from precompiled libraries)
-  instead of a location at the top of the main file:
-
-  ```text
-  # Before
-  $> mojo example.mojo
-  /path/to/example.mojo:33:16: error: invalid call to '__setitem__': violated constraint
-     vec[base + i] = values[i].cast[dtype]()
-     ~~~^~~~~~~~~~
-
-  /path/to/example.mojo:1:1: note: constraint declared here evaluated to False, expected 'mut'
-  from std.algorithm.functional import elementwise
-  ^
-  /path/to/example.mojo:1:1: note: function declared here
-  from std.algorithm.functional import elementwise
-  ^
-
-  # After
-  $> mojo example.mojo
-  /path/to/example.mojo:33:16: error: invalid call to '__setitem__': violated constraint
-      vec[base + i] = values[i].cast[dtype]()
-      ~~~^~~~~~~~~~
-
-  max/kernels/src/layout/layout_tensor.mojo:2092: note: constraint declared here evaluated to False, expected 'mut'
-  max/kernels/src/layout/layout_tensor.mojo:2090: note: function declared here
-  ```
-
-- The `mojo` compiler now provides more useful diagnostics in the case that
-  source information is unavailable by synthesizing a declaration and
-  pretty-printing it.
-
-  For example, instead of the following, with no contextual information after
-  the 'here':
-
-  ```text
-  /path/to/file.mojo:2092: note: function declared here:
-  ```
-
-  The user will now see:
-
-  ```text
-  /path/to/file.mojo:2092: note: function declared here:
-  def __setitem__[*Tys: Indexer](self, *args: *Tys.values, *, val: SIMD[dtype, Self.element_size]) where mut
-  ```
-
-  The coverage and quality of diagnostics in such cases will continue to improve
-  in subsequent releases.
-
-- The `mojo package` command has renamed to `mojo precompile`. Similarly, the
-  `.mojopkg` file extension has been deprecated; favor the `.mojoc` file
-  extension instead.
-
-  ```text
-  # Before
-  mojo package my_package -o my_package.mojopkg
-
-  # After
-  mojo precompile my_package -o my_package.mojoc
-  ```
-
-- Added `mojo --print-cache-location` and `mojo --clear-cache` for inspecting
-  and clearing the on-disk Mojo compile cache (`.mojo_cache`). The resolved
-  path honors the existing precedence (`MODULAR_CACHE_DIR`, `MODULAR_HOME`,
-  `MODULAR_DERIVED_PATH`, `XDG_CACHE_HOME`, etc.). `--clear-cache` prompts for
-  confirmation by default; pass `-f` (or `--force`) to skip the prompt for
-  scripting use.
-
-  ```text
-  $ mojo --print-cache-location
-  /home/you/.cache/modular/.mojo_cache
-
-  $ mojo --clear-cache
-  This will remove the Mojo compile cache at:
-    /home/you/.cache/modular/.mojo_cache
-  Proceed? [y/N] y
-  Removed /home/you/.cache/modular/.mojo_cache
-
-  $ mojo --clear-cache -f   # no prompt
-  ```
-
-- The Mojo compiler now reports call-related errors on the operand value that
-  causes the failure, instead of on the call overall. This makes it easier
-  to understand failures in calls with many arguments spread over multiple
-  lines.
-
-- `mojo format` now accepts the bare move-capture form `{name^}` in closure
-  capture lists. Previously only the equivalent `{var name^}` form
-  round-tripped through the formatter.
+- Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
 
 ## GPU programming
 
-- Added `DeviceContextList[size]` in `std.gpu.host`: a fixed-size,
-  `Copyable`/`ImplicitlyCopyable`/`Sized` collection of `DeviceContext` values.
-  Multi-device custom-op `execute` methods now receive a `DeviceContextList[N]`
-  — the graph compiler synthesizes one from the per-device contexts attached to
-  the op via a variadic constructor. Kernels can index into it with
-  `dev_ctxs[i]` (runtime) or `dev_ctxs.__getitem_param__[i]()` (comptime), and
-  iterate with `len()`. This replaces the previous `DeviceContextPtrList`
-  pattern.
+- `DeviceContext.load_function` now keys its runtime cache on the requested
+  entry-point name as well as the blob. Loading two different entry points
+  (for example `kernel_a` and `kernel_b`) from a single PTX/cubin blob no
+  longer collides — previously the second load silently returned the function
+  resolved by the first. The cache also no longer keys on the entire blob
+  when no module name is supplied: it keys on a short hash of the blob instead,
+  so each call avoids copying, hashing, and byte-comparing the whole blob (and
+  retaining a duplicate of it). The win scales with blob size and matters most
+  for large multi-entry blobs loaded on the per-execution path.
+
+- The `DeviceStream` type is now included in the API reference documentation.
+  Returned by `DeviceContext.create_stream()` and
+  `DeviceContext.create_external_stream()`, it provides methods for
+  synchronizing and sequencing asynchronous GPU work (for example,
+  `synchronize()`, `record_event()`, and `enqueue_wait_for()`). The type was
+  already public but was previously hidden from the generated docs.
+
+- Added an 8x8 `simdgroup_matrix` matrix multiply-accumulate primitive
+  (`_mma_apple_8x8()`) with `apple_mma_load_8x8()` / `apple_mma_store_8x8()`
+  fragment helpers for Apple Silicon GPUs in `std.gpu.compute.arch`. Unlike
+  the 16x16 path (Apple M5 only), the 8x8 primitive is available on all Apple
+  GPU generations (M1-M5). It accepts `Float16`, `BFloat16`, and `Float32`
+  inputs with a `Float32` accumulator.
+
+- Apple M5 `simdgroup_matrix` MMA now accepts FP8 (`float8_e4m3fn`,
+  `float8_e5m2`) inputs with an F32 accumulator, alongside the existing
+  F16/BF16/F32 and 8-bit integer types.
+
+- Added `warp.match_any()`, which returns, for each warp lane, the mask of
+  lanes whose value has the same bits. It uses NVIDIA's `match.any.sync`
+  instruction, a `readfirstlane` ballot fold on AMD, and a shuffle-based
+  emulation on Apple Silicon GPUs.
+
+- Added `warp.match_all()`, which returns the warp's active-lane mask if every
+  lane holds the same bits and 0 otherwise. It uses NVIDIA's `match.all.sync`
+  instruction, a `readfirstlane` ballot fold on AMD, and a shuffle-based check
+  on Apple Silicon GPUs.
+
+- `DeviceGraphBuilder.collect_dependencies` now accepts an optional
+  `dependencies` argument. The named predecessor handles are injected as
+  ambient predecessors of every node the `work` closure adds, so the scope's
+  nodes run after those predecessors without the closure threading the handles
+  through to each `add_*` call. With the default (empty) `dependencies` the
+  behavior is unchanged. When `work` adds no nodes, the returned join node
+  falls back to depending on `dependencies` so it still chains correctly.
 
   ```mojo
-  from gpu.host import DeviceContext, DeviceContextList
-
-  @compiler.register("mo.distributed.allreduce.sum")
-  struct DistributedAllReduceSum:
-      @staticmethod
-      def execute[
-          dtype: DType, rank: Int, target: StaticString, _trace_name: StaticString,
-      ](
-          outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
-          inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
-          signal_buffers: MutableInputVariadicTensors[dtype=DType.uint8, rank=1, ...],
-          dev_ctxs: DeviceContextList,
-      ) capturing raises:
-          comptime num_devices = inputs.size
-          # ... use dev_ctxs[i] per device ...
+  var producers = builder.collect_dependencies(add_producers)
+  # Every node added by `add_consumers` depends on `producers`:
+  var consumers = builder.collect_dependencies(
+      add_consumers, dependencies=[producers]
+  )
   ```
 
-- `DeviceContext.enqueue_function[func]` and
-  `DeviceContext.compile_function[func]` now accept a single kernel argument
-  instead of requiring it to be passed twice. The previous two-argument forms
-  `enqueue_function[func, func]` and `compile_function[func, func]` are
-  deprecated. The transitional `enqueue_function_experimental` and
-  `compile_function_experimental` aliases are also deprecated; switch to
-  `enqueue_function` / `compile_function`.
+- Added a `DeviceGraphBuilder.add_function` overload that takes the kernel as a
+  compile-time parameter and compiles it automatically, mirroring the
+  parameter-based `DeviceContext.enqueue_function`. Callers no longer need a
+  separate `DeviceContext.compile_function` step to add a kernel node:
 
   ```mojo
-  # Before
-  ctx.enqueue_function[my_kernel, my_kernel](grid_dim=1, block_dim=1)
-  ctx.enqueue_function_experimental[my_kernel](grid_dim=1, block_dim=1)
-
-  # After
-  ctx.enqueue_function[my_kernel](grid_dim=1, block_dim=1)
+  def build(mut builder: DeviceGraphBuilder) raises {read}:
+      _ = builder.add_function[kernel](
+          42, grid_dim=1, block_dim=1, dependencies=[]
+      )
   ```
+
+- `AddressSpace` is now target-extensible rather than a fixed, portable enum.
+  The built-in GPU spaces (`GENERIC`, `GLOBAL`, `SHARED`, `CONSTANT`, `LOCAL`,
+  `SHARED_CLUSTER`, `BUFFER_RESOURCE`) are unchanged, but accessing any other
+  name — for example an accelerator-specific `AddressSpace.SCRATCHPAD` — now
+  resolves through the active hardware backend instead of being a hard-coded
+  compile error. The set of valid address-space names is the union of the
+  built-in GPU spaces and whatever the active backend defines, so accelerator
+  backends can provide their own named spaces (with their own values) only
+  where they exist. A name that no backend defines remains a compile-time
+  error.
+
+- Added support for the Steam Deck's RDNA2 Van Gogh APU.
 
 ## Removed
 
-- The `DeviceContextPtr` and `DeviceContextPtrList` types have been removed
-  from `std.runtime.asyncrt`. Custom-op `execute` methods now take
-  `DeviceContext` directly (or `Optional[DeviceContext]` where the context is
-  genuinely optional), and multi-device ops take `DeviceContextList[N]` (see
-  the new entry under _Library changes_). The helpers `get_device_context()`
-  and `get_optional_device_context()` are no longer needed — pass the
-  `DeviceContext` through directly. The `CpuDeviceContext` runtime always
-  supplies a real context for the CPU path, so the nullable wrapper is no
-  longer required.
+- Removed the `store_volatile()` and `load_volatile()` intrinsics from
+  `std.gpu.intrinsics`. Use `UnsafePointer.store[volatile=True]()` and
+  `UnsafePointer.load[volatile=True]()` instead, which work across all
+  supported GPU targets rather than NVIDIA only.
 
-  ```mojo
-  # Before
-  from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
-
-  @compiler.register("my_op")
-  struct MyOp:
-      @staticmethod
-      def execute[target: StaticString](
-          output: OutputTensor,
-          input: InputTensor,
-          ctx: DeviceContextPtr,
-      ) raises:
-          var gpu_ctx = ctx.get_device_context()
-          ...
-
-  # After
-  from gpu.host import DeviceContext
-
-  @compiler.register("my_op")
-  struct MyOp:
-      @staticmethod
-      def execute[target: StaticString](
-          output: OutputTensor,
-          input: InputTensor,
-          ctx: DeviceContext,
-      ) raises:
-          ...
-  ```
-
-- The `use_blocking_impl` parameter has been removed from `elementwise` (in
-  `std.algorithm.functional`), and the analogous
-  `single_thread_blocking_override` parameter has been removed from the
-  reduction APIs (`reduce`, `max`, `min`, `sum`, `product`, `mean` in
-  `std.algorithm.reduction`). These operations now always dispatch work the same
-  way, with a single worker used automatically when the problem size is small,
-  so the blocking variants are no longer needed.
-
-- The legacy `fn` keyword now produces an error instead of a warning. Please
-  move to `def`.
-
-- The previously-deprecated `constrained[cond, msg]()` function has been
-  removed. Use `comptime assert cond, msg` instead.
-
-- The previously-deprecated `Int`-returning overload of `normalize_index` has
-  been removed. Use the `UInt`-returning overload (or write the index
-  arithmetic inline, e.g. `x[len(x) - 1]`).
-
-- The previously-deprecated default `UnsafePointer()` null constructor has
-  been removed. To model a nullable pointer use
-  `Optional[UnsafePointer[...]]`. For a non-null placeholder for delayed
-  initialization, use `UnsafePointer.unsafe_dangling()`.
-
-- The deprecated free-function reflection API in `std.reflection` has been
-  removed. Use the unified `reflect[T]() -> Reflected[T]` API instead.
-
-  Migration table:
-
-  - `struct_field_count[T]()` → `reflect[T]().field_count()`
-  - `struct_field_names[T]()` → `reflect[T]().field_names()`
-  - `struct_field_types[T]()` → `reflect[T]().field_types()`
-  - `struct_field_index_by_name[T, name]()` →
-    `reflect[T]().field_index[name]()`
-  - `struct_field_type_by_name[T, name]()` →
-    `reflect[T]().field_type[name]()`
-  - `struct_field_ref[idx](s)` → `reflect[T]().field_ref[idx](s)`
-  - `is_struct_type[T]()` → `reflect[T]().is_struct()`
-  - `offset_of[T, name=...]()` → `reflect[T]().field_offset[name=...]()`
-  - `offset_of[T, index=...]()` → `reflect[T]().field_offset[index=...]()`
-  - `ReflectedType[T]` → `Reflected[T]`
-
-- `String` and `StringSlice` can now be sliced by codepoints, e.g.
-  `String("🔄🔥🔄")[codepoint=1:2]` returns `"🔥"`.
-
-- `String` and `StringSlice` can now be indexed by graphemes, e.g.
-  `String("👨‍🚀🧑‍🌾क्षि")[grapheme=1]` returns `"🧑‍🌾"`.
+- Removed the deprecated `GPUAddressSpace` alias for `AddressSpace`. Use
+  `AddressSpace` directly.
 
 ## Fixed
 
-- Fixed a GPU reduction correctness bug that produced wrong results for a
-  contiguous last-axis reduction (for example `mean` over the last axis) once
-  the number of rows reached `256 * sm_count` (37888 rows on a 148-SM GPU).
-  An N-D reduction is normalized to a rank-3 `(outer, reduce, inner)` shape, so
-  a last-axis reduction has a trailing `inner == 1` dimension; the kernel
-  launcher treated that as a non-contiguous reduction and, once the device was
-  thread-saturated, dispatched a kernel whose cross-row SIMD packing is only
-  valid when a real inner dimension supplies the adjacent rows. Contiguity is
-  now derived from the layout (the reduce dimension is innermost whenever every
-  dimension after it is unit-sized).
+- A `comptime` member with a trailing `where` clause is now accepted as a
+  witness for a conditional trait conformance when the conformance constraint
+  implies the member's constraint, for example:
 
-- Reduced the virtual address space reserved by every `mojo` invocation by
-  ~1 GiB. The JIT memory mapper's reservation granularity was 1 GiB, so each
-  fresh reservation was rounded up to that size and mmapped
-  `PROT_READ|PROT_WRITE`, inflating `VmPeak` and counting against Linux
-  `RLIMIT_AS`. This caused non-deterministic OOM crashes in
-  `libKGENCompilerRTShared.so` when two `mojo` processes ran concurrently on
-  memory-constrained CI runners (e.g. GitHub Actions free-tier, 7 GiB). The
-  granularity is now 64 MiB; large compiles still work because the mapper
-  reserves additional slabs on demand.
-  ([Issue #6433](https://github.com/modular/modular/issues/6433))
+  ```mojo
+  trait StaticSize:
+      comptime SIZE: Int
 
-- Attempting to import a source Mojo package from a broken symlink will no
-  longer result in a compiler crash.
-  ([Issue #6424](https://github.com/modular/modular/issues/6424))
-
-- `MODULAR_NVPTX_COMPILER_PATH` is now part of mojo cache location so that when
-  switching to a different `ptxas` CUBIN cache will not hit those were
-  generated before the switch.
-  ([Issue #6540](https://github.com/modular/modular/issues/6549))
-
-- Fixed the `mojo` compiler incorrectly emitting AVX-512 instructions on
-  hosts where the CPU model (e.g. `znver4`) advertises AVX-512 but the OS
-  has not enabled it in XCR0 — for example, inside Docker containers on
-  GitHub Actions. Host CPU features are now cross-checked against the
-  runtime CPUID view, so features the kernel withholds no longer cause
-  `SIGILL` at runtime.
-  ([Issue #6413](https://github.com/modular/modular/issues/6413))
+  struct Foo[size: Int = -1](StaticSize where size >= 0):
+      comptime SIZE: Int where Self.size >= 0 = Self.size
+  ```

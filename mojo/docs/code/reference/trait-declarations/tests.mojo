@@ -119,7 +119,7 @@ def test_able_to_say_hello():
 
 
 trait Boxable:
-    comptime Associated: Writable & Copyable & ImplicitlyDestructible
+    comptime Associated: Writable & Copyable & ImplicitlyDeletable
 
     def unbox(self) -> Self.Associated:
         ...
@@ -144,7 +144,7 @@ def test_associated_types() raises:
 # --- Generic associated type ---
 
 
-comptime Base = Copyable & ImplicitlyDestructible & Writable
+comptime Base = Copyable & ImplicitlyDeletable & Writable
 
 
 @fieldwise_init
@@ -167,7 +167,7 @@ def test_generic_associated_type() raises:
 
 from std.sys.info import bit_width_of
 
-comptime BaseElement = Copyable & ImplicitlyDestructible & Writable
+comptime BaseElement = Copyable & ImplicitlyDeletable & Writable
 
 
 trait Test:
@@ -235,7 +235,7 @@ trait PrettyPrintable(Printable):
 
 
 @fieldwise_init
-struct Box_2[T: Copyable & Writable & ImplicitlyDestructible](PrettyPrintable):
+struct Box_2[T: Copyable & Writable & ImplicitlyDeletable](PrettyPrintable):
     var value: Self.T
 
     def to_string(self) -> String:
@@ -274,7 +274,7 @@ def test_parameter_level_bounds():
 
 
 @fieldwise_init
-struct Pair_1[T: Writable & Copyable & ImplicitlyDestructible](Writable):
+struct Pair_1[T: Writable & Copyable & ImplicitlyDeletable](Writable):
     var first: Self.T
     var second: Self.T
 
@@ -291,7 +291,7 @@ def test_struct_level_bounds() raises:
 
 
 @fieldwise_init
-struct Pair_2[T: Copyable & ImplicitlyDestructible](
+struct Pair_2[T: Copyable & ImplicitlyDeletable](
     Writable where conforms_to(T, Writable)
 ):
     var first: Self.T

@@ -38,13 +38,12 @@ from std.utils import Variant
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
+from std.builtin.variadics import TypeList
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
 from std.memory import UnsafeMaybeUninit
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location, reflect
-from std.sys.intrinsics import _type_is_eq
-from std.utils.variant import _all_trivial_copyinit
 from std.utils._nicheable import (
     UnsafeNicheable,
     UnsafeCustomNicheStorage,
@@ -94,7 +93,13 @@ struct EmptyOptionalError[T: AnyType](
 
 struct Optional[T: Movable](
     Boolable,
-    Copyable where conforms_to(T, Copyable),
+    # TODO(MOCO-3640): Remove the _NoneType check once the compiler can
+    # synthesize copy constructors through variadic conditional conformances
+    # (TypeList.of[_NoneType, T]().all_conforms_to[Copyable]() when T: Copyable).
+    Copyable where (
+        conforms_to(T, Copyable)
+        and TypeList.of[T, _NoneType]().all_conforms_to[Copyable]()
+    ),
     Defaultable,
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
@@ -246,71 +251,6 @@ struct Optional[T: Movable](
         """Implicitly cast an `OptionalReg[T]` to an `Optional[T]`."""
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         UnsafePointer(to=self).bitcast[OptionalReg[U]]()[] = optional_reg
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__(
-        nullable: UnsafePointer[...],
-        out self: Optional[
-            UnsafePointer[
-                nullable.type,
-                nullable.origin,
-                address_space=nullable.address_space,
-            ]
-        ],
-    ):
-        self = {value = nullable}
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__(
-        nullable: UnsafePointer[mut=True, ...],
-        out self: Optional[
-            UnsafePointer[
-                nullable.type,
-                AnyOrigin[mut=True],
-                address_space=nullable.address_space,
-            ]
-        ],
-    ):
-        self = {value = nullable.unsafe_origin_cast[AnyOrigin[mut=True]]()}
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__[
-        __disambiguate: NoneType = None
-    ](
-        nullable: UnsafePointer[...],
-        out self: Optional[
-            UnsafePointer[
-                nullable.type,
-                AnyOrigin[mut=False],
-                address_space=nullable.address_space,
-            ]
-        ],
-    ):
-        self = {
-            value = nullable.as_immutable().unsafe_origin_cast[
-                AnyOrigin[mut=False]
-            ]()
-        }
-
-    # TODO(MOCO-3640): Remove once the compiler can synthesize copy
-    # constructors through variadic conditional conformances
-    # (AllCopyable[_NoneType, T] when T: Copyable).
-    comptime __copy_ctor_is_trivial: Bool = _all_trivial_copyinit[Self.T]()
-
-    @always_inline
-    def __init__(out self, *, copy: Self):
-        """Copy-initialize an `Optional`.
-
-        Args:
-            copy: The `Optional` to copy from.
-        """
-        self._value = Self._type(copy=copy._value)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -727,9 +667,8 @@ struct Optional[T: Movable](
         caller-provided destructor function.
 
         This method can be used to destroy `Optional` values whose element
-        type is not `ImplicitlyDestructible` (for example, types
-        marked `@explicit_destroy`). The `__del__` on `Optional`
-        requires `T: ImplicitlyDestructible`, so explicit-destroy users must
+        type is not `ImplicitlyDeletable`. The `__del__` on `Optional`
+        requires `T: ImplicitlyDeletable`, so explicit-destroy users must
         destroy an `Optional[T]` through this API instead.
 
         If `self` is empty, `destroy_func` is not called. Otherwise
@@ -745,9 +684,8 @@ struct Optional[T: Movable](
         Examples:
 
         ```mojo
-        @explicit_destroy
         @fieldwise_init
-        struct ExplicitDestroy(Movable):
+        struct ExplicitDestroy(Movable, ImplicitlyDeletable where False):
             var data: Int
 
             def destroy(deinit self):
@@ -769,14 +707,14 @@ struct Optional[T: Movable](
             self._value^.destroy_with[_NoneType](_NoneType.__del__)
 
     def or_else[
-        _T: Movable & ImplicitlyDestructible, //
+        _T: Movable & ImplicitlyDeletable, //
     ](deinit self: Optional[_T], var default: _T) -> _T:
         """Return the underlying value contained in the `Optional` or a default
         value if the `Optional`'s underlying value is not present.
 
         Parameters:
             _T: Type of the optional element, which must conform to
-                `ImplicitlyDestructible`.
+                `ImplicitlyDeletable`.
 
         Args:
             default: The new value to use if no value was present.
@@ -979,27 +917,27 @@ struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
     @always_inline
     def __init__(out self):
         self._value = __mlir_op.`kgen.variant.create`[
-            _type=Self._mlir_type, index=Int(1)._mlir_value
+            _type=Self._mlir_type, index=SIMDSize(1)._mlir_value
         ](__mlir_attr.false)
 
     @always_inline
     def __init__[U: TrivialRegisterPassable](out self, value: U):
-        comptime assert _type_is_eq[U, Self.T]()
+        comptime assert U == Self.T
         self._value = __mlir_op.`kgen.variant.create`[
-            _type=Self._mlir_type, index=Int(0)._mlir_value
+            _type=Self._mlir_type, index=SIMDSize(0)._mlir_value
         ](rebind[Self.T](value))
 
     @always_inline
     def value[U: TrivialRegisterPassable](self) -> U:
-        comptime assert _type_is_eq[U, Self.T]()
-        var value = __mlir_op.`kgen.variant.get`[index=Int(0)._mlir_value](
+        comptime assert U == Self.T
+        var value = __mlir_op.`kgen.variant.get`[index=SIMDSize(0)._mlir_value](
             self._value
         )
         return rebind[U](value)
 
     @always_inline
     def __bool__(self) -> Bool:
-        return __mlir_op.`kgen.variant.is`[index=Int(0)._mlir_value](
+        return __mlir_op.`kgen.variant.is`[index=SIMDSize(0)._mlir_value](
             self._value
         )
 
@@ -1025,14 +963,14 @@ struct _NicheableOptionalRegStorage[
 
     @always_inline
     def __init__[U: TrivialRegisterPassable](out self, value: U):
-        comptime assert _type_is_eq[U, Self.T]()
+        comptime assert U == Self.T
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         var ptr = UnsafePointer(to=self.storage).bitcast[Self.T]()
         ptr.init_pointee_move(rebind[Self.T](value))
 
     @always_inline
     def value[U: TrivialRegisterPassable](self) -> U:
-        comptime assert _type_is_eq[U, Self.T]()
+        comptime assert U == Self.T
         return UnsafePointer(to=self.storage).bitcast[U]()[]
 
     @always_inline

@@ -121,16 +121,14 @@ def erf_elementwise(
     var tid = granularity * global_idx.x
 
     @always_inline
-    @__copy_capture(tid)
-    @parameter
-    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         var offset = tid + Int(idx[0].value())
         if offset >= len:
             return
         buf[offset] = erf(buf[offset])
 
-    elementwise[func, simd_width=simd_width_of[DType.float32](), target="gpu"](
-        granularity, ctx
+    elementwise[simd_width=simd_width_of[DType.float32](), target="gpu"](
+        func, Coord(granularity), ctx
     )
 
 
@@ -193,7 +191,7 @@ def test_erf_kernel_sm90() raises:
 
 
 def test_shared_stack_allocation() -> (
-    UnsafePointer[Int8, MutAnyOrigin, address_space=AddressSpace.SHARED]
+    UnsafePointer[Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED]
 ):
     return stack_allocation[
         999, DType.int8, 8, address_space=AddressSpace.SHARED

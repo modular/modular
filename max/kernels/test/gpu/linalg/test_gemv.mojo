@@ -352,12 +352,20 @@ def run_matvec_with_epilogue_fn(
 
 
 def run_split_k_gemm[
-    M: Int, N: Int, K: Int, with_epilogue: Bool, tile_n: Int = 2
+    M: Int,
+    N: Int,
+    K: Int,
+    with_epilogue: Bool,
+    tile_n: Int = 2,
+    tile_m: Int = 1,
+    num_threads: Int = 128,
 ](*, ctx: DeviceContext) raises:
     comptime a_type = DType.float32
-    comptime num_threads = 128
     comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
-    comptime check_bounds = N % tile_n != 0
+    comptime check_bounds_n = N % tile_n != 0
+    # The grid covers ceildiv(M, tile_m) * tile_m rows, so tile_m > 1 needs
+    # the row guard (tile_m == 1 covers M exactly).
+    comptime check_bounds_m = tile_m > 1
     comptime seed_val = 42
     comptime row_pad = 8
     comptime const_val = Float32(4.0)  # added by the epilogue
@@ -412,11 +420,12 @@ def run_split_k_gemm[
             type_of(a_nd).LayoutType,
             type_of(w_nd).LayoutType,
             simd_width=simd_width,
-            tile_m=1,
+            tile_m=tile_m,
             tile_n=tile_n,
             num_threads=num_threads,
             elementwise_lambda_fn=epilogue_fn,
-            check_bounds=check_bounds,
+            check_bounds_m=check_bounds_m,
+            check_bounds_n=check_bounds_n,
         ]
         var func = ctx.compile_function[kernel]()
         ctx.enqueue_function(
@@ -427,7 +436,7 @@ def run_split_k_gemm[
             M,
             N,
             K,
-            grid_dim=(ceildiv(M, 1), ceildiv(N, tile_n)),
+            grid_dim=(ceildiv(M, tile_m), ceildiv(N, tile_n)),
             block_dim=num_threads,
         )
     else:
@@ -439,10 +448,11 @@ def run_split_k_gemm[
             type_of(a_nd).LayoutType,
             type_of(w_nd).LayoutType,
             simd_width=simd_width,
-            tile_m=1,
+            tile_m=tile_m,
             tile_n=tile_n,
             num_threads=num_threads,
-            check_bounds=check_bounds,
+            check_bounds_m=check_bounds_m,
+            check_bounds_n=check_bounds_n,
         ]
         ctx.enqueue_function[kernel](
             c_nd,
@@ -451,7 +461,7 @@ def run_split_k_gemm[
             M,
             N,
             K,
-            grid_dim=(ceildiv(M, 1), ceildiv(N, tile_n)),
+            grid_dim=(ceildiv(M, tile_m), ceildiv(N, tile_n)),
             block_dim=num_threads,
         )
 
@@ -523,9 +533,62 @@ def main() raises:
         )
 
         # gemv_split_k GEMM (M > 1, N > 1), with and without an epilogue.
-        # Covers both check_bounds=False (N % tile_n == 0) and the bounds-checked
-        # path (N % tile_n != 0).
+        # Covers both check_bounds_n=False (N % tile_n == 0) and the
+        # column-bounds-checked path (N % tile_n != 0).
         run_split_k_gemm[4, 128, 2048, with_epilogue=True, tile_n=2](ctx=ctx)
         run_split_k_gemm[33, 126, 2048, with_epilogue=True, tile_n=4](ctx=ctx)
         run_split_k_gemm[4, 128, 2048, with_epilogue=False, tile_n=2](ctx=ctx)
         run_split_k_gemm[33, 126, 2048, with_epilogue=False, tile_n=4](ctx=ctx)
+
+        # tile_m > 1 with M % tile_m != 0 and N % tile_n != 0: both row and
+        # column guards on (check_bounds_m and check_bounds_n). No tuning
+        # config reaches this combination today, but it is what the kernel's
+        # parameter defaults give a direct caller.
+        run_split_k_gemm[5, 126, 2048, with_epilogue=True, tile_n=4, tile_m=2](
+            ctx=ctx
+        )
+        run_split_k_gemm[5, 126, 2048, with_epilogue=False, tile_n=4, tile_m=2](
+            ctx=ctx
+        )
+
+        # FP32 router-GEMM dispatch shapes (small N, large K) with an epilogue,
+        # at the dispatch's tile_m buckets (tile_n=1, 256 threads). Exercises
+        # the split-K GEMV epilogue path that matmul_dispatch_sm100 now routes
+        # the FP32 router/gate GEMM to (the epilogue rides through as the
+        # elementwise_lambda_wrapper).
+        run_split_k_gemm[
+            4,
+            128,
+            6144,
+            with_epilogue=True,
+            tile_n=1,
+            tile_m=1,
+            num_threads=256,
+        ](ctx=ctx)
+        run_split_k_gemm[
+            8,
+            128,
+            6144,
+            with_epilogue=True,
+            tile_n=1,
+            tile_m=2,
+            num_threads=256,
+        ](ctx=ctx)
+        run_split_k_gemm[
+            16,
+            128,
+            6144,
+            with_epilogue=True,
+            tile_n=1,
+            tile_m=4,
+            num_threads=256,
+        ](ctx=ctx)
+        run_split_k_gemm[
+            8,
+            256,
+            6144,
+            with_epilogue=True,
+            tile_n=1,
+            tile_m=2,
+            num_threads=256,
+        ](ctx=ctx)

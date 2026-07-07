@@ -11,16 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OwnedKwargsDict
 from std.os import abort
 
 from std.python import Python, PythonObject
 from std.python._cpython import PyObjectPtr, Py_ssize_t
-from std.python.bindings import PythonModuleBuilder
+from std.python.bindings import PythonModuleBuilder, raise_python_exception
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
 
@@ -62,7 +61,6 @@ def PyInit_mojo_module() -> PythonObject:
         abort(String("failed to create Python module: ", e))
 
 
-@export
 def takes_zero_raises_returns() raises -> PythonObject:
     var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
     if s != "just a python string":
@@ -71,14 +69,14 @@ def takes_zero_raises_returns() raises -> PythonObject:
     return PythonObject("just another python string")
 
 
-@export
-def takes_one_raises_returns(a: PythonObject) raises -> PythonObject:
+def takes_one_raises_returns(
+    a: PythonObject,
+) raises -> PythonObject:
     if a != PythonObject("foo"):
         raise Error("input must be 'foo'")
     return a
 
 
-@export
 def takes_two_raises_returns(
     a: PythonObject, b: PythonObject
 ) raises -> PythonObject:
@@ -87,7 +85,6 @@ def takes_two_raises_returns(
     return a + b
 
 
-@export
 def takes_three_raises_returns(
     a: PythonObject, b: PythonObject, c: PythonObject
 ) raises -> PythonObject:
@@ -96,7 +93,6 @@ def takes_three_raises_returns(
     return a + b + c
 
 
-@export
 def takes_seven_raises_returns(
     a: PythonObject,
     b: PythonObject,
@@ -111,7 +107,6 @@ def takes_seven_raises_returns(
     return a + b + c + d + e + f + g
 
 
-@export
 def takes_eight_raises_returns(
     a: PythonObject,
     b: PythonObject,
@@ -127,7 +122,6 @@ def takes_eight_raises_returns(
     return a + b + c + d + e + f + g + h
 
 
-@export
 def takes_zero_returns() -> PythonObject:
     try:
         return takes_zero_raises_returns()
@@ -135,7 +129,6 @@ def takes_zero_returns() -> PythonObject:
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_one_returns(a: PythonObject) -> PythonObject:
     try:
         return takes_one_raises_returns(a)
@@ -143,7 +136,6 @@ def takes_one_returns(a: PythonObject) -> PythonObject:
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_two_returns(a: PythonObject, b: PythonObject) -> PythonObject:
     try:
         return takes_two_raises_returns(a, b)
@@ -151,7 +143,6 @@ def takes_two_returns(a: PythonObject, b: PythonObject) -> PythonObject:
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_three_returns(
     a: PythonObject, b: PythonObject, c: PythonObject
 ) -> PythonObject:
@@ -161,7 +152,6 @@ def takes_three_returns(
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_zero_raises() raises:
     var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
     if s != "just a python string":
@@ -173,21 +163,18 @@ def takes_zero_raises() raises:
     )
 
 
-@export
 def takes_one_raises(list_obj: PythonObject) raises:
     if len(list_obj) != 3:
         raise Error("list_obj must have length 3")
     list_obj[PythonObject(0)] = PythonObject("baz")
 
 
-@export
 def takes_two_raises(list_obj: PythonObject, obj: PythonObject) raises:
     if len(list_obj) != 3:
         raise Error("list_obj must have length 3")
     list_obj[PythonObject(0)] = obj
 
 
-@export
 def takes_three_raises(
     list_obj: PythonObject, obj: PythonObject, obj2: PythonObject
 ) raises:
@@ -196,7 +183,6 @@ def takes_three_raises(
     list_obj[PythonObject(0)] = obj + obj2
 
 
-@export
 def takes_zero():
     try:
         takes_zero_raises()
@@ -204,7 +190,6 @@ def takes_zero():
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_one(list_obj: PythonObject):
     try:
         takes_one_raises(list_obj)
@@ -212,7 +197,6 @@ def takes_one(list_obj: PythonObject):
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_two(list_obj: PythonObject, obj: PythonObject):
     try:
         takes_two_raises(list_obj, obj)
@@ -220,7 +204,6 @@ def takes_two(list_obj: PythonObject, obj: PythonObject):
         abort(String("Unexpected Python error: ", e))
 
 
-@export
 def takes_three(list_obj: PythonObject, obj: PythonObject, obj2: PythonObject):
     try:
         takes_three_raises(list_obj, obj, obj2)
@@ -233,10 +216,7 @@ def takes_three(list_obj: PythonObject, obj: PythonObject, obj2: PythonObject):
 # ===----------------------------------------------------------------------=== #
 
 
-@export
-def sum_kwargs_ints(
-    kwargs: OwnedKwargsDict[PythonObject],
-) raises -> PythonObject:
+def sum_kwargs_ints(**kwargs: PythonObject) raises -> PythonObject:
     """Test function that takes kwargs, converts them to Ints, adds them together and returns the sum.
     """
     var total = 0
@@ -247,16 +227,15 @@ def sum_kwargs_ints(
     return PythonObject(total)
 
 
-@export
 def sum_pos_arg_and_kwargs(
-    arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]
+    arg1: PythonObject, **kwargs: PythonObject
 ) raises -> PythonObject:
-    return PythonObject(Int(py=arg1) + Int(py=sum_kwargs_ints(kwargs)))
+    return PythonObject(Int(py=arg1) + Int(py=sum_kwargs_ints(**kwargs^)))
 
 
 def fastcall_concat(
     py_self: PyObjectPtr,
-    args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+    args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
     nargs: Py_ssize_t,
 ) abi("C") -> PyObjectPtr:
     """Hand-written METH_FASTCALL wrapper that concatenates `nargs` strings.
@@ -271,10 +250,4 @@ def fastcall_concat(
             result = result + PythonObject(from_borrowed=args[i])
         return result.steal_data()
     except e:
-        ref cpy = Python().cpython()
-        var error_message = String(e)
-        var error_type = cpy.get_error_global("PyExc_Exception")
-        cpy.PyErr_SetString(
-            error_type, error_message.as_c_string_slice().unsafe_ptr()
-        )
-        return PyObjectPtr()
+        return raise_python_exception(e)

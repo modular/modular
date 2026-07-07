@@ -183,7 +183,10 @@ def bench_reducescatter_2d[
             signal_buffers[gpu_idx], 0
         )
         rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+            signal_buffers[gpu_idx]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
         )
 
     # Create 2D input and output TileTensors.
@@ -222,7 +225,7 @@ def bench_reducescatter_2d[
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime for i in range(num_buffers):
                 in_bufs[i] = InputTileType(
-                    cb_inputs[i].offset_ptr(cache_iter),
+                    cb_inputs[i].offset_ptr(cache_iter).as_unsafe_any_origin(),
                     row_major(M, D),
                 )
 
@@ -422,7 +425,10 @@ def bench_reducescatter[
             signal_buffers[gpu_idx], 0
         )
         rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+            signal_buffers[gpu_idx]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
         )
 
     # Create input and output TileTensors
@@ -452,7 +458,7 @@ def bench_reducescatter[
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime for i in range(num_buffers):
                 in_bufs[i] = InputTileType(
-                    cb_inputs[i].offset_ptr(cache_iter),
+                    cb_inputs[i].offset_ptr(cache_iter).as_unsafe_any_origin(),
                     row_major(input_length),
                 )
 

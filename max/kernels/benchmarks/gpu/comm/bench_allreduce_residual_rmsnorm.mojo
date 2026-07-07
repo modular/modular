@@ -45,7 +45,7 @@ from comm.allreduce_residual_rmsnorm import (
     allreduce_rmsnorm,
 )
 from std.collections import Optional
-from comm.sync import is_p2p_enabled
+from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 
@@ -70,7 +70,7 @@ def _verify_results[
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
-    epsilon: Scalar[in_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
 ) raises:
@@ -93,7 +93,7 @@ def _verify_results[
 
     # Reset signal buffers.
     for i in range(ngpus):
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
 
     comptime InTensorType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
@@ -113,7 +113,7 @@ def _verify_results[
         out_tensors[_i] = TileTensor(
             ar_out_dev[_i],
             row_major(Coord(Index(num_rows, num_cols))),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -167,7 +167,7 @@ def _verify_results[
     # Fully-fused kernel path.
     # Reset signal buffers for the fully-fused kernel run.
     for i in range(ngpus):
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -302,7 +302,7 @@ def _verify_add_results[
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
-    epsilon: Scalar[in_dtype],
+    epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
     residual_dev: DeviceBuffer[in_dtype],
@@ -327,7 +327,7 @@ def _verify_add_results[
 
     # --- Epilogue path: allreduce (with add epilogue) + fused RMSNorm+FP8 ---
     for i in range(ngpus):
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
 
     comptime InTensorType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
@@ -426,7 +426,7 @@ def _verify_add_results[
 
     # --- Fully-fused path: allreduce+add+RMSNorm+FP8 (single kernel) ---
     for i in range(ngpus):
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -606,8 +606,13 @@ def bench_allreduce_rmsnorm_fp8[
                 size_of[Signal]() + temp_bytes
             )
         )
-        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
 
     # TileTensor views for allreduce.
     comptime InTensorType = TileTensor[
@@ -692,7 +697,7 @@ def bench_allreduce_rmsnorm_fp8[
     list_of_ctx[0].enqueue_copy(gamma_dev, gamma_host)
 
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(num_cols))))
-    var epsilon = Scalar[in_dtype](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[in_dtype](0.0)
     var scale_ub = max_finite[out_dtype]().cast[DType.float32]()
 
@@ -737,13 +742,27 @@ def bench_allreduce_rmsnorm_fp8[
         UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
     for i in range(ngpus):
-        fused_fp8_out_ptrs[i] = fused_fp8_out_dev[i].unsafe_ptr()
-        fused_scales_ptrs[i] = fused_scales_dev[i].unsafe_ptr()
-        fully_fused_fp8_out_ptrs[i] = fully_fused_fp8_out_dev[i].unsafe_ptr()
-        fully_fused_scales_ptrs[i] = fully_fused_scales_dev[i].unsafe_ptr()
-        fused_add_fp8_out_ptrs[i] = fused_add_fp8_out_dev[i].unsafe_ptr()
-        fused_add_scales_ptrs[i] = fused_add_scales_dev[i].unsafe_ptr()
-        residual_output_ptrs[i] = residual_out_dev[i].unsafe_ptr()
+        fused_fp8_out_ptrs[i] = (
+            fused_fp8_out_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
+        fused_scales_ptrs[i] = (
+            fused_scales_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
+        fully_fused_fp8_out_ptrs[i] = (
+            fully_fused_fp8_out_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
+        fully_fused_scales_ptrs[i] = (
+            fully_fused_scales_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
+        fused_add_fp8_out_ptrs[i] = (
+            fused_add_fp8_out_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
+        fused_add_scales_ptrs[i] = (
+            fused_add_scales_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
+        residual_output_ptrs[i] = (
+            residual_out_dev[i].unsafe_ptr().as_unsafe_any_origin()
+        )
 
     # ===== Benchmark 1: allreduce only =====
 
@@ -1135,6 +1154,10 @@ def main() raises:
         )
         return
 
+    # Enable P2P access between all GPU pairs before the read-only status
+    # check below. In production this happens during model setup; the
+    # standalone bench must do it explicitly (mirrors the unit test).
+    _ = enable_p2p()
     if not is_p2p_enabled():
         print("P2P not enabled, skipping benchmark.")
         return

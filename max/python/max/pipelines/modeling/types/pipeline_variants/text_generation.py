@@ -33,11 +33,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from functools import cached_property
 from typing import (
+    TYPE_CHECKING,
     Any,
     Generic,
     Literal,
     TypedDict,
 )
+
+if TYPE_CHECKING:
+    from PIL.Image import Image as PILImage
 
 from max.pipelines.context import (
     SamplingParams,
@@ -101,6 +105,18 @@ class ImageContentPart(_MessageContentPart):
         default="image", description="Content type identifier"
     )
 
+    # Optional vendor sizing hints; ``None`` means unset and models may ignore
+    # them. ``detail`` is the OpenAI quality tier; models that honor it map the
+    # tier to a resolution.
+    detail: str | None = Field(
+        default=None,
+        description="Detail/quality tier hint for image preprocessing",
+    )
+    max_long_side_pixel: int | None = Field(
+        default=None,
+        description="Max long-side length in pixels for image preprocessing",
+    )
+
 
 class VideoContentPart(_MessageContentPart):
     """A video content part of a message."""
@@ -109,10 +125,32 @@ class VideoContentPart(_MessageContentPart):
         default="video", description="Content type identifier"
     )
 
+    # Optional vendor sampling/sizing hints; ``None`` means unset and models
+    # may ignore them.
+    fps: float | None = Field(
+        default=None,
+        description="Frames-per-second to sample the video at",
+    )
+    max_frames: int | None = Field(
+        default=None,
+        description="Maximum number of frames to sample from the video",
+    )
+    detail: str | None = Field(
+        default=None,
+        description="Detail/quality tier hint for video preprocessing",
+    )
+    max_long_side_pixel: int | None = Field(
+        default=None,
+        description="Max long-side length in pixels for video preprocessing",
+    )
+
 
 MessageContent = TextContentPart | ImageContentPart | VideoContentPart
 
-_MessageRole = Literal["system", "user", "assistant", "tool", "function"]
+# ``root`` is a vendor role; supporting chat templates order it above ``system``.
+_MessageRole = Literal[
+    "system", "user", "assistant", "tool", "function", "root"
+]
 
 
 class TextGenerationRequestMessage(BaseModel):
@@ -320,6 +358,16 @@ class TextGenerationRequest:
     A list of video byte arrays that can be included as part of the request.
     Each video is decoded into frames during preprocessing.
     """
+    decoded_images: list[PILImage] = field(default_factory=list)
+    """
+    Decoded ``PIL.Image`` objects corresponding 1:1 to :attr:`images`, decoded
+    once at request admission (the API server validates images by fully
+    decoding them, so the decoded result is carried here to avoid a second
+    decode in the tokenizer). API-process-only: this is never serialized across
+    the worker boundary, so it must stay populated only for the in-process
+    tokenization step. Empty when images were not pre-decoded (offline/test
+    callers); tokenizers fall back to decoding :attr:`images` in that case.
+    """
     tools: list[TextGenerationRequestTool] | None = None
     """
     A list of tools that can be invoked during the generation process. This
@@ -376,9 +424,31 @@ class TextGenerationRequest:
     ``TextContext.external_block_metadata`` so the DKVConnector can
     fetch cached blocks before the forward pass.
     """
+    cache_salt: str | None = None
+    """Optional per-request salt that isolates this prompt's prefix-cache
+
+    entries from other requests sharing the same tokens.
+    Combined with the cluster-level ``kv_cache_hash_seed`` via XOR inside
+    ``BlockManager`` to derive the root parent hash. Has effect only when
+    ``kv_cache_hash_algo`` is ``sha256`` or ``sha256_64``; under
+    ``ahash64`` the salt is dropped with a one-time warning.
+
+    Capped at 512 chars at the OpenAI schema layer.
+    """
 
     def __str__(self) -> str:
         return str(self.request_id)
+
+    def images_for_processing(self) -> list[bytes | PILImage]:
+        """Return the images for tokenizer preprocessing, decoded once.
+
+        Prefers the pre-decoded :attr:`decoded_images` (decoded and validated
+        once at the API server) and falls back to the raw :attr:`images` bytes
+        for offline and test callers. Tokenizers consume images through this so
+        the decode-once policy lives in one place rather than being repeated at
+        every per-model decode site.
+        """
+        return self.decoded_images or self.images
 
     def __post_init__(self) -> None:
         """Validates mutual exclusivity, image-messaging constraints, and message-image consistency after object initialization."""
@@ -460,12 +530,7 @@ class BatchType(Enum):
 
 @dataclass(eq=True)
 class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
-    """Input parameters for text generation pipeline operations.
-
-    This class encapsulates the batch of contexts and number of steps required
-    for token generation in a single input object, replacing the previous
-    pattern of passing batch and num_steps as separate parameters.
-    """
+    """Input parameters for text generation pipeline operations."""
 
     batches: list[list[TextGenerationContextType]]
     """Variable list of batches, with each batch being a list of contexts.
@@ -473,9 +538,6 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     There can be multiple batches when using data parallelism, in which each
     batch is mapped to a different device replica.
     """
-
-    num_steps: int
-    """Number of steps to run for."""
 
     input_tokens: int = -1
     """Number of input tokens."""
@@ -508,7 +570,6 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         return (
             "TextGenerationInputs("
             f"batch_size={len(self.flat_batch)}, "
-            f"num_steps={self.num_steps}, "
             f"batch_type={self.batch_type.value}"
             ")"
         )

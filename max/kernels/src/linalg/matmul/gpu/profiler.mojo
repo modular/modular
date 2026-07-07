@@ -15,6 +15,7 @@
 from std.time.time import global_perf_counter_ns
 from std.gpu import WARP_SIZE, block_idx, thread_idx
 from std.gpu.host import DeviceContext
+from std.gpu.host.info import B200
 from std.gpu import sm_id
 
 
@@ -114,7 +115,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
         var device_buffer = ctx.enqueue_create_buffer[DType.uint64](length)
         device_buffer.enqueue_fill(0)
         return Span[UInt64, MutAnyOrigin](
-            ptr=device_buffer.unsafe_ptr(),
+            ptr=device_buffer.unsafe_ptr().as_unsafe_any_origin(),
             length=length,
         )
 

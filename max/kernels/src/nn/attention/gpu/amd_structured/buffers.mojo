@@ -43,7 +43,7 @@ import std.itertools
 @always_inline
 def _cast_f32_to_fp8_raw[
     src_dtype: DType,
-    size: Int,
+    size: SIMDSize,
     //,
     dtype: DType,
 ](src: SIMD[src_dtype, size]) -> SIMD[dtype, size]:
@@ -106,7 +106,7 @@ struct QRegisterBuffer[
     comptime RegType = TileTensor[
         Self.dtype,
         type_of(Self.reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var reg_tile: Self.RegType
@@ -229,7 +229,7 @@ struct QRegisterBuffer[
     ](self) -> TileTensor[
         Self.dtype,
         type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
         """Return MMA-sized sub-tile for the given tile and k indices."""
@@ -237,7 +237,7 @@ struct QRegisterBuffer[
             TileTensor[
                 Self.dtype,
                 type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
-                MutExternalOrigin,
+                MutUntrackedOrigin,
                 address_space=AddressSpace.LOCAL,
             ]
         ](
@@ -285,7 +285,7 @@ struct OutputRegisterBuffer[
     comptime RegType = TileTensor[
         Self.dtype,
         type_of(Self.reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var reg_tile: Self.RegType
@@ -347,7 +347,7 @@ struct PRegisterBuffer[
     comptime RegType = TileTensor[
         Self.accum_type_,
         type_of(Self.reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var reg_tile: Self.RegType
@@ -359,7 +359,7 @@ struct PRegisterBuffer[
     comptime StageTileType = TileTensor[
         Self.accum_type_,
         type_of(Self.stage_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 
@@ -388,6 +388,7 @@ struct PRegisterBuffer[
         address_space=AddressSpace.SHARED,
     ]
 
+    @__allow_legacy_any_origin_fields
     var smem_tile: Self.SmemTileType
 
     # TileTensor type for a single BM×BK blocked SMEM slice. Parent is
@@ -550,7 +551,7 @@ struct PRegisterBuffer[
     comptime MmaTileType = TileTensor[
         Self.mma_dtype,
         type_of(Self._mma_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 
@@ -751,7 +752,6 @@ struct PRegisterBuffer[
             layout_3d,
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-            element_size=1,
         ](mma_tile.ptr, layout_3d())
 
         var dist_res = mma_3d.distribute_with_offset[tl_3d](lane_id())
@@ -778,6 +778,17 @@ struct PRegisterBuffer[
 
     @always_inline
     def copy_to_shared(self):
+        # When P is not SMEM-backed there is no P SMEM region and `mma_tile`
+        # reads P from registers, but the decode driver calls this
+        # unconditionally — so no-op the register-resident path. This fires only
+        # for a BN==WN config that is NOT warp-local. Warp-local also has
+        # BN==WN, but is deliberately forced SMEM-backed (see `_warp_local_p` in
+        # attention.mojo) because the register-resident 16x16x128 P→PV path does
+        # not compile, so warp-local does NOT take this no-op. Comptime-dead on
+        # every shipping MLA-decode config (byte-identical).
+        comptime if not Self.shared_memory_backed:
+            return
+
         comptime frag_w = Self.output_frag_size
         var warp_row, warp_col = get_warp_coords[Self.BN, Self.WN]()
 

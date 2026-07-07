@@ -148,7 +148,7 @@ struct BlockwiseFP8Accumulator[
     comptime RegTileType = TileTensor[
         Self.accum_type,
         Self.AccumLayout,
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.GENERIC,
     ]
 

@@ -145,7 +145,7 @@ def modular_py_binary(
         pydeps_test(
             name = name + ".pydeps_test",
             srcs = srcs,
-            data = extra_data + data,
+            data = data,
             ignore_extra_deps = ignore_extra_deps,
             ignore_unresolved_imports = ignore_unresolved_imports,
             target_compatible_with = select({

@@ -109,6 +109,33 @@ def _check_kernel():
     if keep[0].cast[DType.float32]() != Float32(1000.0):
         _ = Float32(1.0) / Float32(0.0)
 
+    # cast_saturating with in_dtype == out_dtype (non-fp8): identity.
+    var bf16_id = cast_saturating[DType.bfloat16](
+        SIMD[DType.bfloat16, 2](BFloat16(1000.0), BFloat16(-1000.0))
+    )
+    if bf16_id[0].cast[DType.float32]() != Float32(1000.0):
+        _ = Float32(1.0) / Float32(0.0)
+
+    # cast_saturating with in_dtype == out_dtype (fp8): identity, no clamp.
+    var e4m3_id = cast_saturating[DType.float8_e4m3fn](
+        SIMD[DType.float8_e4m3fn, 1](Scalar[DType.float8_e4m3fn](fp8_max))
+    )
+    if e4m3_id[0].cast[DType.float32]() != fp8_max:
+        _ = Float32(1.0) / Float32(0.0)
+
+    # cast_saturating across fp8 types: e5m2 → e4m3fn must still clamp.
+    # e5m2 max_finite exceeds e4m3fn max_finite.
+    comptime e5m2_max = Float32(max_finite[DType.float8_e5m2]())
+    var e5m2_big = SIMD[DType.float8_e5m2, 2](
+        Scalar[DType.float8_e5m2](e5m2_max),
+        Scalar[DType.float8_e5m2](-e5m2_max),
+    )
+    var cross = cast_saturating[DType.float8_e4m3fn](e5m2_big)
+    if cross[0].cast[DType.float32]() != fp8_max:
+        _ = Float32(1.0) / Float32(0.0)
+    if cross[1].cast[DType.float32]() != fp8_min:
+        _ = Float32(1.0) / Float32(0.0)
+
 
 def main() raises:
     with DeviceContext() as ctx:

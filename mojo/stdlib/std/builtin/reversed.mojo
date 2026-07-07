@@ -25,7 +25,12 @@ from std.hashlib import Hasher
 
 from std.memory.span import Span, _SpanIter
 
-from .range import _StridedRange
+from .range import (
+    _StridedRange,
+    _ZeroStartingScalarRange,
+    _StridedScalarRange,
+    _SequentialScalarRange,
+)
 
 # ===----------------------------------------------------------------------=== #
 #  Reversible
@@ -82,6 +87,44 @@ def reversed[T: ReversibleRange](value: T) -> _StridedRange:
     return value.__reversed__()
 
 
+def reversed[
+    dtype: DType
+](value: _ZeroStartingScalarRange[dtype]) -> _StridedScalarRange[dtype]:
+    """Get a reversed iterator of the input range.
+
+    **Note**: iterators are currently non-raising.
+
+    Parameters:
+        dtype: The dtype of the range to reverse.
+
+    Args:
+        value: The range to get the reversed iterator of.
+
+    Returns:
+        The reversed iterator of the range.
+    """
+    return value.__reversed__()
+
+
+def reversed[
+    dtype: DType
+](value: _SequentialScalarRange[dtype]) -> _StridedScalarRange[dtype]:
+    """Get a reversed iterator of the input range.
+
+    **Note**: iterators are currently non-raising.
+
+    Parameters:
+        dtype: The dtype of the range to reverse.
+
+    Args:
+        value: The range to get the reversed iterator of.
+
+    Returns:
+        The reversed iterator of the range.
+    """
+    return value.__reversed__()
+
+
 def reversed[T: Copyable](ref value: List[T]) -> type_of(value.__reversed__()):
     """Get a reversed iterator of the input list.
 
@@ -122,7 +165,7 @@ def reversed[
 
 
 def reversed[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable & ImplicitlyDeletable
 ](ref value: Deque[T]) -> _DequeIter[T, origin_of(value), False]:
     """Get a reversed iterator of the deque.
 
@@ -141,8 +184,8 @@ def reversed[
 
 
 def reversed[
-    K: KeyElement & Copyable & ImplicitlyDestructible,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDeletable,
+    V: Copyable & ImplicitlyDeletable,
     H: Hasher,
 ](ref value: Dict[K, V, H],) -> _DictKeyIter[K, V, H, origin_of(value), False]:
     """Get a reversed iterator of the input dict.
@@ -166,8 +209,8 @@ def reversed[
 def reversed[
     dict_mutability: Bool,
     //,
-    K: KeyElement & Copyable & ImplicitlyDestructible,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDeletable,
+    V: Copyable & ImplicitlyDeletable,
     H: Hasher,
     dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictValueIter[K, V, H, dict_origin]) -> _DictValueIter[
@@ -196,8 +239,8 @@ def reversed[
 def reversed[
     dict_mutability: Bool,
     //,
-    K: KeyElement & Copyable & ImplicitlyDestructible,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDeletable,
+    V: Copyable & ImplicitlyDeletable,
     H: Hasher,
     dict_origin: Origin[mut=dict_mutability],
 ](ref value: _DictEntryIter[K, V, H, dict_origin]) -> _DictEntryIter[

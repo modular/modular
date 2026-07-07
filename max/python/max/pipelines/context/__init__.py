@@ -17,18 +17,16 @@ from .context import (
     BaseContextType,
     GrammarEnforcementSnapshot,
     GrammarEnforcementState,
+    GrammarMatcher,
     PixelContext,
-    PixelGenerationContext,
     PixelGenerationContextType,
     SpecDecodingState,
     StructuredOutputRegionDelimiters,
     TextAndVisionContext,
     TextContext,
-    TextGenerationContext,
     TextGenerationContextType,
     TextGenerationResponseFormat,
     VLMContextType,
-    VLMTextGenerationContext,
 )
 from .context_validators import (
     validate_aspect_ratio_args,
@@ -59,7 +57,13 @@ from .sampling_params import (
     SamplingParamsInput,
 )
 from .status import GenerationStatus
-from .tokens import ImageMetadata, Range, TokenBuffer, TokenSlice
+from .tokens import (
+    ImageMetadata,
+    Range,
+    TokenBuffer,
+    TokenHashOverride,
+    TokenSlice,
+)
 
 __all__ = [
     "FUTURE_TOKEN",
@@ -72,12 +76,12 @@ __all__ = [
     "GenerationStatus",
     "GrammarEnforcementSnapshot",
     "GrammarEnforcementState",
+    "GrammarMatcher",
     "ImageMetadata",
     "InputError",
     "LogProbabilities",
     "LogitsProcessor",
     "PixelContext",
-    "PixelGenerationContext",
     "PixelGenerationContextType",
     "ProcessorInputs",
     "PromptTooLongError",
@@ -89,14 +93,13 @@ __all__ = [
     "StructuredOutputRegionDelimiters",
     "TextAndVisionContext",
     "TextContext",
-    "TextGenerationContext",
     "TextGenerationContextType",
     "TextGenerationOutput",
     "TextGenerationResponseFormat",
     "TokenBuffer",
+    "TokenHashOverride",
     "TokenSlice",
     "VLMContextType",
-    "VLMTextGenerationContext",
     "validate_aspect_ratio_args",
     "validate_flux2_max_pixel_area",
     "validate_image_grid_thw_args",

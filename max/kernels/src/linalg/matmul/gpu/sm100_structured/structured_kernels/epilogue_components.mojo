@@ -24,10 +24,15 @@ The SM100 epilogue pipeline flows as:
     TMEM (accumulators) → Registers → SMEM → GMEM (via TMA)
 """
 
-from std.sys import align_of, simd_width_of
+from std.sys import align_of, size_of, simd_width_of
 
 from std.gpu import WARP_SIZE, lane_id, warp_id
-from std.gpu.memory import fence_async_view_proxy
+from std.gpu.memory import (
+    fence_async_view_proxy,
+    cp_async_bulk_tensor_reduce_global_shared_cta,
+    ReduceOp,
+)
+from std.gpu.sync import cp_async_bulk_commit_group
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from structured_kernels.barriers import WarpGroupBarrier
 from layout import (
@@ -45,7 +50,7 @@ from layout.layout import blocked_product, upcast, zipped_divide
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
-from std.utils.index import IndexList
+from std.utils.index import Index, IndexList
 from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
@@ -138,8 +143,8 @@ from structured_kernels.pipeline import ProducerConsumerPipeline
 
 
 @always_inline
-def fp8_frag_to_smem[
-    swizzle_mode: TensorMapSwizzle,
+def st_shared_frag_to_smem[
+    swizzle: Swizzle,
     stageN: Int,
     transpose_c: Bool,
     vec_dtype: DType,
@@ -149,17 +154,32 @@ def fp8_frag_to_smem[
     dst: TileTensor[address_space=AddressSpace.SHARED, ...],
     warp_offset: UInt32 = 0,
 ):
-    """Store fragment to SMEM via st.shared instruction."""
-    comptime assert stageN == 16, "stageN must be 16 for FP8 output type"
+    """Store a register fragment to SMEM via plain st.shared, applying the
+    SMEM swizzle to each offset.
+
+    Used for output dtypes that cannot go through `st_matrix` (which is
+    `.b16`-only): `float8_e4m3fn` (SWIZZLE_NONE, so `swizzle` is the identity
+    and `warp_offset` is 0 -- reproducing the original un-swizzled fp8 store)
+    and `float32` (32B/64B/128B swizzle). The fp32 stores stay swizzle-safe
+    because the swizzle keeps the low 16 bytes (4 fp32) contiguous and the
+    per-store offsets are even.
+    """
     comptime assert (
-        vec_dtype == dst.dtype == DType.float8_e4m3fn
-    ), "vec_dtype and dst.dtype must be float8_e4m3fn for FP8 output type"
+        dst.dtype == DType.float32 or stageN == 16
+    ), "stageN must be 16 for FP8 output type"
+    comptime assert vec_dtype == dst.dtype and dst.dtype in (
+        DType.float8_e4m3fn,
+        DType.float32,
+    ), "vec_dtype and dst.dtype must match and be float8_e4m3fn or float32"
 
     comptime load_width = 2
     comptime repeats = stageN // 8
     comptime assert (
         vec_size // 4
     ) == repeats, "vec_size must be divisible by 4 and equal to repeats * 4"
+
+    comptime stride0 = UInt32(dst.static_stride[0])
+    comptime stride1 = UInt32(dst.static_stride[1])
 
     var coords = FragmentCoords[stageN, repeats](UInt32(lane_id()))
     var top = coords.top_upper
@@ -179,13 +199,30 @@ def fp8_frag_to_smem[
         var elem2 = vec[offset + 2]
         var elem3 = vec[offset + 3]
 
-        comptime if transpose_c:
-            var m0n0 = top_col * UInt32(stageN) + top_row
-            var m0n1 = (top_col + 1) * UInt32(stageN) + top_row
-            var m1n0 = bot_col * UInt32(stageN) + bot_row
-            var m1n1 = (bot_col + 1) * UInt32(stageN) + bot_row
+        var dst_ptr = dst.ptr.mut_cast[True]()
 
-            var dst_ptr = dst.ptr.mut_cast[True]()
+        comptime if transpose_c:
+            var m0n0 = (
+                swizzle(top_col * stride0 + top_row * stride1 + warp_offset)
+                - warp_offset
+            )
+            var m0n1 = (
+                swizzle(
+                    (top_col + 1) * stride0 + top_row * stride1 + warp_offset
+                )
+                - warp_offset
+            )
+            var m1n0 = (
+                swizzle(bot_col * stride0 + bot_row * stride1 + warp_offset)
+                - warp_offset
+            )
+            var m1n1 = (
+                swizzle(
+                    (bot_col + 1) * stride0 + bot_row * stride1 + warp_offset
+                )
+                - warp_offset
+            )
+
             dst_ptr.store[alignment=align_of[SIMD[dst.dtype, 1]]()](
                 m0n0, SIMD[dst.dtype, 1](elem0)
             )
@@ -207,10 +244,9 @@ def fp8_frag_to_smem[
                 dst.dtype
             ]()
 
-            var top_ptr_offset = top_row * UInt32(stageN) + top_col
-            var bot_ptr_offset = bot_row * UInt32(stageN) + bot_col
+            var top_ptr_offset = swizzle(top_row * stride0 + top_col * stride1)
+            var bot_ptr_offset = swizzle(bot_row * stride0 + bot_col * stride1)
 
-            var dst_ptr = dst.ptr.mut_cast[True]()
             dst_ptr.store[alignment=align_of[type_of(top_elems)]()](
                 top_ptr_offset, top_elems
             )
@@ -236,8 +272,9 @@ def store_fragment_to_smem[
     """Store fragment to SMEM via st.matrix instruction for bf16 output type and st.shared instruction for FP8 output type.
     """
 
-    comptime if dst.dtype in (DType.float8_e4m3fn,):  # FP32/FP8 output type
-        return fp8_frag_to_smem[c_swizzle, stageN, transpose_c](
+    # st_matrix is .b16-only, so fp8 and fp32 use plain swizzled st.shared.
+    comptime if dst.dtype in (DType.float8_e4m3fn, DType.float32):
+        return st_shared_frag_to_smem[swizzle, stageN, transpose_c](
             vec, dst, warp_offset
         )
 
@@ -641,6 +678,93 @@ struct TMAStoreExecutor[
                             store_coords.coord_n,
                         ),
                     )
+
+
+# =============================================================================
+# TMAReduceExecutor - Execute TMA reduce-add stores with proper SMEM tiling
+# =============================================================================
+
+
+struct TMAReduceExecutor[
+    c_type: DType,
+    c_smem_dim0: Int,
+    c_smem_dim1: Int,
+    epc: EpilogueConfig,
+    stage_contiguous_size: Int,
+    c_swizzle: TensorMapSwizzle,
+    batched: Bool = False,
+](TrivialRegisterPassable):
+    """Execute TMA reduce-add from SMEM to GMEM.
+
+    Mirrors TMAStoreExecutor but uses cp_async_bulk_tensor_reduce_global_shared_cta (add)
+    instead of cp_async_bulk_tensor_global_shared_cta (store).
+    Takes a typed TMATensorTile value (not a raw pointer) so the
+    descriptor keeps its grid_constant provenance end-to-end -- otherwise
+    the compiler drops the constant-memory optimization and each TMA
+    issue refetches the descriptor.
+    Only supports non-transpose path.
+    """
+
+    comptime stageN = Self.epc.stageN
+    comptime cta_group = Self.epc.cta_group
+    comptime c_smem_shape0 = Self.c_smem_dim0
+    comptime CG1_TMA_BM = Self.c_smem_shape0
+    comptime CG2_TMA_BM = Self.c_smem_shape0 if Self.epc.MMA_M == 256 else Self.epc.BM
+    comptime TMA_BM = Self.CG2_TMA_BM if Self.cta_group == 2 else Self.CG1_TMA_BM
+
+    @staticmethod
+    @always_inline
+    def execute[
+        tma_rank: Int,
+        tile_shape: IndexList[tma_rank],
+        desc_shape: IndexList[tma_rank],
+    ](
+        c_smem_tile: TileTensor[
+            dtype=Self.c_type, address_space=AddressSpace.SHARED, ...
+        ],
+        store_coords: TMAStoreCoords[
+            Self.epc,
+            Self.c_smem_shape0,
+            _,
+            Self.batched,
+        ],
+        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
+        warp_id: UInt32,
+        lane: UInt32,
+    ):
+        """Execute TMA reduce-add from SMEM to GMEM via typed descriptor."""
+        comptime assert (
+            not Self.epc.transpose_c
+        ), "TMAReduceExecutor only supports non-transpose path"
+        if store_coords.elect_one_warp and lane == 0:
+            fence_async_view_proxy()
+
+            var c_smem_split = c_smem_tile.tile[Self.TMA_BM, Self.stageN](
+                Coord(Int(store_coords.c_smem_coord_m), Idx[0])
+            )
+
+            comptime if Self.batched:
+                cp_async_bulk_tensor_reduce_global_shared_cta[
+                    reduction_kind=ReduceOp.ADD
+                ](
+                    c_smem_split.ptr,
+                    UnsafePointer(to=c_tma_op.descriptor).bitcast[NoneType](),
+                    Index(
+                        store_coords.coord_n,
+                        store_coords.coord_m,
+                        store_coords.coord_b,
+                    ),
+                )
+            else:
+                cp_async_bulk_tensor_reduce_global_shared_cta[
+                    reduction_kind=ReduceOp.ADD
+                ](
+                    c_smem_split.ptr,
+                    UnsafePointer(to=c_tma_op.descriptor).bitcast[NoneType](),
+                    Index(store_coords.coord_n, store_coords.coord_m),
+                )
+
+            cp_async_bulk_commit_group()
 
 
 # =============================================================================
@@ -1244,25 +1368,25 @@ struct TMEMToSMemWriter[
             comptime if is_lower_required:
                 comptime tile_width = 32
                 comptime num_swblocks = Self.stage_contiguous_size // Self.swizzle_width
+                comptime warps_per_swblock = Self.swizzle_width // tile_width
 
-                # 4D logical layout: (num_swblocks, stageN, 2, tile_width)
                 comptime logical_layout = InternalLayout(
                     Coord(
                         Idx[num_swblocks],
                         Idx[Self.stageN],
-                        Idx[2],
+                        Idx[warps_per_swblock],
                         Idx[tile_width],
                     ),
                     Coord(
                         Idx[Self.stageN * Self.swizzle_width],
-                        Idx[2 * tile_width],
+                        Idx[Self.swizzle_width],
                         Idx[tile_width],
                         Idx[1],
                     ),
                 )
                 var new_smem = c_smem_tile.reshape(logical_layout)
 
-                warp_j, warp_i = divmod(Int(self.warp_id), 2)
+                warp_j, warp_i = divmod(Int(self.warp_id), warps_per_swblock)
                 var tiled = new_smem.tile[1, Self.stageN, 1, tile_width](
                     Coord(warp_j, Idx[0], warp_i, Idx[0])
                 )
@@ -1270,7 +1394,7 @@ struct TMEMToSMemWriter[
                 # Coalesce: (1, stageN, 1, 32) -> (stageN, 32)
                 comptime coalesced = InternalLayout(
                     Coord(Idx[Self.stageN], Idx[tile_width]),
-                    Coord(Idx[2 * tile_width], Idx[1]),
+                    Coord(Idx[Self.swizzle_width], Idx[1]),
                 )
                 var c_smem_warp_tile = tiled.reshape(coalesced)
 
@@ -1298,21 +1422,39 @@ struct TMEMToSMemWriter[
                 ](lower_casted, c_smem_warp_tile_lower, UInt32(warp_offset))
             else:
                 comptime tile_width = 16
-                comptime logical = row_major[Self.stageN, 4, tile_width]()
-                var new_smem = c_smem_tile.reshape(logical)
+                comptime num_swblocks = Self.stage_contiguous_size // Self.swizzle_width
+                comptime warps_per_swblock = Self.swizzle_width // tile_width
 
-                var tiled = new_smem.tile[Self.stageN, 1, tile_width](
-                    Coord(Idx[0], Int(self.warp_id), Idx[0])
+                comptime logical_layout = InternalLayout(
+                    Coord(
+                        Idx[num_swblocks],
+                        Idx[Self.stageN],
+                        Idx[warps_per_swblock],
+                        Idx[tile_width],
+                    ),
+                    Coord(
+                        Idx[Self.stageN * Self.swizzle_width],
+                        Idx[Self.swizzle_width],
+                        Idx[tile_width],
+                        Idx[1],
+                    ),
+                )
+                var new_smem = c_smem_tile.reshape(logical_layout)
+
+                warp_j, warp_i = divmod(Int(self.warp_id), warps_per_swblock)
+                var tiled = new_smem.tile[1, Self.stageN, 1, tile_width](
+                    Coord(warp_j, Idx[0], warp_i, Idx[0])
                 )
 
-                # Coalesce: (stageN, 1, 16) -> (stageN, 16)
+                # Coalesce: (1, stageN, 1, tile_width) -> (stageN, tile_width)
+                # with the in-block stageN-row stride = swizzle_width.
                 comptime coalesced = InternalLayout(
                     Coord(Idx[Self.stageN], Idx[tile_width]),
-                    Coord(Idx[4 * tile_width], Idx[1]),
+                    Coord(Idx[Self.swizzle_width], Idx[1]),
                 )
                 var c_smem_warp_tile = tiled.reshape(coalesced)
 
-                var warp_offset = Int(self.warp_id) * tile_width
+                var warp_offset = warp_i * tile_width
                 store_fragment_to_smem[
                     Self.swizzle,
                     Self.stageN,
@@ -1704,7 +1846,7 @@ struct SMemEpilogueWriter[
         comptime warp_tile_layout = row_major[Self.data_paths, Self.stageN]()
         comptime SMemPtr = UnsafePointer[
             Scalar[Self.c_type],
-            MutExternalOrigin,
+            MutUntrackedOrigin,
             address_space=AddressSpace.SHARED,
         ]
         var upper_tile = TileTensor(

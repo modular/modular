@@ -30,11 +30,10 @@ from std.format._utils import FormatStruct, Named, TypeNames
 from std.memory import (
     UnsafePointer,
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     is_trivially_movable,
 )
 from std.sys import align_of, size_of
-from std.sys.intrinsics import _type_is_eq
 
 
 # ===----------------------------------------------------------------------=== #
@@ -50,7 +49,7 @@ def _all_types_unique[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime for j in range(i + 1, Ts.size):
-            if _type_is_eq[Ts[i], Ts[j]]():
+            if Ts[i] == Ts[j]:
                 return False
     return True
 
@@ -59,12 +58,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial destructors."""
 
     comptime for i in range(Ts.size):
-        comptime if conforms_to(Ts[i], ImplicitlyDestructible):
-            if not is_trivially_destructible[
-                downcast[Ts[i], ImplicitlyDestructible]
-            ]():
-                return False
-        else:
+        if not is_trivially_deletable[Ts[i]]():
             return False
     return True
 
@@ -74,7 +68,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Copyable):
-            if not is_trivially_copyable[downcast[Ts[i], Copyable]]():
+            if not is_trivially_copyable[Ts[i]]():
                 return False
         else:
             return False
@@ -86,7 +80,7 @@ def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Movable):
-            if not is_trivially_movable[downcast[Ts[i], Movable]]():
+            if not is_trivially_movable[Ts[i]]():
                 return False
         else:
             return False
@@ -246,15 +240,15 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         self._storage = copy._storage
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Move initializer for the union.
 
         Args:
-            take: The union to move from.
+            move: The union to move from.
         """
         # Bitwise move of the raw storage
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        self._storage = take._storage
+        self._storage = move._storage
 
     # Note: No __del__ - UnsafeUnion doesn't know what type is stored, so it
     # cannot call destructors. Users must manually manage destruction if needed.

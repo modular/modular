@@ -24,28 +24,41 @@ The caller is responsible for calling
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from typing import cast
 
+import numpy as np
 from max.dtype import DType
 from max.graph import (
+    BufferValue,
+    DeviceRef,
     TensorValue,
     ops,
 )
 
+from ..comm.ep.ep_manager import EPBatchManager
+from ..kernels import moe_eplb_remap, moe_router_single_group_eplb
 from ..transformer.distributed_transformer import forward_sharded_layers
 from .moe import MoE
+
+logger = logging.getLogger("max.serve")
 
 
 def _ep_forward(
     moe_shards: list[MoE],
     xs: list[TensorValue],
+    eplb_counter_buffers: list[BufferValue] | None = None,
+    layer_idx_per_device: list[TensorValue] | None = None,
 ) -> list[TensorValue]:
     """Runs the EP MoE forward pass using multi-device dispatch and combine.
 
     Uses single multi-device graph ops for both dispatch and combine,
     with per-shard gate and local expert compute in between:
     gate -> multi-device dispatch -> local compute -> multi-device combine.
+
+    Returns:
+        outputs: One output tensor per shard.
     """
 
     all_topk_ids: list[TensorValue] = []
@@ -53,9 +66,104 @@ def _ep_forward(
     all_input_scales: list[TensorValue | None] = []
     device_ids: list[int] = []
 
-    for shard, x in zip(moe_shards, xs, strict=True):
-        router_idx, router_weight = shard.gate(x)
-        all_topk_ids.append(ops.cast(router_idx, DType.int32))
+    batch_mgr = moe_shards[0].ep_batch_manager
+    _eplb_remap_logged = False
+    for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
+        gate = shard.gate
+        device = shard.devices[0]
+
+        use_fused_eplb_router = (
+            batch_mgr.config.eplb_enabled
+            and getattr(gate, "n_group", 1) == 1
+            and not _eplb_is_identity_placement(batch_mgr)
+            and hasattr(
+                gate, "compute_scores"
+            )  # only Kimi gate has this for now
+        )
+
+        if use_fused_eplb_router:
+            assert layer_idx_per_device, (
+                "EPLB requires per-device layer_idx tensors; got "
+                f"{layer_idx_per_device!r}"
+            )
+            layer_idx_t = layer_idx_per_device[device.id]
+            log2phy = ops.buffer_load(
+                batch_mgr._eplb_log2phy_per_device[device.id]
+            )
+            logcnt = ops.buffer_load(
+                batch_mgr._eplb_logcnt_per_device[device.id]
+            )
+
+            scores = gate.compute_scores(x)  # type: ignore[attr-defined]
+            phy_idx, log_idx, router_weight = moe_router_single_group_eplb(
+                expert_scores=scores,
+                expert_bias=gate.e_score_correction_bias,  # type: ignore[attr-defined]
+                logcnt=logcnt,
+                log2phy=log2phy,
+                layer_idx=layer_idx_t,
+                n_routed_experts=gate.num_experts,
+                n_experts_per_tok=gate.num_experts_per_token,
+                norm_weights=gate.norm_topk_prob,  # type: ignore[attr-defined]
+                num_log=gate.num_experts,
+                max_replicas=batch_mgr.config.max_replicas,
+                hash_decorrelate=getattr(
+                    batch_mgr.config, "eplb_hash_decorrelate", True
+                ),
+                routed_scaling_factor=gate.routed_scaling_factor,  # type: ignore[attr-defined]
+            )
+
+            # Histogram still consumes LOGICAL ids — emit it BEFORE swapping.
+            if eplb_counter_buffers:
+                _accumulate(
+                    eplb_counter_buffers[i],
+                    log_idx.reshape([-1]),
+                    device,
+                    gate.num_experts,
+                )
+
+            if not _eplb_remap_logged and i == 0:
+                logger.info(
+                    "EPLB: fused mo.moe.single.group.router.eplb installed "
+                    "in compiled graph (layer_idx=%s, max_replicas=%d)",
+                    shard.layer_idx,
+                    batch_mgr.config.max_replicas,
+                )
+                _eplb_remap_logged = True
+
+            router_idx = phy_idx
+        else:
+            # Original chained path. Covers DSV3 (n_group > 1) and any
+            # build where the gate doesn't yet expose compute_scores.
+            router_idx, router_weight = gate(x)
+            router_idx = ops.cast(router_idx, DType.int32)
+
+            if eplb_counter_buffers:
+                _accumulate(
+                    eplb_counter_buffers[i],
+                    ops.cast(router_idx, DType.int32).reshape([-1]),
+                    device,
+                    gate.num_experts,
+                )
+
+            if batch_mgr.config.eplb_enabled:
+                assert layer_idx_per_device, (
+                    "EPLB requires per-device layer_idx tensors; got "
+                    f"{layer_idx_per_device!r}"
+                )
+                layer_idx_t = layer_idx_per_device[device.id]
+                if not _eplb_remap_logged and i == 0:
+                    logger.info(
+                        "EPLB: fused mo.moe.eplb.remap installed in compiled graph "
+                        "(layer_idx=%s, max_replicas=%d)",
+                        shard.layer_idx,
+                        batch_mgr.config.max_replicas,
+                    )
+                    _eplb_remap_logged = True
+                router_idx = _eplb_remap(
+                    router_idx, shard, batch_mgr, layer_idx_t
+                )
+
+        all_topk_ids.append(router_idx)
         all_router_weights.append(router_weight)
         all_input_scales.append(shard._ep_dispatch_input_scales())
         device_ids.append(shard.devices[0].id)
@@ -64,8 +172,6 @@ def _ep_forward(
     scales: list[TensorValue] | None = None
     if all_input_scales[0] is not None:
         scales = [s for s in all_input_scales if s is not None]
-
-    batch_mgr = moe_shards[0].ep_batch_manager
 
     # When the model has an unfused shared expert and non-allreduce EP, split
     # the per-device dispatch and combine into async launch + wait and run the
@@ -79,6 +185,22 @@ def _ep_forward(
     overlap_shared_expert = (
         has_unfused_shared and not batch_mgr.config.use_allreduce
     )
+
+    # Decide the MXFP4 EP A-scale preshuffle fold BEFORE dispatch, because the
+    # dispatch scales output shape (slot-sized vs row-major) depends on it. The
+    # fold writes the slot layout from the dispatch producer, which is only
+    # wired into the use_allreduce dispatch (`call_ep_dispatch`) and the
+    # dispatch-wait (`call_ep_dispatch_wait`) ops — not the multi-device
+    # single-op `call_distributed_ep_dispatch`. Enable it only when one of those
+    # wired paths will run; the distributed path keeps the standalone
+    # preshuffle. `MoE` defines `configure_ep_scale_fusion` as a no-op;
+    # `MoEQuantized` overrides it to enable the fold.
+    dispatch_supports_fold = (
+        batch_mgr.config.use_allreduce or overlap_shared_expert
+    )
+    for shard in moe_shards:
+        shard.configure_ep_scale_fusion(dispatch_supports_fold)
+
     shared_outs: list[TensorValue | None] | None = None
 
     if batch_mgr.config.use_allreduce:
@@ -192,12 +314,90 @@ def _ep_forward(
         if shared_out is not None:
             out += shared_out
         outputs.append(out.cast(x.dtype))
+
     return outputs
+
+
+def _accumulate(
+    counter_buf: BufferValue,
+    router_idx_flat: TensorValue,
+    device: DeviceRef,
+    num_experts: int,
+) -> None:
+    """Atomic-equivalent on-GPU histogram via broadcast equality + reduction."""
+    counter = ops.buffer_load(counter_buf)
+
+    expert_ids = ops.range(
+        start=0,
+        stop=num_experts,
+        step=1,
+        out_dim=num_experts,
+        dtype=DType.int32,
+        device=device,
+    )
+
+    matches = ops.equal(
+        ops.unsqueeze(router_idx_flat, axis=-1),
+        ops.unsqueeze(expert_ids, axis=0),
+    )
+
+    increment_2d = ops.sum(matches.cast(DType.int32), axis=0)
+
+    increment = ops.reshape(increment_2d, [num_experts]).cast(DType.int64)
+
+    ops.buffer_store(counter_buf, counter + increment)
+
+
+def _eplb_remap(
+    router_idx: TensorValue,
+    shard: MoE,
+    batch_mgr: EPBatchManager,
+    layer_idx_t: TensorValue,
+) -> TensorValue:
+    """Fused EPLB logical-to-physical id remap.
+
+    Single Mojo kernel (``mo.moe.eplb.remap``) that replaces the legacy
+    7-op chain (gather logcnt -> range -> mod -> mul + adds -> gather
+    log2phy). Caches the current layer's slice of ``logcnt`` and
+    ``log2phy`` in SMEM and writes physical ids in one launch.
+
+    Identity-bypassed at graph build time when the EPLB plan is the
+    identity permutation. With a non-identity plan we MUST remap even
+    at ``max_replicas == 1``, because weights are loaded at permuted
+    physical slots and the gate emits logical ids — so a bare
+    ``max_replicas`` check would be wrong.
+
+    Returns ``[N, K]`` int32 physical ids.
+    """
+    if _eplb_is_identity_placement(batch_mgr):
+        return router_idx
+
+    device = shard.devices[0]
+    num_log = shard.gate.num_experts
+    max_replicas = batch_mgr.config.max_replicas
+
+    log2phy = ops.buffer_load(batch_mgr._eplb_log2phy_per_device[device.id])
+    logcnt = ops.buffer_load(batch_mgr._eplb_logcnt_per_device[device.id])
+
+    return moe_eplb_remap(
+        router_idx=router_idx,
+        logcnt=logcnt,
+        log2phy=log2phy,
+        layer_idx=layer_idx_t,
+        num_log=num_log,
+        max_replicas=max_replicas,
+        n_experts_per_tok=int(router_idx.shape[1]),
+        hash_decorrelate=getattr(
+            batch_mgr.config, "eplb_hash_decorrelate", True
+        ),
+    )
 
 
 def forward_moe_sharded_layers(
     shards: Sequence[Callable[[TensorValue], TensorValue]],
     xs: list[TensorValue],
+    eplb_counter_buffers: list[BufferValue] | None = None,
+    layer_idx_per_device: list[TensorValue] | None = None,
 ) -> list[TensorValue]:
     """Forward pass through DP-sharded layers (EP MoE or replicated MLP/MoE).
 
@@ -211,12 +411,32 @@ def forward_moe_sharded_layers(
         xs: Input tensors, one per shard.
 
     Returns:
-        Output tensors, one per shard.
+        outputs: Output tensors, one per shard.
     """
     first = shards[0]
     if (
         hasattr(first, "_ep_batch_manager")
         and first._ep_batch_manager is not None
     ):
-        return _ep_forward(cast(list[MoE], list(shards)), xs)
+        return _ep_forward(
+            cast(list[MoE], list(shards)),
+            xs,
+            eplb_counter_buffers,
+            layer_idx_per_device,
+        )
     return forward_sharded_layers(shards, xs)
+
+
+def _eplb_is_identity_placement(batch_mgr: EPBatchManager) -> bool:
+    """True iff EPLB's host-side plan is the identity permutation.
+
+    When True, ``router_idx`` from the gate is already in physical-id
+    space and no kernel-side remap is needed.
+    """
+    plan = batch_mgr._eplb_phy2log
+    if plan is None:
+        return True
+
+    n_phy = plan.shape[1]
+    ident = np.broadcast_to(np.arange(n_phy, dtype=plan.dtype), plan.shape)
+    return bool(np.array_equal(plan, ident))

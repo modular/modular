@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import pytest
-from max.pipelines.context import TextGenerationContext
+from max.pipelines.context import TextContext
 from testbed.harnesses.gemma4_attention import (
     Gemma4AttentionHarness,
     Gemma4AttentionStaticParams,
@@ -50,7 +50,7 @@ _SMOKE_SHAPES = [
 def runner() -> LayerTestRunner[
     Gemma4AttentionStaticParams,
     AttentionDynamicParams,
-    list[TextGenerationContext],
+    list[TextContext],
 ]:
     session, device = create_session()
     return LayerTestRunner(
@@ -62,7 +62,7 @@ def test_benchmark_smoke(
     runner: LayerTestRunner[
         Gemma4AttentionStaticParams,
         AttentionDynamicParams,
-        list[TextGenerationContext],
+        list[TextContext],
     ],
 ) -> None:
     results = runner.benchmark(_SMOKE_SHAPES, iterations=1, warmup=1)

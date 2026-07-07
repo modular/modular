@@ -14,18 +14,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -41,6 +38,7 @@ from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 
+from .batch_processor import Gemma3BatchProcessor
 from .gemma3 import Gemma3
 from .model_config import Gemma3Config
 
@@ -82,6 +80,9 @@ class Gemma3Model(
     """
 
     model_config_cls: ClassVar[type[Any]] = Gemma3Config
+    batch_processor_cls: ClassVar[type[Gemma3BatchProcessor]] = (
+        Gemma3BatchProcessor
+    )
 
     model: Model
     """The compiled and initialized MAX Engine model ready for inference."""
@@ -95,6 +96,7 @@ class Gemma3Model(
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
         """
         Args:
@@ -118,6 +120,7 @@ class Gemma3Model(
             weights,
             adapter,
             return_logits,
+            max_batch_size=max_batch_size,
         )
         # Detect multimodal models by presence of text_config
         self._is_multimodal = hasattr(self.huggingface_config, "text_config")
@@ -148,16 +151,6 @@ class Gemma3Model(
         Returns:
             The loaded MAX Engine model object.
         """
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
-                dtype=np.uint32,
-            )
-        ).to(self.devices[0])
-
         with CompilationTimer("model") as timer:
             graph = self._build_graph()
             timer.mark_build_complete()
@@ -320,47 +313,3 @@ class Gemma3Model(
                 logits=model_outputs[0],
                 next_token_logits=model_outputs[0],
             )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> ModelInputs:
-        """Prepares the initial inputs for the first execution pass of the Gemma 3 model.
-
-        Args:
-            replica_batches: A sequence of sequences of :obj:`TextContext` objects representing
-                the input prompts for each replica.
-            kv_cache_inputs: Optional inputs required by the KV cache manager.
-
-        Returns:
-            The prepared :obj:`ModelInputs` object for the initial execution step.
-        """
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        assert kv_cache_inputs is not None
-
-        # Get input_row_offsets: start and end position of each batch in the
-        # combined total_seq_len dimension.
-        input_row_offsets = np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-        )
-
-        # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
-
-        return Gemma3Inputs(
-            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
-                self.devices[0]
-            ),
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=kv_cache_inputs,
-        )

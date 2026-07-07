@@ -19,7 +19,6 @@ in the SM100 FA4 attention kernel when processing a mixed TG+CE batch. Certain
 combinations of seq_lens and cache_lens trigger the deadlock.
 """
 
-from std.collections import Set
 from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
@@ -31,7 +30,11 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from kv_cache_test_utils import assert_no_nan_inf, padded_lut_cols
+from kv_cache_test_utils import (
+    assert_no_nan_inf,
+    padded_lut_cols,
+    random_distinct,
+)
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask
 from std.utils import IndexList
@@ -149,15 +152,19 @@ def test_paged_ragged_attention[
     random(kv_block_paged_tensor)
 
     var paged_lut_tensor = paged_lut.tensor[update=False]()
-    var paged_lut_set = Set[Int]()
+    # Sample one distinct paged block per page across the whole batch up
+    # front, then hand them out in iteration order. Total pages needed is
+    # <= num_paged_blocks by construction.
+    var total_pages = 0
+    for bs in range(batch_size):
+        total_pages += ceildiv(cache_lengths[bs] + valid_lengths[bs], page_size)
+    var paged_blocks = random_distinct(num_paged_blocks, total_pages)
+    var page_pos = 0
     for bs in range(batch_size):
         var seq_len = cache_lengths[bs] + valid_lengths[bs]
         for block_idx in range(ceildiv(seq_len, page_size)):
-            var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
-            while randval in paged_lut_set:
-                randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
-            paged_lut_set.add(randval)
-            paged_lut_tensor[bs, block_idx] = UInt32(randval)
+            paged_lut_tensor[bs, block_idx] = UInt32(paged_blocks[page_pos])
+            page_pos += 1
 
     var kv_block_paged_lt = kv_block_paged.device_tensor()
     var cache_lengths_lt = cache_lengths_managed.device_tensor()

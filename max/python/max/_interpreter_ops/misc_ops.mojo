@@ -31,7 +31,7 @@ from extensibility import (
 )
 from extensibility import FusedOutput
 from extensibility import StaticTensorSpec
-from builtin_kernels import Range
+from builtin_kernels import Range, range_shape
 
 from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
@@ -55,7 +55,7 @@ from op_utils import (
 
 
 @export
-def PyInit_misc_ops() -> PythonObject:
+def PyInit_misc_ops() abi("C") -> PythonObject:
     """Create a Python module with miscellaneous kernel function bindings."""
     try:
         var b = PythonModuleBuilder("misc_ops")
@@ -90,6 +90,8 @@ struct _RangeShapeBody(Dispatchable):
     var start_addr: Int
     var stop_addr: Int
     var step_addr: Int
+
+    @__allow_legacy_any_origin_fields
     var result_ptr: UnsafePointer[Int, MutAnyOrigin]
 
     def call[t: DType](self) raises -> None:
@@ -165,10 +167,10 @@ def range_dispatcher(
 def range_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    start_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    stop_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    step_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    start_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    stop_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    step_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     ctx: DeviceContext,
 ) raises:
@@ -208,17 +210,17 @@ def range_op[
                 # the Metal shader compiler cannot handle. Use elementwise
                 # with simd_width=1 to avoid this issue on all GPU targets.
                 @always_inline
-                @parameter
-                @__copy_capture(out_ptr, start, step)
-                def range_func[width: Int, alignment: Int = 1](idx: Coord):
+                def range_func[
+                    width: Int, alignment: Int = 1
+                ](idx: Coord) {var}:
                     var i = Int(idx[0].value())
                     var result = start + (
                         iota[dtype, width](Scalar[dtype](i)) * step
                     )
                     out_ptr.store[width=width](i, result)
 
-                elementwise[range_func, simd_width=1, target="gpu"](
-                    Coord(size), ctx
+                elementwise[simd_width=1, target="gpu"](
+                    range_func, Coord(size), ctx
                 )
             else:
                 raise Error(
@@ -236,9 +238,9 @@ def range_op[
 def range_shape_op[
     dtype: DType
 ](
-    start_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    stop_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    step_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    start_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    stop_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    step_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
 ) raises -> Int:
     """Compute range output size using Range.shape from the `kernels` package.
 
@@ -256,7 +258,7 @@ def range_shape_op[
     var start = start_ptr.load()
     var stop = stop_ptr.load()
     var step = step_ptr.load()
-    var shape = Range.shape[dtype](start, stop, step)
+    var shape = range_shape[dtype](start, stop, step)
     return shape[0]
 
 
@@ -285,7 +287,10 @@ def range_shape_dispatcher(
     var result: Int = 0
     dispatch_dtype(
         _RangeShapeBody(
-            start_addr, stop_addr, step_addr, UnsafePointer(to=result)
+            start_addr,
+            stop_addr,
+            step_addr,
+            UnsafePointer(to=result).as_unsafe_any_origin(),
         ),
         dtype,
     )
@@ -300,7 +305,7 @@ def range_shape_dispatcher(
 def random_normal_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     mean: Float32,
     variance: Float32,
@@ -363,9 +368,7 @@ def random_normal_op[
             raise Error("No GPU accelerator available")
 
     @always_inline
-    @parameter
-    @__copy_capture(out_ptr, mean, variance, seed_value, grid_block)
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert (
             width == 1
         ), "PyTorch-compat normal kernel uses scalar lanes"
@@ -379,11 +382,11 @@ def random_normal_op[
         out_ptr.store[width=1](i, SIMD[dtype, 1](value))
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](Coord(size), ctx)
+        elementwise[simd_width=1](func, Coord(size), ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=1, target="gpu"](Coord(size), ctx)
+                elementwise[simd_width=1, target="gpu"](func, Coord(size), ctx)
 
 
 def random_normal_dispatcher(
@@ -457,7 +460,7 @@ def random_normal_dispatcher(
 def random_uniform_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     lower_bound: Float32,
     upper_bound: Float32,
@@ -483,9 +486,7 @@ def random_uniform_op[
     var delta = upper_bound - lower_bound
 
     @always_inline
-    @parameter
-    @__copy_capture(out_ptr, lower_bound, delta, seed_value)
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
         var generator = Random(seed=seed_value, offset=UInt64(i))
         var values: SIMD[DType.float32, 4] = generator.step_uniform()
@@ -493,11 +494,11 @@ def random_uniform_op[
         out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=4](Coord(size), ctx)
+        elementwise[simd_width=4](func, Coord(size), ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=4, target="gpu"](Coord(size), ctx)
+                elementwise[simd_width=4, target="gpu"](func, Coord(size), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for random_uniform"
@@ -578,8 +579,8 @@ def random_uniform_dispatcher(
 def _cumsum_cpu[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dim0: Int,
     dim1: Int,
     dim2: Int,

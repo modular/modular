@@ -13,12 +13,15 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any, cast
 
+_logger = logging.getLogger("max.pipelines")
+
 from max.pipelines.context import (
     BaseContextType,
-    PixelGenerationContext,
+    PixelContext,
     TextContext,
     TextGenerationOutput,
 )
@@ -76,22 +79,24 @@ def load_scheduler(
     response_queue = worker_queues.response_queue
     cancel_queue = worker_queues.cancel_queue
 
+    _logger.info("max_batch_size: %d", pipeline.max_batch_size)
+
     if pipeline.__class__.__name__ == "PixelGenerationPipeline":
         pixel_pipeline = cast(PixelGenerationPipeline[Any], pipeline)
 
         def batch_constructor(
-            context: PixelGenerationContext,
+            context: PixelContext,
         ) -> PixelGenerationInputs[Any]:
-            """Convert a single PixelGenerationContext into PixelGenerationInputs."""
+            """Convert a single PixelContext into PixelGenerationInputs."""
             return PixelGenerationInputs(batch={context.request_id: context})
 
         return OneShotScheduler[
-            PixelGenerationContext, PixelGenerationInputs[Any], GenerationOutput
+            PixelContext, PixelGenerationInputs[Any], GenerationOutput
         ](
             pipeline=pixel_pipeline,
             batch_constructor=batch_constructor,
             request_queue=cast(
-                MAXPullQueue[PixelGenerationContext],
+                MAXPullQueue[PixelContext],
                 request_queue,
             ),
             response_queue=cast(
@@ -101,15 +106,10 @@ def load_scheduler(
                 response_queue,
             ),
             cancel_queue=cancel_queue,
-            max_batch_size=pipeline_config.runtime.max_batch_size
-            if pipeline_config.runtime.max_batch_size is not None
-            else 1,
         )
     elif pipeline.__class__.__name__ == "EmbeddingsPipeline":
         embeddings_scheduler_config = EmbeddingsSchedulerConfig(
-            max_batch_size=pipeline_config.runtime.max_batch_size
-            if pipeline_config.runtime.max_batch_size is not None
-            else 1
+            max_batch_size=pipeline.max_batch_size
         )
         emb_pipeline = cast(EmbeddingsPipelineType, pipeline)
         return EmbeddingsScheduler(

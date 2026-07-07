@@ -156,15 +156,15 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     @parameter
     def run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel](
-            output_dyn.as_any_origin(),
+            output_dyn.as_unsafe_any_origin(),
             StaticTuple[
                 TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
                 4,
             ](
-                input_0_dyn.as_any_origin().as_immut(),
-                input_1_dyn.as_any_origin().as_immut(),
-                input_2_dyn.as_any_origin().as_immut(),
-                input_3_dyn.as_any_origin().as_immut(),
+                input_0_dyn.as_unsafe_any_origin().as_immut(),
+                input_1_dyn.as_unsafe_any_origin().as_immut(),
+                input_2_dyn.as_unsafe_any_origin().as_immut(),
+                input_3_dyn.as_unsafe_any_origin().as_immut(),
             ),
             grid_dim=(d0 * d1 * d2 * d3 * d4 // B_SIZE),
             block_dim=(B_SIZE),
@@ -237,16 +237,16 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
                 epilogue_plus_one
             ) if test_epilogue else None
         ](
-            output_dyn.as_any_origin(),
+            output_dyn.as_unsafe_any_origin(),
             4,
             StaticTuple[
                 TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
                 4,
             ](
-                input_0_dyn.as_any_origin().as_immut(),
-                input_1_dyn.as_any_origin().as_immut(),
-                input_2_dyn.as_any_origin().as_immut(),
-                input_3_dyn.as_any_origin().as_immut(),
+                input_0_dyn.as_unsafe_any_origin().as_immut(),
+                input_1_dyn.as_unsafe_any_origin().as_immut(),
+                input_2_dyn.as_unsafe_any_origin().as_immut(),
+                input_3_dyn.as_unsafe_any_origin().as_immut(),
             ),
             ctx,
         )

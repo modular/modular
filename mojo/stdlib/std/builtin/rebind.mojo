@@ -15,6 +15,8 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+import std.memory
+
 
 @always_inline("builtin")
 def rebind[
@@ -118,51 +120,10 @@ Parameters:
 """
 
 
-@always_inline
-def trait_downcast[
-    T: TrivialRegisterPassable, //, Trait: type_of(AnyType)
-](var src: T) -> downcast[T, Trait]:
-    """Downcast a parameter input type `T` and rebind the type such that the
-    return value's type conforms the provided `Trait`. If `T`, after resolving
-    to a concrete type, does not actually conform to `Trait`, a compilation
-    error would occur.
-
-    Parameters:
-        T: The original type.
-        Trait: The trait to downcast into.
-
-    Args:
-        src: The value to downcast.
-
-    Returns:
-        The downcasted value.
-    """
-    return rebind[downcast[T, Trait]](src)
-
-
-def trait_downcast_var[
-    T: Movable,
-    //,
-    Trait: type_of(Movable),
-](var src: T) -> downcast[T, Trait]:
-    """Downcast a parameter input type `T` and rebind the type such that the
-    return value's type conforms to the provided `Trait`. If `T`, after
-    resolving to a concrete type, does not actually conform to `Trait`, a
-    compilation error will occur.
-
-    Parameters:
-        T: The original type (inferred).
-        Trait: The trait to downcast into.
-
-    Args:
-        src: The value to downcast.
-
-    Returns:
-        The downcasted value.
-    """
-    return rebind_var[downcast[T, Trait]](src^)
-
-
+@deprecated(
+    "use `conforms_to(type_of(src), Trait)` instead in a `where` clause or"
+    " `comptime assert`"
+)
 @always_inline
 def trait_downcast[
     T: AnyType, //, Trait: type_of(AnyType)
@@ -182,4 +143,5 @@ def trait_downcast[
     Returns:
         The downcasted value.
     """
+    comptime assert conforms_to(T, Trait), "Invalid downcast"
     return rebind[downcast[T, Trait]](src)

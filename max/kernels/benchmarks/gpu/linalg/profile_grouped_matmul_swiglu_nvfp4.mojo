@@ -403,30 +403,30 @@ def main() raises:
         var a_offsets_tt = TileTensor(
             a_offsets_dev,
             row_major(Coord(_ri(num_active_experts + 1))),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         var a_scale_offsets_tt = TileTensor(
             a_scale_offsets_dev,
             row_major(Coord(_ri(num_active_experts))),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         var expert_ids_tt = TileTensor(
             expert_ids_dev,
             row_major(Coord(_ri(num_active_experts))),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         var expert_scales_tt = TileTensor(
             expert_scales_dev,
             row_major(Coord(Idx[num_experts])),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         var input_scales_tt = TileTensor(
             input_scales_dev,
             row_major(Coord(_ri(num_active_experts))),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
 
         var c_bf16_tt = TileTensor(
             c_bf16_buf, row_major(Coord(_ri(M), Idx[N]))
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         var o_tt = TileTensor(
             o_buf, row_major(Coord(_ri(M), Idx[packed_H]))
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         var s_tt = TileTensor(
             s_buf,
             row_major(
@@ -438,7 +438,7 @@ def main() raises:
                     Idx[SF_ATOM_K],
                 )
             ),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
 
         # Pre-build the SwiGLU output carrier for the fused dispatch.
         # Bypassing `grouped_matmul_swiglu_nvfp4_dispatch` keeps the per-iter
@@ -495,10 +495,10 @@ def main() raises:
             var a_tt = TileTensor(
                 cb_a.offset_ptr(iteration),
                 row_major(Coord(_ri(M), Idx[packed_K])),
-            ).as_any_origin()
+            ).as_unsafe_any_origin()
             var b_tt = TileTensor(
                 cb_b.offset_ptr(iteration), b_shape
-            ).as_any_origin()
+            ).as_unsafe_any_origin()
             var a_scales_tt = TileTensor(
                 cb_a_scales.offset_ptr(iteration),
                 row_major(
@@ -510,17 +510,17 @@ def main() raises:
                         Idx[SF_ATOM_K],
                     )
                 ),
-            ).as_any_origin()
+            ).as_unsafe_any_origin()
             var b_scales_tt = TileTensor(
                 cb_b_scales.offset_ptr(iteration), b_scales_shape
-            ).as_any_origin()
+            ).as_unsafe_any_origin()
 
             if fused:
                 if match_bf16:
                     if trace:
                         grouped_matmul_nvfp4_dispatch[
                             transpose_b=True,
-                            fuse_swiglu_nvfp4=True,
+                            fuse_swiglu=True,
                             SwiGLUOutputT=type_of(swiglu_out),
                             swiglu_match_bf16=True,
                             swiglu_disable_compute=swiglu_disable_compute,
@@ -546,7 +546,7 @@ def main() raises:
                     else:
                         grouped_matmul_nvfp4_dispatch[
                             transpose_b=True,
-                            fuse_swiglu_nvfp4=True,
+                            fuse_swiglu=True,
                             SwiGLUOutputT=type_of(swiglu_out),
                             swiglu_match_bf16=True,
                             swiglu_disable_compute=swiglu_disable_compute,
@@ -570,7 +570,7 @@ def main() raises:
                     if trace:
                         grouped_matmul_nvfp4_dispatch[
                             transpose_b=True,
-                            fuse_swiglu_nvfp4=True,
+                            fuse_swiglu=True,
                             SwiGLUOutputT=type_of(swiglu_out),
                             swiglu_match_bf16=False,
                             swiglu_disable_compute=swiglu_disable_compute,
@@ -596,7 +596,7 @@ def main() raises:
                     else:
                         grouped_matmul_nvfp4_dispatch[
                             transpose_b=True,
-                            fuse_swiglu_nvfp4=True,
+                            fuse_swiglu=True,
                             SwiGLUOutputT=type_of(swiglu_out),
                             swiglu_match_bf16=False,
                             swiglu_disable_compute=swiglu_disable_compute,

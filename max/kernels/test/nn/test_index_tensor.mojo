@@ -338,7 +338,7 @@ def test_index_tensor_CLIPVIT() raises:
     var output_dyn = output_data_buffer.make_dynamic[DType.int64]()
 
     # TODO: index_tensor works too. For batch_dims = 0 only.
-    gather_nd[input_type, DType.uint64, batch_dims, target="cpu"](
+    gather_nd[batch_dims, target="cpu"](
         input_dyn,
         indices_dyn,
         output_dyn,

@@ -327,7 +327,10 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         if not request.images:
             return {}
 
-        pil_images = [_to_pil(img_bytes) for img_bytes in request.images]
+        # _to_pil accepts both a PIL.Image and raw bytes.
+        pil_images = [
+            _to_pil(image) for image in request.images_for_processing()
+        ]
         medias = [{"type": "image", "image": img} for img in pil_images]
         return self.vision_processor.preprocess(medias)
 
@@ -467,6 +470,8 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             json_schema=json_schema,
             grammar=grammar,
             grammar_state=grammar_state,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             grid_thws=grid_thws,

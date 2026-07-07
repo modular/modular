@@ -41,7 +41,9 @@ from layout.tile_layout import (
     Layout,
     blocked_product,
     col_major,
+    col_major_nested,
     row_major,
+    row_major_nested,
     zipped_divide,
 )
 ```
@@ -50,6 +52,14 @@ from layout.tile_layout import (
 
 A layout is a function that maps a set of logical coordinates to a single linear
 index value.
+
+Mojo's layout system is modeled on the layout abstraction in
+[CuTe](https://github.com/NVIDIA/cutlass/blob/main/media/docs/cpp/cute/01_layout.md),
+part of NVIDIA's CUTLASS library. CuTe defines a small set of fundamental
+operations—composition, complement, product, and division—that combine
+algebraically into higher-level tiling operations. Mojo's `Layout` provides
+several of those higher-level operations directly, such as `blocked_product()`
+and `zipped_divide()`.
 
 For example, a layout could describe a 2x4 row-major matrix, or a 6x6
 column-major matrix.
@@ -110,7 +120,7 @@ The following example shows how to use a `Layout` to convert between coordinates
 and index values.
 
 ```mojo
-var coords = coord[1, 1]()
+var coords = coord[1, 1]
 var idx = row_major3x4(coords)
 print("index at (1, 1): ", idx)
 print("coordinates at index 7:", row_major3x4.idx2crd(7))
@@ -156,11 +166,11 @@ can hold both compile-time and run-time integer values. Each element of a
 `Coord` is either an integer value or a nested tuple.
 
 You can create a simple `Coord` with all compile-time values or all run-time
-values using the [`coord()`](/docs/std/utils/coord/coord/) function:
+values using the [`coord`](/docs/std/utils/coord/coord/) comptime alias:
 
 ```mojo
-var comptime_coords = coord[4, 4]()
-var runtime_coords = coord[DType.int32]((a, b, c))
+var comptime_coords = coord[4, 4]
+var runtime_coords = Coord(Int32(a), Int32(b), Int32(c))
 ```
 
 You can mix compile-time and run-time values:
@@ -181,7 +191,7 @@ of `Coord` values:
 
 ```mojo
 var shape1 = Coord((Idx[6], Idx[8]))
-var shape2 = Coord((coord[2, 2](), coord[3, 4]()))
+var shape2 = Coord((coord[2, 2], coord[3, 4]))
 var shape3 = Coord((shape1, shape2))
 print(shape3)
 ```
@@ -324,7 +334,7 @@ comptime col_major3d = col_major[4, 4, 4]()
 Or you can pass in a `Coord` defining the shape of the layout.
 
 ```mojo
-var from_coords = row_major(coord[6, 8]())
+var from_coords = row_major(coord[6, 8])
 ```
 
 Defining a layout using `Coord` values lets you define both compile-time
@@ -337,17 +347,17 @@ GPU. However, sometimes you don't know the shape of the data—or you know
 the width of the data but not the number of rows.
 
 As described in the section on [`Coord` and `Idx`](#coord-and-idx), you can
-define a `Coord` using the `Coord` constructor or the `coord()` convenience
-function. Using `Coord`, you can define layouts with all compile-time
+define a `Coord` using the `Coord` constructor or the `coord` convenience
+comptime alias. Using `Coord`, you can define layouts with all compile-time
 dimensions, all run-time dimensions, or a mixture of the two.
 
 ```mojo
 # Layout with compile-time dimensions
-comptime row_major_comptime = row_major(coord[16, 8]())
+comptime row_major_comptime = row_major(coord[16, 8])
 
 # Layout with run-time dimensions
 var a, b = 4, 8
-var row_major_runtime = row_major(coord[DType.int32]((a, b)))
+var row_major_runtime = row_major(Coord(Int32(a), Int32(b)))
 
 # Mixed layout with one run-time dimension and one compile-time dimension
 var row_major_mixed = row_major((rows, Idx[columns]))
@@ -467,7 +477,7 @@ each column represents a tile worth of data.
 
 ```mojo
 var base = row_major[6, 4]()
-var result = zipped_divide[coord[2, 2]()](base)
+var result = zipped_divide[coord[2, 2]](base)
 print_layout(base.to_layout())
 print_layout(result.to_layout())
 ```
@@ -506,6 +516,95 @@ values from the top-left corner of the base layout (0, 4, 1, 5). However, in
 this case, the tiled layout is reshaped so that each column holds a single tile
 worth of data. This layout makes it very easy to address individual tiles of
 data.
+
+## Nested layouts
+
+The tiled layouts shown above derive a nested layout from simpler ones using
+`blocked_product()` and `zipped_divide()`. You can also construct a nested
+layout directly from a nested shape using
+[`row_major_nested()`](/docs/layout/tile_layout/row_major_nested/) and
+[`col_major_nested()`](/docs/layout/tile_layout/col_major_nested/). These
+constructors compute row-major (or column-major) strides over the *flattened*
+shape, then re-nest the strides to match the input shape.
+
+Nested layouts are useful when a tensor's logical structure is itself a grid of
+fragments—for example, the per-thread register tiles consumed by GPU
+matrix-multiply instructions (NVIDIA's MMA, *matrix multiply-accumulate*, and
+AMD's MFMA, *matrix fused multiply-add*), or the outputs of `blocked_product()`.
+The outer sub of each mode indexes the grid of fragments, and the inner sub
+indexes within a fragment.
+
+For a nested shape `((a, b), (c, d))`:
+
+- `row_major_nested()` produces strides `((b*c*d, c*d), (d, 1))`.
+- `col_major_nested()` produces strides `((1, a), (a*b, a*b*c))`.
+
+The following example builds a 2x2 outer grid of 3x4 inner fragments in both
+orderings:
+
+```mojo
+# A re-nested row-major layout: a 2x2 outer grid of 3x4 inner
+# fragments. Shape ((2, 3), (2, 4)) flattens to (2, 3, 2, 4),
+# producing row-major strides (24, 8, 4, 1), re-nested as
+# ((24, 8), (4, 1)).
+var nested = row_major_nested(
+    Coord(Coord(Idx[2], Idx[3]), Coord(Idx[2], Idx[4]))
+)
+print_layout(nested.to_layout())
+
+# The column-major variant re-nests col-major strides over the same
+# flattened shape: (1, 2, 6, 12), re-nested as ((1, 2), (6, 12)).
+var nested_col = col_major_nested(
+    Coord(Coord(Idx[2], Idx[3]), Coord(Idx[2], Idx[4]))
+)
+print_layout(nested_col.to_layout())
+```
+
+Output:
+
+```plaintext
+(((2, 3), (2, 4)):((24, 8), (4, 1)))
+       0    1    2    3    4    5    6    7
+    +----+----+----+----+----+----+----+----+
+ 0  |  0 |  4 |  1 |  5 |  2 |  6 |  3 |  7 |
+    +----+----+----+----+----+----+----+----+
+ 1  | 24 | 28 | 25 | 29 | 26 | 30 | 27 | 31 |
+    +----+----+----+----+----+----+----+----+
+ 2  |  8 | 12 |  9 | 13 | 10 | 14 | 11 | 15 |
+    +----+----+----+----+----+----+----+----+
+ 3  | 32 | 36 | 33 | 37 | 34 | 38 | 35 | 39 |
+    +----+----+----+----+----+----+----+----+
+ 4  | 16 | 20 | 17 | 21 | 18 | 22 | 19 | 23 |
+    +----+----+----+----+----+----+----+----+
+ 5  | 40 | 44 | 41 | 45 | 42 | 46 | 43 | 47 |
+    +----+----+----+----+----+----+----+----+
+(((2, 3), (2, 4)):((1, 2), (6, 12)))
+       0    1    2    3    4    5    6    7
+    +----+----+----+----+----+----+----+----+
+ 0  |  0 |  6 | 12 | 18 | 24 | 30 | 36 | 42 |
+    +----+----+----+----+----+----+----+----+
+ 1  |  1 |  7 | 13 | 19 | 25 | 31 | 37 | 43 |
+    +----+----+----+----+----+----+----+----+
+ 2  |  2 |  8 | 14 | 20 | 26 | 32 | 38 | 44 |
+    +----+----+----+----+----+----+----+----+
+ 3  |  3 |  9 | 15 | 21 | 27 | 33 | 39 | 45 |
+    +----+----+----+----+----+----+----+----+
+ 4  |  4 | 10 | 16 | 22 | 28 | 34 | 40 | 46 |
+    +----+----+----+----+----+----+----+----+
+ 5  |  5 | 11 | 17 | 23 | 29 | 35 | 41 | 47 |
+    +----+----+----+----+----+----+----+----+
+```
+
+The result types are the `RowMajorNestedLayout` and `ColMajorNestedLayout`
+aliases. These constructors are currently restricted to all-static
+(compile-time) leaf dimensions and a single level of nesting. For flat shapes,
+use [`row_major()`](/docs/layout/tile_layout/row_major/) or
+[`col_major()`](/docs/layout/tile_layout/col_major/) instead.
+
+Once you have a nested layout, you can build a `TileTensor` from it and use
+`tile()` to extract individual fragments. See
+[Extracting a tile](/docs/manual/tile-tensor/tensors/#extracting-a-tile)
+in the tensors guide.
 
 ## Non-contiguous layouts
 

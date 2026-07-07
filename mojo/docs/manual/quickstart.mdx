@@ -60,6 +60,7 @@ Use the following command to install the {tooltipNightly}:
 </TabItem>
 
 <TabItem value="pixi" label="pixi">
+
 1. If needed, install `pixi`:
 
     ```sh
@@ -88,22 +89,41 @@ Use the following command to install the {tooltipStable}:
 <Tabs groupId="install">
 <TabItem value="uv" label="uv">
 
-    ```sh
-    uv init temperature-analyzer && cd temperature-analyzer
-    uv venv && source .venv/bin/activate
-    uv add mojo
-    ```
+1. If needed, install `uv`:
+
+   ```sh
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+2. Create a project and install Mojo:
+
+   ```sh
+   uv init temperature-analyzer && cd temperature-analyzer
+   uv venv && source .venv/bin/activate
+   uv add mojo --prerelease allow
+   ```
+
+   Note that the `--prerelease allow` flag is required only when installing beta
+   (or dev) builds.
 
 </TabItem>
 <TabItem value="pixi" label="pixi">
 
+1. If needed, install `pixi`:
+
     ```sh
-    pixi init temperature-analyzer \
-    -c https://conda.modular.com/max/  -c conda-forge
-    cd temperature-analyzer
-    pixi add mojo
-    pixi shell
+    curl -fsSL https://pixi.sh/install.sh | sh
     ```
+
+2. Create a project and install Mojo:
+
+   ```sh
+   pixi init temperature-analyzer \
+       -c https://conda.modular.com/max/  -c conda-forge
+   cd temperature-analyzer
+   pixi add mojo
+   pixi shell
+   ```
 
 </TabItem>
 </Tabs>
@@ -221,6 +241,14 @@ What changed:
 - You add `raises` before the return arrow.
 - You add the check for an empty list.
 - You raise an `Error` if it's empty.
+
+:::note
+
+After this change, your app won't compile yet. Because `calculate_average()`
+can now raise, the call to it in `main()` must handle the error. You add that
+handling in the next step.
+
+:::
 
 ## Handle errors
 

@@ -637,7 +637,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8[
         b_type,
         Layout.row_major(num_experts * N, K),
         address_space=AddressSpace.GENERIC,
-    ](b.ptr.as_any_origin())
+    ](b.ptr.as_unsafe_any_origin())
     b_tma_op = create_tensor_tile[
         Index(BN, BK) if config.transpose_b else Index(BK, BN),
         swizzle_mode=config.b_swizzle,
@@ -881,13 +881,13 @@ def load_AB[
         a_scales_desc_shape,
     ],
     a_smem_base: UnsafePointer[
-        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_type], _, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
     ],
     a_scales_smem_base: UnsafePointer[
-        Scalar[a_scales_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_scales_type], _, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -946,21 +946,18 @@ def load_AB[
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_smem_base + Int(stage) * a_smem_tile_size)
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](b_smem_base + Int(stage) * b_smem_tile_size)
     var a_scales_smem_tile = LayoutTensor[
         a_scales_type,
         a_scales_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_scales_smem_base + Int(stage) * a_scales_smem_tile_size)
@@ -1025,13 +1022,13 @@ def load_AB_partial[
     ],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     a_smem_base: UnsafePointer[
-        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_type], _, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[b_type], _, address_space=AddressSpace.SHARED
     ],
     a_scales_smem_base: UnsafePointer[
-        Scalar[a_scales_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_scales_type], _, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -1081,21 +1078,18 @@ def load_AB_partial[
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_smem_base + Int(stage) * a_smem_tile_size)
     var a_scales_smem_tile = LayoutTensor[
         a_scales_type,
         a_scales_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_scales_smem_base + Int(stage) * a_scales_smem_tile_size)
     var b_smem_slice = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](
@@ -1170,7 +1164,7 @@ def multi_stage_reg_epilogue[
         Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
-    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    c_ptr: UnsafePointer[mut=True, Scalar[c_type], _],
     c_coord: Tuple[Int, Int],
     elect_one_warp: Bool,
     group_end_idx: UInt32,
@@ -1403,7 +1397,7 @@ def promote_accumulators[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     b_scales_n: Int,
     a_scales_smem_base: UnsafePointer[
-        Scalar[a_scales_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[a_scales_type], _, address_space=AddressSpace.SHARED
     ],
     c_upper_main_tile: LayoutTensor[
         accum_type,
@@ -1600,7 +1594,6 @@ def promote_accumulators[
     var a_scales_smem = LayoutTensor[
         a_scales_type,
         a_scales_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_scales_smem_base + Int(tma_load_stage_index) * a_scales_smem_tile_size)
@@ -1892,13 +1885,13 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     # Load warp as producer and mma warp as consumer
     var load_mma_pipeline = ProducerConsumerPipeline[num_pipeline_stages](
-        load_mma_mbar_ptr.unsafe_origin_cast[MutExternalOrigin]()
+        load_mma_mbar_ptr.unsafe_origin_cast[MutUntrackedOrigin]()
     )
 
     var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * num_pipeline_stages
     var mma_output_pipeline = ProducerConsumerPipeline[
         config.num_accum_pipeline_stages
-    ](mma_output_mbar_ptr.unsafe_origin_cast[MutExternalOrigin]())
+    ](mma_output_mbar_ptr.unsafe_origin_cast[MutUntrackedOrigin]())
 
     var clc_full_mbar_ptr = (
         mma_output_mbar_ptr + 2 * config.num_accum_pipeline_stages
@@ -1914,7 +1907,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     ](
         (
             clc_empty_mbar_ptr + config.num_clc_pipeline_stages
-        ).unsafe_origin_cast[MutExternalOrigin]()
+        ).unsafe_origin_cast[MutUntrackedOrigin]()
     )
 
     var clc_response_ptr = (
@@ -2304,7 +2297,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             ](
                 c_upper_main_tile,
                 c_lower_main_tile,
-                c_smem_base,
+                c_smem_base.as_unsafe_any_origin(),
                 c_tma_op,
                 c_ptr,
                 c_coord=(Int(work_info.m), Int(work_info.n)),
@@ -2440,7 +2433,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         b_type,
         Layout.row_major(num_experts * N, K),
         address_space=AddressSpace.GENERIC,
-    ](b.ptr.as_any_origin())
+    ](b.ptr.as_unsafe_any_origin())
     b_tma_op = create_tensor_tile[
         Index(
             BN // (config.cluster_shape[0] // config.cta_group), BK
@@ -2540,7 +2533,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         b_scales_type,
         Layout.row_major(b_scales_expert * b_scales_n, b_scales_k),
         address_space=AddressSpace.GENERIC,
-    ](b_scales.ptr.as_any_origin())
+    ](b_scales.ptr.as_unsafe_any_origin())
 
     comptime kernel = blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_type,

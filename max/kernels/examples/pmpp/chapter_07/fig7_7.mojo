@@ -24,8 +24,8 @@ from std.itertools import product
 
 
 def convolution_2D_basic_kernel(
-    N: UnsafePointer[Float32, MutAnyOrigin],
-    F: UnsafePointer[Float32, MutAnyOrigin],
+    N: UnsafePointer[Float32, ImmutAnyOrigin],
+    F: UnsafePointer[Float32, ImmutAnyOrigin],
     P: UnsafePointer[Float32, MutAnyOrigin],
     r: Int,
     width: Int,
@@ -64,9 +64,9 @@ def convolution_2D_basic_kernel(
 
 
 def convolution_2d_basic(
-    h_in: UnsafePointer[Float32, MutAnyOrigin],
-    h_filter: UnsafePointer[Float32, MutAnyOrigin],
-    h_out: UnsafePointer[Float32, MutAnyOrigin],
+    h_in: UnsafePointer[mut=False, Float32, _],
+    h_filter: UnsafePointer[mut=False, Float32, _],
+    h_out: UnsafePointer[mut=True, Float32, _],
     r: Int,
     width: Int,
     height: Int,
@@ -124,9 +124,9 @@ def convolution_2d_basic(
 
 
 def cpu_2d_conv(
-    inarr: UnsafePointer[Float32, MutAnyOrigin],
-    filter: UnsafePointer[Float32, MutAnyOrigin],
-    outarr: UnsafePointer[Float32, MutAnyOrigin],
+    inarr: UnsafePointer[mut=False, Float32, _],
+    filter: UnsafePointer[mut=False, Float32, _],
+    outarr: UnsafePointer[mut=True, Float32, _],
     r: Int,
     width: Int,
     height: Int,

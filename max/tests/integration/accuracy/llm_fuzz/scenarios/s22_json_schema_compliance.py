@@ -48,7 +48,15 @@ def _rand(k: int = 300) -> str:
 class JsonSchemaCompliance(BaseScenario):
     name = "json_schema_compliance"
     description = "100-run cache-busted test that json_schema response_format actually constrains output"
-    tags = ["structured", "json", "schema", "compliance", "correctness"]
+    tags = [
+        "validation",
+        "structured",
+        "json",
+        "schema",
+        "compliance",
+        "correctness",
+    ]
+    scenario_type = "validation"
 
     async def run(
         self, client: FuzzClient, config: RunConfig

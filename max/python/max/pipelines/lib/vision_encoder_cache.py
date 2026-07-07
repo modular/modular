@@ -28,8 +28,8 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
 from max.pipelines.context import (
+    TextAndVisionContext,
     VLMContextType,
-    VLMTextGenerationContext,
 )
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.pipelines.request import RequestID
@@ -123,7 +123,14 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
     @traced
     def lookup(self, image_hash: int) -> VisionEncoderCacheEntry | None:
-        """Look up a cached entry by image hash, refreshing LRU order."""
+        """Look up a cached entry by image hash, refreshing LRU order.
+
+        A falsy hash (``0``, the sentinel for an image/video with no
+        content hash) is treated as a miss, so callers don't need to guard
+        the call themselves.
+        """
+        if not image_hash:
+            return None
         entry = self._cache.get(image_hash)
         if entry is not None:
             self._cache.move_to_end(image_hash)
@@ -190,7 +197,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
     @staticmethod
     def _ensure_image_hashes(
-        ctx: VLMTextGenerationContext,
+        ctx: TextAndVisionContext,
     ) -> None:
         """Assert that all images have pre-computed hashes.
 
@@ -273,14 +280,33 @@ class VisionEncoderCache(Generic[VLMContextType]):
         for count, img_hash, req_id in zip(
             per_image_token_counts, image_hashes, request_ids, strict=True
         ):
-            per_device = [
-                dev_tensor[offset : offset + count, :]
-                for dev_tensor in vision_outputs
-            ]
+            start = offset
             offset += count
-            if img_hash is not None:
-                self.insert(img_hash, per_device, count)
-                self.acquire(req_id, img_hash)
+            # 0 is the no-content-hash sentinel (build_video_inputs appends it
+            # for a range with no hash). lookup() treats a falsy hash as a
+            # miss, so an entry cached under 0 is never retrievable -- it would
+            # just waste memory and hold a slot + ref. Skip alloc/insert/
+            # acquire for it, but still advance past its tokens in the encoder
+            # output (this method only populates the cache for future reuse;
+            # the current forward uses the encoder output directly, so skipping
+            # is output-neutral).
+            if not img_hash:
+                continue
+            # Allocate owned copies rather than views so the cache entry does
+            # not pin the (variable-size) vision-encoder output buffer.  This
+            # prevents GPU allocator fragmentation caused by mismatched holes
+            # left behind when the output buffer is freed.
+            per_device = []
+            for dev_tensor in vision_outputs:
+                slot = Buffer.zeros(
+                    shape=[count, int(dev_tensor.shape[1])],
+                    dtype=dev_tensor.dtype,
+                    device=dev_tensor.device,
+                )
+                slot.inplace_copy_from(dev_tensor[start : start + count, :])
+                per_device.append(slot)
+            self.insert(img_hash, per_device, count)
+            self.acquire(req_id, img_hash)
 
     @traced
     def prepare_vision_outputs(

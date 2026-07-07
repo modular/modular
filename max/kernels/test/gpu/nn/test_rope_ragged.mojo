@@ -191,10 +191,10 @@ def _test_rope_ragged_gpu_impl[
             target=StaticString("gpu"),
             output_fn=output_fn,
         ](
-            x=q_device_tensor.as_any_origin(),
-            input_row_offsets=input_row_offsets_device_tensor.as_any_origin(),
-            start_pos=start_pos_device_tensor.as_any_origin(),
-            freqs_cis=freqs_cis_device_tensor.as_any_origin(),
+            x=q_device_tensor.as_unsafe_any_origin(),
+            input_row_offsets=input_row_offsets_device_tensor.as_unsafe_any_origin(),
+            start_pos=start_pos_device_tensor.as_unsafe_any_origin(),
+            freqs_cis=freqs_cis_device_tensor.as_unsafe_any_origin(),
             context=ctx,
             position_ids=position_ids_device_tensor,
         )
@@ -206,10 +206,10 @@ def _test_rope_ragged_gpu_impl[
             target=StaticString("gpu"),
             output_fn=output_fn,
         ](
-            x=q_device_tensor.as_any_origin(),
-            input_row_offsets=input_row_offsets_device_tensor.as_any_origin(),
-            start_pos=start_pos_device_tensor.as_any_origin(),
-            freqs_cis=freqs_cis_device_tensor.as_any_origin(),
+            x=q_device_tensor.as_unsafe_any_origin(),
+            input_row_offsets=input_row_offsets_device_tensor.as_unsafe_any_origin(),
+            start_pos=start_pos_device_tensor.as_unsafe_any_origin(),
+            freqs_cis=freqs_cis_device_tensor.as_unsafe_any_origin(),
             context=ctx,
         )
 

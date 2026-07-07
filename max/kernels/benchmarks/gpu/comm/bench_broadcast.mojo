@@ -127,9 +127,11 @@ def bench_broadcast[
         out_multicast_buf = DeviceMulticastBuffer[dtype](
             list_of_ctx.copy(), length
         )
-        out_multicast_ptr = out_multicast_buf.multicast_buffer_for(
-            list_of_ctx[0]
-        ).unsafe_ptr()
+        out_multicast_ptr = (
+            out_multicast_buf.multicast_buffer_for(list_of_ctx[0])
+            .unsafe_ptr()
+            .as_unsafe_any_origin()
+        )
 
         comptime for gpu_idx in range(ngpus):
             # For multimem, we use unicast buffers for verification/copy-back
@@ -147,7 +149,10 @@ def bench_broadcast[
                 signal_buffers[gpu_idx], 0
             )
             rank_sigs[gpu_idx] = (
-                signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+                signal_buffers[gpu_idx]
+                .unsafe_ptr()
+                .bitcast[Signal]()
+                .as_unsafe_any_origin()
             )
     else:
         comptime for gpu_idx in range(ngpus):
@@ -166,7 +171,10 @@ def bench_broadcast[
                 signal_buffers[gpu_idx], 0
             )
             rank_sigs[gpu_idx] = (
-                signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+                signal_buffers[gpu_idx]
+                .unsafe_ptr()
+                .bitcast[Signal]()
+                .as_unsafe_any_origin()
             )
 
     # Create and initialize host buffer for root with position-based values
@@ -195,7 +203,8 @@ def bench_broadcast[
     else:
         for i in range(ngpus):
             out_tiles[i] = OutputTileType(
-                out_bufs_list[i].unsafe_ptr(), row_major(length)
+                out_bufs_list[i].unsafe_ptr().as_unsafe_any_origin(),
+                row_major(length),
             )
             # Ensure setup has propagated.
             list_of_ctx[i].synchronize()

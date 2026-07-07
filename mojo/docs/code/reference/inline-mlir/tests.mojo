@@ -243,7 +243,7 @@ struct MiniInt(Writable):
 
     @implicit
     def __init__(out self, value: Int):
-        self._mlir_value = value._mlir_value
+        self._mlir_value = value.__mlir_index__()
 
     def __add__(self, rhs: Self) -> Self:
         return Self(
@@ -335,10 +335,10 @@ def sum_to(end: Int) -> Int:
     var i: __mlir_type.index = __mlir_attr.`0 : index`
     var one: __mlir_type.index = __mlir_attr.`1 : index`
 
-    # end._mlir_value unwraps Int to raw __mlir_type.index
+    # end.__mlir_index__() converts Int to raw __mlir_type.index
     while Bool(
         __mlir_op.`index.cmp`[pred=__mlir_attr.`#index<cmp_predicate slt>`](
-            i, end._mlir_value
+            i, end.__mlir_index__()
         )
     ):
         acc = __mlir_op.`index.add`(acc, i)
@@ -370,7 +370,7 @@ def test_circle_area_approx() raises:
     """MLIR attrs as constants in a computation."""
 
     def circle_area_approx(radius: Int) -> Int:
-        var r = radius._mlir_value
+        var r = radius.__mlir_index__()
         var r_squared = __mlir_op.`index.mul`(r, r)
         var pi: __mlir_type.index = __mlir_attr.`3 : index`
         var area = __mlir_op.`index.mul`(pi, r_squared)
@@ -385,16 +385,25 @@ def test_clamp() raises:
     """Comparisons with pop.select to clamp a value."""
 
     def clamp(val: Int, low: Int, high: Int) -> Int:
-        var v = val._mlir_value
-        var lo = low._mlir_value
-        var hi = high._mlir_value
-        var too_low = __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate slt>`
-        ](v, lo)
+        var v = val.__mlir_index__()
+        var lo = low.__mlir_index__()
+        var hi = high.__mlir_index__()
+        # index.cmp returns i1, but pop.select needs a !kgen.scalar<bool>.
+        var too_low = __mlir_op.`pop.cast_from_builtin`[
+            _type=__mlir_type.`!kgen.scalar<bool>`
+        ](
+            __mlir_op.`index.cmp`[pred=__mlir_attr.`#index<cmp_predicate slt>`](
+                v, lo
+            )
+        )
         var result = __mlir_op.`pop.select`(too_low, lo, v)
-        var too_high = __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate sgt>`
-        ](result, hi)
+        var too_high = __mlir_op.`pop.cast_from_builtin`[
+            _type=__mlir_type.`!kgen.scalar<bool>`
+        ](
+            __mlir_op.`index.cmp`[pred=__mlir_attr.`#index<cmp_predicate sgt>`](
+                result, hi
+            )
+        )
         result = __mlir_op.`pop.select`(too_high, hi, result)
         return Int(mlir_value=result)
 

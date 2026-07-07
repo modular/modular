@@ -37,7 +37,7 @@ import mteb
 import numpy as np
 
 # Pipelines
-from max.entrypoints.cli import pipeline_config_options
+from max._entrypoints.cli.config import pipeline_config_options
 from max.pipelines import (
     PIPELINE_REGISTRY,
     EmbeddingsPipelineType,
@@ -207,7 +207,7 @@ def main(
     if workspace_dir := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(workspace_dir)
 
-    pipeline_config = PipelineConfig(**config_kwargs)
+    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
 
     model: EmbeddingModel | mteb.encoder_interface.Encoder
     logging.info(f"Loading model with {model_library} library.")

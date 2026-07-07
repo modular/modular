@@ -130,8 +130,7 @@ Don't mix set and dict syntax. `{1, 2}` is a set. `{1: 2}` is a dict.
 {1, "b": 2}   # Error: cannot have a 'key: value' pair in set initializer
 ```
 
-:::note Sets are not initializer lists
-
+**Sets are not initializer lists**.
 Brace syntax also serves as an *initializer list* that creates
 an instance of an inferred type. Without type context, the
 compiler can't distinguish a set from an initializer list, so
@@ -154,7 +153,22 @@ process({1, "hello"})  # type inferred from signature
 var x: T = {}  # type inferred from variable declaration, calls T()
 ```
 
-:::
+**Sharp edge: set displays are core Mojo syntax but the `Set` type is not**.
+You must import `Set` from the standard library to use it as a type:
+
+```mojo
+from std.collections import Set # Required to use Set type
+from std.testing import assert_equal
+
+def main() raises:
+    var display_set = {1, 2, 3}        # A set with elements 1, 2, and 3
+    assert_equal(len(display_set), 3)  # The length of the set is 3
+
+    var empty_set = Set[Int]()         # An empty set
+    empty_set.add(4)                   # Add an element to the set
+    empty_set.add(4)
+    assert_equal(len(empty_set), 1)    # Sets do not allow duplicate elements
+```
 
 ## Member access
 

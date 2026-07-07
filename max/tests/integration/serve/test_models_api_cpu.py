@@ -23,7 +23,7 @@ from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     ListModelsResponse,
-    Model,
+    MaxModel,
 )
 
 SMOLLM_135M_REPO_ID = "HuggingFaceTB/SmolLM-135M"
@@ -61,12 +61,14 @@ async def test_serve_models(app: FastAPI) -> None:
 
         assert len(response.data) == 1
         assert response.data[0].id == SMOLLM_135M_REPO_ID
+        assert response.data[0].max_model_len == 512
 
         raw_response = await client.get("/v1/models/SmolLM-135M")
 
-        response2 = Model.model_validate(raw_response.json())
+        response2 = MaxModel.model_validate(raw_response.json())
 
         assert response2.id == SMOLLM_135M_REPO_ID
+        assert response2.max_model_len == 512
 
 
 MODEL_ALIAS = "foobar"

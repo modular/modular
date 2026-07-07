@@ -51,6 +51,7 @@ from .amd_4wave_matmul import AMD4WaveMatmul, KernelConfig
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(t"amd_4wave_split_k_reduce_{c_type}_SK{num_splits}")
 def _split_k_reduce_kernel[
     num_splits: Int,
     c_type: DType,

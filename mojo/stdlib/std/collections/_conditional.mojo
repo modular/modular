@@ -15,7 +15,7 @@
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.utils.type_functions import ConditionalType
 
-comptime _ComptimeConditionalType = ImplicitlyCopyable & ImplicitlyDestructible & RegisterPassable
+comptime _ComptimeConditionalType = ImplicitlyCopyable & ImplicitlyDeletable & RegisterPassable
 
 
 # TODO: If this ever goes public, there is likely a better name for this...

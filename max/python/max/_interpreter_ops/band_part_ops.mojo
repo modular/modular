@@ -44,7 +44,7 @@ from op_utils import (
 
 
 @export
-def PyInit_band_part_ops() -> PythonObject:
+def PyInit_band_part_ops() abi("C") -> PythonObject:
     """Create a Python module with band_part kernel function bindings."""
     try:
         var b = PythonModuleBuilder("band_part_ops")
@@ -65,8 +65,8 @@ def PyInit_band_part_ops() -> PythonObject:
 def band_part_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     mn_stride: Int,
     M: Int,
     N: Int,
@@ -94,17 +94,7 @@ def band_part_op[
     var total = mn_stride  # caller passes batch * M * N
 
     @always_inline
-    @parameter
-    @__copy_capture(
-        out_ptr,
-        in_ptr,
-        M,
-        N,
-        num_lower,
-        num_upper,
-        exclude_flag,
-    )
-    def func[width: Int, alignment: Int = 1](idx: Coord):
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var i = Int(idx[0].value())
         var mn_rem = i % (M * N)
         var m, n = divmod(mn_rem, N)
@@ -122,10 +112,10 @@ def band_part_op[
             out_ptr[i] = Scalar[dtype](0)
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](Coord(total), ctx)
+        elementwise[simd_width=1](func, Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
+            elementwise[simd_width=1, target="gpu"](func, Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 

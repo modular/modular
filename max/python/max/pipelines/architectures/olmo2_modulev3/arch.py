@@ -13,12 +13,14 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
 )
 from max.pipelines.modeling.types import PipelineTask
 
+from ..llama3_modulev3.batch_processor import Llama3ModuleV3BatchProcessor
 from . import weight_adapters
 from .model import Olmo2Model
 from .model_config import Olmo2Config
@@ -49,4 +51,6 @@ olmo2_modulev3_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Olmo2Config,
+    batching=Llama3ModuleV3BatchProcessor,
+    memory_planner=PagedMemoryPlanner,
 )

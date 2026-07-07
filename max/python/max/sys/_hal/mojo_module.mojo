@@ -18,6 +18,7 @@ from std.python.bindings import PythonModuleBuilder
 
 from _mojo_module import (
     Buffer,
+    BufferView,
     Bundle,
     Context,
     Device,
@@ -30,7 +31,7 @@ from _mojo_module import (
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     """Initializes the ``mojo_module`` Python extension."""
     try:
         var b = PythonModuleBuilder("mojo_module")
@@ -59,8 +60,16 @@ def PyInit_mojo_module() -> PythonObject:
             .def_method[Context.load_function]("load_function")
         )
 
-        _ = b.add_type[Buffer]("Buffer").def_method[Buffer.get_byte_size](
-            "get_byte_size"
+        _ = (
+            b.add_type[Buffer]("Buffer")
+            .def_method[Buffer.get_byte_size]("get_byte_size")
+            .def_method[Buffer.view]("view")
+        )
+
+        _ = (
+            b.add_type[BufferView]("BufferView")
+            .def_method[BufferView.get_byte_offset]("get_byte_offset")
+            .def_method[BufferView.get_byte_size]("get_byte_size")
         )
 
         _ = b.add_type[Bundle]("Bundle").def_method[Bundle.get_function_name](
@@ -76,6 +85,8 @@ def PyInit_mojo_module() -> PythonObject:
             .def_method[Queue.copy_to_device]("copy_to_device")
             .def_method[Queue.copy_from_device]("copy_from_device")
             .def_method[Queue.copy_intra_device]("copy_intra_device")
+            .def_method[Queue.set_memory]("set_memory")
+            .def_method[Queue.fill]("fill")
             .def_method[Queue.wait_for_events]("wait_for_events")
             .def_method[Queue.execute]("execute")
         )
@@ -87,6 +98,8 @@ def PyInit_mojo_module() -> PythonObject:
             .def_method[Stream.copy_to_device]("copy_to_device")
             .def_method[Stream.copy_from_device]("copy_from_device")
             .def_method[Stream.copy_intra_device]("copy_intra_device")
+            .def_method[Stream.set_memory]("set_memory")
+            .def_method[Stream.fill]("fill")
             .def_method[Stream.wait_for_events]("wait_for_events")
             .def_method[Stream.execute]("execute")
         )

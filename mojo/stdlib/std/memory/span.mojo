@@ -25,7 +25,7 @@ from std.bit.mask import splat
 from std.bit import pop_count
 from std.memory import (
     is_trivially_copyable,
-    is_trivially_destructible,
+    is_trivially_deletable,
     pack_bits,
     uninit_copy_n,
 )
@@ -581,7 +581,7 @@ struct Span[
 
     @always_inline
     def copy_from[
-        _T: Copyable & ImplicitlyDestructible, _origin: MutOrigin, //
+        _T: Copyable & ImplicitlyDeletable, _origin: MutOrigin, //
     ](self: Span[_T, _origin], other: Span[_T, _]):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
@@ -598,7 +598,7 @@ struct Span[
         # needed). For non-trivial types, we keep the single-pass assignment
         # loop rather than destroy_n + uninit_copy_n, which would be two
         # passes over memory with worse cache locality.
-        comptime if is_trivially_copyable[_T]() and is_trivially_destructible[
+        comptime if is_trivially_copyable[_T]() and is_trivially_deletable[
             _T
         ]():
             uninit_copy_n[overlapping=False](
@@ -671,7 +671,7 @@ struct Span[
         return not self == rhs
 
     def fill[
-        _T: Copyable & ImplicitlyDestructible, //
+        _T: Copyable & ImplicitlyDeletable, //
     ](self: Span[mut=True, _T, _], value: _T):
         """
         Fill the memory that a span references with a given value.

@@ -99,9 +99,6 @@ def test_text_generation_pipeline(monkeypatch: MonkeyPatch) -> None:
         text_generation, "weights_format", MagicMock(return_value=None)
     )
     monkeypatch.setattr(text_generation, "load_kv_manager", MagicMock())
-    monkeypatch.setattr(
-        text_generation, "IncrementCacheLengthsProcessor", MagicMock()
-    )
 
     max_length = 512
     eos_token = 998
@@ -155,7 +152,7 @@ def test_text_generation_pipeline(monkeypatch: MonkeyPatch) -> None:
         while True:
             # This will generate a list[dict[request_id, TextGenerationOutput]] for each step
             inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
-                batches=[list(context_batch.values())], num_steps=1
+                batches=[list(context_batch.values())]
             )
             output = pipeline.execute(inputs)
             assert len(output) == len(context_batch)

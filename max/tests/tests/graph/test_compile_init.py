@@ -28,6 +28,10 @@ import pytest
 import torch
 from max.driver import (
     CPU,
+    Accelerator,
+    accelerator_count,
+    get_virtual_cpu_target,
+    set_virtual_cpu_target,
     set_virtual_device_api,
     set_virtual_device_count,
     set_virtual_device_target_arch,
@@ -217,6 +221,25 @@ def virtual_device_mode() -> Iterator[None]:
         set_virtual_device_count(0)
 
 
+def test_accelerator_constructs_in_virtual_device_mode(
+    virtual_device_mode: None,
+) -> None:
+    """Virtual-device mode must apply to device creation, not just counting.
+
+    The virtual-device settings are process-wide globals in the MLRT driver.
+    If the ``_core`` extension ever links its own copy of that library, the
+    ``set_virtual_device_*`` setters and ``accelerator_count()`` see one copy
+    while ``Accelerator()`` construction (which goes through libmax) sees the
+    other — and on a machine with no physical GPU, construction fails with
+    'No supported "gpu" device available' even though the count says one is
+    present. This is exactly what broke the compile benchmarks on CPU-only
+    runners; constructing here guards against the globals splitting again.
+    """
+    assert accelerator_count() >= 1
+    # Must not raise, even on machines with no physical GPU.
+    Accelerator()
+
+
 def test_init_all_in_virtual_device_mode_returns_dict(
     virtual_device_mode: None,
 ) -> None:
@@ -248,3 +271,16 @@ def test_nested_collectors_both_observe_phases() -> None:
 
     assert outer.compile_seconds >= inner.compile_seconds
     assert outer.init_seconds >= inner.init_seconds
+
+
+def test_virtual_cpu_target_roundtrip() -> None:
+    """The virtual CPU target setter/getter round-trips and defaults empty."""
+    assert get_virtual_cpu_target() == ""
+    try:
+        set_virtual_cpu_target("x86-64-v3")
+        assert get_virtual_cpu_target() == "x86-64-v3"
+        set_virtual_cpu_target("generic")
+        assert get_virtual_cpu_target() == "generic"
+    finally:
+        set_virtual_cpu_target("")
+    assert get_virtual_cpu_target() == ""

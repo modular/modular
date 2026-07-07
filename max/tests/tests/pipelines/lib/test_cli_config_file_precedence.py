@@ -20,10 +20,10 @@ from typing import Any
 import click
 import pytest
 from click.testing import CliRunner
+from max._entrypoints.cli.config import config_to_flag, pipeline_config_options
 from max.config import ConfigFileModel
 from max.config.config_file_model import _resolve_config_file
 from max.driver import DeviceSpec
-from max.entrypoints.cli.config import config_to_flag, pipeline_config_options
 from max.pipelines.lib import PipelineConfig
 from pydantic import Field
 from pytest import MonkeyPatch
@@ -107,7 +107,7 @@ def test_implicit_devices_do_not_override_config(
 ) -> None:
     """Absent --devices leaves device_specs to config or model defaults."""
     monkeypatch.setattr(
-        "max.entrypoints.cli.config.DevicesOptionType.device_specs",
+        "max._entrypoints.cli.config.DevicesOptionType.device_specs",
         staticmethod(lambda devices: [devices]),
     )
 
@@ -122,7 +122,7 @@ def test_implicit_devices_use_default_without_config(
 ) -> None:
     """Absent --devices lets MAXModelConfig use its Pydantic default."""
     monkeypatch.setattr(
-        "max.entrypoints.cli.config.DevicesOptionType.device_specs",
+        "max._entrypoints.cli.config.DevicesOptionType.device_specs",
         staticmethod(lambda devices: [devices]),
     )
 
@@ -136,7 +136,7 @@ def test_explicit_devices_still_override_config_file(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "max.entrypoints.cli.config.DevicesOptionType.device_specs",
+        "max._entrypoints.cli.config.DevicesOptionType.device_specs",
         staticmethod(lambda devices: [devices]),
     )
 
@@ -153,7 +153,7 @@ def test_explicit_devices_inherited_by_draft_devices(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "max.entrypoints.cli.config.DevicesOptionType.device_specs",
+        "max._entrypoints.cli.config.DevicesOptionType.device_specs",
         staticmethod(lambda devices: [devices]),
     )
 
@@ -204,12 +204,11 @@ def test_cli_overrides_yaml_recipe_values(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    config = PipelineConfig(  # type: ignore[call-arg]
+    config = PipelineConfig.from_flat_kwargs(
         config_file=str(config_path),
         device_specs=[DeviceSpec(i, "gpu") for i in range(4)],
         data_parallel_degree=4,
         ep_size=4,
-        defer_resolve=True,
     )
 
     main = config.models["main"]

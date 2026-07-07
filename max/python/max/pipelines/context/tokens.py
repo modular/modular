@@ -50,7 +50,13 @@ from typing import Any, TypeAlias
 import numpy as np
 import numpy.typing as npt
 
-__all__ = ["ImageMetadata", "Range", "TokenBuffer", "TokenSlice"]
+__all__ = [
+    "ImageMetadata",
+    "Range",
+    "TokenBuffer",
+    "TokenHashOverride",
+    "TokenSlice",
+]
 
 
 @dataclasses.dataclass(frozen=False, slots=True)
@@ -78,13 +84,20 @@ class Range:
         self.start = start
         self.end = end
 
+    def __post_init__(self) -> None:
+        """Validate that start <= end."""
+        if self.start > self.end:
+            raise ValueError(
+                f"start ({self.start}) must be <= end ({self.end})"
+            )
+
     def __len__(self) -> int:
         """Returns the number of elements in the range (``end - start``).
 
         Returns:
             The length of the range, which is always >= 0.
         """
-        return self.end - self.start
+        return max(0, self.end - self.start)
 
     def bump_start(self, amount: int) -> None:
         """Bump the start index by the given amount.
@@ -302,6 +315,20 @@ class TokenBuffer:
 
         self._actively_chunked = False
 
+    def __post_init__(self) -> None:
+        # This is called in post_init to ensure that the token array is always
+        # writable even if this token buffer was created via deserialization.
+        self._ensure_writeable()
+
+    def _ensure_writeable(self) -> None:
+        """Ensure that the underlying token array is writeable.
+
+        This makes a private copy of the array if the current array is not writeable,
+        allowing in-place manipulation of tokens for prompt or generation operations.
+        """
+        if not self.array.flags.writeable:
+            self.array = self.array.copy()
+
     # ============================================================================
     # Token Access Properties
     # ============================================================================
@@ -321,16 +348,17 @@ class TokenBuffer:
         """
         # If the index is an integer, handle single token lookup.
         if isinstance(index, int):
+            key = index  # Use 'key' to follow original code logic.
             # Handle negative index by converting to positive (Python-style negative indexing)
-            if index < 0:
-                index = self._current_length + index
+            if key < 0:
+                key = self._current_length + key
             # Check bounds - only allow access within current valid length
-            if index < 0 or index >= self._current_length:
+            if key < 0 or key >= self._current_length:
                 raise IndexError(
-                    f"Index {index} is out of bounds for array of length {self._current_length}"
+                    f"Index {key} is out of bounds for array of length {self._current_length}"
                 )
             # Return the token at the specified position
-            return self.array[index]
+            return self.array[key]
         # If the index is a slice, allow for convenient sub-sequence extraction.
         elif isinstance(index, slice):
             # Apply slice to the valid portion of the buffer
@@ -763,3 +791,28 @@ class ImageMetadata:
 
     def __repr__(self):
         return f"ImageMetadata(start_idx={self.start_idx}, end_idx={self.end_idx}, pixel_values={self.pixel_values.shape})"
+
+
+@dataclasses.dataclass(kw_only=True)
+class TokenHashOverride:
+    """Content hash to use in place of a token when hashing KV-cache blocks.
+
+    The token stream itself is unchanged. The override is applied only while
+    computing block hashes, so content that is represented by placeholder tokens
+    can participate in prefix-cache keys.
+    """
+
+    token_idx: int
+    """Index of the token to replace while hashing."""
+
+    token_hash: int
+    """Hash value to use at ``token_idx`` while hashing."""
+
+    source: str = "media"
+    """Human-readable label describing where the hash override came from (e.g. "image", "video")."""
+
+    def __post_init__(self) -> None:
+        if self.token_idx < 0:
+            raise ValueError(
+                "Token hash overrides must have a valid token index"
+            )

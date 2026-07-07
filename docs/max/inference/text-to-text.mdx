@@ -6,7 +6,6 @@ description: Generate text using MAX with OpenAI-compatible chat and completion 
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import MDXListing from '@site/src/components/Listing/MDXListing';
 import InstallModular from '../../_includes/install-modular.mdx';
 import InstallOpenAI from '../../_includes/install-openai.mdx';
 import Requirements from '@site/src/components/Requirements';
@@ -71,6 +70,10 @@ For compatibility with OpenAI SDKs that emit `developer` for the o1/o3
 reasoning models, MAX also accepts `developer` as a system-equivalent role and
 normalizes it to `system` internally.
 
+Some models define extra roles through their chat template. For example, MAX
+also accepts a `root` role, but only when the model's tokenizer enables it.
+Requests that use a role the model doesn't support are rejected.
+
 Use this endpoint whenever you want conversational interaction, such as:
 
 - Building chatbots or assistants
@@ -90,6 +93,9 @@ response per request, such as:
 - Offline inference workflows
 - Synthetic text generation
 - One-off text generation tasks
+
+Like `v1/chat/completions`, responses from this endpoint include a `usage`
+object reporting prompt, completion, and total token counts.
 
 ## Quickstart
 
@@ -216,7 +222,7 @@ curl http://0.0.0.0:8000/v1/chat/completions \
             "content": "Hello, how are you?"
             }
         ],
-        "max_tokens": 100
+        "max_completion_tokens": 100
     }'
 ```
 
@@ -250,10 +256,16 @@ You should receive a response similar to this:
   "usage": {
     "completion_tokens": 17,
     "prompt_tokens": null,
-    "total_tokens": 17
+    "total_tokens": 17,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
   }
 }
 ```
+
+For reasoning models, `usage.completion_tokens_details.reasoning_tokens` reports
+how many of the completion tokens were spent on reasoning (it's `0` otherwise).
 
 </TabItem>
 </Tabs>
@@ -266,10 +278,7 @@ For complete details on all available API endpoints and options, see the
 Now that you have successfully set up MAX with an OpenAI-compatible chat
 endpoint, check out additional serving optimizations specific to your use case.
 
-export const docs = [
-        '../../serve/structured-output.mdx',
-        '../../serve/prefix-caching.mdx',
-        '../../serve/offline-inference.mdx'
-    ]
-
-<MDXListing mdxList={docs} />
+- [Structured output](/max/serve/structured-output): Enable structured output
+  with your GenAI deployments for predictable responses.
+- [Prefix caching with PagedAttention](/max/serve/prefix-caching): Use prefix
+  caching and PagedAttention when serving a model with the MAX CLI.

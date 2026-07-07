@@ -16,3 +16,13 @@ modular_py_library(
         "//max/python/max/pipelines/weights",
     ],
 )
+
+modular_py_library(
+    name = "logging_utils",
+    srcs = ["logging_utils.py"],
+    deps = [
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/support",
+    ],
+)

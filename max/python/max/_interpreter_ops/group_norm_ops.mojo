@@ -36,7 +36,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-def PyInit_group_norm_ops() -> PythonObject:
+def PyInit_group_norm_ops() abi("C") -> PythonObject:
     """Create a Python module with group_norm kernel function bindings."""
     try:
         var b = PythonModuleBuilder("group_norm_ops")
@@ -58,15 +58,15 @@ def PyInit_group_norm_ops() -> PythonObject:
 def _group_norm_cpu[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    beta_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    beta_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_size: Int,
     num_channels: Int,
     spatial_size: Int,
     num_groups: Int,
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
 ) where dtype.is_floating_point():
     """CPU group normalization on [N, C, spatial_size] flattened layout.
 
@@ -115,7 +115,9 @@ def _group_norm_cpu[
             var_val = var_val / Scalar[dtype](group_size)
 
             # Pass 3: normalize with per-channel affine
-            var inv_std = Scalar[dtype](1) / sqrt(var_val + epsilon)
+            var inv_std = Scalar[dtype](1) / sqrt(
+                var_val + epsilon.cast[dtype]()
+            )
             for c_off in range(channels_per_group):
                 var c = c_start + c_off
                 var base = (n * num_channels + c) * spatial_size
@@ -134,12 +136,12 @@ def _group_norm_gpu[
     dtype: DType,
     rank: Int,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    beta_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    beta_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[rank],
-    epsilon: Scalar[dtype],
+    epsilon: Float32,
     num_groups: Int32,
     ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
@@ -238,7 +240,7 @@ def _call[
     for i in range(2, rank):
         spatial_size *= in_shape[i]
 
-    var epsilon = _get_buffer_ptr[dtype](epsilon_buffer)[0]
+    var epsilon = _get_buffer_ptr[DType.float32](epsilon_buffer)[0]
 
     if ctx.api() == "cpu":
         _group_norm_cpu[dtype](

@@ -81,7 +81,7 @@ def main() raises:
         var normed_tensor = TileTensor(normed_dev, normed_shape)
         var unnormed_tensor = TileTensor(unnormed_dev, unnormed_shape)
 
-        var eps = Scalar[a_type](0.001)
+        var eps = Float32(0.001)
 
         var counter_buf = ctx.enqueue_create_buffer[DType.int32](1)
         ctx.enqueue_memset(counter_buf, Scalar[DType.int32](0))
@@ -106,7 +106,7 @@ def main() raises:
             b_tensor,
             gamma_tensor,
             eps,
-            counter_buf.unsafe_ptr(),
+            counter_buf.unsafe_ptr().as_unsafe_any_origin(),
             ctx,
         )
         ctx.synchronize()
@@ -125,7 +125,7 @@ def main() raises:
             b_tensor,
             gamma_tensor,
             eps,
-            counter_buf.unsafe_ptr(),
+            counter_buf.unsafe_ptr().as_unsafe_any_origin(),
             ctx,
             trace_buf=GmemTrace(trace_buf.unsafe_ptr()),
         )

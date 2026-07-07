@@ -25,7 +25,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from max.pipelines.kv_cache import PagedKVCacheManager
 from modular_graph_test import modular_graph_test
 from test_common.context_utils import create_text_context
@@ -54,7 +54,7 @@ def test_kv_cache_ragged_attention(
     mask_strategy: MHAMaskVariant,
 ) -> None:
     num_q_heads = 32
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=128,
@@ -98,7 +98,8 @@ def test_kv_cache_ragged_attention(
                 blocks,
                 cache_lengths,
                 lookup_table,
-                max_lengths,
+                max_prompt_length,
+                max_cache_length,
                 attention_dispatch_metadata,
             ) = g.inputs
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -107,7 +108,8 @@ def test_kv_cache_ragged_attention(
                 blocks.buffer,
                 cache_lengths.tensor,
                 lookup_table.tensor,
-                max_lengths.tensor,
+                max_prompt_length.tensor,
+                max_cache_length.tensor,
                 attention_dispatch_metadata=attention_dispatch_metadata.tensor,
             )
             result = flash_attention_ragged(
@@ -132,7 +134,7 @@ def test_kv_cache_ragged_attention(
     for context in batch:
         kv_manager.claim(context.request_id, replica_idx=0)
         assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0)
 
     input_row_offsets = Buffer(
         DType.uint32,
@@ -143,7 +145,7 @@ def test_kv_cache_ragged_attention(
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     @modular_graph_test(
@@ -158,8 +160,9 @@ def test_kv_cache_ragged_attention(
             2: kv_runtime_inputs.kv_blocks,
             3: kv_runtime_inputs.cache_lengths,
             4: kv_runtime_inputs.lookup_table,
-            5: kv_runtime_inputs.max_lengths,
-            6: kv_runtime_inputs.attention_dispatch_metadata,
+            5: kv_runtime_inputs.max_prompt_length,
+            6: kv_runtime_inputs.max_cache_length,
+            7: kv_runtime_inputs.attention_dispatch_metadata,
         },
     )
     def test_runs_without_nan(

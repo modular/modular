@@ -153,7 +153,7 @@ def bench_decode[
                 config=MHAConfig[qkv_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
-                output_device.as_any_origin(),
+                output_device.as_unsafe_any_origin(),
                 q_device,
                 k_device,
                 CausalMask(),
@@ -480,7 +480,7 @@ def bench_prefill_sparse[
     comptime cl_layout = Layout(UNKNOWN_VALUE)
     comptime lut_layout = Layout.row_major[2]()
 
-    var kv_block_lt = LayoutTensor[qkv_type, kv_block_layout, MutAnyOrigin](
+    var kv_block_lt = LayoutTensor[qkv_type, kv_block_layout](
         blocks_device.unsafe_ptr(),
         RuntimeLayout[kv_block_layout].row_major(
             IndexList[6](
@@ -488,13 +488,11 @@ def bench_prefill_sparse[
             )
         ),
     )
-    var cache_lengths_lt = LayoutTensor[
-        DType.uint32, cl_layout, ImmutAnyOrigin
-    ](
+    var cache_lengths_lt = LayoutTensor[mut=False, DType.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
-    var lut_lt = LayoutTensor[DType.uint32, lut_layout, ImmutAnyOrigin](
+    var lut_lt = LayoutTensor[mut=False, DType.uint32, lut_layout, _](
         lut_device.unsafe_ptr(),
         RuntimeLayout[lut_layout].row_major(
             IndexList[2](batch_size, num_pages)

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys.intrinsics import _type_is_eq
 
 from std.utils.type_functions import ConditionalType
 from std.testing import assert_true, assert_false, TestSuite
@@ -25,8 +24,8 @@ def test_conditional_type_with_bool_literal() raises:
         Trait=AnyType, If=False, Then=Int, Else=String
     ]
 
-    assert_true(_type_is_eq[IsInt, Int]())
-    assert_true(_type_is_eq[IsString, String]())
+    assert_true(IsInt == Int)
+    assert_true(IsString == String)
 
 
 def test_conditional_type_with_bool_function() raises:
@@ -40,8 +39,8 @@ def test_conditional_type_with_bool_function() raises:
         Trait=AnyType, If=bool[False](), Then=Int, Else=String
     ]
 
-    assert_true(_type_is_eq[IsInt, Int]())
-    assert_true(_type_is_eq[IsString, String]())
+    assert_true(IsInt == Int)
+    assert_true(IsString == String)
 
 
 def test_conditional_type_nested() raises:
@@ -55,15 +54,15 @@ def test_conditional_type_nested() raises:
         Trait=AnyType, If=True, Then=IsInt, Else=IsString
     ]
 
-    assert_true(_type_is_eq[FinalType, Int]())
+    assert_true(FinalType == Int)
 
 
 def test_conditional_type_same_types() raises:
     comptime Int1 = ConditionalType[Trait=AnyType, If=True, Then=Int, Else=Int]
     comptime Int2 = ConditionalType[Trait=AnyType, If=False, Then=Int, Else=Int]
 
-    assert_true(_type_is_eq[Int1, Int]())
-    assert_true(_type_is_eq[Int2, Int]())
+    assert_true(Int1 == Int)
+    assert_true(Int2 == Int)
 
 
 def test_conditional_type_ternary_tree() raises:
@@ -76,10 +75,10 @@ def test_conditional_type_ternary_tree() raises:
         ],
     ]
 
-    assert_true(_type_is_eq[PickAType[True, True], Int]())
-    assert_true(_type_is_eq[PickAType[True, False], Float64]())
-    assert_true(_type_is_eq[PickAType[False, True], String]())
-    assert_true(_type_is_eq[PickAType[False, False], List[Int]]())
+    assert_true(PickAType[True, True] == Int)
+    assert_true(PickAType[True, False] == Float64)
+    assert_true(PickAType[False, True] == String)
+    assert_true(PickAType[False, False] == List[Int])
 
 
 def main() raises:

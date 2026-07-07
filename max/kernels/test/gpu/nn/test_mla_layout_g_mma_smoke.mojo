@@ -16,7 +16,7 @@
 Purpose
 =======
 Phase A9.1 of the MLA decode Layout G design (BM=32, BN=64) requires the
-custom raw-PTX `bulk_mma_ws` wrapper (mla_decode_utils.mojo:1828) to accept
+custom raw-PTX `bulk_mma_ws` wrapper (attention_utils.mojo) to accept
 M=32 even though the Mojo stdlib `_get_f8f6f4_mma_shape`
 (mma_nvidia_sm100.mojo:345) only allows M in {64, 128}.  The custom wrapper
 in MLA decode bypasses the stdlib shape table by feeding the descriptor M
@@ -100,8 +100,7 @@ from layout.tma_async import (
 )
 from linalg.arch.sm100.mma import smem_descriptor
 from linalg.matmul.gpu import matmul_kernel_naive
-from nn.attention.gpu.nvidia.sm100.attention_utils import elect
-from nn.attention.gpu.nvidia.sm100.mla_decode_utils import bulk_mma_ws
+from nn.attention.gpu.nvidia.sm100.attention_utils import bulk_mma_ws, elect
 from std.testing import assert_true
 from std.utils.index import Index, IndexList
 
@@ -209,14 +208,12 @@ def qk_smoke_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_M, QK_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_smem_ptr)
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_N, QK_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](b_smem_ptr)
@@ -379,7 +376,6 @@ def pv_smoke_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(PV_M, PV_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_smem_ptr)
@@ -388,7 +384,6 @@ def pv_smoke_kernel[
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(PV_N, PV_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](b_smem_ptr)
@@ -538,8 +533,8 @@ def fill_random_fp8[
 def dequant_fp8_to_bf16[
     src_dtype: DType, dst_dtype: DType
 ](
-    src: UnsafePointer[Scalar[src_dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dst_dtype], MutAnyOrigin],
+    src: UnsafePointer[mut=False, Scalar[src_dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[dst_dtype], _],
     n: Int,
 ):
     for i in range(n):

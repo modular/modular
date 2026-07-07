@@ -130,7 +130,7 @@ struct _PrecompiledEntriesRuntime[
 
 @always_inline
 def _comptime_list_to_span[
-    T: ImplicitlyDestructible & Copyable, //, list: List[T]
+    T: ImplicitlyDeletable & Copyable, //, list: List[T]
 ]() -> Span[T, StaticConstantOrigin]:
     """Convert a comptime list to a runtime span of static constant origin."""
 
@@ -611,7 +611,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
                     var flag = self.conversion_flag
                     var empty = flag == 0
 
-                    ref arg = trait_downcast[Writable](args[i])
+                    ref arg = args[i]
                     if empty or flag == s_value:
                         arg.write_to(writer)
                     elif flag == r_value:

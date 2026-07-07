@@ -52,9 +52,6 @@ Context protocols
    :template: autosummary/class.rst
 
    BaseContext
-   TextGenerationContext
-   VLMTextGenerationContext
-   PixelGenerationContext
 
 Type variables
 --------------

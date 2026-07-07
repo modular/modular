@@ -12,12 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from .cache_params import (
+    BatchCharacteristics,
+    KVCacheAssignments,
     KVCacheBuffer,
+    KVCacheBufferInterface,
     KVCacheMemory,
     KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
+    KVHashAlgo,
+    MHAKVCacheParams,
+    MLAKVCacheParams,
+    MSAKVCacheParams,
+    MultiKVCacheBuffer,
     MultiKVCacheParams,
     ReplicatedKVCacheMemory,
     compute_max_seq_len_fitting_in_cache,
@@ -25,14 +33,32 @@ from .cache_params import (
     compute_num_host_blocks,
     estimated_memory_size,
 )
-from .input_types import KVCacheInputs, KVCacheInputsPerDevice, PagedCacheValues
+from .input_types import (
+    KVCacheInputs,
+    KVCacheInputsInterface,
+    KVCacheInputsPerDevice,
+    MultiKVCacheInputs,
+    PagedCacheValues,
+)
 from .metrics import KVCacheMetrics
-from .utils import AttentionDispatchResolver, build_max_lengths_tensor
+from .utils import (
+    AttnKey,
+    AttnKeyInterface,
+    MHAAttnKey,
+    MLAAttnKey,
+    MSAAttnKey,
+    build_max_lengths_tensors,
+)
 
 __all__ = [
-    "AttentionDispatchResolver",
+    "AttnKey",
+    "AttnKeyInterface",
+    "BatchCharacteristics",
+    "KVCacheAssignments",
     "KVCacheBuffer",
+    "KVCacheBufferInterface",
     "KVCacheInputs",
+    "KVCacheInputsInterface",
     "KVCacheInputsPerDevice",
     "KVCacheMemory",
     "KVCacheMetrics",
@@ -40,10 +66,19 @@ __all__ = [
     "KVCacheParams",
     "KVCacheQuantizationConfig",
     "KVConnectorType",
+    "KVHashAlgo",
+    "MHAAttnKey",
+    "MHAKVCacheParams",
+    "MLAAttnKey",
+    "MLAKVCacheParams",
+    "MSAAttnKey",
+    "MSAKVCacheParams",
+    "MultiKVCacheBuffer",
+    "MultiKVCacheInputs",
     "MultiKVCacheParams",
     "PagedCacheValues",
     "ReplicatedKVCacheMemory",
-    "build_max_lengths_tensor",
+    "build_max_lengths_tensors",
     "compute_max_seq_len_fitting_in_cache",
     "compute_num_device_blocks",
     "compute_num_host_blocks",

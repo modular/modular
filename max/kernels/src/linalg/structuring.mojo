@@ -162,7 +162,7 @@ trait SharedMemoryBasePtr:
     @staticmethod
     def ptr() -> (
         UnsafePointer[
-            Int8, MutExternalOrigin, address_space=AddressSpace.SHARED
+            Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED
         ]
     ):
         ...
@@ -178,7 +178,7 @@ struct NVIDIASharedMemoryBasePtr[
     @staticmethod
     def ptr() -> (
         UnsafePointer[
-            Int8, MutExternalOrigin, address_space=AddressSpace.SHARED
+            Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED
         ]
     ):
         return external_memory[
@@ -203,7 +203,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
     ]
 
     var base_ptr: UnsafePointer[
-        Int8, MutExternalOrigin, address_space=AddressSpace.SHARED
+        Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED
     ]
     var offset: Int
 
@@ -226,7 +226,9 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
             Allocated tile.
         """
         var result = T(
-            (self.base_ptr + self.offset).bitcast[Scalar[dtype]](),
+            (self.base_ptr + self.offset)
+            .bitcast[Scalar[dtype]]()
+            .as_unsafe_any_origin(),
         )
         self.offset += T.storage_size
         return result

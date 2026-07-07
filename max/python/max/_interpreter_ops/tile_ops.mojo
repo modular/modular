@@ -39,7 +39,7 @@ from op_utils import (
 
 
 @export
-def PyInit_tile_ops() -> PythonObject:
+def PyInit_tile_ops() abi("C") -> PythonObject:
     """Create a Python module with tile kernel function bindings."""
     try:
         var b = PythonModuleBuilder("tile_ops")
@@ -60,8 +60,8 @@ def PyInit_tile_ops() -> PythonObject:
 def tile_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: InlineArray[Int, MAX_RANK],
     out_strides: InlineArray[Int, MAX_RANK],
     in_strides: InlineArray[Int, MAX_RANK],
@@ -89,6 +89,11 @@ def tile_op[
         ctx: Device context (CPU).
     """
 
+    # TODO: This body captures `InlineArray` shape/stride args, which makes the
+    # closure memory-only, so it cannot satisfy the unified-closure
+    # `elementwise` overload's `RegisterPassable` bound. Keep using the
+    # deprecated parameter-closure overload until the array data is staged in
+    # device memory (or the unified overload accepts memory-only closures).
     @always_inline
     @parameter
     @__copy_capture(out_ptr, in_ptr, in_shape, out_strides, in_strides, rank)

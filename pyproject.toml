@@ -40,6 +40,11 @@ extend-exclude = [
   "*_pb2.pyi", # Generated protobuf stubs
   "*max/serve/schemas/openai.py", # Generated file
   "third-party",
+  # Vendored verbatim from xgrammar v0.2.2 (hack-to-own); kept unformatted so a
+  # future re-vendor diffs cleanly against upstream.
+  "*max/python/max/_xgrammar/structural_tag.py",
+  "*max/python/max/_xgrammar/builtin_structural_tag.py",
+  "*max/python/max/_xgrammar/openai_tool_call_schema.py",
   "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
   "utils/mblack/tests",
   "Faux/mojo_llm_from_scratch/**", # Experimental from-scratch LLM project
@@ -100,7 +105,6 @@ convention = "google"
 # With exceptions for these packages:
 "max/python/max/benchmark/**/*" = ["D"]
 "max/python/max/config/**/*" = ["D"]
-"max/python/max/entrypoints/**/*" = ["D"]
 "max/python/max/pipelines/kv_cache/connectors/**/*" = ["D"]
 "max/python/max/mlir/**/*" = ["D"]
 "max/python/max/nn/**/*" = ["D"]
@@ -111,6 +115,7 @@ convention = "google"
 # Exclude private packages and modules (NOTE: this allows max/_core/*.pyi files):
 "max/python/max/_core_mojo/**/*" = ["D"]
 "max/python/max/_core_types/**/*" = ["D"]
+"max/python/max/_entrypoints/**/*" = ["D"]
 "max/python/max/_interpreter_ops/**/*" = ["D"]
 "max/python/max/_mlir/**/*" = ["D"]
 "max/python/max/_core/dialects/**/*" = ["D"]

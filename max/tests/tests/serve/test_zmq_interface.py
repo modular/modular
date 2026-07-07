@@ -16,11 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import queue
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
-from typing import cast
-from unittest.mock import Mock
+from typing import Generic, TypeVar, cast
 
 import pytest
 from max.pipelines.context import BaseContext
@@ -30,6 +28,52 @@ from max.pipelines.modeling.types import (
 )
 from max.serve.scheduler_result import SchedulerResult
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerProxy
+
+_T = TypeVar("_T")
+
+
+class FakeAsyncPushQueue(Generic[_T]):
+    """Test double mimicking ZmqAsyncPushSocket interface."""
+
+    def __init__(self) -> None:
+        self._queue: asyncio.Queue[_T] = asyncio.Queue()
+
+    def put_nowait(self, item: _T) -> None:
+        self._queue.put_nowait(item)
+
+    async def put(self, item: _T) -> None:
+        await self._queue.put(item)
+
+    def get_nowait(self) -> _T:
+        return self._queue.get_nowait()
+
+    async def get(self) -> _T:
+        return await self._queue.get()
+
+    def qsize(self) -> int:
+        return self._queue.qsize()
+
+
+class FakeAsyncPullQueue(Generic[_T]):
+    """Test double mimicking ZmqAsyncPullSocket interface."""
+
+    def __init__(self) -> None:
+        self._queue: asyncio.Queue[_T] = asyncio.Queue()
+
+    async def get(self) -> _T:
+        return await self._queue.get()
+
+    def get_nowait(self) -> _T:
+        return self._queue.get_nowait()
+
+    def put_nowait(self, item: _T) -> None:
+        self._queue.put_nowait(item)
+
+    async def put(self, item: _T) -> None:
+        await self._queue.put(item)
+
+    def qsize(self) -> int:
+        return self._queue.qsize()
 
 
 async def wait_until(
@@ -61,10 +105,12 @@ class FakeOutput(PipelineOutput):
 
 @contextlib.asynccontextmanager
 async def create_worker_proxy(
-    request_queue: queue.Queue[BaseContext],
-    response_queue: queue.Queue[dict[RequestID, SchedulerResult[FakeOutput]]],
-    cancel_queue: queue.Queue[list[RequestID]],
-) -> AsyncGenerator[ZmqModelWorkerProxy, None]:  # type: ignore[type-arg]
+    request_queue: FakeAsyncPushQueue[BaseContext],
+    response_queue: FakeAsyncPullQueue[
+        dict[RequestID, SchedulerResult[FakeOutput]]
+    ],
+    cancel_queue: FakeAsyncPushQueue[list[RequestID]],
+) -> AsyncGenerator[ZmqModelWorkerProxy[BaseContext, FakeOutput], None]:
     proxy = ZmqModelWorkerProxy(request_queue, response_queue, cancel_queue)
     response_worker_task = asyncio.create_task(proxy.response_worker())
     try:
@@ -75,13 +121,14 @@ async def create_worker_proxy(
 
 @pytest.mark.asyncio
 async def test_buffering() -> None:
-    request_queue: queue.Queue[BaseContext] = queue.Queue()
-    response_queue: queue.Queue[
+    request_queue: FakeAsyncPushQueue[BaseContext] = FakeAsyncPushQueue()
+    response_queue: FakeAsyncPullQueue[
         dict[RequestID, SchedulerResult[FakeOutput]]
-    ] = queue.Queue()
+    ] = FakeAsyncPullQueue()
+    cancel_queue: FakeAsyncPushQueue[list[RequestID]] = FakeAsyncPushQueue()
 
     async with create_worker_proxy(
-        request_queue, response_queue, cancel_queue=Mock()
+        request_queue, response_queue, cancel_queue
     ) as proxy:
         req_id = RequestID("my_request_id")
         fake_context = cast(BaseContext, FakeContext(name="fake context"))
@@ -100,7 +147,7 @@ async def test_buffering() -> None:
         def put(data: str, is_done: bool = False) -> None:
             output = FakeOutput(data, is_done)
             sch_result = SchedulerResult(is_done=is_done, result=output)
-            response_queue.put({req_id: sch_result})
+            response_queue.put_nowait({req_id: sch_result})
 
         put("a")
 

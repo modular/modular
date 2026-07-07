@@ -25,7 +25,7 @@ from std.utils.coord import Coord
 
 def run_elementwise[
     dtype: DType,
-    kernel_fn: def[dtype: DType, width: Int](
+    kernel_fn: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width]
     ) thin raises -> SIMD[dtype, width],
 ](ctx: DeviceContext) raises where dtype.is_floating_point():
@@ -42,12 +42,8 @@ def run_elementwise[
             in_host2[i] = 0.001 * abs(Scalar[dtype](i) - length // 2)
         in_host = in_host2^
 
-    var in_buffer = Span[Scalar[dtype]](
-        ptr=in_device.unsafe_ptr(), length=length
-    )
-    var out_buffer = Span[Scalar[dtype]](
-        ptr=out_device.unsafe_ptr(), length=length
-    )
+    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=length)
+    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=length)
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)

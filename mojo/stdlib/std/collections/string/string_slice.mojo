@@ -190,7 +190,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     def __init__(out self: StaticString, _kgen: __mlir_type.`!kgen.string`):
         # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
         # encoded, they can be arbitrary binary data.
-        var length: Int = Int(mlir_value=__mlir_op.`pop.string.size`(_kgen))
+        var length: Int = Int(
+            SIMDSize(mlir_value=__mlir_op.`pop.string.size`(_kgen))
+        )
         var ptr = UnsafePointer[mut=False, _, StaticConstantOrigin](
             __mlir_op.`pop.string.address`(_kgen)
         ).bitcast[Byte]()
@@ -647,6 +649,19 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # Operator dunders
     # ===------------------------------------------------------------------===#
 
+    @doc_hidden
+    @unavailable(
+        "StringSlice does not support `__len__` because Mojo strings are"
+        " UTF-8 encoded, so a single length is ambiguous: it could mean the"
+        " number of UTF-8 bytes, the number of Unicode code points, or the"
+        " number of user-visible characters (grapheme clusters). Use"
+        " `s.byte_length()` or `len(s.bytes())` for the number of UTF-8 bytes,"
+        " `len(s.codepoints())` for Unicode code points, or"
+        " `len(s.graphemes())` for grapheme clusters."
+    )
+    def __len__(self) -> Int:
+        ...
+
     # This decorator informs the compiler that indirect address spaces are not
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
@@ -821,23 +836,42 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return StringSlice(rhs) <= self
 
-    @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
-    def __iter__(self) -> CodepointSliceIter[Self.origin]:
-        """Iterate over the string, returning immutable references.
+    def __iter__(self) -> GraphemeSliceIter[Self.origin]:
+        """Iterate over the grapheme clusters in the string slice.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen. See `graphemes()` for the precise
+        definition.
+
+        To iterate by Unicode codepoint or by byte instead, use
+        `codepoints()`/`codepoint_slices()` or `bytes()`.
 
         Returns:
-            An iterator of references to the string elements.
+            An iterator yielding each grapheme cluster as a `StringSlice`.
         """
-        return self.codepoint_slices()
+        return self.graphemes()
+
+    def __reversed__(self) -> GraphemeSliceIter[Self.origin, False]:
+        """Iterate backwards over the grapheme clusters in the string slice.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen. See `graphemes()` for the precise
+        definition.
+
+        Returns:
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
+        """
+        return self.graphemes_reversed()
 
     @always_inline
     def __getitem__[I: Indexer, //](self, *, byte: I) -> Self:
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
-        For strings containing multi-byte UTF-8 characters, this may return a
-        partial or invalid character sequence. For proper character access, use
-        `codepoint_slices()` or iterate over the string directly.
+        For strings containing multi-byte UTF-8 characters `byte` must fall on
+        a codepoint boundary and an entire codepoint will be returned.
+        Aborts if `byte` does not fall on a codepoint boundary.
 
         Parameters:
             I: A type that can be used as an index.
@@ -866,7 +900,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             byte: The byte index (0-based).
 
         Returns:
-            A StringSlice containing a single byte at the specified position.
+            A StringSlice containing the codepoint starting at the specified
+            byte position.
         """
         comptime assert IntLiteral[byte.value]() >= 0, (
             "negative indexing is not supported, use e.g."

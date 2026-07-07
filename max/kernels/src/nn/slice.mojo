@@ -103,9 +103,9 @@ def slice_as_view[
     step_type: DType,
 ](
     tensor: TileTensor[dtype, ...],
-    starts: TileTensor[start_type, ...],
-    ends: TileTensor[end_type, ...],
-    steps: TileTensor[step_type, ...],
+    starts: TileTensor[mut=False, start_type, ...],
+    ends: TileTensor[mut=False, end_type, ...],
+    steps: TileTensor[mut=False, step_type, ...],
 ) -> TileTensor[
     dtype,
     Layout[
@@ -172,10 +172,10 @@ def copy_to_slice[
     target: StaticString = "cpu",
 ](
     buffer: TileTensor[mut=True, dtype, ...],
-    in_slice: TileTensor[dtype, ...],
-    start: TileTensor[start_type, ...],
-    end: TileTensor[end_type, ...],
-    step: TileTensor[step_type, ...],
+    in_slice: TileTensor[mut=False, dtype, ...],
+    start: TileTensor[mut=False, start_type, ...],
+    end: TileTensor[mut=False, end_type, ...],
+    step: TileTensor[mut=False, step_type, ...],
     context: DeviceContext,
 ) raises:
     var expected_shape = slice_shape(buffer, start, end, step)
@@ -194,14 +194,13 @@ def copy_to_slice[
     var buffer_slice_view = slice_as_view(buffer, start, end, step)
 
     @always_inline
-    @__copy_capture(in_slice, buffer_slice_view)
-    @parameter
-    def copy[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def copy[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         buffer_slice_view.store[width=simd_width](
             idx, in_slice.load[width=simd_width](idx)
         )
 
-    elementwise[copy, 1, target=target, _trace_description="slice_copy"](
+    elementwise[1, target=target, _trace_description="slice_copy"](
+        copy,
         buffer_slice_view.layout.shape_coord(),
         context,
     )
@@ -218,10 +217,10 @@ def slice_as_copy[
     index_type: DType,
 ](
     output: TileTensor[mut=True, dtype, ...],
-    tensor: TileTensor[dtype, ...],
-    start: TileTensor[index_type, ...],
-    end: TileTensor[index_type, ...],
-    step: TileTensor[index_type, ...],
+    tensor: TileTensor[mut=False, dtype, ...],
+    start: TileTensor[mut=False, index_type, ...],
+    end: TileTensor[mut=False, index_type, ...],
+    step: TileTensor[mut=False, index_type, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert output.flat_rank == tensor.flat_rank
@@ -230,13 +229,11 @@ def slice_as_copy[
 
     # Copy lambda sliced view into output buffer.
     @always_inline
-    @__copy_capture(sliced)
-    @parameter
-    def copy[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def copy[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         output.store[width=simd_width](idx, sliced.load[width=simd_width](idx))
 
     # Invoke copy.
-    elementwise[copy, 1](output.layout.shape_coord(), ctx)
+    elementwise[1](copy, output.layout.shape_coord(), ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -251,10 +248,10 @@ def slice_shape[
     stop_type: DType,
     step_type: DType,
 ](
-    input_buf: TileTensor[input_type, ...],
-    start_buf: TileTensor[start_type, ...],
-    stop_buf: TileTensor[stop_type, ...],
-    step_buf: TileTensor[step_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    start_buf: TileTensor[mut=False, start_type, ...],
+    stop_buf: TileTensor[mut=False, stop_type, ...],
+    step_buf: TileTensor[mut=False, step_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     comptime assert start_buf.flat_rank == 1, "start_buf.rank must be 1"
     comptime assert stop_buf.flat_rank == 1, "stop_buf.rank must be 1"
@@ -310,9 +307,9 @@ def sliced_add[
     target: StaticString,
 ](
     c: TileTensor[mut=True, dtype, ...],
-    a: TileTensor[dtype, ...],
-    b: TileTensor[dtype, ...],
-    lora_end_idx: TileTensor[DType.int64, ...],
+    a: TileTensor[mut=False, dtype, ...],
+    b: TileTensor[mut=False, dtype, ...],
+    lora_end_idx: TileTensor[mut=False, DType.int64, ...],
     ctx: DeviceContext,
 ) raises:
     """Adds tensors a and b element-wise for rows < lora_end_idx, otherwise copies a.
@@ -332,9 +329,7 @@ def sliced_add[
 
     var batch_end_idx = Int(lora_end_idx[0])
 
-    @parameter
-    @__copy_capture(batch_end_idx, c, a, b)
-    def _sliced_add[width: Int, alignment: Int = 1](idx: Coord):
+    def _sliced_add[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var out_val: SIMD[dtype, width]
 
         if Int(idx[0].value()) >= batch_end_idx:
@@ -351,11 +346,11 @@ def sliced_add[
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[
-            _sliced_add,
             simd_width,
             target=target,
             _trace_description="slice_add",
         ](
+            _sliced_add,
             c.layout.shape_coord(),
             ctx,
         )
@@ -363,6 +358,6 @@ def sliced_add[
         comptime compile_target = _current_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[_sliced_add, simd_width, target=target](
-            c.layout.shape_coord(), ctx
+        elementwise[simd_width, target=target](
+            _sliced_add, c.layout.shape_coord(), ctx
         )

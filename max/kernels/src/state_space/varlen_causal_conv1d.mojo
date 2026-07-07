@@ -63,8 +63,10 @@ def causal_conv1d_varlen_states_cpu[
     dim: Int,
     batch: Int,
     state_len: Int,
-    x: TileTensor[x_dtype, ...],  # Shape (total_tokens, dim)
-    cu_seqlens: TileTensor[cu_seqlens_dtype, ...],  # Shape (batch + 1,)
+    x: TileTensor[mut=False, x_dtype, ...],  # Shape (total_tokens, dim)
+    cu_seqlens: TileTensor[
+        mut=False, cu_seqlens_dtype, ...
+    ],  # Shape (batch + 1,)
     states: TileTensor[
         mut=True, states_dtype, ...
     ],  # Shape (batch, dim, state_len)
@@ -153,13 +155,19 @@ def causal_conv1d_varlen_fwd_cpu[
     total_seqlen: Int,
     width: Int,
     batch: Int,
-    x: TileTensor[x_dtype, ...],  # Shape (dim, total_seqlen) for varlen
-    weight: TileTensor[weight_dtype, ...],  # Shape (dim, width)
-    bias: TileTensor[bias_dtype, ...],  # Shape (dim,)
-    query_start_loc: TileTensor[cu_seqlens_dtype, ...],  # Shape (batch + 1,)
-    cache_indices: TileTensor[cache_indices_dtype, ...],  # Shape (batch,)
+    x: TileTensor[
+        mut=False, x_dtype, ...
+    ],  # Shape (dim, total_seqlen) for varlen
+    weight: TileTensor[mut=False, weight_dtype, ...],  # Shape (dim, width)
+    bias: TileTensor[mut=False, bias_dtype, ...],  # Shape (dim,)
+    query_start_loc: TileTensor[
+        mut=False, cu_seqlens_dtype, ...
+    ],  # Shape (batch + 1,)
+    cache_indices: TileTensor[
+        mut=False, cache_indices_dtype, ...
+    ],  # Shape (batch,)
     has_initial_state: TileTensor[
-        has_initial_state_dtype, ...
+        mut=False, has_initial_state_dtype, ...
     ],  # Shape (batch,)
     conv_states: TileTensor[
         mut=True, conv_states_dtype, ...
@@ -327,15 +335,19 @@ def causal_conv1d_varlen_update_cpu[
     seqlen: Int,
     width: Int,
     state_len: Int,
-    x: TileTensor[x_dtype, ...],  # Shape (batch, dim) or (batch, dim, seqlen)
-    weight: TileTensor[weight_dtype, ...],  # Shape (dim, width)
-    bias: TileTensor[bias_dtype, ...],  # Shape (dim,)
+    x: TileTensor[
+        mut=False, x_dtype, ...
+    ],  # Shape (batch, dim) or (batch, dim, seqlen)
+    weight: TileTensor[mut=False, weight_dtype, ...],  # Shape (dim, width)
+    bias: TileTensor[mut=False, bias_dtype, ...],  # Shape (dim,)
     conv_state: TileTensor[
         mut=True, conv_state_dtype, ...
     ],  # Shape (batch, dim, state_len)
-    cache_seqlens: TileTensor[cache_seqlens_dtype, ...],  # Shape (batch,)
+    cache_seqlens: TileTensor[
+        mut=False, cache_seqlens_dtype, ...
+    ],  # Shape (batch,)
     conv_state_indices: TileTensor[
-        conv_state_indices_dtype, ...
+        mut=False, conv_state_indices_dtype, ...
     ],  # Shape (batch,)
     output: TileTensor[
         mut=True, output_dtype, ...
@@ -527,13 +539,13 @@ def causal_conv1d_varlen_states_gpu[
     batch: Int,
     state_len: Int,
     x: TileTensor[
-        x_dtype, x_LT, MutExternalOrigin
+        x_dtype, x_LT, MutUntrackedOrigin
     ],  # Shape (total_tokens, dim)
     cu_seqlens: TileTensor[
-        cu_seqlens_dtype, cu_seqlens_LT, MutExternalOrigin
+        cu_seqlens_dtype, cu_seqlens_LT, MutUntrackedOrigin
     ],  # Shape (batch + 1,)
     states: TileTensor[
-        states_dtype, states_LT, MutExternalOrigin
+        states_dtype, states_LT, MutUntrackedOrigin
     ],  # Shape (batch, dim, state_len)
     x_seqlen_stride: UInt32,
     x_dim_stride: UInt32,
@@ -630,22 +642,22 @@ def causal_conv1d_varlen_fwd_gpu[
     dim: Int,
     total_seqlen: Int,
     batch: Int,
-    x: TileTensor[x_dtype, x_LT, MutExternalOrigin],
-    weight: TileTensor[weight_dtype, weight_LT, MutExternalOrigin],
-    bias: TileTensor[bias_dtype, bias_LT, MutExternalOrigin],
+    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],
+    weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
+    bias: TileTensor[bias_dtype, bias_LT, MutUntrackedOrigin],
     query_start_loc: TileTensor[
-        cu_seqlens_dtype, query_start_loc_LT, MutExternalOrigin
+        cu_seqlens_dtype, query_start_loc_LT, MutUntrackedOrigin
     ],
     cache_indices: TileTensor[
-        cache_indices_dtype, cache_indices_LT, MutExternalOrigin
+        cache_indices_dtype, cache_indices_LT, MutUntrackedOrigin
     ],
     has_initial_state: TileTensor[
-        has_initial_state_dtype, has_initial_state_LT, MutExternalOrigin
+        has_initial_state_dtype, has_initial_state_LT, MutUntrackedOrigin
     ],
     conv_states: TileTensor[
-        conv_states_dtype, conv_states_LT, MutExternalOrigin
+        conv_states_dtype, conv_states_LT, MutUntrackedOrigin
     ],
-    output: TileTensor[output_dtype, output_LT, MutExternalOrigin],
+    output: TileTensor[output_dtype, output_LT, MutUntrackedOrigin],
     x_dim_stride: UInt32,
     x_seqlen_stride: UInt32,
     weight_dim_stride: UInt32,
@@ -808,17 +820,17 @@ def causal_conv1d_varlen_update_gpu[
     dim: Int,
     seqlen: Int,
     state_len: Int,
-    x: TileTensor[x_dtype, x_LT, MutExternalOrigin],
-    weight: TileTensor[weight_dtype, weight_LT, MutExternalOrigin],
-    bias: TileTensor[bias_dtype, bias_LT, MutExternalOrigin],
-    conv_state: TileTensor[conv_state_dtype, conv_state_LT, MutExternalOrigin],
+    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],
+    weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
+    bias: TileTensor[bias_dtype, bias_LT, MutUntrackedOrigin],
+    conv_state: TileTensor[conv_state_dtype, conv_state_LT, MutUntrackedOrigin],
     cache_seqlens: TileTensor[
-        cache_seqlens_dtype, cache_seqlens_LT, MutExternalOrigin
+        cache_seqlens_dtype, cache_seqlens_LT, MutUntrackedOrigin
     ],
     conv_state_indices: TileTensor[
-        conv_state_indices_dtype, conv_state_indices_LT, MutExternalOrigin
+        conv_state_indices_dtype, conv_state_indices_LT, MutUntrackedOrigin
     ],
-    output: TileTensor[output_dtype, output_LT, MutExternalOrigin],
+    output: TileTensor[output_dtype, output_LT, MutUntrackedOrigin],
     x_batch_stride: UInt32,
     x_dim_stride: UInt32,
     x_seqlen_stride: UInt32,

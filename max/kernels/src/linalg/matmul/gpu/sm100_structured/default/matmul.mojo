@@ -22,6 +22,7 @@ All GPU code (kernel structs, runtime functions) is in matmul_kernels.mojo.
 from std.math import align_up, ceildiv
 from std.sys import size_of
 
+from comm import MAX_GPUS, Signal
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
@@ -30,13 +31,15 @@ from layout import (
     Coord,
     Idx,
     RowMajorLayout,
+    TensorLayout,
     TileTensor,
     row_major as tt_row_major,
 )
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 
-from std.utils.index import Index
+from std.utils.index import Index, IndexList
+from std.collections import OptionalReg
 from std.utils.static_tuple import StaticTuple
 
 from linalg.utils import (
@@ -132,6 +135,14 @@ def _blackwell_matmul_tma_umma_warp_specialized[
         comptime assert (
             MMA_M == 128 or MMA_M == 64
         ), "Only support MMA_M == 128 or 64 when cta_group == 1"
+
+    comptime if c_type == DType.float32:
+        comptime assert (
+            a_type == b_type == DType.float32
+        ), "Only support float32 input types is tested for float32 output dtype"
+        comptime assert (
+            register_based_epilogue
+        ), "only register-based epilogue is supported for float32 output dtype"
 
     # requirements for float8_e4m3fn output dtype
     comptime if c_type == DType.float8_e4m3fn:
@@ -256,8 +267,9 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     # fmt: on
 
     comptime assert (not config.use_tma_epilogue_load) or (
-        config.use_tma_epilogue_load and c_type == DType.bfloat16
-    ), "TMA epilogue load is only supported for bfloat16 output type"
+        c_type == DType.bfloat16
+        or (config.epilogue_is_1d and c_type == DType.float32)
+    ), "TMA epilogue load is only supported for bfloat16 (2D) or float32 (1D)"
 
     # Epilogue tensor TMA descriptor (2D only; 1D uses cp.async.bulk).
     # 2D bias: epilogue tensor is 2D (M, N) in GMEM.
@@ -335,15 +347,23 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     else:
         workspace = {}
 
-    ctx.enqueue_function[kernel, dump_asm=False](
+    # This is wrapped in an InlineArray to match reduce-scatter friendly kernel interface
+    var c_tma_ops: InlineArray[type_of(c_tma_op), 1] = [c_tma_op]
+    var rank_sigs: Optional[
+        InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
+    ] = None
+
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
-        c_tma_op,
+        c_tma_ops,
         epi_load_tma_op,
         bias_1d_tile,
         cluster_dim,
         mnk,
         workspace,
+        rank_sigs,
+        0,
         grid_dim=grid_dim,
         block_dim=KernelType.NUM_THREADS,
         shared_mem_bytes=smem_size,
