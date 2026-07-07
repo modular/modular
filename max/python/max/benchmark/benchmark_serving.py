@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -1127,10 +1128,53 @@ def _resolve_seed(args: ServingBenchmarkConfig) -> None:
         logger.info("Using pinned seed=%d", args.seed)
 
 
+def _seed_for_concurrency(seed: int | None, max_concurrency: int | None) -> int:
+    """Derive a per-concurrency-level seed from the base seed.
+
+    Each concurrency level gets its own request sample instead of replaying
+    the same requests as every other level, while staying reproducible from
+    the single base seed.
+    """
+    digest = hashlib.sha256(f"{seed}:{max_concurrency}".encode()).digest()
+    return int.from_bytes(digest[:4], "big")
+
+
+def _sample_for_seed(
+    args: ServingBenchmarkConfig,
+    benchmark_task: BenchmarkTask,
+    tokenizer: PreTrainedTokenizerBase | None,
+    chat: bool,
+    seed: int | None,
+) -> Samples:
+    """Draw one deterministic workload sample from ``seed``."""
+    random.seed(seed)
+    np.random.seed(seed)
+    samples = sample_requests(
+        args=args,
+        benchmark_task=benchmark_task,
+        tokenizer=tokenizer,
+        chat=chat,
+    )
+
+    # Inject response_format into all sampled requests if specified
+    if args.response_format is not None:
+        response_format = parse_response_format(args.response_format)
+        if isinstance(samples, RequestSamples):
+            for request in samples.requests:
+                request.response_format = response_format
+            logger.info(
+                f"Injected response_format into {len(samples.requests)} requests"
+            )
+        else:
+            logger.warning(
+                "response_format is only supported for single-turn benchmarks, "
+                "ignoring for multi-turn chat sessions"
+            )
+    return samples
+
+
 def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     assert args.model is not None
-    random.seed(args.seed)
-    np.random.seed(args.seed)
     set_ulimit()
     model_id = args.model
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
@@ -1198,27 +1242,7 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
             trust_remote_code=args.trust_remote_code,
         )
 
-    samples = sample_requests(
-        args=args,
-        benchmark_task=benchmark_task,
-        tokenizer=tokenizer,
-        chat=chat,
-    )
-
-    # Inject response_format into all sampled requests if specified
-    if args.response_format is not None:
-        response_format = parse_response_format(args.response_format)
-        if isinstance(samples, RequestSamples):
-            for request in samples.requests:
-                request.response_format = response_format
-            logger.info(
-                f"Injected response_format into {len(samples.requests)} requests"
-            )
-        else:
-            logger.warning(
-                "response_format is only supported for single-turn benchmarks, "
-                "ignoring for multi-turn chat sessions"
-            )
+    samples = _sample_for_seed(args, benchmark_task, tokenizer, chat, args.seed)
 
     lora_manager = None
     if args.lora_paths:
@@ -1332,6 +1356,18 @@ def _run_benchmark_sweep(
                 f" * {mc} = {args.num_prompts}"
             )
 
+        # Each concurrency level draws its own sample, derived from the base
+        # seed, so levels are reproducible individually without replaying
+        # the exact same requests at every level.
+        mc_seed = _seed_for_concurrency(args.seed, mc)
+        session.samples = _sample_for_seed(
+            args,
+            session.benchmark_task,
+            session.tokenizer,
+            session.endpoint == "/v1/chat/completions",
+            mc_seed,
+        )
+
         for rr in args.request_rate:
             iteration_results: list[BenchmarkResult] = []
             validation_passed = True
@@ -1341,7 +1377,7 @@ def _run_benchmark_sweep(
                         args.backend, args.host, args.port, args.dry_run
                     )
 
-                logger.info("mc=%s seed=%d", mc, args.seed)
+                logger.info("mc=%s seed=%d", mc, mc_seed)
 
                 result, ok = asyncio.run(benchmark(args, session, mc, rr))
                 iteration_results.append(result)
