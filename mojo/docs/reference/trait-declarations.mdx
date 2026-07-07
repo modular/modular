@@ -460,9 +460,7 @@ trait Sized:
 struct SizedStruct[T: Copyable](Sized):
     var backing_store: List[Self.T]
 
-# Error: 'SizedStruct[T]' does not implement all requirements
-# for 'Sized'
-# Note: required function '__len__' is not implemented
+# Error about missing a trait's required function '__len__'.
 ```
 
 ### Missing required members
@@ -487,9 +485,8 @@ trait Taggable:
 
 @fieldwise_init
 struct Widget(Taggable):
-    comptime Tag = Int
-    # Note: comptime member 'Tag' type Int does not conform
-    # to trait's required type Sized
+    comptime Tag = Bool
+    # Error since Bool is not Sized
 ```
 
 ### Provided method conflicts
@@ -510,7 +507,7 @@ trait Welcomer:
 @fieldwise_init
 struct Host(Greeter, Welcomer):
     pass
-    # Error: trait method requirement greet has conflicting
-    # default implementations in Greeter and Welcomer; you
-    # must implement it manually
+    # Error about a trait method requirement greet having conflicting
+    # default implementations in Greeter and Welcomer; you must
+    # implement it manually
 ```
