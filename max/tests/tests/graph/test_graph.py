@@ -155,6 +155,25 @@ def test_add_op_closure() -> None:
     assert "mo.output" in str(add_graph._mlir_op)
 
 
+def test_side_stream_stages_mo_sequence() -> None:
+    """``ops.side_stream`` stages an ``mo.sequence`` region tagged with the
+    requested stream id, with the body mapped through its block arguments.
+    """
+    input_type = TensorType(
+        dtype=DType.float32, shape=[4], device=DeviceRef.GPU(0)
+    )
+    with Graph("side_stream", input_types=[input_type]) as graph:
+        x = graph.inputs[0].tensor
+        results = ops.side_stream(
+            [x], lambda t: ops.relu(t), result_types=[x.type], stream_id=1
+        )
+        graph.output(results[0])
+
+    ir = str(graph._mlir_op)
+    assert "mo.sequence[1]" in ir
+    assert "mo.yield" in ir
+
+
 def test_invalid_operand() -> None:
     """Test that passing an invalid operand raises an error."""
     with Graph(

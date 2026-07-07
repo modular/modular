@@ -7256,6 +7256,7 @@ class SequenceOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
@@ -7263,6 +7264,15 @@ class SequenceOp(max._core.Operation):
         results: Sequence[max._core.Type],
         inputs: Sequence[max._core.Value[max._core.Type]],
         stream_id: max._core.dialects.builtin.IntegerAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        result_types: Sequence[max._core.Type],
+        stream_id: int,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
