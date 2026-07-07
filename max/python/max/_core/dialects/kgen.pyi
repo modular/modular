@@ -3369,6 +3369,7 @@ class GeneratorOp(max._core.Operation):
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
         source_param_list: PogListAttr,
+        source_func_type_generator: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -3466,6 +3467,14 @@ class GeneratorOp(max._core.Operation):
     def source_param_list(self) -> PogListAttr | None: ...
     @source_param_list.setter
     def source_param_list(self, arg: PogListAttr, /) -> None: ...
+    @property
+    def source_func_type_generator(
+        self,
+    ) -> max._core.dialects.builtin.TypedAttr | None: ...
+    @source_func_type_generator.setter
+    def source_func_type_generator(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
 
 class IsRunInComptimeInterpreterOp(max._core.Operation):
     """
