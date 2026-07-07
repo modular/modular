@@ -157,8 +157,9 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateExpression(
     ContextuallyEvaluatedAttrInterface attr) {
   // First try context-specific evaluation (handles attrs that need special
   // treatment in specific contexts like parser vs elaborator).
-  if (auto result = evaluateContextSpecific(attr); succeeded(result))
-    return result;
+  FailureOr<TypedAttr> contextResult = evaluateContextSpecific(attr);
+  if (succeeded(contextResult))
+    return contextResult;
 
   // Fall back to interface-based evaluation.
   return attr.evaluateWithContext(*this);
@@ -376,7 +377,7 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
     bool changed = false;
     // BindParamsAttr must always be re-created using an Evaluation Context.
     SmallVector<TypedAttr> newParamValues;
-    for (auto param : bindParams.getParamValues()) {
+    for (TypedAttr param : bindParams.getParamValues()) {
       auto newParam = replaceImpl(param, rootDepth);
       if (!newParam)
         return nullptr;
@@ -398,6 +399,8 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
       TypedAttr result = BindParamsAttr::get(
           bindParams.getContext(), cast<TypedAttr>(newGenerator),
           newParamValues, bindParams.getDischarged(), getEvaluationContext());
+      if (!result)
+        return nullptr;
       assert(isEqualCanon(result.getType(), newType) &&
              "inferred bind_params type must match rebound type");
       return result;
