@@ -170,11 +170,16 @@ FailureOr<TypedAttr> TypeConformsToTraitAttr::evaluateWithContext(
   FailureOr<ResolvedStructHandle> resolvedOr =
       context.resolveStructOp(getTypeValue(), /*acceptAsync=*/false);
   if (failed(resolvedOr)) {
-    // In materialization contexts, failure to resolve means the type is not a
-    // struct (e.g. MLIR primitive types like `index`). Non-struct types don't
-    // conform to any traits, so return false.
-    if (context.isMaterializationContext())
-      return {SIMDAttr::getScalarBool(getContext(), false)};
+    if (context.isMaterializationContext()) {
+      if (auto typeParam = dyn_cast<TypeParamAttr>(getTypeValue());
+          typeParam && !isa<TypeValueType>(typeParam.getTypeValue())) {
+        // This is a non-struct type.
+        //
+        // FIXME: non-struct type is TRP, maybe we should resolve it to
+        // `__MLIRType` instead?
+        return TypedAttr(SIMDAttr::getScalarBool(getContext(), false));
+      }
+    }
     return failure();
   }
 

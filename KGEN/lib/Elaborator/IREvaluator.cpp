@@ -112,7 +112,7 @@ IREvaluator::evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) {
   // Don't try to evaluate a parameter operator that still contains parametric
   // things in it, since it may be transitory.
   if (EscapingReferenceFinder::check(attr))
-    return cast<TypedAttr>(attr);
+    return failure();
 
   if (auto genref = dyn_cast<TypeGeneratorRefAttr>(attr)) {
     // Attempt to concretize the function first.
@@ -353,35 +353,45 @@ IREvaluator::resolveStructOp(TypedAttr typeValue, bool acceptAsync) {
   if (!typeRef)
     return failure();
 
-  auto instanceRef = dyn_cast<TypeInstanceRefAttr>(typeRef);
-  if (!instanceRef)
-    return failure();
-  ParamNode *genNode =
-      elaborator->lookupImplNode(instanceRef.getSymbol())->parent;
-  StructGeneratorOp gen = cast<StructGeneratorOp>(genNode->gen);
+  if (auto instRef = dyn_cast<TypeInstanceRefAttr>(typeRef)) {
+    ParamNode *genNode =
+        elaborator->lookupImplNode(instRef.getSymbol())->parent;
+    StructGeneratorOp gen = cast<StructGeneratorOp>(genNode->gen);
 
-  // Look up the impl node and try to get the StructInstanceOp.
-  // Add parent node as waiter if the user accepts async elaboration.
-  ErrorTreeOr<StructInstanceOp> structInstanceOr =
-      elaborator->getConcreteStructTypeInstance(parent, *errorLoc, instanceRef,
-                                                acceptAsync);
-  if (structInstanceOr.isError()) {
-    emitError(structInstanceOr.takeError());
-    return failure();
+    // Look up the impl node and try to get the StructInstanceOp.
+    // Add parent node as waiter if the user accepts async elaboration.
+    ErrorTreeOr<StructInstanceOp> structInstanceOr =
+        elaborator->getConcreteStructTypeInstance(parent, *errorLoc, instRef,
+                                                  acceptAsync);
+    if (structInstanceOr.isError()) {
+      emitError(structInstanceOr.takeError());
+      return failure();
+    }
+    // If the struct instance is already done concretizing, return it.
+    StructInstanceOp instance = structInstanceOr.takeValue();
+    if (instance)
+      return ResolvedStructHandle{gen, genNode->inputParams, genNode, instance};
+
+    // If the struct instance is not yet ready and the user accepts async,
+    // return null decl to signal that async concretization was triggered.
+    if (acceptAsync)
+      return ResolvedStructHandle{nullptr, {}, nullptr, nullptr};
+
+    // Otherwise, return the generator.
+    return ResolvedStructHandle{gen, genNode->inputParams, genNode, nullptr};
   }
 
-  // If the struct instance is already done concretizing, return it.
-  StructInstanceOp instance = structInstanceOr.takeValue();
-  if (instance)
-    return ResolvedStructHandle{gen, genNode->inputParams, genNode, instance};
+  if (auto genRef = dyn_cast<TypeGeneratorRefAttr>(typeRef)) {
+    // If the struct is not concretized yet, return the generator. things like
+    // conforms_to does not requires a concretized struct to fold.
+    StringAttr name = cast<FlatSymbolRefAttr>(genRef.getSymbol()).getAttr();
+    auto gen = elaborator->oldSymTab.lookup<StructGeneratorOp>(name);
+    if (!gen)
+      return failure();
+    return ResolvedStructHandle{gen, genRef.getParamValues(), nullptr, nullptr};
+  }
 
-  // If the struct instance is not yet ready and the user accepts async,
-  // return null decl to signal that async concretization was triggered.
-  if (acceptAsync)
-    return ResolvedStructHandle{nullptr, {}, nullptr, nullptr};
-
-  // Otherwise, return the generator.
-  return ResolvedStructHandle{gen, genNode->inputParams, genNode, nullptr};
+  return failure();
 }
 
 Operation *
