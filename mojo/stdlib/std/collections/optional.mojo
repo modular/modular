@@ -44,12 +44,12 @@ from std.hashlib import Hasher
 from std.memory import UnsafeMaybeUninit
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location, reflect
+from std.utils import StaticTuple
 from std.utils._nicheable import (
     UnsafeNicheable,
     UnsafeCustomNicheStorage,
     NicheIndex,
 )
-from std.utils.type_functions import ConditionalType
 
 
 @fieldwise_init
@@ -945,11 +945,12 @@ struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
 struct _NicheableOptionalRegStorage[
     T: TrivialRegisterPassable & UnsafeNicheable
 ](TrivialRegisterPassable, _OptionalRegStorageTraits):
-    comptime StorageType = ConditionalType[
-        Trait=TrivialRegisterPassable,
-        If=conforms_to(Self.T, UnsafeCustomNicheStorage),
-        Then=downcast[Self.T, UnsafeCustomNicheStorage].NicheStorage,
-        Else=__mlir_type[`!pop.array<1, `, Self.T, `>`],
+    comptime StorageType: TrivialRegisterPassable = downcast[
+        Self.T, UnsafeCustomNicheStorage
+    ].NicheStorage if conforms_to(
+        Self.T, UnsafeCustomNicheStorage
+    ) else StaticTuple[
+        Self.T, 1
     ]
     var storage: Self.StorageType
 
@@ -981,13 +982,14 @@ struct _NicheableOptionalRegStorage[
         return Self.T.classify_niche(ptr) == NicheIndex.NotANiche
 
 
-comptime _OptionalRegStorageFor[T: TrivialRegisterPassable] = ConditionalType[
-    Trait=_OptionalRegStorageTraits,
-    If=conforms_to(T, UnsafeNicheable),
-    Then=_NicheableOptionalRegStorage[
-        downcast[T, TrivialRegisterPassable & UnsafeNicheable]
-    ],
-    Else=_DefaultOptionalRegStorage[T],
+comptime _OptionalRegStorageFor[
+    T: TrivialRegisterPassable
+]: _OptionalRegStorageTraits = _NicheableOptionalRegStorage[
+    downcast[T, TrivialRegisterPassable & UnsafeNicheable]
+] if conforms_to(
+    T, UnsafeNicheable
+) else _DefaultOptionalRegStorage[
+    T
 ]
 
 

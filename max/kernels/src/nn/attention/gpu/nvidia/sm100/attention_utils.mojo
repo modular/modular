@@ -54,7 +54,6 @@ from layout.tile_layout import (
 )
 from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import bitcast
-from std.utils.type_functions import ConditionalType
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 
 # `elect` is defined in the shared NVIDIA module so SM90 and SM100 can both use
@@ -870,21 +869,13 @@ struct SM100TensorAccumulator[
         transpose_b=Self.transpose_b,
     ]()
 
-    comptime AType = ConditionalType[
-        Trait=TrivialRegisterPassable,
-        If=Self.a_tmem,
-        Then=TMemTile[Self.operand_type, Self.MMA_M, Self.BK],
-        Else=MMASmemDescriptorPair,
-    ]
+    comptime AType: TrivialRegisterPassable = TMemTile[
+        Self.operand_type, Self.MMA_M, Self.BK
+    ] if Self.a_tmem else MMASmemDescriptorPair
     # The runtime argument type of `a` in `mma`/`mma_maybe_partial_k`:
     # a raw TMEM address for the TS quadrant, an SMEM descriptor pair
     # for the SS quadrant.
-    comptime AInput = ConditionalType[
-        Trait=TrivialRegisterPassable,
-        If=Self.a_tmem,
-        Then=UInt32,
-        Else=MMASmemDescriptorPair,
-    ]
+    comptime AInput: TrivialRegisterPassable = UInt32 if Self.a_tmem else MMASmemDescriptorPair
     comptime BType = MMASmemDescriptorPair
     comptime CType = TMemTile[Self.accum_t, Self.MMA_M, Self.MMA_N]
 

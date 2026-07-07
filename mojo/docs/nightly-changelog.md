@@ -514,6 +514,18 @@ This version is still a work in progress.
   `where conforms_to(..)` and `comptime assert conforms_to(..)` make explicit
   value trait downcasting no longer necessary.
 
+- The `ConditionalType` type function in `std.utils.type_functions` is now
+  deprecated. Use the equivalent ternary expression `T if cond else U`
+  instead:
+
+  ```mojo
+  # Deprecated:
+  comptime Storage = ConditionalType[If=cond, Then=Int, Else=NoneType]
+
+  # Use instead:
+  comptime Storage = Int if cond else NoneType
+  ```
+
 - Added `raise_python_exception()` to `std.python.bindings`, which translates a
   Mojo `Error` into a Python exception via `PyErr_SetString` and returns a null
   `PyObjectPtr`.

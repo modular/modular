@@ -27,7 +27,6 @@ from std.memory import (
     is_trivially_movable,
 )
 from std.reflection import reflect
-from std.utils.type_functions import ConditionalType
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
@@ -76,15 +75,10 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         `!pop.array<`, Self.size.__mlir_index__(), `, `, Self.element_type, `>`
     ]
 
-    comptime _DeviceElementType: _StaticTupleTraits = ConditionalType[
-        Trait=_StaticTupleTraits,
-        If=conforms_to(Self.element_type, DevicePassable),
-        Then=downcast[
-            downcast[Self.element_type, DevicePassable].device_type,
-            _StaticTupleTraits,
-        ],
-        Else=Self.element_type,
-    ]
+    comptime _DeviceElementType: _StaticTupleTraits = downcast[
+        downcast[Self.element_type, DevicePassable].device_type,
+        _StaticTupleTraits,
+    ] if conforms_to(Self.element_type, DevicePassable) else Self.element_type
     """The device-side element type: the element's `device_type` when it is
     `DevicePassable`, otherwise the element type itself."""
 
