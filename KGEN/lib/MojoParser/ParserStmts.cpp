@@ -2762,11 +2762,8 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
 
   auto buildBranchAssumption = [&](Location loc,
                                    bool invertCondition) -> ConstraintAttr {
-    // Convert `x and y` to `x & y` so we get better canonicalization.
-    TypedAttr branchCondition = LIT::deShortCircuitCond(paramIfOp.getCond());
-    if (invertCondition)
-      branchCondition = ParamOperatorAttr::getNot(branchCondition);
-    return ConstraintAttr::get(branchCondition, loc);
+    return LIT::buildBranchAssumption(paramIfOp.getCond(), invertCondition,
+                                      loc);
   };
 
   // Parse a nested suite inside a param-if region. Inserts the branch
