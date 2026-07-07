@@ -36,6 +36,13 @@ def memory_manager_config(monkeypatch: pytest.MonkeyPatch) -> None:
     # 2% of 100MiB is 2MiB per chunk
     chunk_percent = 2
 
+    # These tests assert classic freelist-allocator semantics (exact chunk
+    # sizing, the 100MiB cap, and the OOM message). The VMM allocator (default
+    # on for NVIDIA) rounds the pool up to a 256MiB granule and satisfies
+    # requests from a single arena, which changes those invariants, so pin it
+    # off here to keep exercising the classic path.
+    monkeypatch.setenv("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM", "False")
+
     # Set config for device memory manager
     monkeypatch.setenv(
         "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE", f"{max_cache_size}"
