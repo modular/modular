@@ -376,6 +376,12 @@ This version is still a work in progress.
   type (`T: AnyType`) instead of requiring `T: ImplicitlyDeletable`, returning
   `False` for non-`ImplicitlyDeletable` (linear) types.
 
+- `List.resize` and `List.shrink` `new_size` arguments have been renamed to
+  `new_length`.
+
+- The `value` argument of `List.resize` has been renamed to `fill` to match
+  List's constructor.
+
 - The `Reflected.field_type[name]` reflection member has been renamed to
   `Reflected.field[name]`, because it returns a chainable `Reflected` handle
   for the named field rather than the field's bare type, so the old name was

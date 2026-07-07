@@ -1065,18 +1065,18 @@ struct List[T: Movable](
         self._realloc(new_capacity)
 
     def resize(
-        mut self, new_size: Int, value: Self.T
+        mut self, new_length: Int, fill: Self.T
     ) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
-        """Resizes the list to the given new size.
+        """Resizes the list to the given new length.
 
         Args:
-            new_size: The new size.
-            value: The value to use to populate new elements.
+            new_length: The new length.
+            fill: The value to use to populate new elements.
 
         Notes:
-            If the new size is smaller than the current one, elements at the end
-            are discarded. If the new size is larger than the current one, the
-            list is appended with new values elements up to the requested size.
+            If the new length is smaller than the current one, elements at the end
+            are discarded. If the new length is larger than the current one, the
+            list is appended with new values elements up to the requested length.
 
         Examples:
 
@@ -1088,21 +1088,21 @@ struct List[T: Movable](
         print(list)                  # ['z', 'y', 'x', 'v', 'v', 'v']
         ```
         """
-        if new_size <= self._len:
-            self.shrink(new_size)
+        if new_length <= self._len:
+            self.shrink(new_length)
         else:
-            self._unchecked_grow(new_size, value)
+            self._unchecked_grow(new_length, fill)
 
     def _unchecked_grow(
-        mut self, new_size: Int, value: Self.T
+        mut self, new_length: Int, fill: Self.T
     ) where conforms_to(Self.T, Copyable):
-        assert new_size >= self._len
+        assert new_length >= self._len
 
-        self.reserve(new_size)
-        self._annotate_increase(new_size - self._len)
-        for i in range(self._len, new_size):
-            (self._data + i).init_pointee_copy(value)
-        self._len = new_size
+        self.reserve(new_length)
+        self._annotate_increase(new_length - self._len)
+        for i in range(self._len, new_length):
+            (self._data + i).init_pointee_copy(fill)
+        self._len = new_length
 
     def resize(
         mut self, *, unsafe_uninit_length: Int
@@ -1135,15 +1135,15 @@ struct List[T: Movable](
             self._len = unsafe_uninit_length
 
     def shrink(
-        mut self, new_size: Int
+        mut self, new_length: Int
     ) where conforms_to(Self.T, ImplicitlyDeletable):
-        """Resizes to the given new size which must be <= the current size.
+        """Resizes to the given new length which must be <= the current size.
 
         Args:
-            new_size: The new size.
+            new_length: The new length.
 
         Notes:
-            With no new value provided, the new size must be smaller than or
+            With no new value provided, the new length must be smaller than or
             equal to the current one. Elements at the end are discarded.
 
         Examples:
@@ -1154,7 +1154,7 @@ struct List[T: Movable](
         # numbers.shrink(8)               # Error: new size is bigger than current
         ```
         """
-        if len(self) < new_size:
+        if len(self) < new_length:
             abort(
                 "You are calling List.shrink with a new_size bigger than the"
                 " current size. If you want to make the List bigger, provide a"
@@ -1162,11 +1162,11 @@ struct List[T: Movable](
                 " size is smaller than the current size."
             )
 
-        destroy_n(self._data + new_size, count=len(self) - new_size)
+        destroy_n(self._data + new_length, count=len(self) - new_length)
 
-        var old_size: Int = self._len
-        self._len = new_size
-        self._annotate_shrink(old_size)
+        var old_length: Int = self._len
+        self._len = new_length
+        self._annotate_shrink(old_length)
 
     def reverse(mut self):
         """Reverses the elements of the list.
