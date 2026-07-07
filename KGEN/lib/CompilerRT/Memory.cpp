@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "./Memory.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MLRT/AsyncRT/Runtime/Globals/Globals.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/Log.h"

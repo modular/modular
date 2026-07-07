@@ -22,9 +22,7 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLVMPassesPipeline.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 
 #include "KGENToLLVMPipeline.h"
 #include "LLVMAccessorHelper.h"

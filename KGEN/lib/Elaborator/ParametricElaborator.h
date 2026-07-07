@@ -14,7 +14,6 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "MLRT/AsyncRT/CompilerSupport/AsyncSideEffectMap.h"
 #include "ParametricIREvaluator.h"
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/Threading/Shared.h"

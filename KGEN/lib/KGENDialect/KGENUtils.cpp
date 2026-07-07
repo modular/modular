@@ -18,7 +18,6 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/Support/CompilerProfiling.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/MDialect/MAttrs.h"
