@@ -660,3 +660,24 @@ This version is still a work in progress.
   struct Foo[size: Int = -1](StaticSize where size >= 0):
       comptime SIZE: Int where Self.size >= 0 = Self.size
   ```
+
+- The reflection-based default `Equatable` implementation no longer fails to
+  compile for single-element `RegisterPassable` structs. Such a struct is
+  flattened to its sole field's type, which previously caused the reflection
+  `field_ref` to produce an invalid `kgen.struct.gep`. For example, this now
+  compiles and prints `True`:
+
+  ```mojo
+  @fieldwise_init
+  struct Inner(Equatable, RegisterPassable):
+      var x: Int
+      var y: Int
+
+  @fieldwise_init
+  struct Outer(Equatable, RegisterPassable):
+      var inner: Inner
+
+  def main():
+      var o = Outer(Inner(1, 2))
+      print(o == o)
+  ```
