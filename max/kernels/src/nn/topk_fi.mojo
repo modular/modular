@@ -687,6 +687,9 @@ def _block_reduce_value_count[
 @__name(
     t"topk_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}",
 )
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
+)
 def TopKSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
     probs_origin: ImmutOrigin,
@@ -1204,6 +1207,9 @@ def apply_min_p_mask_kernel[
 )
 @__name(
     t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}_{from_logits}",
+)
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
 )
 def TopKTopPSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
@@ -1812,6 +1818,9 @@ def topk_topp_sampling_from_prob[
 
 
 @__name(t"topk_softmax_sample_{dtype}_{out_idx_type}")
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
+)
 def topk_softmax_sample_kernel[
     block_size: Int,
     vec_size: Int,
