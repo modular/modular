@@ -23,7 +23,7 @@ from std.algorithm.functional import IndexList
 from std.math import sqrt
 
 from extensibility import ManagedTensorSlice
-from extensibility import Input
+from extensibility import IOSpec
 from extensibility import StaticTensorSpec
 from nn.normalization import layer_norm as nn_layer_norm
 
@@ -201,7 +201,7 @@ def layer_norm_op[
                     dtype, 1, ...
                 ].get_unknown()
                 var beta_tensor = ManagedTensorSlice[
-                    io_spec=Input, static_spec=beta_spec
+                    io_spec=IOSpec.Input, static_spec=beta_spec
                 ](beta_ptr, gamma_shape)
 
                 nn_layer_norm[

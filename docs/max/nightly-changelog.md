@@ -390,6 +390,13 @@ This version is still a work in progress.
   `USE_OLD_TOP_K_KERNEL` environment variable. The legacy top-k sampling
   kernel this fallback selected has been deleted; the current two-stage
   top-k kernel is now used unconditionally.
+- The `Input`, `Output`, `MutableInput`, `FusedInput`, and `FusedOutput`
+  `IOSpec` values used in custom-op signatures (for example,
+  `Tensor[Input, spec]`) are now static members of `IOSpec`
+  (`IOSpec.Input`, `IOSpec.Output`, `IOSpec.MutableInput`,
+  `IOSpec.FusedInput`, `IOSpec.FusedOutput`) instead of module-level aliases.
+  Update custom-op call sites to qualify these names under `IOSpec`, for
+  example `Tensor[IOSpec.Input, spec]`.
 
 ## Fixes
 

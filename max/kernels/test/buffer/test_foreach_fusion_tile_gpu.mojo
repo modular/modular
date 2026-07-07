@@ -23,7 +23,7 @@ from builtin_primitives.primitives import foreach_fusion_tile
 
 from extensibility import (
     ElementwiseFusionTile,
-    IOUnknown,
+    IOSpec,
     ManagedTensorSlice,
     get_row_major_tensor_spec_static,
 )
@@ -130,7 +130,7 @@ def test_foreach_fusion_tile_add(ctx: DeviceContext) raises:
 
     comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, M, N]()
     var out_mts = ManagedTensorSlice[
-        mut=True, io_spec=IOUnknown, static_spec=spec
+        mut=True, io_spec=IOSpec.Unknown, static_spec=spec
     ](out_dev.unsafe_ptr(), IndexList[2](M, N))
 
     foreach_fusion_tile[target="gpu", tile_shape=IndexList[2](TM, TN)](

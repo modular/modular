@@ -29,7 +29,7 @@ from std.algorithm.functional import elementwise, IndexList
 from extensibility import (
     ManagedTensorSlice,
 )
-from extensibility import FusedOutput
+from extensibility import IOSpec
 from extensibility import StaticTensorSpec
 from builtin_kernels import Range, range_shape
 
@@ -192,7 +192,7 @@ def range_op[
 
     comptime out_spec = StaticTensorSpec[dtype, 1, ...].get_unknown()
     var output_tensor = ManagedTensorSlice[
-        io_spec=FusedOutput, static_spec=out_spec
+        io_spec=IOSpec.FusedOutput, static_spec=out_spec
     ](out_ptr, IndexList[1](size))
 
     if ctx.api() == "cpu":

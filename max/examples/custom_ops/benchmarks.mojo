@@ -35,10 +35,8 @@ from kernels.tensor_core_mma import TensorCoreMMA
 from kernels.top_k import TopK
 from layout.int_tuple import product, to_index_list
 from extensibility import (
-    Input,
     IOSpec,
     ManagedTensorSlice,
-    Output,
     StaticTensorSpec,
     get_row_major_tensor_spec_static,
 )
@@ -120,9 +118,9 @@ def top_k() raises:
 
     var cpu_ctx = DeviceContext(api="cpu")
 
-    var in_vals = Tensor[Input, val_spec](cpu_ctx).rand()
-    var out_vals = Tensor[Output, val_spec](cpu_ctx).rand()
-    var out_idxs = Tensor[Output, idx_spec](cpu_ctx).rand()
+    var in_vals = Tensor[IOSpec.Input, val_spec](cpu_ctx).rand()
+    var out_vals = Tensor[IOSpec.Output, val_spec](cpu_ctx).rand()
+    var out_idxs = Tensor[IOSpec.Output, idx_spec](cpu_ctx).rand()
 
     var b = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, els * log2_floor(K))
@@ -140,9 +138,9 @@ def top_k() raises:
     comptime if has_nvidia_gpu_accelerator():
         var gpu_ctx = DeviceContext()
 
-        var out_vals_dev = Tensor[Output, val_spec](gpu_ctx).rand()
-        var out_idxs_dev = Tensor[Output, idx_spec](gpu_ctx).rand()
-        var in_vals_dev = Tensor[Input, val_spec](gpu_ctx).rand()
+        var out_vals_dev = Tensor[IOSpec.Output, val_spec](gpu_ctx).rand()
+        var out_idxs_dev = Tensor[IOSpec.Output, idx_spec](gpu_ctx).rand()
+        var in_vals_dev = Tensor[IOSpec.Input, val_spec](gpu_ctx).rand()
 
         @parameter
         def top_k_gpu() raises:
@@ -175,9 +173,9 @@ def matmul() raises:
 
     var cpu_ctx = DeviceContext(api="cpu")
 
-    var a = Tensor[Input, a_spec](cpu_ctx).rand()
-    var b = Tensor[Input, b_spec](cpu_ctx).rand()
-    var c = Tensor[Output, c_spec](cpu_ctx).rand()
+    var a = Tensor[IOSpec.Input, a_spec](cpu_ctx).rand()
+    var b = Tensor[IOSpec.Input, b_spec](cpu_ctx).rand()
+    var c = Tensor[IOSpec.Output, c_spec](cpu_ctx).rand()
 
     var bench = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, FLOPS)
@@ -198,9 +196,9 @@ def matmul() raises:
         or has_nvidia_gpu_accelerator()
     ):
         var gpu_ctx = DeviceContext()
-        var a_dev = Tensor[Input, a_spec](gpu_ctx).rand()
-        var b_dev = Tensor[Input, b_spec](gpu_ctx).rand()
-        var c_dev = Tensor[Output, c_spec](gpu_ctx).rand()
+        var a_dev = Tensor[IOSpec.Input, a_spec](gpu_ctx).rand()
+        var b_dev = Tensor[IOSpec.Input, b_spec](gpu_ctx).rand()
+        var c_dev = Tensor[IOSpec.Output, c_spec](gpu_ctx).rand()
 
         @parameter
         def bench_matmul_kernel[impl: StaticString]() raises:
@@ -247,9 +245,9 @@ def tensor_core_mma() raises:
 
     var cpu_ctx = DeviceContext(api="cpu")
 
-    var a = Tensor[Input, a_spec](cpu_ctx).rand()
-    var b = Tensor[Input, b_spec](cpu_ctx).rand()
-    var c = Tensor[Output, c_spec](cpu_ctx).rand()
+    var a = Tensor[IOSpec.Input, a_spec](cpu_ctx).rand()
+    var b = Tensor[IOSpec.Input, b_spec](cpu_ctx).rand()
+    var c = Tensor[IOSpec.Output, c_spec](cpu_ctx).rand()
 
     var bench = Bench()
     var flops = ThroughputMeasure(BenchMetric.flops, FLOPS)
@@ -266,9 +264,9 @@ def tensor_core_mma() raises:
     # TODO: Add NVIDIA GPU support
     comptime if has_amd_gpu_accelerator():
         var gpu_ctx = DeviceContext()
-        var a_dev = Tensor[Input, a_spec](gpu_ctx).rand()
-        var b_dev = Tensor[Input, b_spec](gpu_ctx).rand()
-        var c_dev = Tensor[Output, c_spec](gpu_ctx).rand()
+        var a_dev = Tensor[IOSpec.Input, a_spec](gpu_ctx).rand()
+        var b_dev = Tensor[IOSpec.Input, b_spec](gpu_ctx).rand()
+        var c_dev = Tensor[IOSpec.Output, c_spec](gpu_ctx).rand()
 
         @parameter
         def bench_matmul_kernel[impl: StaticString]() raises:

@@ -14,7 +14,7 @@
 """
 
 from extensibility import get_row_major_tensor_spec_static
-from extensibility import ManagedTensorSlice, IOUnknown
+from extensibility import ManagedTensorSlice, IOSpec
 from extensibility.managed_tensor_slice import (
     StaticTensorSpec,
     _IndexListToTileLayout,
@@ -32,7 +32,7 @@ def test_basic_construction() raises:
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
     # Shape-only constructor computes row-major strides automatically
     comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 3, 4]()
-    var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
+    var tensor = ManagedTensorSlice[io_spec=IOSpec.Unknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[2](3, 4)
     )
 
@@ -46,7 +46,7 @@ def test_shape_and_strides() raises:
     comptime spec = get_row_major_tensor_spec_static[
         DType.float32, 3, 2, 3, 4
     ]()
-    var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
+    var tensor = ManagedTensorSlice[io_spec=IOSpec.Unknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[3](2, 3, 4)
     )
 
@@ -65,7 +65,7 @@ def test_dim_size() raises:
     """Test dim_size methods (compile-time and runtime)."""
     var storage = InlineArray[Float32, 5 * 7](uninitialized=True)
     comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 5, 7]()
-    var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
+    var tensor = ManagedTensorSlice[io_spec=IOSpec.Unknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[2](5, 7)
     )
 
@@ -83,7 +83,7 @@ def test_getitem_setitem() raises:
     var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
     comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 2, 3]()
     var tensor = ManagedTensorSlice[
-        mut=True, io_spec=IOUnknown, static_spec=spec
+        mut=True, io_spec=IOSpec.Unknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](2, 3))
 
     # Set values
@@ -112,7 +112,7 @@ def test_simd_load_store() raises:
     var storage = InlineArray[Float32, 8](uninitialized=True)
     comptime spec = get_row_major_tensor_spec_static[DType.float32, 1, 8]()
     var tensor = ManagedTensorSlice[
-        mut=True, io_spec=IOUnknown, static_spec=spec
+        mut=True, io_spec=IOSpec.Unknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[1](8))
 
     # Store a SIMD vector
@@ -135,7 +135,7 @@ def test_to_layout_tensor() raises:
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
     comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 3, 4]()
     var tensor = ManagedTensorSlice[
-        mut=True, io_spec=IOUnknown, static_spec=spec
+        mut=True, io_spec=IOSpec.Unknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](3, 4))
 
     # Initialize data
@@ -160,7 +160,7 @@ def test_stride_length() raises:
     """Test stride_length methods."""
     var storage = InlineArray[Float32, 3 * 5](uninitialized=True)
     comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 3, 5]()
-    var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
+    var tensor = ManagedTensorSlice[io_spec=IOSpec.Unknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[2](3, 5)
     )
 
@@ -178,7 +178,7 @@ def test_simd_load_store_2d() raises:
     var storage = InlineArray[Float32, 4 * 8](uninitialized=True)
     comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 4, 8]()
     var tensor = ManagedTensorSlice[
-        mut=True, io_spec=IOUnknown, static_spec=spec
+        mut=True, io_spec=IOSpec.Unknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](4, 8))
 
     # Store vectors in each row
@@ -215,7 +215,7 @@ def test_to_tile_tensor() raises:
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
     comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 3, 4]()
     var tensor = ManagedTensorSlice[
-        mut=True, io_spec=IOUnknown, static_spec=spec
+        mut=True, io_spec=IOSpec.Unknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](3, 4))
 
     # Initialize data
@@ -241,7 +241,7 @@ def test_shape_coord_static() raises:
     """Test shape_coord() preserves fully-static shape information."""
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
     comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 3, 4]()
-    var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
+    var tensor = ManagedTensorSlice[io_spec=IOSpec.Unknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[2](3, 4)
     )
 
@@ -268,9 +268,9 @@ def test_shape_coord_mixed() raises:
     comptime mixed_spec = StaticTensorSpec[
         DType.float32, 2, static_layout=mixed_layout
     ](align_of[DType.float32](), AddressSpace.GENERIC)
-    var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=mixed_spec](
-        storage.unsafe_ptr(), IndexList[2](2, 4)
-    )
+    var tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Unknown, static_spec=mixed_spec
+    ](storage.unsafe_ptr(), IndexList[2](2, 4))
 
     var shape = tensor.shape_coord()
 
@@ -290,7 +290,7 @@ def test_strides_coord_static() raises:
     """Test strides_coord() preserves fully-static stride information."""
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
     comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 3, 4]()
-    var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
+    var tensor = ManagedTensorSlice[io_spec=IOSpec.Unknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[2](3, 4)
     )
 
@@ -318,9 +318,9 @@ def test_strides_coord_mixed() raises:
     comptime mixed_spec = StaticTensorSpec[
         DType.float32, 2, static_layout=mixed_layout
     ](align_of[DType.float32](), AddressSpace.GENERIC)
-    var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=mixed_spec](
-        storage.unsafe_ptr(), IndexList[2](2, 4), IndexList[2](4, 1)
-    )
+    var tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Unknown, static_spec=mixed_spec
+    ](storage.unsafe_ptr(), IndexList[2](2, 4), IndexList[2](4, 1))
 
     var strides = tensor.strides_coord()
 
