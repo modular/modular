@@ -84,15 +84,14 @@ def PyInit_misc_ops() abi("C") -> PythonObject:
 
 
 @fieldwise_init
-struct _RangeShapeBody(Dispatchable):
+struct _RangeShapeBody[origin: MutOrigin](Dispatchable):
     """Dispatch body for the RangeShape operation over data dtypes."""
 
     var start_addr: Int
     var stop_addr: Int
     var step_addr: Int
 
-    @__allow_legacy_any_origin_fields
-    var result_ptr: UnsafePointer[Int, MutAnyOrigin]
+    var result_ptr: UnsafePointer[Int, Self.origin]
 
     def call[t: DType](self) raises -> None:
         comptime if t == DType.bool:
@@ -290,7 +289,7 @@ def range_shape_dispatcher(
             start_addr,
             stop_addr,
             step_addr,
-            UnsafePointer(to=result).as_unsafe_any_origin(),
+            UnsafePointer(to=result),
         ),
         dtype,
     )
