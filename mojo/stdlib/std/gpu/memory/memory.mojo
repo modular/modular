@@ -874,7 +874,7 @@ def external_memory[
         StaticTuple[dtype, 0], MutUntrackedOrigin, address_space=address_space
     ]
     var extern_ptr_symbol = PtrTy(
-        __mlir_op.`pop.extern_ptr_symbol`[
+        _mlir_value=__mlir_op.`pop.extern_ptr_symbol`[
             _type=PtrTy._mlir_type,
             name=_get_kgen_string[name](),
             alignment=alignment.__mlir_index__(),

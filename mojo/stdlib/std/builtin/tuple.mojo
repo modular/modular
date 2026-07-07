@@ -216,7 +216,7 @@ struct Tuple[*element_types: Movable](
             index=idx.__mlir_index__(),
             _type=UnsafePointer[Self.element_types[idx]]._mlir_type,
         ](storage_kgen_ptr)
-        return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
+        return UnsafePointer[_, origin_of(self)](_mlir_value=elt_kgen_ptr)[]
 
     @always_inline("nodebug")
     def __contains__[T: Equatable](self, value: T) -> Bool:

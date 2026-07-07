@@ -274,7 +274,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
                 T, origin, address_space=address_space
             ]._mlir_type,
         ](ptr)
-        return typed_ptr
+        return {_mlir_value = typed_ptr}
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

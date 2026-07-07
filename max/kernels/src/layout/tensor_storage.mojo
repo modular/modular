@@ -316,9 +316,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorStorage):
             A handle referring to the same storage, viewed with the new type
             parameters.
         """
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type=type_of(result)._mlir_type,
-        ](storage._get_kgen_pointer())
+        result = {
+            _mlir_value = __mlir_op.`pop.pointer.bitcast`[
+                _type=type_of(result)._mlir_type,
+            ](storage._get_kgen_pointer())
+        }
 
     @staticmethod
     @always_inline

@@ -1250,7 +1250,7 @@ struct VariadicList[
             to=Pointer(_mlir_value=value)[]
         ).unsafe_origin_cast[UntrackedOrigin[mut=False]]()
         var elt_ptr = UnsafePointer[_, UntrackedOrigin[mut=False]](
-            __mlir_op.`pop.array.gep`(
+            _mlir_value=__mlir_op.`pop.array.gep`(
                 array_up._get_kgen_pointer(),
                 Int(0).__mlir_index__(),
             )

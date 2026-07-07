@@ -311,7 +311,9 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         var discr_ptr = __mlir_op.`pop.variant.discr_gep`[
             _type=__mlir_type.`!kgen.pointer<scalar<ui8>>`
         ](UnsafePointer(to=self._impl)._get_kgen_pointer())
-        return UnsafePointer[_, origin_of(self)](discr_ptr).bitcast[UInt8]()[]
+        return UnsafePointer[_, origin_of(self)](_mlir_value=discr_ptr).bitcast[
+            UInt8
+        ]()[]
 
     @always_inline("nodebug")
     def isa[T: AnyType](self) -> Bool:
@@ -321,10 +323,12 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     @always_inline("nodebug")
     def unsafe_ptr[T: AnyType](ref self) -> UnsafePointer[T, origin_of(self)]:
         comptime idx = _get_type_index[T, *Self.Ts]()
-        return __mlir_op.`pop.variant.bitcast`[
-            _type=UnsafePointer[T, origin_of(self)]._mlir_type,
-            index=idx.__mlir_index__(),
-        ](UnsafePointer(to=self._impl)._get_kgen_pointer())
+        return {
+            _mlir_value = __mlir_op.`pop.variant.bitcast`[
+                _type=UnsafePointer[T, origin_of(self)]._mlir_type,
+                index=idx.__mlir_index__(),
+            ](UnsafePointer(to=self._impl)._get_kgen_pointer())
+        }
 
 
 # TODO(MOCO-3653): size_of[T]() == 0 does not work correctly in some cases when

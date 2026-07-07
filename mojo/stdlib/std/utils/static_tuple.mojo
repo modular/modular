@@ -254,7 +254,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
             UnsafePointer(to=self._mlir_value)._get_kgen_pointer(),
             idx.__mlir_index__(),
         )
-        return UnsafePointer[origin=origin_of(self)](ptr)[]
+        return UnsafePointer[origin=origin_of(self)](_mlir_value=ptr)[]
 
     @always_inline("nodebug")
     def _replace[idx: Int](self, val: Self.element_type) -> Self:

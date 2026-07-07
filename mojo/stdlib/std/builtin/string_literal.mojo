@@ -335,7 +335,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             The raw pointer to the data.
         """
         var ptr = UnsafePointer[_, StaticConstantOrigin](
-            __mlir_op.`pop.string.address`(self.value)
+            _mlir_value=__mlir_op.`pop.string.address`(self.value)
         )
 
         # TODO(MSTDL-555):

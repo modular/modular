@@ -403,11 +403,13 @@ struct _WriteBufferHeap(Writable, Writer):
 
     def __init__(out self):
         comptime alignment: Int = align_of[Byte]()
-        self._data = __mlir_op.`pop.stack_allocation`[
-            count=HEAP_BUFFER_BYTES.__mlir_index__(),
-            _type=type_of(self._data)._mlir_type,
-            alignment=alignment.__mlir_index__(),
-        ]()
+        self._data = {
+            _mlir_value = __mlir_op.`pop.stack_allocation`[
+                count=HEAP_BUFFER_BYTES.__mlir_index__(),
+                _type=type_of(self._data)._mlir_type,
+                alignment=alignment.__mlir_index__(),
+            ]()
+        }
         self._pos = 0
 
     def write_list[

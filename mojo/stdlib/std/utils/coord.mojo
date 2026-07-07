@@ -1681,7 +1681,7 @@ struct _RegTuple[*element_types: CoordLike](
             index=idx.__mlir_index__(),
             _type=UnsafePointer[Self.element_types[idx]]._mlir_type,
         ](storage_kgen_ptr)
-        return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
+        return UnsafePointer[_, origin_of(self)](_mlir_value=elt_kgen_ptr)[]
 
     @always_inline("nodebug")
     def __init__[*elt_types: CoordLike](out self: _RegTuple[*elt_types]):

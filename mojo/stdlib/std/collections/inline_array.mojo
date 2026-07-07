@@ -662,7 +662,7 @@ struct InlineArray[ElementType: Movable, size: Int](
             UnsafePointer(to=self._array)._get_kgen_pointer(),
             index(idx).__mlir_index__(),
         )
-        return UnsafePointer[_, origin_of(self)](ptr)[]
+        return UnsafePointer[_, origin_of(self)](_mlir_value=ptr)[]
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations

@@ -194,7 +194,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             SIMDSize(mlir_value=__mlir_op.`pop.string.size`(_kgen))
         )
         var ptr = UnsafePointer[mut=False, _, StaticConstantOrigin](
-            __mlir_op.`pop.string.address`(_kgen)
+            _mlir_value=__mlir_op.`pop.string.address`(_kgen)
         ).bitcast[Byte]()
         self._slice = {ptr = ptr, length = length}
 

@@ -72,5 +72,5 @@ def global_constant[
         " invalid at runtime."
     )
     return UnsafePointer[mut=False, origin=StaticConstantOrigin](
-        __mlir_op.`pop.global_constant`[value=value]()
+        _mlir_value=__mlir_op.`pop.global_constant`[value=value]()
     )[]

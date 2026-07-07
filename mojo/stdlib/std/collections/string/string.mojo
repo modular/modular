@@ -348,7 +348,7 @@ struct String(
             SIMDSize(mlir_value=__mlir_op.`pop.string.size`(data.value))
         )
         self._ptr_or_data = UnsafePointer[_, MutUntrackedOrigin](
-            __mlir_op.`pop.string.address`(data.value)
+            _mlir_value=__mlir_op.`pop.string.address`(data.value)
         ).bitcast[Byte]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.

@@ -114,9 +114,11 @@ struct Coroutine[type: ImplicitlyDeletable, origins: OriginSet](
         comptime assert (
             size_of[_CoroutineContext]() == size_of[ctx_type]()
         ), "context size must be 16 bytes"
-        return __mlir_op.`co.get_callback_ptr`[
-            _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
-        ](self._handle)
+        return {
+            _mlir_value = __mlir_op.`co.get_callback_ptr`[
+                _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
+            ](self._handle)
+        }
 
     @always_inline
     def _set_result_slot(self, slot: UnsafePointer[mut=True, Self.type, ...]):
@@ -213,9 +215,11 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](
         comptime assert (
             size_of[_CoroutineContext]() == size_of[ctx_type]()
         ), "context size must be 16 bytes"
-        return __mlir_op.`co.get_callback_ptr`[
-            _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
-        ](self._handle)
+        return {
+            _mlir_value = __mlir_op.`co.get_callback_ptr`[
+                _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
+            ](self._handle)
+        }
 
     @always_inline
     def _set_result_slot(
