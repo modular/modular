@@ -1285,6 +1285,14 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
            "bind_params simplification must preserve the requested type");
     return simplified;
   }
+
+  // Only fail during elaborator materialization. Speculative evaluators should
+  // preserve residual bind_params expressions for later folding.
+  if (evaluationContext && evaluationContext->isMaterializationContext() &&
+      sugarDynCast<GeneratorAttr>(generator))
+    return {};
+
+  // Build the residual bind_params expression.
   TypedAttr result =
       Base::get(generator.getContext(), generator, paramValues, discharged);
 
