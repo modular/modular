@@ -291,11 +291,15 @@ static void getCallOpEffects(
     case ArgConvention::ReadReg:
       return OperandEffect::regUse;
     case ArgConvention::ReadMem:
+      return OperandEffect::memLoad;
     case ArgConvention::Mut:
     case ArgConvention::MutRef:
+      return OperandEffect::memMut;
     case ArgConvention::Ref: {
-      bool isMut = cast<RefType>(argType).isMutableKnown(true);
-      return isMut ? OperandEffect::memMut : OperandEffect::memLoad;
+      // If the reference is guaranteed immutable, then treat it as a load,
+      // otherwise it might be a mutation.
+      bool isImmut = cast<RefType>(argType).isMutableKnown(false);
+      return isImmut ? OperandEffect::memLoad : OperandEffect::memMut;
     }
     case ArgConvention::ByRefError:
     case ArgConvention::ByRefResult:

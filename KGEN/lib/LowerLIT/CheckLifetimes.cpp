@@ -1838,6 +1838,7 @@ private:
   void checkOriginAccesses(TypedAttr origin, Operation &op);
   void handleAnyOriginUse(Operation &op, ArrayRef<TypedAttr> definedOrigins);
 
+  SmallVector<InteriorOriginAttr> findInteriorOriginsInType(Type type);
   void establishInteriorOriginsFromDef(Type type);
 
   /// This is metadata about all the values we are tracking.
@@ -1982,23 +1983,33 @@ static void addBadValueNameToDiag(ValueRef valueRef, const BitVector &bits,
   diag << "'";
 }
 
+SmallVector<InteriorOriginAttr>
+UninitializedValueScan::findInteriorOriginsInType(Type type) {
+  SmallVector<InteriorOriginAttr> result;
+
+  // Don't scan anything if no interior origins are accessed.
+  if (!liveness.interior.empty()) {
+    for (auto origin :
+         valueSet.perThreadCache.originFinder.findOriginsIn(type, {})) {
+      // Ignore the vast majority of origins that don't have interior origins.
+      if (!interiorOriginTracker.originHasInteriorOrigins(origin))
+        continue;
+
+      // Given a def of something with an "a.list["x"].second.field["y"].z"
+      // origin, we need to mark the "x" and "y" interior origins live.
+      origin.walk([&](InteriorOriginAttr origin) { result.push_back(origin); });
+    }
+  }
+  return result;
+}
+
 void UninitializedValueScan::establishInteriorOriginsFromDef(Type type) {
   // Don't scan anything if no interior origins are accessed.
   if (liveness.interior.empty())
     return;
 
-  for (auto origin :
-       valueSet.perThreadCache.originFinder.findOriginsIn(type, {})) {
-    // Ignore the vast majority of origins that don't have interior origins.
-    if (!interiorOriginTracker.originHasInteriorOrigins(origin))
-      continue;
-
-    // Given a def of something with an "a.list["x"].second.field["y"].z"
-    // origin, we need to mark the "x" and "y" interior origins live.
-    origin.walk([&](InteriorOriginAttr origin) {
-      interiorOriginTracker.markInteriorOriginLive(origin, liveness.interior);
-    });
-  }
+  for (InteriorOriginAttr origin : findInteriorOriginsInType(type))
+    interiorOriginTracker.markInteriorOriginLive(origin, liveness.interior);
 }
 
 /// Verify that the specified ValueRef is live at this point, diagnosing an
@@ -2006,8 +2017,17 @@ void UninitializedValueScan::establishInteriorOriginsFromDef(Type type) {
 void UninitializedValueScan::checkUse(Value value, Operation &op,
                                       bool isDeref) {
   SmallVector<InteriorOriginAttr> interiorOrigins;
-  SmallVector<ValueRef> accesses =
-      valueSet.getValueRefsForAccess(value, isDeref, interiorOrigins);
+  SmallVector<ValueRef> accesses;
+
+  // If this is a direct reference to a value, return field sensitive info.
+  if (ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref)) {
+    accesses.push_back(valueRef);
+
+    auto valueType = ValueRef::getDereferencedType(value.getType(), isDeref);
+    interiorOrigins = findInteriorOriginsInType(valueType);
+  } else {
+    accesses = valueSet.getValueRefsForAccess(value, isDeref, interiorOrigins);
+  }
 
   for (ValueRef access : accesses) {
     // The referenced value fields must be live.
@@ -2088,10 +2108,26 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
 /// Complain about a use of an invalidated interior origin.
 void UninitializedValueScan::diagnoseInteriorOriginUsageError(
     InteriorOriginAttr interior, Operation &op) {
-  // TODO: This error is not good enough.
+  // If the interior origin is based on something else uninitialized, then
+  // complain about the base of the access, not the indirect aspect.
+  SmallVector<InteriorOriginAttr> dummy;
+  for (ValueRef access :
+       valueSet.getValueRefsForOrigin(interior.getBase(), dummy)) {
+    if (!access.isAllPresent(liveness.tracked)) {
+      diagnoseUsageError(access, op);
+      return;
+    }
+  }
+
   // TODO: Add a bitvector to UVS to avoid redundant errors.
-  mlir::emitError(op.getLoc(), "use of uninitialized interior origin ")
-      << interior.getUserName();
+  // TODO: The quality of this error message is not great.
+  auto diag = emitError(op.getLoc(), "use of invalidated interior reference");
+  if (auto userName = sugarDynCast<StringAttr>(interior.getUserName()))
+    diag << " '" << userName.getValue() << "'";
+
+  // We mark the liveness sentinel as having an error diagnosed to make sure the
+  // pass fails.
+  valueSet.getValueInfo(0).hasErrorDiagnosed = true;
 }
 
 void UninitializedValueScan::checkDef(Value value, Operation &op,
