@@ -24,10 +24,13 @@ from extensibility import (
     ComputeOutputFusion,
     ComputeOutputFusionTile,
     ElementwiseFusion,
+    ElementwiseFusionTile,
     InputFusion,
     OutputFusion,
+    get_kernel_tile_shape,
 )
 from std.collections import InlineArray
+from std.gpu import block_idx
 from std.gpu.host import DeviceBuffer, DeviceContext, DeviceGraphBuilder
 from std.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
 from std.gpu.host.info import is_accelerator, is_cpu, is_gpu
@@ -40,6 +43,11 @@ from layout import (
     row_major,
     coord_to_index_list,
 )
+from layout.tile_io import (
+    GenericToLocalTileCopier,
+    LocalToGenericTileCopier,
+)
+from layout.tile_tensor import stack_allocation
 from std.memory import memcpy
 from std.memory.unsafe_pointer import unsafe_cast
 
@@ -1889,6 +1897,185 @@ def foreach_fusion[
         target=target,
         _trace_description=_trace_name,
     ](adapter, Coord(tensor.shape()), ctx)
+
+
+@fieldwise_init
+struct _ElementwiseFusionTileAdapter[
+    dtype: DType,
+    rank: Int,
+    InFusion: InputFusion,
+    OutFusion: OutputFusion,
+    ComputeFusion: ComputeOutputFusion,
+    ComputeFusionTile: ComputeOutputFusionTile,
+    io_spec: IOSpec[True, _],
+    static_spec: StaticTensorSpec[
+        dtype, rank, _, InFusion, OutFusion, ComputeFusion, ComputeFusionTile
+    ],
+    //,
+    E: ElementwiseFusionTile,
+    tile_shape: IndexList[2],
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
+    """Per-tile body for `foreach_fusion_tile`, holding the fusion struct and
+    output tensor by value.
+
+    Analogous to `_ElementwiseFusionAdapter`, but for tile-based fusion: a
+    named, register-passable struct (not a closure) so `elem` and the tensor's
+    decomposed ptr/shape/strides cross into the GPU kernel by value. Its
+    `__call__` drives one output *tile*, handing the fusion struct a load copier
+    (used by `compute` to pull its inputs into `Copier.dst_address_space`) and
+    storing the manufactured result tile via a store copier.
+
+    Parameters:
+        dtype: The data type of the tensor elements.
+        rank: The rank of the tensor.
+        InFusion: The tensor's input-fusion type.
+        OutFusion: The tensor's output-fusion type.
+        ComputeFusion: The tensor's compute-output-fusion type.
+        ComputeFusionTile: The tensor's compute-output-fusion-tile type.
+        io_spec: The tensor's IO spec.
+        static_spec: The tensor's static spec.
+        E: The tile elementwise fusion struct type.
+        tile_shape: The `(rows, cols)` shape of one output tile.
+    """
+
+    # SM100 (B200): one thread-block processes one output tile. `thread_layout`
+    # equals `tile_shape`, so each of the `tile_shape[0] * tile_shape[1]`
+    # threads owns a 1x1 fragment (`frag_layout`). This is the simplest
+    # tile-divisible mapping; a coarser thread layout (bigger per-thread
+    # fragments, fewer threads) is a tuning follow-up.
+    comptime thread_layout = row_major(
+        Idx[Self.tile_shape[0]], Idx[Self.tile_shape[1]]
+    )
+    comptime frag_layout = type_of(row_major[1, 1]())
+
+    var elem: Self.E
+    var tensor: ManagedTensorSlice[
+        io_spec=Self.io_spec, static_spec=Self.static_spec
+    ]
+
+    @always_inline
+    def __call__(self) capturing:
+        # One block per output tile: `block_idx.(y, x)` selects the tile row and
+        # column. Carried into the kernel as a closure (the adapter is not
+        # `DevicePassable`, so its captures cross via the same mechanism
+        # `functional.elementwise` uses for its body closure).
+        var tile_coords = IndexList[Self.rank](
+            Int(block_idx.y), Int(block_idx.x)
+        )
+        # NOTE(GEX-3913): we likely want to replace the adapter defining the
+        # load copier here with a `functional.tile_elementwise` primitive, so
+        # the load / tiling policy is reusable.
+        var load_copier = GenericToLocalTileCopier[Self.thread_layout]()
+
+        # Driver-owned per-thread output fragment. It is allocated in LOCAL (so
+        # the store copier's src address space lines up) and handed to `compute`
+        # as `dst`, typed GENERIC / `MutAnyOrigin` to match the trait; `dst`
+        # carries the concrete `frag_layout` so `compute` can size its own
+        # staging from `dst.layout` (no `rebind` needed on either side).
+        # TODO(GEX-3912): the LOCAL->GENERIC cast here (and GENERIC->LOCAL on
+        # the result below) is a temporary "dance" because the fusion trait
+        # pins its tile to GENERIC and returns it.
+        # TODO(GEX-3912): generalizes the trait's tile address space and makes
+        # `dst` an inout to remove this.
+        var dst_local = stack_allocation[
+            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+        ](row_major[1, 1]())
+        var dst = TileTensor(
+            dst_local.ptr.address_space_cast[
+                AddressSpace.GENERIC
+            ]().unsafe_origin_cast[MutAnyOrigin](),
+            row_major[1, 1](),
+        )
+
+        # `compute` manufactures the result tile: it loads its own inputs via
+        # `load_copier` (global -> local), fills `dst`, and returns it.
+        var res = self.elem.compute[
+            Self.dtype, Self.rank, Self.frag_layout, type_of(load_copier)
+        ](tile_coords, load_copier, dst)
+
+        # Store the result fragment into the output tile at `tile_coords`. The
+        # returned tile is typed GENERIC through the trait, so cast it back to
+        # LOCAL for the store copier.
+        var tc = Coord(Int(tile_coords[0]), Int(tile_coords[1]))
+        var out_tile = self.tensor.to_tile_tensor().tile[
+            Self.tile_shape[0], Self.tile_shape[1]
+        ](tc)
+        var res_local = res.address_space_cast[AddressSpace.LOCAL]()
+        LocalToGenericTileCopier[Self.thread_layout]().copy(out_tile, res_local)
+
+
+@register_internal("mogg.call.foreach_tile")
+@no_inline
+def foreach_fusion_tile[
+    dtype: DType,
+    rank: Int,
+    //,
+    E: ElementwiseFusionTile,
+    *,
+    target: StaticString = "cpu",
+    tile_shape: IndexList[2] = get_kernel_tile_shape[dtype, target](),
+    _trace_name: StaticString = "mogg.for_each_tile",
+](
+    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
+    var elem: E,
+    ctx: DeviceContext,
+) raises:
+    """Apply a tile-based pure elementwise fusion to each tile of the tensor.
+
+    Analogous to `foreach_fusion`, but for tile-based fusion: instead of driving
+    a per-element SIMD loop
+    via `std.algorithm.functional.elementwise`, this launches one GPU block per
+    output tile and drives the fusion struct's tile `compute` over the output.
+    The fusion struct manufactures each tile (loading its own inputs through a
+    copier the driver supplies) and the driver stores the result via a store
+    copier.
+
+    Parameters:
+        dtype: The data type of the elements in the tensor slice.
+        rank: The rank of the tensor slice.
+        E: The tile elementwise fusion struct type.
+        target: Indicates the type of the target device (e.g. "cpu", "gpu").
+        tile_shape: The `(rows, cols)` shape of one output tile.
+        _trace_name: Name of the executed operation displayed in the trace.
+
+    Args:
+        tensor: The output tensor slice which receives the computed values.
+        elem: The tile elementwise fusion struct.
+        ctx: The call context (forward this from the custom operation).
+
+    Constraints:
+        Requires a GPU target and a rank-2 tensor whose shape divides evenly
+        into `tile_shape`. Partial-tile / remainder handling and a CPU path are
+        documented follow-ups.
+    """
+    comptime assert is_accelerator[
+        target
+    ](), "foreach_fusion_tile currently supports GPU targets only"
+    comptime assert (
+        rank == 2
+    ), "foreach_fusion_tile currently supports rank-2 tensors only"
+
+    # Capture `elem` and the output tensor by value through a named adapter
+    # struct rather than a closure, mirroring `foreach_fusion`: passing the
+    # concrete register-passable adapter by value to `enqueue_function` carries
+    # `elem`'s decomposed ptr/shape/strides through to the device.
+    var adapter = _ElementwiseFusionTileAdapter[E, tile_shape](elem, tensor)
+
+    comptime TM = tile_shape[0]
+    comptime TN = tile_shape[1]
+    var shape = tensor.shape()
+    debug_assert(
+        shape[0] % TM == 0 and shape[1] % TN == 0,
+        "foreach_fusion_tile requires tile-divisible shapes",
+    )
+    var grid_m = shape[0] // TM
+    var grid_n = shape[1] // TN
+
+    ctx.enqueue_function(
+        adapter,
+        grid_dim=(grid_n, grid_m),
+        block_dim=(TM * TN),
+    )
 
 
 @register_internal("mogg.for_each.out_func")
