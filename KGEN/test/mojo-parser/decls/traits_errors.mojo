@@ -260,7 +260,7 @@ struct NeverDeletableOuter(ImplicitlyDeletable where False):
 # Test that overriding a parent trait's comptime decl with a non-comptime decl is an error.
 # Regression test for MOCO-4227 (latent null-pointer dereference in error path).
 trait TraitWithComptime:
-    # expected-note @+1 {{cannot overload with this non-comptime definition}}
+    # expected-note @+1 {{cannot overload comptime alias with a non-comptime definition}}
     comptime MyType = Int
 
 

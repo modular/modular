@@ -4332,7 +4332,8 @@ void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
                 emitError(override->getLoc(), "invalid redefinition of ")
                 << name;
             diag.attachNote(parentAliasDecl->getLoc())
-                << "cannot overload with this non-comptime definition";
+                << "cannot overload comptime alias with a non-comptime "
+                   "definition";
             continue;
           }
 
