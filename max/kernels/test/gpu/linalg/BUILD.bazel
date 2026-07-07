@@ -586,6 +586,44 @@ mojo_test(
     ],
 )
 
+# Consumer-Blackwell (sm_120 / sm_121, e.g. RTX PRO / GB10 / DGX Spark) NVFP4
+# tests. They drive the arch-agnostic naive CUDA-core path that
+# `block_scaled_matmul` routes to when compute >= 12.0 (the SM100 warp-
+# specialized kernel is unavailable there). They do NOT self-skip on other
+# arches — the FP4 decode / dispatch comptime asserts fail to BUILD on
+# H100 / A100 / AMD — so gate them to nvidia_gpu and tag "manual" (nvidia_gpu
+# alone is insufficient: H100 is also nvidia). Run on consumer-Blackwell
+# hardware with `--test_tag_filters=` and `--local_resources=gpu-memory=<GiB>`.
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
+        },
+        tags = [
+            "gpu",
+            "manual",
+        ],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:nvidia_gpu",
+        ],
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:structured_kernels",
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in [
+        "test_block_scaled_fp4_naive.mojo",
+        "test_block_scaled_fp4_dispatch_sm121.mojo",
+    ]
+]
+
 [
     mojo_test(
         name = src + ".test",
@@ -612,6 +650,12 @@ mojo_test(
     for src in glob(
         ["**/*.mojo"],
         exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + [
+            # Consumer-Blackwell (sm_120 / sm_121) NVFP4 tests — handled by the
+            # explicit nvidia_gpu + manual rule above. Excluded here so the
+            # generic (has_gpu-only) loop does not also emit unguarded
+            # duplicates that fail to BUILD on H100 / A100 / AMD CI runners.
+            "test_block_scaled_fp4_naive.mojo",
+            "test_block_scaled_fp4_dispatch_sm121.mojo",
             "test_matmul_pdl_race.mojo",
             "test_grouped_matmul_swiglu_nvfp4_interleave.mojo",
             "test_grouped_matmul_swiglu_nvfp4_dispatch.mojo",
