@@ -449,11 +449,13 @@ def M_DeviceInfoAttr : MAttr<"DeviceInfo", "device_info"> {
     StringRefParameter<>:$label,
     StringRefParameter<>:$api,
     StringRefParameter<>:$arch,
-    StringRefParameter<>:$model
+    StringRefParameter<>:$model,
+    DefaultValuedParameter<"bool", "false">:$tile_based_fusion
   );
 
   let assemblyFormat = [{
-    `<` $label `,` $api `,` $arch `,` $model `>`
+    `<` $label `,` $api `,` $arch `,` $model
+    (`,` `tile_based_fusion` `=` $tile_based_fusion^)? `>`
   }];
 }
 
