@@ -188,6 +188,8 @@ static void addConformanceTable(
   // Update the types of the struct wrapper.
   SymbolRefAttr symbol = closureParent.getSymbolRef(fileModule);
   TraitType oldTraitType = structDeclOp.getCanonicalTrait();
+  if (llvm::is_contained(oldTraitType.getSymbols(), symbol))
+    return;
   SmallVector<SymbolRefAttr> symbols;
   llvm::append_range(symbols, oldTraitType.getSymbols());
   symbols.push_back(symbol);
@@ -1091,12 +1093,17 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
     if (!closureParent.isEmpty()) {
       addWitnessEntry(closureParent.getTrait(moduleDecl),
                       closureParent.getDefiningOp(moduleDecl));
+    } else {
+      // Marker parents (AnyType, ImplicitlyCopyable, RegisterPassable,
+      // TrivialRegisterPassable) declare no requirements of their own; their
+      // inherited requirements (e.g. Copyable's copy init for
+      // ImplicitlyCopyable) are witnessed in the declaring parent's
+      // ConformanceOp. An empty ConformanceOp per claimed trait is still
+      // required for TypeConformsToTraitAttr::simplify() to verify
+      // conformance on concrete closure types.
+      addConformanceTable(structDecl, closureParent, {}, moduleDecl);
     }
   }
-
-  // AnyType has no methods, but TypeConformsToTraitAttr::simplify() needs a
-  // ConformanceOp to verify conformance on concrete closure types.
-  addConformanceTable(structDecl, anyParent, {}, moduleDecl);
 
   assert(moveParentStrAttr && "closures are expected to conform to Movable");
   auto initName = StringAttr::get(ctx, "__init__");
@@ -1353,9 +1360,16 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
   callMethod.setInlineLevel(InlineLevel::Always);
   addWitnessEntry(callParent, callMethod);
 
-  // AnyType has no methods, but TypeConformsToTraitAttr::simplify() needs a
-  // ConformanceOp to verify conformance on concrete closure types.
-  addConformanceTable(structDecl, anyParent, {}, moduleDecl);
+  // Marker parents (AnyType, ImplicitlyCopyable, RegisterPassable,
+  // TrivialRegisterPassable) declare no requirements of their own; their
+  // inherited requirements (e.g. Copyable's copy init for ImplicitlyCopyable)
+  // are witnessed in the declaring parent's ConformanceOp above. An empty
+  // ConformanceOp per claimed trait is still required for
+  // TypeConformsToTraitAttr::simplify() to verify conformance on concrete
+  // closure types.
+  for (ClosureParent &parent : parents)
+    if (parent.isEmpty())
+      addConformanceTable(structDecl, parent, {}, moduleDecl);
 
   // Populate the body of ClosureWrapper::__call__.
   {
