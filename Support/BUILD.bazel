@@ -432,6 +432,9 @@ modular_cc_library(
     }),
     deps = [
         ":Base",
+        # Configuration backs the session.debug.profiling_* settings that
+        # Range.cpp reads at enable()/disable() time (MXTOOLS-190).
+        ":Configuration",
         ":Globals",
         ":MArchTargetMinimal",
         "//Config",
