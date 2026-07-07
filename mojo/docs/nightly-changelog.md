@@ -351,7 +351,7 @@ This version is still a work in progress.
 
   ```diff
    struct Packet[*Ts: Movable](
-  -    Serializable where Ts.all_conforms_to[Serializable](), 
+  -    Serializable where Ts.all_conforms_to[Serializable](),
        JsonSerializable where Ts.all_conforms_to[JsonSerializable](),
        Movable,
    ):
@@ -621,6 +621,21 @@ This version is still a work in progress.
   `AddressSpace` directly.
 
 ## Fixed
+
+- Type refinement from a `conforms_to()` guard now applies inside the branches
+  of a ternary `exp1 if cond else exp2` used in a `comptime` context, matching
+  the existing `comptime if` statement behavior. For example, this now compiles:
+
+  ```mojo
+  trait HasProperty:
+      comptime property: Int
+
+  comptime get_property_or[T: AnyType] =
+      T.property if conforms_to(T, HasProperty) else 0
+  ```
+
+  Previously the true branch failed with `'AnyType' value has no attribute
+  'property'` because `T` was not refined under the guard.
 
 - A `comptime` member with a trailing `where` clause is now accepted as a
   witness for a conditional trait conformance when the conformance constraint
