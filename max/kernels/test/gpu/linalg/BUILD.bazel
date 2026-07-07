@@ -621,6 +621,7 @@ mojo_test(
     for src in [
         "test_block_scaled_fp4_naive.mojo",
         "test_block_scaled_fp4_dispatch_sm121.mojo",
+        "test_nvfp4_tensorcore.mojo",
     ]
 ]
 
@@ -656,6 +657,7 @@ mojo_test(
             # duplicates that fail to BUILD on H100 / A100 / AMD CI runners.
             "test_block_scaled_fp4_naive.mojo",
             "test_block_scaled_fp4_dispatch_sm121.mojo",
+            "test_nvfp4_tensorcore.mojo",
             "test_matmul_pdl_race.mojo",
             "test_grouped_matmul_swiglu_nvfp4_interleave.mojo",
             "test_grouped_matmul_swiglu_nvfp4_dispatch.mojo",
