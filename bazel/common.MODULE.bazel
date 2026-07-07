@@ -43,6 +43,8 @@ archive_override(
         # TODO: Should we submit this upstream or force our deps to directly
         # depend on the things that provide their pyi files?
         "//bazel/public-patches:rules_mypy_pyi_files.patch",
+        # https://github.com/bazel-contrib/rules_mypy/pull/141
+        "//bazel/public-patches:rules_mypy_transitives.patch",
     ],
     strip_prefix = "rules_mypy-0.41.0",
     urls = [
