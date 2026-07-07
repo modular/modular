@@ -4290,7 +4290,10 @@ void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
         continue;
       if (isa_and_nonnull<FnOp>(declsInParent.front()->getIfOperation())) {
         for (ASTDecl *decl : declsInParent) {
-          auto func = cast<FnOp>(decl->getIfOperation());
+          // Skip disabled or erroneous decls whose operation was cleared.
+          auto func = dyn_cast_or_null<FnOp>(decl->getIfOperation());
+          if (!func)
+            continue;
 
           if (isInherited(func, parentDecl))
             continue;
@@ -4328,7 +4331,7 @@ void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
             auto diag =
                 emitError(override->getLoc(), "invalid redefinition of ")
                 << name;
-            diag.attachNote(overrideAliasDecl->getLoc())
+            diag.attachNote(parentAliasDecl->getLoc())
                 << "cannot overload with this non-comptime definition";
             continue;
           }
