@@ -27,6 +27,29 @@ _FILECHECK_TESTS = [
     for src in _FILECHECK_TESTS
 ]
 
+# Tile-based elementwise fusion needs the builtin_kernels package (for the
+# `Add` op) which the shared glob deps below don't carry. Give it an explicit
+# target so the other buffer tests don't pull that heavy dep.
+_EXPLICIT_DEP_TESTS = [
+    "test_tile_codegen_elementwise_fusion.mojo",
+]
+
+mojo_test(
+    name = "test_tile_codegen_elementwise_fusion.mojo.test",
+    srcs = ["test_tile_codegen_elementwise_fusion.mojo"],
+    copts = [
+        "--debug-level",
+        "full",
+    ],
+    deps = [
+        "//max:builtin_kernels",
+        "//max:extensibility",
+        "//max:layout",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
 [
     mojo_test(
         name = src + ".test",
@@ -45,6 +68,6 @@ _FILECHECK_TESTS = [
     )
     for src in glob(
         ["*.mojo"],
-        exclude = _FILECHECK_TESTS,
+        exclude = _FILECHECK_TESTS + _EXPLICIT_DEP_TESTS,
     )
 ]

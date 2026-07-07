@@ -395,6 +395,28 @@ struct _NoComputeFusionTile(ComputeOutputFusionTile):
         ), "compute() not implemented for this ComputeOutputFusionTile"
 
 
+trait ElementwiseFusionTile(TrivialRegisterPassable):
+    """The `TileTensor` variant of `ElementwiseFusion`: a tile-based pure
+    elementwise fusion struct emitted by the graph compiler.
+
+    `compute` fills the driver-provided `dst` tile (which carries the tile
+    layout) and returns it.
+    """
+
+    def compute[
+        dtype: DType,
+        rank: Int,
+        LayoutType: TensorLayout,
+        Copier: TileCopier,
+    ](
+        self,
+        tile_coords: IndexList[rank],
+        copier: Copier,
+        dst: TileTensor[dtype, LayoutType, MutAnyOrigin],
+    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
+        ...
+
+
 # Compile time Tensor information
 struct StaticTensorSpec[
     dtype: DType,
@@ -2472,6 +2494,26 @@ def get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
         return simd_width_of[dtype, target=get_gpu_target()]()
 
     return simd_width_of[dtype]()
+
+
+@doc_hidden
+def get_kernel_tile_shape[dtype: DType, target: StaticString]() -> IndexList[2]:
+    """Get the 2D tile shape used by tile-programming-model fusion kernels.
+
+    The tile analog of `get_kernel_simd_width`: returns the `(rows, cols)` of
+    the register / on-chip tile a tile-based kernel (e.g. `Add.elementwise` on a
+    `TileTensor`) operates on for `target`. It is returned as an `IndexList[2]`
+    — the same lightweight, comptime-materializable shape descriptor used for
+    tensor shapes elsewhere in this file — so a driver can splat it into e.g.
+    `row_major[s[0], s[1]]()`.
+
+    TODO(GEX-3905): currently hardcoded for CPU/GPU, needs to be extended to
+    derive from the target device.
+    """
+    comptime if _is_gpu[target]():
+        return IndexList[2](16, 16)
+
+    return IndexList[2](8, 8)
 
 
 def foreach[

@@ -53,7 +53,7 @@ from extensibility import (
     ElementwiseUnaryMixedOp,
     ElementwiseUnaryOp,
 )
-from layout import TileTensor
+from layout import Idx, TileTensor
 from layout.tile_layout import TensorLayout
 from std.logger import Logger
 
@@ -63,6 +63,43 @@ from std.utils.numerics import isinf, isnan
 
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
+
+
+@always_inline
+def _elementwise_tile[
+    Op: ElementwiseBinaryOp,
+    dtype: DType,
+    LayoutType: TensorLayout,
+](
+    lhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
+    rhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
+) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
+    """Naive in-place element-wise binary op over two statically-shaped tiles.
+
+    Applies `Op.elementwise` (the scalar overload) to each element of `lhs` and
+    `rhs`, writing the result in place into `lhs`, which is returned. A
+    statically known layout is required so the walk is unrolled at compile time.
+
+    TODO(GEX-3906): This is currently a naive implementation: a scalar element
+    walk that lowers to scalar loads/stores on both CPU and GPU. It will need to
+    be optimized (e.g. vectorized copies).
+    """
+    comptime assert (
+        LayoutType.shape_known
+    ), "elementwise(TileTensor) requires a statically known layout"
+
+    comptime element_size = type_of(lhs).element_size
+    comptime num_elements = LayoutType.static_product
+
+    comptime for i in range(num_elements):
+        var lhs_off = lhs.layout(Idx[i])
+        var rhs_off = rhs.layout(Idx[i])
+        var lhs_val = lhs.raw_load[width=element_size](lhs_off)
+        var rhs_val = rhs.raw_load[width=element_size](rhs_off)
+        lhs.raw_store[width=element_size](
+            lhs_off, Op.elementwise[dtype, element_size](lhs_val, rhs_val)
+        )
+    return lhs
 
 
 @compiler.register("mo.add")
@@ -82,9 +119,9 @@ struct Add(ElementwiseBinaryOp):
         lhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
         rhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
     ) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
-        # TODO(GEX-3799): implement TileTensor element-wise add.
-        _ = rhs
-        return lhs
+        """Element-wise add two tiles in place into `lhs`; see `_elementwise_tile`.
+        """
+        return _elementwise_tile[Self, dtype, LayoutType](lhs, rhs)
 
 
 @compiler.register("mo.sub")
@@ -105,6 +142,18 @@ struct Mul(ElementwiseBinaryOp):
         width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs * rhs
+
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        LayoutType: TensorLayout,
+    ](
+        lhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
+        rhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
+    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
+        """Element-wise multiply two tiles in place into `lhs`; see `_elementwise_tile`.
+        """
+        return _elementwise_tile[Self, dtype, LayoutType](lhs, rhs)
 
 
 @compiler.register("mo.div")
