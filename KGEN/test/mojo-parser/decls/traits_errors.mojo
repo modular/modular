@@ -255,3 +255,16 @@ struct NeverDeletableInner(ImplicitlyDeletable where False):
 
 struct NeverDeletableOuter(ImplicitlyDeletable where False):
     var m: NeverDeletableInner
+
+
+# Test that overriding a parent trait's comptime decl with a non-comptime decl is an error.
+# Regression test for MOCO-4227 (latent null-pointer dereference in error path).
+trait TraitWithComptime:
+    # expected-note @+1 {{cannot overload with this non-comptime definition}}
+    comptime MyType = Int
+
+
+trait ChildOverridesComptimeWithFn(TraitWithComptime):
+    # expected-error @+1 {{invalid redefinition of 'MyType'}}
+    def MyType(self):
+        pass
