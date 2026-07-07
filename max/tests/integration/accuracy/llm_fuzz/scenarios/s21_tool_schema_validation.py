@@ -25,6 +25,7 @@ What it catches:
   - Extra properties when additionalProperties: false
   - Malformed JSON in arguments string
   - Enum violations
+  - Array cardinality (minItems/maxItems) violations
   - Nested object schema violations
   - Inconsistencies between streaming and non-streaming tool calls
   - Tool call ID format issues (missing id, empty id)
@@ -287,13 +288,14 @@ NESTED_TOOL = {
 # JSON but violates a declared schema keyword. Unlike the cases above (which
 # use natural prompts the model satisfies on its own), these adversarial
 # prompts only conform when the server actively constrains tool arguments to
-# the schema -- so they expose whether schema enforcement is on.
+# the schema, so they expose whether schema enforcement is on. Each case is
+# repeat-sampled (see ``_schema_enforcement``).
 #
 # ``enforceable`` marks keywords that grammar-based constrained decoding can
-# satisfy (type/enum/required/additionalProperties/maximum/maxLength/pattern/
-# format/minProperties): a violation there is a real defect (FAIL). The rest
-# (``multipleOf``/``not``/``if``-``then``) cannot be expressed as a token
-# grammar on any engine, so a violation is surfaced as INTERESTING.
+# satisfy (type/enum/required/additionalProperties/minItems/maxItems/maximum/
+# maxLength/pattern/format/minProperties): a violation there is a real defect
+# (FAIL). The rest (``multipleOf``/``not``/``if``-``then``) cannot be expressed
+# as a token grammar on any engine, so a violation is expected -- graded PASS.
 
 
 def _enforce_tool(
@@ -319,6 +321,8 @@ def _enforce_tool(
         },
     }
 
+
+_ENFORCE_REPEATS = 4
 
 _ENFORCEMENT_CASES: list[dict[str, Any]] = [
     # --- grammar-enforceable: FAIL when the schema is not enforced ----------
@@ -482,7 +486,37 @@ _ENFORCEMENT_CASES: list[dict[str, Any]] = [
         ),
         "prompt": 'Call set_metadata with only field a set to "x".',
     },
-    # --- grammar-inexpressible: violation is INTERESTING, not FAIL ----------
+    {
+        "name": "enum_violation",
+        "expect": "enum",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "set_role",
+            {"role": {"type": "string", "enum": ["admin", "user", "guest"]}},
+            ["role"],
+            "Assign an account role.",
+        ),
+        "prompt": 'Call set_role with role set to "SUPERADMIN".',
+    },
+    {
+        "name": "array_max_items",
+        "expect": "maxItems",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "add_tags",
+            {
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 3,
+                }
+            },
+            ["tags"],
+            "Attach at most three tags.",
+        ),
+        "prompt": "Call add_tags with these seven tags: a, b, c, d, e, f, g.",
+    },
+    # --- grammar-inexpressible: violation is PASS (expected), never FAIL -----
     {
         "name": "multiple_of",
         "expect": "multipleOf",
@@ -530,6 +564,39 @@ _ENFORCEMENT_CASES: list[dict[str, Any]] = [
         ),
     },
 ]
+
+
+# Enforcement cases whose keyword the constrained-decoding backend genuinely
+# cannot enforce, so the honest outcome is an enforce-or-400 up front rather
+# than a best-effort 200 that silently violates the schema. Mirrors the honest-
+# rejection contract in the sibling ``s32_structured_output_schema_limits``
+# (``array_unique_unenforceable`` / ``_EXPECT_REJECT`` /
+# ``_is_honest_rejection``): for these a clean 400 naming the construct is a
+# PASS, not a FAIL. ``multipleOf`` / ``not`` / ``if``-``then`` are CFG-
+# inexpressible on every backend; ``minProperties`` is unenforceable for the
+# decomposing-codec models (e.g. gemma4) whose enforce-or-400 gate rejects it --
+# both surface the same 400. This only credits the 400 PATH: the ``enforceable``
+# flag is left untouched, so a schema-violating 200 still grades as before (a
+# JSON-arg model that DOES enforce ``minProperties`` is still FAILed on a
+# violation; the universally-inexpressible three are PASS, a violation being
+# expected).
+_EXPECT_HONEST_REJECT: frozenset[str] = frozenset(
+    {"min_properties", "multiple_of", "not_forbidden", "conditional_required"}
+)
+
+
+def _is_honest_rejection(status: int) -> bool:
+    """True if ``status`` is an honest refusal of the unenforceable construct.
+
+    These requests are well-formed (valid JSON, structurally valid tool
+    schema), so the only reason to reject one is the construct itself: a clean
+    400 is the backend honestly declining to build a grammar it cannot enforce,
+    whatever the exact message says. Matching on status alone -- rather than an
+    ``"enforce"`` substring that is backend- and version-specific -- keeps a
+    correctly-refused request from grading FAIL just because a backend words its
+    400 differently (or omits the word entirely).
+    """
+    return status == 400
 
 
 # ---------------------------------------------------------------------------
@@ -703,75 +770,116 @@ class ToolSchemaValidation(BaseScenario):
         self, client: FuzzClient, model: str
     ) -> list[ScenarioResult]:
         """Force a named tool call asking for a value that violates a declared
-        keyword, then validate against the schema.
+        keyword, then validate the arguments against the schema.
 
-        A conforming result is a PASS (the backend constrained args to the
-        schema). A violation of a grammar-enforceable keyword is a FAIL; a
-        violation of a keyword no token grammar can express is surfaced as
-        INTERESTING.
+        Each case is repeated ``_ENFORCE_REPEATS`` times at ``temperature=0``
+        with reasoning disabled, so a grammar that enforces only intermittently
+        (e.g. under serving-state / compiler-cache contention) is caught while a
+        correct backend stays deterministic. Conforming is a PASS; a
+        grammar-enforceable violation is a FAIL; a violation of a keyword no
+        token grammar can express is a PASS (expected, not a defect).
         """
         results: list[ScenarioResult] = []
         for case in _ENFORCEMENT_CASES:
             tool = case["tool"]
             fname = tool["function"]["name"]
             test = f"enforce_{case['name']}"
-            payload = self._req(
-                model,
-                case["prompt"],
-                [tool],
-                tool_choice={
-                    "type": "function",
-                    "function": {"name": fname},
-                },
-                temperature=0.0,
-            )
-            resp = await client.post_json(
-                payload, timeout=self._fuzz_config.timeout * 2
-            )
+            expect_honest_reject = case["name"] in _EXPECT_HONEST_REJECT
 
-            if resp.error or resp.status != 200:
-                v, d, _ = self._assess_tool_response(resp, [tool])
-                results.append(
-                    self.make_result(
-                        self.name,
-                        test,
-                        v,
-                        status_code=resp.status,
-                        detail=d,
-                        **self._exchange_verbose(payload, resp),
-                    )
+            fired = 0
+            conformant = 0
+            honest_reject = 0
+            first_bad: tuple[dict[str, Any], RawResponse, str] | None = None
+            last: tuple[dict[str, Any], RawResponse] | None = None
+            transport: tuple[Verdict, str] | None = None
+
+            for _ in range(_ENFORCE_REPEATS):
+                payload = self._req(
+                    model,
+                    case["prompt"],
+                    [tool],
+                    tool_choice={
+                        "type": "function",
+                        "function": {"name": fname},
+                    },
+                    temperature=0.0,
+                    chat_template_kwargs={
+                        "enable_thinking": False,
+                        "thinking": False,
+                    },
                 )
-                continue
+                resp = await client.post_json(
+                    payload, timeout=self._fuzz_config.timeout * 2
+                )
+                last = (payload, resp)
 
-            data, _perr = parse_json(resp.body)
-            tool_calls = _get_tool_calls(data or {})
-            if not tool_calls:
-                # tool_choice forced a specific function, so the server is
-                # required to emit that call -- its absence is a failure.
-                results.append(
-                    self.make_result(
-                        self.name,
-                        test,
+                if resp.error or resp.status != 200:
+                    transport = self._assess_tool_response(resp, [tool])[:2]
+                    # A CFG-inexpressible keyword the backend cannot enforce is
+                    # honestly refused with an enforce-or-400 (see
+                    # _EXPECT_HONEST_REJECT); count those so the fired==0 branch
+                    # can credit the honest rejection as a PASS.
+                    if expect_honest_reject and _is_honest_rejection(
+                        resp.status
+                    ):
+                        honest_reject += 1
+                    continue
+
+                data, _perr = parse_json(resp.body)
+                tool_calls = _get_tool_calls(data or {})
+                if not tool_calls:
+                    continue
+                fired += 1
+                valid, detail = _validate_tool_call(tool_calls[0], [tool])
+                if valid:
+                    conformant += 1
+                elif first_bad is None:
+                    first_bad = (payload, resp, detail)
+
+            # A forced tool_choice that never fired is a server fault (or the
+            # transport error behind it) -- UNLESS it is a CFG-inexpressible
+            # construct the backend honestly refused with an enforce-or-400,
+            # which is the correct outcome (mirrors s32's honest-rejection
+            # contract), so a clean rejection across all repeats is a PASS.
+            if fired == 0:
+                assert last is not None
+                payload, resp = last
+                if expect_honest_reject and honest_reject == _ENFORCE_REPEATS:
+                    verdict = Verdict.PASS
+                    note = (
+                        f"honest enforce-or-400 ({case['expect']}): rejected "
+                        f"{honest_reject}/{_ENFORCE_REPEATS}; unenforceable "
+                        "construct refused up front, never a best-effort 200"
+                    )
+                else:
+                    verdict, note = transport or (
                         Verdict.FAIL,
-                        status_code=resp.status,
-                        detail=(
-                            "forced tool_choice produced no tool call "
-                            f"(finish={_get_finish_reason(data or {})})"
-                        ),
-                        **self._exchange_verbose(payload, resp),
+                        "forced tool_choice produced no tool call",
                     )
-                )
-                continue
-
-            valid, detail = _validate_tool_call(tool_calls[0], [tool])
-            if valid:
-                verdict, note = Verdict.PASS, f"args conform ({case['expect']})"
-            elif case["enforceable"]:
-                verdict = Verdict.FAIL
-                note = f"schema not enforced ({case['expect']}): {detail}"
             else:
-                verdict = Verdict.INTERESTING
-                note = f"grammar cannot enforce {case['expect']}: {detail}"
+                violations = fired - conformant
+                if violations == 0:
+                    assert last is not None
+                    payload, resp = last
+                    verdict = Verdict.PASS
+                    note = (
+                        f"args conform {conformant}/{fired} ({case['expect']})"
+                    )
+                else:
+                    assert first_bad is not None
+                    payload, resp, bad = first_bad
+                    if case["enforceable"]:
+                        verdict = Verdict.FAIL
+                        note = (
+                            f"schema not enforced ({case['expect']}): "
+                            f"{violations}/{fired} violated; {bad}"
+                        )
+                    else:
+                        verdict = Verdict.PASS
+                        note = (
+                            f"{case['expect']} not grammar-enforceable; "
+                            f"{violations}/{fired} violated (expected): {bad}"
+                        )
             results.append(
                 self.make_result(
                     self.name,
