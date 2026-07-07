@@ -220,6 +220,15 @@ TypedAttr LIT::deShortCircuitCond(TypedAttr value) {
   return sugarOp;
 }
 
+ConstraintAttr LIT::buildBranchAssumption(TypedAttr cond, bool invertCondition,
+                                          Location loc) {
+  // Convert `x and y` to `x & y` so we get better canonicalization.
+  TypedAttr branchCondition = deShortCircuitCond(cond);
+  if (invertCondition)
+    branchCondition = ParamOperatorAttr::getNot(branchCondition);
+  return ConstraintAttr::get(branchCondition, loc);
+}
+
 bool LIT::attrConformsToTraitUnderAssumptions(
     TypedAttr actualAttr, TraitType expectedTrait, SharedState &shared,
     ArrayRef<ConstraintAttr> assumptions) {

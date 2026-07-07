@@ -64,6 +64,16 @@ TriState canDischargeConstraints(
 /// legal during constraint checking.
 TypedAttr deShortCircuitCond(TypedAttr value);
 
+/// Build a branch assumption from a comptime boolean condition `cond`,
+/// canonicalizing short-circuit `and`/`or` into `&`/`|` (via
+/// `deShortCircuitCond`) and optionally inverting it for the `else`/negated
+/// branch. Shared by the `comptime if` statement path and the comptime ternary
+/// `exp1 if cond else exp2` path so that a `conforms_to(T, Trait)` guard
+/// refines `T` inside the corresponding branch. `loc` is attached to the
+/// constraint.
+ConstraintAttr buildBranchAssumption(TypedAttr cond, bool invertCondition,
+                                     Location loc);
+
 //===----------------------------------------------------------------------===//
 // Type Refinement for Where Clauses
 //===----------------------------------------------------------------------===//

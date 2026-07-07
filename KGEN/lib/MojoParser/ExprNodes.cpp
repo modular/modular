@@ -4509,15 +4509,44 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     return emitter.emitCResult(MRValue(destBuffer), this, dest);
   };
 
+  // Emit a branch expression under `assumption`, inserted into a fresh child
+  // scope of the emitter's declScope so that `conforms_to`-based type
+  // refinement applies within the branch without leaking the assumption to
+  // sibling code. Keeps the emitter's builder insertion point in sync for the
+  // dynamic path.
+  auto emitBranchUnderAssumption = [&](const ExprNode *branchExpr,
+                                       ConstraintAttr assumption) -> AnyValue {
+    ASTDecl &branchScope = emitter.getDeclResolver().addFullyResolvedDecl(
+        /*declVal=*/nullptr, StringAttr(), branchExpr->getLoc(),
+        &emitter.declScope);
+    branchScope.insertKnownAssumptions(assumption);
+    if (emitter.builder) {
+      IREmitter branchEmitter(branchScope, *emitter.builder,
+                              emitter.varDeclCursor);
+      AnyValue result = branchEmitter.emitExpr(branchExpr, EC_CondExpr);
+      // Propagate the advanced insertion point back to the parent emitter.
+      emitter.builder = branchEmitter.builder;
+      return result;
+    }
+    IREmitter branchEmitter(branchScope, emitter.paramContext,
+                            emitter.deferredTypingContext);
+    return branchEmitter.emitExpr(branchExpr, EC_CondExpr);
+  };
+
   // Inside a parameter context, emit conditional expression.
   if (!emitter.builder) {
     PValue condPVal =
         emitter.emitPValue({condRVal, condExpr}, EC_BoolCondition);
     if (!condPVal)
       return {};
-    // Emit the expressions.
-    AnyValue trueRawVal = emitter.emitExpr(trueExpr, EC_CondExpr);
-    AnyValue falseRawVal = emitter.emitExpr(falseExpr, EC_CondExpr);
+    // Emit the expressions, refining each branch under the (possibly inverted)
+    // condition so `conforms_to` guards refine type parameters they gate.
+    AnyValue trueRawVal = emitBranchUnderAssumption(
+        trueExpr, buildBranchAssumption(condPVal.get(),
+                                        /*invertCondition=*/false, ifLoc));
+    AnyValue falseRawVal = emitBranchUnderAssumption(
+        falseExpr,
+        buildBranchAssumption(condPVal.get(), /*invertCondition=*/true, ifLoc));
     // Get CValues, resolving a UValue to the other operand's type.
     CValue trueVal =
         emitToCValueInferringType({trueRawVal, trueExpr}, falseRawVal);
@@ -4562,10 +4591,14 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
                           TypeRange{condPVal.get().getType()}, condPVal.get());
 
     emitter.builder->createBlock(&paramIfOp.getThenRegion());
-    AnyValue trueRawVal = emitter.emitExpr(trueExpr, EC_CondExpr);
+    AnyValue trueRawVal = emitBranchUnderAssumption(
+        trueExpr, buildBranchAssumption(condPVal.get(),
+                                        /*invertCondition=*/false, ifLoc));
 
     emitter.builder->createBlock(&paramIfOp.getElseRegion());
-    AnyValue falseRawVal = emitter.emitExpr(falseExpr, EC_CondExpr);
+    AnyValue falseRawVal = emitBranchUnderAssumption(
+        falseExpr,
+        buildBranchAssumption(condPVal.get(), /*invertCondition=*/true, ifLoc));
 
     CValue falseVal =
         emitToCValueInferringType({falseRawVal, falseExpr}, trueRawVal);
