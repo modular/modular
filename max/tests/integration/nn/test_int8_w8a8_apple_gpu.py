@@ -37,6 +37,7 @@ from max.driver import (
     Accelerator,
     Buffer,
     accelerator_api,
+    accelerator_architecture_name,
     accelerator_count,
 )
 from max.dtype import DType
@@ -77,6 +78,15 @@ def _skip_if_not_apple() -> None:
         pytest.skip("No GPU available for the Apple int8 W8A8 test")
     if accelerator_api() != "metal":
         pytest.skip("Apple int8 W8A8 path requires a Metal GPU")
+    # `enqueue_apple_int8_matmul` requires Apple M5 (compute_capability == 5).
+    # Metal reports the compute capability as the leading integer of the
+    # architecture name (e.g. "2" on M2, "5-metal4" on M5).
+    generation = int(accelerator_architecture_name().split("-", 1)[0])
+    if generation != 5:
+        pytest.skip(
+            "Apple int8 W8A8 path requires Apple M5 "
+            f"(compute_capability == 5); got compute_capability={generation}"
+        )
 
 
 def _quant_rows_absmax(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
