@@ -104,7 +104,7 @@ def _gpu_per_expert_reference[
     b_dev: DeviceBuffer[DType.uint8],
     a_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
     b_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
-    c_ref_dev: DeviceBuffer[DType.float32],
+    mut c_ref_dev: DeviceBuffer[DType.float32],
 ) raises:
     comptime packed_K = K // 2
     comptime scale_K = K // MXFP4_SF_VECTOR_SIZE

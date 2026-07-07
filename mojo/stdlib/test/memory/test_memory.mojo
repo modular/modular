@@ -635,7 +635,7 @@ def test_pointer_refitem() raises:
 def test_pointer_refitem_string() raises:
     comptime payload = "$Modular!Mojo!HelloWorld^"
     var ptr = alloc[String](1)
-    __get_address_as_uninit_lvalue(ptr.address) = String()
+    __get_address_as_uninit_lvalue(ptr._get_kgen_pointer()) = String()
     ptr[] = payload
     assert_equal(ptr[], payload)
     ptr.free()

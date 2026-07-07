@@ -32,7 +32,8 @@ from max.pipelines.lib.pipeline_variants.utils import (
     StructuredOutputHelper,
     build_response,
 )
-from max.pipelines.modeling.types import RequestID
+from max.pipelines.lib.tool_parsing import StructuralTagToolParser, register
+from max.pipelines.modeling.types import ParsedToolCall, RequestID
 
 
 class _RecordingMatcher(GrammarMatcher):
@@ -104,6 +105,45 @@ def advance_to_processed(ctx: TextContext) -> None:
     """
     ctx.update_with_future_token()
     ctx.realize_future_token(new_token=99, log_probabilities=None)
+
+
+@register("_test_section_parser")
+class _SectionParser(StructuralTagToolParser):
+    """Minimal section-wrapped parser for region-tag derivation tests."""
+
+    SECTION_BEGIN = "<sec>"
+    SECTION_END = "</sec>"
+
+    def _parse_complete_section(
+        self, tool_section: str
+    ) -> list[ParsedToolCall]:
+        return []
+
+
+@register("_test_to_eos_parser")
+class _ToEosParser(_SectionParser):
+    """Section parser that opts into enforcement-to-EOS."""
+
+    ENFORCE_TOOL_REGION_TO_EOS = True
+
+
+class TestGetToolRegionTags:
+    """``StructuredOutputHelper._get_tool_region_tags``."""
+
+    def test_section_parser_returns_section_pair(self) -> None:
+        tags = StructuredOutputHelper._get_tool_region_tags(
+            "_test_section_parser"
+        )
+        assert tags == ("<sec>", "</sec>")
+
+    def test_to_eos_parser_has_no_end_tag(self) -> None:
+        """With no end tag, enforcement never flips off: the completed
+        grammar masks everything but EOS, so the turn ends with its single
+        tool-call section (e.g. MiniMax-M3; CENG-718)."""
+        tags = StructuredOutputHelper._get_tool_region_tags(
+            "_test_to_eos_parser"
+        )
+        assert tags == ("<sec>", None)
 
 
 class TestBuildResponse:

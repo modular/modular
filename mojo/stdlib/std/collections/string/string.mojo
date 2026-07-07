@@ -760,7 +760,7 @@ struct String(
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
-            ptr.bitcast[Atomic[DType.int]]().address
+            ptr.bitcast[Atomic[DType.int]]()._get_kgen_pointer()
         ) = Atomic[DType.int](1)
 
         # Return a pointer to right after the header, which is where the string

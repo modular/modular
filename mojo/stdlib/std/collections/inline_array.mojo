@@ -206,9 +206,8 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, size: Int](
 
 
 @explicit_destroy(
-    "An `InlineArray` of non-`ImplicitlyDeletable` elements must either be"
-    " explicitly destroyed with `destroy_with()`, or have its ownership passed"
-    " along by returning it or moving it into another function."
+    "Use `destroy_with()` to explicitly destroy an `InlineArray` of"
+    " non-`ImplicitlyDeletable` elements"
 )
 struct InlineArray[ElementType: Movable, size: Int](
     Copyable where conforms_to(ElementType, Copyable),
@@ -586,7 +585,9 @@ struct InlineArray[ElementType: Movable, size: Int](
             # `UnsafePointer.destroy_pointee_with` since `UnsafePointer` is
             # bound on `T: AnyType` but `InlineArray` has `ElementType: Movable`.
             destroy_func(
-                __get_address_as_owned_value((self.unsafe_ptr() + idx).address)
+                __get_address_as_owned_value(
+                    (self.unsafe_ptr() + idx)._get_kgen_pointer()
+                )
             )
 
     # ===------------------------------------------------------------------===#
@@ -658,7 +659,7 @@ struct InlineArray[ElementType: Movable, size: Int](
         ref self, idx: Some[Indexer]
     ) -> ref[self] Self.ElementType:
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._array).address,
+            UnsafePointer(to=self._array)._get_kgen_pointer(),
             index(idx).__mlir_index__(),
         )
         return UnsafePointer[_, origin_of(self)](ptr)[]

@@ -5341,7 +5341,7 @@ struct TMATensorTileArray[
     @always_inline
     def __init__(
         out self,
-        tensormaps_device: DeviceBuffer[DType.uint8],
+        mut tensormaps_device: DeviceBuffer[DType.uint8],
     ):
         """
         Initializes a new TMATensorTileArray.
@@ -5349,8 +5349,10 @@ struct TMATensorTileArray[
         Args:
             tensormaps_device: Device buffer to store TMA descriptors.
         """
-
-        self.tensormaps_ptr = tensormaps_device.unsafe_ptr()
+        # TODO: this type should properly hold origins
+        self.tensormaps_ptr = tensormaps_device.unsafe_ptr().unsafe_origin_cast[
+            MutUntrackedOrigin
+        ]()
 
     @always_inline
     def __getitem__(

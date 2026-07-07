@@ -33,7 +33,6 @@ from ._nicheable import (
 )
 from std.os import abort
 from std.sys import align_of, size_of
-from std.utils.type_functions import ConditionalType
 
 # ===----------------------------------------------------------------------=== #
 # Variant Storages
@@ -144,12 +143,9 @@ struct _CustomNicheStorage[Storage: UnsafeCustomNicheStorage](
         )
 
 
-comptime _NicheStorageFor[T: AnyType] = ConditionalType[
-    Trait=_NicheStorage,
-    If=conforms_to(T, UnsafeCustomNicheStorage),
-    Then=_CustomNicheStorage[downcast[T, UnsafeCustomNicheStorage]],
-    Else=_DefaultNicheStorage[T],
-]
+comptime _NicheStorageFor[T: AnyType] = _CustomNicheStorage[
+    downcast[T, UnsafeCustomNicheStorage]
+] if conforms_to(T, UnsafeCustomNicheStorage) else _DefaultNicheStorage[T]
 
 
 struct _NichedOptionalStorage[
@@ -314,7 +310,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     def get_discriminant(ref self) -> ref[self] UInt8:
         var discr_ptr = __mlir_op.`pop.variant.discr_gep`[
             _type=__mlir_type.`!kgen.pointer<scalar<ui8>>`
-        ](UnsafePointer(to=self._impl).address)
+        ](UnsafePointer(to=self._impl)._get_kgen_pointer())
         return UnsafePointer[_, origin_of(self)](discr_ptr).bitcast[UInt8]()[]
 
     @always_inline("nodebug")
@@ -328,7 +324,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
         return __mlir_op.`pop.variant.bitcast`[
             _type=UnsafePointer[T, origin_of(self)]._mlir_type,
             index=idx.__mlir_index__(),
-        ](UnsafePointer(to=self._impl).address)
+        ](UnsafePointer(to=self._impl)._get_kgen_pointer())
 
 
 # TODO(MOCO-3653): size_of[T]() == 0 does not work correctly in some cases when
@@ -351,27 +347,19 @@ comptime _IsNicheEligible[*Ts: AnyType]: Bool = (Ts.size == 2) and (
 """True if `Ts` qualifies for niche-optimized storage: exactly two types
 where one is `UnsafeNicheable` and the other is an empty type."""
 
-comptime _NichedStorageFor[*Ts: AnyType] = ConditionalType[
-    Trait=_VariantStorage,
-    If=conforms_to(Ts[0], UnsafeNicheable),
-    Then=_NichedOptionalStorage[
-        downcast[Ts[0], UnsafeNicheable],
-        downcast[Ts[1], TrivialRegisterPassable],
-    ],
-    Else=_NichedOptionalStorage[
-        downcast[Ts[1], UnsafeNicheable],
-        downcast[Ts[0], TrivialRegisterPassable],
-    ],
+comptime _NichedStorageFor[*Ts: AnyType] = _NichedOptionalStorage[
+    downcast[Ts[0], UnsafeNicheable],
+    downcast[Ts[1], TrivialRegisterPassable],
+] if conforms_to(Ts[0], UnsafeNicheable) else _NichedOptionalStorage[
+    downcast[Ts[1], UnsafeNicheable],
+    downcast[Ts[0], TrivialRegisterPassable],
 ]
 """Resolves to the concrete `_NichedOptionalStorage[T]` for the eligible type,
 regardless of which position the `UnsafeNicheable` type occupies in `Ts`."""
 
-comptime _VariantStorageFor[*Ts: AnyType] = ConditionalType[
-    Trait=_VariantStorage,
-    If=_IsNicheEligible[*Ts],
-    Then=_NichedStorageFor[*Ts],
-    Else=_DefaultVariantStorage[*Ts],
-]
+comptime _VariantStorageFor[*Ts: AnyType] = _NichedStorageFor[
+    *Ts
+] if _IsNicheEligible[*Ts] else _DefaultVariantStorage[*Ts]
 """Selects the storage strategy for `Variant[*Ts]`: niche-optimized storage
 when eligible, falling back to the general discriminant-tagged storage."""
 
@@ -871,9 +859,8 @@ struct Variant[*Ts: Movable](
         """Destroy a value contained in this Variant in-place using a caller
         provided destructor function.
 
-        This method can be used to destroy types marked `@explicit_destroy`
-        in a `Variant` in-place, without requiring that they be
-        `ImplicitlyDeletable`.
+        This method can be used to destroy types that do not conform to
+        `ImplicitlyDeletable` in a `Variant` in-place.
 
         This method will abort if this variant does not current contain an
         element of the specified type `T`.

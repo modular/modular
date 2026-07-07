@@ -7231,6 +7231,48 @@ class SelectOp(max._core.Operation):
     @property
     def y(self) -> max._core.Value[TensorType]: ...
 
+class SequenceOp(max._core.Operation):
+    """
+    The `mo.sequence` operation wraps a region of ops that should be bound to a
+    single device stream selected by `streamId` (0 is the default stream). It
+    exists for two reasons: (1) the region is a fusion boundary -- ops inside it
+    are not fused with ops outside it -- and (2) it marks which ops should be
+    enqueued on the side stream, so the MOGG->MGP lowering can bind the body's
+    device context to a `mgp.device_context.select_stream` view.
+
+    Operands are a plain variadic list (tensors / chains) mapped 1:1 into the
+    body's block arguments, and `mo.yield` maps 1:1 to the op's results.
+    The body is a graph region (unordered); chains encode any mutable ordering
+    exactly as in the enclosing graph.
+
+    Example:
+    ```mlir
+    %out = mo.sequence[1] (%a) : (!mo.tensor<[3], f32, gpu:0>)
+        -> (!mo.tensor<[3], f32, gpu:0>) {
+    ^bb0(%arg: !mo.tensor<[3], f32, gpu:0>):
+      %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
+      mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
+    }
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        results: Sequence[max._core.Type],
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        stream_id: max._core.dialects.builtin.IntegerAttr,
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def stream_id(self) -> int: ...
+    @stream_id.setter
+    def stream_id(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+
 class ShapeOfOp(max._core.Operation):
     """
     Returns the shape of a tensor.

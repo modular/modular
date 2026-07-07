@@ -138,9 +138,8 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
 
 
 @explicit_destroy(
-    "A `List` of non-`ImplicitlyDeletable` elements must either be"
-    " explicitly destroyed with `destroy_with()`, or have its ownership passed"
-    " along by returning it or moving it into another function."
+    "Use `destroy_with()` to explicitly destroy a `List` of"
+    " non-`ImplicitlyDeletable` elements"
 )
 struct List[T: Movable](
     Boolable,
@@ -517,7 +516,9 @@ struct List[T: Movable](
             # TODO(MOCO-4111): `destroy_func` cannot convert to UnsafePointer.destroy_pointee_with
             # `destroy_func` type since UP is bound on `T: AnyType` but List has `T: Movable`.
             destroy_func(
-                __get_address_as_owned_value((self.unsafe_ptr() + i).address)
+                __get_address_as_owned_value(
+                    (self.unsafe_ptr() + i)._get_kgen_pointer()
+                )
             )
         self^._unsafe_assume_destroyed_and_deallocate()
 

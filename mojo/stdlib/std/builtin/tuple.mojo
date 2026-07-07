@@ -207,7 +207,9 @@ struct Tuple[*element_types: Movable](
         """
         # Return a reference to an element at the specified index, propagating
         # mutability of self.
-        var storage_kgen_ptr = UnsafePointer(to=self._mlir_value).address
+        var storage_kgen_ptr = UnsafePointer(
+            to=self._mlir_value
+        )._get_kgen_pointer()
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[

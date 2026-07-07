@@ -26,6 +26,9 @@ _EXTRA_CONSTRAINTS = {
     # B-loader, materialize->dense, and the matmul2d 16x32x16 deep-K path). Apple
     # M5 only (Metal 4 / AIR 2.8); the generic glob loop generates the mojo_test.
     "test_apple_fp4_matmul.mojo": ["//:apple_gpu"],
+    # Apple M5 int8 W8A8 (widening int8->int32 MMA + per-row/col dequant + the
+    # online activation-quant kernel). Apple M5 only (Metal 4 / AIR 2.8).
+    "test_apple_int8_matmul.mojo": ["//:apple_gpu"],
     "test_async_copy_wgmma.mojo": ["//:h100_gpu"],
     "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_gemm_kernel_new.mojo": ["//:nvidia_gpu"],  # Requires 32-thread warps

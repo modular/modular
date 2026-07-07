@@ -237,6 +237,17 @@ class StructuralTagToolParser(ABC):
     """
 
     # Marker constants — subclasses override.
+    ENFORCE_TOOL_REGION_TO_EOS: ClassVar[bool] = False
+    """Keep grammar enforcement on after ``SECTION_END``.
+
+    For models whose chat template terminates a tool-call turn immediately
+    after its single section (e.g. MiniMax-M3), leaving enforcement on lets
+    the completed grammar mask everything but EOS, so the turn cannot
+    continue past the section. The default ``False`` keeps the
+    section-bounded region: enforcement flips off at ``SECTION_END`` and
+    the model may emit free text afterwards.
+    """
+
     SECTION_BEGIN: ClassVar[str] = ""
     SECTION_END: ClassVar[str] = ""
     CALL_BEGIN: ClassVar[str] = ""

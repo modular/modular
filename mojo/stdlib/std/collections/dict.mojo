@@ -463,8 +463,8 @@ struct _DictValueIter[
 
 
 @explicit_destroy(
-    "A `Dict` with non-`ImplicitlyDeletable` keys or values must be explicitly"
-    " destroyed with `destroy_with()`"
+    "Use `destroy_with()` to explicitly destroy a `Dict` with"
+    " non-`ImplicitlyDeletable` keys or values"
 )
 struct Dict[
     K: KeyElement,

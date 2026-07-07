@@ -251,7 +251,8 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     @always_inline("nodebug")
     def _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._mlir_value).address, idx.__mlir_index__()
+            UnsafePointer(to=self._mlir_value)._get_kgen_pointer(),
+            idx.__mlir_index__(),
         )
         return UnsafePointer[origin=origin_of(self)](ptr)[]
 

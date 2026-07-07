@@ -393,6 +393,20 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed MiniMax-M3 tool-call grammar enforcement silently disabling itself
+  when the model emits more than one tool-call section in a single response.
+  Enforcement used to switch off once the first section closed, so a second
+  section's start marker was rejected against the completed matcher
+  (`Matcher rejected N token(s)…`) and the rest of the request ran
+  unconstrained. Enforcement now stays on through the end of the turn: after
+  the single tool-call section closes, only EOS is allowed, matching the
+  model's chat template (all invocations in one section, followed
+  immediately by end of turn).
+- Fixed MiniMax-M3 streaming chat completions aborting with a 500 when the
+  model emits a malformed tool call. The streaming tool parser now fails open
+  like the non-streaming path: the raw tool-call text degrades to assistant
+  content, tool parsing is bypassed for the rest of the request, and the
+  stream terminates normally.
 - Fixed a precision loss in the normalization ops where the `epsilon` value was
   carried in the input's dtype (for example `bfloat16`) before use. A small
   epsilon such as `1e-6` is not representable in `bfloat16`, so it was silently
@@ -436,6 +450,14 @@ This version is still a work in progress.
   no-synchronization behavior, so a later `to_numpy()` on the slice triggered
   an unexpected device synchronization. Slices and views now preserve the
   `DevicePinnedBuffer` type.
+
+- Fixed virtual-device mode on macOS. Previously the
+  `max.driver.set_virtual_device_*()` settings had no effect on device
+  creation: `Accelerator()` still took the real-hardware path, so requesting
+  more devices than physically present failed and single-device
+  cross-compilation silently used the real GPU. The virtual-device state now
+  lives in a single shared library, so the setters and device creation always
+  observe the same configuration on every platform.
 
 - Fixed DeepSeek-V3.1-NVFP4 multi-token prediction (MTP) failing to load with
   `dispatch_quant_config must be specified when dispatch_dtype is not

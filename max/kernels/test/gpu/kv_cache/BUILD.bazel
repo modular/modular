@@ -9,7 +9,6 @@ _GPU_MEMORY = {
     "test_kv_cache_2m_iadd.mojo": "6",
     "test_kv_cache_matmul.mojo": "6",
     "test_kv_cache_radd.mojo": "5.5",
-    "test_kv_cache_ragged_matmul.mojo": "7",
     "test_kv_cache_ragged_matmul_scale.mojo": "6",
     "test_kv_cache_store_ragged.mojo": "6",
     "test_mha_decoding_vs_naive.mojo": "6",
@@ -26,11 +25,6 @@ _APPLE_GPU_INCOMPATIBLE = select({
 _EXTRA_CONSTRAINTS = {
     "test_batch_kv_cache_flash_attention.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_kv_cache_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
-    "test_kv_cache_ragged_matmul.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: PRDT-506
-        "//:b200_gpu": ["@platforms//:incompatible"],  # FIXME: KERN-3152
-        "//conditions:default": [],
-    }),
     "test_batch_kv_cache_flash_attention_causal_mask.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_kv_cache_ragged_matmul_scale.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2318
     "test_fused_qkv_index_matmul_scale_mxfp8.mojo": select({
@@ -81,7 +75,6 @@ _EXTRA_CONSTRAINTS = {
             "//:b200_gpu": True,
             "//conditions:default": src not in [
                 "test_kv_cache_matmul.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
-                "test_kv_cache_ragged_matmul.mojo",  # MSTDL-1147: fails with asserts on H100/AMD
                 "test_mha_mixed_ce_tg.mojo",  # KERN-2339: accessing idx=4 in dimension of size 4
                 "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
                 "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
@@ -110,6 +103,7 @@ _EXTRA_CONSTRAINTS = {
         ["**/*.mojo"],
         exclude = [
             "kv_cache_test_utils.mojo",  # Imported source, not a test
+            "test_kv_cache_ragged_matmul.mojo",  # Split by dtype below (KERN-3152 compile time)
             "test_mha_inflight_batching_gemma3_hang.mojo",  # KERN-2734: manual repro test, split by page_size below
             "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # Split by page_size below
             "test_mha_gemma4_shapes.mojo",  # Split by (page_size, mask_kind) below
@@ -117,6 +111,43 @@ _EXTRA_CONSTRAINTS = {
             "test_mha_paged_kv_oob_canary.mojo",  # Split by page_size below (B200 NaN canary)
             "test_paged_kv_null_block_sentinel.mojo",  # Explicit B200-only target below (SERVOPT-1456 kernel regression)
         ],
+    )
+]
+
+[
+    mojo_test(
+        name = "test_kv_cache_ragged_matmul_{}.mojo.test".format(suffix),
+        size = "large",
+        srcs = [
+            "kv_cache_test_utils.mojo",
+            "test_kv_cache_ragged_matmul.mojo",
+        ],
+        copts = [
+            "-D",
+            "test_dtype={}".format(test_dtype),
+        ],
+        enable_assertions = select({
+            "//:b200_gpu": True,
+            "//conditions:default": False,  # MSTDL-1147: fails with asserts on H100/AMD
+        }),
+        exec_properties = {
+            "test.resources:gpu-memory": "7",
+        },
+        main = "test_kv_cache_ragged_matmul.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "@mojo//:std",
+        ],
+    )
+    for suffix, test_dtype in (
+        ("bf16", "bfloat16"),
+        ("fp32", "float32"),
     )
 ]
 
