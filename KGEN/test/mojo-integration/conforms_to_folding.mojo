@@ -6,8 +6,6 @@
 
 # RUN: %mojo -debug-level full %s 2 3 | FileCheck %s
 
-from std.utils.type_functions import ConditionalType
-
 
 struct ConditionalArraySize[T: AnyType]:
     comptime Size: Int = 0 if conforms_to(Self.T, ImplicitlyCopyable) else 1
