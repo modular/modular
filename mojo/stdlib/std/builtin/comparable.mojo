@@ -51,7 +51,7 @@ trait Equatable:
     """
 
     @always_inline
-    def __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self, /) -> Bool:
         """Define whether two instances of the object are equal to each other.
 
         The default implementation uses reflection to compare all fields for
@@ -82,7 +82,7 @@ trait Equatable:
         return True
 
     @always_inline
-    def __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self, /) -> Bool:
         """Define whether two instances of the object are not equal to each
         other.
 

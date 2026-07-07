@@ -527,7 +527,9 @@ struct List[T: Movable](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    def __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
+    def __eq__(
+        self, other: Self, /
+    ) -> Bool where conforms_to(Self.T, Equatable):
         """Checks if two lists are equal.
 
         Args:
@@ -569,7 +571,7 @@ struct List[T: Movable](
             element.__hash__(hasher)
 
     def __contains__(
-        self, value: Self.T
+        self, value: Self.T, /
     ) -> Bool where conforms_to(Self.T, Equatable):
         """Verify if a given value is present in the list.
 

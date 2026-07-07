@@ -537,6 +537,9 @@ This version is still a work in progress.
   available when you want them: `codepoints()` or `codepoint_slices()` for
   Unicode scalars, and `bytes()` for raw UTF-8 bytes.
 
+- The `Equatable` trait now allows for positional-only implementations, and
+  argument on implementers no longer need to match the trait exactly.
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.

@@ -15,6 +15,31 @@ from test_utils.reflection import SimplePoint, NestedStruct, EmptyStruct
 from std.testing import assert_true, assert_false, TestSuite
 
 
+@fieldwise_init
+struct OldImpl(Defaultable, Equatable):
+    var n: Int
+
+    def __init__(out self):
+        self.n = 0
+
+    def __eq__(self, other: Self) -> Bool:
+        return True
+
+
+def param[e: Equatable](lhs: e, rhs: e) -> Bool:
+    return lhs.__eq__(rhs)
+
+
+def test_old_impl() raises:
+    """Test that non-positional only implementations are handled correctly."""
+    var p1 = OldImpl(n=1)
+    var p2 = OldImpl()
+    assert_true(p1 == p2)
+    assert_true(p1.n == 1)
+    assert_true(p2.n == 0)
+    assert_true(param[OldImpl](p1, p2))
+
+
 def test_default_eq_simple() raises:
     """Test the reflection-based default __eq__ with a simple struct."""
     var p1 = SimplePoint(1, 2)
