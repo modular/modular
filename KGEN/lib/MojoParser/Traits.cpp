@@ -1211,10 +1211,10 @@ Type LIT::mergeTwoMetaTypeBounds(SharedState &shared, ASTType typeA,
       }
 
       assert(!origCons.empty());
-      // Conjunct the constraints.
       TypedAttr prop = origCons.front().getProposition();
       Location loc = origCons.front().getLoc();
-      if (constraints.size() == 2) {
+      if (origCons.size() == 2) {
+        // Two constraints, conjunct them.
         ConstraintAttr consB = origCons.back();
         prop = ParamOperatorAttr::get(POC::And, prop, consB.getProposition());
         loc = FusedLoc::get(shared.getContext(), {loc, consB.getLoc()});
