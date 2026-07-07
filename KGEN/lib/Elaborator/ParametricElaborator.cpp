@@ -342,6 +342,17 @@ static ElaborationState processGenericOp(PImplNode *parent, Operation *op) {
     }
   }
 
+  // Post-rebind, a struct.gep into a flattened single-element register-passable
+  // struct is an identity; fold it (as StructGEPOp::fold does) before the
+  // verifier.
+  if (auto gep = dyn_cast<StructGEPOp>(op)) {
+    if (gep.getContainer().getType() == gep.getType()) {
+      gep.replaceAllUsesWith(gep.getContainer());
+      gep.erase();
+      return ElaborationState::advance();
+    }
+  }
+
   return ElaborationState::advance();
 }
 
