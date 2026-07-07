@@ -37,8 +37,9 @@ struct MetalEnqueueFunctionArgs:
     """Passes through Metal specific kernel launch data through to the
     driver."""
 
-    @__allow_legacy_any_origin_fields
-    var args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutUntrackedOrigin]
+    var args: UnsafePointer[
+        OpaquePointer[MutUntrackedOrigin], MutUntrackedOrigin
+    ]
     var arg_sizes: UnsafePointer[UInt64, ImmutUntrackedOrigin]
     var arg_is_device_ptr: UnsafePointer[Bool, MutUntrackedOrigin]
     var buffers: Optional[
@@ -171,7 +172,7 @@ def call_with_pack_metal[
         )
 
     var metal_args = MetalEnqueueFunctionArgs(
-        dense_args_addrs,
+        dense_args_addrs.bitcast[OpaquePointer[MutUntrackedOrigin]](),
         dense_args_sizes,
         dense_args_is_device_ptr,
         None,
@@ -357,7 +358,7 @@ def call_with_pack_checked_metal[
     )
 
     var metal_args = MetalEnqueueFunctionArgs(
-        dense_args_addrs,
+        dense_args_addrs.bitcast[OpaquePointer[MutUntrackedOrigin]](),
         dense_args_sizes,
         dense_args_is_device_ptr,
         device_type_encoder._buffers.unsafe_ptr().unsafe_origin_cast[
