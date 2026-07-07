@@ -1182,7 +1182,7 @@ struct StateContext(ImplicitlyCopyable, RegisterPassable):
         var buffer_data = Optional[OpaquePointer[MutAnyOrigin]]()
 
         var mem_handle = external_call[
-            "TMP_MGP_RT_GetCachedBuffer", AnyAsyncValueRefPtr
+            "MGP_RT_GetCachedBuffer", AnyAsyncValueRefPtr
         ](
             slot,
             self._handle,
@@ -1204,9 +1204,7 @@ struct StateContext(ImplicitlyCopyable, RegisterPassable):
         Args:
             slot: The index of the state slot to clear.
         """
-        external_call["TMP_MGP_RT_RemoveCachedBuffer", NoneType](
-            slot, self._handle
-        )
+        external_call["MGP_RT_RemoveCachedBuffer", NoneType](slot, self._handle)
 
 
 # ===-----------------------------------------------------------------------===#
