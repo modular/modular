@@ -190,6 +190,56 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_batch_determinism_gpu",
+    size = "enormous",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "test_batch_determinism_gpu.py",
+    ],
+    exec_properties = {
+        # Ensure the test has at least 23GB of GPU memory available.
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    ignore_extra_deps = [
+        # SmolLM (Llama arch) is loaded via registry string lookup.
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+    ],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+        # Manual until the determinism CI lane is wired (test plan Slice 4).
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/serve",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/telemetry",
+        requirement("async-asgi-testclient"),
+        requirement("pytest-asyncio"),
+        requirement("sse-starlette"),
+        requirement("fastapi"),
+    ],
+)
+
+modular_py_test(
     name = "test_warm_cache_target",
     size = "large",
     srcs = [
