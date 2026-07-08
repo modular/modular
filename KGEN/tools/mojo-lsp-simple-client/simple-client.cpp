@@ -85,8 +85,7 @@ int main(int argc, char **argv) {
   // textDocument/publishDiagnostics in response to textDocument/didOpen.
   bool hasDiagnosticErrors = false;
   LSPBatchClient client(/*attachDebugger=*/attachDebugger);
-  if (noDocstringChecks)
-    client.setNoDocstringChecks();
+  client.setCheckDocstrings(!noDocstringChecks);
   client.open(doc);
   if (failOnDiagnostics)
     client.onDiagnostics(doc, [&](const std::vector<lsp::Diagnostic> &diags) {

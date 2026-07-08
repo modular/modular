@@ -34,7 +34,7 @@ LSPBatchClient::LSPBatchClient(
     std::function<void(const ExecutionResult &)> onExecuteCallback)
     : onExecuteCallback(std::move(onExecuteCallback)),
       serverJSONInputOS(serverJSONInput), attachDebugger(attachDebugger),
-      noDocstringChecks(false) {
+      checkDocstrings(false) {
   llvm::json::Value initialize =
       llvm::json::Object{{"processId", 123},
                          {"rootPath", "mojo"},
@@ -51,8 +51,8 @@ LSPBatchClient::LSPBatchClient(
   request("initialize", initialize, std::function(doNothing));
 }
 
-LSPBatchClient &LSPBatchClient::setNoDocstringChecks(bool value) {
-  noDocstringChecks = value;
+LSPBatchClient &LSPBatchClient::setCheckDocstrings(bool value) {
+  checkDocstrings = value;
   return *this;
 }
 
@@ -380,8 +380,10 @@ ErrorOrSuccess LSPBatchClient::doExecute(const LSPServerStdioFiles &ioFiles,
   llvm::SmallVector<StringRef> args = {lspServerPath, "-mojo-test"};
   if (attachDebugger)
     args.push_back("-attach-debugger-on-startup");
-  if (noDocstringChecks)
-    args.push_back("-skip-docstring-checks");
+  // Pass the value explicitly so the client controls the behavior regardless of
+  // the server's default (which is -check-docstrings=false).
+  args.push_back(checkDocstrings ? "-check-docstrings=true"
+                                 : "-check-docstrings=false");
 
   int exitCode = llvm::sys::ExecuteAndWait(lspServerPath, args,
                                            /*Env=*/std::nullopt, /*redirects=*/
