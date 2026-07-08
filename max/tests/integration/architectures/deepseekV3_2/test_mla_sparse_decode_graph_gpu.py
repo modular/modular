@@ -632,7 +632,13 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
     reason="Sparse MLA decode kernel is SM100-class (B100/B200); skip elsewhere.",
 )
 def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
-    """E2E prefill then decode for :class:`SparseLatentAttentionWithRopeFp8` (toy shapes)."""
+    """E2E prefill then decode for :class:`SparseLatentAttentionWithRopeFp8` (toy shapes).
+
+    Also guards the top-k pad-sentinel fix: asserts the lightning indexer's
+    ``-1`` padding survives ``__call__`` into the returned/attention indices
+    (i.e. is not rewritten to ``0``). This exercises the layer path
+    (``__call__`` -> ``_mla_impl``), not just the standalone kernel op.
+    """
     device = Accelerator(0)
     session = InferenceSession(devices=[Accelerator()])
 
@@ -775,7 +781,7 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
             )
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
             freqs_cis = ops.cast(rope.freqs_cis, hidden.dtype).to(hidden.device)
-            out, _topk = sparse_attn(
+            out, topk_out = sparse_attn(
                 layer_idx,
                 hidden,
                 kv_mla,
@@ -784,7 +790,9 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
                 input_row_offsets,
                 None,
             )
-            g.output(out)
+            # Surface the returned top-k indices too, so the test can assert the
+            # indexer's -1 pad sentinels survive __call__ (see the prefill check).
+            g.output(out, topk_out)
         return g
 
     _ = sparse_attn.state_dict()
@@ -823,8 +831,18 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
         np.array([0, prefill_len], dtype=np.uint32)
     ).to(device)
     kv_list = kv_ri_pref.flatten()
-    out_pref = model.execute(hidden_prefill, row_prefill, *kv_list)[0]
+    pref_results = model.execute(hidden_prefill, row_prefill, *kv_list)
+    out_pref = pref_results[0]
     _run_check(out_pref, prefill_len)
+
+    # Early prefill positions have < index_topk causal keys, so the indexer
+    # emits -1 pads; __call__ must not rewrite them to 0.
+    topk_pref = from_dlpack(pref_results[1]).cpu().numpy()
+    assert (topk_pref == -1).any(), (
+        "indexer -1 top-k pad sentinels were not preserved through "
+        "SparseLatentAttentionWithRopeFp8.__call__ (the -1->0 clobber must "
+        "stay removed)"
+    )
 
     for _ in range(prefill_len):
         context.update(42)

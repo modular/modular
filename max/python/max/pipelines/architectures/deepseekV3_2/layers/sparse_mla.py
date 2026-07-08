@@ -273,19 +273,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 input_row_offsets,
                 indexer_kv_collection,
                 layer_idx,
-                # TODO(KERN-2997): Once the graph mode is no longer hardcoded to
-                # "decode", this should be conditionally set to NULL_MASK.
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            )
-            topk_indices = ops.where(
-                (topk_indices != -1),
-                topk_indices,
-                ops.broadcast_to(
-                    ops.constant(
-                        0, dtype=topk_indices.dtype, device=topk_indices.device
-                    ),
-                    topk_indices.shape,
-                ),
             )
         else:
             # ``shared`` layer: reuse the previous full layer's top-k selection
@@ -881,22 +869,7 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
                 input_row_offsets,
                 indexer_kv_collection,
                 layer_idx,
-                # TODO(KERN-2997): Once the graph mode is no longer hardcoded to
-                # "decode", this should be conditionally set to NULL_MASK.
-                # Must stay CAUSAL for MTP: the target verifies K+1 merged
-                # tokens in one decode forward, so a NULL_MASK top-k would leak
-                # future draft-position keys into each verification query.
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            )
-            topk_indices = ops.where(
-                (topk_indices != -1),
-                topk_indices,
-                ops.broadcast_to(
-                    ops.constant(
-                        0, dtype=topk_indices.dtype, device=topk_indices.device
-                    ),
-                    topk_indices.shape,
-                ),
             )
         else:
             if prev_topk_indices is None:
