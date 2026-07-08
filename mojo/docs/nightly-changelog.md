@@ -551,6 +551,14 @@ This version is still a work in progress.
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
 
+- `mojo-lsp-server` no longer parses or type-checks code blocks inside
+  docstrings by default. This checking rests on unstable foundations in the
+  LSP server and was prone to failing, producing false-positive diagnostics
+  unrelated to the code being edited, for little value in return. Pass
+  `-check-docstrings` when launching `mojo-lsp-server` from the command line
+  to re-enable the previous behavior. We plan to make this checking more
+  robust and re-enable it by default over time.
+
 ## GPU programming
 
 - `DeviceContext.load_function` now keys its runtime cache on the requested
