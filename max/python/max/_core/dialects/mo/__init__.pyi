@@ -7247,9 +7247,8 @@ class SequenceOp(max._core.Operation):
 
     Example:
     ```mlir
-    %out = mo.sequence[1] (%a) : (!mo.tensor<[3], f32, gpu:0>)
+    %out = mo.sequence[1] (%a : !mo.tensor<[3], f32, gpu:0>) (%arg)
         -> (!mo.tensor<[3], f32, gpu:0>) {
-    ^bb0(%arg: !mo.tensor<[3], f32, gpu:0>):
       %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
       mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
     }
