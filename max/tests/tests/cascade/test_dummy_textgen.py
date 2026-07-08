@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 from max.experimental.cascade import GenerateRequest, LocalRuntime
-from max.tests.tests.cascade.dummy_textgen import (
+from max.experimental.cascade.pipelines.dummy_textgen import (
     build_dummy_textgen_pipeline,
 )
 

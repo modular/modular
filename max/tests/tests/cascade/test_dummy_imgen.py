@@ -20,7 +20,7 @@ from collections.abc import AsyncIterator
 import numpy as np
 import pytest
 from max.experimental.cascade import ImageGenRequest, LocalRuntime
-from max.tests.tests.cascade.dummy_imgen import (
+from max.experimental.cascade.pipelines.dummy_imgen import (
     build_dummy_imgen_pipeline,
 )
 from PIL import Image

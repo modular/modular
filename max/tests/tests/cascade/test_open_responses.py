@@ -23,8 +23,10 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from max.experimental.cascade import LocalRuntime
+from max.experimental.cascade.pipelines.dummy_imgen import (
+    build_dummy_imgen_pipeline,
+)
 from max.experimental.cascade.serve.open_responses import build_router
-from max.tests.tests.cascade.dummy_imgen import build_dummy_imgen_pipeline
 from PIL import Image
 
 

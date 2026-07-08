@@ -20,8 +20,10 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from max.experimental.cascade import LocalRuntime
+from max.experimental.cascade.pipelines.dummy_textgen import (
+    build_dummy_textgen_pipeline,
+)
 from max.experimental.cascade.serve.chat_completions import build_router
-from max.tests.tests.cascade.dummy_textgen import build_dummy_textgen_pipeline
 
 
 @pytest.fixture()

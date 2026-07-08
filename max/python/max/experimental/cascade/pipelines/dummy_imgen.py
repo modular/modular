@@ -20,13 +20,15 @@ from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.experimental.cascade import (
-    CascadePipeline,
-    ImageGenInterface,
-    ImageGenRequest,
+from max.experimental.cascade.core import (
     Worker,
     pipeline_method,
     worker_method,
+)
+from max.experimental.cascade.pipelines import CascadePipeline
+from max.experimental.cascade.pipelines.imgen import (
+    ImageGenInterface,
+    ImageGenRequest,
 )
 from PIL import Image
 from scipy import ndimage
