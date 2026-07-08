@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 from async_asgi_testclient import TestClient
+from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig
@@ -54,7 +55,7 @@ MAX_READ_SIZE = 10 * 1024
     ],
     indirect=True,
 )
-async def test_smollm_serve_gpu(app: FastAPI) -> None:  # type: ignore
+async def test_smollm_serve_gpu(app: FastAPI) -> None:
     # Arbitrary - just demonstrate we can submit multiple async
     # requests and collect the results later
     N_REQUESTS = 3
@@ -117,7 +118,7 @@ async def test_smollm_serve_gpu(app: FastAPI) -> None:  # type: ignore
     ],
 )
 async def test_smollm_serve_gpu_nonchat_completions(
-    app: FastAPI,  # type: ignore
+    app: FastAPI,
     prompt: str | list[str] | list[int] | list[list[int]],
     expected_choices: int,
 ) -> None:
@@ -155,7 +156,7 @@ async def test_smollm_serve_gpu_nonchat_completions(
     indirect=True,
 )
 @pytest.mark.asyncio
-async def test_tinyllama_serve_gpu_stream(app: FastAPI) -> None:  # type: ignore
+async def test_tinyllama_serve_gpu_stream(app: FastAPI) -> None:
     NUM_TASKS = 16
 
     def openai_completion_request(content: str) -> dict[str, Any]:
