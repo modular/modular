@@ -61,6 +61,7 @@ from layout import (
     Coord,
     Idx,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -208,6 +209,9 @@ def gemv_kernel_vector[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_storage: TensorStorage,
+    a_storage: TensorStorage,
+    b_storage: TensorStorage,
     *,
     simd_width: Int,
     transpose_b: Bool = False,
@@ -216,9 +220,9 @@ def gemv_kernel_vector[
     check_bounds: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],  # m
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],  # m * k
-    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],  # 1 * k
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Storage=c_storage],  # m
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Storage=a_storage],  # m * k
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],  # 1 * k
     m: Int,
     n: Int,
     k: Int,
@@ -363,6 +367,9 @@ def gemv_split_k[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_storage: TensorStorage,
+    a_storage: TensorStorage,
+    b_storage: TensorStorage,
     simd_width: Int,
     tile_m: Int,
     tile_n: Int,
@@ -374,9 +381,9 @@ def gemv_split_k[
     check_bounds_n: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    output: TileTensor[c_type, c_layout, MutAnyOrigin],
-    act: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    output: TileTensor[c_type, c_layout, MutAnyOrigin, Storage=c_storage],
+    act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Storage=a_storage],
+    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],
     m: Int,
     n: Int,
     k: Int,
@@ -813,6 +820,9 @@ def gemv_gpu_dispatch[
                 type_of(c).LayoutType,
                 type_of(a).LayoutType,
                 type_of(b).LayoutType,
+                type_of(c).Storage,
+                type_of(a).Storage,
+                type_of(b).Storage,
                 simd_width=simd_width,
                 tile_m=tile_m,
                 tile_n=tile_n,
@@ -880,6 +890,9 @@ def gemv_gpu_dispatch[
                     type_of(c).LayoutType,
                     type_of(a).LayoutType,
                     type_of(b).LayoutType,
+                    type_of(c).Storage,
+                    type_of(a).Storage,
+                    type_of(b).Storage,
                     simd_width=simd_width,
                     transpose_b=False,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -916,6 +929,9 @@ def gemv_gpu_dispatch[
                     type_of(c).LayoutType,
                     type_of(a).LayoutType,
                     type_of(b_tile_n_major).LayoutType,
+                    type_of(c).Storage,
+                    type_of(a).Storage,
+                    type_of(b_tile_n_major).Storage,
                     simd_width=simd_width,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -941,6 +957,9 @@ def gemv_gpu_dispatch[
                 type_of(c).LayoutType,
                 type_of(b).LayoutType,
                 type_of(a).LayoutType,
+                type_of(c).Storage,
+                type_of(b).Storage,
+                type_of(a).Storage,
                 simd_width=simd_width,
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1040,6 +1059,9 @@ def gemv_gpu_dispatch[
             BLOCK_DIM,
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            c_storage=type_of(c).Storage,
+            a_storage=type_of(a).Storage,
+            b_storage=type_of(b).Storage,
         ]
         ctx.enqueue_function[kernel](
             c,

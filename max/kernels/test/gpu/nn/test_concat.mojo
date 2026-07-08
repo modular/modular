@@ -135,8 +135,10 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     comptime kernel = _concat_inner_most_single_dim[
         OutputLayoutType=output_dyn.LayoutType,
         output_origin=MutAnyOrigin,
+        OutputStorage=output_dyn.Storage,
         InputLayoutType=input_0_dyn.LayoutType,
         input_origin=ImmutAnyOrigin,
+        InputStorage=input_0_dyn.Storage,
         dtype=dtype,
         num_inputs=4,
         block_size=B_SIZE,

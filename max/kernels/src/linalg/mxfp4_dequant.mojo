@@ -31,7 +31,7 @@ from std.gpu.primitives.grid_controls import (
 )
 from std.utils import StaticTuple
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
-from layout import TileTensor
+from layout import TensorStorage, TileTensor
 from layout.coord import Coord, Idx
 from layout.tile_layout import TensorLayout
 from .fp4_utils import cast_uint_to_fp4e2m1, MXFP4_SF_VECTOR_SIZE
@@ -52,13 +52,22 @@ def _dequant_mxfp4_to_fp8_kernel[
     output_layout: TensorLayout,
     scales_layout: TensorLayout,
     input_layout: TensorLayout,
+    output_storage: TensorStorage,
+    scales_storage: TensorStorage,
+    input_storage: TensorStorage,
     *,
     SF_VECTOR_SIZE: Int = 32,
     ELEMENTS_PER_THREAD: Int = 8,
 ](
-    output: TileTensor[out_dtype, output_layout, MutAnyOrigin],
-    input: TileTensor[in_dtype, input_layout, MutAnyOrigin],
-    scales: TileTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    output: TileTensor[
+        out_dtype, output_layout, MutAnyOrigin, Storage=output_storage
+    ],
+    input: TileTensor[
+        in_dtype, input_layout, MutAnyOrigin, Storage=input_storage
+    ],
+    scales: TileTensor[
+        scales_dtype, scales_layout, MutAnyOrigin, Storage=scales_storage
+    ],
     num_rows: Int,
     num_cols: Int,
 ):
@@ -189,13 +198,19 @@ def dequant_mxfp4[
 
     # Rebind immutable origins to MutAnyOrigin for the GPU kernel.
     var input_tt = rebind[
-        TileTensor[in_dtype, type_of(input).LayoutType, MutAnyOrigin]
+        TileTensor[
+            in_dtype,
+            type_of(input).LayoutType,
+            MutAnyOrigin,
+            Storage=type_of(input).Storage,
+        ]
     ](input)
     var scales_tt = rebind[
         TileTensor[
             scales_dtype,
             type_of(scales).LayoutType,
             MutAnyOrigin,
+            Storage=type_of(scales).Storage,
         ]
     ](scales)
 
@@ -206,6 +221,9 @@ def dequant_mxfp4[
         type_of(output).LayoutType,
         type_of(scales_tt).LayoutType,
         type_of(input_tt).LayoutType,
+        type_of(output).Storage,
+        type_of(scales_tt).Storage,
+        type_of(input_tt).Storage,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
     ]

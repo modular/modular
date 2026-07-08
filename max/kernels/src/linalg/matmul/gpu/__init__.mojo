@@ -39,8 +39,10 @@ from layout import (
     Coord,
     Idx,
     LayoutTensor,
+    PointerStorage,
     RuntimeLayout,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     coord_to_index_list,
     row_major,
@@ -227,10 +229,13 @@ def matmul_kernel_naive[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
+    c_storage: TensorStorage = PointerStorage[element_width=1],
+    a_storage: TensorStorage = PointerStorage[element_width=1],
+    b_storage: TensorStorage = PointerStorage[element_width=1],
 ](
-    c: TileTensor[c_type, c_layout_type, MutAnyOrigin],
-    a: TileTensor[a_type, a_layout_type, ImmutAnyOrigin],
-    b: TileTensor[b_type, b_layout_type, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout_type, MutAnyOrigin, Storage=c_storage],
+    a: TileTensor[a_type, a_layout_type, ImmutAnyOrigin, Storage=a_storage],
+    b: TileTensor[b_type, b_layout_type, ImmutAnyOrigin, Storage=b_storage],
     m: Int,
     n: Int,
     k: Int,
@@ -249,11 +254,17 @@ def matmul_kernel_naive[
 
     comptime if transpose_b:
         for i in range(k):
-            accum += a[x, i].cast[s_type]() * b[y, i].cast[s_type]()
+            accum += (
+                rebind[Scalar[a_type]](a[x, i]).cast[s_type]()
+                * rebind[Scalar[b_type]](b[y, i]).cast[s_type]()
+            )
 
     else:
         for i in range(k):
-            accum += a[x, i].cast[s_type]() * b[i, y].cast[s_type]()
+            accum += (
+                rebind[Scalar[a_type]](a[x, i]).cast[s_type]()
+                * rebind[Scalar[b_type]](b[i, y]).cast[s_type]()
+            )
 
     comptime if elementwise_lambda_fn:
         comptime elementwise_lambda = elementwise_lambda_fn.value()
@@ -614,6 +625,9 @@ def _matmul_gpu[
                     type_of(c).LayoutType,
                     type_of(a).LayoutType,
                     type_of(b).LayoutType,
+                    type_of(c).Storage,
+                    type_of(a).Storage,
+                    type_of(b).Storage,
                     transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_wrapper,
                     BLOCK_M=64,
@@ -1384,6 +1398,9 @@ def _matmul_gpu[
         BLOCK_DIM,
         transpose_b,
         elementwise_lambda_fn=elementwise_lambda_wrapper,
+        c_storage=type_of(c).Storage,
+        a_storage=type_of(a).Storage,
+        b_storage=type_of(b).Storage,
     ]
 
     ctx.enqueue_function[kernel](

@@ -4310,7 +4310,7 @@ def _conv_miopen[
             output.num_elements()
         )
         var output_tmp = TileTensor[
-            output_type, output.LayoutType, MutAnyOrigin
+            output_type, output.LayoutType, MutAnyOrigin, ...
         ](output_tmp_data, output.layout)
         _conv_miopen[filter_is_fcrs=filter_is_fcrs](
             input,
