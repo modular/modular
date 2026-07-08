@@ -48,7 +48,7 @@ public:
   static ErrorOr<MojoServer> create(bool singleThreaded, bool waitOnShutdown,
                                     llvm::lsp::MessageHandler &messageHandler,
                                     ArrayRef<std::string> includeDirs,
-                                    bool skipDocstringCodeBlockChecks = false);
+                                    bool checkDocstringCodeBlocks = false);
 
   // Get the telemetry context for this server.
   LSPTelemetryContext &getLSPTelemetryContext();

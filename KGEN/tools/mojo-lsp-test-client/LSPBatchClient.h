@@ -89,9 +89,10 @@ public:
       std::function<void(const ExecutionResult &)> onExecuteCallback =
           [](const ExecutionResult &) {});
 
-  /// When called before execute(), passes -skip-docstring-checks to the server
-  /// so that code blocks inside doc strings are not parsed or type-checked.
-  LSPBatchClient &setNoDocstringChecks(bool value = true);
+  /// When called before execute(), passes -check-docstrings to the server so
+  /// that code blocks inside doc strings are parsed and type-checked. Disabled
+  /// by default, matching the server.
+  LSPBatchClient &setCheckDocstrings(bool value = true);
 
   ~LSPBatchClient();
 
@@ -248,9 +249,9 @@ private:
   /// A flag indicating that a mojo-lsp-server will be launched with a
   /// debugger attached.
   bool attachDebugger;
-  /// When true, pass -skip-docstring-checks to the server, skipping
-  /// parsing and type-checking of code blocks inside doc strings.
-  bool noDocstringChecks;
+  /// When true, pass -check-docstrings to the server, enabling parsing and
+  /// type-checking of code blocks inside doc strings.
+  bool checkDocstrings;
 };
 
 } // namespace M

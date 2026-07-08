@@ -505,10 +505,11 @@ public:
   void addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
                     MojoASTDeclRef curReplDecl, unsigned bufferId);
 
-  /// When true, skip parsing and type-checking code blocks inside doc strings.
-  /// Used in testing to validate that a file parses cleanly without requiring
-  /// every docstring example to be fully correct Mojo code.
-  bool skipCodeBlockChecks = false;
+  /// When true, parse and type-check code blocks inside doc strings. Defaults
+  /// to off, since docstring examples need not be fully correct Mojo code.
+  /// Text documents override it from the server's `-check-docstrings` flag;
+  /// notebook cells use this default.
+  bool checkCodeBlocks = false;
 
   /// Find the code block that contains the given location.
   CodeBlock *findContainingCodeBlock(llvm::SMLoc loc);
@@ -549,7 +550,7 @@ public:
                    int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
                    MLRT::CPUDevice &cpuDevice,
                    ArrayRef<std::string> includeDirs,
-                   bool skipDocstringCodeBlockChecks = false);
+                   bool checkDocstringCodeBlocks = false);
   MojoTextDocument(const MojoDocument &) = delete;
   MojoTextDocument &operator=(const MojoDocument &) = delete;
 

@@ -22,6 +22,9 @@ def function():
 )");
 
   createTestClient()
+      // Docstring code-block checking is disabled by default; enable it here
+      // since these tests exercise diagnostics/hover/completion inside blocks.
+      .setCheckDocstrings(true)
       .open(doc)
       .onDiagnostics(doc,
                      [](const std::vector<lsp::Diagnostic> &diags) {
@@ -49,6 +52,9 @@ def function():
 )");
 
   createTestClient()
+      // Docstring code-block checking is disabled by default; enable it here
+      // since these tests exercise diagnostics/hover/completion inside blocks.
+      .setCheckDocstrings(true)
       .open(doc)
       .hover(doc, *doc.findFirstPos("foo"),
              [](const lsp::Hover &hover) {
@@ -78,6 +84,9 @@ def function():
 )");
 
   createTestClient()
+      // Docstring code-block checking is disabled by default; enable it here
+      // since these tests exercise diagnostics/hover/completion inside blocks.
+      .setCheckDocstrings(true)
       .open(doc)
       .completion(doc, *doc.findFirstPos("completion"),
                   [](const lsp::CompletionList &completion) {
@@ -94,6 +103,9 @@ TEST(CodeBlockTest, testCodeBlockEndCompletion) {
   Document doc = createDocumentFromInputFileWithinPackage("doc_strings.mojo");
 
   createTestClient()
+      // Docstring code-block checking is disabled by default; enable it here
+      // since these tests exercise diagnostics/hover/completion inside blocks.
+      .setCheckDocstrings(true)
       .open(doc)
       .completion(doc, doc.findFirstRange("test_completions.")->end,
                   [](const lsp::CompletionList &completion) {

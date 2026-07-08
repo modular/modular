@@ -1840,7 +1840,7 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
   // The doc string entry above must be registered unconditionally so that
   // folding ranges, hover, and other doc string navigation features work
   // regardless of whether code block validation is enabled.
-  if (skipCodeBlockChecks)
+  if (!checkCodeBlocks)
     return;
 
   // Process the code blocks in the doc string.
@@ -1929,11 +1929,11 @@ MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
                                    SendDiagnosticsFnRef sendDiagnosticsFn,
                                    MLRT::CPUDevice &cpuDevice,
                                    ArrayRef<std::string> includeDirs,
-                                   bool skipDocstringCodeBlockChecks)
+                                   bool checkDocstringCodeBlocks)
     : MojoDocument(Kind::kTextDocument, uri, version, sendDiagnosticsFn,
                    cpuDevice, includeDirs),
       contents(std::move(contents)) {
-  docStrings.skipCodeBlockChecks = skipDocstringCodeBlockChecks;
+  docStrings.checkCodeBlocks = checkDocstringCodeBlocks;
   // We add the main doc to the SourceMgr here to ensure it's considered the
   // "main" file.
   getSourceMgr().AddNewSourceBuffer(
@@ -2279,8 +2279,7 @@ struct MojoServer::Impl {
 
   Impl(ContextRef ctx, bool waitOnShutdown,
        llvm::lsp::MessageHandler &messageHandler,
-       ArrayRef<std::string> includeDirs,
-       bool skipDocstringCodeBlockChecks = false)
+       ArrayRef<std::string> includeDirs, bool checkDocstringCodeBlocks = false)
       : ctx(ctx.copy()),
         lspTelemetryContext(*ctx->get<M::Telemetry::TelemetryContext>()),
         waitOnShutdown(waitOnShutdown), messageHandler(messageHandler),
@@ -2289,7 +2288,7 @@ struct MojoServer::Impl {
                 .outgoingNotification<llvm::lsp::PublishDiagnosticsParams>(
                     "textDocument/publishDiagnostics")),
         progressMgr(messageHandler), includeDirs(includeDirs),
-        skipDocstringCodeBlockChecks(skipDocstringCodeBlockChecks) {}
+        checkDocstringCodeBlocks(checkDocstringCodeBlocks) {}
 
   /// Begin the shutdown process for the server.
   void shutdown() {
@@ -2395,7 +2394,7 @@ struct MojoServer::Impl {
     // Create a new document.
     it->second = MojoTextDocumentRef::create(
         uri, std::move(contents), version, sendDiagnosticsFn, cpuDevice,
-        includeDirs, skipDocstringCodeBlockChecks);
+        includeDirs, checkDocstringCodeBlocks);
 
     // Clear pending contents since they're now being parsed.
     pendingDocContents.erase(uri.file());
@@ -2458,8 +2457,8 @@ struct MojoServer::Impl {
   /// Additional directories to append to the search paths list.
   std::vector<std::string> includeDirs;
 
-  /// When true, skip parsing and type-checking code blocks in doc strings.
-  bool skipDocstringCodeBlockChecks = false;
+  /// When true, parse and type-check code blocks in doc strings.
+  bool checkDocstringCodeBlocks = false;
 
   /// Debouncer for document updates. Initialized lazily because it needs
   /// a reference to this Impl.
@@ -2495,7 +2494,7 @@ ErrorOr<MojoServer>
 MojoServer::create(bool singleThreaded, bool waitOnShutdown,
                    llvm::lsp::MessageHandler &messageHandler,
                    ArrayRef<std::string> includeDirs,
-                   bool skipDocstringCodeBlockChecks) {
+                   bool checkDocstringCodeBlocks) {
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "mojo-lsp-server", Init::Options().withCPUDeviceOptions(
                              MLRT::CPUDeviceOptions()
@@ -2505,7 +2504,7 @@ MojoServer::create(bool singleThreaded, bool waitOnShutdown,
     return ctxOr.takeError();
   auto implPtr =
       std::make_unique<Impl>(ctxOr->copy(), waitOnShutdown, messageHandler,
-                             includeDirs, skipDocstringCodeBlockChecks);
+                             includeDirs, checkDocstringCodeBlocks);
   // Initialize the debouncer before moving the impl.
   implPtr->initDebouncer(implPtr->lspTelemetryContext, implPtr->progressMgr);
   MojoServer server(std::move(implPtr));
