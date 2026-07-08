@@ -1707,3 +1707,22 @@ def apply_closure[T: TrivialRegisterPassable](x: T):
 
 def main():
     apply_closure(Int(42))
+
+
+# // -----
+
+# COM: Use where clauses to infer parameters that depend on aliases
+
+def typed_raises[
+   R: AnyType,
+   F: def() raises R,
+   //,
+](f: F):
+   pass
+
+# CHECK-LABEL: lit.fn @"thing
+def thing():
+   def closure() raises Int:
+       pass
+   # CHECK: lit.call @{{.*}}::@"typed_raises{{.*}}"[{{.*}}]<:!AnyType !Int
+   typed_raises(closure)

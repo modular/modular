@@ -9,6 +9,44 @@ from std.sys import argv
 from std.memory.pointer import AddressSpace
 
 
+trait Config(ImplicitlyDeletable):
+    comptime R: AnyType
+
+    @staticmethod
+    def makeIt() -> Self:
+        ...
+
+
+@fieldwise_init
+struct MyConfig(Config, ImplicitlyCopyable):
+    comptime R: AnyType = Int
+    var item: Self.R
+
+    def thing(self) -> Self.R:
+        return self.item
+
+    @staticmethod
+    def makeIt() -> Self:
+        return MyConfig(3)
+
+
+def chain[
+    R: AnyType,
+    Inner: Config,
+    Outer: def(Inner),
+    //,
+](outer: Outer) where R == Inner.R:
+    var c = Inner.makeIt()
+    outer(c)
+
+
+def testParamInf():
+    def outer(i: MyConfig) {var}:
+        print(i.thing())
+
+    chain(outer)
+
+
 def hasOrigin[F: def[T: MutOrigin](TypeWithOrigin[T]) -> None, //](f: F):
     f[MutAnyOrigin](TypeWithOrigin[MutAnyOrigin]())
 
@@ -211,3 +249,6 @@ def main() raises:
     # CHECK: read only 1
     var ptr = UnsafePointer(to=one)
     demo_origin_closure(ptr)
+
+    # CHECK: 3
+    testParamInf()

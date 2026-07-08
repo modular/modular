@@ -26,6 +26,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
 
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -836,6 +837,9 @@ VerifiedParamBindings ParamInf::inferForStruct() {
   if (failed(inferFromParamList()))
     return {};
 
+  if (failed(inferFromBodyConstraints()))
+    return {};
+
   if (paramBindings.bindingKind != ParamBindings::kUnbindAll &&
       failed(inferFromDefaults(paramBindings.bindingKind ==
                                ParamBindings::kWithEllipsis))) {
@@ -1038,6 +1042,125 @@ LogicalResult ParamInf::inferFromDefaults(bool installOnlyInferredOnly) {
           UnknownAttr::get(evaluator.getReboundType(declaredParamTypes[idx]));
       setInitialInferredValue(idx, listValue);
     }
+  }
+
+  return success();
+}
+
+namespace {
+/// Collects the indices of same-scope parameter references
+struct ParamIndexRefCollector
+    : public IndexParameterReplacer<ParamIndexRefCollector> {
+  Attribute tryReplace(Attribute attr, size_t depth) {
+    if (auto ref = dyn_cast<ParamIndexRefAttr>(attr);
+        ref && ref.getDepth() == depth)
+      indices.insert(ref.getIndex());
+    return nullptr;
+  }
+  Type tryReplace(Type, size_t) { return {}; }
+
+  static void collect(TypedAttr value, llvm::SmallDenseSet<size_t, 4> &out) {
+    ParamIndexRefCollector collector;
+    collector.replace(value);
+    out.insert(collector.indices.begin(), collector.indices.end());
+  }
+
+  llvm::SmallDenseSet<size_t, 4> indices;
+};
+} // namespace
+
+/// Collect the individual equality (`==`) propositions
+static void
+collectEqualityPropositions(TypedAttr prop,
+                            SmallVectorImpl<ParamOperatorAttr> &out) {
+  auto op = sugarDynCast<ParamOperatorAttr>(prop);
+  if (!op)
+    return;
+  if (op.getOpcode() == POC::And) {
+    for (TypedAttr operand : op.getOperands())
+      collectEqualityPropositions(operand, out);
+    return;
+  }
+  if (op.getOpcode() == POC::EQ && op.getOperands().size() == 2)
+    out.push_back(op);
+}
+
+LogicalResult ParamInf::inferFromBodyConstraints() {
+  ArrayRef<ConstraintAttr> bodyConstraints =
+      declaredParamPogs.getBodyConstraints();
+  if (bodyConstraints.empty())
+    return success();
+
+  // Gather every equality proposition, flattening conjunctions so a
+  // `where a == b and b == c` clause contributes both equalities rather than a
+  // single (non-invertible) `and` proposition.
+  SmallVector<ParamOperatorAttr> equalities;
+  for (ConstraintAttr constraint : bodyConstraints)
+    collectEqualityPropositions(constraint.getProposition(), equalities);
+  if (equalities.empty())
+    return success();
+
+  const ExprNode *expr = getGivenBindings().getExpr();
+
+  // Map each parameter to the equalities that reference it.
+  DenseMap<size_t, SmallVector<size_t>> paramToEqualities;
+  for (size_t idx = 0; idx < equalities.size(); ++idx) {
+    llvm::SmallDenseSet<size_t, 4> refs;
+    ParamIndexRefCollector::collect(equalities[idx].getOperands()[0], refs);
+    ParamIndexRefCollector::collect(equalities[idx].getOperands()[1], refs);
+    for (size_t param : refs)
+      paramToEqualities[param].push_back(idx);
+  }
+
+  // Solve equalities off a worklist seeded with all of them. Inferring a
+  // parameter from one equality can make another usable, so binding a
+  // parameter re-queues only the equalities that reference it.
+  //
+  // The total number of queue entries is bounded by the seed plus the number
+  // of (parameter -> equality) dependency edges built above.
+  SmallVector<size_t> worklist;
+  for (size_t idx = 0; idx < equalities.size(); ++idx)
+    worklist.push_back(idx);
+
+  while (!worklist.empty()) {
+    ParamOperatorAttr eq = equalities[worklist.pop_back_val()];
+
+    // Fold any get witness expressions in the constraint. We can only drive
+    // inference when exactly one side is fully determined and the other still
+    // has unbound parameters.
+    TypedAttr lhs = evaluator.getReboundAttribute(eq.getOperands()[0]);
+    TypedAttr rhs = evaluator.getReboundAttribute(eq.getOperands()[1]);
+    bool lhsOpen = paramFinder.hasReferences(lhs);
+    bool rhsOpen = paramFinder.hasReferences(rhs);
+    if (lhsOpen == rhsOpen)
+      continue;
+
+    TypedAttr determined = lhsOpen ? rhs : lhs;
+    TypedAttr unbound = lhsOpen ? lhs : rhs;
+
+    // A successful match binds precisely the open side's parameters (the
+    // determined side is concrete).
+    llvm::SmallDenseSet<size_t, 4> unboundParams;
+    ParamIndexRefCollector::collect(unbound, unboundParams);
+
+    ParamMatcher matcher(expr, *this, /*allowImplicitConversions=*/false);
+    ParamMatcher::FailableScope failableScope(matcher);
+    if (succeeded(matcher.matchParams(determined, unbound))) {
+      // Re-queue the equalities referencing a parameter this match bound.
+      for (size_t param : unboundParams) {
+        if (!evaluator.getIndexBindings()[param])
+          continue;
+        for (size_t dep : paramToEqualities[param])
+          worklist.push_back(dep);
+      }
+      continue;
+    }
+
+    // The constraint isn't usable for inference (yet, or at all). Roll back
+    // any tentative bindings the failed match made; genuine violations are
+    // reported later by `checkBodyConstraints`.
+    if (matcher.failureReason)
+      failableScope.revert();
   }
 
   return success();
@@ -2112,6 +2235,11 @@ VerifiedParamBindings CallParamInf::inferForCall() {
         return {};
     }
   }
+
+  // Infer any parameters that are only reachable through equality `where`
+  // clauses.
+  if (failed(inferFromBodyConstraints()))
+    return {};
 
   // Lastly, See if we can fulfill any missing parameters with default values
   // for their type (variadic attr always have a default empty value if not
