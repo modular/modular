@@ -59,6 +59,13 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_paged_mha_prefix_hit_differential.mojo": select({
+        # Prefix-hit COLD-vs-HIT determinism differential.  Arch-portable code
+        # (flash_attention[ragged=True] + CausalMask), but validated on B200
+        # first; MI355 is the follow-up per the determinism test plan.
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # test_mha_gemma4_shapes.mojo is split into per-(page_size, mask_kind) targets below; the AMD-only crash repro is one of them.
 }
 
