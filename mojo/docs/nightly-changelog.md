@@ -434,11 +434,12 @@ This version is still a work in progress.
       requiring `ValueType` to be `ImplicitlyDeletable`.
   - `LinkedList[ElementType]`
     - Unlike `Dict`, a `LinkedList` with non-`ImplicitlyDeletable` elements can
-      be populated (`append`, `prepend`) and then torn down with
-      `destroy_with()`.
-    - Element-destroying operations (`insert`, `extend`, `clear`) still require
-      `ElementType` to be `ImplicitlyDeletable`. For deletable element types
-      (the common case) this is transparent.
+      be populated (`append`, `prepend`, `insert`, `extend`) and then torn down
+      with `destroy_with()`.
+    - Only `clear` still requires `ElementType` to be `ImplicitlyDeletable`. For
+      deletable element types (the common case) this is transparent.
+    - `LinkedList.insert()` no longer raises on an out-of-range index; like
+      `List.insert()`, it now aborts (checked when asserts are enabled).
     - Consuming iteration (`for x in list^`, the `IterableOwned` conformance)
       is likewise conditional, requiring `ElementType` to be
       `ImplicitlyDeletable`.
