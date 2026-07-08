@@ -263,6 +263,12 @@ This version is still a work in progress.
 
 ### Python API
 
+- Added `max.graph.ops.floor_div` (and `F.floor_div`), element-wise floor
+  division matching Python `//`. Unlike `ops.div`, integer operands stay in
+  the integer domain instead of being promoted to `float64`, so integer floor
+  division compiles on backends without 64-bit float support (for example,
+  Metal GPUs).
+
 - Added `max.driver.set_virtual_cpu_target()` and `get_virtual_cpu_target()`.
   Set a fixed CPU codegen target (for example `"x86-64-v3"`, `"neoverse-n1"`,
   or `"generic"` for the most-portable baseline of the host arch family) before

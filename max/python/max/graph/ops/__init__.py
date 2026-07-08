@@ -80,6 +80,10 @@ from .custom import custom, inplace_custom
 from .debug import print
 from .distributed_scatter import distributed_scatter
 from .elementwise import *
+
+# `floor_div` is re-exported by name (not only via the `*` above) to make its
+# public-API visibility explicit; `elementwise` defines no `__all__`.
+from .elementwise import floor_div
 from .elementwise import max as _elementwise_max
 from .elementwise import min as _elementwise_min
 from .flatten import flatten

@@ -557,6 +557,34 @@ Returns:
     A tensor with the broadcast shape containing ``lhs / rhs`` element-wise.
 """
 
+floor_div = _binary_with_scalar_promotion(
+    functional(ops.floor_div, rule=binary_rule)
+)
+floor_div.__doc__ = """Divides two tensors element-wise using floor division.
+
+The result is rounded toward negative infinity, matching Python's ``//``.
+Either operand may be a Python ``int`` or ``float`` scalar, which is
+automatically promoted to a tensor. Integer operands stay in the integer
+domain (no ``float64`` promotion), unlike :func:`div`.
+
+.. code-block:: python
+
+    from max.experimental import Tensor
+    from max.experimental import functional as F
+
+    a = Tensor([7, 10, 18])
+    b = Tensor([2, 5, 6])
+    result = F.floor_div(a, b)
+    # result is [3, 2, 3]
+
+Args:
+    lhs: The numerator tensor or scalar.
+    rhs: The denominator tensor or scalar.
+
+Returns:
+    A tensor with the broadcast shape containing ``lhs // rhs`` element-wise.
+"""
+
 pow = _binary_with_scalar_promotion(functional(ops.pow, rule=binary_rule))
 pow.__doc__ = """Raises elements of one tensor to the power of another element-wise.
 

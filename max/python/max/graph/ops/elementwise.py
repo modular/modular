@@ -166,6 +166,77 @@ def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     ].tensor
 
 
+def floor_div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
+    """Divides two tensors element-wise using floor division (Python ``//``).
+
+    The result is rounded toward negative infinity for all operands, matching
+    Python's ``//``. Integer operands stay in the integer domain: the divide
+    truncates toward zero, then a floor correction is applied for signed
+    integers (a no-op for unsigned or non-negative operands). Floating-point
+    operands compute ``floor(lhs / rhs)``.
+
+    Unlike :obj:`div`, integer operands are never promoted to ``float64``. This
+    matters on backends without native 64-bit floating-point support (for
+    example, Apple/Metal GPUs), where an ``f64`` intermediate fails to compile.
+    The ``//`` operator is intentionally left on its existing
+    ``floor(div(...))`` path here to keep the blast radius minimal; unifying
+    it onto ``floor_div`` is a reasonable follow-up.
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("floor_div_example") as graph:
+            lhs = ops.constant([7, 10, 18], DType.int32, device=device)
+            rhs = ops.constant([2, 5, 6], DType.int32, device=device)
+            graph.output(ops.floor_div(lhs, rhs))
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.array_equal(result.to_numpy(), [3, 2, 3])
+
+    Args:
+        lhs: The numerator input.
+        rhs: The denominator input.
+
+    Returns:
+        A tensor value with the broadcast shape containing the element-wise
+        floor division of ``lhs`` by ``rhs``.
+
+    Raises:
+        Error: If the input shapes are not compatible for broadcasting.
+        Error: If one of the inputs has an unsupported dtype.
+        Error: If the two symbols are parts of different graphs.
+    """
+    lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
+    assert_same_device(lhs, rhs)
+    if lhs.dtype.is_integral() and rhs.dtype.is_integral():
+        # Integer division stays in the integer domain, mirroring `mod`
+        # (`rmo.ModOp`), so there is no `float64` promotion like `div` does.
+        # `rmo.DivOp` truncates toward zero.
+        quotient = Graph.current._add_op_generated(
+            rmo.DivOp, input_x=lhs, input_y=rhs
+        )[0].tensor
+        if lhs.dtype.is_signed_integral():
+            # Truncation toward zero and floor division differ by one when the
+            # exact quotient is negative (operand signs differ) and the divide
+            # leaves a nonzero remainder. Correct so the result matches `//`.
+            remainder = mod(lhs, rhs)
+            quotient = quotient - (
+                (remainder != 0) & ((lhs < 0) ^ (rhs < 0))
+            ).cast(quotient.dtype)
+        return quotient
+    return floor(div(lhs, rhs))
+
+
 max = _elementwise_binary(rmo.MaxOp, "max")
 max.__doc__ = """
 Computes the element-wise maximum of two tensors.
