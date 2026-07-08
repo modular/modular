@@ -518,10 +518,14 @@ def _oracle_command_and_env(
 ) -> tuple[list[str], dict[str, str]]:
     """Return the (command, extra-env) for running one case under `oracle`.
 
-    diff      -- run as-is; catches hangs (timeout) and crashes (exit code).
-    ref       -- numerical correctness: run with `--check 1` so the target
+    diff        -- run as-is; catches hangs (timeout) and crashes (exit code).
+    ref         -- numerical correctness: run with `--check 1` so the target
                  compares its output to a higher-precision CPU reference and
                  emits FUZZ_NUMERIC_FAIL on a wrong answer. No sanitizer.
+    determinism -- run-to-run bit-stability: `--rerun 8` re-runs the same input
+                 N times (no forced split-K) and flags any non-bit-exact output.
+    batch_invariance -- `--batch-invariance 1`: run a probe under two different
+                 co-batch compositions and flag if the probe's output changes.
     redzone   -- MAX redzone allocator: catches OOB *writes* at free (~native).
     poison    -- MAX poison allocator (`poison-all`) + `--check`: every device
                  allocation is NaN-filled, so an unwritten/uninitialized output
@@ -561,6 +565,20 @@ def _oracle_command_and_env(
         # varied launch decomposition (e.g. forced split-K) N times and checks
         # the output is bit-stable; divergence = an inter-block race.
         return base_cmd + ["--schedule", "8"], env
+    if oracle == "determinism":
+        # Run-to-run determinism: the target re-runs the SAME input N times and
+        # checks the output is bit-stable (atol=rtol=0). Like `schedule` but
+        # WITHOUT forcing a split-K decomposition -- it exercises the kernel's
+        # default launch, catching races / order-dependent atomics that show up
+        # without any forced amplification.
+        return base_cmd + ["--rerun", "8"], env
+    if oracle == "batch_invariance":
+        # Batch invariance: the target runs a probe token under two different
+        # co-batch compositions (different filler count / distribution / expert
+        # set for the OTHER tokens; same expert + same input for the probe) and
+        # checks the probe's output rows are bit-identical (atol=rtol=0). A
+        # difference means a dispatch/reduction path keyed on the batch.
+        return base_cmd + ["--batch-invariance", "1"], env
     if oracle == "contract":
         # Special-value contract: the target injects NaN/Inf/large inputs and
         # checks a finiteness/propagation contract (not a tolerance diff).
@@ -947,6 +965,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
             "diff",
             "ref",
             "schedule",
+            "determinism",
+            "batch_invariance",
             "contract",
             "redzone",
             "poison",

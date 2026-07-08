@@ -69,6 +69,13 @@ Select with `--oracle`:
   NaN/Inf.
 - `schedule` — inter-block race check: force a split-K decomposition and re-run
   the same input N times, flagging any non-bit-exact output.
+- `determinism` — run-to-run bit-stability: re-run the same input N times
+  (`--rerun 8`, no forced split-K) and flag any non-bit-exact output. Catches
+  races / order-dependent atomics on the kernel's default launch.
+- `batch_invariance` — run a probe token under two different co-batch
+  compositions (`--batch-invariance 1`) and flag if the probe's output rows
+  change (`atol=rtol=0`). Locks in a same-batch-different-neighbors invariant;
+  a divergence is a real batch-variance finding.
 - `redzone` — OOB writes, ~native speed, AMD-capable (validated on MI355).
 - `poison` — NaN-fills every device allocation (`MODULAR_DEBUG_DEVICE_ALLOCATOR=
   poison-all`), so an uninitialized read propagates NaN into the output and
