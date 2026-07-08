@@ -87,6 +87,15 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added `--no-enable-tool-call-constrained-decode` (config key
+  `sampling.enable_tool_call_constrained_decode`, default enabled) to decouple
+  tool-call parsing from constrained decoding. When disabled, a configured
+  `--tool-parser` still parses tool calls out of the generated text, but no
+  server-generated grammar is produced and the bitmask constrained-decode path
+  is skipped for tool calls. Note that with it disabled, `tool_choice=required`
+  or a named function can no longer force a tool call. This is independent of
+  `--enable-structured-output`, which continues to gate user-supplied
+  `response_format` JSON schemas.
 - Added `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` to control how long the server
   waits for in-flight requests to finish after receiving `SIGTERM` before
   exiting (default 5 seconds). Raise it so long-running requests are drained

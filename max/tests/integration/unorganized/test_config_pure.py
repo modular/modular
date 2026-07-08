@@ -486,18 +486,31 @@ class TestNeedsBitmaskConstraints:
 
     @mock_pipeline_config_resolve
     @pytest.mark.parametrize(
-        "enable_structured_output,tool_parser,expected",
+        "enable_structured_output,tool_parser,enable_tool_call_constrained_decode,expected",
         [
-            (False, None, False),
-            (True, None, True),
-            (False, "kimik2_5", True),
-            (True, "kimik2_5", True),
+            # No structured output, no parser: never needs the bitmask path.
+            (False, None, True, False),
+            (False, None, False, False),
+            # User structured output on: always needs it, regardless of the
+            # tool-call flag.
+            (True, None, True, True),
+            (True, None, False, True),
+            # Parser configured + tool-call constrained decode on (default):
+            # bitmask path wires in for server-generated tool grammars.
+            (False, "kimik2_5", True, True),
+            (True, "kimik2_5", True, True),
+            # Parser configured but tool-call constrained decode disabled: the
+            # parser still parses output, but no grammar/bitmask on its account.
+            (False, "kimik2_5", False, False),
+            # ...unless user structured output independently requires it.
+            (True, "kimik2_5", False, True),
         ],
     )
     def test_truth_table(
         self,
         enable_structured_output: bool,
         tool_parser: str | None,
+        enable_tool_call_constrained_decode: bool,
         expected: bool,
     ) -> None:
         config = PipelineConfig(
@@ -505,7 +518,8 @@ class TestNeedsBitmaskConstraints:
                 {"main": MAXModelConfig(model_path="test/model")}
             ),
             sampling=SamplingConfig(
-                enable_structured_output=enable_structured_output
+                enable_structured_output=enable_structured_output,
+                enable_tool_call_constrained_decode=enable_tool_call_constrained_decode,
             ),
             runtime=PipelineRuntimeConfig(tool_parser=tool_parser),
         )

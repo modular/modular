@@ -1521,9 +1521,14 @@ async def openai_create_chat_completion(
 
         # For architectures with a grammar-based tool parser (e.g., Kimi),
         # generate constrained decoding grammars for tool calls and/or
-        # response_format.
-        has_grammar_parser = parser is not None and hasattr(
-            parser, "generate_tool_call_grammar"
+        # response_format. Skipped when tool-call constrained decode is
+        # disabled: the parser still parses tool calls out of the generated
+        # text (see ``parse_tool_calls`` below), but no decode-time grammar is
+        # produced.
+        has_grammar_parser = (
+            parser is not None
+            and hasattr(parser, "generate_tool_call_grammar")
+            and pipeline_config.sampling.enable_tool_call_constrained_decode
         )
         if has_grammar_parser:
             (
