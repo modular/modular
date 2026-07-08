@@ -4595,11 +4595,25 @@ def fused_silu_nvfp4_interleaved_kernel[
                 )
 
 
+@always_inline
+def _sigmoid[
+    dtype: DType,
+    width: SIMDSize,
+    accum: DType = get_accum_type[dtype](),
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    # Local copy: shmem can't import nn (nn -> shmem import cycle).
+    # TODO(KERN-3166): drop once sigmoid is layered below shmem.
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert accum.is_floating_point(), "accum must be floating point"
+    var x_cast = x.cast[accum]()
+    return (1 / (1 + exp(-x_cast))).cast[dtype]()
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 @__name(
-    t"fused_silu_mxfp4_{input_dtype}_{fp4_dtype}_fuse_a_scale_preshuffle_{fuse_a_scale_preshuffle}"
+    t"fused_silu_mxfp4_{input_dtype}_{fp4_dtype}_fuse_a_scale_preshuffle_{fuse_a_scale_preshuffle}_clamp_{clamp_activation}"
 )
 def fused_silu_mxfp4_kernel[
     fp4_dtype: DType,
@@ -4613,12 +4627,18 @@ def fused_silu_mxfp4_kernel[
     num_sms: Int,
     *,
     fuse_a_scale_preshuffle: Bool = False,
+    # Clamped SwiGLU-OAI variant; False (default) = plain SiLU(g) * u:
+    #   g'=min(g,L); u'=clamp(u,-L,L); z=(u'+1)*g'*sigmoid(g'*alpha)
+    clamp_activation: Bool = False,
 ](
     output_tensor: TileTensor[fp4_dtype, output_layout, MutUntrackedOrigin],
     scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
     input_tensor: TileTensor[input_dtype, input_layout, ImmutUntrackedOrigin],
     row_offsets: TileTensor[DType.uint32, offsets_layout, ImmutUntrackedOrigin],
     max_padded_M: Int = 0,
+    # Clamped-variant alpha/L; unused when clamp_activation=False.
+    alpha: Float32 = 0.0,
+    limit: Float32 = 0.0,
 ):
     """
     This kernel performs the SILU operation for all the MLPs in the EP MoE
@@ -4693,8 +4713,14 @@ def fused_silu_mxfp4_kernel[
                 (m, k + hidden_size)
             ).cast[accum_dtype]()
 
-            gate_proj = gate_proj / (1.0 + exp(-gate_proj))
-            var output_val = gate_proj * up_proj
+            var output_val: SIMD[accum_dtype, src_width]
+            comptime if clamp_activation:
+                var g_c = min(gate_proj, limit)
+                var u_c = up_proj.clamp(-limit, limit)
+                output_val = (u_c + 1.0) * g_c * _sigmoid(g_c * alpha)
+            else:
+                gate_proj = gate_proj / (1.0 + exp(-gate_proj))
+                output_val = gate_proj * up_proj
 
             # Quantization logic (MXFP4).
             var thread_max = abs(output_val).reduce_max().cast[DType.float32]()

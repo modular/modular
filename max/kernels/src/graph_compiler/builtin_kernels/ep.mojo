@@ -1990,11 +1990,16 @@ struct Struct_ep_fused_silu_mxfp4:
         *,
         fuse_a_scale_preshuffle: Bool = False,
         max_padded_M: Int = 0,
+        clamp_activation: Bool = False,
     ](
         output: OutputTensor[dtype=fp4_dtype, rank=2, ...],
         scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
         input: InputTensor[dtype=input_dtype, rank=2, ...],
         row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        # Clamped-SwiGLU alpha/L (trailing CPU f32 constants); unused when
+        # clamp_activation=False.
+        alpha: Float32,
+        limit: Float32,
         context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism fused SILU kernel with MXFP4
@@ -2039,6 +2044,7 @@ struct Struct_ep_fused_silu_mxfp4:
             hw_info.max_thread_block_size,
             hw_info.sm_count,
             fuse_a_scale_preshuffle=fuse_a_scale_preshuffle,
+            clamp_activation=clamp_activation,
         ]
 
         @always_inline
@@ -2050,6 +2056,7 @@ struct Struct_ep_fused_silu_mxfp4:
                 ";scales_dtype=", scales_dtype,
                 ";input_dtype=", input_dtype,
                 ";fuse_a_scale_preshuffle=", fuse_a_scale_preshuffle,
+                ";clamp_activation=", clamp_activation,
             )
             # fmt: on
 
@@ -2064,6 +2071,8 @@ struct Struct_ep_fused_silu_mxfp4:
                 input_tensor,
                 row_offsets_tensor,
                 max_padded_M,
+                alpha,
+                limit,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
                 attributes=pdl_launch_attributes(PDLLevel.ON),

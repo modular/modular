@@ -328,13 +328,12 @@ class MoEQuantized(MoE):
                 swiglu_limit=self.swiglu_limit,
             )
         else:
-            if isinstance(strategy, Mxfp4Strategy) and not self.use_swigluoai:
-                # MXFP4 EP fold: ep_wait writes the up-proj A-scale
-                # (KS224) and fused_silu the down-proj A-scale (KS64) directly
-                # into the grouped-matmul slot layout. This covers standard
-                # SiLU only; OAI-clamped SwiGLU (e.g. gpt-oss) is excluded in
-                # `configure_ep_scale_fusion` and handled by the generic path
-                # below.
+            if isinstance(strategy, Mxfp4Strategy):
+                # MXFP4 EP down path: fuse activation (plain SiLU or clamped
+                # SwiGLU) + MXFP4 quantize into one kernel. With scale fusion
+                # on, ep_wait/fused_silu write the up/down A-scale (KS224/KS64)
+                # into the matmul slot layout; else max_padded_M==0 and the
+                # standalone preshuffle runs.
                 gate_up = strategy.grouped_matmul(
                     self.gate_up_proj,
                     gate_up_scales,
@@ -349,6 +348,9 @@ class MoEQuantized(MoE):
                     input_scales=None,
                     expert_inputs=expert_inputs,
                     max_padded_M=mxfp4_ep_max_padded_m,
+                    clamp_activation=self.use_swigluoai,
+                    swiglu_alpha=self.swiglu_alpha,
+                    swiglu_limit=self.swiglu_limit,
                 )
             else:
                 gate_up = strategy.grouped_matmul(
