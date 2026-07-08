@@ -24,6 +24,7 @@ handle is needed.
 from std.sys import align_of
 from std.testing import assert_equal, TestSuite
 
+from layout import Coord
 from layout.tensor_storage import PointerStorage
 
 # Natural element alignments for the dtypes exercised below. `PointerStorage`
@@ -88,7 +89,9 @@ def test_offset() raises:
     PointerStorage[element_width=1].store[alignment=ALIGN_F32](
         storage, SIMD[DType.float32, 4](0.0, 0.0, 0.0, 0.0)
     )
-    var offset_storage = PointerStorage[element_width=1].offset(storage, 2)
+    var offset_storage = PointerStorage[element_width=1].offset(
+        storage, Coord(Int(2))
+    )
     PointerStorage[element_width=1].store[alignment=ALIGN_F32](
         offset_storage, Float32(9.0)
     )
@@ -131,7 +134,9 @@ def test_load_store_offset_overload() raises:
 def test_distance() raises:
     var buf = InlineArray[Float32, 8](fill=0.0)
     var storage = buf.unsafe_ptr()
-    var offset_storage = PointerStorage[element_width=1].offset(storage, 3)
+    var offset_storage = PointerStorage[element_width=1].offset(
+        storage, Coord(Int(3))
+    )
 
     assert_equal(
         PointerStorage[element_width=1].distance(offset_storage, storage), 3
@@ -147,7 +152,9 @@ def test_distance_offset_round_trip() raises:
     var storage = buf.unsafe_ptr()
 
     for n in range(16):
-        var advanced = PointerStorage[element_width=1].offset(storage, n)
+        var advanced = PointerStorage[element_width=1].offset(
+            storage, Coord(Int(n))
+        )
         assert_equal(
             PointerStorage[element_width=1].distance(advanced, storage), n
         )

@@ -187,7 +187,9 @@ struct TileTensor[
     """
 
     comptime TileResultType[
-        tile_shape_types: TypeList[Trait=CoordLike, ...]
+        tile_shape_types: TypeList[Trait=CoordLike, ...],
+        *,
+        linear_idx_type: DType = DType.int,
     ] = TileTensor[
         Self.dtype,
         Layout[
@@ -195,7 +197,9 @@ struct TileTensor[
             stride_types=_NestedTileResultStrideTypes[Self.LayoutType],
         ],
         Self.origin,
-        Storage=Self.Storage,
+        Storage=Self.Storage.OffsetResultType[
+            TypeList.of[Scalar[linear_idx_type]]()
+        ],
         address_space=Self.address_space,
     ]
     """Result type of `.tile[]`. Per outer mode, the result stride is
@@ -215,6 +219,8 @@ struct TileTensor[
         tile_shape_types: The result tile's shape `TypeList` (typically
             built from the variadic `tile_sizes` of the calling
             `.tile[]` method).
+        linear_idx_type: Integer type keying the offset-derived storage of the
+            result (see `OffsetViewType`). Defaults to `DType.int`.
     """
 
     comptime shape_known = Self.LayoutType.shape_known
@@ -581,11 +587,15 @@ struct TileTensor[
         ](self._storage)
 
     @always_inline("nodebug")
-    def _offset_storage(self, offset: Some[Indexer]) -> type_of(self._storage):
+    def _offset_storage(
+        self, offset: Some[CoordLike]
+    ) -> Self.Storage.OffsetResultType[
+        TypeList.of[type_of(offset)]()
+    ].StorageType[Self.dtype, Self.origin, Self.address_space]:
         """Advances `self`'s storage handle by `offset` elements via the
         storage policy.
         """
-        return Self.Storage.offset(self._storage, offset)
+        return Self.Storage.offset(self._storage, Coord(offset))
 
     @always_inline("nodebug")
     def _load_storage[
@@ -647,7 +657,8 @@ struct TileTensor[
     @always_inline
     def slice[
         *IndexTypes: CoordLike
-    ](self, *indices: *IndexTypes) -> Self.ViewType[
+    ](self, *indices: *IndexTypes) -> Self.OffsetViewType[
+        TypeList.of[Scalar[Self.linear_idx_type]](),
         Layout[
             shape_types=Self.LayoutType._shape_types.filter_idx[
                 _KeepCoordWhereIndexIsAll[IndexTypes, ...]
@@ -1111,9 +1122,7 @@ struct TileTensor[
         return result
 
     @always_inline("nodebug")
-    def copy_from(
-        self, other: TileTensor
-    ) where Self.mut and Self.element_size == other.element_size:
+    def copy_from(self, other: TileTensor) where Self.mut:
         """Copy data from another tensor into this tensor.
 
         Performs an element-by-element copy from `other` into `self`,
@@ -1204,7 +1213,6 @@ struct TileTensor[
             mut=False,
             Self.dtype,
             _,
-            Storage=Self.Storage,
             address_space=Self.address_space,
             ...,
         ],
@@ -1222,8 +1230,14 @@ struct TileTensor[
         Returns:
             The number of elements between `self` and `other`.
         """
+        # Storages are assumed copy-compatible: `other` may carry a different
+        # (e.g. offset-derived) `Storage` policy, so reinterpret its handle as
+        # `self`'s before measuring the scalar-element distance.
         return Scalar[Self.linear_idx_type](
-            Self.Storage.distance(self._storage, other._storage)
+            Self.Storage.distance(
+                self._storage,
+                rebind[type_of(self._storage)](other._storage),
+            )
         )
 
     def write_to(self, mut w: Some[Writer]):
@@ -1269,7 +1283,7 @@ struct TileTensor[
     def tile[
         *tile_sizes: Int
     ](self, coordinates: Coord) -> Self.TileResultType[
-        _IntToComptimeInt[*tile_sizes]
+        _IntToComptimeInt[*tile_sizes], linear_idx_type=Self.linear_idx_type
     ]:
         """Extract a sub-tile (CuTe `local_tile`). Works on both flat
         and nested parent layouts.
@@ -1299,7 +1313,8 @@ struct TileTensor[
     @always_inline("nodebug")
     def tile[
         *tile_sizes: Int, stride_layout: TensorLayout
-    ](self, coordinates: Coord) -> Self.ViewType[
+    ](self, coordinates: Coord) -> Self.OffsetViewType[
+        TypeList.of[Scalar[Self.linear_idx_type]](),
         Layout[
             shape_types=_IntToComptimeInt[*tile_sizes],
             stride_types=stride_layout._shape_types,
@@ -1343,7 +1358,9 @@ struct TileTensor[
         //,
     ](
         self, tile_shape: Coord[*tile_shape_types], coordinates: Coord
-    ) -> Self.TileResultType[tile_shape_types]:
+    ) -> Self.TileResultType[
+        tile_shape_types, linear_idx_type=Self.linear_idx_type
+    ]:
         """Extract a tile (sub-tensor) with shape specified as a Coord argument.
 
         This overload accepts the tile shape as a Coord value rather than
@@ -1384,7 +1401,8 @@ struct TileTensor[
     def tile_with_offset[
         *tile_sizes: Int
     ](self, coordinates: Coord) -> Tuple[
-        Self.ViewType[
+        Self.OffsetViewType[
+            TypeList.of[Int](),
             Layout[
                 shape_types=_IntToComptimeInt[*tile_sizes],
                 stride_types=Self.LayoutType._stride_types,
@@ -1415,7 +1433,8 @@ struct TileTensor[
     def tile_with_offset[
         *tile_sizes: Int, stride_layout: TensorLayout
     ](self, coordinates: Coord) -> Tuple[
-        Self.ViewType[
+        Self.OffsetViewType[
+            TypeList.of[Int](),
             Layout[
                 shape_types=_IntToComptimeInt[*tile_sizes],
                 stride_types=stride_layout._shape_types,
@@ -1468,6 +1487,29 @@ struct TileTensor[
     Parameters:
         new_layout: The new TensorLayout type for the view.
     """
+    comptime OffsetViewType[
+        offsets: TypeList[Trait=CoordLike, ...],
+        LayoutType: TensorLayout = Self.LayoutType,
+    ] = TileTensor[
+        dtype=Self.dtype,
+        LayoutType=LayoutType,
+        origin=Self.origin,
+        Storage=Self.Storage.OffsetResultType[offsets],
+        address_space=Self.address_space,
+    ]
+    """The TileTensor type produced by offsetting into this tensor's storage.
+
+    Names the return type of offset-producing operations (slicing, tiling,
+    distribution). It preserves dtype, origin, and address_space, optionally
+    changes the layout, and carries the storage policy's
+    `OffsetResultType[offsets]` so an offset that yields a different storage
+    handle is reflected in the view's type.
+
+    Parameters:
+        offsets: The coordinate types of the offset applied to the storage.
+        LayoutType: The layout type of the resulting view. Defaults to this
+            tensor's `LayoutType`.
+    """
 
     @always_inline("nodebug")
     def reshape[
@@ -1519,7 +1561,7 @@ struct TileTensor[
     def tile[
         *tile_sizes: Int
     ](self, *tile_coords: Int) -> Self.TileResultType[
-        _IntToComptimeInt[*tile_sizes]
+        _IntToComptimeInt[*tile_sizes], linear_idx_type=Self.linear_idx_type
     ]:
         """Variadic-`Int`-coords form of `.tile[]`. Works on both flat
         and nested parents — see the `Coord`-arg sibling above.
@@ -1565,7 +1607,8 @@ struct TileTensor[
     def distribute[
         thread_layout: Layout,
         swizzle: Optional[Swizzle] = None,
-    ](self, thread_id: Int) -> Self.ViewType[
+    ](self, thread_id: Int) -> Self.OffsetViewType[
+        TypeList.of[Scalar[Self.linear_idx_type]](),
         Layout[
             shape_types=_Divide[
                 Self.LayoutType._shape_types,
@@ -1617,7 +1660,7 @@ struct TileTensor[
                     Self.LayoutType._stride_types, thread_layout.shape_types
                 ],
             ],
-            Storage=Self.Storage,
+            Storage=Self.Storage.OffsetResultType[TypeList.of[Int]()],
             address_space=Self.address_space,
         ],
         IndexList[thread_layout.shape_types.size],
@@ -1806,7 +1849,7 @@ struct TileTensor[
             Self.LayoutType._stride_types,
         ],
         ImmutOrigin(Self.origin),
-        Storage=Self.Storage,
+        Storage=Self.Storage.OffsetResultType[TypeList.of[Int]()],
         address_space=Self.address_space,
         linear_idx_type=Self.linear_idx_type,
     ]
@@ -1893,7 +1936,7 @@ struct TileTensor[
             tiles[i] = Self.SplitElementType[count, axis](
                 Self.Storage.offset(
                     self._unsafe_storage_cast[to_mut=False](),
-                    i * tile_size * axis_stride,
+                    Coord(i * tile_size * axis_stride),
                 ),
                 split_layout,
             )
@@ -1911,7 +1954,7 @@ struct TileTensor[
             Self.LayoutType._stride_types,
         ],
         ImmutOrigin(Self.origin),
-        Storage=Self.Storage,
+        Storage=Self.Storage.OffsetResultType[TypeList.of[Int]()],
         address_space=Self.address_space,
         linear_idx_type=Self.linear_idx_type,
     ]
@@ -1999,7 +2042,7 @@ struct TileTensor[
         return Self.DynamicSplitType[axis](
             Self.Storage.offset(
                 self._unsafe_storage_cast[to_mut=False](),
-                idx * axis_partition_dim * axis_stride,
+                Coord(idx * axis_partition_dim * axis_stride),
             ),
             Layout(new_shape, self.layout.stride_coord()),
         )
@@ -2033,7 +2076,9 @@ struct TileTensor[
             stride_types=Self.LayoutType._stride_types,
         ],
         Self.origin,
-        Storage=Self.Storage,
+        Storage=Self.Storage.OffsetResultType[
+            TypeList.of[Scalar[Self.linear_idx_type]]()
+        ],
         address_space=Self.address_space,
     ] where (slices.size == Self.flat_rank and Self.all_dims_known):
         """Extract a slice from the tensor using slice objects.
@@ -2133,7 +2178,9 @@ struct TileTensor[
             Self.LayoutType._stride_types,
         ],
         Self.origin,
-        Storage=Self.Storage,
+        Storage=Self.Storage.OffsetResultType[
+            TypeList.of[Scalar[Self.linear_idx_type]]()
+        ],
         address_space=Self.address_space,
     ]:
         """Slice tensor with runtime start/end indices.
@@ -3199,7 +3246,8 @@ def _distribute[
 ](
     data_layout_tensor: TileTensor,
     thread_id: Int,
-) -> data_layout_tensor.ViewType[
+) -> data_layout_tensor.OffsetViewType[
+    TypeList.of[Scalar[data_layout_tensor.linear_idx_type]](),
     Layout[
         shape_types=_Divide[
             data_layout_tensor.LayoutType._shape_types,
@@ -3287,10 +3335,10 @@ def _distribute[
         shape_types=NewShapeTypes,
         stride_types=NewStrideTypes,
     ]
-    return data_layout_tensor.ViewType[ResultLayout](
+    return {
         data_layout_tensor._offset_storage(swizzled_offset),
         layout,
-    )
+    }
 
 
 @always_inline("nodebug")
@@ -3301,7 +3349,8 @@ def _distribute_with_offset[
     data_layout_tensor: TileTensor,
     thread_id: Int,
 ) -> Tuple[
-    data_layout_tensor.ViewType[
+    data_layout_tensor.OffsetViewType[
+        TypeList.of[Int](),
         Layout[
             shape_types=_Divide[
                 data_layout_tensor.LayoutType._shape_types,
@@ -3385,7 +3434,7 @@ def _distribute_with_offset[
         stride_types=NewStrideTypes,
     ]
     return (
-        data_layout_tensor.ViewType[ResultLayout](
+        data_layout_tensor.OffsetViewType[TypeList.of[Int](), ResultLayout](
             data_layout_tensor._offset_storage(swizzled_offset),
             layout,
         ),
@@ -3444,7 +3493,9 @@ def _tile[
     ],
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
-) -> data_layout_tensor.TileResultType[tile_shape_types]:
+) -> data_layout_tensor.TileResultType[
+    tile_shape_types, linear_idx_type=data_layout_tensor.linear_idx_type
+]:
     """Extract a sub-tile from a TileTensor (CuTe `local_tile`). Works
     on both flat and nested parents via per-mode comptime dispatch.
 
@@ -3491,7 +3542,9 @@ def _tile[
                 )
             )
 
-    comptime ResultType = data_layout_tensor.TileResultType[tile_shape_types]
+    comptime ResultType = data_layout_tensor.TileResultType[
+        tile_shape_types, linear_idx_type=data_layout_tensor.linear_idx_type
+    ]
     comptime ParentIsFlat = (
         data_layout_tensor.LayoutType.rank
         == data_layout_tensor.LayoutType.flat_rank
@@ -3538,7 +3591,8 @@ def _tile_with_offset[
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
 ) -> Tuple[
-    data_layout_tensor.ViewType[
+    data_layout_tensor.OffsetViewType[
+        TypeList.of[Int](),
         Layout[
             shape_types=tile_shape_types,
             stride_types=data_layout_tensor.LayoutType._stride_types,
@@ -3577,7 +3631,8 @@ def _tile_with_offset[
     )
 
     return (
-        data_layout_tensor.ViewType[
+        data_layout_tensor.OffsetViewType[
+            TypeList.of[Int](),
             Layout[
                 shape_types=tile_shape_types,
                 stride_types=data_layout_tensor.LayoutType._stride_types,
@@ -3606,7 +3661,8 @@ def _tile[
     ],
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
-) -> data_layout_tensor.ViewType[
+) -> data_layout_tensor.OffsetViewType[
+    TypeList.of[Scalar[data_layout_tensor.linear_idx_type]](),
     Layout[
         shape_types=tile_shape_types,
         stride_types=stride_layout._shape_types,
@@ -3637,7 +3693,8 @@ def _tile[
         stride=Coord[*stride_layout._shape_types](),
     )
 
-    return data_layout_tensor.ViewType[
+    return data_layout_tensor.OffsetViewType[
+        TypeList.of[Scalar[data_layout_tensor.linear_idx_type]](),
         Layout[
             shape_types=tile_shape_types,
             stride_types=stride_layout._shape_types,
@@ -3664,7 +3721,8 @@ def _tile_with_offset[
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
 ) -> Tuple[
-    data_layout_tensor.ViewType[
+    data_layout_tensor.OffsetViewType[
+        TypeList.of[Int](),
         Layout[
             shape_types=tile_shape_types,
             stride_types=stride_layout._shape_types,
@@ -3696,7 +3754,8 @@ def _tile_with_offset[
     )
 
     return (
-        data_layout_tensor.ViewType[
+        data_layout_tensor.OffsetViewType[
+            TypeList.of[Int](),
             Layout[
                 shape_types=tile_shape_types,
                 stride_types=stride_layout._shape_types,

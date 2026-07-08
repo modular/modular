@@ -19,7 +19,7 @@ from std.gpu.host import DevicePointer
 from std.os import abort
 from std.sys import size_of
 from std.sys.info import is_gpu
-from layout import TensorLayout, Idx
+from layout import Coord, CoordLike, Idx, TensorLayout
 
 
 trait TensorStorage:
@@ -27,7 +27,7 @@ trait TensorStorage:
 
     A conforming type describes how to access storage that is owned elsewhere.
     It provides a concrete `StorageType` handle along with static operations to
-    load from, store to, offset into, and reinterpret values of that handle. The
+    load from, store into, and reinterpret values of that handle. The
     trait never owns the underlying memory; the handle's `origin` parameter
     tracks the lifetime and mutability of the borrowed storage.
     """
@@ -57,7 +57,7 @@ trait TensorStorage:
 
     @staticmethod
     def write_type_name_to(mut writer: Some[Writer]):
-        """Write the storage type name representation to the writer.
+        """Writes the storage type name representation to the writer.
 
         Args:
             writer: The `Writer` to output to.
@@ -248,19 +248,50 @@ trait TensorStorage:
         """
         ...
 
+    comptime OffsetResultType[
+        offset_types: TypeList[Trait=CoordLike, ...],
+    ]: TensorStorage
+    """The storage type produced by offsetting with a given coordinate.
+
+    Parameters:
+        offset_types: The coordinate element types of the applied offset.
+    """
+
     @staticmethod
-    def offset(
-        storage: Self.StorageType[...], offset: Some[Indexer]
-    ) -> type_of(storage):
+    @always_inline
+    def offset[
+        offset_mut: Bool,
+        offset_types: TypeList[Trait=CoordLike, ...],
+        //,
+        offset_dtype: DType,
+        offset_origin: Origin[mut=offset_mut],
+        offset_address_space: AddressSpace,
+    ](
+        var storage: Self.StorageType[
+            offset_dtype, offset_origin, offset_address_space
+        ],
+        var offset_coord: Coord[*offset_types],
+    ) -> Self.OffsetResultType[offset_types].StorageType[
+        offset_dtype, offset_origin, offset_address_space
+    ]:
         """Returns a storage handle offset by a number of scalar elements.
+
+        Parameters:
+            offset_mut: The mutability of the storage, inferred from
+                `offset_origin`.
+            offset_types: The coordinate element types of `offset_coord`.
+            offset_dtype: The element data type of the storage.
+            offset_origin: The origin tracking the lifetime of the storage.
+            offset_address_space: The address space the storage resides in.
 
         Args:
             storage: The storage to offset from.
-            offset: The number of scalar elements to advance the handle by.
+            offset_coord: A rank-1 coordinate holding the number of scalar
+                elements to advance the handle by.
 
         Returns:
-            A handle of the same type starting `offset` scalar elements into
-            the referenced storage.
+            A handle of the same type starting the given number of scalar
+            elements into the referenced storage.
         """
         ...
 
@@ -540,7 +571,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorArith):
 
     @staticmethod
     def write_type_name_to(mut writer: Some[Writer]):
-        """Write the storage type name representation to the writer.
+        """Writes the storage type name representation to the writer.
 
         Args:
             writer: The `Writer` to output to.
@@ -742,33 +773,68 @@ struct PointerStorage[*, element_width: Int = 1](TensorArith):
             alignment=alignment, non_temporal=non_temporal
         ](offset, value)
 
+    comptime OffsetResultType[
+        offset_types: TypeList[Trait=CoordLike, ...],
+    ]: TensorStorage = Self
+    """The storage type produced by offsetting with a given coordinate.
+
+    Offsetting never changes the storage policy, so this is `Self`.
+
+    Parameters:
+        offset_types: The coordinate element types of the applied offset.
+    """
+
     @staticmethod
     @always_inline
-    def offset(
-        storage: Self.StorageType[...], offset: Some[Indexer]
-    ) -> type_of(storage):
+    def offset[
+        offset_mut: Bool,
+        offset_types: TypeList[Trait=CoordLike, ...],
+        //,
+        offset_dtype: DType,
+        offset_origin: Origin[mut=offset_mut],
+        offset_address_space: AddressSpace,
+    ](
+        var storage: Self.StorageType[
+            offset_dtype, offset_origin, offset_address_space
+        ],
+        var offset_coord: Coord[*offset_types],
+    ) -> Self.OffsetResultType[offset_types].StorageType[
+        offset_dtype, offset_origin, offset_address_space
+    ]:
         """Returns a storage handle offset by a number of scalar elements.
 
         The returned handle refers to the same externally owned storage,
-        advanced by `offset` scalar elements. The offset is measured in scalar
-        elements (not logical SIMD elements) so that it matches the scalar-unit
-        offsets produced by a tensor's layout and consumed by `load`/`store`;
-        for a vectorized storage (`element_width > 1`) advancing the raw
-        SIMD-typed handle directly would over-advance by `element_width`.
+        advanced by the scalar-element offset in `offset_coord`. The offset is
+        measured in scalar elements (not logical SIMD elements) so that it
+        matches the scalar-unit offsets produced by a tensor's layout and
+        consumed by `load`/`store`; for a vectorized storage
+        (`element_width > 1`) advancing the raw SIMD-typed handle directly would
+        over-advance by `element_width`.
+
+        Parameters:
+            offset_mut: The mutability of the storage, inferred from
+                `offset_origin`.
+            offset_types: The coordinate element types of `offset_coord`.
+            offset_dtype: The element data type of the storage.
+            offset_origin: The origin tracking the lifetime of the storage.
+            offset_address_space: The address space the storage resides in.
 
         Args:
             storage: The storage to offset from.
-            offset: The number of scalar elements to advance the handle by.
+            offset_coord: A rank-1 coordinate holding the number of scalar
+                elements to advance the handle by.
 
         Returns:
-            A handle of the same type starting `offset` scalar elements into
-            the referenced storage.
+            A handle of the same type starting the given number of scalar
+            elements into the referenced storage.
         """
         # `storage` is an `UnsafePointer[SIMD[dtype, element_width]]`. Reinterpret
         # it as a scalar pointer so `+ offset` advances in scalar (not SIMD)
         # units, then `rebind` back to the original handle type.
+        comptime assert offset_coord.flat_rank == 1
         return (
-            storage.bitcast[Scalar[type_of(storage).type.dtype]]() + offset
+            storage.bitcast[Scalar[type_of(storage).type.dtype]]()
+            + offset_coord[0].value()
         ).bitcast[SIMD[type_of(storage).type.dtype, Self.element_width]]()
 
     @staticmethod
@@ -837,7 +903,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorArith):
             other_origin: The origin of the right-hand storage operand.
             other_address_space: The address space of the right-hand storage
                 operand.
-            dtype: The dtype of both tensors's elements.
+            dtype: The dtype of both tensors' elements.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and
@@ -1270,7 +1336,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorArith):
 
     @staticmethod
     def write_type_name_to(mut writer: Some[Writer]):
-        """Write the storage type name representation to the writer.
+        """Writes the storage type name representation to the writer.
 
         Args:
             writer: The `Writer` to output to.
@@ -1505,11 +1571,34 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorArith):
             alignment=alignment, non_temporal=non_temporal
         ](offset, value)
 
+    comptime OffsetResultType[
+        offset_types: TypeList[Trait=CoordLike, ...],
+    ]: TensorStorage = Self
+    """The storage type produced by offsetting with a given coordinate.
+
+    Offsetting never changes the storage policy, so this is `Self`.
+
+    Parameters:
+        offset_types: The coordinate element types of the applied offset.
+    """
+
     @staticmethod
     @always_inline
-    def offset(
-        storage: Self.StorageType[...], offset: Some[Indexer]
-    ) -> type_of(storage):
+    def offset[
+        offset_mut: Bool,
+        offset_types: TypeList[Trait=CoordLike, ...],
+        //,
+        offset_dtype: DType,
+        offset_origin: Origin[mut=offset_mut],
+        offset_address_space: AddressSpace,
+    ](
+        var storage: Self.StorageType[
+            offset_dtype, offset_origin, offset_address_space
+        ],
+        var offset_coord: Coord[*offset_types],
+    ) -> Self.OffsetResultType[offset_types].StorageType[
+        offset_dtype, offset_origin, offset_address_space
+    ]:
         """Returns a storage handle offset by a number of scalar elements.
 
         On host this advances the wrapped `DevicePointer` (bounds-checked
@@ -1517,27 +1606,37 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorArith):
         device pointer held in the handle's first bytes, preserving the rest of
         the handle's (unused) bytes.
 
+        Parameters:
+            offset_mut: The mutability of the storage, inferred from
+                `offset_origin`.
+            offset_types: The coordinate element types of `offset_coord`.
+            offset_dtype: The element data type of the storage.
+            offset_origin: The origin tracking the lifetime of the storage.
+            offset_address_space: The address space the storage resides in.
+
         Args:
             storage: The storage to offset from.
-            offset: The number of scalar elements to advance the handle by.
+            offset_coord: A rank-1 coordinate holding the number of scalar
+                elements to advance the handle by.
 
         Returns:
-            A handle of the same type starting `offset` scalar elements into
-            the referenced storage.
+            A handle of the same type starting the given number of scalar
+            elements into the referenced storage.
         """
+        comptime assert offset_coord.flat_rank == 1
         comptime if is_gpu():
             var result = storage
             var leaf = UnsafePointer(to=result).bitcast[
                 UnsafePointer[Scalar[type_of(storage).dtype], MutAnyOrigin]
             ]()
-            leaf[] = leaf[] + offset
+            leaf[] = leaf[] + offset_coord[0].value()
             return result
         else:
             # Keep this non-raising (matching the pointer-backed policy and
             # `TileTensor`'s `DeviceBuffer` constructor) by aborting on the
             # out-of-bounds case `DevicePointer` arithmetic raises on.
             try:
-                return storage + index(offset)
+                return storage + Int(offset_coord[0].value())
             except e:
                 abort(String("DevicePointerStorage.offset: ", e))
 
@@ -1609,7 +1708,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorArith):
             OtherLayoutType: The layout type of the right-hand storage operand.
             other_mut: The mutability of the right-hand storage operand.
             other_origin: The origin of the right-hand storage operand.
-            dtype: The dtype of both tensors's elements.
+            dtype: The dtype of both tensors' elements.
 
         Args:
             storage: A tuple of the destination storage (modified in place) and

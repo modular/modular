@@ -3162,8 +3162,13 @@ struct TMATensorTile[
             coords: Base 2D coordinates in the source tensor.
             multicast_mask: Bit mask specifying CTAs that receive the data.
         """
+        # `_offset_storage` yields an offset-derived storage policy; storages
+        # are copy-compatible, so reinterpret it as `dst`'s own storage type.
         var dst_slice = type_of(dst)(
-            dst._offset_storage(cta_rank * tma_load_size), dst.layout
+            rebind[type_of(dst._storage)](
+                dst._offset_storage(cta_rank * tma_load_size)
+            ),
+            dst.layout,
         )
 
         self.async_multicast_load(
