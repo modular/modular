@@ -84,6 +84,68 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_max_tokenizer",
+    size = "medium",
+    srcs = ["test_max_tokenizer.py"],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
+        "//max/python/max/experimental/cascade/workers",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_max_model_worker",
+    size = "small",
+    srcs = ["test_max_model_worker.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/experimental/cascade/workers",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_max_model_worker_integration",
+    size = "large",
+    srcs = ["test_max_model_worker_integration.py"],
+    ignore_extra_deps = [
+        # SmolLM resolves to the llama3 architecture via string lookup in the
+        # pipeline registry, so these are runtime-only deps.
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+    ],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
+        "//max/python/max/experimental/cascade/workers",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
     name = "test_dummy_imgen",
     size = "small",
     srcs = ["test_dummy_imgen.py"],

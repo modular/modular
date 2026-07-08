@@ -1,0 +1,207 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Cascade worker that delegates decode work to a MAX Serve model worker.
+
+This worker does **not** load the model in its own process. Instead it spawns a
+``max.serve`` model-worker subprocess (the same one used by
+``max.serve.api_server`` and ``max.entrypoints.LLM``) and communicates with it
+over ZMQ (via :class:`ZmqModelWorkerInterface`). As in ``max.serve``, a single
+fan-out task on the proxy side pulls ``SchedulerResult`` batches off the response
+socket and routes individual outputs to per-request ``asyncio.Queue`` instances.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import logging
+import time
+from collections.abc import AsyncIterator
+
+import numpy as np
+import numpy.typing as npt
+from max.experimental.cascade import GenerateRequest, Worker, worker_method
+from max.pipelines.architectures import register_all_models
+from max.pipelines.context import (
+    EOSTracker,
+    SamplingParams,
+    TextAndVisionContext,
+    TextContext,
+    TextGenerationOutput,
+    TokenBuffer,
+)
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.modeling.types import RequestID
+from max.serve.config import MetricRecordingMethod, Settings
+from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
+from max.serve.worker_interface import ModelWorkerProxy
+from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
+from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
+
+logger = logging.getLogger(__name__)
+
+Int32Array = npt.NDArray[np.int32]
+TokenIdArray = npt.NDArray[np.int64]
+
+_ModelWorkerProxy = ModelWorkerProxy[
+    TextAndVisionContext | TextContext, TextGenerationOutput
+]
+
+
+class MAXModelWorker(Worker):
+    """Cascade worker backed by a MAX Serve model-worker subprocess.
+
+    The worker is constructed with a :py:class:`PipelineConfig` (typically built
+    once by the entrypoint/CLI and shared across the cascade pipeline's
+    workers). It does **not** load the model in its own process; instead it
+    spawns a ``max.serve`` model-worker subprocess (the same one used by
+    ``max.serve.api_server`` and ``max.entrypoints.LLM``) and communicates with
+    it over ZMQ. Per-request streaming is handled by the proxy's single
+    response-fan-out task.
+    """
+
+    def __init__(self, pipeline_config: PipelineConfig) -> None:
+        device_specs = pipeline_config.model.device_specs
+        on_cpu = all(spec.device_type == "cpu" for spec in device_specs)
+        super().__init__(deploy_hints=["cpu"] if on_cpu else ["gpu"])
+        self.pipeline_config = pipeline_config
+
+        self.max_length: int | None = None
+        self._eos_token_ids: set[int] = set()
+        self._proxy: _ModelWorkerProxy | None = None
+
+    @contextlib.asynccontextmanager
+    async def open(self) -> AsyncIterator[MAXModelWorker]:
+        """Resolve the config, bring up the model-worker subprocess and proxy.
+
+        The telemetry consumer, model-worker subprocess and proxy (with its
+        single response fan-out task) stay alive for the worker's lifetime.
+        These are the same async context managers used by
+        ``max.entrypoints.LLM`` and ``max.serve.api_server``.
+        """
+        t0 = time.monotonic()
+        register_all_models()
+
+        pipeline_config = self.pipeline_config
+
+        # Materialize the (tokenizer, factory) pair on this side. The factory is
+        # sent via pickle to the worker subprocess where it is invoked to
+        # actually load the model on the target device. ``retrieve_factory``
+        # performs the architecture lookup and resolves ``pipeline_config`` in
+        # place (including ``max_length``).
+        tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
+            pipeline_config
+        )
+        resolved_max_length = pipeline_config.model.max_length
+        assert resolved_max_length is not None
+        self.max_length = resolved_max_length
+
+        pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(
+            pipeline_config.models.main_architecture_name
+        )
+        context_type = PIPELINE_REGISTRY.retrieve_context_type(pipeline_config)
+
+        # Tokenization happens upstream (this worker receives token ids), so we
+        # only need the eos set to terminate generation in the worker.
+        self._eos_token_ids = set(
+            getattr(tokenizer, "_default_eos_token_ids", set())
+        )
+
+        settings = Settings(
+            offline_inference=True,
+            disable_telemetry=True,
+            metric_recording=MetricRecordingMethod.NOOP,
+        )
+
+        model_worker_interface = ZmqModelWorkerInterface[
+            TextAndVisionContext | TextContext, TextGenerationOutput
+        ](
+            pipeline_task,
+            context_type=context_type,
+        )
+
+        async with contextlib.AsyncExitStack() as exit_stack:
+            metric_client = await exit_stack.enter_async_context(
+                start_telemetry_consumer(settings)
+            )
+            self._proxy = await exit_stack.enter_async_context(
+                start_model_worker(
+                    model_factory=model_factory,
+                    pipeline_config=pipeline_config,
+                    settings=settings,
+                    metric_client=metric_client,
+                    model_worker_interface=model_worker_interface,
+                    zmq_endpoint_base=generate_zmq_ipc_path(),
+                )
+            )
+            logger.info("MAXModelWorker ready in %.1fs", time.monotonic() - t0)
+            try:
+                yield self
+            finally:
+                self._proxy = None
+
+    @worker_method()
+    async def decode(
+        self, req: GenerateRequest, tokens: TokenIdArray
+    ) -> AsyncIterator[Int32Array]:
+        """Submit a decode request and stream generated token ids.
+
+        The proxy's response-fan-out task delivers ``TextGenerationOutput``
+        batches to a per-request ``asyncio.Queue``; we collect any tokens
+        produced in a single fan-out delivery and forward them as one
+        ``np.int32`` array to the cascade stream.
+        """
+        assert self._proxy is not None
+        assert self.max_length is not None
+
+        request_id = RequestID()
+
+        prompt_tokens = tokens.astype(np.int64)
+        sampling_params = SamplingParams(
+            max_new_tokens=req.num_tokens,
+            ignore_eos=req.ignore_eos,
+            temperature=req.temperature,
+        )
+        request_max_length = min(
+            self.max_length, int(prompt_tokens.shape[0]) + req.num_tokens
+        )
+        # Mirror max-serve's tokenizer behaviour: when ignore_eos is set,
+        # strip the EOS triggers entirely. The scheduler terminates a request
+        # as soon as it samples any token in ``eos_token_ids``, regardless of
+        # ``sampling_params.ignore_eos`` -- so leaving the default EOS set
+        # populated would silently cap generation early.
+        ctx_eos_token_ids: set[int] = (
+            set() if req.ignore_eos else set(self._eos_token_ids)
+        )
+        ctx = TextContext(
+            request_id=request_id,
+            max_length=request_max_length,
+            tokens=TokenBuffer(prompt_tokens),
+            eos_tracker=EOSTracker(eos_token_ids=ctx_eos_token_ids),
+            sampling_params=sampling_params,
+        )
+
+        async for outputs in self._proxy.stream(request_id, ctx):
+            token_arrays = [
+                np.asarray(output.tokens, dtype=np.int32)
+                for output in outputs
+                if output.tokens
+            ]
+            if token_arrays:
+                yield np.concatenate(token_arrays)
+
+    @worker_method()
+    async def echo(self, tokens: Int32Array) -> AsyncIterator[np.int32]:
+        """Echo the tokens back to the caller, for debugging."""
+        for token in tokens:
+            yield np.int32(token)
