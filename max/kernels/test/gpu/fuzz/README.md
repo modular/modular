@@ -96,8 +96,12 @@ Select with `--oracle`:
 
 Not every target supports every oracle. Each target declares a default oracle
 (its primary bug class) and a `ref`/`contract`/`schedule` mode only where a
-reference, special-value contract, or split-K decomposition exists. Targets that
-fuzz the input value distribution expose a `dist` spec field
+reference, special-value contract, or split-K decomposition exists; likewise
+`determinism`/`batch_invariance`/`batch_variance` only where the target parses
+the corresponding flag (`--rerun` / `--batch-invariance` / `--batch-variance`).
+Cross-run comparisons always live inside the target process — the orchestrator
+issues one verdict per subprocess and never holds two cases' outputs.
+Targets that fuzz the input value distribution expose a `dist` spec field
 (uniform/normal/sparse/large/all-equal); NaN/Inf specials are reachable but kept
 out of the auto-mix — they drive the `contract` oracle, not `ref`.
 
@@ -143,16 +147,22 @@ design's non-gating → gating rollout:
   ```
 
 - **Nightly (non-gating / notify-only, slow):** a time-boxed live search per
-  oracle. New findings file an issue + notify; the lane does not redden `main`.
-  Proposed `ci/default/postsubmit.json` lane (apply when ready):
+  oracle. New findings surface as a soft-failed step + notify; the lane does
+  not redden `main`. The lane is `kernel-fuzz-b200` in
+  `ci/default/postsubmit.json`, running `ci/default/kernel-fuzz.sh`
+  (`soft_fail: true`), which sweeps the determinism/batch-invariance oracle
+  family over the wired targets with a bounded budget and a fresh
+  `$BUILDKITE_BUILD_NUMBER` seed.
 
-  ```json
-  {
-    "name": "kernel-fuzz-b200",
-    "command": "ci/default/test.sh --config=ci-remote-b200 --config=ci-postsubmit -- python3 max/kernels/test/gpu/fuzz/fuzz.py --target mha_causal --oracle memcheck --budget 200 --seed $BUILDKITE_BUILD_NUMBER",
-    "queue": "persistent-b200",
-    "soft_fail": true
-  }
-  ```
+  GPU-locality caveat: `fuzz.py` runs the built target binaries **directly**
+  (not via `bazel test`), so it needs a **local** GPU on the agent. The
+  `persistent-b200` queue runs its bazel work via remote execution
+  (`--config=ci-remote-b200`), so a local GPU is not guaranteed there —
+  `kernel-fuzz.sh` self-checks `nvidia-smi` and no-ops cleanly when absent.
+  The proven home for direct-binary GPU fuzzing is a self-hosted local-GPU
+  GitHub Actions runner (the `.github/workflows/llmFuzzAdHoc.yaml` pattern);
+  porting the search there is the recommended long-term move. Also note
+  `manual`-tagged fuzz targets must be built by explicit name — `//...` and
+  `:all` wildcards skip them.
 
   Validate the redzone/poison allocators on MI355 before adding an AMD lane.
