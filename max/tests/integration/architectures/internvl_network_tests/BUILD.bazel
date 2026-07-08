@@ -23,8 +23,10 @@ modular_py_test(
         requirement("jinja2"),
     ],
     tags = [
+        "manual",
         "no-sandbox",
         "requires-network",
+        "run-in-hf-workflow",
     ],
     deps = [
         "//max/python/max/pipelines/architectures/internvl",
