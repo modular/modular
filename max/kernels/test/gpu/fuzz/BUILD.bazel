@@ -49,6 +49,38 @@ mojo_test(
     ],
 )
 
+# Target: GEMV split-K (`_matmul_gpu` -> SM100 GEMV_SPLIT_K). The production FP32
+# decode router/gate GEMM (KERN-3076): M<=64, N<=256, K>=2048, transpose_b.
+# N/K are compile-time; M is the runtime fuzz axis (crosses the tile_m buckets).
+# `determinism` oracle: the in-block K reduction must be bit-stable run-to-run.
+mojo_test(
+    name = "fuzz_gemv_split_k.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_gemv_split_k.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_gemv_split_k.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
 # Kernel-level fuzzing (see gpu-kernels-fuzzing-design.md).
 #
 # Slice 0: a seeded, boundary-aware shape generator drives flash_attention with

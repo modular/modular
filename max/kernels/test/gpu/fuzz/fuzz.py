@@ -121,9 +121,20 @@ _TARGETS: dict[str, FuzzTarget] = {
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_matmul.mojo.test",
         binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_matmul.mojo.test",
         description=(
-            "matmul _matmul_gpu tuned SM100 bf16 (memory-safety oracle)"
+            "matmul _matmul_gpu tuned SM100 bf16 (memory-safety; also"
+            " determinism + batch_variance negative control)"
         ),
         default_oracle="memcheck",
+    ),
+    "gemv_split_k": FuzzTarget(
+        name="gemv_split_k",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_gemv_split_k.mojo.test",
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_gemv_split_k.mojo.test",
+        description=(
+            "GEMV split-K (SM100 GEMV_SPLIT_K, FP32 decode router GEMM)"
+            " run-to-run determinism"
+        ),
+        default_oracle="determinism",
     ),
     "numeric_canary": FuzzTarget(
         name="numeric_canary",
@@ -591,6 +602,17 @@ def _oracle_command_and_env(
         # control lost sensitivity, or the heuristic collapsed to one count for
         # the shapes) is the FAILURE. Mirrors the positive-control canaries.
         return base_cmd + ["--batch-invariance-negctl", "1"], env
+    if oracle == "batch_variance":
+        # Negative control (the inverse of batch_invariance): the target runs
+        # the SAME probe row in two batches whose sizes straddle an M-keyed
+        # dispatch breakpoint (e.g. dense matmul M=1 GEMV_SPLIT_K vs M>1 tile
+        # GEMM) and asserts the probe's output rows DIVERGE bit-for-bit --
+        # PASS iff divergence is observed, FAIL if they bit-match (the control
+        # lost its teeth / the path became invariant). This proves the
+        # invariance oracles above have real sensitivity to a dispatch switch,
+        # rather than passing vacuously. A bit-match is reported as a finding,
+        # not silently swallowed.
+        return base_cmd + ["--batch-variance", "1"], env
     if oracle == "contract":
         # Special-value contract: the target injects NaN/Inf/large inputs and
         # checks a finiteness/propagation contract (not a tolerance diff).
@@ -980,6 +1002,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
             "determinism",
             "batch_invariance",
             "batch_invariance_negctl",
+            "batch_variance",
             "contract",
             "redzone",
             "poison",

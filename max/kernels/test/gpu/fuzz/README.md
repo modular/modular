@@ -82,6 +82,12 @@ Select with `--oracle`:
   require the output to DIVERGE. Proves the invariance oracle has teeth; a
   bit-match (control lost sensitivity, or the heuristic collapsed to one count)
   is the FAIL.
+- `batch_variance` — negative control (`--batch-variance 1`), the inverse of
+  `batch_invariance`: run the same probe row in two batch sizes that straddle an
+  M-keyed dispatch breakpoint and assert the probe's output DIVERGES
+  bit-for-bit. PASS iff divergence is observed (proving the invariance oracles
+  have teeth); a bit-match emits `FUZZ_CONTRACT_FAIL` and is reported, not
+  swallowed.
 - `redzone` — OOB writes, ~native speed, AMD-capable (validated on MI355).
 - `poison` — NaN-fills every device allocation (`MODULAR_DEBUG_DEVICE_ALLOCATOR=
   poison-all`), so an uninitialized read propagates NaN into the output and
