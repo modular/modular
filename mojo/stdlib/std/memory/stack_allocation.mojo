@@ -95,27 +95,31 @@ def stack_allocation[
         comptime global_name = name.value() if name else "_global_alloc"
 
         comptime if address_space == AddressSpace.SHARED:
-            return __mlir_op.`pop.global_alloc`[
-                name=_get_kgen_string[global_name](),
-                count=count.__mlir_index__(),
-                memoryType=__mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
-                _type=UnsafePointer[
-                    type, MutUntrackedOrigin, address_space=address_space
-                ]._mlir_type,
-                alignment=alignment.__mlir_index__(),
-            ]()
+            return {
+                _mlir_value = __mlir_op.`pop.global_alloc`[
+                    name=_get_kgen_string[global_name](),
+                    count=count.__mlir_index__(),
+                    memoryType=__mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
+                    _type=UnsafePointer[
+                        type, MutUntrackedOrigin, address_space=address_space
+                    ]._mlir_type,
+                    alignment=alignment.__mlir_index__(),
+                ]()
+            }
         elif address_space == AddressSpace.CONSTANT:
             # No need to annotation this global_alloc because constants in
             # GPU shared memory won't prevent llvm module splitting to
             # happen since they are immutables.
-            return __mlir_op.`pop.global_alloc`[
-                name=_get_kgen_string[global_name](),
-                count=count.__mlir_index__(),
-                _type=UnsafePointer[
-                    type, MutUntrackedOrigin, address_space=address_space
-                ]._mlir_type,
-                alignment=alignment.__mlir_index__(),
-            ]()
+            return {
+                _mlir_value = __mlir_op.`pop.global_alloc`[
+                    name=_get_kgen_string[global_name](),
+                    count=count.__mlir_index__(),
+                    _type=UnsafePointer[
+                        type, MutUntrackedOrigin, address_space=address_space
+                    ]._mlir_type,
+                    alignment=alignment.__mlir_index__(),
+                ]()
+            }
 
         # MSTDL-797: The NVPTX backend requires that `alloca` instructions may
         # only have generic address spaces. When allocating LOCAL memory,
@@ -126,11 +130,13 @@ def stack_allocation[
                 _type=UnsafePointer[type, MutUntrackedOrigin]._mlir_type,
                 alignment=alignment.__mlir_index__(),
             ]()
-            return __mlir_op.`pop.pointer.bitcast`[
-                _type=UnsafePointer[
-                    type, MutUntrackedOrigin, address_space=address_space
-                ]._mlir_type
-            ](generic_ptr)
+            return {
+                _mlir_value = __mlir_op.`pop.pointer.bitcast`[
+                    _type=UnsafePointer[
+                        type, MutUntrackedOrigin, address_space=address_space
+                    ]._mlir_type
+                ](generic_ptr)
+            }
 
     elif CurrentPlugin.stack_allocation_fn[address_space]:
         return comptime (
@@ -138,10 +144,12 @@ def stack_allocation[
         )[count, type, name=name, alignment=alignment]()
 
     # Perform a stack allocation of the requested size, alignment, and type.
-    return __mlir_op.`pop.stack_allocation`[
-        count=count.__mlir_index__(),
-        _type=UnsafePointer[
-            type, MutUntrackedOrigin, address_space=address_space
-        ]._mlir_type,
-        alignment=alignment.__mlir_index__(),
-    ]()
+    return {
+        _mlir_value = __mlir_op.`pop.stack_allocation`[
+            count=count.__mlir_index__(),
+            _type=UnsafePointer[
+                type, MutUntrackedOrigin, address_space=address_space
+            ]._mlir_type,
+            alignment=alignment.__mlir_index__(),
+        ]()
+    }

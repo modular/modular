@@ -268,13 +268,13 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         comptime assert Self._is_element[
             T
         ](), "type is not a union element type"
-        var ptr = UnsafePointer(to=self._storage).address
+        var ptr = UnsafePointer(to=self._storage)._get_kgen_pointer()
         var typed_ptr = __mlir_op.`pop.union.bitcast`[
             _type=UnsafePointer[
                 T, origin, address_space=address_space
             ]._mlir_type,
         ](ptr)
-        return typed_ptr
+        return {_mlir_value = typed_ptr}
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

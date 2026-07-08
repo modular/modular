@@ -323,14 +323,20 @@ class PipelineConfig(ConfigFileModel):
         server-generated and gated on having a parser that can both produce
         the grammar and parse the resulting output).
 
+        Tool-call constrained decoding can be turned off independently via
+        ``sampling.enable_tool_call_constrained_decode``: when that is
+        ``False`` the tool parser still parses tool calls out of generated
+        text, but no grammar is generated and the bitmask path is not needed
+        on its account.
+
         Drives whether model / sampler graphs are compiled with a bitmask
         input and whether the D2H pinned buffer is allocated. Distinct from
         ``sampling.enable_structured_output``, which is the user-facing
         flag and only gates honoring user-supplied JSON schemas.
         """
-        return (
-            self.sampling.enable_structured_output
-            or self.runtime.tool_parser is not None
+        return self.sampling.enable_structured_output or (
+            self.runtime.tool_parser is not None
+            and self.sampling.enable_tool_call_constrained_decode
         )
 
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
@@ -1201,6 +1207,13 @@ class PipelineConfig(ConfigFileModel):
 
         self.sampling.structured_output_backend = (
             DEFAULT_STRUCTURED_OUTPUT_BACKEND
+        )
+        logger.info(
+            "Defaulting structured output backend to the global default %r "
+            "(architecture %s declares no default). Override with "
+            "--structured-output-backend.",
+            DEFAULT_STRUCTURED_OUTPUT_BACKEND,
+            arch.name if arch is not None else None,
         )
 
     def _validate_and_resolve_overlap_scheduler(

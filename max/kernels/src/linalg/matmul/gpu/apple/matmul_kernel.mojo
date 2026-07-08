@@ -31,7 +31,6 @@ from std.gpu import WARP_SIZE, block_dim, block_idx, lane_id, thread_idx
 from std.gpu.host import DeviceContext
 from std.sys import align_of
 from std.utils import IndexList
-from std.utils.type_functions import ConditionalType
 from layout import TileTensor, Idx
 from layout.tile_layout import Layout, TensorLayout, row_major
 from layout.coord import Coord
@@ -425,15 +424,18 @@ struct AppleM5MatMul[
 
     # === B-operand layout selection ======================================= #
 
+    comptime _PickBMatLayoutResult: TensorLayout = type_of(
+        Layout(Coord(Int(), Int()), Coord(Idx[1], Int()))
+    ) if Self.transpose_b else type_of(
+        Layout(Coord(Int(), Int()), Coord(Int(), Idx[1]))
+    )
+
     @staticmethod
     def _pick_b_mat_layout(
-        k: Int, n: Int
-    ) -> ConditionalType[
-        Trait=TensorLayout,
-        If=Self.transpose_b,
-        Then=type_of(Layout(Coord(k, n), Coord(Idx[1], k))),
-        Else=type_of(Layout(Coord(k, n), Coord(n, Idx[1]))),
-    ]:
+        k: Int,
+        n: Int,
+        out result: Self._PickBMatLayoutResult,
+    ):
         """Full B=(K, N) Layout selected at comptime.
 
         `transpose_b=True`  -> strides `(1, K)` (col_major view of an (N,K) buffer).
@@ -442,16 +444,14 @@ struct AppleM5MatMul[
         `run` pre-tiles this into a per-simdgroup SG_N-wide column slab
         (full K), then the K-loop tiles only the K axis; no pointer arithmetic.
         """
-        comptime _Ret = ConditionalType[
-            Trait=TensorLayout,
-            If=Self.transpose_b,
-            Then=type_of(Layout(Coord(k, n), Coord(Idx[1], k))),
-            Else=type_of(Layout(Coord(k, n), Coord(n, Idx[1]))),
-        ]
         comptime if Self.transpose_b:
-            return rebind[_Ret](Layout(Coord(k, n), Coord(Idx[1], k)))
+            return rebind[type_of(result)](
+                Layout(Coord(k, n), Coord(Idx[1], k))
+            )
         else:
-            return rebind[_Ret](Layout(Coord(k, n), Coord(n, Idx[1])))
+            return rebind[type_of(result)](
+                Layout(Coord(k, n), Coord(n, Idx[1]))
+            )
 
     # === Shared simdgroup-tiled GEMM body ================================== #
     # `run` and `run_conv` share this whole body; the comptime

@@ -246,6 +246,7 @@ class TCSchemaEnforcement(BaseScenario):
         validate: Callable[[dict[str, Any]], tuple[Verdict, str]] | None = None,
         tool_choice: str | dict[str, Any] = "required",
         max_tokens: int = 1024,
+        temperature: float | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> list[ScenarioResult]:
         """Run a single tool-call test with standard boilerplate.
@@ -257,14 +258,21 @@ class TCSchemaEnforcement(BaseScenario):
         """
         if tools is None:
             tools = [make_tool(tool_name, schema, tool_desc)]
+        chat_kwargs: dict[str, Any] = {
+            "tool_choice": tool_choice,
+            "max_tokens": max_tokens,
+        }
+        # Enforcement is a per-step mask property, so greedy (temperature=0)
+        # decoding is the deterministic probe; only set it when a case opts in.
+        if temperature is not None:
+            chat_kwargs["temperature"] = temperature
         try:
             resp = await loop.run_in_executor(
                 None,
                 lambda: v.tc_chat(
                     [{"role": "user", "content": user_message}],
                     tools,
-                    tool_choice=tool_choice,
-                    max_tokens=max_tokens,
+                    **chat_kwargs,
                 ),
             )
             if budget_exhausted(resp):
@@ -1953,6 +1961,8 @@ class TCSchemaEnforcement(BaseScenario):
             v,
             loop,
             test_name="type_list_object_with_properties",
+            temperature=0,
+            max_tokens=2048,
             schema={
                 "type": "object",
                 "properties": {
@@ -2029,6 +2039,8 @@ class TCSchemaEnforcement(BaseScenario):
             v,
             loop,
             test_name="type_list_array_with_items",
+            temperature=0,
+            max_tokens=2048,
             schema={
                 "type": "object",
                 "properties": {
@@ -2474,6 +2486,8 @@ class TCSchemaEnforcement(BaseScenario):
             v,
             loop,
             test_name="ref_defs_chain_a_b_c",
+            temperature=0,
+            max_tokens=2048,
             schema={
                 "type": "object",
                 "properties": {
@@ -2558,6 +2572,8 @@ class TCSchemaEnforcement(BaseScenario):
             v,
             loop,
             test_name="ref_defs_reused_same_def",
+            temperature=0,
+            max_tokens=2048,
             schema={
                 "type": "object",
                 "properties": {
@@ -2628,6 +2644,8 @@ class TCSchemaEnforcement(BaseScenario):
             v,
             loop,
             test_name="ref_defs_anyof_nullable",
+            temperature=0,
+            max_tokens=2048,
             schema={
                 "type": "object",
                 "properties": {
@@ -3276,6 +3294,8 @@ class TCSchemaEnforcement(BaseScenario):
             v,
             loop,
             test_name="ref_defs_recursive_enum_leaf",
+            temperature=0,
+            max_tokens=2048,
             schema={
                 "type": "object",
                 "properties": {
@@ -3661,6 +3681,8 @@ class TCSchemaEnforcement(BaseScenario):
             v,
             loop,
             test_name="anyof_nullable_array",
+            temperature=0,
+            max_tokens=2048,
             schema={
                 "type": "object",
                 "properties": {
@@ -3873,11 +3895,14 @@ class TCSchemaEnforcement(BaseScenario):
             v,
             loop,
             test_name="anyof_nested_in_array_items",
+            temperature=0,
+            max_tokens=2048,
             schema={
                 "type": "object",
                 "properties": {
                     "entries": {
                         "type": "array",
+                        "minItems": 2,
                         "items": {
                             "anyOf": [
                                 {"type": "string"},
@@ -4111,6 +4136,8 @@ class TCSchemaEnforcement(BaseScenario):
             v,
             loop,
             test_name="anyof_with_ref_and_null",
+            temperature=0,
+            max_tokens=2048,
             schema={
                 "type": "object",
                 "properties": {

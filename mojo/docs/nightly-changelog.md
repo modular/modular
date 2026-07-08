@@ -274,6 +274,12 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `reversed()` now works on typed ranges such as
+  `reversed(range(Int16(1), 10, 2))`. The `ReversibleRange` trait gained an
+  associated `ReversedType` iterator instead of hard-coding its `__reversed__()`
+  return type, so every range flavor (including the typed scalar ranges) can
+  conform and return its own reversed iterator.
+
 - Added `to_numpy_array` and `from_numpy_array` to the new `python.numpy` module
   for moving flat numeric data between Mojo `Span`/`List` and NumPy arrays
   without hand-written `ctypes` plumbing:
@@ -345,7 +351,7 @@ This version is still a work in progress.
 
   ```diff
    struct Packet[*Ts: Movable](
-  -    Serializable where Ts.all_conforms_to[Serializable](), 
+  -    Serializable where Ts.all_conforms_to[Serializable](),
        JsonSerializable where Ts.all_conforms_to[JsonSerializable](),
        Movable,
    ):
@@ -369,6 +375,12 @@ This version is still a work in progress.
   for consistency with the `ImplicitlyDeletable` rename. It now also accepts any
   type (`T: AnyType`) instead of requiring `T: ImplicitlyDeletable`, returning
   `False` for non-`ImplicitlyDeletable` (linear) types.
+
+- `List.resize` and `List.shrink` `new_size` arguments have been renamed to
+  `new_length`.
+
+- The `value` argument of `List.resize` has been renamed to `fill` to match
+  List's constructor.
 
 - The `Reflected.field_type[name]` reflection member has been renamed to
   `Reflected.field[name]`, because it returns a chainable `Reflected` handle
@@ -508,6 +520,18 @@ This version is still a work in progress.
   `where conforms_to(..)` and `comptime assert conforms_to(..)` make explicit
   value trait downcasting no longer necessary.
 
+- The `ConditionalType` type function in `std.utils.type_functions` is now
+  deprecated. Use the equivalent ternary expression `T if cond else U`
+  instead:
+
+  ```mojo
+  # Deprecated:
+  comptime Storage = ConditionalType[If=cond, Then=Int, Else=NoneType]
+
+  # Use instead:
+  comptime Storage = Int if cond else NoneType
+  ```
+
 - Added `raise_python_exception()` to `std.python.bindings`, which translates a
   Mojo `Error` into a Python exception via `PyErr_SetString` and returns a null
   `PyObjectPtr`.
@@ -518,6 +542,9 @@ This version is still a work in progress.
   perceives as a single "character" on screen. The lower-level views remain
   available when you want them: `codepoints()` or `codepoint_slices()` for
   Unicode scalars, and `bytes()` for raw UTF-8 bytes.
+
+- The `Equatable` trait now allows for positional-only implementations, and
+  argument on implementers no longer need to match the trait exactly.
 
 ## Tooling changes
 
@@ -616,6 +643,21 @@ This version is still a work in progress.
 
 ## Fixed
 
+- Type refinement from a `conforms_to()` guard now applies inside the branches
+  of a ternary `exp1 if cond else exp2` used in a `comptime` context, matching
+  the existing `comptime if` statement behavior. For example, this now compiles:
+
+  ```mojo
+  trait HasProperty:
+      comptime property: Int
+
+  comptime get_property_or[T: AnyType] =
+      T.property if conforms_to(T, HasProperty) else 0
+  ```
+
+  Previously the true branch failed with `'AnyType' value has no attribute
+  'property'` because `T` was not refined under the guard.
+
 - A `comptime` member with a trailing `where` clause is now accepted as a
   witness for a conditional trait conformance when the conformance constraint
   implies the member's constraint, for example:
@@ -626,4 +668,25 @@ This version is still a work in progress.
 
   struct Foo[size: Int = -1](StaticSize where size >= 0):
       comptime SIZE: Int where Self.size >= 0 = Self.size
+  ```
+
+- The reflection-based default `Equatable` implementation no longer fails to
+  compile for single-element `RegisterPassable` structs. Such a struct is
+  flattened to its sole field's type, which previously caused the reflection
+  `field_ref` to produce an invalid `kgen.struct.gep`. For example, this now
+  compiles and prints `True`:
+
+  ```mojo
+  @fieldwise_init
+  struct Inner(Equatable, RegisterPassable):
+      var x: Int
+      var y: Int
+
+  @fieldwise_init
+  struct Outer(Equatable, RegisterPassable):
+      var inner: Inner
+
+  def main():
+      var o = Outer(Inner(1, 2))
+      print(o == o)
   ```

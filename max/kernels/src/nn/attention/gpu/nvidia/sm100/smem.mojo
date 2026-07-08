@@ -47,7 +47,7 @@ In fused mode, K_nope and V alternate in the same buffer (padded_ov_depth
 wide), and rope data is stored separately at half the staging rate.
 k_smem_base() and v_smem_base() return the same pointer.
 
-In `num_qo == 1` mode the cross-WG LSE exchange runs through the (now-dead)
+In `num_q == 1` mode the cross-WG LSE exchange runs through the (now-dead)
 s TMEM slot rather than smem, so no additional smem region is needed. Both
 warpgroups still write the combined LSE-reduced output to the single
 q-aliased o_smem region, then TMA-store it to gmem. Output partials remain
@@ -179,7 +179,7 @@ struct SM100AttentionSMem[
     # stays visible.
     comptime correction_byte_offset: Int = Self.kv_byte_offset + Self.kv_bytes
     comptime correction_bytes: Int = (
-        (2 if Self.config.num_qo == 1 else 1)
+        (2 if Self.config.num_q == 1 else 1)
         * Self.config.BM
         * size_of[DType.float32]()
     )
@@ -214,7 +214,9 @@ struct SM100AttentionSMem[
         use_order_barriers=Self.use_order_barriers,
         use_fused_kv=Self.config.use_fused_kv,
         pair_cta=Self.config.pair_cta,
-        num_qo=Self.config.num_qo,
+        num_q=Self.config.num_q,
+        splitk_partitions=Self.config.splitk_partitions,
+        BM=Self.config.BM,
     ]
 
     comptime mbar_bytes: Int = Int(Self.MiscMBarsType.num_mbars()) * size_of[

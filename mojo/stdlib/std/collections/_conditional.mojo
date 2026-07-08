@@ -13,7 +13,6 @@
 """Defines `_ComptimeConditional`, a compile-time conditional value wrapper."""
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.utils.type_functions import ConditionalType
 
 comptime _ComptimeConditionalType = ImplicitlyCopyable & ImplicitlyDeletable & RegisterPassable
 
@@ -40,12 +39,8 @@ struct _ComptimeConditional[
         engaged: Compile-time flag controlling whether the value is present.
     """
 
-    var _value: ConditionalType[
-        Trait=_ComptimeConditionalType,
-        If=Self.engaged,
-        Then=Self.T,
-        Else=NoneType,
-    ]
+    comptime _ValueType: _ComptimeConditionalType = Self.T if Self.engaged else NoneType
+    var _value: Self._ValueType
 
     comptime device_type: AnyType = Self
 

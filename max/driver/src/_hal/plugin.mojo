@@ -379,6 +379,40 @@ struct RawDriver(Movable):
                 message=String(t"failed to free_sync: {err.message}"),
             )
 
+    def wrap_memory(
+        self,
+        context: ContextHandle,
+        address: UInt64,
+        byte_size: UInt64,
+        owning: Bool,
+    ) raises HALError -> MemoryHandle:
+        var mem = UnsafeMaybeUninit[MemoryHandle]()
+        var status = self._raw.memory_wrap.f(
+            context, address, byte_size, owning, OutParam[MemoryHandle](to=mem)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to wrap memory: {err.message}"),
+            )
+        return mem.unsafe_assume_init_ref()
+
+    def unwrap_memory(
+        self, context: ContextHandle, mem: MemoryHandle
+    ) raises HALError -> UInt64:
+        var address = UnsafeMaybeUninit[UInt64]()
+        var status = self._raw.memory_unwrap.f(
+            context, mem, OutParam[UInt64](to=address)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to unwrap memory: {err.message}"),
+            )
+        return address.unsafe_assume_init_ref()
+
     def alloc_pinned(
         self, context: ContextHandle, byte_size: UInt64
     ) raises HALError -> MemoryHandle:
@@ -826,6 +860,24 @@ struct RawPlugin(Movable):
             memory: MemoryHandle,
         ) thin -> PluginResultCode,
     ]
+    var memory_wrap: HALFunction[
+        "M_driver_memory_wrap",
+        def(
+            context: ContextHandle,
+            address: UInt64,
+            size: UInt64,
+            owning: Bool,
+            memory: OutParam[MemoryHandle, _],
+        ) thin -> PluginResultCode,
+    ]
+    var memory_unwrap: HALFunction[
+        "M_driver_memory_unwrap",
+        def(
+            context: ContextHandle,
+            memory: MemoryHandle,
+            address: OutParam[UInt64, _],
+        ) thin -> PluginResultCode,
+    ]
     var memory_alloc_async: HALFunction[
         "M_driver_memory_alloc_async",
         def(
@@ -1059,6 +1111,8 @@ struct RawPlugin(Movable):
             handle, so_path
         )
         self.memory_free_sync = type_of(self.memory_free_sync)(handle, so_path)
+        self.memory_wrap = type_of(self.memory_wrap)(handle, so_path)
+        self.memory_unwrap = type_of(self.memory_unwrap)(handle, so_path)
         self.memory_alloc_async = type_of(self.memory_alloc_async)(
             handle, so_path
         )

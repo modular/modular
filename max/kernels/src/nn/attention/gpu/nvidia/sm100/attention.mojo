@@ -84,16 +84,21 @@ struct FA4Config[
     var swizzle_mode: TensorMapSwizzle
     var use_fused_kv: Bool
     var pair_cta: Bool
-    var num_qo: Int
+    var num_q: Int
     # Single-O TMEM mode: reuse ONE O accumulator (TMEM_O1 aliased to TMEM_O0,
     # tmem_used = 2*BN + padded_ov instead of 2*BN + 2*padded_ov), so a wide V
     # (e.g. GLM v_head_dim=256, ov_depth too big for the 2-O layout) still fits
-    # the 512-col TMEM. Implies num_qo==1 (the kernel body already aliases O in
+    # the 512-col TMEM. Implies num_q==1 (the kernel body already aliases O in
     # the 1Q path). Default False ⇒ EXACTLY the pre-existing 2-O behavior (both
     # 2Q and the pre-existing prefer_1q short-seq 1Q stay byte-identical).
     var single_o: Bool
     var page_size: Int
     var is_mla: Bool
+    # Split-K cluster size for the num_q==1 path: the number of CTAs grouped in
+    # a cluster that partition the K/V sequence and combine via DSMEM. 1 = no
+    # split-K (the cluster is then just `cta_group` for pair-CTA). Compile-time
+    # because it drives the static `nvvm.cluster_dim` metadata.
+    var splitk_partitions: Int
     var row_major_v_atoms: Bool
     var row_major_k_atoms: Bool
 
@@ -121,6 +126,33 @@ struct FA4Config[
     @always_inline
     def cta_group(self) -> Int:
         return 2 if self.pair_cta else 1
+
+    @always_inline
+    def cluster_size(self) -> Int:
+        """CTAs per launch cluster.
+
+        Unifies the two cluster uses: `cta_group` (pair-CTA shares one MMA
+        across 2 CTAs) and `splitk_partitions` (num_q==1 split-K groups CTAs
+        that independently attend over K/V partitions and combine via DSMEM).
+        These are mutually exclusive today (split-K is single-CTA only), so the
+        product is `cta_group` for pair-CTA and `splitk_partitions` for split-K.
+        Drives the static `nvvm.cluster_dim` metadata and the launch
+        `cluster_dim`.
+        """
+        return self.cta_group() * self.splitk_partitions
+
+    @always_inline
+    def splitk_dynamic(self) -> Bool:
+        """True when this config uses the runtime-sized (dynamic) split-K
+        cluster — the num_q==1 split-K path (cta_group==1, splitk_partitions>1).
+
+        Such configs launch via `SM100MHA2Q.kernel_dyncluster` (no static
+        `nvvm.cluster_dim` metadata; cluster size chosen at launch) rather than
+        the static `kernel` entry. `supported()` forbids `splitk_partitions>1`
+        for any config other than num_q==1, so the `num_q==1` term is implied,
+        but it is spelled out for clarity at the dispatch/selection site.
+        """
+        return self.num_q == 1 and self.splitk_partitions > 1
 
     @always_inline
     def PairBM_eff(self) -> Int:
@@ -336,8 +368,9 @@ struct FA4Config[
         page_size: Int,
         is_mla: Bool,
         pair_cta: Bool = False,
-        num_qo: Int = 2,
+        num_q: Int = 2,
         num_qk_stages: Int = 0,
+        splitk_partitions: Int = 1,
         nope_depth: Int = -1,
         single_o: Bool = False,
         bn_cap: Int = 0,
@@ -354,18 +387,19 @@ struct FA4Config[
         self.group = group
         self.qk_depth = qk_depth
         self.pair_cta = pair_cta
-        self.num_qo = num_qo
-        # single_o implies num_qo==1 (the body's 1Q path aliases O). Guard
+        self.num_q = num_q
+        # single_o implies num_q==1 (the body's 1Q path aliases O). Guard
         # against an inconsistent caller; `single_o=False` is the default and
         # leaves every existing config untouched.
-        self.single_o = single_o and num_qo == 1
+        self.single_o = single_o and num_q == 1
         self.page_size = page_size
         self.is_mla = is_mla
+        self.splitk_partitions = splitk_partitions
         self.MMA_M = 256 if pair_cta else 128
-        # num_qo=1 halves BM to MMA_M (=128) — each CTA now covers half as
-        # many Q rows. supported() forbids num_qo=1 with pair_cta, so MMA_M
-        # is always 128 here when num_qo == 1.
-        if num_qo == 1:
+        # num_q=1 halves BM to MMA_M (=128) — each CTA now covers half as
+        # many Q rows. supported() forbids num_q=1 with pair_cta, so MMA_M
+        # is always 128 here when num_q == 1.
+        if num_q == 1:
             self.BM = self.MMA_M
         else:
             self.BM = 256
@@ -497,18 +531,18 @@ struct FA4Config[
         # - S producers: 2 (1 per warp group)
         # - C barriers: 4 (C0/C1 producer/consumer)
         # - Order barriers: 2 (only when EnableForcedOrdering)
-        # - Q1Sync barriers: num_qk_stages (only when num_qo == 2; num_qo=1
+        # - Q1Sync barriers: num_qk_stages (only when num_q == 2; num_q=1
         #   shares Q across both pipelines so no Q1Sync slot is needed —
         #   FA4MiscMBars collapses Q1SyncIdx in that mode)
         # - O producers: 2 (O consumers reuse S_consumer[0], not separate)
         # Total fixed = 8 + order_barrier_count + 2*num_pv_stages
-        #             + (num_qk_stages if num_qo == 2 else 0)
+        #             + (num_qk_stages if num_q == 2 else 0)
         comptime order_barrier_count: Int = 2 if EnableForcedOrdering else 0
         misc_mbars_fixed_size = (
             8
             + order_barrier_count
             + 2 * self.num_pv_stages
-            + (self.num_qk_stages if num_qo == 2 else 0)
+            + (self.num_qk_stages if num_q == 2 else 0)
         )
         smem_use += misc_mbars_fixed_size * Self.mbar_size
 
@@ -537,13 +571,13 @@ struct FA4Config[
         # Must match `SM100AttentionSMem.correction_bytes` in smem.mojo: the
         # layout reserves one Float32 slot per softmax thread, i.e.
         # `2 * WARPGROUP_SIZE = 256` Float32 entries (1 KiB) regardless of
-        # `num_qo`. In 2Q this equals `BM * num_correction_cols`, but 1Q
+        # `num_q`. In 2Q this equals `BM * num_correction_cols`, but 1Q
         # halves `BM` to 128 and needs the doubling factor here too.
         # Without it, `smem_use` (passed as `shared_mem_bytes` at launch) is
         # 512 bytes short of the smem.mojo layout, and the trailing mbar /
         # tmem_addr regions overflow into unmapped __shared__ on init.
         smem_use += (
-            (2 if num_qo == 1 else 1)
+            (2 if num_q == 1 else 1)
             * self.BM
             * Self.num_correction_cols
             * size_of[DType.float32]()
@@ -665,15 +699,19 @@ struct FA4Config[
             and self.page_size % Self.MMA_K != 0
         ):
             return False
+        # Split-K (cluster partitioning of K/V) is only wired for the
+        # num_q==1 single-CTA path; any other config must leave it disabled.
+        if self.num_q != 1 and self.splitk_partitions != 1:
+            return False
         base = (
             self.BN >= 64
             and self.num_kv_stages >= 2
             and self.tmem_used <= Self.sm100_tmem_cols
             and self.smem_used <= Self.sm100_smem_carveout
         )
-        if self.num_qo == 1:
-            # num_qo=1 is single-CTA only (pair-CTA only requires double
-            # the seq-len of single-CTA, num_qo=1 is for small seq-len).
+        if self.num_q == 1:
+            # num_q=1 is single-CTA only (pair-CTA only requires double
+            # the seq-len of single-CTA, num_q=1 is for small seq-len).
             # pair-CTA decreases perf in every benchmark I've tried
             # anyway, so it especially doesn't make sense for small
             # seq-len.
@@ -682,6 +720,15 @@ struct FA4Config[
                 and self.qk_depth >= 64
                 and self.qk_depth <= 256
                 and not self.pair_cta
+                # Split-K cluster size P (portable: 2-SM clusters cap at 8).
+                # P must be a power of two so block_idx.x // P (scheduler) and
+                # the depth-band split (M4) fold to shifts.
+                and (
+                    self.splitk_partitions == 1
+                    or self.splitk_partitions == 2
+                    or self.splitk_partitions == 4
+                    or self.splitk_partitions == 8
+                )
             )
         if self.pair_cta:
             # Pair-CTA: depth > 64 (depth=64 needs 32B swizzles) and <= 128.
@@ -689,20 +736,20 @@ struct FA4Config[
         return base and self.qk_depth >= 64
 
     @always_inline
-    def with_num_qo(self, num_qo: Int, *, num_qk_stages: Int = 0) -> Self:
-        """Reconstruct this config with a different `num_qo` (single-CTA).
+    def with_num_q(self, num_q: Int, *, num_qk_stages: Int = 0) -> Self:
+        """Reconstruct this config with a different `num_q` (single-CTA).
 
         `num_qk_stages == 0` (default) lets the constructor derive the
         optimal staging for the new shape — appropriate for the dispatch-time
         1Q/2Q selection, where each launch config is free-standing. A nonzero
         value pins the staging (see `switch_1q_config`).
 
-        `pair_cta` is forced False because `num_qo == 1` is single-CTA only
+        `pair_cta` is forced False because `num_q == 1` is single-CTA only
         (see `supported()`). Re-passing the stored `swizzle_mode` is faithful:
         the constructor re-derives it (FP8 re-forces 64B), and it is already
         the post-override value here. The `row_major_{v,k}_atoms` fields are
         not re-passed: the constructor recomputes them from
-        `page_size`/`BN`/`is_mla`, and `BN` is `num_qo`-independent, so the
+        `page_size`/`BN`/`is_mla`, and `BN` is `num_q`-independent, so the
         value is identical to `self`'s.
         """
         return Self(
@@ -714,20 +761,53 @@ struct FA4Config[
             page_size=self.page_size,
             is_mla=self.is_mla,
             pair_cta=False,
-            num_qo=num_qo,
+            num_q=num_q,
             num_qk_stages=num_qk_stages,
             nope_depth=self.nope_depth,
             # Preserve single-O only when the reconstructed config is itself 1Q.
-            # The existing prefer_1q short-seq path calls with_num_qo(1) on a
+            # The existing prefer_1q short-seq path calls with_num_q(1) on a
             # single_o=False 2Q config -> stays single_o=False (byte-identical).
-            single_o=self.single_o and num_qo == 1,
+            single_o=self.single_o and num_q == 1,
+        )
+
+    @always_inline
+    def with_splitk(self, splitk_partitions: Int) -> Self:
+        """Reconstruct this config with a split-K cluster size (num_q==1).
+
+        Split-K groups `splitk_partitions` single-CTA kernels in a launch
+        cluster that partition the K/V sequence and (from M4) combine via
+        DSMEM. `pair_cta` is forced False — split-K is single-CTA only: each
+        CTA runs its own `cta_group::1` MMA over its own TMEM/SMEM, and the
+        cluster exists purely to group the split-K partitions. `num_q` and the
+        derived `num_qk_stages` are preserved, so `with_splitk(1)` is a no-op
+        (identical config) and the split-K plumbing folds away.
+
+        `nope_depth` (the Q@K'/Q_nope width) and `single_o` (the wide-V 1Q TMEM
+        mode) are re-passed so a GLM-style config (`v_head_dim != qk_nope`) or a
+        single-O config survives the reconstruction; both are byte-identical for
+        the DeepSeek/MHA shapes (nope == ov, single_o == False).
+        """
+        return Self(
+            num_q_heads=self.num_q_heads,
+            group=self.group,
+            qk_depth=self.qk_depth,
+            ov_depth=self.ov_depth,
+            swizzle_mode=self.swizzle_mode,
+            page_size=self.page_size,
+            is_mla=self.is_mla,
+            pair_cta=False,
+            num_q=self.num_q,
+            num_qk_stages=self.num_qk_stages,
+            splitk_partitions=splitk_partitions,
+            nope_depth=self.nope_depth,
+            single_o=self.single_o,
         )
 
     @always_inline
     def switch_1q_config(self) -> Self:
         """The 1Q variant used by the in-kernel per-sequence 1Q/2Q switch.
 
-        Unlike the dispatch-time conversion (`with_num_qo(1)`), which is free
+        Unlike the dispatch-time conversion (`with_num_q(1)`), which is free
         to pick the optimal staging, this pins `num_qk_stages` to this (2Q)
         config's value: the switch feeds the 2Q-built TMA ops to the 1Q body,
         so the per-stage K split (`QTMATile`'s smem-tile last dim and
@@ -737,7 +817,7 @@ struct FA4Config[
         configs; if its extra barriers do not fit in 1Q smem, the constructor
         falls back to 1 stage and `can_switch_to_1q()` rejects the switch.
         """
-        return self.with_num_qo(1, num_qk_stages=self.num_qk_stages)
+        return self.with_num_q(1, num_qk_stages=self.num_qk_stages)
 
     @always_inline
     def can_switch_to_1q(self) -> Bool:
@@ -751,7 +831,7 @@ struct FA4Config[
         fails when the pinned staging could not be honored (smem fallback to
         1 stage). When this returns False the kernel runs pure 2Q.
         """
-        if self.num_qo != 2 or self.pair_cta:
+        if self.num_q != 2 or self.pair_cta:
             return False
         var cfg1 = self.switch_1q_config()
         return cfg1.supported() and cfg1.num_qk_stages == self.num_qk_stages
@@ -773,8 +853,8 @@ struct FA4Config[
         return String(
             "pair_cta = ",
             self.pair_cta,
-            "\nnum_qo = ",
-            self.num_qo,
+            "\nnum_q = ",
+            self.num_q,
             "\nMMA_M = ",
             self.MMA_M,
             "\nqk_depth = ",

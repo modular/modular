@@ -35,8 +35,23 @@ is no card list to maintain.
 | ghostscript   | combine per-card PDFs (`gs`)    | `brew install ghostscript`              |
 | Node / npx    | runs `svgo` to shrink SVGs      | `brew install node`                     |
 
-Fonts: the cards use **Inter** (text) and **Roboto Mono** (code). Install both
-locally; Chrome renders them at build time. Fonts are not part of this kit.
+### Fonts (required)
+
+The cards use **Inter** (text) and **Roboto Mono** (code). Both must be
+installed on the build machine and visible to headless Chrome before you run
+`build.py`. The card CSS names these families with no `@font-face`, so they
+resolve only from installed system fonts. Variable versions are fine; they trace
+cleanly. Fonts are not bundled in this kit.
+
+The dependency is build-time only. Chrome resolves fonts while rendering HTML to
+PDF, then `mutool` traces the PDF's glyphs into SVG paths. The finished files
+carry no font reference and render anywhere; the build, not the output, is what
+needs the fonts.
+
+If a font is missing, Chrome silently falls back and raises no error: the text
+font falls back acceptably, but the code font falls back to `SF Mono`/`Menlo`,
+which traces into garbled, unreadable glyphs in every format. So if code blocks
+look broken, first confirm Inter and Roboto Mono are installed.
 
 ## Build
 

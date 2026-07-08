@@ -348,7 +348,7 @@ struct String(
             SIMDSize(mlir_value=__mlir_op.`pop.string.size`(data.value))
         )
         self._ptr_or_data = UnsafePointer[_, MutUntrackedOrigin](
-            __mlir_op.`pop.string.address`(data.value)
+            _mlir_value=__mlir_op.`pop.string.address`(data.value)
         ).bitcast[Byte]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
@@ -760,7 +760,7 @@ struct String(
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
-            ptr.bitcast[Atomic[DType.int]]().address
+            ptr.bitcast[Atomic[DType.int]]()._get_kgen_pointer()
         ) = Atomic[DType.int](1)
 
         # Return a pointer to right after the header, which is where the string

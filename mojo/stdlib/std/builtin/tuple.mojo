@@ -207,14 +207,16 @@ struct Tuple[*element_types: Movable](
         """
         # Return a reference to an element at the specified index, propagating
         # mutability of self.
-        var storage_kgen_ptr = UnsafePointer(to=self._mlir_value).address
+        var storage_kgen_ptr = UnsafePointer(
+            to=self._mlir_value
+        )._get_kgen_pointer()
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
             index=idx.__mlir_index__(),
             _type=UnsafePointer[Self.element_types[idx]]._mlir_type,
         ](storage_kgen_ptr)
-        return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
+        return UnsafePointer[_, origin_of(self)](_mlir_value=elt_kgen_ptr)[]
 
     @always_inline("nodebug")
     def __contains__[T: Equatable](self, value: T) -> Bool:

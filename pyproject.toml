@@ -121,9 +121,10 @@ convention = "google"
 "max/python/max/_core/dialects/**/*" = ["D"]
 "max/python/max/_core/internal/**/*" = ["D"]
 "max/python/max/**/_*.py" = ["D"]
-# Ignore ANN001 (function argument missing type annotation) for auto-generated
-# stubfiles
-"*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206", "D200", "D212", "D418"]
+# Disable most annotations for third-party stubfiles
+"*/_mlir/*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206", "D200", "D212", "D418"]
+# Be a little less strict with docs in first-party stubfiles
+"*/_core/*.pyi" = ["D200", "D212", "D418"]
 # Ignore type annotations for the llm-book tutorial files
 "oss/llm-book/**/*.py" = ["ANN001", "ANN201", "ANN202"]
 # Ignore type annotations, intentional math unicode (×), and common tutorial code patterns
