@@ -160,11 +160,10 @@ def _handle_import_error(
         # Backport `add_note()`
         import exceptiongroup  # noqa: F401
 
-    e.add_note(  # type: ignore
-        f"`max {subcommand}` is not available with the base `max` package."
-    )
     suggest = suggestion[0] if os.getenv("CONDA_PREFIX") else suggestion[1]
-    e.add_note(f"Please install {suggest}")  # type: ignore
+    e.add_note(  # type: ignore
+        f"To use the `max {subcommand}` command, install the `{suggest}` package."
+    )
     raise e
 
 
