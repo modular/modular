@@ -45,7 +45,7 @@ mkdir -p "$logs_dir"
 
 # Cache resource results
 if [[ ! -f "$bazelrc_root/local-resources.bazelrc" ]]; then
-  ./bazel/internal/detect_local_resources.sh > "$bazelrc_root/local-resources.bazelrc"
+  "$script_root/../bazel/internal/detect_local_resources.sh" > "$bazelrc_root/local-resources.bazelrc"
 fi
 
 bazelrc_lines+=("import %workspace%/build/local-resources.bazelrc")
