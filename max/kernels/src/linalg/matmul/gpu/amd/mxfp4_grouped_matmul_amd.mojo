@@ -964,7 +964,9 @@ def mxfp4_grouped_matmul_amd_preb(
             return run_kernel[64, 128, 512, 64, False, deep_prime=True]()
 
     comptime if N == 6144 and packed_K == (6144 // 2):  # MiniMax-M3 gate+up
-        if etm <= 4:
+        if etm <= 2:
+            return run_kernel[16, 64, 512, 16, True, STREAM, wg_per_cu=1]()
+        elif etm <= 4:
             return run_kernel[16, 64, 512, 16, True, STREAM]()
         elif etm <= 256:
             return run_kernel[16, 128, 512, 32, True, STREAM]()
@@ -980,7 +982,9 @@ def mxfp4_grouped_matmul_amd_preb(
             return run_kernel[64, 128, 512, 64, False]()
 
     comptime if N == 6144 and packed_K == (3072 // 2):  # MiniMax-M3 down
-        if etm <= 4:
+        if etm <= 2:
+            return run_kernel[16, 64, 512, 16, True, STREAM, wg_per_cu=1]()
+        elif etm <= 4:
             return run_kernel[16, 64, 512, 16, True, STREAM]()
         elif etm <= 256:
             return run_kernel[16, 128, 512, 32, True, STREAM]()
