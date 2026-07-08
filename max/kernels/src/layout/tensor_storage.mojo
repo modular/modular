@@ -19,6 +19,7 @@ from std.gpu.host import DevicePointer
 from std.os import abort
 from std.sys import size_of
 from std.sys.info import is_gpu
+from layout import TensorLayout, Idx
 
 
 trait TensorStorage:
@@ -288,8 +289,223 @@ trait TensorStorage:
         ...
 
 
-struct PointerStorage[*, element_width: Int = 1](TensorStorage):
-    """Implements `TensorStorage` backed by a raw `UnsafePointer`.
+trait TensorArith(TensorStorage):
+    """Extends `TensorStorage` with in-place elementwise arithmetic.
+
+    A conforming type provides the same non-owning storage handle as
+    `TensorStorage`, plus a family of in-place elementwise binary operations.
+    Each operation takes its operands as `(storage, layout)` tuples, so the
+    layout describing a handle travels alongside it.
+    """
+
+    @staticmethod
+    def add[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Adds `other` into `storage` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+    @staticmethod
+    def mul[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Multiplies `storage` by `other` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+    @staticmethod
+    def sub[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Subtracts `other` from `storage` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+    @staticmethod
+    def floordiv[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Floor-divides `storage` by `other` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+    @staticmethod
+    def truediv[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """True-divides `storage` by `other` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+
+struct PointerStorage[*, element_width: Int = 1](TensorArith):
+    """Implements `TensorArith` backed by a raw `UnsafePointer`.
 
     `PointerStorage` is the default storage policy for `TileTensor`. Its
     `StorageType` handle is a plain `UnsafePointer`, and every operation is
@@ -579,6 +795,378 @@ struct PointerStorage[*, element_width: Int = 1](TensorStorage):
         """
         return (Int(storage) - Int(other)) // size_of[dtype]()
 
+    @always_inline
+    @staticmethod
+    def _elementwise_binary_with_broadcast[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+        func: Some[
+            def(
+                SIMD[dtype, Self.element_width], SIMD[dtype, Self.element_width]
+            ) -> (SIMD[dtype, Self.element_width])
+        ],
+    ):
+        """Apply an elementwise binary operation with broadcasting support.
+
+        This internal method applies a binary operation between elements of this
+        tensor and another tensor, with support for limited broadcasting
+        patterns. The operation is performed in-place on this tensor.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The dtype of both tensors's elements.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+            func: A binary function that takes two elements (one from each
+                tensor) and returns a single element as the result of the
+                operation.
+
+        Notes:
+
+        - Currently supports only rank-2 tensors or tensors of the same rank.
+        - For tensors of the same rank, shapes must match exactly.
+        - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
+            match the corresponding dimension of the rank-2 tensor.
+        - The operation is optimized based on the memory layout of both tensors.
+        """
+
+        ref self_storage = storage[0]
+        ref self_layout = storage[1]
+        ref other_storage = other[0]
+        ref other_layout = other[1]
+
+        comptime self_rank = type_of(self_layout).rank
+        comptime other_rank = type_of(other_layout).rank
+        comptime other_shape[i: Int] = type_of(other_layout).static_shape[i]
+        comptime self_shape[i: Int] = type_of(self_layout).static_shape[i]
+
+        comptime if self_rank == other_rank:
+            comptime for axis in range(type_of(self_layout).rank):
+                comptime assert other_shape[axis] == self_shape[axis], (
+                    "_elementwise_binary_with_broadcast requires shape to"
+                    " be the same for tensors of the same rank"
+                )
+
+        comptime assert type_of(self_layout).all_dims_known, (
+            "_elementwise_binary_with_broadcast must operates on tensors"
+            " of statically know layouts"
+        )
+        comptime assert other_rank <= self_rank, (
+            "_elementwise_binary_with_broadcast must operates on tensor of"
+            " equal of lower rank"
+        )
+
+        # TODO(KERN-812): Support numpy like broadcasting and relax rank-2
+        # constrain.
+        comptime assert (
+            self_rank == 2 or self_rank == other_rank
+        ), "Only supports rank-2 tensor, or same rank"
+
+        comptime if other_rank == 1:
+            comptime assert other_shape[0] == self_shape[0], (
+                "_elementwise_binary_with_broadcast 1d tensor operand must"
+                " have a dim that matches the tensors"
+            )
+
+            comptime for i in range(type_of(self_layout).static_product):
+                comptime other_size = type_of(other_layout).static_product
+
+                var lhs_idx = self_layout(Idx[i])
+                var rhs_idx = other_layout(Idx[i % other_size])
+
+                self_storage.bitcast[Scalar[dtype]]().store(
+                    lhs_idx,
+                    func(
+                        self_storage.bitcast[Scalar[dtype]]().load[
+                            width=Self.element_width
+                        ](lhs_idx),
+                        other_storage.bitcast[Scalar[dtype]]().load[
+                            width=Self.element_width
+                        ](rhs_idx),
+                    ),
+                )
+
+        comptime for i in range(type_of(self_layout).static_product):
+            var lhs_idx = self_layout(Idx[i])
+            var rhs_idx = other_layout(Idx[i])
+            self_storage.bitcast[Scalar[dtype]]().store(
+                lhs_idx,
+                func(
+                    self_storage.bitcast[Scalar[dtype]]().load[
+                        width=Self.element_size
+                    ](lhs_idx),
+                    other_storage.bitcast[Scalar[dtype]]().load[
+                        width=Self.element_size
+                    ](rhs_idx),
+                ),
+            )
+
+    @staticmethod
+    def add[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Adds `other` into `storage` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def add(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return lhs + rhs
+
+        Self._elementwise_binary_with_broadcast(storage, other, add)
+
+    @staticmethod
+    def mul[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Multiplies `storage` by `other` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def mul(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return lhs * rhs
+
+        Self._elementwise_binary_with_broadcast(storage, other, mul)
+
+    @staticmethod
+    def sub[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Subtracts `other` from `storage` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def sub(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return lhs - rhs
+
+        Self._elementwise_binary_with_broadcast(storage, other, sub)
+
+    @staticmethod
+    def floordiv[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Floor-divides `storage` by `other` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def floordiv(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return lhs // rhs
+
+        Self._elementwise_binary_with_broadcast(storage, other, floordiv)
+
+    @staticmethod
+    def truediv[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """True-divides `storage` by `other` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def truediv(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return lhs / rhs
+
+        Self._elementwise_binary_with_broadcast(storage, other, truediv)
+
 
 @always_inline
 def _device_leaf_ptr[
@@ -628,8 +1216,8 @@ def _device_leaf_ptr[
         abort("DevicePointerStorage operations are not supported on host")
 
 
-struct DevicePointerStorage[*, element_width: Int = 1](TensorStorage):
-    """Implements `TensorStorage` backed by a `DevicePointer` handle.
+struct DevicePointerStorage[*, element_width: Int = 1](TensorArith):
+    """Implements `TensorArith` backed by a `DevicePointer` handle.
 
     `DevicePointerStorage` is the device-pointer-backed analogue of
     `PointerStorage`, accepting the same `element_width` parameter. Its
@@ -679,6 +1267,17 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorStorage):
         origin: The origin tracking the lifetime of the borrowed storage.
         address_space: The address space the borrowed storage resides in.
     """
+
+    @staticmethod
+    def write_type_name_to(mut writer: Some[Writer]):
+        """Write the storage type name representation to the writer.
+
+        Args:
+            writer: The `Writer` to output to.
+        """
+        t"DevicePointerStorage[element_size={Self.element_size}]".write_to(
+            writer
+        )
 
     @doc_hidden
     @staticmethod
@@ -972,3 +1571,370 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorStorage):
             # The element offsets are available on host without dereferencing;
             # their difference is the scalar-element distance (element_size 1).
             return storage.offset() - other.offset()
+
+    @always_inline
+    @staticmethod
+    def _elementwise_binary_with_broadcast[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, AddressSpace.GENERIC],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, AddressSpace.GENERIC],
+            OtherLayoutType,
+        ],
+        func: Some[
+            def(
+                SIMD[dtype, Self.element_width], SIMD[dtype, Self.element_width]
+            ) -> (SIMD[dtype, Self.element_width])
+        ],
+    ):
+        """Apply an elementwise binary operation with broadcasting support.
+
+        This internal method applies a binary operation between elements of this
+        tensor and another tensor, with support for limited broadcasting
+        patterns. The operation is performed in-place on this tensor.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            dtype: The dtype of both tensors's elements.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+            func: A binary function that takes two elements (one from each
+                tensor) and returns a single element as the result of the
+                operation.
+
+        Notes:
+
+        - Currently supports only rank-2 tensors or tensors of the same rank.
+        - For tensors of the same rank, shapes must match exactly.
+        - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
+            match the corresponding dimension of the rank-2 tensor.
+        - The operation is optimized based on the memory layout of both tensors.
+        """
+
+        ref self_storage = storage[0]
+        ref self_layout = storage[1]
+        ref other_storage = other[0]
+        ref other_layout = other[1]
+
+        comptime self_rank = type_of(self_layout).rank
+        comptime other_rank = type_of(other_layout).rank
+        comptime other_shape[i: Int] = type_of(other_layout).static_shape[i]
+        comptime self_shape[i: Int] = type_of(self_layout).static_shape[i]
+
+        comptime if self_rank == other_rank:
+            comptime for axis in range(type_of(self_layout).rank):
+                comptime assert other_shape[axis] == self_shape[axis], (
+                    "_elementwise_binary_with_broadcast requires shape to"
+                    " be the same for tensors of the same rank"
+                )
+
+        comptime assert type_of(self_layout).all_dims_known, (
+            "_elementwise_binary_with_broadcast must operates on tensors"
+            " of statically know layouts"
+        )
+        comptime assert other_rank <= self_rank, (
+            "_elementwise_binary_with_broadcast must operates on tensor of"
+            " equal of lower rank"
+        )
+
+        # TODO(KERN-812): Support numpy like broadcasting and relax rank-2
+        # constrain.
+        comptime assert (
+            self_rank == 2 or self_rank == other_rank
+        ), "Only supports rank-2 tensor, or same rank"
+
+        comptime if other_rank == 1:
+            comptime assert other_shape[0] == self_shape[0], (
+                "_elementwise_binary_with_broadcast 1d tensor operand must"
+                " have a dim that matches the tensors"
+            )
+
+            comptime for i in range(type_of(self_layout).static_product):
+                comptime other_size = type_of(other_layout).static_product
+
+                var lhs_idx = self_layout(Idx[i])
+                var rhs_idx = other_layout(Idx[i % other_size])
+
+                _device_leaf_ptr(self_storage).store(
+                    lhs_idx,
+                    func(
+                        _device_leaf_ptr(self_storage).load[
+                            width=Self.element_width
+                        ](lhs_idx),
+                        _device_leaf_ptr(other_storage).load[
+                            width=Self.element_width
+                        ](rhs_idx),
+                    ),
+                )
+
+        comptime for i in range(type_of(self_layout).static_product):
+            var lhs_idx = self_layout(Idx[i])
+            var rhs_idx = other_layout(Idx[i])
+            _device_leaf_ptr(self_storage).store(
+                lhs_idx,
+                func(
+                    _device_leaf_ptr(self_storage).load[
+                        width=Self.element_size
+                    ](lhs_idx),
+                    _device_leaf_ptr(other_storage).load[
+                        width=Self.element_size
+                    ](rhs_idx),
+                ),
+            )
+
+    @staticmethod
+    def add[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Adds `other` into `storage` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def add(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return lhs + rhs
+
+        Self._elementwise_binary_with_broadcast(storage, other, add)
+
+    @staticmethod
+    def mul[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Multiplies `storage` by `other` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def mul(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return lhs * rhs
+
+        Self._elementwise_binary_with_broadcast(storage, other, mul)
+
+    @staticmethod
+    def sub[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Subtracts `other` from `storage` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def sub(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return lhs - rhs
+
+        Self._elementwise_binary_with_broadcast(storage, other, sub)
+
+    @staticmethod
+    def floordiv[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Floor-divides `storage` by `other` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def floordiv(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return lhs // rhs
+
+        Self._elementwise_binary_with_broadcast(storage, other, floordiv)
+
+    @staticmethod
+    def truediv[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """True-divides `storage` by `other` elementwise, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def truediv(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return lhs / rhs
+
+        Self._elementwise_binary_with_broadcast(storage, other, truediv)

@@ -1497,3 +1497,123 @@ def test_split_dynamic_alignment_trailing_zero_partition() raises:
     assert_equal(split0[1, 3], 11)
     assert_equal(split1[0, 0], 4)
     assert_equal(split1[1, 3], 15)
+
+
+def test_iadd_same_shape() raises:
+    """In-place elementwise add of two same-shape tensors."""
+    var a_data = InlineArray[Int32, 4](fill=0)
+    var b_data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 1
+    a[0, 1] = 2
+    a[1, 0] = 3
+    a[1, 1] = 4
+    b[0, 0] = 10
+    b[0, 1] = 20
+    b[1, 0] = 30
+    b[1, 1] = 40
+
+    a += b
+
+    assert_equal(a[0, 0], 11)
+    assert_equal(a[0, 1], 22)
+    assert_equal(a[1, 0], 33)
+    assert_equal(a[1, 1], 44)
+
+
+def test_imul_same_shape() raises:
+    """In-place elementwise multiply of two same-shape tensors."""
+    var a_data = InlineArray[Int32, 4](fill=0)
+    var b_data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 1
+    a[0, 1] = 2
+    a[1, 0] = 3
+    a[1, 1] = 4
+    b[0, 0] = 2
+    b[0, 1] = 3
+    b[1, 0] = 4
+    b[1, 1] = 5
+
+    a *= b
+
+    assert_equal(a[0, 0], 2)
+    assert_equal(a[0, 1], 6)
+    assert_equal(a[1, 0], 12)
+    assert_equal(a[1, 1], 20)
+
+
+def test_isub_same_shape() raises:
+    """In-place elementwise subtract of two same-shape tensors."""
+    var a_data = InlineArray[Int32, 4](fill=0)
+    var b_data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 10
+    a[0, 1] = 20
+    a[1, 0] = 30
+    a[1, 1] = 40
+    b[0, 0] = 1
+    b[0, 1] = 2
+    b[1, 0] = 3
+    b[1, 1] = 4
+
+    a -= b
+
+    assert_equal(a[0, 0], 9)
+    assert_equal(a[0, 1], 18)
+    assert_equal(a[1, 0], 27)
+    assert_equal(a[1, 1], 36)
+
+
+def test_ifloordiv_same_shape() raises:
+    """In-place elementwise floor-divide of two same-shape tensors."""
+    var a_data = InlineArray[Int32, 4](fill=0)
+    var b_data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 10
+    a[0, 1] = 20
+    a[1, 0] = 30
+    a[1, 1] = 40
+    b[0, 0] = 3
+    b[0, 1] = 7
+    b[1, 0] = 4
+    b[1, 1] = 9
+
+    a //= b
+
+    assert_equal(a[0, 0], 3)
+    assert_equal(a[0, 1], 2)
+    assert_equal(a[1, 0], 7)
+    assert_equal(a[1, 1], 4)
+
+
+def test_itruediv_same_shape() raises:
+    """In-place elementwise true-divide of two same-shape tensors."""
+    var a_data = InlineArray[Float32, 4](fill=0)
+    var b_data = InlineArray[Float32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 10.0
+    a[0, 1] = 20.0
+    a[1, 0] = 30.0
+    a[1, 1] = 40.0
+    b[0, 0] = 4.0
+    b[0, 1] = 5.0
+    b[1, 0] = 8.0
+    b[1, 1] = 16.0
+
+    a /= b
+
+    assert_equal(a[0, 0], 2.5)
+    assert_equal(a[0, 1], 4.0)
+    assert_equal(a[1, 0], 3.75)
+    assert_equal(a[1, 1], 2.5)

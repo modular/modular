@@ -33,7 +33,12 @@ from std.utils.coord import _coerce_dynamic
 
 from .swizzle import Swizzle
 
-from .tensor_storage import DevicePointerStorage, TensorStorage, PointerStorage
+from .tensor_storage import (
+    DevicePointerStorage,
+    TensorStorage,
+    TensorArith,
+    PointerStorage,
+)
 from .tile_layout import (
     Layout,
     RowMajorLayout,
@@ -2688,6 +2693,79 @@ struct TileTensor[
             ](self._storage),
             self.num_elements(),
             owning=False,
+        )
+
+    @always_inline
+    def __iadd__(
+        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+        """Adds `rhs` into this tensor elementwise, in place.
+
+        Args:
+            rhs: The tensor to add, broadcast against this tensor's layout.
+        """
+        Self.Storage.add(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
+        )
+
+    @always_inline
+    def __imul__(
+        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+        """Multiplies this tensor by `rhs` elementwise, in place.
+
+        Args:
+            rhs: The tensor to multiply by, broadcast against this tensor's
+                layout.
+        """
+        Self.Storage.mul(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
+        )
+
+    @always_inline
+    def __isub__(
+        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+        """Subtracts `rhs` from this tensor elementwise, in place.
+
+        Args:
+            rhs: The tensor to subtract, broadcast against this tensor's layout.
+        """
+        Self.Storage.sub(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
+        )
+
+    @always_inline
+    def __ifloordiv__(
+        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+        """Floor-divides this tensor by `rhs` elementwise, in place.
+
+        Args:
+            rhs: The tensor to floor-divide by, broadcast against this tensor's
+                layout.
+        """
+        Self.Storage.floordiv(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
+        )
+
+    @always_inline
+    def __itruediv__(
+        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+        """True-divides this tensor by `rhs` elementwise, in place.
+
+        Args:
+            rhs: The tensor to true-divide by, broadcast against this tensor's
+                layout.
+        """
+        Self.Storage.truediv(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
         )
 
 
