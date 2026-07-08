@@ -157,6 +157,9 @@ def _run_8x8_case[
         type_of(d_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_tt).LayoutType,
+        type_of(d_tt).Storage,
+        type_of(a_tt).Storage,
+        type_of(b_tt).Storage,
         transpose_b,
         BLOCK_M=BM,
         BLOCK_N=BN,
@@ -267,6 +270,9 @@ def _run_8x8_bias_case[
         type_of(d_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_tt).LayoutType,
+        type_of(d_tt).Storage,
+        type_of(a_tt).Storage,
+        type_of(b_tt).Storage,
         transpose_b,
         elementwise_lambda_fn=Optional[elementwise_epilogue_type](
             bias_epilogue
