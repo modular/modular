@@ -537,10 +537,12 @@ def _oracle_command_and_env(
                  N times (no forced split-K) and flags any non-bit-exact output.
     batch_invariance -- `--batch-invariance 1`: run a probe under two different
                  co-batch compositions and flag if the probe's output changes.
-    batch_invariance_negctl -- `--batch-invariance-negctl 1`: the negative
-                 control -- run the probe across batch sizes under the default
-                 partition heuristic and require the output to DIVERGE (proves
-                 the batch_invariance oracle has teeth; a bit-match is the FAIL).
+    batch_variance -- `--batch-variance 1`: the negative control (inverse of
+                 batch_invariance) -- run the probe across a batch composition
+                 that straddles an M-keyed dispatch breakpoint (dense matmul
+                 M=1 GEMV vs M>1 tile GEMM; attention default partition
+                 heuristic) and require the probe's output to DIVERGE. Proves
+                 the batch_invariance oracle has teeth; a bit-match is the FAIL.
     redzone   -- MAX redzone allocator: catches OOB *writes* at free (~native).
     poison    -- MAX poison allocator (`poison-all`) + `--check`: every device
                  allocation is NaN-filled, so an unwritten/uninitialized output
@@ -594,21 +596,15 @@ def _oracle_command_and_env(
         # checks the probe's output rows are bit-identical (atol=rtol=0). A
         # difference means a dispatch/reduction path keyed on the batch.
         return base_cmd + ["--batch-invariance", "1"], env
-    if oracle == "batch_invariance_negctl":
-        # Negative control for batch_invariance: run the probe across batch
-        # sizes under the DEFAULT partition heuristic (which keys the partition
-        # count on the batch size) and require the probe's output to DIVERGE.
-        # This proves the batch_invariance oracle has teeth; a bit-match (the
-        # control lost sensitivity, or the heuristic collapsed to one count for
-        # the shapes) is the FAILURE. Mirrors the positive-control canaries.
-        return base_cmd + ["--batch-invariance-negctl", "1"], env
     if oracle == "batch_variance":
         # Negative control (the inverse of batch_invariance): the target runs
-        # the SAME probe row in two batches whose sizes straddle an M-keyed
-        # dispatch breakpoint (e.g. dense matmul M=1 GEMV_SPLIT_K vs M>1 tile
-        # GEMM) and asserts the probe's output rows DIVERGE bit-for-bit --
-        # PASS iff divergence is observed, FAIL if they bit-match (the control
-        # lost its teeth / the path became invariant). This proves the
+        # the SAME probe row in two batches whose composition straddles an
+        # M-keyed dispatch breakpoint (dense matmul M=1 GEMV_SPLIT_K vs M>1 tile
+        # GEMM; attention decode's default partition heuristic, which keys the
+        # partition count on the batch size) and asserts the probe's output rows
+        # DIVERGE bit-for-bit -- PASS iff divergence is observed, FAIL if they
+        # bit-match (the control lost its teeth / the path became invariant, or
+        # the heuristic collapsed to one count for the shapes). This proves the
         # invariance oracles above have real sensitivity to a dispatch switch,
         # rather than passing vacuously. A bit-match is reported as a finding,
         # not silently swallowed.
@@ -1001,7 +997,6 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
             "schedule",
             "determinism",
             "batch_invariance",
-            "batch_invariance_negctl",
             "batch_variance",
             "contract",
             "redzone",

@@ -655,7 +655,7 @@ def main() raises:
     var schedule_repeats = flag_int(args, "--schedule", 0)
     var rerun = flag_int(args, "--rerun", 0)
     var batch_invariance = flag_int(args, "--batch-invariance", 0) == 1
-    var batch_negctl = flag_int(args, "--batch-invariance-negctl", 0) == 1
+    var batch_negctl = flag_int(args, "--batch-variance", 0) == 1
     seed(the_seed)
 
     if mode == "list-specs":

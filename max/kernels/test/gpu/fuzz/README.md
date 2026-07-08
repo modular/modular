@@ -76,18 +76,13 @@ Select with `--oracle`:
   compositions (`--batch-invariance 1`) and flag if the probe's output rows
   change (`atol=rtol=0`). Locks in a same-batch-different-neighbors invariant;
   a divergence is a real batch-variance finding.
-- `batch_invariance_negctl` — the negative control for `batch_invariance`
-  (`--batch-invariance-negctl 1`): run the probe across batch sizes under the
-  default partition heuristic (which keys the count on the batch size) and
-  require the output to DIVERGE. Proves the invariance oracle has teeth; a
-  bit-match (control lost sensitivity, or the heuristic collapsed to one count)
-  is the FAIL.
 - `batch_variance` — negative control (`--batch-variance 1`), the inverse of
-  `batch_invariance`: run the same probe row in two batch sizes that straddle an
-  M-keyed dispatch breakpoint and assert the probe's output DIVERGES
-  bit-for-bit. PASS iff divergence is observed (proving the invariance oracles
-  have teeth); a bit-match emits `FUZZ_CONTRACT_FAIL` and is reported, not
-  swallowed.
+  `batch_invariance`: run the same probe in two batch compositions that straddle
+  an M-keyed dispatch breakpoint (dense matmul M=1 GEMV vs M>1 tile GEMM;
+  attention decode's default partition heuristic, which keys the count on the
+  batch size) and assert the probe's output DIVERGES bit-for-bit. PASS iff
+  divergence is observed (proving the invariance oracles have teeth); a
+  bit-match emits `FUZZ_CONTRACT_FAIL` and is reported, not swallowed.
 - `redzone` — OOB writes, ~native speed, AMD-capable (validated on MI355).
 - `poison` — NaN-fills every device allocation (`MODULAR_DEBUG_DEVICE_ALLOCATOR=
   poison-all`), so an uninitialized read propagates NaN into the output and
