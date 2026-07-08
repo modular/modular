@@ -42,6 +42,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_rowwise_reductions.py",
     "test_runtime_source_notes.py",
     "test_scatter.py",
+    "test_tile_based_fusion.py",
 ]
 
 modular_py_library(
@@ -359,6 +360,26 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tile_based_fusion",
+    srcs = [
+        "test_tile_based_fusion.py",
+    ],
+    # NVIDIA-only: tile-based fusion is not yet validated on AMD/Apple GPUs —
+    # a coverage gate, not a hardware incompatibility (the codegen path emits
+    # generic Mojo via `foreach_fusion_tile` with no NVIDIA-specific branch).
+    # Widen this once the path is validated on other targets.
+    gpu_constraints = ["//:nvidia_gpu"],
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
