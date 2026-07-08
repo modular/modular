@@ -16,8 +16,10 @@ Compiling with ``session.compile(graph, tile_based_fusion=True)`` selects the
 tile-based programming model: elementwise kernels operate on ``TileTensor``
 values (driven by ``foreach_fusion_tile``) instead of SIMD. These tests
 exercise the whole path -- graph build, tile-based-fusion compile, init, and
-GPU execution -- and check the result against numpy for both a standalone
-``mo.add`` and a fused ``mo.add`` + ``mo.mul`` chain.
+GPU execution -- and check the result against numpy for a standalone
+``mo.add``, a fused ``mo.add`` + ``mo.mul`` chain, a bare ``mo.matmul``, and a
+fused ``mo.matmul`` + bias ``mo.add`` epilogue. Each case is covered both with
+runtime inputs and with a compile-time-constant operand.
 """
 
 from __future__ import annotations
@@ -104,3 +106,129 @@ def test_tile_based_fusion_add_mul() -> None:
     out = _run_tile_based_fusion(session, graph, a, b, c)
 
     np.testing.assert_allclose(out, (a + b) * c, rtol=1e-5, atol=1e-5)
+
+
+def test_tile_based_fusion_matmul() -> None:
+    """A standalone ``mo.matmul`` graph runs under the tile programming model."""
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    session = InferenceSession(devices=[Accelerator()])
+    gpu = DeviceRef.GPU(0)
+    with Graph(
+        "tile_based_fusion_matmul",
+        input_types=[
+            TensorType(DType.float32, _SHAPE, device=gpu),
+            TensorType(DType.float32, _SHAPE, device=gpu),
+        ],
+    ) as graph:
+        lhs, rhs = (v.tensor for v in graph.inputs)
+        graph.output(ops.matmul(lhs, rhs))
+
+    a = np.random.randn(*_SHAPE).astype(np.float32)
+    b = np.random.randn(*_SHAPE).astype(np.float32)
+    out = _run_tile_based_fusion(session, graph, a, b)
+
+    np.testing.assert_allclose(out, a @ b, rtol=1e-5, atol=1e-5)
+
+
+def test_tile_based_fusion_matmul_add() -> None:
+    """A fused ``mo.matmul`` + bias ``mo.add`` runs under the tile programming model."""
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    session = InferenceSession(devices=[Accelerator()])
+    gpu = DeviceRef.GPU(0)
+    bias_shape = [1, _SHAPE[1]]
+    with Graph(
+        "tile_based_fusion_matmul_add",
+        input_types=[
+            TensorType(DType.float32, _SHAPE, device=gpu),
+            TensorType(DType.float32, _SHAPE, device=gpu),
+            TensorType(DType.float32, bias_shape, device=gpu),
+        ],
+    ) as graph:
+        lhs, rhs, bias = (v.tensor for v in graph.inputs)
+        graph.output(ops.add(ops.matmul(lhs, rhs), bias))
+
+    a = np.random.randn(*_SHAPE).astype(np.float32)
+    b = np.random.randn(*_SHAPE).astype(np.float32)
+    bias_np = np.random.randn(*bias_shape).astype(np.float32)
+    out = _run_tile_based_fusion(session, graph, a, b, bias_np)
+
+    np.testing.assert_allclose(out, a @ b + bias_np, rtol=1e-5, atol=1e-5)
+
+
+def test_tile_based_fusion_add_constant() -> None:
+    """A standalone ``mo.add`` with a compile-time-constant operand."""
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    session = InferenceSession(devices=[Accelerator()])
+    gpu = DeviceRef.GPU(0)
+    b = np.random.randn(*_SHAPE).astype(np.float32)
+    with Graph(
+        "tile_based_fusion_add_constant",
+        input_types=[TensorType(DType.float32, _SHAPE, device=gpu)],
+    ) as graph:
+        (lhs,) = (v.tensor for v in graph.inputs)
+        rhs = ops.constant(b, DType.float32, device=gpu)
+        graph.output(ops.add(lhs, rhs))
+
+    a = np.random.randn(*_SHAPE).astype(np.float32)
+    out = _run_tile_based_fusion(session, graph, a)
+
+    np.testing.assert_allclose(out, a + b, rtol=1e-5, atol=1e-5)
+
+
+def test_tile_based_fusion_add_mul_constant() -> None:
+    """A fused ``mo.add`` + ``mo.mul`` where the scale is a compile-time constant."""
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    session = InferenceSession(devices=[Accelerator()])
+    gpu = DeviceRef.GPU(0)
+    c = np.random.randn(*_SHAPE).astype(np.float32)
+    with Graph(
+        "tile_based_fusion_add_mul_constant",
+        input_types=[
+            TensorType(DType.float32, _SHAPE, device=gpu),
+            TensorType(DType.float32, _SHAPE, device=gpu),
+        ],
+    ) as graph:
+        lhs, rhs = (v.tensor for v in graph.inputs)
+        scale = ops.constant(c, DType.float32, device=gpu)
+        graph.output(ops.mul(ops.add(lhs, rhs), scale))
+
+    a = np.random.randn(*_SHAPE).astype(np.float32)
+    b = np.random.randn(*_SHAPE).astype(np.float32)
+    out = _run_tile_based_fusion(session, graph, a, b)
+
+    np.testing.assert_allclose(out, (a + b) * c, rtol=1e-5, atol=1e-5)
+
+
+def test_tile_based_fusion_matmul_add_constant() -> None:
+    """A fused ``mo.matmul`` + bias ``mo.add`` where the bias is a constant."""
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    session = InferenceSession(devices=[Accelerator()])
+    gpu = DeviceRef.GPU(0)
+    bias_shape = [1, _SHAPE[1]]
+    bias_np = np.random.randn(*bias_shape).astype(np.float32)
+    with Graph(
+        "tile_based_fusion_matmul_add_constant",
+        input_types=[
+            TensorType(DType.float32, _SHAPE, device=gpu),
+            TensorType(DType.float32, _SHAPE, device=gpu),
+        ],
+    ) as graph:
+        lhs, rhs = (v.tensor for v in graph.inputs)
+        bias = ops.constant(bias_np, DType.float32, device=gpu)
+        graph.output(ops.add(ops.matmul(lhs, rhs), bias))
+
+    a = np.random.randn(*_SHAPE).astype(np.float32)
+    b = np.random.randn(*_SHAPE).astype(np.float32)
+    out = _run_tile_based_fusion(session, graph, a, b)
+
+    np.testing.assert_allclose(out, a @ b + bias_np, rtol=1e-5, atol=1e-5)
