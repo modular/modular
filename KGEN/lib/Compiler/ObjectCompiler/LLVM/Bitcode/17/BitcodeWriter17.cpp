@@ -3600,6 +3600,18 @@ void ModuleBitcodeWriter::writeInstruction(const Instruction &I,
     const CallInst &CI = cast<CallInst>(I);
     FunctionType *FTy = CI.getFunctionType();
 
+    // PointerRewriter typed the emask callee `i8*`; the call's explicit type
+    // must match it, else the AIR reader rejects "explicit call type does not
+    // match pointee". Gated to the emask family; every other call is unchanged.
+    if (const Function *F = dyn_cast<Function>(CI.getCalledOperand())) {
+      StringRef CalleeName = F->getName();
+      if (CalleeName.starts_with("llvm.agx3.") &&
+          CalleeName.contains(".with.emask")) {
+        if (TypedPointerType *PtrTy = PointerMap.lookup(F))
+          FTy = cast<FunctionType>(PtrTy->getElementType());
+      }
+    }
+
     if (CI.hasOperandBundles())
       writeOperandBundles(CI, InstID);
 

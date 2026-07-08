@@ -103,6 +103,20 @@ static FunctionType *getTypedFunctionType(const Function *func) {
   auto &ctx = func->getContext();
   auto *fTy = func->getFunctionType();
 
+  // Apple's air backend lowers emask only on a typed `i8*`; the opaque `{}*`
+  // MLIR emits fails the macOS-27 PSO bitcode upgrade. BitcodeWriter17's Call
+  // path types the call site to match.
+  if (func->getName().starts_with("llvm.agx3.") &&
+      func->getName().contains(".with.emask")) {
+    auto args = fTy->params().vec();
+    for (unsigned i = 0, e = args.size(); i != e; ++i) {
+      if (auto *opaquePtrTy = dyn_cast<PointerType>(args[i]))
+        args[i] = TypedPointerType::get(Type::getInt8Ty(ctx),
+                                        opaquePtrTy->getAddressSpace());
+    }
+    return FunctionType::get(fTy->getReturnType(), args, fTy->isVarArg());
+  }
+
   // handle known intrinsics
   if (func->isIntrinsic()) {
     switch (func->getIntrinsicID()) {
