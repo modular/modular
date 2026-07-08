@@ -145,6 +145,29 @@ class ModelGroup(click.Group):
         )
 
 
+def _handle_import_error(
+    e: ImportError, subcommand: str, suggestion: tuple[str, str]
+) -> None:
+    """Gives actionable feedback on import errors.
+
+    Args:
+        e: The raised error
+        subcommand: The subcommand that was run (i.e. "serve" for `max serve`)
+        suggestion: Which package to install, first item is when using conda, second is for wheels.
+    """
+
+    if sys.version_info < (3, 11):
+        # Backport `add_note()`
+        import exceptiongroup  # noqa: F401
+
+    e.add_note(  # type: ignore
+        f"`max {subcommand}` is not available with the base `max` package."
+    )
+    suggest = suggestion[0] if os.getenv("CONDA_PREFIX") else suggestion[1]
+    e.add_note(f"Please install {suggest}")  # type: ignore
+    raise e
+
+
 @click.command(cls=ModelGroup)
 @click.option(
     "--version",
@@ -173,12 +196,21 @@ def main(ctx: click.Context, log_level: str = "INFO") -> None:
 
     # Some subcommands opt out of telemetry.
     if ctx.invoked_subcommand not in _TELEMETRY_OPT_OUT_COMMANDS:
-        configure_telemetry()
+        configure_telemetry(ctx.invoked_subcommand or "")
 
 
-def configure_telemetry(color: str | None = None) -> None:
-    from max.serve.config import Settings
-    from max.serve.telemetry.common import configure_metrics
+def configure_telemetry(subcommand: str) -> None:
+    try:
+        from max.serve.config import Settings
+        from max.serve.telemetry.common import configure_metrics
+    except ImportError as e:
+        # Note: most commands import main(), and thus run this, so this catches most subcommands.
+        _handle_import_error(
+            e,
+            subcommand,
+            # All subcommands that invoke telemetry need serve deps anyways, so always suggest these.
+            ("max-pipelines", "max[serve]"),
+        )
 
     settings = Settings()
     configure_metrics(settings)
@@ -532,10 +564,14 @@ def cli_list(json: bool) -> None:
     This command displays information about all registered pipelines and their
     configurations. Output can be formatted as human-readable text or JSON.
     """
-    from max._entrypoints.cli.list import (
-        list_pipelines_to_console,
-        list_pipelines_to_json,
-    )
+    try:
+        from max._entrypoints.cli.list import (
+            list_pipelines_to_console,
+            list_pipelines_to_json,
+        )
+    except ImportError as e:
+        # This one does not enable telemetry, and this is the first import, so we have to handle this here.
+        _handle_import_error(e, "list", ("max-pipelines", "max[serve]"))
 
     if json:
         list_pipelines_to_json()
@@ -609,8 +645,14 @@ def cli_benchmark(
     #
     # Import lazily to avoid importing benchmark modules at module load
     # time.
-    from max.benchmark.sweep_benchmark_serving import main as sweep_main
-    from max.profiler import oneshot
+    try:
+        from max.benchmark.sweep_benchmark_serving import main as sweep_main
+        from max.profiler import oneshot
+    except ImportError as e:
+        # This one does not enable telemetry, and this is the first import, so we have to handle this here.
+        _handle_import_error(
+            e, "benchmark", ("max-benchmark", "max[benchmark]")
+        )
 
     args = list(args)
     profile_path: str | None = None

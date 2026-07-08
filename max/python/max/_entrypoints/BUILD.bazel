@@ -66,6 +66,7 @@ modular_py_library(
         # These all point to the symlinked version of the benchmark directory.
         "//max/python/max/benchmark:benchmark_serving_lib",
         requirement("click"),
+        requirement("exceptiongroup"),  # only for python < 3.11
         requirement("typing-extensions"),
     ],
 )
@@ -87,6 +88,7 @@ modular_py_binary(
     # import, but optional (Mojo-backed) so not a static import.
     ignore_extra_deps = ALL_ARCHITECTURES + [
         "//max/python/max/_interpreter_ops",
+        requirement("exceptiongroup"),  # only for python < 3.11
     ],
     mojo_deps = PROD_MOJOPKGS,
     deps = ALL_ARCHITECTURES + [
@@ -100,6 +102,7 @@ modular_py_binary(
         "//max/python/max/serve:config",
         "//max/python/max/serve/telemetry",
         requirement("click"),
+        requirement("exceptiongroup"),  # only for python < 3.11
         requirement("typing-extensions"),
     ],
 )
