@@ -14,7 +14,7 @@
 # Tests for numeric-types.mdx code examples.
 #
 # Not tested (no runnable behavior to assert from this file):
-#   - `reflect[type_of(a)]().name()` prints (Int / UInt naming demos)
+#   - `reflect[type_of(a)].name()` prints (Int / UInt naming demos)
 #   - `Float8` arithmetic (requires GPU; covered in the support-matrix
 #     table; CPU execution is unsupported)
 #   - `Float4_e2m1fn` operations (requires NVIDIA Blackwell)

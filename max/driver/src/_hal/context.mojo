@@ -280,6 +280,38 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     ) raises HALError:
         self._raw[].free_pinned(self._handle, mem._handle)
 
+    def wrap_memory(
+        self, address: UInt64, byte_size: UInt64, owning: Bool = False
+    ) raises HALError -> Buffer[Self.device_spec]:
+        """Wraps an existing device memory region in a Buffer.
+
+        With `owning=False` (the default) the region is externally owned:
+        the plugin never frees it, freeing the buffer releases only the
+        plugin's bookkeeping, and the caller must keep the underlying
+        allocation alive for the buffer's lifetime. With `owning=True`
+        the buffer frees the region through the plugin's normal path,
+        which is only valid for an address that came from this plugin's
+        own allocator (e.g. one released with `unwrap_memory`).
+        """
+        return Buffer[Self.device_spec](
+            _handle=self._raw[].wrap_memory(
+                self._handle, address, byte_size, owning
+            ),
+            byte_size=byte_size,
+            _context=self._self_ref.try_upgrade().value(),
+        )
+
+    def unwrap_memory(
+        self, mem: Buffer[Self.device_spec]
+    ) raises HALError -> UInt64:
+        """Releases ownership of the region under `mem`, returning its address.
+
+        After this call the buffer is non-owning — freeing it releases
+        only the plugin's bookkeeping — and the caller is responsible for
+        the region at the returned address.
+        """
+        return self._raw[].unwrap_memory(self._handle, mem._handle)
+
     def memory_get_address(
         self, mem: Buffer[Self.device_spec]
     ) raises HALError -> UInt64:

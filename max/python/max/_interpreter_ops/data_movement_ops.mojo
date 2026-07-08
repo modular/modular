@@ -27,7 +27,7 @@ from std.algorithm.functional import elementwise, IndexList
 from std.utils.coord import Coord
 
 from extensibility import ManagedTensorSlice
-from extensibility import Input, MutableInput, Output
+from extensibility import IOSpec
 from extensibility import StaticTensorSpec
 from layout import IntTuple, create_unknown_int_tuple
 from builtin_kernels import (
@@ -129,12 +129,12 @@ def static_broadcast_to_op[
     comptime in_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
     comptime out_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
 
-    var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
-        in_ptr, in_shape
-    )
+    var input_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=in_spec
+    ](in_ptr, in_shape)
 
     var output_tensor = ManagedTensorSlice[
-        io_spec=Output, static_spec=out_spec
+        io_spec=IOSpec.Output, static_spec=out_spec
     ](out_ptr, out_shape)
 
     if ctx.api() == "cpu":
@@ -261,20 +261,20 @@ def transpose_op[
     comptime out_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
     comptime perm_spec = StaticTensorSpec[DType.int64, 1, ...].get_unknown()
 
-    var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
-        in_ptr, in_shape
-    )
+    var input_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=in_spec
+    ](in_ptr, in_shape)
 
     var output_tensor = ManagedTensorSlice[
-        io_spec=Output, static_spec=out_spec
+        io_spec=IOSpec.Output, static_spec=out_spec
     ](out_ptr, out_shape)
 
     # TODO: ManagedTensorSlice should correctly propagate mutability to
     # prevent us from needing to unsafely cast the pointer mutability here.
     var perm_data_ptr = perm_data.unsafe_ptr().unsafe_mut_cast[True]()
-    var perm_tensor = ManagedTensorSlice[io_spec=Input, static_spec=perm_spec](
-        perm_data_ptr, IndexList[1](MAX_RANK)
-    )
+    var perm_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=perm_spec
+    ](perm_data_ptr, IndexList[1](MAX_RANK))
 
     if ctx.api() == "cpu":
         Transpose.execute[
@@ -536,24 +536,24 @@ def slice_op[
     comptime in_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
     comptime out_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
 
-    var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
-        in_ptr, in_shape
-    )
+    var input_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=in_spec
+    ](in_ptr, in_shape)
     var output_tensor = ManagedTensorSlice[
-        io_spec=Output, static_spec=out_spec
+        io_spec=IOSpec.Output, static_spec=out_spec
     ](out_ptr, out_shape)
 
     comptime idx_spec = StaticTensorSpec[DType.int64, 1, ...].get_unknown()
 
-    var starts_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
-        starts_ptr, IndexList[1](MAX_RANK)
-    )
-    var stops_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
-        stops_ptr, IndexList[1](MAX_RANK)
-    )
-    var steps_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
-        steps_ptr, IndexList[1](MAX_RANK)
-    )
+    var starts_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=idx_spec
+    ](starts_ptr, IndexList[1](MAX_RANK))
+    var stops_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=idx_spec
+    ](stops_ptr, IndexList[1](MAX_RANK))
+    var steps_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=idx_spec
+    ](steps_ptr, IndexList[1](MAX_RANK))
 
     comptime unknown_starts = create_unknown_int_tuple(MAX_RANK)
     comptime unknown_steps = create_unknown_int_tuple(MAX_RANK)
@@ -729,11 +729,11 @@ def mutable_store_slice_op[
     comptime src_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
 
     var dst_tensor = ManagedTensorSlice[
-        io_spec=MutableInput, static_spec=dst_spec
+        io_spec=IOSpec.MutableInput, static_spec=dst_spec
     ](dst_ptr, dst_shape)
-    var src_tensor = ManagedTensorSlice[io_spec=Input, static_spec=src_spec](
-        src_ptr, src_shape
-    )
+    var src_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=src_spec
+    ](src_ptr, src_shape)
 
     comptime idx_spec = StaticTensorSpec[DType.int64, 1, ...].get_unknown()
 
@@ -743,15 +743,15 @@ def mutable_store_slice_op[
     var stops_ptr = stops.unsafe_ptr().unsafe_mut_cast[True]()
     var steps_ptr = steps.unsafe_ptr().unsafe_mut_cast[True]()
 
-    var starts_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
-        starts_ptr, IndexList[1](MAX_RANK)
-    )
-    var stops_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
-        stops_ptr, IndexList[1](MAX_RANK)
-    )
-    var steps_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
-        steps_ptr, IndexList[1](MAX_RANK)
-    )
+    var starts_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=idx_spec
+    ](starts_ptr, IndexList[1](MAX_RANK))
+    var stops_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=idx_spec
+    ](stops_ptr, IndexList[1](MAX_RANK))
+    var steps_tensor = ManagedTensorSlice[
+        io_spec=IOSpec.Input, static_spec=idx_spec
+    ](steps_ptr, IndexList[1](MAX_RANK))
 
     if ctx.api() == "cpu":
         MutableStoreSlice.execute[target="cpu", dtype=dtype, rank=MAX_RANK](

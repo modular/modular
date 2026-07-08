@@ -194,18 +194,7 @@ class ServerCommand(NamedTuple):
 def is_vision_model(model: str) -> bool:
     """Check if the model supports vision tasks."""
     model = model.casefold()
-    if any(
-        kw in model
-        for kw in (
-            "no_vision",
-            "__eagle",
-            "__mtp",
-            "__dflash",
-            "_kvconnector",
-            "__internal",
-            "gemma-3-1b",
-        )
-    ):
+    if any(kw in model for kw in ("gemma-3-1b",)):
         return False
     return any(
         kw in model

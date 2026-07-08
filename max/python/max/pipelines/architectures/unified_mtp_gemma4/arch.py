@@ -51,4 +51,9 @@ unified_mtp_gemma4_arch = SupportedArchitecture(
     # graph) and produces variable-shape image embeddings, so this path does
     # not auto-enable device graph capture (mirrors the non-MTP gemma4 arch).
     supports_device_graph_capture=False,
+    # Pin to llguidance: the gemma4 tool parser emits llguidance-format
+    # grammars the xgrammar StructuralTag matcher rejects (crashes the worker).
+    # The base Gemma4ForConditionalGeneration also pins this.
+    # Override with --structured-output-backend.
+    default_structured_output_backend="llguidance",
 )

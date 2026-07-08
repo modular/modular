@@ -87,6 +87,15 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added `--no-enable-tool-call-constrained-decode` (config key
+  `sampling.enable_tool_call_constrained_decode`, default enabled) to decouple
+  tool-call parsing from constrained decoding. When disabled, a configured
+  `--tool-parser` still parses tool calls out of the generated text, but no
+  server-generated grammar is produced and the bitmask constrained-decode path
+  is skipped for tool calls. Note that with it disabled, `tool_choice=required`
+  or a named function can no longer force a tool call. This is independent of
+  `--enable-structured-output`, which continues to gate user-supplied
+  `response_format` JSON schemas.
 - Added `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` to control how long the server
   waits for in-flight requests to finish after receiving `SIGTERM` before
   exiting (default 5 seconds). Raise it so long-running requests are drained
@@ -390,6 +399,13 @@ This version is still a work in progress.
   `USE_OLD_TOP_K_KERNEL` environment variable. The legacy top-k sampling
   kernel this fallback selected has been deleted; the current two-stage
   top-k kernel is now used unconditionally.
+- The `Input`, `Output`, `MutableInput`, `FusedInput`, and `FusedOutput`
+  `IOSpec` values used in custom-op signatures (for example,
+  `Tensor[Input, spec]`) are now static members of `IOSpec`
+  (`IOSpec.Input`, `IOSpec.Output`, `IOSpec.MutableInput`,
+  `IOSpec.FusedInput`, `IOSpec.FusedOutput`) instead of module-level aliases.
+  Update custom-op call sites to qualify these names under `IOSpec`, for
+  example `Tensor[IOSpec.Input, spec]`.
 
 ## Fixes
 
@@ -450,6 +466,14 @@ This version is still a work in progress.
   no-synchronization behavior, so a later `to_numpy()` on the slice triggered
   an unexpected device synchronization. Slices and views now preserve the
   `DevicePinnedBuffer` type.
+
+- Fixed virtual-device mode on macOS. Previously the
+  `max.driver.set_virtual_device_*()` settings had no effect on device
+  creation: `Accelerator()` still took the real-hardware path, so requesting
+  more devices than physically present failed and single-device
+  cross-compilation silently used the real GPU. The virtual-device state now
+  lives in a single shared library, so the setters and device creation always
+  observe the same configuration on every platform.
 
 - Fixed DeepSeek-V3.1-NVFP4 multi-token prediction (MTP) failing to load with
   `dispatch_quant_config must be specified when dispatch_dtype is not

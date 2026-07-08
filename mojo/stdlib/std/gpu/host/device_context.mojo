@@ -999,9 +999,14 @@ struct DevicePointer[
         """
         # TODO: GEX-3693: Assert/raise when target doesn't support raw device
         # pointer access
+        # `DeviceBuffer.unsafe_ptr()` now ties its mutability to the borrow of
+        # the buffer; force mutable to preserve this helper's `MutAnyOrigin`
+        # contract.
         return (
-            self._buffer[].unsafe_ptr() + self._offset
-        ).as_unsafe_any_origin()
+            (self._buffer[].unsafe_ptr() + self._offset)
+            .unsafe_mut_cast[True]()
+            .as_unsafe_any_origin()
+        )
 
     # ===------------------------------------------------------------------=== #
     # Pointer arithmetic
@@ -1834,19 +1839,27 @@ struct DeviceBuffer[dtype: DType](
         return self._handle
 
     @always_inline
-    def unsafe_ptr(
-        self,
-    ) -> Self._DevicePtr:
+    def unsafe_ptr[
+        mut: Bool,
+        //,
+        origin: Origin[mut=mut],
+    ](ref[origin] self,) -> UnsafePointer[Scalar[Self.dtype], origin]:
         """Returns the raw device pointer without transferring ownership.
 
         This method provides direct access to the underlying device pointer
         for advanced use cases. The buffer retains ownership of the pointer.
 
+        Parameters:
+            mut: The mutability of this `DeviceBuffer`.
+            origin: The origin of this `DeviceBuffer`.
+
         Returns:
             The raw device pointer owned by this buffer.
         """
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
-        return self._device_ptr
+        return self._device_ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[
+            origin
+        ]()
 
     def device_ptr(
         ref self,
@@ -8246,6 +8259,57 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 _DeviceContextPtr[mut=True],
             ](self._handle, other._handle)
         )
+
+    def num_streams(self) -> Int:
+        """Returns the number of streams available on this device context.
+
+        Returns:
+            The number of streams available on this device context.
+        """
+        # int AsyncRT_DeviceContext_numStreams(const DeviceContext *ctx)
+        return Int(
+            external_call[
+                "AsyncRT_DeviceContext_numStreams",
+                Int32,
+            ](self._handle)
+        )
+
+    def select_stream(self, stream_id: Int) raises -> DeviceContext:
+        """Returns a view of this device context bound to the given stream.
+
+        The returned context shares this context's full stream set, driver
+        context, and device memory pool; only the current-stream selector
+        differs, so work enqueued on it runs on stream `stream_id`. Stream 0 is
+        the base/default stream. Backends without a multi-stream model return a
+        view equivalent to this context.
+
+        Args:
+            stream_id: Index of the stream the returned view submits to.
+
+        Returns:
+            A device context view bound to stream `stream_id`.
+
+        Raises:
+            If the stream cannot be selected or created.
+        """
+        # const char *AsyncRT_DeviceContext_selectStream(
+        #     const DeviceContext **result, const DeviceContext *ctx,
+        #     unsigned int stream_id)
+        var result: _DeviceContextPtr[mut=True] = {}
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_selectStream",
+                _CString[],
+                UnsafePointer[_DeviceContextPtr[mut=True], origin_of(result)],
+                _DeviceContextPtr[mut=True],
+                c_uint,
+            ](UnsafePointer(to=result), self._handle, c_uint(stream_id))
+        )
+        # The runtime transferred ownership of the view's reference to us, so
+        # the wrapper must own it (and release on destruction).
+        var view = DeviceContext(result)
+        view._owning = True
+        return view^
 
     @always_inline
     def get_api_version(self) raises -> Int:

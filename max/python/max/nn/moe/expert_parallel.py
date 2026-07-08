@@ -25,6 +25,7 @@ The caller is responsible for calling
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable, Sequence
 from typing import cast
 
@@ -39,10 +40,74 @@ from max.graph import (
 
 from ..comm.ep.ep_manager import EPBatchManager
 from ..kernels import moe_eplb_remap, moe_router_single_group_eplb
+from ..layer import Module
 from ..transformer.distributed_transformer import forward_sharded_layers
 from .moe import MoE
 
 logger = logging.getLogger("max.serve")
+
+# Stream selector for the shared expert. Stream 0 is the default (routed/EP)
+# stream; binding the shared expert to a side stream lets it run concurrently
+# with the routed-expert dispatch/combine.
+_SHARED_EXPERT_STREAM_ID = 1
+
+
+def _shared_experts_on_side_stream(
+    shards: Sequence[Module], xs: Sequence[TensorValue]
+) -> list[TensorValue]:
+    """Runs the replicated shared expert on a dedicated side stream.
+
+    Wraps the per-device shared-expert forwards in a single ``mo.sequence``
+    (via :func:`~max.graph.ops.side_stream`) tagged with the side-stream id. The
+    graph compiler binds the whole region to a per-device side-stream
+    device-context view and inserts the boundary cross-stream synchronization,
+    so the shared expert overlaps the routed-expert dispatch/combine on the main
+    stream. Because the region is not isolated-from-above, the body captures each
+    shard's weights directly from the enclosing scope -- no subgraph, weight
+    placeholderization, or dim rebinding is required.
+
+    Args:
+        shards: Per-device sharded shared-expert modules, aligned with ``xs``.
+        xs: Per-device inputs; one shared-expert output is returned per input,
+            in the same order.
+    """
+    shard_list = list(shards)
+    x_list = [TensorValue(x) for x in xs]
+
+    def body(*ins: TensorValue) -> list[TensorValue]:
+        return [shard(x) for shard, x in zip(shard_list, ins, strict=True)]
+
+    return ops.side_stream(
+        x_list,
+        body,
+        result_types=[x.type for x in x_list],
+        stream_id=_SHARED_EXPERT_STREAM_ID,
+    )
+
+
+def _compute_shared_experts(
+    moe_shards: list[MoE],
+    xs: list[TensorValue],
+    device_idxs: Sequence[int],
+) -> list[TensorValue | None]:
+    """Returns the shared-expert output for each device index in ``device_idxs``.
+
+    Honors ``MODULAR_OVERLAP_SHARED_EXPERT`` (default on): when enabled, runs the
+    replicated shared expert on a side stream that overlaps the routed-expert
+    path; when ``0``, runs it inline on the default stream (baseline for A/B
+    comparison). The returned list is aligned with ``device_idxs``. The element
+    type is widened to ``TensorValue | None`` so callers can splice the result
+    directly into the per-device ``shared_outs`` list (which is ``None`` on
+    devices that skip the shared expert).
+    """
+    if os.environ.get("MODULAR_OVERLAP_SHARED_EXPERT", "1") == "0":
+        return [moe_shards[i].shared_experts(xs[i]) for i in device_idxs]
+    return [
+        *_shared_experts_on_side_stream(
+            [moe_shards[i].shared_experts for i in device_idxs],
+            [xs[i] for i in device_idxs],
+        )
+    ]
 
 
 def _ep_forward(
@@ -223,9 +288,9 @@ def _ep_forward(
             # would multiply the shared contribution by ``n_devices`` after
             # the reduction. Add it on device 0 only so ``AllReduce.sum``
             # recovers a single copy.
+            (shared_dev0,) = _compute_shared_experts(moe_shards, xs, [0])
             shared_outs = [
-                moe_shards[0].shared_experts(xs[0]) if i == 0 else None
-                for i in range(len(moe_shards))
+                shared_dev0 if i == 0 else None for i in range(len(moe_shards))
             ]
     elif overlap_shared_expert:
         # Per-device async dispatch so we can interleave the shared-expert
@@ -237,10 +302,9 @@ def _ep_forward(
                 device_ids[i],
                 input_scales=scales[i] if scales is not None else None,
             )
-        shared_outs = [
-            shard.shared_experts(x)
-            for shard, x in zip(moe_shards, xs, strict=True)
-        ]
+        shared_outs = _compute_shared_experts(
+            moe_shards, xs, range(len(moe_shards))
+        )
         all_dispatch_results = [
             shard.ep_batch_manager.ep_dispatch_wait(device_ids[i])
             for i, shard in enumerate(moe_shards)
@@ -251,10 +315,9 @@ def _ep_forward(
             xs, all_topk_ids, device_ids, input_scales=scales
         )
         if has_unfused_shared:
-            shared_outs = [
-                shard.shared_experts(x)
-                for shard, x in zip(moe_shards, xs, strict=True)
-            ]
+            shared_outs = _compute_shared_experts(
+                moe_shards, xs, range(len(moe_shards))
+            )
 
     # Estimated total token-expert pairs across all devices.
     total_tokens = ops.shape_to_tensor(xs[0].shape)[0]

@@ -303,14 +303,24 @@ Table 5 summarizes the literal formats you can use to represent numbers.
 
 </figure>
 
-At compile time, the literal types are arbitrary-precision (also called
-infinite-precision) values, so the compiler can perform compile-time
-calculations without overflow or rounding errors.
+At compile-time, Mojo treats numeric literals as arbitrary-precision values, so
+the compiler can perform compile-time calculations without overflow or rounding
+errors.
 
-At runtime the values are converted to finite-precision types—`Int` for
-integer values, and `Float64` for floating-point values. (This process of
-converting a value that can only exist at compile time into a runtime value is
-called *materialization*.)
+At runtime the values are converted to finite-precision types. `IntLiteral` can
+convert to any finite-precision integer type, defaulting to `Int` if the type is
+unspecified. And `FloatLiteral` converts to any finite-precision floating-point
+type, defaulting to `Float64`.
+
+```mojo
+var float1 = 3.3  # float1 is type Float64
+var float2: Float32 = 7.5
+var int1 = 5  # int1 is type Int
+var int2: Int8 = 4
+```
+
+This process of converting a value that can only exist at compile time into a
+runtime value is called *materialization*.
 
 The following code sample shows the difference between an arbitrary-precision
 calculation and the same calculation done using `Float64` values at runtime,
@@ -425,14 +435,13 @@ the `DType` abstraction.
 
 ### Numeric type conversion
 
-[Constructors and implicit conversion](/docs/manual/lifecycle/life/#constructors-and-implicit-conversion)
-documents the circumstances in which Mojo automatically converts a value from
-one type to another. Importantly, numeric [operators](/docs/manual/operators/)
-**don't** automatically narrow or widen operands to a common type.
+In Mojo, numeric [operators](/docs/manual/operators/) **don't** automatically
+narrow or widen operands to a common type. You need to explicitly convert the
+operands to the desired type.
 
-You can explicitly convert a `SIMD` value to a different `SIMD` type either
-by invoking its [`cast()`](/docs/std/builtin/simd/SIMD/#cast) method or by
-passing it as an argument to the constructor of the target type. For example:
+You can explicitly convert a `SIMD` value to a different `SIMD` type either by
+invoking its [`cast()`](/docs/std/builtin/simd/SIMD/#cast) method or by passing
+it as an argument to the constructor of the target type. For example:
 
 ```mojo
 simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)

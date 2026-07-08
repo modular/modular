@@ -1160,8 +1160,8 @@ struct SlidingWindowCausalMask[window_size: Int](
     def total_iters[
         BM: Int, BN: Int, page_size: Int
     ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
-        start_col = self.start_column[BM, BN, page_size](seq_id, row)
-        end_col = min(row + UInt32(BM), num_cols)  # one past end
+        var start_col = self.start_column[BM, BN, page_size](seq_id, row)
+        var end_col = min(row + UInt32(BM), num_cols)  # one past end
         return ceildiv(end_col - start_col, UInt32(BN))
 
     @staticmethod
@@ -1177,9 +1177,9 @@ struct SlidingWindowCausalMask[window_size: Int](
     ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> StaticTuple[
         UInt32, Self.count_nonfull_sets(BM, BN)
     ]:
-        start_col = self.start_column[BM, BN, page_size](seq_id, row)
+        var start_col = self.start_column[BM, BN, page_size](seq_id, row)
         # partial_exit_end_col = row + BM
-        partial_exit_end_col = min(row + UInt32(BM), num_cols)
+        var partial_exit_end_col = min(row + UInt32(BM), num_cols)
         # partial's end uses `ceildiv` and unmasked uses floored division
         # Partials must cover the entire `BN` tile with an masked entry
         # The unmasked region can't handle a tile with any

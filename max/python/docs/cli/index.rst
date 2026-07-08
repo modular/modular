@@ -27,3 +27,4 @@
    list.rst
    serve.rst
    warm-cache.rst
+   warm-interpreter-cache.rst

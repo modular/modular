@@ -56,6 +56,8 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
             .def_method[Context.create_stream]("create_stream")
             .def_method[Context.alloc_sync]("alloc_sync")
             .def_method[Context.alloc_host_pinned]("alloc_host_pinned")
+            .def_method[Context.wrap_memory]("wrap_memory")
+            .def_method[Context.unwrap_memory]("unwrap_memory")
             .def_method[Context.memory_get_address]("memory_get_address")
             .def_method[Context.load_function]("load_function")
         )

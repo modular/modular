@@ -142,6 +142,7 @@ PINS = {
     "sqlalchemy": "sqlalchemy@2.0.44",
     "sse-starlette": "sse-starlette@2.1.2",
     "starlette": "starlette@0.50.0",
+    "sybil": "sybil@10.0.1",
     "tabulate": "tabulate@0.9.0",
     "taskgroup": "taskgroup@0.2.2",
     "termcolor": "termcolor@2.5.0",
@@ -9562,6 +9563,17 @@ def targets():
         name = "supervisor@4.3.0",
         wheel = ":_wheel_supervisor@4.3.0",
         testonly = "supervisor" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_sybil@10.0.1",
+        actual = "@pycross_lock_file_wheel_sybil_10.0.1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "sybil@10.0.1",
+        wheel = ":_wheel_sybil@10.0.1",
+        testonly = "sybil" in _TESTONLY_DEPS,
     )
 
     _sympy_1_13_3_deps = [
@@ -26797,6 +26809,16 @@ def repositories():
         ],
         sha256 = "0bcb763fddafba410f35cbde226aa7f8514b9fb82eb05a0c85f6588d1c13f8db",
         downloaded_file_path = "supervisor-4.3.0-py2.py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_sybil_10.0.1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/41/f3/4f2a8069d212a33bccc88be13b5bdad61f810054f6c21c6da3aa25fb38d0/sybil-10.0.1-py3-none-any.whl",
+        ],
+        sha256 = "0030d8583d5ce97969397d303db1f17054f61b23f18469c0ac61f9f42735571c",
+        downloaded_file_path = "sybil-10.0.1-py3-none-any.whl",
     )
 
     maybe(

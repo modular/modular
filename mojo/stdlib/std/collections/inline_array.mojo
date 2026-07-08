@@ -53,7 +53,6 @@ from std.memory.unsafe_maybe_uninit import (
     _is_trivially_copyable,
     _is_trivially_movable,
 )
-from std.utils.type_functions import ConditionalType
 
 # ===-----------------------------------------------------------------------===#
 # Array
@@ -272,14 +271,9 @@ struct InlineArray[ElementType: Movable, size: Int](
     var _array: Self.type
     """The underlying storage for the array."""
 
-    comptime _DeviceElementType: Movable = ConditionalType[
-        Trait=Movable,
-        If=conforms_to(Self.ElementType, DevicePassable),
-        Then=downcast[
-            downcast[Self.ElementType, DevicePassable].device_type, Movable
-        ],
-        Else=Self.ElementType,
-    ]
+    comptime _DeviceElementType: Movable = downcast[
+        downcast[Self.ElementType, DevicePassable].device_type, Movable
+    ] if conforms_to(Self.ElementType, DevicePassable) else Self.ElementType
     """The device-side element type: the element's `device_type` when it is
     `DevicePassable`, otherwise the element type itself."""
 
@@ -585,7 +579,9 @@ struct InlineArray[ElementType: Movable, size: Int](
             # `UnsafePointer.destroy_pointee_with` since `UnsafePointer` is
             # bound on `T: AnyType` but `InlineArray` has `ElementType: Movable`.
             destroy_func(
-                __get_address_as_owned_value((self.unsafe_ptr() + idx).address)
+                __get_address_as_owned_value(
+                    (self.unsafe_ptr() + idx)._get_kgen_pointer()
+                )
             )
 
     # ===------------------------------------------------------------------===#
@@ -657,10 +653,10 @@ struct InlineArray[ElementType: Movable, size: Int](
         ref self, idx: Some[Indexer]
     ) -> ref[self] Self.ElementType:
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._array).address,
+            UnsafePointer(to=self._array)._get_kgen_pointer(),
             index(idx).__mlir_index__(),
         )
-        return UnsafePointer[_, origin_of(self)](ptr)[]
+        return UnsafePointer[_, origin_of(self)](_mlir_value=ptr)[]
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations

@@ -177,8 +177,29 @@ can happen when one of the following occurs:
 - You return a value of one type from a function that specifies a different
   return type.
 
-In all cases, implicit conversion is supported when the target type
-defines a constructor that meets the following criteria:
+For example, the `Optional[T]` type models a value that may or may not be
+present. You can implicitly convert a value of type `T` into an `Optional[T]`,
+and you can implicitly convert a value of `None` into an empty `Optional[T]`:
+
+```mojo
+var opt_greeting: Optional[String] = None  # implicitly converts to an empty Optional
+opt_greeting = String("Salve!")  # implicitly converts the String into an Optional
+```
+
+In general, types should only support implicit conversions when the conversion
+is:
+
+- Safe
+- Zero-cost or low-cost
+- Semantically unambiguous
+
+Implicit conversion is intended to reduce unnecessary boilerplate, not to
+weaken type safety.
+
+#### Enabling implicit conversion
+
+Implicit conversion is supported only when the target type defines
+a constructor that meets the following criteria:
 
 - Is declared with the `@implicit` decorator.
 - Has a single required, non-keyword argument of the source type.
@@ -197,7 +218,8 @@ Mojo implicitly converts the `Source` value in `a` to a `Target` value if
 struct Target:
 
     @implicit
-    def __init__(out self, s: Source): ...
+    def __init__(out self, s: Source):
+        pass
 ```
 
 With implicit conversion, the assignment above is essentially identical to:
@@ -205,13 +227,6 @@ With implicit conversion, the assignment above is essentially identical to:
 ```mojo
 var b = Target(a)
 ```
-
-In general, types should only support implicit conversions when the conversion
-is lossless and ideally inexpensive. For example, converting an integer to a
-floating-point number is usually lossless (except for very large positive and
-negative integers, where the conversion may be approximate), but converting a
-floating-point number to an integer is very likely to lose information. So
-Mojo supports implicit conversion from `Int` to `Float64`, but not the reverse.
 
 The constructor used for implicit conversion can take optional arguments, so
 the following constructor would also support implicit conversion from `Source`

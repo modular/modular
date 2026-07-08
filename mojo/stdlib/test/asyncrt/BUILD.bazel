@@ -32,6 +32,9 @@ _EXTRA_CONSTRAINTS = {
     "test_copies.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2562
     "test_smoke.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2554
     "test_elementwise.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-4091
+    # Metal has no `create_stream` (MetalDeviceContext::streamCreate is
+    # unimplemented), so the multi-stream select_stream test cannot run.
+    "test_select_stream.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: DRIV-102
 }
 
 # TODO(GEX-3549): asyncrt CPU `DeviceContext` memcpy path returns garbage

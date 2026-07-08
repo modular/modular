@@ -131,13 +131,11 @@ PEP 3102.
 compiler deduces inferred parameters from call-site arguments:
 
 ```mojo
-from std.reflection import reflect
-
 def inferred_type[T: Writable, //](value: T):
     print(t"Value is {value}. Type is {reflect[T].name()}.")
 
 def main():
-    inferred_type(5)       # Value is 5. Type is Int.
+    inferred_type(5)       # Value is 5. Type is SIMD[DType.int, 1].
     inferred_type("Hello") # Value is Hello. Type is String.
 ```
 
@@ -510,7 +508,7 @@ error type can follow `raises`:
 def parse(text: String) raises -> Int:
     # ...
 
-def parse_strict(text: String) raises ValueError -> Int:
+def parse_strict(text: String) raises SomeError -> Int:
     # ...
 ```
 
@@ -555,6 +553,7 @@ def main() raises:
         "sqrt"
     )
     print(sqrt(4.0))  # 2.0
+    _ = lib  # Keep the library handle alive until the call is done
 ```
 
 :::caution

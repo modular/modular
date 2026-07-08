@@ -1139,7 +1139,11 @@ class Graph:
             except Exception:
                 model = "unknown"
             info = _DeviceInfoAttr(
-                label=dev.label, api=dev.api, arch=arch, model=model
+                label=dev.label,
+                api=dev.api,
+                arch=arch,
+                model=model,
+                tile_based_fusion=False,
             )
             entries[dev.label] = mlir.Attribute._CAPICreate(info._CAPIPtr)  # type: ignore[attr-defined]
         module.attributes[_DEVICE_INFO_MAPPING_ATTR_NAME] = mlir.DictAttr.get(
