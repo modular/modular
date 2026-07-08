@@ -43,7 +43,6 @@
       "type": "category",
       "collapsed": false,
       "items": [
-        "max/deploy/cloud",
         {
           "type": "doc",
           "id": "max/deploy/local-to-cloud",
@@ -731,11 +730,6 @@
       "label": "Create embeddings",
       "type": "link",
       "href": "/max/rest-api/#POST/v1/embeddings"
-    },
-    {
-      "label": "Create batch",
-      "type": "link",
-      "href": "/max/rest-api/#POST/v1/batches"
     },
     {
       "label": "List models",
