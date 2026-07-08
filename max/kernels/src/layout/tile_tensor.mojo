@@ -23,7 +23,7 @@ from std.collections._conditional import _ComptimeConditional
 from std.memory import stack_allocation as _std_stack_allocation
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from std.gpu.host import DeviceBuffer, DeviceContext, DevicePointer, HostBuffer
 from layout._fillers import BATCH_SIZE
 from layout.layout_tensor import LayoutTensor
 from std.sys import prefetch
@@ -33,7 +33,7 @@ from std.utils.coord import _coerce_dynamic
 
 from .swizzle import Swizzle
 
-from .tensor_storage import TensorStorage, PointerStorage
+from .tensor_storage import DevicePointerStorage, TensorStorage, PointerStorage
 from .tile_layout import (
     Layout,
     RowMajorLayout,
@@ -267,7 +267,7 @@ struct TileTensor[
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self, target)
+        encoder.encode_fields[Self](self, target)
 
     @staticmethod
     def _is_convertible_to_device_type[T: AnyType]() -> Bool:
@@ -308,8 +308,27 @@ struct TileTensor[
     ]
     """Type alias for this tensor with GENERIC address space.
 
-    Used by constructors that create tensors from Span, DeviceBuffer, or
-    HostBuffer, which all produce GENERIC address space tensors.
+    Used by constructors that create tensors from Span or HostBuffer, which
+    produce GENERIC address space tensors.
+    """
+
+    comptime DeviceGenericType[origin: Origin] = TileTensor[
+        Self.dtype,
+        Self.LayoutType,
+        origin,
+        Storage=DevicePointerStorage[element_width=1],
+        address_space=AddressSpace.GENERIC,
+        linear_idx_type=Self.linear_idx_type,
+    ]
+    """Type alias for this tensor backed by `DevicePointerStorage`.
+
+    Used by the `DeviceBuffer` and `DevicePointer` constructors, which carry the
+    buffer's `DevicePointer` (its owning reference plus offset and size) to the
+    kernel boundary instead of a bare pointer.
+
+    Parameters:
+        origin: The pointer origin for the returned device-pointer-backed
+            tensor.
     """
 
     @always_inline
@@ -424,6 +443,34 @@ struct TileTensor[
         self._storage = rebind[type_of(self._storage)](
             device_buffer.unsafe_ptr()
         )
+        self.layout = layout
+
+    @always_inline
+    def __init__(
+        out self: Self.DeviceGenericType[Self.origin],
+        var device_pointer: DevicePointer[Self.dtype, Self.origin],
+        var layout: Self.LayoutType,
+    ):
+        """Create a `DevicePointerStorage`-backed `TileTensor` from a
+        `DevicePointer`.
+
+        Like the `DeviceBuffer` constructor, this produces a
+        `DevicePointerStorage`-backed tile that carries the full `DevicePointer`
+        — its non-owning reference to the owning `DeviceBuffer` plus an element
+        offset and size — to the kernel boundary, where
+        `DevicePointer._to_device_type` encodes it to a bare device pointer.
+        Use this overload when you already hold a `DevicePointer` (for example
+        an offset one); construct it with `TileTensor(buffer.device_ptr(),
+        layout)`.
+
+        The tile borrows the `DevicePointer`'s origin; the backing
+        `DeviceBuffer` must outlive the tile.
+
+        Args:
+            device_pointer: The device pointer referencing the tensor data.
+            layout: The layout of the tensor.
+        """
+        self._storage = device_pointer
         self.layout = layout
 
     @always_inline
