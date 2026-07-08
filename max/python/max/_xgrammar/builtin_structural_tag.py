@@ -33,6 +33,7 @@ from .structural_tag import (
     AnyTextFormat,
     ConstStringFormat,
     JSONSchemaFormat,
+    OptionalFormat,
     RegexFormat,
     SequenceFormat,
     StructuralTag,
@@ -713,8 +714,22 @@ def get_kimi_structural_tag(
     if not reasoning:
         return StructuralTag(format=suffix_tag)
 
-    prefix_tag = TagFormat(begin="", content=AnyTextFormat(), end=THINK_TAG_END)
-    return StructuralTag(format=SequenceFormat(elements=[prefix_tag, suffix_tag]))
+    # Optional reasoning prefix (free text up to ``</think>``) whose AnyText
+    # excludes the tool markers, so the suffix trigger arms even when no
+    # ``</think>`` precedes the tool section (else the prefix swallows the
+    # marker as reasoning and the tool call decodes unconstrained).
+    prefix_tag = TagFormat(
+        begin="",
+        content=AnyTextFormat(
+            excludes=[TOOL_CALLS_SECTION_BEGIN, TOOL_CALL_BEGIN]
+        ),
+        end=THINK_TAG_END,
+    )
+    return StructuralTag(
+        format=SequenceFormat(
+            elements=[OptionalFormat(content=prefix_tag), suffix_tag]
+        )
+    )
 
 
 @register_model_structural_tag("deepseek_r1")

@@ -94,6 +94,22 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_kimi_reasoning_toolarg_enforcement",
+    size = "small",
+    srcs = [
+        "test_kimi_reasoning_toolarg_enforcement.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/_xgrammar",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_xgrammar_shim",
     size = "small",
     srcs = [
