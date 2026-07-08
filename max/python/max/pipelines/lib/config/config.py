@@ -510,27 +510,49 @@ class PipelineConfig(ConfigFileModel):
         # not reconstruct the manifest (which would trigger HF validation).
         if model_kwargs:
             model_kwargs.update(component_overrides.get("main", {}))
-            model_path = model_kwargs.pop("model_path", "")
-            if model_path:
-                revision = model_kwargs.pop("huggingface_model_revision", None)
-                # Strip kwargs that match MAXModelConfig defaults so
-                # from_model_path() doesn't reject them for diffusion
-                # pipelines (which forbid extra kwargs).
-                non_default_kwargs = _strip_default_model_kwargs(model_kwargs)
-                self.models = ModelManifest.from_model_path(
-                    model_path,
-                    revision=revision,
-                    **non_default_kwargs,
-                )
-            elif "main" in self.models:
+            if "main" in self.models:
                 # The main model came from a YAML recipe (or a pre-built
-                # manifest via ``models=``). Still let CLI flags such as
-                # --devices override the recipe so the same YAML can be
-                # reused across different multi-GPU setups.
+                # manifest via ``models=``). Merge CLI overrides -- including
+                # --model-path -- into it via with_override() so the same
+                # recipe can be reused across different multi-GPU setups or
+                # models, instead of rebuilding the manifest from scratch and
+                # losing the recipe's other settings (device_specs, kv_cache,
+                # etc).
+                new_model_path = model_kwargs.get("model_path")
+                if (
+                    new_model_path
+                    and new_model_path != self.models["main"].model_path
+                ):
+                    logger.warning(
+                        "--model-path %r overrides the model_path %r loaded "
+                        "from --config-file. The rest of the config file "
+                        "(device_specs, kv_cache, etc) was tuned for the "
+                        "original model and may not be appropriate for %r.",
+                        new_model_path,
+                        self.models["main"].model_path,
+                        new_model_path,
+                    )
                 non_default_kwargs = _strip_default_model_kwargs(model_kwargs)
                 if non_default_kwargs:
                     self.models = self.models.with_override(
                         "main", **non_default_kwargs
+                    )
+            else:
+                model_path = model_kwargs.pop("model_path", "")
+                if model_path:
+                    revision = model_kwargs.pop(
+                        "huggingface_model_revision", None
+                    )
+                    # Strip kwargs that match MAXModelConfig defaults so
+                    # from_model_path() doesn't reject them for diffusion
+                    # pipelines (which forbid extra kwargs).
+                    non_default_kwargs = _strip_default_model_kwargs(
+                        model_kwargs
+                    )
+                    self.models = ModelManifest.from_model_path(
+                        model_path,
+                        revision=revision,
+                        **non_default_kwargs,
                     )
 
         # Apply KV cache config to main model
