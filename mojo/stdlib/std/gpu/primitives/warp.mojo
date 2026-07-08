@@ -1387,13 +1387,49 @@ def _vote_amd_helper[ret_type: DType](vote: Bool) -> Scalar[ret_type]:
 
 
 @always_inline
+def _vote_apple_helper[ret_type: DType](vote: Bool) -> Scalar[ret_type]:
+    comptime assert ret_type in (
+        DType.uint32,
+        DType.uint64,
+    ), "Unsupported return type"
+
+    # Metal's AIR backend exposes no usable ballot intrinsic: `simd_ballot` maps
+    # to `air.simd_ballot.i64`, but emitting it via `llvm_intrinsic` crashes the
+    # Metal shader compiler at pipeline-state creation
+    # (XPC_ERROR_CONNECTION_INTERRUPTED), the same "declared in MSL but errors in
+    # the backend" trap noted for `bfloat16` shuffles above. So emulate the
+    # ballot with an XOR-butterfly OR-reduction over the working
+    # `simd_shuffle_xor`: each lane seeds its own bit (`1 << lane_id()` iff it
+    # voted `True`), then `log2(WARP_SIZE)` butterfly steps OR every lane's bit
+    # into every lane, so all lanes end up holding the full mask. The XOR
+    # butterfly is all-lanes-correct on Metal (unlike a `shuffle_down` tree --
+    # see the `metal-simd-shuffle-down` KB entry), and because each lane only
+    # ever sets bit `lane_id() < WARP_SIZE`, no bit `>= WARP_SIZE` is ever set
+    # (so nothing to mask, even for a `uint64` return).
+    var mask = (
+        Scalar[ret_type](1) << Scalar[ret_type](lane_id())
+    ) if vote else Scalar[ret_type](0)
+
+    # Precondition: WARP_SIZE is a power of two (Apple SIMD-group is 32, and this
+    # branch is is_apple_gpu-gated), so log2_floor(WARP_SIZE) butterfly steps OR
+    # every lane's bit into every lane with no gaps.
+    comptime for i in range(log2_floor(WARP_SIZE)):
+        comptime offset = 1 << i
+        mask |= shuffle_xor(mask, UInt32(offset))
+
+    return mask
+
+
+@always_inline
 def vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
     """Creates a 32 or 64 bit mask among all threads in the warp, where each bit is set to 1 if the
     corresponding thread voted True, and 0 otherwise.
 
     This function takes a boolean value which represents the corresponding threads vote.
 
-    Nvidia only supports 32 bit masks, while AMD supports 32 and 64 bit masks.
+    NVIDIA supports 32-bit masks; AMD supports 32- and 64-bit masks; Apple
+    Silicon (a 32-lane SIMD-group) supports 32-bit masks, and also accepts a
+    `DType.uint64` return whose upper 32 bits are always zero.
 
     Parameters:
         ret_type: Return type for the mask (must be `DType.uint32` or `DType.uint64`).
@@ -1410,6 +1446,8 @@ def vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
         return rebind[Scalar[ret_type]](_vote_nvidia_helper(val))
     elif is_amd_gpu():
         return _vote_amd_helper[ret_type](val)
+    elif is_apple_gpu():
+        return _vote_apple_helper[ret_type](val)
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()

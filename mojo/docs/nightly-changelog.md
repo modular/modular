@@ -590,6 +590,12 @@ This version is still a work in progress.
   instruction, a `readfirstlane` ballot fold on AMD, and a shuffle-based check
   on Apple Silicon GPUs.
 
+- `warp.vote()` now works on Apple Silicon GPUs. Metal's AIR backend exposes no
+  usable ballot intrinsic, so it emulates the ballot with an XOR-butterfly
+  OR-reduction over `simd_shuffle_xor`, returning a 32-bit mask (or a
+  `DType.uint64` mask whose upper 32 bits are always zero); NVIDIA and AMD are
+  unchanged.
+
 - `DeviceGraphBuilder.collect_dependencies` now accepts an optional
   `dependencies` argument. The named predecessor handles are injected as
   ambient predecessors of every node the `work` closure adds, so the scope's
