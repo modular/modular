@@ -278,7 +278,8 @@ modular_cc_library(
     name = "BazelRunfiles",
     srcs = ["lib/BazelRunfiles.cpp"],
     hdrs = ["include/Support/BazelRunfiles.h"],
-    visibility = ["//visibility:private"],
+    # max._core resolves the NIXL plugin dir from runfiles via this helper.
+    visibility = ["//max/python/max:__pkg__"],
     deps = [
         "@llvm-project//llvm:Support",
         "@rules_cc//cc/runfiles",
