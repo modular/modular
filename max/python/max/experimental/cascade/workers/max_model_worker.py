@@ -191,7 +191,8 @@ class MAXModelWorker(Worker):
             sampling_params=sampling_params,
         )
 
-        async for outputs in self._proxy.stream(request_id, ctx):
+        response_stream = await self._proxy.stream(request_id, ctx)
+        async for outputs in response_stream:
             token_arrays = [
                 np.asarray(output.tokens, dtype=np.int32)
                 for output in outputs

@@ -256,8 +256,11 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     async def mock_stream(
         request_id: str, context: Any
     ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        for response in scheduler_responses:
-            yield [response]
+        async def _gen() -> AsyncGenerator[list[TextGenerationOutput], None]:
+            for response in scheduler_responses:
+                yield [response]
+
+        return _gen()
 
     # Mock context returned by tokenizer
     mock_tokens = Mock()
@@ -284,7 +287,7 @@ async def test_ttft_recorded_once_per_chunk() -> None:
         bound_method = TokenGeneratorPipeline.next_token_chunk.__get__(
             pipeline, type(pipeline)
         )
-        chunks = [chunk async for chunk in bound_method(mock_request)]
+        chunks = [chunk async for chunk in await bound_method(mock_request)]
 
     # Verify TTFT called exactly once, ITL called for remaining 2 chunks
     assert mock_metrics.ttft.call_count == 1
@@ -342,8 +345,11 @@ async def test_tpot_not_recorded_for_single_token() -> None:
     async def mock_stream(
         request_id: str, context: Any
     ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        for response in scheduler_responses:
-            yield [response]
+        async def _gen() -> AsyncGenerator[list[TextGenerationOutput], None]:
+            for response in scheduler_responses:
+                yield [response]
+
+        return _gen()
 
     mock_tokens = Mock()
     mock_tokens.prompt_length = 10
@@ -362,7 +368,7 @@ async def test_tpot_not_recorded_for_single_token() -> None:
         bound_method = TokenGeneratorPipeline.next_token_chunk.__get__(
             pipeline, type(pipeline)
         )
-        chunks = [chunk async for chunk in bound_method(mock_request)]
+        chunks = [chunk async for chunk in await bound_method(mock_request)]
 
     assert len(chunks) == 1
     # One token generated -> no inter-token span, so TPOT is not emitted.
@@ -392,8 +398,11 @@ async def _run_reasoning_pipeline(
     async def mock_stream(
         request_id: str, context: Any
     ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        for response in scheduler_responses:
-            yield [response]
+        async def _gen() -> AsyncGenerator[list[TextGenerationOutput], None]:
+            for response in scheduler_responses:
+                yield [response]
+
+        return _gen()
 
     mock_tokens = Mock()
     mock_tokens.prompt = (
@@ -427,7 +436,7 @@ async def _run_reasoning_pipeline(
         bound = TokenGeneratorPipeline.next_token_chunk.__get__(
             pipeline, type(pipeline)
         )
-        return [chunk async for chunk in bound(mock_request)]
+        return [chunk async for chunk in await bound(mock_request)]
 
 
 def _make_responses(
@@ -628,13 +637,16 @@ async def test_next_token_chunk_stop_sequence_sets_eos_status() -> None:
     async def mock_stream(
         request_id: str, context: Any
     ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        yield [
-            TextGenerationOutput(
-                request_id=test_request_id,
-                tokens=[10],
-                final_status=GenerationStatus.ACTIVE,
-            )
-        ]
+        async def _gen() -> AsyncGenerator[list[TextGenerationOutput], None]:
+            yield [
+                TextGenerationOutput(
+                    request_id=test_request_id,
+                    tokens=[10],
+                    final_status=GenerationStatus.ACTIVE,
+                )
+            ]
+
+        return _gen()
 
     mock_context = Mock(
         request_id=test_request_id,
@@ -660,7 +672,7 @@ async def test_next_token_chunk_stop_sequence_sets_eos_status() -> None:
         bound = TokenGeneratorPipeline.next_token_chunk.__get__(
             pipeline, type(pipeline)
         )
-        chunks = [chunk async for chunk in bound(mock_request)]
+        chunks = [chunk async for chunk in await bound(mock_request)]
 
     assert len(chunks) == 1
     assert chunks[0].status == GenerationStatus.END_OF_SEQUENCE

@@ -54,10 +54,12 @@ class GeneralPipelineHandler(
             # Create context from request
             context = await self.tokenizer.new_context(request)
 
-            # Stream responses from the engine
-            async for responses in self.model_worker.stream(
+            # Stream responses from the engine. Awaiting the submit hands the
+            # request off to the model worker, so a failed handoff raises here.
+            response_stream = await self.model_worker.stream(
                 request.request_id, context
-            ):
+            )
+            async for responses in response_stream:
                 for response in responses:
                     yield response
         finally:

@@ -1189,8 +1189,11 @@ async def _run_stream(
     mock_pipeline.model_name = "test-model"
 
     async def mock_next_token_chunk(request: Any) -> Any:
-        for chunk in chunks:
-            yield chunk
+        async def _gen() -> Any:
+            for chunk in chunks:
+                yield chunk
+
+        return _gen()
 
     mock_pipeline.next_token_chunk = mock_next_token_chunk
     mock_request = _make_mock_request()
@@ -1203,7 +1206,7 @@ async def _run_stream(
     )
     return [
         CreateChatCompletionStreamResponse.model_validate_json(p)
-        async for p in generator.stream(mock_request)
+        async for p in await generator.stream(mock_request)
         if isinstance(p, str) and p != "[DONE]"
     ]
 
@@ -1218,8 +1221,11 @@ async def _run_completion_stream(
     mock_pipeline.model_name = "test-model"
 
     async def mock_next_token_chunk(request: Any) -> Any:
-        for chunk in chunks:
-            yield chunk
+        async def _gen() -> Any:
+            for chunk in chunks:
+                yield chunk
+
+        return _gen()
 
     mock_pipeline.next_token_chunk = mock_next_token_chunk
     mock_request = _make_mock_request()
@@ -1230,7 +1236,7 @@ async def _run_completion_stream(
     )
     return [
         CompletionStreamResponse.model_validate_json(p)
-        async for p in generator.stream(mock_request)
+        async for p in await generator.stream(mock_request)
         if isinstance(p, str) and p != "[DONE]"
     ]
 
@@ -1243,8 +1249,11 @@ async def _run_stream_with_kimi_tool_parser(
     mock_pipeline.model_name = "test-model"
 
     async def mock_next_token_chunk(request: Any) -> Any:
-        for chunk in chunks:
-            yield chunk
+        async def _gen() -> Any:
+            for chunk in chunks:
+                yield chunk
+
+        return _gen()
 
     mock_pipeline.next_token_chunk = mock_next_token_chunk
     mock_request = _make_mock_request()
@@ -1256,7 +1265,7 @@ async def _run_stream_with_kimi_tool_parser(
     )
     return [
         CreateChatCompletionStreamResponse.model_validate_json(p)
-        async for p in generator.stream(mock_request)
+        async for p in await generator.stream(mock_request)
         if isinstance(p, str) and p != "[DONE]"
     ]
 
@@ -1554,8 +1563,11 @@ async def test_openai_completion_stream_accounts_reasoning_tokens_for_metrics() 
     mock_pipeline.model_name = "test-model"
 
     async def mock_next_token_chunk(request: Any) -> Any:
-        for chunk in chunks:
-            yield chunk
+        async def _gen() -> Any:
+            for chunk in chunks:
+                yield chunk
+
+        return _gen()
 
     mock_pipeline.next_token_chunk = mock_next_token_chunk
     mock_request = _make_mock_request()
@@ -1566,7 +1578,7 @@ async def test_openai_completion_stream_accounts_reasoning_tokens_for_metrics() 
         patch("max.serve.router.openai_routes.record_request_end") as end_mock,
     ):
         generator = OpenAICompletionResponseGenerator(mock_pipeline)
-        _ = [p async for p in generator.stream(mock_request)]
+        _ = [p async for p in await generator.stream(mock_request)]
 
     assert end_mock.call_count == 1
     args = end_mock.call_args.args
@@ -2155,24 +2167,38 @@ async def test_openai_chat_completion_tool_calling_with_content(
 async def test_chat_stream_error_yields_json(
     patch_openai_metrics: None,
 ) -> None:
-    """Regression test for MXSERV-95: errors raised mid-stream are serialized as JSON."""
+    """Regression test for MXSERV-95: errors raised mid-stream are serialized as JSON.
+
+    Once the SSE response has begun (headers sent, first chunk yielded), an
+    error can no longer change the HTTP status, so it must be serialized as a
+    JSON error payload inside the stream rather than propagating.
+    """
     mock_pipeline = Mock()
     mock_pipeline.model_name = "test-model"
 
     async def mock_next_token_chunk(request: Any) -> Any:
-        raise ValueError(
-            "Input string is larger than tokenizer's max length (264823 > 262144)."
-        )
-        yield  # makes this an async generator despite the unconditional raise
+        async def _gen() -> Any:
+            yield TokenGeneratorOutput(
+                status=GenerationStatus.ACTIVE,
+                decoded_tokens="hi",
+                token_count=1,
+                prompt_token_count=5,
+            )
+            raise ValueError(
+                "Input string is larger than tokenizer's max length "
+                "(264823 > 262144)."
+            )
+
+        return _gen()
 
     mock_pipeline.next_token_chunk = mock_next_token_chunk
     generator = OpenAIChatResponseGenerator(mock_pipeline)
 
-    results = [p async for p in generator.stream(_make_mock_request())]
+    results = [p async for p in await generator.stream(_make_mock_request())]
 
-    # The error path does not emit [DONE]; exactly one item should be yielded.
-    assert len(results) == 1
-    payload = results[0]
+    # The first payload is the streamed chunk; the last is the serialized
+    # error. The error path does not emit [DONE].
+    payload = results[-1]
     assert isinstance(payload, str), (
         f"Expected a JSON string, got {type(payload).__name__}: {payload!r}"
     )
@@ -2181,6 +2207,31 @@ async def test_chat_stream_error_yields_json(
     parsed = json.loads(payload)
     assert parsed["error"]["code"] == "500"
     assert "262144" in parsed["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_submission_error_raises(
+    patch_openai_metrics: None,
+) -> None:
+    """SERVSYS-1277: a failed submission raises from ``stream`` before the SSE
+    response begins, so the route can map it to an HTTP error status instead of
+    burying it in an already-200 stream."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+
+    async def mock_next_token_chunk(request: Any) -> Any:
+        raise ValueError(
+            "Input string is larger than tokenizer's max length "
+            "(264823 > 262144)."
+        )
+
+    mock_pipeline.next_token_chunk = mock_next_token_chunk
+    generator = OpenAIChatResponseGenerator(mock_pipeline)
+
+    # Awaiting the coroutine performs the submission, which raises here rather
+    # than yielding an error payload inside the stream.
+    with pytest.raises(ValueError, match="262144"):
+        await generator.stream(_make_mock_request())
 
 
 # ============================================================================

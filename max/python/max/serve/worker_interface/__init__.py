@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Generic
@@ -73,12 +73,21 @@ class ModelWorkerProxy(ABC, Generic[BaseContextType, PipelineOutputType]):
         METRICS.reqs_awaiting_admission(delta)
 
     @abstractmethod
-    def stream(
+    async def stream(
         self,
         req_id: RequestID,
         data: BaseContextType,
-    ) -> AsyncIterator[list[PipelineOutputType]]:
-        pass
+    ) -> AsyncGenerator[list[PipelineOutputType], None]:
+        """Submit ``data`` to the model worker and return a response generator.
+
+        Awaiting this coroutine performs the handoff to the model worker (for
+        example, the request-queue put). A submission failure — such as a dead
+        worker — raises here, before any response has been streamed, so callers
+        can surface it as an error before response headers are sent. The
+        returned async generator yields batches of pipeline outputs as they
+        arrive.
+        """
+        ...
 
     @abstractmethod
     def cancel(self, req_id: RequestID) -> None:

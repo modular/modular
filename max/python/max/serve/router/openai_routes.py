@@ -258,9 +258,14 @@ class OpenAIResponseGenerator(ABC, Generic[_T]):
     async def stream(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
-        # This yield is required to make this method an async generator
-        # for proper type checking. It will never be called due to @abstractmethod.
-        yield ""
+        """Submits ``request`` and returns an SSE payload generator.
+
+        Awaiting this coroutine submits the request to the pipeline (which
+        tokenizes and hands it off to the model worker), so a failed
+        submission raises here — before the streaming response headers are
+        sent — and can be mapped to an HTTP error status. Iterating the
+        returned generator yields the SSE payloads.
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -392,6 +397,19 @@ class OpenAIChatResponseGenerator(
     async def stream(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[str | JSONResponse, None]:
+        # Submit the request before returning the response stream. Awaiting
+        # next_token_chunk tokenizes and hands the request off to the model
+        # worker, so a failed submission (e.g. a dead worker) raises here —
+        # before the SSE 200 headers are sent — and the route maps it to an
+        # HTTP error status.
+        token_generator = await self.pipeline.next_token_chunk(request)
+        return self._stream(request, token_generator)
+
+    async def _stream(
+        self,
+        request: TextGenerationRequest,
+        token_generator: AsyncGenerator[TokenGeneratorOutput, None],
+    ) -> AsyncGenerator[str | JSONResponse, None]:
         self.logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
@@ -413,7 +431,7 @@ class OpenAIChatResponseGenerator(
         self._think_closed = False
 
         try:
-            async for chunk in self.pipeline.next_token_chunk(request):
+            async for chunk in token_generator:
                 self.logger.debug(
                     "Streaming: %s, TOKENS: %d, %s%s",
                     request.request_id,
@@ -1727,11 +1745,13 @@ async def openai_create_chat_completion(
         )
 
         if completion_request.stream:
+            # Await the submit so a failed handoff surfaces as an HTTP error
+            # before the SSE headers are sent, rather than as an error chunk
+            # inside an already-200 stream.
+            token_stream = await response_generator.stream(token_request)
             # We set a large timeout for ping otherwise benchmarking scripts
             # such as sglang will fail in parsing the ping message.
-            return EventSourceResponse(
-                response_generator.stream(token_request), ping=100000, sep="\n"
-            )
+            return EventSourceResponse(token_stream, ping=100000, sep="\n")
 
         response = await response_generator.complete([token_request])
         return response
@@ -2189,6 +2209,19 @@ class OpenAICompletionResponseGenerator(
     async def stream(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
+        # Submit the request before returning the response stream. Awaiting
+        # next_token_chunk tokenizes and hands the request off to the model
+        # worker, so a failed submission (e.g. a dead worker) raises here —
+        # before the SSE 200 headers are sent — and the route maps it to an
+        # HTTP error status.
+        token_generator = await self.pipeline.next_token_chunk(request)
+        return self._stream(request, token_generator)
+
+    async def _stream(
+        self,
+        request: TextGenerationRequest,
+        token_generator: AsyncGenerator[TokenGeneratorOutput, None],
+    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
         logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
@@ -2197,7 +2230,7 @@ class OpenAICompletionResponseGenerator(
         n_prompt_tokens = 0
         n_cached_prompt_tokens = 0
         try:
-            async for chunk in self.pipeline.next_token_chunk(request):
+            async for chunk in token_generator:
                 chunk_total_tokens = (
                     chunk.reasoning_token_count or 0
                 ) + chunk.token_count
@@ -2567,10 +2600,14 @@ async def openai_create_completion(
                 raise NotImplementedError(
                     "Streaming responses for multiple prompts is not supported"
                 )
+            # Await the submit so a failed handoff surfaces as an HTTP error
+            # before the SSE headers are sent, rather than as an error chunk
+            # inside an already-200 stream.
+            token_stream = await response_generator.stream(token_requests[0])
             # We set a large timeout for ping otherwise benchmarking scripts
             # such as sglang will fail in parsing the ping message.
             return EventSourceResponse(
-                response_generator.stream(token_requests[0]),
+                token_stream,
                 ping=100000,
                 sep="\n",
             )
