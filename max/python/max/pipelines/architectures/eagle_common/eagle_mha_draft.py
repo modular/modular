@@ -47,12 +47,13 @@ from max.nn.attention.attention_with_rope import (
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import Module
+from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
+    RotaryEmbedding,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.transformer.distributed_transformer import (
@@ -84,9 +85,15 @@ class Eagle3MHADraftConfig:
     dtype: DType
     norm_dtype: DType
     kv_params: KVCacheParams
-    rope_scaling: dict[str, Any]
+    rope_scaling: dict[str, Any] | None = None
     """Yarn rope scaling params (Deepseek-flavored: beta_fast, beta_slow,
-    mscale, mscale_all_dim, factor, original_max_position_embeddings)."""
+    mscale, mscale_all_dim, factor, original_max_position_embeddings).
+
+    Optional: when ``None``, the caller must pass a pre-built ``rope`` to
+    :class:`Eagle3MHADraft` via its constructor kwarg. This lets M3-style
+    targets whose draft checkpoint has ``rope_scaling=None`` inject a plain
+    :class:`RotaryEmbedding` (or the target's partial-RoPE flavor) without
+    faking yarn parameters just to pass this validator."""
 
     fc_input_multiplier: int
     """Number of fused target hidden states (2 or 3). Set from the
@@ -98,6 +105,13 @@ class Eagle3MHADraftConfig:
 
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+
+    fc_norm: bool = False
+    """Apply a separate RMSNorm to each captured target hidden-state chunk
+    before the ``fc`` fusion (EAGLE3 ``fc_norm: true``). The chunks come from
+    target layers at different depths with very different magnitudes, and ``fc``
+    is trained on per-chunk-normalized inputs, so skipping this collapses the
+    draft."""
 
 
 class Eagle3MHADraft(Module):
@@ -122,7 +136,26 @@ class Eagle3MHADraft(Module):
         )
     """
 
-    def __init__(self, config: Eagle3MHADraftConfig) -> None:
+    def __init__(
+        self,
+        config: Eagle3MHADraftConfig,
+        *,
+        rope: RotaryEmbedding | None = None,
+    ) -> None:
+        """Build the draft module.
+
+        Args:
+            config: Draft configuration. When ``config.rope_scaling`` is set
+                and ``rope`` is not, a Deepseek-flavored yarn RoPE is built
+                from those params (the original K2.5 behavior). When ``rope``
+                is passed, it is used verbatim and ``config.rope_scaling`` is
+                ignored — this is the path M3-style targets take, since their
+                Llama-Eagle3 draft checkpoint (``LlamaForCausalLMEagle3`` with
+                ``rope_scaling: null``) needs a plain / partial RoPE built by
+                the caller from the target's head geometry.
+            rope: Optional pre-built rotary embedding. If ``None`` and
+                ``config.rope_scaling`` is also ``None``, this raises.
+        """
         super().__init__()
         self.config = config
         devices = config.devices
@@ -131,10 +164,25 @@ class Eagle3MHADraft(Module):
         dtype = config.dtype
         norm_dtype = config.norm_dtype
 
-        self.use_tp_ep = config.data_parallel_degree == 1 and num_devices > 1
-        self.use_data_parallel_attention = (
-            num_devices > 1 and config.data_parallel_degree == num_devices
+        self.dp_degree = config.data_parallel_degree
+        assert num_devices % self.dp_degree == 0, (
+            f"num_devices={num_devices} not divisible by "
+            f"data_parallel_degree={self.dp_degree}"
         )
+        self.tp_degree = num_devices // self.dp_degree
+        # Pure TP (EP): one replica spanning all devices.
+        self.use_tp_ep = self.dp_degree == 1 and num_devices > 1
+        # Pure DP: one replica per device.
+        self.use_data_parallel_attention = (
+            num_devices > 1 and self.dp_degree == num_devices
+        )
+        # Mixed TP+DP (e.g. TP4DP2): ``dp_degree`` replicas, each spanning
+        # ``tp_degree`` devices. Mirrors ``MiniMaxM3TransformerBlock``: attention
+        # is sharded per replica group and the post-attention / post-MLP
+        # collectives are ``reducescatter.sum`` / ``allgather`` with
+        # ``group_size=tp_degree`` on the FULL signal-buffer set (no subset
+        # signal-buffer collectives).
+        self.use_tp_dp = num_devices > 1 and 1 < self.dp_degree < num_devices
 
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,
@@ -161,26 +209,35 @@ class Eagle3MHADraft(Module):
         self.fc.sharding_strategy = ShardingStrategy.replicate(num_devices)
         self.fc_shards = self.fc.shard(devices)
 
-        # Deepseek-flavored yarn rope (matches the draft HF config's
-        # rope_scaling block; the per-head q/k dim is the MHA head_dim).
-        scaling_params = DeepseekYarnRopeScalingParams(
-            scaling_factor=config.rope_scaling["factor"],
-            original_max_position_embeddings=config.rope_scaling[
-                "original_max_position_embeddings"
-            ],
-            beta_fast=config.rope_scaling["beta_fast"],
-            beta_slow=config.rope_scaling["beta_slow"],
-            mscale=config.rope_scaling["mscale"],
-            mscale_all_dim=config.rope_scaling["mscale_all_dim"],
-        )
-        self.rope = DeepseekYarnRotaryEmbedding(
-            config.head_dim,
-            n_heads=config.num_attention_heads,
-            theta=config.rope_theta,
-            max_seq_len=config.max_position_embeddings,
-            scaling_params=scaling_params,
-            interleaved=False,
-        )
+        if rope is not None:
+            self.rope: RotaryEmbedding = rope
+        else:
+            if config.rope_scaling is None:
+                raise ValueError(
+                    "Eagle3MHADraft requires either an explicit ``rope`` "
+                    "kwarg or ``config.rope_scaling`` (Deepseek-yarn) so it "
+                    "can build the default yarn RoPE. Got neither."
+                )
+            # Deepseek-flavored yarn rope (matches the draft HF config's
+            # rope_scaling block; the per-head q/k dim is the MHA head_dim).
+            scaling_params = DeepseekYarnRopeScalingParams(
+                scaling_factor=config.rope_scaling["factor"],
+                original_max_position_embeddings=config.rope_scaling[
+                    "original_max_position_embeddings"
+                ],
+                beta_fast=config.rope_scaling["beta_fast"],
+                beta_slow=config.rope_scaling["beta_slow"],
+                mscale=config.rope_scaling["mscale"],
+                mscale_all_dim=config.rope_scaling["mscale_all_dim"],
+            )
+            self.rope = DeepseekYarnRotaryEmbedding(
+                config.head_dim,
+                n_heads=config.num_attention_heads,
+                theta=config.rope_theta,
+                max_seq_len=config.max_position_embeddings,
+                scaling_params=scaling_params,
+                interleaved=False,
+            )
 
         wide_hidden_size = config.hidden_size * 2
         attn_kwargs: dict[str, Any] = dict(
@@ -197,6 +254,16 @@ class Eagle3MHADraft(Module):
         if self.use_data_parallel_attention:
             self.self_attn: AttentionWithRope = DataParallelAttentionWithRope(
                 **attn_kwargs
+            )
+        elif self.use_tp_dp:
+            # Mixed TP+DP: unwrapped base attention sharded per replica group.
+            # We do NOT use ``TensorParallelAttentionWithRope`` (its internal
+            # allreduce runs over the full device set with no group_size); the
+            # post-attention reduce is done externally in ``__call__`` with
+            # ``reducescatter.sum(..., group_size=tp_degree)``.
+            self.self_attn = AttentionWithRope(**attn_kwargs)
+            self.self_attn.sharding_strategy = ShardingStrategy.tensor_parallel(
+                self.tp_degree
             )
         elif num_devices > 1:
             self.self_attn = TensorParallelAttentionWithRope(**attn_kwargs)
@@ -223,22 +290,47 @@ class Eagle3MHADraft(Module):
                     config.head_dim,
                 )
             )
+        elif self.use_tp_dp:
+            replacement_o_proj.sharding_strategy = (
+                ShardingStrategy.head_aware_columnwise(
+                    self.tp_degree,
+                    config.num_attention_heads,
+                    config.head_dim,
+                )
+            )
         else:
             replacement_o_proj.sharding_strategy = ShardingStrategy.replicate(
                 num_devices
             )
-        o_proj_shards = replacement_o_proj.shard(devices)
         self.self_attn.o_proj = replacement_o_proj
-        shards_seq = getattr(
-            self.self_attn,
-            "replicated_attentions",
-            None,
-        )
-        if shards_seq is None:
-            shards_seq = getattr(self.self_attn, "list_of_attentions", None)
-        if shards_seq is not None:
-            for shard_idx, attn_shard in enumerate(shards_seq):
+
+        # ``list_of_attentions`` is the per-device attention shard list used by
+        # the multi-device call paths. The TP wrapper builds it at construction;
+        # mixed TP+DP builds it here, one shard per device, sharding each
+        # replica's ``tp_degree`` group independently (mirrors
+        # ``MiniMaxM3TransformerBlock.self_attn_shards``).
+        self.list_of_attentions: list[AttentionWithRope]
+        if self.use_tp_dp:
+            o_proj_shards = []
+            self.list_of_attentions = []
+            for start in range(0, num_devices, self.tp_degree):
+                grp = devices[start : start + self.tp_degree]
+                o_proj_shards.extend(replacement_o_proj.shard(grp))
+                self.list_of_attentions.extend(self.self_attn.shard(grp))
+            for shard_idx, attn_shard in enumerate(self.list_of_attentions):
                 attn_shard.o_proj = o_proj_shards[shard_idx]
+        else:
+            o_proj_shards = replacement_o_proj.shard(devices)
+            shards_seq = getattr(
+                self.self_attn,
+                "replicated_attentions",
+                None,
+            )
+            if shards_seq is None:
+                shards_seq = getattr(self.self_attn, "list_of_attentions", None)
+            if shards_seq is not None:
+                for shard_idx, attn_shard in enumerate(shards_seq):
+                    attn_shard.o_proj = o_proj_shards[shard_idx]
 
         def _replicated_rmsnorm() -> RMSNorm:
             n = RMSNorm(
@@ -255,6 +347,20 @@ class Eagle3MHADraft(Module):
 
         self.hidden_norm = _replicated_rmsnorm()
         self.hidden_norm_shards = self.hidden_norm.shard(devices)
+
+        # Per-chunk pre-``fc`` norms (EAGLE3 ``fc_norm``). One RMSNorm per fused
+        # target hidden state; ``LayerList`` gives ``fc_norm.{i}.weight`` FQNs
+        # matching the checkpoint. Each is replicated and sharded like the other
+        # norms; applied only at step 0 (when the ``fc`` fusion runs).
+        self.fc_norm: LayerList | None = None
+        if config.fc_norm:
+            self.fc_norm = LayerList(
+                [
+                    _replicated_rmsnorm()
+                    for _ in range(config.fc_input_multiplier)
+                ]
+            )
+            self.fc_norm_shards = [norm.shard(devices) for norm in self.fc_norm]
 
         self.post_attention_layernorm = _replicated_rmsnorm()
         self.post_attention_layernorm_shards = (
@@ -316,6 +422,31 @@ class Eagle3MHADraft(Module):
 
         fused_hs: list[TensorValue] = list(fused_target_hs)
         if fused_hs[0].shape[-1] != config.hidden_size:
+            # Step 0 only (fused input is ``fc_input_multiplier * hidden``).
+            # Normalize each captured chunk before fusing, matching the draft's
+            # training-time ``fc_norm``.
+            if self.fc_norm is not None:
+                h = config.hidden_size
+                normed_chunks = [
+                    forward_sharded_layers(
+                        self.fc_norm_shards[j],
+                        [
+                            fused_hs[d][:, j * h : (j + 1) * h]
+                            for d in range(num_devices)
+                        ],
+                    )
+                    for j in range(config.fc_input_multiplier)
+                ]
+                fused_hs = [
+                    ops.concat(
+                        [
+                            normed_chunks[j][d]
+                            for j in range(len(normed_chunks))
+                        ],
+                        axis=-1,
+                    )
+                    for d in range(num_devices)
+                ]
             fused_hs = forward_sharded_layers(self.fc_shards, fused_hs)
 
         h_embed = self.embed_tokens(tokens, signal_buffers)
@@ -344,6 +475,69 @@ class Eagle3MHADraft(Module):
                 ops.rebind(
                     fused_hs[i],
                     [f"{split_prefix}_seq_dev_{i}", config.hidden_size],
+                )
+                for i in range(num_devices)
+            ]
+        elif self.use_tp_dp:
+            # Mixed TP+DP: ``tokens`` is the full merged batch broadcast to
+            # every device by ``embed_tokens``. Split it per DP replica on the
+            # replica leader devices, then broadcast each replica's slice to
+            # its TP group (the "broadcast-full-and-slice-locally" workaround,
+            # since grouped broadcast is unavailable). Mirrors
+            # ``MiniMaxM3.__call__`` (minimax_m3.py). ``fused_hs`` already
+            # arrives per-device TP-replicated from the target, so it is only
+            # rebound (not re-split) to the per-device split dim so the concat
+            # with ``h_embed`` shares a symbolic seq length.
+            host_offsets_i64 = host_input_row_offsets.cast(DType.int64)
+            replica_leader_indices = [
+                r * self.tp_degree for r in range(self.dp_degree)
+            ]
+            replica_h_embed, replica_offsets = split_batch_replicated(
+                [devices[i] for i in replica_leader_indices],
+                [h_embed[i] for i in replica_leader_indices],
+                [input_row_offsets_[i] for i in replica_leader_indices],
+                host_offsets_i64,
+                data_parallel_splits,
+                prefix=split_prefix,
+            )
+            bcast_h_embed: list[TensorValue] = []
+            bcast_offsets: list[TensorValue] = []
+            for r, (rh, roff) in enumerate(
+                zip(replica_h_embed, replica_offsets, strict=True)
+            ):
+                start = r * self.tp_degree
+                end = start + self.tp_degree
+                bcast_h_embed.extend(
+                    ops.distributed_broadcast(rh, signal_buffers)[start:end]
+                )
+                bcast_offsets.extend(
+                    ops.distributed_broadcast(roff, signal_buffers)[start:end]
+                )
+            input_row_offsets_ = bcast_offsets
+            # Rebind to a per-REPLICA seq dim (not per-device): every device in
+            # a TP group holds the same replica sequence, so they must share one
+            # symbolic dim or ``reducescatter.sum`` / ``allgather`` (which check
+            # shape-equality within each group) reject the mismatched symbols.
+            # ``h_embed`` (from the draft's own split) and ``fused_hs`` (from the
+            # target) arrive with different symbols but equal runtime lengths;
+            # binding both to ``seq_replica_{r}`` also lets them concat.
+            h_embed = [
+                ops.rebind(
+                    bcast_h_embed[i],
+                    [
+                        f"{split_prefix}_seq_replica_{i // self.tp_degree}",
+                        config.hidden_size,
+                    ],
+                )
+                for i in range(num_devices)
+            ]
+            fused_hs = [
+                ops.rebind(
+                    fused_hs[i],
+                    [
+                        f"{split_prefix}_seq_replica_{i // self.tp_degree}",
+                        config.hidden_size,
+                    ],
                 )
                 for i in range(num_devices)
             ]
@@ -389,6 +583,19 @@ class Eagle3MHADraft(Module):
                 freqs_cis,
                 input_row_offsets_,
             )
+        elif self.use_tp_dp:
+            # Per-replica sharded attention: call each device's shard directly
+            # (no wrapper allreduce); the post-attention reduce runs externally.
+            attn_outs = [
+                self.list_of_attentions[i](
+                    layer_idx_cpu,
+                    concat_inputs[i],
+                    kv_collections[i],
+                    freqs_cis[i],
+                    input_row_offsets_[i],
+                )
+                for i in range(num_devices)
+            ]
         else:
             single_out = self.self_attn(
                 layer_idx_cpu,
@@ -399,21 +606,74 @@ class Eagle3MHADraft(Module):
             )
             attn_outs = [single_out]
 
-        hs = [
-            fused + attn_out
-            for fused, attn_out in zip(fused_hs, attn_outs, strict=True)
-        ]
+        if self.use_tp_dp:
+            # M3-target residual pattern: only the leader TP rank adds the
+            # residual; ``reducescatter.sum`` over the TP group sums the shards
+            # (adding the residual exactly once) and leaves each rank with its
+            # own 1/tp token slice. The dense MLP then runs replicated on that
+            # slice, and a group ``allgather`` re-materializes the full replica
+            # sequence. All collectives use the FULL signal-buffer set with
+            # ``group_size=tp_degree`` — no subset-buffer collectives.
+            hs_pre = [
+                (fused + attn_out).cast(fused.dtype)
+                if i % self.tp_degree == 0
+                else attn_out
+                for i, (fused, attn_out) in enumerate(
+                    zip(fused_hs, attn_outs, strict=True)
+                )
+            ]
+            hs = ops.reducescatter.sum(
+                hs_pre, signal_buffers, axis=0, group_size=self.tp_degree
+            )
+            norm_outs = forward_sharded_layers(
+                self.post_attention_layernorm_shards, hs
+            )
+            mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
+            hs = [
+                (h + mlp_out).cast(h.dtype)
+                for h, mlp_out in zip(hs, mlp_outs, strict=True)
+            ]
+            hs = ops.allgather(
+                hs, signal_buffers, axis=0, group_size=self.tp_degree
+            )
+        else:
+            hs = [
+                fused + attn_out
+                for fused, attn_out in zip(fused_hs, attn_outs, strict=True)
+            ]
 
-        norm_outs = forward_sharded_layers(
-            self.post_attention_layernorm_shards, hs
-        )
-        mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
-        if self.use_tp_ep:
-            mlp_outs = ops.allreduce.sum(mlp_outs, signal_buffers)
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
+            norm_outs = forward_sharded_layers(
+                self.post_attention_layernorm_shards, hs
+            )
+            mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
+            if self.use_tp_ep:
+                mlp_outs = ops.allreduce.sum(mlp_outs, signal_buffers)
+            hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
-        if config.data_parallel_degree > 1:
+        if self.use_tp_dp:
+            # Within a replica all TP ranks hold the same sequence, so only the
+            # first TP rank contributes real last-token rows; the others pass an
+            # empty slice into a full-group allgather (mirrors MiniMaxM3's
+            # last-token gather). This avoids counting each replica's rows
+            # ``tp_degree`` times.
             last_token_per_dev: list[TensorValue] = []
+            for dev_idx in range(num_devices):
+                lt = ops.gather(
+                    hs[dev_idx],
+                    input_row_offsets_[dev_idx][1:] - 1,
+                    axis=0,
+                )
+                if dev_idx % self.tp_degree != 0:
+                    lt = ops.slice_tensor(
+                        lt,
+                        [(slice(0, 0), f"empty_last_token_{dev_idx}"), ...],
+                    )
+                last_token_per_dev.append(lt)
+            last_token_distributed = ops.allgather(
+                last_token_per_dev, signal_buffers
+            )
+        elif config.data_parallel_degree > 1:
+            last_token_per_dev = []
             for dev_idx in range(num_devices):
                 h0 = hs[dev_idx]
                 last_token_indices = input_row_offsets_[dev_idx][1:] - 1
@@ -466,10 +726,17 @@ class Eagle3MHADraft(Module):
                     - draft_return_n_logits_range_per_dev[dev_idx]
                 )
                 dev_indices = ops.reshape(dev_offsets, shape=(-1,))
-                variable_per_dev.append(
-                    ops.gather(hs[dev_idx], dev_indices, axis=0)
-                )
-            if self.use_data_parallel_attention:
+                gathered = ops.gather(hs[dev_idx], dev_indices, axis=0)
+                # Mixed TP+DP: only the leader TP rank per replica contributes
+                # real rows; empty-slice the others before the full-group
+                # allgather so no verify row is counted ``tp_degree`` times.
+                if self.use_tp_dp and dev_idx % self.tp_degree != 0:
+                    gathered = ops.slice_tensor(
+                        gathered,
+                        [(slice(0, 0), f"empty_variable_{dev_idx}"), ...],
+                    )
+                variable_per_dev.append(gathered)
+            if self.use_data_parallel_attention or self.use_tp_dp:
                 variable_per_dev = ops.allgather(
                     variable_per_dev, signal_buffers
                 )

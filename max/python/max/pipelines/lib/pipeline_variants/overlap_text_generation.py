@@ -862,7 +862,21 @@ def build_realize_future_token_graph(
     num_speculative_tokens: int,
     data_parallel_degree: int = 1,
 ) -> Graph:
-    """Builds a graph that prepares the input for the next batch."""
+    """Builds a graph that prepares the input for the next batch.
+
+    Args:
+        devices: All devices spanned by the model, in replica-major order
+            (``[r0_tp0, r0_tp1, ..., r1_tp0, ...]``).
+        enable_dp: Whether data parallelism is enabled (``dp_degree > 1``).
+        num_speculative_tokens: Number of speculative tokens per step.
+        data_parallel_degree: Number of data-parallel replicas. Devices are
+            replica-major, so ``tp_degree = len(devices) // data_parallel_degree``
+            consecutive devices form one DP replica and share the same request
+            slice; this maps device ``i`` to replica ``i // tp_degree`` when
+            indexing ``data_parallel_splits`` (which is indexed by replica, not
+            device). Defaults to ``1`` (pure DP), which reproduces the
+            historical device-index-equals-replica behavior.
+    """
     device0 = devices[0]
     if num_speculative_tokens > 0:
         spec_decode_input_types = _RealizeFutureTokenSpecDecodeInputs[
@@ -1070,7 +1084,16 @@ def build_realize_future_token_graph(
                     cache_length_adjusted.cast(DType.uint32)
                 )
             elif enable_dp:
-                # DP > 1
+                # DP > 1 (possibly mixed with TP). ``data_parallel_splits`` is
+                # indexed by DP replica (length ``dp_degree + 1``), NOT by
+                # device. Under mixed TP+DP every ``tp_degree`` consecutive
+                # devices form one replica and share the same request slice, so
+                # map device ``i`` to replica ``i // tp_degree`` before slicing.
+                # Indexing by the raw device index (the historical pure-DP
+                # assumption, valid only when ``tp_degree == 1``) walks off the
+                # end of the ``dp_degree + 1`` splits tensor for ``tp_degree >
+                # 1``, producing out-of-bounds / empty slices that corrupt
+                # ``cache_lengths`` on the non-leader TP ranks of each replica.
                 assert spec_decode.signal_buffers is not None
                 assert spec_decode.data_parallel_splits is not None
 

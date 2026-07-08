@@ -1002,9 +1002,20 @@ class PipelineConfig(ConfigFileModel):
             if draft_archs and draft_archs[0] == "Gemma4AssistantForCausalLM":
                 target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
         if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
+            draft_archs = (
+                self.draft_model.huggingface_config.architectures
+                if self.draft_model is not None
+                else None
+            )
             if self.speculative.is_mtp() and self.draft_model is None:
                 target_archs[0] = (
                     "UnifiedMTPMiniMaxM3SparseForConditionalGeneration"
+                )
+            elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+                # M3 target + MHA (Llama-style) Eagle3 draft. The v0 Eagle3
+                # path forbids block-sparse attention.
+                target_archs[0] = (
+                    "Eagle3MHAMiniMaxM3SparseForConditionalGeneration"
                 )
         if target_archs[0] == "GlmMoeDsaForCausalLM":
             # GLM-5.2 bakes a NextN MTP layer into the target checkpoint, so
