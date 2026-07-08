@@ -147,6 +147,8 @@ This version is still a work in progress.
   with `out-of-bounds` redzone checks. Because the NaN can also surface on
   legitimately-uninitialized allocation padding, it is a manual debugging aid
   rather than a default.
+- Added a `max-benchmark` conda package for parity with the `max[benchmark]`
+  wheel extra.
 
 ### Inference server
 
