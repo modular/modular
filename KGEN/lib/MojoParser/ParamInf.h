@@ -81,6 +81,10 @@ private:
   // UnboundAttr.
   LogicalResult finalizeWithUnbound();
 
+  /// Infer still-unbound parameters from equality (`where a == b`) body
+  /// constraints.
+  LogicalResult inferFromBodyConstraints();
+
   /// Convenience getters for fields from paramBindings.
   ASTDecl &getDeclScope() const { return paramBindings.declScope; }
   SharedState &getShared() const { return paramBindings.shared; }
