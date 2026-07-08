@@ -23,9 +23,12 @@ from std.sys.info import (
     _is_amd_rdna,
     _is_amd_rdna3,
     _is_amd_rdna4,
+    _is_sm_8x_or_newer,
     is_amd_gpu,
     is_apple_m5,
 )
+from std.gpu.primitives.id import lane_id
+from std.gpu.primitives.warp import shuffle_idx
 
 from std.gpu._utils import (
     _get_llvm_struct_fields,
@@ -239,6 +242,24 @@ def mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 
 @always_inline
+def _ld_matrix_broadcast_row(
+    row: SIMD[DType.uint32, 4], src: UInt32
+) -> SIMD[DType.uint32, 4]:
+    """Broadcasts a source lane's four 32-bit row-words to all lanes.
+
+    Used by the pre-Ampere `ld_matrix` emulation. The warp shuffle primitive
+    operates on a single 32-bit word at a time, so one shuffle is issued per
+    word of the row.
+    """
+    return SIMD[DType.uint32, 4](
+        shuffle_idx(row[0], src),
+        shuffle_idx(row[1], src),
+        shuffle_idx(row[2], src),
+        shuffle_idx(row[3], src),
+    )
+
+
+@always_inline
 def ld_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
 ](ptr: UnsafePointer[mut=False, Scalar[dtype], ...]) -> SIMD[dtype, simd_width]:
@@ -305,6 +326,55 @@ def ld_matrix[
         if transpose:
             return ".trans" + sfx
         return sfx
+
+    # Pre-Ampere NVIDIA GPUs (Volta sm_70, Turing sm_75) do not have `ldmatrix`
+    # codegen support: the NVVM intrinsic fails instruction selection and even
+    # raw `ldmatrix` PTX requires a newer ISA than is emitted for these targets.
+    # Emulate the instruction's data movement with portable shared-memory loads
+    # and warp shuffles instead. See issue #6653.
+    #
+    # `ldmatrix.m8n8.b16` is pure 16-bit-cell data movement, so the emulation
+    # operates on 32-bit words (a pair of `b16` cells) and is independent of the
+    # element dtype. For the `.xN` variants, lanes `8*mtx .. 8*mtx+7` each supply
+    # the 16-byte row address of the 8x8 matrix `mtx`. After the load, thread `t`
+    # holds, per matrix, the two column elements `(2*(t%4), 2*(t%4)+1)` of row
+    # `t//4` — i.e. the `(t%4)`-th 32-bit word of row `t//4`.
+    comptime if is_nvidia_gpu() and not _is_sm_8x_or_newer():
+        var lane = lane_id()
+        comptime num_src_lanes = num_registers * 8
+
+        # This lane's 16-byte matrix row, as four 32-bit words (eight b16 cells).
+        # Only the lanes that supply a matrix row hold valid addresses.
+        var row_words = SIMD[DType.uint32, 4](0)
+        if lane < num_src_lanes:
+            row_words = ptr.bitcast[UInt32]().load[width=4]()
+
+        var regs = SIMD[DType.uint32, num_registers](0)
+
+        comptime if not transpose:
+            comptime for mtx in range(num_registers):
+                var src = UInt32(mtx * 8 + lane // 4)
+                regs[mtx] = _ld_matrix_broadcast_row(row_words, src)[lane % 4]
+        else:
+            # Transposed load: thread `t` holds column `t//4` of rows
+            # `2*(t%4)` and `2*(t%4)+1`, packed low/high into one 32-bit word.
+            var col = lane // 4
+            var word_idx = col // 2
+            var shift = UInt32((col % 2) * 16)
+            var base_row = (lane % 4) * 2
+
+            comptime for mtx in range(num_registers):
+                var w0 = _ld_matrix_broadcast_row(
+                    row_words, UInt32(mtx * 8 + base_row)
+                )[word_idx]
+                var w1 = _ld_matrix_broadcast_row(
+                    row_words, UInt32(mtx * 8 + base_row + 1)
+                )[word_idx]
+                var e0 = (w0 >> shift) & UInt32(0xFFFF)
+                var e1 = (w1 >> shift) & UInt32(0xFFFF)
+                regs[mtx] = e0 | (e1 << 16)
+
+        return bitcast[dtype, simd_width](regs)
 
     var d: SIMD[dtype, simd_width]
 
