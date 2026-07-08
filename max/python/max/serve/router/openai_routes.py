@@ -174,14 +174,15 @@ def record_request_start() -> None:
 
 @traced
 def record_request_end(
-    status_code: int,
     request_path: str,
     elapsed_ms: float,
     output_tokens: int | None = None,
     input_tokens: int | None = None,
 ) -> None:
+    # The HTTP status code is labeled onto ``maxserve.request_count`` by the
+    # ``register_request`` middleware, which knows the code actually returned to
+    # the client (see ``max/python/max/serve/request.py``).
     METRICS.reqs_running(-1)
-    METRICS.request_count(status_code, request_path)
     METRICS.request_time(elapsed_ms, request_path)
     if output_tokens is not None:
         METRICS.output_tokens(output_tokens)
@@ -672,7 +673,6 @@ class OpenAIChatResponseGenerator(
             yield error_response.model_dump_json()
         finally:
             record_request_end(
-                status_code,
                 request.request_path,
                 request_timer.elapsed_ms,
                 # TODO: (MODELS-1117) determine whether to break out reasoning tokens into a separate metric
@@ -694,7 +694,6 @@ class OpenAIChatResponseGenerator(
         n_prompt_tokens = 0
         n_cached_prompt_tokens = 0
         request_timer = StopWatch(start_ns=request.timestamp_ns)
-        status_code = 200
 
         try:
             completed_outputs = await self.pipeline.all_tokens(request)
@@ -866,7 +865,6 @@ class OpenAIChatResponseGenerator(
             return response
         finally:
             record_request_end(
-                status_code,
                 request.request_path,
                 request_timer.elapsed_ms,
                 # TODO: (MODELS-1117) determine whether to break out reasoning tokens into a separate metric
@@ -973,7 +971,6 @@ class OpenAIEmbeddingsResponseGenerator:
         record_request_start()
         metrics_req = requests[0]
         request_timer = StopWatch(start_ns=metrics_req.timestamp_ns)
-        status_code = 200
 
         try:
             embedding_outputs = await asyncio.gather(
@@ -1001,7 +998,6 @@ class OpenAIEmbeddingsResponseGenerator:
             return response
         finally:
             record_request_end(
-                status_code,
                 metrics_req.request_path,
                 request_timer.elapsed_ms,
             )
@@ -2200,7 +2196,6 @@ class OpenAICompletionResponseGenerator(
         n_tokens = 0
         n_prompt_tokens = 0
         n_cached_prompt_tokens = 0
-        status_code = 200
         try:
             async for chunk in self.pipeline.next_token_chunk(request):
                 chunk_total_tokens = (
@@ -2328,7 +2323,6 @@ class OpenAICompletionResponseGenerator(
             )
         finally:
             record_request_end(
-                status_code,
                 request.request_path,
                 request_timer.elapsed_ms,
                 n_reasoning_tokens + n_tokens,
@@ -2346,7 +2340,6 @@ class OpenAICompletionResponseGenerator(
         n_prompt_tokens = 0
         n_cached_prompt_tokens = 0
         request_timer = StopWatch(start_ns=requests[0].timestamp_ns)
-        status_code = 200
 
         try:
             req_output_list = await asyncio.gather(
@@ -2407,12 +2400,8 @@ class OpenAICompletionResponseGenerator(
                 usage=usage,
             )
             return response
-        except:
-            status_code = 500
-            raise
         finally:
             record_request_end(
-                status_code,
                 requests[0].request_path,
                 request_timer.elapsed_ms,
                 n_reasoning_tokens + n_tokens,

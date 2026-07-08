@@ -1570,10 +1570,9 @@ async def test_openai_completion_stream_accounts_reasoning_tokens_for_metrics() 
 
     assert end_mock.call_count == 1
     args = end_mock.call_args.args
-    assert args[0] == 200
-    assert args[1] == "/v1/completions"
-    assert args[3] == 5  # 3 reasoning + 2 completion tokens
-    assert args[4] == 5
+    assert args[0] == "/v1/completions"
+    assert args[2] == 5  # 3 reasoning + 2 completion tokens
+    assert args[3] == 5
 
 
 @pytest.mark.asyncio
@@ -1615,10 +1614,9 @@ async def test_openai_completion_non_stream_accounts_reasoning_tokens_for_metric
 
     assert end_mock.call_count == 1
     args = end_mock.call_args.args
-    assert args[0] == 200
-    assert args[1] == "/v1/completions"
-    assert args[3] == 3  # 2 reasoning + 1 completion tokens
-    assert args[4] == 4
+    assert args[0] == "/v1/completions"
+    assert args[2] == 3  # 2 reasoning + 1 completion tokens
+    assert args[3] == 4
 
 
 @pytest.mark.asyncio
