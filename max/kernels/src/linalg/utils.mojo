@@ -19,7 +19,9 @@ from std.sys.intrinsics import masked_load, masked_store
 from std.utils.index import Index, IndexList
 from std.algorithm import vectorize
 from layout.layout import *
-from layout import LayoutTensor, TileTensor
+from layout import LayoutTensor, TileTensor, Coord
+from layout.tile_layout import Layout as _NewLayout
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 @always_inline
@@ -109,6 +111,163 @@ comptime elementwise_epilogue_type = def[
 comptime elementwise_compute_lambda_type = def[
     dtype: DType, width: SIMDSize, *, alignment: Int = 1
 ](IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
+
+
+trait TileConsumer(DevicePassable, ImplicitlyCopyable, Movable):
+    """Trait for an epilogue operation which consumes a tile of data.
+
+    The kernel feeds the consumer a tile (in `src_address_space`); the
+    consumer is terminal (does whatever it does and returns nothing).
+    For a non-terminal counterpart, see `TileOperation`; for aux-load
+    capabilities, see `AuxLoading` / `AuxLoadingPipelined` (which refine
+    `TileOperation`, not this trait).
+    """
+
+    comptime src_address_space: AddressSpace
+    """AddressSpace of the tile being consumed"""
+
+    def __call__[
+        thread_layout: _NewLayout, dtype: DType
+    ](
+        ref self,
+        tile_coord: Coord,
+        tile: TileTensor[
+            dtype,
+            ...,
+            address_space=Self.src_address_space,
+        ],
+    ) -> None:
+        """The epilogue operation.
+        Parameters:
+            thread_layout: The logical layout of threads which collaborate on this epilogue.
+        Args:
+            tile: the tile of data being consumed.
+            tile_coord: the coordinate of this tile within the global output tensor.
+        """
+        ...
+
+
+trait TileOperation(DevicePassable, ImplicitlyCopyable, Movable):
+    """Non-terminal counterpart to `TileConsumer`: mutates a tile in
+    place between MMA and store. Composes additively with capability
+    subtraits like `AuxLoading` for ops that need pre-loaded data.
+
+    Surface matches `TileConsumer.__call__` modulo `mut=True` on the
+    tile (the op writes back) and on `self`. The two traits are role-
+    distinct (terminal vs non-terminal); a struct that wants to be
+    both would need separate disambiguation, which we'll deal with
+    if/when that comes up.
+    """
+
+    comptime src_address_space: AddressSpace
+    """AddressSpace of the tile being transformed (typically LOCAL)."""
+
+    def __call__[
+        thread_layout: _NewLayout,
+        dtype: DType,
+    ](
+        mut self,
+        tile_coord: Coord,
+        tile: TileTensor[
+            mut=True,
+            dtype,
+            ...,
+            address_space=Self.src_address_space,
+        ],
+    ) -> type_of(tile):
+        """Transform `tile` and return it.
+
+        Returns a `TileTensor` of the same shape as its tile argument.
+
+        Parameters:
+            thread_layout: Logical layout of threads collaborating on the tile.
+            dtype: Element type of the tile.
+        Args:
+            tile_coord: Absolute element coord of this sub-tile's top-left in
+                the global output tensor — consistent with
+                `TileConsumer.__call__` and the legacy
+                `elementwise_compute_lambda_type`. The kernel bakes per-warp,
+                per-inner-stage, per-data-path-half offsets into this coord
+                (on top of the per-CTA tile origin). Aux-loading impls can
+                recover the SMEM-local position via `tile_coord % (tile shape)`,
+                given their comptime knowledge of the per-CTA tile dims.
+            tile: Per-warp tile (kernel side passes a `TileTensor` view over the
+                per-thread register storage; `tile.static_shape` is the warp
+                tile shape, `distribute_with_offset[thread_layout]` slices per
+                lane).
+        """
+        ...
+
+
+struct NullTileConsumer(TileConsumer):
+    """No-op TileConsumer. Used as the default when no fusion is requested,
+    and as the placeholder type when a kernel's `tile_consumer` Optional is
+    None.
+    """
+
+    comptime src_address_space = AddressSpace.LOCAL
+
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "NullTileConsumer"
+
+    def __init__(out self):
+        comptime assert (
+            False
+        ), "NullTileConsumer is a null sentinel. Do not use!"
+
+    def __call__[
+        thread_layout: _NewLayout, dtype: DType
+    ](
+        ref self,
+        tile_coord: Coord,
+        tile: TileTensor[dtype, ..., address_space=Self.src_address_space],
+    ) -> None:
+        pass
+
+
+struct NullTileOperation(TileOperation):
+    """No-op `TileOperation` sentinel — parallel to `NullTileConsumer`.
+    Used as the default `TileOperationType` so kernels without a fused
+    op compile without callers having to spell out a placeholder.
+    """
+
+    comptime src_address_space = AddressSpace.LOCAL
+
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "NullTileOperation"
+
+    def __init__(out self):
+        comptime assert (
+            False
+        ), "NullTileOperation is a null sentinel. Do not use!"
+
+    def __call__[
+        thread_layout: _NewLayout,
+        dtype: DType,
+    ](
+        mut self,
+        tile_coord: Coord,
+        tile: TileTensor[
+            mut=True, dtype, ..., address_space=Self.src_address_space
+        ],
+    ) -> type_of(tile):
+        return tile
 
 
 @fieldwise_init
