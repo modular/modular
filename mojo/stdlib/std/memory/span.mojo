@@ -240,9 +240,7 @@ struct Span[
     @doc_hidden
     @implicit
     @always_inline("nodebug")
-    def __init__(
-        other: Span, out self: Span[other.T, ImmutOrigin(other.origin)]
-    ):
+    def __init__(other: Span, out self: ImmutSpan[other.T, other.origin]):
         """Implicitly cast the mutable origin of self to an immutable one.
 
         Args:
@@ -580,15 +578,11 @@ struct Span[
         return Pointer[Self.T, Self.origin](to=self._data[0])
 
     @always_inline
-    def copy_from[
-        _T: Copyable & ImplicitlyDeletable, _origin: MutOrigin, //
-    ](self: Span[_T, _origin], other: Span[_T, _]):
+    def copy_from(
+        self, other: Span[Self.T, _]
+    ) where Self.mut and conforms_to(Self.T, Copyable & ImplicitlyDeletable):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
-
-        Parameters:
-            _T: List element type that supports implicit destruction.
-            _origin: The inferred mutable origin of the data within the Span.
 
         Args:
             other: The `Span` to copy all elements from.
@@ -598,17 +592,19 @@ struct Span[
         # needed). For non-trivial types, we keep the single-pass assignment
         # loop rather than destroy_n + uninit_copy_n, which would be two
         # passes over memory with worse cache locality.
-        comptime if is_trivially_copyable[_T]() and is_trivially_deletable[
-            _T
+        comptime if is_trivially_copyable[Self.T]() and is_trivially_deletable[
+            Self.T
         ]():
             uninit_copy_n[overlapping=False](
-                dest=self.unsafe_ptr(),
+                # TODO(MOCO-4220) once fixed remove the unsafe_mut_cast
+                dest=self.unsafe_ptr().unsafe_mut_cast[True](),
                 src=other.unsafe_ptr(),
                 count=len(self),
             )
         else:
             for i in range(len(self)):
-                self[i] = other[i].copy()
+                # TODO(MOCO-4220) once fixed this is self[i] = other[i].copy()
+                self.unsafe_ptr().unsafe_mut_cast[True]()[i] = other[i].copy()
 
     def __bool__(self) -> Bool:
         """Check if a span is non-empty.
@@ -623,15 +619,10 @@ struct Span[
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
-    def __eq__[
-        _T: Equatable,
-        //,
-    ](self: Span[_T, Self.origin], rhs: Span[_T, _]) -> Bool:
+    def __eq__(
+        self, rhs: Span[Self.T, _]
+    ) -> Bool where conforms_to(Self.T, Equatable):
         """Verify if span is equal to another span.
-
-        Parameters:
-            _T: The type of the elements must implement the
-              traits `Equatable`, `Copyable`.
 
         Args:
             rhs: The span to compare against.
@@ -653,14 +644,10 @@ struct Span[
         return True
 
     @always_inline
-    def __ne__[
-        _T: Equatable, //
-    ](self: Span[_T, Self.origin], rhs: Span[_T, _]) -> Bool:
+    def __ne__(
+        self, rhs: Span[Self.T, _]
+    ) -> Bool where conforms_to(Self.T, Equatable):
         """Verify if span is not equal to another span.
-
-        Parameters:
-            _T: The type of the elements in the span. Must implement the
-              traits `Equatable`, `Copyable`.
 
         Args:
             rhs: The span to compare against.
@@ -670,29 +657,26 @@ struct Span[
         """
         return not self == rhs
 
-    def fill[
-        _T: Copyable & ImplicitlyDeletable, //
-    ](self: Span[mut=True, _T, _], value: _T):
+    def fill(
+        self, value: Self.T
+    ) where Self.mut and conforms_to(Self.T, Copyable & ImplicitlyDeletable):
         """
         Fill the memory that a span references with a given value.
-
-        Parameters:
-            _T: Span element type that supports implicit destruction.
 
         Args:
             value: The value to assign to each element.
         """
         for ref element in self:
-            rebind[_T](element) = value.copy()
+            # TODO(MOCO-4220) once fixed update body to:
+            # element = value.copy()
+            var p = UnsafePointer(to=element).unsafe_mut_cast[True]()
+            p[] = value.copy()
 
     @always_inline
-    def unsafe_swap_elements[
-        U: Movable
-    ](self: Span[mut=True, U, _], a: Int, b: Int):
+    def unsafe_swap_elements(
+        self, a: Int, b: Int
+    ) where Self.mut and conforms_to(Self.T, Movable):
         """Swap the values at indices `a` and `b` without performing bounds checking.
-
-        Parameters:
-            U: Span element type that must be `Movable`.
 
         Args:
             a: The first element's index.
@@ -711,20 +695,18 @@ struct Span[
             "Index `b` out of bounds: ",
             b,
         )
-        var ptr = self.unsafe_ptr()
+        # TODO(MOCO-4220) once fixed remove unsafe_mut_cast
+        var ptr = self.unsafe_ptr().unsafe_mut_cast[True]()
 
         # `a` and `b` may be equal, so we cannot use `swap` directly.  The
         # unsafe_origin_cast silence the (correct) exclusivity error.
         (ptr + a).unsafe_origin_cast[MutAnyOrigin]().swap_pointees(ptr + b)
 
-    def swap_elements[
-        U: Movable
-    ](self: Span[mut=True, U, _], a: Int, b: Int) raises:
+    def swap_elements(
+        self, a: Int, b: Int
+    ) raises where Self.mut and conforms_to(Self.T, Movable):
         """
         Swap the values at indices `a` and `b`.
-
-        Parameters:
-            U: Span element type that must be `Movable`.
 
         Args:
             a: The first argument index.
