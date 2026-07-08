@@ -169,3 +169,54 @@ def test_detect_infra_errors_hf_non_rate_limit_not_caught() -> None:
             raise ValueError(
                 "some error from huggingface.co that is not a rate limit"
             )
+
+
+# --- OOM detection tests ---
+
+_OOM_MSG_GIB = (
+    "Model size exceeds available memory (510.14 GiB > 127.23 GiB). "
+    "Model weights: 474.61 GiB, Activation memory: 34.44 GiB, "
+    "Signal buffers: 1.10 GiB. Try running a smaller model."
+)
+_OOM_MSG_TIB = "Model size exceeds available memory (1.25 TiB > 0.12 TiB)."
+
+
+def test_parse_required_bytes_from_oom_gib() -> None:
+    result = verify_pipelines._parse_required_bytes_from_oom(_OOM_MSG_GIB)
+    assert result == int(510.14 * 1024**3)
+
+
+def test_parse_required_bytes_from_oom_tib() -> None:
+    result = verify_pipelines._parse_required_bytes_from_oom(_OOM_MSG_TIB)
+    assert result == int(1.25 * 1024**4)
+
+
+def test_parse_required_bytes_from_oom_no_match() -> None:
+    result = verify_pipelines._parse_required_bytes_from_oom("some other error")
+    assert result is None
+
+
+def test_detect_infra_errors_oom_dirty_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OOM where model fits on a clean node must be classified as InfraError."""
+    # required (510 GiB) < total (1152 GiB) → dirty runner
+    monkeypatch.setattr(
+        verify_pipelines, "_query_total_vram_bytes", lambda: 1152 * 1024**3
+    )
+    with pytest.raises(InfraError):
+        with detect_infra_errors():
+            raise RuntimeError(_OOM_MSG_GIB)
+
+
+def test_detect_infra_errors_oom_model_too_large(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OOM where model exceeds total node VRAM must remain a plain exception."""
+    # required (510 GiB) > total (256 GiB) → model genuinely too big
+    monkeypatch.setattr(
+        verify_pipelines, "_query_total_vram_bytes", lambda: 256 * 1024**3
+    )
+    with pytest.raises(RuntimeError):
+        with detect_infra_errors():
+            raise RuntimeError(_OOM_MSG_GIB)
