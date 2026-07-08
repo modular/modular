@@ -556,21 +556,10 @@ struct TileTensor[
         comptime assert (
             name == "ptr"
         ), "TileTensor.__getattr_param__ only support 'ptr'"
-        comptime assert (
-            Self.Storage == PointerStorage[element_width=Self.element_size]
-        ), "TileTensor.ptr requires its storage to be a PointerStorage"
-        # Materialize the concrete `SIMD[dtype, element_size]` storage pointer
-        # (a valid `rebind` for any `element_size`), then `bitcast` to the
-        # scalar base pointer. For non-vectorized tensors (`element_size == 1`)
-        # this is the identity; for vectorized views it yields the scalar base
-        # address of the underlying storage.
-        result = rebind[
-            UnsafePointer[
-                SIMD[Self.dtype, Self.element_size],
-                Self.origin,
-                address_space=Self.address_space,
-            ]
-        ](self._storage).bitcast[Scalar[Self.dtype]]()
+        try:
+            result = Self.Storage.unsafe_ptr(self._storage)
+        except e:
+            abort(t"TileTensor.ptr access not possible: {e}")
 
     @always_inline("nodebug")
     def _unsafe_storage_cast[

@@ -63,6 +63,45 @@ trait TensorStorage:
         """
         reflect[Self].name().write_to(writer)
 
+    @doc_hidden
+    @staticmethod
+    def unsafe_ptr[
+        mut: Bool,
+        dtype: DType,
+        origin: Origin[mut=mut],
+        address_space: AddressSpace,
+        //,
+    ](
+        storage: Self.StorageType[dtype, origin, address_space],
+    ) raises -> UnsafePointer[
+        Scalar[dtype], origin, address_space=address_space
+    ]:
+        """Returns a raw scalar pointer to the borrowed storage.
+
+        Reinterprets the storage handle as an `UnsafePointer` to the scalar
+        base of the referenced storage; no conversion of the stored elements
+        takes place. The returned pointer borrows the same externally owned
+        memory that the handle refers to; the trait still does not own it.
+
+        Parameters:
+            mut: The mutability of the borrowed storage, inferred from `origin`.
+            dtype: The element data type of the borrowed storage.
+            origin: The origin tracking the lifetime of the borrowed storage.
+            address_space: The address space the borrowed storage resides in.
+
+        Args:
+            storage: The storage to reinterpret as a raw scalar pointer.
+
+        Returns:
+            An `UnsafePointer` to `Scalar[dtype]` referring to the base of the
+            borrowed storage.
+
+        Raises:
+            An error if the backing storage does not support accessing a
+            pointer to the underlying data.
+        """
+        ...
+
     @staticmethod
     def unsafe_cast[
         to_mut: Bool,
@@ -291,6 +330,41 @@ struct PointerStorage[*, element_width: Int = 1](TensorStorage):
             writer: The `Writer` to output to.
         """
         t"PointerStorage[element_size={Self.element_size}]".write_to(writer)
+
+    @doc_hidden
+    @staticmethod
+    @always_inline
+    def unsafe_ptr[
+        mut: Bool,
+        dtype: DType,
+        origin: Origin[mut=mut],
+        address_space: AddressSpace,
+        //,
+    ](
+        storage: Self.StorageType[dtype, origin, address_space],
+    ) raises -> UnsafePointer[
+        Scalar[dtype], origin, address_space=address_space
+    ]:
+        """Returns a raw scalar pointer to the borrowed storage.
+
+        Parameters:
+            mut: The mutability of the borrowed storage, inferred from `origin`.
+            dtype: The element data type of the borrowed storage.
+            origin: The origin tracking the lifetime of the borrowed storage.
+            address_space: The address space the borrowed storage resides in.
+
+        Args:
+            storage: The storage to reinterpret as a raw scalar pointer.
+
+        Returns:
+            An `UnsafePointer` to `Scalar[dtype]` referring to the base of the
+            borrowed storage.
+        """
+        # `storage` is an `UnsafePointer[SIMD[dtype, element_width]]`. Bitcast
+        # it to the scalar base pointer. For non-vectorized storage
+        # (`element_width == 1`) this is the identity; for a vectorized view it
+        # yields the scalar base address of the underlying storage.
+        return storage.bitcast[Scalar[dtype]]()
 
     @staticmethod
     @always_inline
@@ -605,6 +679,59 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorStorage):
         origin: The origin tracking the lifetime of the borrowed storage.
         address_space: The address space the borrowed storage resides in.
     """
+
+    @doc_hidden
+    @staticmethod
+    @always_inline
+    def unsafe_ptr[
+        mut: Bool,
+        dtype: DType,
+        origin: Origin[mut=mut],
+        address_space: AddressSpace,
+        //,
+    ](
+        storage: Self.StorageType[dtype, origin, address_space],
+    ) -> UnsafePointer[Scalar[dtype], origin, address_space=address_space]:
+        """Returns a raw scalar pointer to the base of the borrowed storage.
+
+        On device the owning `DeviceBuffer` is unavailable, so this reinterprets
+        the encoded device address out of the handle (`_device_leaf_ptr`); on
+        host it recovers the raw (offset-adjusted) address through the owning
+        `DeviceBuffer`. Stopgap for the in-progress `LayoutTensor` migration,
+        see GPUA-6.
+
+        Parameters:
+            mut: The mutability of the borrowed storage, inferred from `origin`.
+            dtype: The element data type of the borrowed storage.
+            origin: The origin tracking the lifetime of the borrowed storage.
+            address_space: The address space the borrowed storage resides in.
+
+        Args:
+            storage: The storage to recover the base pointer from.
+
+        Returns:
+            A bare `UnsafePointer` to the first scalar element of the storage.
+        """
+        comptime ResultPtr = UnsafePointer[
+            Scalar[dtype], origin, address_space=address_space
+        ]
+        # `_device_leaf_ptr` returns a `GLOBAL` (device) leaf because Metal has
+        # no usable `GENERIC` device space and the compiler does not insert the
+        # address-space conversion itself. `rebind` cannot change a pointer's
+        # address space, so cast the leaf to the tile's declared space, then
+        # `rebind` the origin. On flat-address targets (CUDA/HIP) `GLOBAL` and
+        # `GENERIC` are the same address so this cast is a no-op reinterpret; on
+        # segmented targets like Metal a `GENERIC` result cannot reach device
+        # memory, but `.ptr`'s return type is fixed to the tile's (`GENERIC`)
+        # space, so Metal is out of scope for this stopgap (see GPUA-6).
+        comptime if is_gpu():
+            return rebind[ResultPtr](
+                _device_leaf_ptr(storage).address_space_cast[address_space]()
+            )
+        else:
+            return rebind[ResultPtr](
+                storage.unsafe_ptr().address_space_cast[address_space]()
+            )
 
     @staticmethod
     @always_inline

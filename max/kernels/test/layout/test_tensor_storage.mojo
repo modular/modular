@@ -14,10 +14,11 @@
 
 Exercises every operation `PointerStorage` provides against a host
 `InlineArray` buffer: trait conformance, scalar and vectorized `load`/`store`
-round-trips (with and without an element offset), `offset`, `distance`, and
-`unsafe_cast` reinterpretation. `load` and `distance` require immutable
-(`mut=False`) handles, while `store` requires a mutable one, so the tests use
-`as_immutable()` where a read-only handle is needed.
+round-trips (with and without an element offset), `offset`, `distance`,
+`unsafe_cast` reinterpretation, and `unsafe_ptr` scalar-pointer extraction.
+`load` and `distance` require immutable (`mut=False`) handles, while `store`
+requires a mutable one, so the tests use `as_immutable()` where a read-only
+handle is needed.
 """
 
 from std.sys import align_of
@@ -174,6 +175,35 @@ def test_unsafe_cast() raises:
         ),
         expected.load[width=1, alignment=ALIGN_U32](),
     )
+
+
+def test_unsafe_ptr() raises:
+    var buf = InlineArray[Float32, 4](fill=0.0)
+    var storage = buf.unsafe_ptr()
+    PointerStorage[element_width=1].store[alignment=ALIGN_F32](
+        storage, SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    )
+
+    # `unsafe_ptr` yields the scalar base pointer of the storage. It lands at
+    # the same address as an independent bitcast and reads the same elements.
+    var raw = PointerStorage[element_width=1].unsafe_ptr(storage)
+    var expected = storage.bitcast[Scalar[DType.float32]]()
+    assert_equal(Int(raw), Int(expected))
+    assert_equal(
+        raw.load[width=4, alignment=ALIGN_F32](),
+        expected.load[width=4, alignment=ALIGN_F32](),
+    )
+
+
+def test_unsafe_ptr_vectorized() raises:
+    var buf = InlineArray[Float32, 4](fill=0.0)
+    # A vectorized (element_width=2) storage handle over the same buffer.
+    var storage = buf.unsafe_ptr().bitcast[SIMD[DType.float32, 2]]()
+
+    # `unsafe_ptr` bitcasts the SIMD-typed handle down to the scalar base,
+    # which coincides with the buffer's own base address.
+    var raw = PointerStorage[element_width=2].unsafe_ptr(storage)
+    assert_equal(Int(raw), Int(buf.unsafe_ptr()))
 
 
 def main() raises:
