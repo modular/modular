@@ -56,7 +56,7 @@ Run a single benchmark with full measurements:
 
 ```bash
 ./bazelw test //mojo/stdlib/benchmarks/collections:bench_dict.mojo.bench \
-  --test_output=all
+  --test_output=all --cache_test_results=no
 ```
 
 Run every stdlib benchmark with full measurements:

@@ -364,7 +364,7 @@ def _is_grapheme_break(mut state: _GraphemeBreakState, cp: UInt32) -> Bool:
 
 @always_inline
 def _decode_previous_codepoint(
-    span: Span[mut=False, Byte, ...], end: Int
+    string: StringSlice[mut=False, _], end: Int
 ) -> Tuple[UInt32, Int]:
     """Decode the codepoint whose last byte is at `end - 1`.
 
@@ -372,7 +372,7 @@ def _decode_previous_codepoint(
     codepoint's lead byte, then decodes it forward.
 
     Args:
-        span: The byte span containing valid UTF-8.
+        string: The string containing valid UTF-8.
         end: One past the last byte of the codepoint to decode. Must be
             in `(0, len(span)]`.
 
@@ -380,15 +380,15 @@ def _decode_previous_codepoint(
         A tuple `(codepoint_value, byte_length)` for the decoded codepoint.
     """
     var pos = end - 1
-    while pos > 0 and _is_utf8_continuation_byte(span[pos]):
+    while pos > 0 and _is_utf8_continuation_byte(string.as_bytes()[pos]):
         pos -= 1
     var byte_len = end - pos
-    var cp, _ = Codepoint.unsafe_decode_utf8_codepoint(span[pos:end])
-    return (cp.to_u32(), byte_len)
+    var cp, _ = Codepoint.unsafe_decode_utf8_to_utf32(string[byte=pos:end])
+    return cp, byte_len
 
 
 def _find_safe_grapheme_start(
-    span: Span[mut=False, Byte, ...], end: Int
+    string: StringSlice[mut=False, _], end: Int
 ) -> Int:
     """Find a byte offset `<= end` that is a guaranteed grapheme boundary.
 
@@ -408,12 +408,12 @@ def _find_safe_grapheme_start(
     falls back to `0`.
 
     Args:
-        span: The byte span, valid UTF-8.
+        string: The string, valid UTF-8.
         end: The byte offset to back up from. Must be in `[0, len(span)]`.
 
     Returns:
         A byte offset `safe` with `0 <= safe <= end` that is a guaranteed
-        grapheme-cluster boundary in `span`.
+        grapheme-cluster boundary in `string`.
     """
     var safe = end
     var cur_gbp = GBP_OTHER
@@ -421,7 +421,7 @@ def _find_safe_grapheme_start(
     while safe > 0:
         var cp: UInt32
         var n: Int
-        cp, n = _decode_previous_codepoint(span, safe)
+        cp, n = _decode_previous_codepoint(string, safe)
         var prev_gbp = _gbp_lookup(cp)
         var candidate = safe - n
 

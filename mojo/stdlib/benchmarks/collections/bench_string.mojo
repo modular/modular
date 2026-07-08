@@ -25,9 +25,7 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
 # ===-----------------------------------------------------------------------===#
-def make_string[
-    length: Int = 0
-](filename: String = "UN_charter_EN.txt") -> String:
+def make_string[length: Int](filename: String = "UN_charter_EN.txt") -> String:
     """Make a `String` made of items in the `./data` directory.
 
     Parameters:
@@ -41,16 +39,17 @@ def make_string[
     try:
         directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
+        var res = String(capacity=length)
+        var file_contents = f.read()
 
-        comptime if length > 0:
-            var items = f.read_bytes(length)
-            i = 0
-            while length > len(items):
-                items.append(items[i])
-                i = i + 1 if i < len(items) - 1 else 0
-            return String(unsafe_from_utf8=items)
-        else:
-            return String(unsafe_from_utf8=f.read_bytes())
+        while res.count_codepoints() < length:
+            var cur_size = res.count_codepoints()
+
+            for i, sl in enumerate(file_contents.codepoint_slices()):
+                if cur_size + i + 1 >= length:
+                    return res^
+                res += sl
+        return res^
     except e:
         print(e, file=stderr)
     abort(String())
@@ -75,7 +74,7 @@ def bench_string_init(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_string_count[
-    length: Int = 0,
+    length: Int,
     filename: StaticString = "UN_charter_EN",
     sequence: StaticString = "a",
 ](mut b: Bencher) raises:
@@ -94,7 +93,7 @@ def bench_string_count[
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_string_split[
-    length: Int = 0,
+    length: Int,
     filename: StaticString = "UN_charter_EN",
     sequence: Optional[StaticString] = None,
 ](mut b: Bencher) raises:
@@ -149,7 +148,7 @@ def bench_string_join[short: Bool](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_string_splitlines[
-    length: Int = 0, filename: StaticString = "UN_charter_EN"
+    length: Int, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = StringSlice(make_string[length](filename + ".txt"))
 
@@ -167,7 +166,7 @@ def bench_string_splitlines[
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_string_lower[
-    length: Int = 0, filename: StaticString = "UN_charter_EN"
+    length: Int, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
@@ -184,7 +183,7 @@ def bench_string_lower[
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_string_upper[
-    length: Int = 0, filename: StaticString = "UN_charter_EN"
+    length: Int, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
@@ -201,7 +200,7 @@ def bench_string_upper[
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_string_replace[
-    length: Int = 0,
+    length: Int,
     filename: StaticString = "UN_charter_EN",
     old: StaticString = "a",
     new: StaticString = "A",
@@ -221,7 +220,7 @@ def bench_string_replace[
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_string_count_codepoints[
-    length: Int = 0, filename: StaticString = "UN_charter_EN"
+    length: Int, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
@@ -238,7 +237,7 @@ def bench_string_count_codepoints[
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_string_find_single[
-    length: Int = 0, filename: StaticString = "UN_charter_EN"
+    length: Int, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
@@ -259,7 +258,7 @@ def bench_string_find_single[
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_string_find_multiple[
-    length: Int = 0, filename: StaticString = "UN_charter_EN"
+    length: Int, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
     var sequence = "ZZZZ"  # something that probably won't be there
@@ -279,7 +278,7 @@ def bench_string_find_multiple[
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_string_is_valid_utf8[
-    length: Int = 0, filename: StaticString = "UN_charter_EN"
+    length: Int, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".html")
 
@@ -292,29 +291,27 @@ def bench_string_is_valid_utf8[
 
 
 # ===-----------------------------------------------------------------------===#
-# Benchmark write_utf8
+# Benchmark codepoint_write_to
 # ===-----------------------------------------------------------------------===#
 @parameter
-def bench_write_utf8[
-    length: Int = 0, filename: StaticString = "UN_charter_EN"
+def bench_codepoint_write_to[
+    length: Int, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
     var codepoints_iter = items.codepoints()
     # appending to a list to avoid paying the overhead of codepoint parsing
-    var codepoints = List[Codepoint](capacity=len(codepoints_iter))
+    var codepoints = List[UInt32](capacity=len(codepoints_iter))
     for c in codepoints_iter:
-        codepoints.append(c)
+        codepoints.append(c.to_u32())
 
     @always_inline
     def call_fn() {read}:
-        var data = InlineArray[Byte, 4](uninitialized=True)
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
             for i in range(len(codepoints)):
-                var res = black_box(codepoints.unsafe_get(i)).unsafe_write_utf8(
-                    black_box(data).unsafe_ptr()
-                )
-                keep(res)
+                var writer = NullWriter()
+                black_box(codepoints.unsafe_get(i)).write_to(writer)
+                keep(writer)
 
     b.iter(call_fn)
 
@@ -371,7 +368,7 @@ struct NullWriter(ImplicitlyCopyable, Writer):
 
 @parameter
 def bench_string_repr[
-    length: Int = 0, filename: StaticString = "UN_charter_EN"
+    length: Int, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher):
     var items = make_string[length](filename + ".txt")
 
@@ -382,6 +379,75 @@ def bench_string_repr[
             var writer = NullWriter()
             black_box(items).write_repr_to(writer)
             keep(writer)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
+# Benchmark string codepoints
+# ===-----------------------------------------------------------------------===#
+@parameter
+def bench_string_codepoints[
+    length: Int, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+
+    @always_inline
+    def call_fn() {read}:
+        # this is to help with instability when measuring small strings
+        for _ in range(10**6 // length):
+            for res in black_box(items).codepoints():
+                keep(res)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
+# Benchmark string ord
+# ===-----------------------------------------------------------------------===#
+@parameter
+def bench_string_ord[
+    length: Int, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+
+    var slices_iter = items.codepoint_slices()
+    # appending to a list to avoid paying the overhead of parsing
+    var slices = List[slices_iter.Element](capacity=len(slices_iter))
+    for s in slices_iter:
+        slices.append(s)
+
+    @always_inline
+    def call_fn() {read}:
+        for res in slices_iter:
+            # this is to help with instability when measuring small strings
+            for _ in range(10**6 // length):
+                keep(ord(black_box(res)))
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
+# Benchmark string chr
+# ===-----------------------------------------------------------------------===#
+@parameter
+def bench_string_chr[
+    length: Int, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+
+    var iterator = items.codepoint_slices()
+    # appending to a list to avoid paying the overhead of codepoint parsing
+    var codepoints = List[Int](capacity=len(iterator))
+    for c in iterator:
+        codepoints.append(ord(c))
+
+    @always_inline
+    def call_fn() {read}:
+        for codepoint in codepoints:
+            # this is to help with instability when measuring small strings
+            for _ in range(10**6 // length):
+                keep(chr(black_box(codepoint)))
 
     b.iter(call_fn)
 
@@ -436,10 +502,9 @@ def main() raises:
         BenchId(String("bench_string_write_long"))
     )
 
-    comptime for i in range(len(lengths)):
-        comptime length = lengths[i]
-
-        comptime for j in range(len(filenames)):
+    comptime for j in range(len(filenames)):
+        comptime for i in range(len(lengths)):
+            comptime length = lengths[i]
             comptime fname = filenames[j]
             comptime old = StaticString(old_chars[j])
             comptime new = new_chars[j]
@@ -477,11 +542,20 @@ def main() raises:
             m.bench_function[bench_string_is_valid_utf8[length, fname]](
                 BenchId(String("bench_string_is_valid_utf8", suffix))
             )
-            m.bench_function[bench_write_utf8[length, fname]](
-                BenchId(String("bench_write_utf8", suffix))
+            m.bench_function[bench_codepoint_write_to[length, fname]](
+                BenchId(String("bench_codepoint_write_to", suffix))
             )
             m.bench_function[bench_string_repr[length, fname]](
                 BenchId(String("bench_string_repr", suffix))
+            )
+            m.bench_function[bench_string_codepoints[length, fname]](
+                BenchId(String("bench_string_codepoints", suffix))
+            )
+            m.bench_function[bench_string_ord[length, fname]](
+                BenchId(String("bench_string_ord", suffix))
+            )
+            m.bench_function[bench_string_chr[length, fname]](
+                BenchId(String("bench_string_chr", suffix))
             )
 
     m.bench_function[bench_string_join[True]](

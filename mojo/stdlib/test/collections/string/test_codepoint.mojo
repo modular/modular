@@ -20,11 +20,13 @@ from std.testing import (
 )
 from std.testing import TestSuite
 
+from std.collections.string._utf8 import _is_valid_utf8
+
 
 def test_char_validity() raises:
     # Check that basic unchecked constructor behaves as expected.
     var c1 = Codepoint(unsafe_unchecked_codepoint=32)
-    assert_equal(c1._scalar_value, 32)
+    assert_equal(c1.to_u32(), 32)
 
     assert_true(Codepoint.from_u32(0))
 
@@ -76,6 +78,20 @@ def test_char_comparison() raises:
     assert_false(Codepoint.__gt__(Codepoint(0), Codepoint(1)))
     assert_false(Codepoint.__gt__(Codepoint(1), Codepoint(1)))
 
+    # test sequences with multiple bytes
+    var elems: List[Codepoint] = ["a", "Ƒ", "Ɠ", "ಆ", "ಇ", "🔄", "🔥"]
+    for i, c in enumerate(elems):
+        for j, c2 in enumerate(elems):
+            if i < j:
+                assert_true(Codepoint.__lt__(c, c2))
+            elif i > j:
+                assert_true(Codepoint.__gt__(c, c2))
+
+            if i == j:
+                assert_equal(c, c2)
+            else:
+                assert_not_equal(c, c2)
+
 
 def test_char_formatting() raises:
     assert_equal(String(Codepoint(0)), "\0")
@@ -114,31 +130,31 @@ def test_char_properties() raises:
 
 def test_char_is_posix_space() raises:
     # checking true cases
-    assert_true(Codepoint.ord(" ").is_posix_space())
-    assert_true(Codepoint.ord("\n").is_posix_space())
-    assert_true(Codepoint.ord("\n").is_posix_space())
-    assert_true(Codepoint.ord("\t").is_posix_space())
-    assert_true(Codepoint.ord("\r").is_posix_space())
-    assert_true(Codepoint.ord("\v").is_posix_space())
-    assert_true(Codepoint.ord("\f").is_posix_space())
+    assert_true(Codepoint(" ").is_posix_space())
+    assert_true(Codepoint("\n").is_posix_space())
+    assert_true(Codepoint("\n").is_posix_space())
+    assert_true(Codepoint("\t").is_posix_space())
+    assert_true(Codepoint("\r").is_posix_space())
+    assert_true(Codepoint("\v").is_posix_space())
+    assert_true(Codepoint("\f").is_posix_space())
 
     # Checking false cases
-    assert_false(Codepoint.ord("a").is_posix_space())
-    assert_false(Codepoint.ord("a").is_posix_space())
-    assert_false(Codepoint.ord("u").is_posix_space())
-    assert_false(Codepoint.ord("s").is_posix_space())
-    assert_false(Codepoint.ord("t").is_posix_space())
-    assert_false(Codepoint.ord("i").is_posix_space())
-    assert_false(Codepoint.ord("n").is_posix_space())
-    assert_false(Codepoint.ord("z").is_posix_space())
-    assert_false(Codepoint.ord(".").is_posix_space())
+    assert_false(Codepoint("a").is_posix_space())
+    assert_false(Codepoint("a").is_posix_space())
+    assert_false(Codepoint("u").is_posix_space())
+    assert_false(Codepoint("s").is_posix_space())
+    assert_false(Codepoint("t").is_posix_space())
+    assert_false(Codepoint("i").is_posix_space())
+    assert_false(Codepoint("n").is_posix_space())
+    assert_false(Codepoint("z").is_posix_space())
+    assert_false(Codepoint(".").is_posix_space())
 
 
 def test_char_is_lower() raises:
-    assert_true(Codepoint.ord("a").is_ascii_lower())
-    assert_true(Codepoint.ord("b").is_ascii_lower())
-    assert_true(Codepoint.ord("y").is_ascii_lower())
-    assert_true(Codepoint.ord("z").is_ascii_lower())
+    assert_true(Codepoint("a").is_ascii_lower())
+    assert_true(Codepoint("b").is_ascii_lower())
+    assert_true(Codepoint("y").is_ascii_lower())
+    assert_true(Codepoint("z").is_ascii_lower())
 
     assert_false(
         Codepoint.from_u32(UInt32(ord("a") - 1)).value().is_ascii_lower()
@@ -147,15 +163,15 @@ def test_char_is_lower() raises:
         Codepoint.from_u32(UInt32(ord("z") + 1)).value().is_ascii_lower()
     )
 
-    assert_false(Codepoint.ord("!").is_ascii_lower())
-    assert_false(Codepoint.ord("0").is_ascii_lower())
+    assert_false(Codepoint("!").is_ascii_lower())
+    assert_false(Codepoint("0").is_ascii_lower())
 
 
 def test_char_is_upper() raises:
-    assert_true(Codepoint.ord("A").is_ascii_upper())
-    assert_true(Codepoint.ord("B").is_ascii_upper())
-    assert_true(Codepoint.ord("Y").is_ascii_upper())
-    assert_true(Codepoint.ord("Z").is_ascii_upper())
+    assert_true(Codepoint("A").is_ascii_upper())
+    assert_true(Codepoint("B").is_ascii_upper())
+    assert_true(Codepoint("Y").is_ascii_upper())
+    assert_true(Codepoint("Z").is_ascii_upper())
 
     assert_false(
         Codepoint.from_u32(UInt32(ord("A") - 1)).value().is_ascii_upper()
@@ -164,25 +180,25 @@ def test_char_is_upper() raises:
         Codepoint.from_u32(UInt32(ord("Z") + 1)).value().is_ascii_upper()
     )
 
-    assert_false(Codepoint.ord("!").is_ascii_upper())
-    assert_false(Codepoint.ord("0").is_ascii_upper())
+    assert_false(Codepoint("!").is_ascii_upper())
+    assert_false(Codepoint("0").is_ascii_upper())
 
 
 def test_char_is_digit() raises:
-    assert_true(Codepoint.ord("1").is_ascii_digit())
-    assert_false(Codepoint.ord("g").is_ascii_digit())
+    assert_true(Codepoint("1").is_ascii_digit())
+    assert_false(Codepoint("g").is_ascii_digit())
 
     # Devanagari Digit 6 — non-ASCII digits are not "ascii digit".
-    assert_false(Codepoint.ord("६").is_ascii_digit())
+    assert_false(Codepoint("६").is_ascii_digit())
 
 
 def test_char_is_printable() raises:
-    assert_true(Codepoint.ord("a").is_ascii_printable())
-    assert_false(Codepoint.ord("\n").is_ascii_printable())
-    assert_false(Codepoint.ord("\t").is_ascii_printable())
+    assert_true(Codepoint("a").is_ascii_printable())
+    assert_false(Codepoint("\n").is_ascii_printable())
+    assert_false(Codepoint("\t").is_ascii_printable())
 
     # Non-ASCII characters are not considered "ascii printable".
-    assert_false(Codepoint.ord("स").is_ascii_printable())
+    assert_false(Codepoint("स").is_ascii_printable())
 
 
 comptime SIGNIFICANT_CODEPOINTS: List[Tuple[Int, List[Byte]]] = [
@@ -250,26 +266,20 @@ def assert_utf8_bytes(codepoint: UInt32, var expected: List[Byte]) raises:
     var char_opt = Codepoint.from_u32(codepoint)
     var char = char_opt.value()
 
-    # Allocate a length-4 buffer to write to.
-    var buffer: List[Byte] = [0, 0, 0, 0]
-    var written = char.unsafe_write_utf8(buffer.unsafe_ptr())
+    var res = String()
+    char.write_to(res)
 
     # Check that the number of bytes written was as expected.
     assert_equal(
-        written,
+        res.byte_length(),
         len(expected),
         StaticString("wrong byte count written encoding codepoint: {}").format(
             codepoint
         ),
     )
 
-    # Normalize `expected` to length 4 so we can compare the written byte
-    # values with `buffer`.
-    for _ in range(4 - len(expected)):
-        expected.append(0)
-
     assert_equal(
-        buffer,
+        List(res.as_bytes()),
         expected,
         StaticString("wrong byte values written encoding codepoint: {}").format(
             codepoint
@@ -296,9 +306,49 @@ def test_char_utf8_byte_length() raises:
 def test_char_comptime() raises:
     comptime c1 = Codepoint.from_u32(32).value()
 
-    # Test that `utf8_byte_length()` works at compile time.
+    # Test that `byte_length()` works at compile time.
     comptime c1_bytes = c1.utf8_byte_length()
     assert_equal(c1_bytes, 1)
+
+
+def test_unsafe_unchecked_codepoint() raises:
+    var res: Codepoint
+    for c in range(0xD7FF):
+        res = Codepoint(unsafe_unchecked_codepoint=UInt32(c))
+        assert_equal(res.to_u32(), UInt32(c))
+
+        res = Codepoint.__init__[optimize_ascii=False](
+            unsafe_unchecked_codepoint=UInt32(c)
+        )
+        assert_equal(res.to_u32(), UInt32(c))
+
+    for c in range(0xE000, 0x10FFFF + 1):
+        res = Codepoint(unsafe_unchecked_codepoint=UInt32(c))
+        assert_equal(res.to_u32(), UInt32(c))
+
+        res = Codepoint.__init__[optimize_ascii=False](
+            unsafe_unchecked_codepoint=UInt32(c)
+        )
+        assert_equal(res.to_u32(), UInt32(c))
+
+
+def test_unsafe_decode_utf8_to_utf32() raises:
+    var res = String(capacity=1)
+    for c in range(0xD7FF):
+        res.resize(0)
+        res += Codepoint(unsafe_unchecked_codepoint=UInt32(c))
+        var u32, byte_length = Codepoint.unsafe_decode_utf8_to_utf32(res)
+        assert_equal(u32, UInt32(c))
+        assert_equal(byte_length, Codepoint.utf8_byte_length(UInt32(c)))
+        assert_equal(byte_length, res.byte_length())
+
+    for c in range(0xE000, 0x10FFFF + 1):
+        res.resize(0)
+        res += Codepoint(unsafe_unchecked_codepoint=UInt32(c))
+        var u32, byte_length = Codepoint.unsafe_decode_utf8_to_utf32(res)
+        assert_equal(u32, UInt32(c))
+        assert_equal(byte_length, Codepoint.utf8_byte_length(UInt32(c)))
+        assert_equal(byte_length, res.byte_length())
 
 
 def main() raises:
