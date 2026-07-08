@@ -5,6 +5,18 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "kv_cache",
     srcs = glob(["**/*.py"]),
+    # Stage the upstream NIXL transport plugins into the runfiles tree so that
+    # `bazel run` workers (which have no install tree) can find them: max._core
+    # resolves this runfiles location and sets NIXL_PLUGIN_DIR before the NIXL
+    # plugin manager is constructed. Linux-x86_64 only (upstream ships prebuilt
+    # binaries for that platform); degrades to nothing elsewhere.
+    data = select({
+        "//:linux_x86_64": [
+            "@nixl_upstream//:libplugin_LIBFABRIC.so",
+            "@nixl_upstream//:libplugin_UCX.so",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/pipelines/context",
         requirement("numpy"),
