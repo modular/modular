@@ -733,10 +733,10 @@ def simd_scalar_alias[dt: DType](input: Scalar[dt]):
 
 
 # CHECK-LABEL: "name": "simd_scalar_sugar"
-# CHECK: "signature": "def simd_scalar_sugar(b: UInt, c: Int8, d: UInt8, e: BFloat16, f: Float64, g: Float4_e2m1fn, h: Float8_e4m3fn)"
+# CHECK: "signature": "def simd_scalar_sugar(b: Int, c: Int8, d: UInt8, e: BFloat16, f: Float64, g: Float4_e2m1fn, h: Float8_e4m3fn)"
 # Int & Bool are not SIMD scalars (yet). Once they are, they'll be added here.
 def simd_scalar_sugar(
-    b: UInt,
+    b: Int,
     c: Int8,
     d: UInt8,
     e: BFloat16,
