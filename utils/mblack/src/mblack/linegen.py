@@ -790,6 +790,20 @@ class _BracketSplitComponent(Enum):
     tail = auto()
 
 
+def _is_named_effect_paren(leaf: Leaf) -> bool:
+    """Is `leaf` the opening paren of a `named_effect` (e.g. `abi` in `abi("C")`)?
+
+    A `named_effect` is `NAME '(' STRING ')'` on a function type or definition.
+    Its parenthesized string must not be used as a line-split point.
+    """
+    parent = leaf.parent
+    return (
+        leaf.type == token.LPAR
+        and parent is not None
+        and parent.type == syms.named_effect
+    )
+
+
 def left_hand_split(
     line: Line, _features: Collection[Feature] = ()
 ) -> Iterator[Line]:
@@ -816,7 +830,11 @@ def left_hand_split(
             current_leaves = tail_leaves if body_leaves else head_leaves
         current_leaves.append(leaf)
         if current_leaves is head_leaves:
-            if leaf.type in OPENING_BRACKETS:
+            # A `named_effect`'s parens (e.g. `abi("C")`) are not a split
+            # point; scan on to the param or return-type bracket.
+            if leaf.type in OPENING_BRACKETS and not _is_named_effect_paren(
+                leaf
+            ):
                 matching_bracket = leaf
                 current_leaves = body_leaves
     if not matching_bracket:
@@ -1011,15 +1029,9 @@ def bracket_split_build_line(
                 original.is_def
                 and opening_bracket.value == "("
                 and not any(leaf.type == token.COMMA for leaf in leaves)
-                # Don't treat a named-effect argument list as a function
-                # parameter list. In a Mojo function type such as
-                # `def() thin abi("C") -> ...`, the `abi("C")` parentheses are a
-                # `named_effect` whose grammar (`NAME '(' STRING ')'`) forbids a
-                # trailing comma; adding one would produce unparseable output.
-                and not (
-                    isinstance(opening_bracket.parent, Node)
-                    and opening_bracket.parent.type == syms.named_effect
-                )
+                # A `named_effect`'s parens (e.g. `abi("C")`) take no trailing
+                # comma.
+                and not _is_named_effect_paren(opening_bracket)
                 # In particular, don't add one within a parenthesized return annotation.
                 # Unfortunately the indicator we're in a return annotation (RARROW) may
                 # be defined directly in the parent node, the parent of the parent ...
