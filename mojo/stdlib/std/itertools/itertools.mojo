@@ -31,8 +31,6 @@ operations.
 # count
 # ===-----------------------------------------------------------------------===#
 
-from std.builtin.rebind import downcast
-
 
 @fieldwise_init
 struct _CountIterator(
@@ -180,8 +178,10 @@ def product[
     IterableTypeA: Iterable, IterableTypeB: Iterable
 ](ref iterable_a: IterableTypeA, ref iterable_b: IterableTypeB) -> _Product2[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    downcast[type_of(iter(iterable_b)), Copyable & Iterator],
-]:
+    IterableTypeB.IteratorType[origin_of(iterable_b)],
+] where conforms_to(
+    IterableTypeB.IteratorType[origin_of(iterable_b)], Copyable & Iterator
+):
     """Returns an iterator that yields tuples of the elements of the outer
     product of the iterables.
 
@@ -210,9 +210,7 @@ def product[
     """
     return {
         iter(iterable_a),
-        rebind_var[downcast[type_of(iter(iterable_b)), Copyable & Iterator]](
-            iter(iterable_b)
-        ),
+        iter(iterable_b),
     }
 
 
@@ -294,9 +292,13 @@ def product[
     ref iterable_c: IterableTypeC,
 ) -> _Product3[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    downcast[type_of(iter(iterable_b)), Copyable & Iterator],
-    downcast[type_of(iter(iterable_c)), Copyable & Iterator],
-]:
+    IterableTypeB.IteratorType[origin_of(iterable_b)],
+    IterableTypeC.IteratorType[origin_of(iterable_c)],
+] where conforms_to(
+    IterableTypeB.IteratorType[origin_of(iterable_b)], Copyable & Iterator
+) and conforms_to(
+    IterableTypeC.IteratorType[origin_of(iterable_c)], Copyable & Iterator
+):
     """Returns an iterator that yields tuples of the elements of the outer
     product of three iterables.
 
@@ -328,12 +330,8 @@ def product[
     """
     return {
         iter(iterable_a),
-        rebind_var[downcast[type_of(iter(iterable_b)), Copyable & Iterator]](
-            iter(iterable_b)
-        ),
-        rebind_var[downcast[type_of(iter(iterable_c)), Copyable & Iterator]](
-            iter(iterable_c)
-        ),
+        iter(iterable_b),
+        iter(iterable_c),
     }
 
 
@@ -425,10 +423,20 @@ def product[
     ref iterable_d: IterableTypeD,
 ) -> _Product4[
     IterableTypeA.IteratorType[origin_of(iterable_a)],
-    downcast[type_of(iter(iterable_b)), Copyable & Iterator],
-    downcast[type_of(iter(iterable_c)), Copyable & Iterator],
-    downcast[type_of(iter(iterable_d)), Copyable & Iterator],
-]:
+    IterableTypeB.IteratorType[origin_of(iterable_b)],
+    IterableTypeC.IteratorType[origin_of(iterable_c)],
+    IterableTypeD.IteratorType[origin_of(iterable_d)],
+] where (
+    conforms_to(
+        IterableTypeB.IteratorType[origin_of(iterable_b)], Copyable & Iterator
+    )
+    and conforms_to(
+        IterableTypeC.IteratorType[origin_of(iterable_c)], Copyable & Iterator
+    )
+    and conforms_to(
+        IterableTypeD.IteratorType[origin_of(iterable_d)], Copyable & Iterator
+    )
+):
     """Returns an iterator that yields tuples of the elements of the outer
     product of four iterables.
 
@@ -463,15 +471,9 @@ def product[
     """
     return {
         iter(iterable_a),
-        rebind_var[downcast[type_of(iter(iterable_b)), Copyable & Iterator]](
-            iter(iterable_b)
-        ),
-        rebind_var[downcast[type_of(iter(iterable_c)), Copyable & Iterator]](
-            iter(iterable_c)
-        ),
-        rebind_var[downcast[type_of(iter(iterable_d)), Copyable & Iterator]](
-            iter(iterable_d)
-        ),
+        iter(iterable_b),
+        iter(iterable_c),
+        iter(iterable_d),
     }
 
 
@@ -481,8 +483,8 @@ def product(
     var iterable_b: Some[IterableOwned],
 ) -> _Product2[
     type_of(iterable_a).IteratorOwnedType,
-    downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator],
-] where conforms_to(type_of(iterable_b).IteratorOwnedType, Copyable):
+    type_of(iterable_b).IteratorOwnedType,
+] where conforms_to(type_of(iterable_b).IteratorOwnedType, Copyable & Iterator):
     """Returns an iterator that yields tuples of the elements of the outer
     product of the iterables, consuming both iterables.
 
@@ -496,9 +498,7 @@ def product(
     """
     return {
         iter(iterable_a^),
-        rebind_var[
-            downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable_b^)),
+        iter(iterable_b^),
     }
 
 
@@ -509,12 +509,12 @@ def product(
     var iterable_c: Some[IterableOwned],
 ) -> _Product3[
     type_of(iterable_a).IteratorOwnedType,
-    downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator],
-    downcast[type_of(iterable_c).IteratorOwnedType, Copyable & Iterator],
+    type_of(iterable_b).IteratorOwnedType,
+    type_of(iterable_c).IteratorOwnedType,
 ] where conforms_to(
-    type_of(iterable_b).IteratorOwnedType, Copyable
+    type_of(iterable_b).IteratorOwnedType, Copyable & Iterator
 ) and conforms_to(
-    type_of(iterable_c).IteratorOwnedType, Copyable
+    type_of(iterable_c).IteratorOwnedType, Copyable & Iterator
 ):
     """Returns an iterator that yields tuples of the elements of the outer
     product of three iterables, consuming all three iterables.
@@ -530,12 +530,8 @@ def product(
     """
     return {
         iter(iterable_a^),
-        rebind_var[
-            downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable_b^)),
-        rebind_var[
-            downcast[type_of(iterable_c).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable_c^)),
+        iter(iterable_b^),
+        iter(iterable_c^),
     }
 
 
@@ -547,13 +543,13 @@ def product(
     var iterable_d: Some[IterableOwned],
 ) -> _Product4[
     type_of(iterable_a).IteratorOwnedType,
-    downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator],
-    downcast[type_of(iterable_c).IteratorOwnedType, Copyable & Iterator],
-    downcast[type_of(iterable_d).IteratorOwnedType, Copyable & Iterator],
+    type_of(iterable_b).IteratorOwnedType,
+    type_of(iterable_c).IteratorOwnedType,
+    type_of(iterable_d).IteratorOwnedType,
 ] where (
-    conforms_to(type_of(iterable_b).IteratorOwnedType, Copyable)
-    and conforms_to(type_of(iterable_c).IteratorOwnedType, Copyable)
-    and conforms_to(type_of(iterable_d).IteratorOwnedType, Copyable)
+    conforms_to(type_of(iterable_b).IteratorOwnedType, Copyable & Iterator)
+    and conforms_to(type_of(iterable_c).IteratorOwnedType, Copyable & Iterator)
+    and conforms_to(type_of(iterable_d).IteratorOwnedType, Copyable & Iterator)
 ):
     """Returns an iterator that yields tuples of the elements of the outer
     product of four iterables, consuming all four iterables.
@@ -570,15 +566,9 @@ def product(
     """
     return {
         iter(iterable_a^),
-        rebind_var[
-            downcast[type_of(iterable_b).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable_b^)),
-        rebind_var[
-            downcast[type_of(iterable_c).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable_c^)),
-        rebind_var[
-            downcast[type_of(iterable_d).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable_d^)),
+        iter(iterable_b^),
+        iter(iterable_c^),
+        iter(iterable_d^),
     }
 
 
@@ -646,8 +636,8 @@ struct _CycleIterator[InnerIteratorType: Iterator & Copyable](
 def cycle[
     IterableType: Iterable
 ](ref iterable: IterableType) -> _CycleIterator[
-    downcast[type_of(iter(iterable)), Copyable & Iterator]
-]:
+    type_of(iter(iterable))
+] where conforms_to(type_of(iter(iterable)), Copyable & Iterator):
     """Creates an iterator that cycles through an iterable indefinitely.
 
     This function returns an iterator that yields elements from the input
@@ -686,19 +676,15 @@ def cycle[
     # Output: red, green, blue, red, green, blue
     ```
     """
-    return _CycleIterator(
-        rebind_var[downcast[type_of(iter(iterable)), Copyable & Iterator]](
-            iter(iterable)
-        )
-    )
+    return _CycleIterator(iter(iterable))
 
 
 @always_inline
 def cycle(
     var iterable: Some[IterableOwned],
-) -> _CycleIterator[
-    downcast[type_of(iterable).IteratorOwnedType, Copyable & Iterator]
-] where conforms_to(type_of(iterable).IteratorOwnedType, Copyable):
+) -> _CycleIterator[type_of(iterable).IteratorOwnedType] where conforms_to(
+    type_of(iterable).IteratorOwnedType, Copyable & Iterator
+):
     """Creates an iterator that cycles through an iterable indefinitely,
     consuming the iterable.
 
@@ -708,11 +694,7 @@ def cycle(
     Returns:
         An iterator that yields elements from the iterable forever.
     """
-    return _CycleIterator(
-        rebind_var[
-            downcast[type_of(iterable).IteratorOwnedType, Copyable & Iterator]
-        ](iter(iterable^))
-    )
+    return _CycleIterator(iter(iterable^))
 
 
 # ===-----------------------------------------------------------------------===#
