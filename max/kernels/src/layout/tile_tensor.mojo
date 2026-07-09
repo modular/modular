@@ -2764,6 +2764,51 @@ struct TileTensor[
             (rhs._storage, rhs.layout),
         )
 
+    @always_inline
+    def abs(self) where Self.mut and conforms_to(Self.Storage, TensorOps):
+        """Takes the elementwise absolute value of this tensor, in place.
+
+        For unsigned dtypes this is the identity.
+        """
+        Self.Storage.abs(self._unsafe_storage_cast[to_mut=True](), self.layout)
+
+    @always_inline
+    def recip(self) where Self.mut and conforms_to(Self.Storage, TensorOps):
+        """Replaces each element of this tensor with its reciprocal, in place.
+
+        Elements equal to zero produce infinity, following IEEE 754 division
+        semantics.
+
+        Constraints:
+            The tensor's dtype must be a floating-point type.
+        """
+        Self.Storage.recip(
+            self._unsafe_storage_cast[to_mut=True](), self.layout
+        )
+
+    @always_inline
+    def exp[
+        scale: Scalar[Self.dtype] = 1
+    ](self) where Self.mut and conforms_to(Self.Storage, TensorOps):
+        """Replaces each element `x` of this tensor with `exp(scale * x)`,
+        in place.
+
+        The scale factor is applied before exponentiation so that scaled
+        exponentials (for example softmax logit scaling) fuse into a single
+        pass over the elements. The default scale of `1` gives a plain
+        exponential.
+
+        Parameters:
+            scale: The compile-time factor each element is multiplied by
+                before exponentiation.
+
+        Constraints:
+            The tensor's dtype must be a floating-point type.
+        """
+        Self.Storage.exp[scale](
+            self._unsafe_storage_cast[to_mut=True](), self.layout
+        )
+
 
 @fieldwise_init
 struct NullableTileTensor[

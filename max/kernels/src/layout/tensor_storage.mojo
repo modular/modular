@@ -16,6 +16,7 @@
 from std.builtin.device_passable import DevicePassable
 from std.builtin.int import index
 from std.gpu.host import DevicePointer
+from std.math import exp
 from std.os import abort
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import is_gpu
@@ -852,6 +853,74 @@ trait TensorOps(TensorStorage):
             storage: A tuple of the destination storage (modified in place) and
                 its layout.
             other: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+    @staticmethod
+    def abs[
+        dtype: DType, //
+    ](
+        storage: Self.StorageType[mut=True, dtype, ...],
+        layout: Some[TensorLayout],
+    ):
+        """Takes the elementwise absolute value of `storage`, in place.
+
+        For unsigned dtypes this is the identity.
+
+        Parameters:
+            dtype: The element data type of the storage.
+
+        Args:
+            storage: The storage to modify in place.
+            layout: The layout describing the storage's elements.
+        """
+        ...
+
+    @staticmethod
+    def recip[
+        dtype: DType, //
+    ](
+        storage: Self.StorageType[mut=True, dtype, ...],
+        layout: Some[TensorLayout],
+    ):
+        """Replaces each element of `storage` with its reciprocal, in place.
+
+        Elements equal to zero produce infinity, following IEEE 754 division
+        semantics.
+
+        Parameters:
+            dtype: The element data type of the storage. Must be a
+                floating-point type.
+
+        Args:
+            storage: The storage to modify in place.
+            layout: The layout describing the storage's elements.
+        """
+        ...
+
+    @staticmethod
+    def exp[
+        dtype: DType, //, scale: Scalar[dtype]
+    ](
+        storage: Self.StorageType[mut=True, dtype, ...],
+        layout: Some[TensorLayout],
+    ):
+        """Replaces each element `x` of `storage` with `exp(scale * x)`,
+        in place.
+
+        The scale factor is applied before exponentiation so that scaled
+        exponentials (for example softmax logit scaling) fuse into a single
+        pass over the elements. Pass a scale of `1` for a plain exponential.
+
+        Parameters:
+            dtype: The element data type of the storage. Must be a
+                floating-point type.
+            scale: The compile-time factor each element is multiplied by
+                before exponentiation.
+
+        Args:
+            storage: The storage to modify in place.
+            layout: The layout describing the storage's elements.
         """
         ...
 
@@ -1715,6 +1784,154 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             return max(lhs, rhs)
 
         Self._elementwise_binary_with_broadcast(storage, other, max_fn)
+
+    @always_inline
+    @staticmethod
+    def _elementwise_unary[
+        dtype: DType, //
+    ](
+        storage: Self.StorageType[mut=True, dtype, ...],
+        layout: Some[TensorLayout],
+        func: Some[
+            def(
+                SIMD[dtype, Self.element_width]
+            ) -> (SIMD[dtype, Self.element_width])
+        ],
+    ):
+        """Apply an elementwise unary operation to all elements, in place.
+
+        Parameters:
+            dtype: The dtype of the storage's elements.
+
+        Args:
+            storage: The storage to modify in place.
+            layout: The layout describing the storage's elements.
+            func: A unary function applied to each logical element.
+
+        Notes:
+
+        - Requires a statically known layout.
+        """
+        comptime assert type_of(layout).all_dims_known, (
+            "_elementwise_unary must operate on tensors of statically known"
+            " layouts"
+        )
+
+        comptime for i in range(type_of(layout).static_product):
+            var idx = layout(Idx[i])
+            storage.bitcast[Scalar[dtype]]().store(
+                idx,
+                func(
+                    storage.bitcast[Scalar[dtype]]().load[
+                        width=Self.element_width
+                    ](idx)
+                ),
+            )
+
+    @staticmethod
+    def abs[
+        dtype: DType, //
+    ](
+        storage: Self.StorageType[mut=True, dtype, ...],
+        layout: Some[TensorLayout],
+    ):
+        """Takes the elementwise absolute value of `storage`, in place.
+
+        For unsigned dtypes this is the identity.
+
+        Parameters:
+            dtype: The element data type of the storage.
+
+        Args:
+            storage: The storage to modify in place.
+            layout: The layout describing the storage's elements.
+        """
+
+        @always_inline
+        def abs_fn(val: SIMD[dtype, Self.element_width]) -> type_of(val):
+            return abs(val)
+
+        Self._elementwise_unary(storage, layout, abs_fn)
+
+    @staticmethod
+    def recip[
+        dtype: DType, //
+    ](
+        storage: Self.StorageType[mut=True, dtype, ...],
+        layout: Some[TensorLayout],
+    ):
+        """Replaces each element of `storage` with its reciprocal, in place.
+
+        Elements equal to zero produce infinity, following IEEE 754 division
+        semantics.
+
+        Parameters:
+            dtype: The element data type of the storage. Must be a
+                floating-point type.
+
+        Args:
+            storage: The storage to modify in place.
+            layout: The layout describing the storage's elements.
+        """
+        comptime assert (
+            dtype.is_floating_point()
+        ), "recip requires a floating-point dtype"
+
+        @always_inline
+        def recip_fn(val: SIMD[dtype, Self.element_width]) -> type_of(val):
+            return 1 / val
+
+        Self._elementwise_unary(storage, layout, recip_fn)
+
+    @staticmethod
+    def exp[
+        dtype: DType, //, scale: Scalar[dtype]
+    ](
+        storage: Self.StorageType[mut=True, dtype, ...],
+        layout: Some[TensorLayout],
+    ):
+        """Replaces each element `x` of `storage` with `exp(scale * x)`,
+        in place.
+
+        The scale factor is applied before exponentiation so that scaled
+        exponentials (for example softmax logit scaling) fuse into a single
+        pass over the elements. Pass a scale of `1` for a plain exponential.
+
+        Parameters:
+            dtype: The element data type of the storage. Must be a
+                floating-point type.
+            scale: The compile-time factor each element is multiplied by
+                before exponentiation.
+
+        Args:
+            storage: The storage to modify in place.
+            layout: The layout describing the storage's elements.
+        """
+        comptime assert (
+            dtype.is_floating_point()
+        ), "exp requires a floating-point dtype"
+
+        comptime assert type_of(
+            layout
+        ).all_dims_known, (
+            "exp must operate on tensors of statically known layouts"
+        )
+
+        # The loop is inlined rather than routed through `_elementwise_unary`:
+        # a closure defined in a function with a dependent-typed value
+        # parameter (`scale: Scalar[dtype]`) fails parameter resolution during
+        # elaboration when passed as a function value.
+        comptime for i in range(type_of(layout).static_product):
+            var idx = layout(Idx[i])
+            storage.bitcast[Scalar[dtype]]().store(
+                idx,
+                exp(
+                    storage.bitcast[Scalar[dtype]]().load[
+                        width=Self.element_width
+                    ](idx)
+                    * scale
+                ),
+            )
 
 
 @always_inline
@@ -2683,3 +2900,162 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             return max(lhs, rhs)
 
         Self._elementwise_binary_with_broadcast(storage, other, max_fn)
+
+    @always_inline
+    @staticmethod
+    def _elementwise_unary[
+        self_origin: MutOrigin,
+        //,
+        dtype: DType,
+    ](
+        storage: Self.StorageType[dtype, self_origin, AddressSpace.GENERIC],
+        layout: Some[TensorLayout],
+        func: Some[
+            def(
+                SIMD[dtype, Self.element_width]
+            ) -> (SIMD[dtype, Self.element_width])
+        ],
+    ):
+        """Apply an elementwise unary operation to all elements, in place.
+
+        Device-only: the underlying loads and stores reinterpret the encoded
+        device pointer and abort on host.
+
+        Parameters:
+            self_origin: The origin of the storage.
+            dtype: The dtype of the storage's elements.
+
+        Args:
+            storage: The storage to modify in place.
+            layout: The layout describing the storage's elements.
+            func: A unary function applied to each logical element.
+
+        Notes:
+
+        - Requires a statically known layout.
+        """
+        comptime assert type_of(layout).all_dims_known, (
+            "_elementwise_unary must operate on tensors of statically known"
+            " layouts"
+        )
+
+        comptime for i in range(type_of(layout).static_product):
+            var idx = layout(Idx[i])
+            _device_leaf_ptr(storage).store(
+                idx,
+                func(
+                    _device_leaf_ptr(storage).load[width=Self.element_width](
+                        idx
+                    )
+                ),
+            )
+
+    @staticmethod
+    def abs[
+        dtype: DType, //
+    ](
+        storage: Self.StorageType[mut=True, dtype, ...],
+        layout: Some[TensorLayout],
+    ):
+        """Takes the elementwise absolute value of `storage`, in place.
+
+        For unsigned dtypes this is the identity. Device-only: the underlying
+        loads and stores reinterpret the encoded device pointer and abort on
+        host.
+
+        Parameters:
+            dtype: The element data type of the storage.
+
+        Args:
+            storage: The storage to modify in place.
+            layout: The layout describing the storage's elements.
+        """
+
+        @always_inline
+        def abs_fn(val: SIMD[dtype, Self.element_width]) -> type_of(val):
+            return abs(val)
+
+        Self._elementwise_unary(storage, layout, abs_fn)
+
+    @staticmethod
+    def recip[
+        dtype: DType, //
+    ](
+        storage: Self.StorageType[mut=True, dtype, ...],
+        layout: Some[TensorLayout],
+    ):
+        """Replaces each element of `storage` with its reciprocal, in place.
+
+        Elements equal to zero produce infinity, following IEEE 754 division
+        semantics. Device-only: the underlying loads and stores reinterpret
+        the encoded device pointer and abort on host.
+
+        Parameters:
+            dtype: The element data type of the storage. Must be a
+                floating-point type.
+
+        Args:
+            storage: The storage to modify in place.
+            layout: The layout describing the storage's elements.
+        """
+        comptime assert (
+            dtype.is_floating_point()
+        ), "recip requires a floating-point dtype"
+
+        @always_inline
+        def recip_fn(val: SIMD[dtype, Self.element_width]) -> type_of(val):
+            return 1 / val
+
+        Self._elementwise_unary(storage, layout, recip_fn)
+
+    @staticmethod
+    def exp[
+        dtype: DType, //, scale: Scalar[dtype]
+    ](
+        storage: Self.StorageType[mut=True, dtype, ...],
+        layout: Some[TensorLayout],
+    ):
+        """Replaces each element `x` of `storage` with `exp(scale * x)`,
+        in place.
+
+        The scale factor is applied before exponentiation so that scaled
+        exponentials (for example softmax logit scaling) fuse into a single
+        pass over the elements. Pass a scale of `1` for a plain exponential.
+        Device-only: the underlying loads and stores reinterpret the encoded
+        device pointer and abort on host.
+
+        Parameters:
+            dtype: The element data type of the storage. Must be a
+                floating-point type.
+            scale: The compile-time factor each element is multiplied by
+                before exponentiation.
+
+        Args:
+            storage: The storage to modify in place.
+            layout: The layout describing the storage's elements.
+        """
+        comptime assert (
+            dtype.is_floating_point()
+        ), "exp requires a floating-point dtype"
+
+        comptime assert type_of(
+            layout
+        ).all_dims_known, (
+            "exp must operate on tensors of statically known layouts"
+        )
+
+        # The loop is inlined rather than routed through `_elementwise_unary`:
+        # a closure defined in a function with a dependent-typed value
+        # parameter (`scale: Scalar[dtype]`) fails parameter resolution during
+        # elaboration when passed as a function value.
+        comptime for i in range(type_of(layout).static_product):
+            var idx = layout(Idx[i])
+            _device_leaf_ptr(storage).store(
+                idx,
+                exp(
+                    _device_leaf_ptr(storage).load[width=Self.element_width](
+                        idx
+                    )
+                    * scale
+                ),
+            )

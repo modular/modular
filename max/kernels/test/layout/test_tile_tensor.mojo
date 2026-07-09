@@ -27,8 +27,10 @@ from layout import (
 )
 from layout.tile_layout import Layout as TileLayout
 from layout.swizzle import Swizzle
+from std.math import exp
 from std.testing import (
     TestSuite,
+    assert_almost_equal,
     assert_equal,
     assert_true,
 )
@@ -1665,3 +1667,93 @@ def test_max_same_shape() raises:
     assert_equal(a[0, 1], 20)
     assert_equal(a[1, 0], 30)
     assert_equal(a[1, 1], 40)
+
+
+def test_abs() raises:
+    """In-place elementwise absolute value."""
+    var data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(data, row_major[2, 2]())
+
+    a[0, 0] = -1
+    a[0, 1] = 2
+    a[1, 0] = -3
+    a[1, 1] = 0
+
+    a.abs()
+
+    assert_equal(a[0, 0], 1)
+    assert_equal(a[0, 1], 2)
+    assert_equal(a[1, 0], 3)
+    assert_equal(a[1, 1], 0)
+
+
+def test_abs_float() raises:
+    """In-place elementwise absolute value on a floating-point tensor."""
+    var data = InlineArray[Float32, 4](fill=0)
+    var a = TileTensor(data, row_major[2, 2]())
+
+    a[0, 0] = -1.5
+    a[0, 1] = 2.5
+    a[1, 0] = -0.0
+    a[1, 1] = -4.25
+
+    a.abs()
+
+    assert_equal(a[0, 0], 1.5)
+    assert_equal(a[0, 1], 2.5)
+    assert_equal(a[1, 0], 0.0)
+    assert_equal(a[1, 1], 4.25)
+
+
+def test_recip() raises:
+    """In-place elementwise reciprocal."""
+    var data = InlineArray[Float32, 4](fill=0)
+    var a = TileTensor(data, row_major[2, 2]())
+
+    a[0, 0] = 2.0
+    a[0, 1] = 4.0
+    a[1, 0] = -8.0
+    a[1, 1] = 16.0
+
+    a.recip()
+
+    assert_equal(a[0, 0], 0.5)
+    assert_equal(a[0, 1], 0.25)
+    assert_equal(a[1, 0], -0.125)
+    assert_equal(a[1, 1], 0.0625)
+
+
+def test_exp() raises:
+    """In-place elementwise exponential with the default scale of 1."""
+    var data = InlineArray[Float32, 4](fill=0)
+    var a = TileTensor(data, row_major[2, 2]())
+
+    a[0, 0] = 0.0
+    a[0, 1] = 1.0
+    a[1, 0] = -1.0
+    a[1, 1] = 2.0
+
+    a.exp()
+
+    assert_almost_equal(a[0, 0], 1.0)
+    assert_almost_equal(a[0, 1], exp(Float32(1.0)))
+    assert_almost_equal(a[1, 0], exp(Float32(-1.0)))
+    assert_almost_equal(a[1, 1], exp(Float32(2.0)))
+
+
+def test_exp_scale() raises:
+    """In-place elementwise `exp(scale * x)` with a non-unit scale."""
+    var data = InlineArray[Float32, 4](fill=0)
+    var a = TileTensor(data, row_major[2, 2]())
+
+    a[0, 0] = 0.0
+    a[0, 1] = 1.0
+    a[1, 0] = -1.0
+    a[1, 1] = 0.5
+
+    a.exp[scale=Float32(2.0)]()
+
+    assert_almost_equal(a[0, 0], 1.0)
+    assert_almost_equal(a[0, 1], exp(Float32(2.0)))
+    assert_almost_equal(a[1, 0], exp(Float32(-2.0)))
+    assert_almost_equal(a[1, 1], exp(Float32(1.0)))
