@@ -131,7 +131,7 @@ def ref_result_invalid2(mut a: MemoryType) -> ref [a] Int:
 
 def ref_result_invalid3(mut a: MemoryType, mut b: MemoryType)
      -> ref [a] MemoryType:
-    # expected-error @+1 {{cannot return reference with incompatible origin: 'b' vs 'a'}}
+    # expected-error @+1 {{cannot return reference with incompatible origin: 'origin_of(b)' vs 'origin_of(a)'}}
     return b
 
 def ref_result_invalid4(mut a: MemoryType, b: Int) -> ref [a] MemoryType:

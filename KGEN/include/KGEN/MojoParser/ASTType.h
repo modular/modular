@@ -298,9 +298,10 @@ public:
                          ASTTypePrinterContext ctx);
 
   /// Print the specified parameter like we would in an origin expression, works
-  /// in an `origin_of(x)` body.
+  /// in an `origin_of(x)` body.  When `elideOriginOf` is true, the `origin_of(`
+  /// and `)` will not be printed. This is important for 'ref' contexts.
   static void printOriginParam(raw_ostream &os, TypedAttr param,
-                               SharedState *diagShared);
+                               SharedState *diagShared, bool elideOriginOf);
   /// Print the specified parameter like we would in a 'ref [x]' argument or
   /// result type, e.g. expanding origin sets.
   static void printRefOriginParam(raw_ostream &os, TypedAttr param,

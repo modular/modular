@@ -863,13 +863,13 @@ def test_signature():
 
 def bad_union[ao: Origin[mut=True]](ref [ao] a: String, mut b: String) -> ref [a, b] String:
     var c: String
-    # expected-error @below {{cannot return reference with incompatible origin: 'c' vs '{ao, b}'}}
+    # expected-error @below {{cannot return reference with incompatible origin: 'origin_of(c)' vs 'origin_of(ao, b)'}}
     return c
 
 # https://github.com/modular/mojo/issues/3829
 def apply_in_memory[o: ImmutOrigin](f: def(ref[o] x: SomeNonTrivRegPassable) thin -> None, x: SomeNonTrivRegPassable):
 # expected-error @below {{value passed to 'x' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
-# expected-note @below {{operand origin 'x' doesn't match expected origin 'o'}}
+# expected-note @below {{operand origin 'origin_of(x)' doesn't match expected origin 'origin_of(o)'}}
     f(x)
 
 
@@ -881,17 +881,17 @@ def getSomeNonTrivRegPassable() -> SomeNonTrivRegPassable: pass
 def direct3830(ref a: SomeNonTrivRegPassable, ref[a] b: SomeNonTrivRegPassable): pass
 def test3830():
     # expected-error @below {{invalid call to 'direct3830': value passed to 'b' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
-    # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'anonymous*'}}
+    # expected-note @below {{operand origin 'origin_of(anonymous*)' doesn't match expected origin 'origin_of(anonymous*)'}}
     direct3830(getSomeNonTrivRegPassable(), getSomeNonTrivRegPassable())
 
 def test3830_1[o: ImmutOrigin](f: def(ref[o] x: SomeNonTrivRegPassable) thin -> None):
     # expected-error @below {{invalid indirect call: value passed to 'x' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
-    # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
+    # expected-note @below {{operand origin 'origin_of(anonymous*)' doesn't match expected origin 'origin_of(o)'}}
     f(getSomeNonTrivRegPassable())
 
 def test3830_2[o: ImmutOrigin](f: def(ref[o] x: Int) thin -> None, x: Int):
     # expected-error @below {{invalid indirect call: value passed to 'x' cannot be converted from 'Int' to ref 'Int'}}
-    # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
+    # expected-note @below {{operand origin 'origin_of(anonymous*)' doesn't match expected origin 'origin_of(o)'}}
     f(x)
 
 struct Struct3855:
@@ -900,7 +900,7 @@ struct Struct3855:
 
 def testStruct3855(t: Struct3855):
     # expected-error @+2 {{value passed to 'e' cannot be converted from 'Int' to ref 'Int'}}
-    # expected-note @+1 {{operand origin 't.l' doesn't match expected origin 'self.l'}}
+    # expected-note @+1 {{operand origin 'origin_of(t.l)' doesn't match expected origin 'origin_of(self.l)'}}
     t.do(t.l)
 
 
@@ -972,8 +972,8 @@ def test_mergewith_pointer():
     # works here.
 
     # expected-error @below {{argument of 'List[Pointer[Int, origin_of(a, b)]]' initializer call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'a' memory accessed through reference embedded in value of type 'Pointer[Int, origin_of(a, b)]'}}
-    # expected-note @below {{'b' memory accessed through reference embedded in value of type 'Pointer[Int, origin_of(a, b)]'}}
+    # expected-note @below {{'origin_of(a)' memory accessed through reference embedded in value of type 'Pointer[Int, origin_of(a, b)]'}}
+    # expected-note @below {{'origin_of(b)' memory accessed through reference embedded in value of type 'Pointer[Int, origin_of(a, b)]'}}
     for elt in [Pointer(to=a), Pointer(to=b)]:
         elt[] *= 2
 
