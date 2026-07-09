@@ -32,6 +32,7 @@ class IndexRefRemapper : public IndexParameterReplacer<IndexRefRemapper> {
 public:
   /// Populate the remapper with named input and result parameters.
   IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams, size_t offset = 0);
+  IndexRefRemapper(ArrayRef<ParamDeclRefAttr> inputParams, size_t offset = 0);
 
   /// Append a parameter declaration to the remapper.
   void appendParamDecl(ParamDeclAttr paramDecl);

@@ -1463,28 +1463,43 @@ selfContainedSymbolAndCaptures(PValue fnPValue,
       DeclResolver::createSelfContainedSignature(fnSig);
   selfContainedSig =
       cast<FnTypeGeneratorType>(getCanonicalType(selfContainedSig));
-
   // Remove captures in signature from symbol.
-  DenseSet<StringAttr> captureNames;
-  for (auto capture : captures)
-    captureNames.insert(capture.getName());
   auto symbol = cast<SymbolConstantAttr>(fnPValue.get());
-  mlir::AttrTypeReplacer captureRewriter;
-  captureRewriter.addReplacement([&](ParamDeclRefAttr reference) -> TypedAttr {
-    if (!captureNames.contains(reference.getName()))
-      return reference;
-    return UnboundAttr::get(reference.getType());
-  });
-  SmallVector<TypedAttr> bindings;
-  for (auto binding : symbol.getParamValues()) {
-    auto bind = cast<TypedAttr>(captureRewriter.replace(binding));
-    bindings.push_back(bind);
-  }
+  IndexRefRemapper toIdx(captures);
+  SmallVector<TypedAttr> params;
 
-  TypedAttr fnVal = SymbolConstantAttr::get(
-      shared.getContext(), symbol.getSymbol(), bindings, selfContainedSig);
+  // The parameter index that the current unbound parameter will be wired to,
+  // starting right after the captures since captures are prepended in
+  // `selfContainedSig`.
+  size_t unboundIdx = captures.size();
+  for (TypedAttr binding : symbol.getParamValues()) {
+    TypedAttr replaced = toIdx.replace(binding);
+    // If this is a `_`, wire it to the corresponding generator input parameter
+    // that we are going to create later.
+    if (isa<UnboundAttr>(replaced)) {
+      params.push_back(ParamIndexRefAttr::get(
+          unboundIdx, selfContainedSig.getInputParamTypes()[unboundIdx]));
+      unboundIdx++;
+      continue;
+    }
+    // Any index reference must be a *direct* reference to a capture.
+    if (auto idxRef = dyn_cast<ParamIndexRefAttr>(replaced);
+        idxRef && idxRef.getDepth() == 0) {
+      assert(llvm::find(captures, cast<ParamDeclRefAttr>(binding)) !=
+             captures.end());
+    }
+    params.push_back(replaced);
+  };
+
+  FuncSymbolAttr fnSymbol = FuncSymbolAttr::get(
+      symbol.getSymbol(), selfContainedSig.getBody(), params);
+  TypedAttr fnVal =
+      GeneratorAttr::get(selfContainedSig.getInputParamTypes(), fnSymbol,
+                         selfContainedSig.getMetadata());
+
   assert(
-      ClosureEmitter::isTypeRebindableTo(selfContainedSig, wrapperImplType) &&
+      ClosureEmitter::isTypeRebindableTo(
+          cast<FuncTypeGeneratorType>(fnVal.getType()), wrapperImplType) &&
       "self-contained promoted signature must match wrapper Impl canonically");
   if (fnVal.getType() != wrapperImplType)
     fnVal = ParamOperatorAttr::getRebind(fnVal, wrapperImplType);
