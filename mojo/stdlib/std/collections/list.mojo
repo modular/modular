@@ -831,6 +831,7 @@ struct List[T: Movable](
         self._unsafe_next_uninit_ptr().unsafe_write(value^)
         self._len += 1
 
+    @always_inline
     def insert(mut self, i: Int, var value: Self.T):
         """Inserts a value to the list at the given index.
         `a.insert(len(a), value)` is equivalent to `a.append(value)`.
@@ -847,11 +848,12 @@ struct List[T: Movable](
         print(list) # ['one', 'two', 'three']
         ```
         """
-        assert i <= len(self), "insert index out of range"
-
         var normalized_idx = i
         if i < 0:
             normalized_idx = max(len(self) + i, 0)
+        # Bounds-check after normalizing, since `check_bounds` rejects
+        # negatives; the valid range is `[0, len(self)]` (`len(self)` appends).
+        check_bounds(normalized_idx, len(self) + 1)
 
         var earlier_idx = len(self)
         var later_idx = len(self) - 1
