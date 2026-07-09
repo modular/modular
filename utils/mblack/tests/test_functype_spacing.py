@@ -47,3 +47,31 @@ def test_named_effect_no_space_already_correct():
     source = 'def foo() abi("C"):\n    pass\n'
     expected = 'def foo() abi("C"):\n    pass\n'
     assert_mojo_format(source, expected)
+
+
+def test_named_effect_split_does_not_add_trailing_comma():
+    """A named effect that must be split must not gain a trailing comma.
+
+    Regression test for MOTO-1607: a function-type effect like `abi("C")`
+    was treated as a function parameter list, so splitting it across lines
+    inserted a magic trailing comma (`abi("C",)`). The grammar
+    (`named_effect: NAME '(' STRING ')'`) forbids that comma, so the
+    formatter's own output failed to re-parse, breaking `mojo format`.
+    """
+    source = (
+        "def main() raises:\n"
+        "    var curl_version = lib.get_function[\n"
+        '        def() thin abi("C") -> UnsafePointer[\n'
+        "            c_char, ImmutOrigin(origin_of(result))\n"
+        "        ]\n"
+        '    ]("curl_version")\n'
+    )
+    expected = (
+        "def main() raises:\n"
+        "    var curl_version = lib.get_function[\n"
+        "        def() thin abi(\n"
+        '            "C"\n'
+        "        ) -> UnsafePointer[c_char, ImmutOrigin(origin_of(result))]\n"
+        '    ]("curl_version")\n'
+    )
+    assert_mojo_format(source, expected)

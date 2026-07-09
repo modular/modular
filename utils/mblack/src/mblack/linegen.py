@@ -1011,6 +1011,15 @@ def bracket_split_build_line(
                 original.is_def
                 and opening_bracket.value == "("
                 and not any(leaf.type == token.COMMA for leaf in leaves)
+                # Don't treat a named-effect argument list as a function
+                # parameter list. In a Mojo function type such as
+                # `def() thin abi("C") -> ...`, the `abi("C")` parentheses are a
+                # `named_effect` whose grammar (`NAME '(' STRING ')'`) forbids a
+                # trailing comma; adding one would produce unparseable output.
+                and not (
+                    isinstance(opening_bracket.parent, Node)
+                    and opening_bracket.parent.type == syms.named_effect
+                )
                 # In particular, don't add one within a parenthesized return annotation.
                 # Unfortunately the indicator we're in a return annotation (RARROW) may
                 # be defined directly in the parent node, the parent of the parent ...
