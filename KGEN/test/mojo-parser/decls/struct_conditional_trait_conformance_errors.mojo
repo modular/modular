@@ -542,3 +542,27 @@ trait CondAliasNotImplied:
 # expected-error @below {{'CondAliasNotImpliedStruct[n]' does not implement all requirements for 'CondAliasNotImplied'}}
 struct CondAliasNotImpliedStruct[n: Int = -1](CondAliasNotImplied where n >= 0):
     comptime SIZE: Int where Self.n >= 10 = Self.n
+
+
+# ===========================================================================
+# constrained comptime member referenced as result type in an unprovable env
+# ===========================================================================
+
+trait Moco4214Op:
+    comptime Output: AnyType
+
+    def operate(self) -> Self.Output:
+        ...
+
+
+@fieldwise_init
+struct Moco4214List[T: AnyType](
+    Moco4214Op where conforms_to(T, Movable),
+):
+    # expected-note @below {{constraint declared here needs evidence}}
+    comptime Output: AnyType where conforms_to(Self.T, Movable) = Int
+
+    # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
+    # expected-note @below {{add a trailing 'where' clause}}
+    def operate(self) -> Self.Output:
+        return Int(123)
