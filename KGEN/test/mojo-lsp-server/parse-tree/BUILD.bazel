@@ -1,0 +1,115 @@
+# Crash-only LSP-parse smoke over real .mojo trees, via a single `kgen -lsp`
+# invocation per file. See the module docstring in lsp_smoke_all.py for what
+# that reproduces, what counts as a failure, and what is NOT covered.
+#
+# Unresolved imports surface as errors, so any scan root added here must be
+# covered by `mojo_deps` below.
+#
+# --- Running ---
+#   Whole stdlib:
+#     bt //KGEN/test/mojo-lsp-server/parse-tree:lsp-parse-smoke-stdlib
+#   Single file (fast, for debugging a failure -- sets up
+#   MODULAR_MOJO_MAX_IMPORT_PATH automatically):
+#     br //KGEN/test/mojo-lsp-server/parse-tree:lsp-smoke-one -- \
+#         oss/modular/mojo/stdlib/std/sys/info.mojo
+
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test")
+
+package(default_visibility = ["//visibility:private"])
+
+# The actual smoke-test implementation, kept as a single py_library so it has
+# exactly one owning rule. lsp-parse-smoke-stdlib and lsp-smoke-one each get a
+# thin `main` wrapper importing from here instead of both listing
+# lsp_smoke_all.py directly -- otherwise the same file would be `main` for two
+# rules and trip bazel/internal/find_duplicate_srcs.py. lsp_smoke_all.py
+# remains directly runnable too (see its module docstring's manual usage).
+modular_py_library(
+    name = "lsp_smoke_lib",
+    srcs = ["lsp_smoke_all.py"],
+    imports = ["."],
+)
+
+# LSP parse tests are excluded from sanitizer builds: instrumentation overhead
+# makes them time out reliably.
+_SANITIZER_INCOMPATIBLE = select({
+    "//:asan": ["@platforms//:incompatible"],
+    "//:ubsan": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+# Emergency escape hatch: files that crash/hang the parse and block the build.
+# Paths are relative to the stdlib root (oss/modular/mojo/stdlib/std). This
+# should normally be empty -- only add files that genuinely crash, not files
+# that merely emit diagnostics. To re-enable: remove from this list.
+_NO_RUN_LIST = [
+]
+
+modular_py_test(
+    name = "lsp-parse-smoke-stdlib",
+    # "large" (900s timeout), not "medium" (300s): files run sequentially within
+    # a shard and a heavy source-reparse is ~60s each, so a few per shard needs
+    # headroom. It also must exceed the script's own 300s per-file hang timeout
+    # so a real hang is reported by the script, not killed by bazel first.
+    size = "large",
+    srcs = ["lsp_smoke_stdlib_main.py"],
+    args = [
+        "--scan-root-file",
+        "$(rootpath //oss/modular/mojo/stdlib/std:__init__.mojo)",
+    ] + [
+        arg
+        for f in _NO_RUN_LIST
+        for arg in [
+            "--skip-file",
+            f,
+        ]
+    ],
+    data = [
+        "//KGEN/tools/kgen",
+        "//oss/modular/mojo/stdlib/std:__init__.mojo",
+        "//oss/modular/mojo/stdlib/std:std_srcs",
+    ],
+    main = "lsp_smoke_stdlib_main.py",
+    # mojo_deps drives the auto-set MODULAR_MOJO_MAX_IMPORT_PATH, giving the
+    # parser the same library-resolution branch the LSP server uses.
+    mojo_deps = [
+        "@mojo//:std",
+    ],
+    # ~240 enabled files / 50 shards ~= 5 files per shard, well within medium.
+    shard_count = 50,
+    tags = [
+        "manual",
+        "no-pydeps",
+    ],
+    target_compatible_with = _SANITIZER_INCOMPATIBLE,
+    deps = [":lsp_smoke_lib"],
+)
+
+# Convenience runner for a single file, e.g. to debug a `lsp-parse-smoke-stdlib`
+# failure without hand-wiring MODULAR_MOJO_MAX_IMPORT_PATH:
+#   br //KGEN/test/mojo-lsp-server/parse-tree:lsp-smoke-one -- \
+#       oss/modular/mojo/stdlib/std/sys/info.mojo
+modular_py_binary(
+    name = "lsp-smoke-one",
+    srcs = ["lsp_smoke_one_main.py"],
+    args = [
+        "--kgen-path",
+        "$(rootpath //KGEN/tools/kgen)",
+    ],
+    data = [
+        "//KGEN/tools/kgen",
+        # __init__.mojo is already pulled in via std_srcs's glob; no need to
+        # list it separately (this target doesn't need its own
+        # $(rootpath ...) reference to it, unlike lsp-parse-smoke-stdlib).
+        "//oss/modular/mojo/stdlib/std:std_srcs",
+    ],
+    main = "lsp_smoke_one_main.py",
+    mojo_deps = [
+        "@mojo//:std",
+    ],
+    tags = [
+        "manual",
+        "no-pydeps",
+    ],
+    target_compatible_with = _SANITIZER_INCOMPATIBLE,
+    deps = [":lsp_smoke_lib"],
+)
