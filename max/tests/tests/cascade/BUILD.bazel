@@ -107,6 +107,13 @@ modular_py_test(
     name = "test_max_model_worker",
     size = "small",
     srcs = ["test_max_model_worker.py"],
+    # TODO(SERVSYS-1284): importing max.pipelines.lib alone blows the 300s
+    # budget on the shared BuildBuddy macOS workers (times out in pytest
+    # collection).
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/experimental/cascade/workers",
