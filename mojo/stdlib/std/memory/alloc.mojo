@@ -601,7 +601,7 @@ def _alloc_bytes(
     return pointer.unsafe_value()
 
 
-def alloc[T: AnyType, //](layout: Layout[T], /) -> Allocation[T]:
+def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
     """Allocates owned storage for `layout.count()` elements of `T`.
 
     Returns an `Allocation`, an explicitly destroyed handle that bundles the
