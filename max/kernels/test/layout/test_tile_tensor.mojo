@@ -1617,3 +1617,51 @@ def test_itruediv_same_shape() raises:
     assert_equal(a[0, 1], 4.0)
     assert_equal(a[1, 0], 3.75)
     assert_equal(a[1, 1], 2.5)
+
+
+def test_min_same_shape() raises:
+    """In-place elementwise minimum of two same-shape tensors."""
+    var a_data = InlineArray[Int32, 4](fill=0)
+    var b_data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 1
+    a[0, 1] = 20
+    a[1, 0] = 3
+    a[1, 1] = 40
+    b[0, 0] = 10
+    b[0, 1] = 2
+    b[1, 0] = 30
+    b[1, 1] = 4
+
+    a.min(b)
+
+    assert_equal(a[0, 0], 1)
+    assert_equal(a[0, 1], 2)
+    assert_equal(a[1, 0], 3)
+    assert_equal(a[1, 1], 4)
+
+
+def test_max_same_shape() raises:
+    """In-place elementwise maximum of two same-shape tensors."""
+    var a_data = InlineArray[Int32, 4](fill=0)
+    var b_data = InlineArray[Int32, 4](fill=0)
+    var a = TileTensor(a_data, row_major[2, 2]())
+    var b = TileTensor(b_data, row_major[2, 2]())
+
+    a[0, 0] = 1
+    a[0, 1] = 20
+    a[1, 0] = 3
+    a[1, 1] = 40
+    b[0, 0] = 10
+    b[0, 1] = 2
+    b[1, 0] = 30
+    b[1, 1] = 4
+
+    a.max(b)
+
+    assert_equal(a[0, 0], 10)
+    assert_equal(a[0, 1], 20)
+    assert_equal(a[1, 0], 30)
+    assert_equal(a[1, 1], 40)

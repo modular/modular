@@ -2815,6 +2815,36 @@ struct TileTensor[
             (rhs._storage, rhs.layout),
         )
 
+    @always_inline
+    def min(
+        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+        """Takes the elementwise minimum with `rhs`, in place.
+
+        Args:
+            rhs: The tensor to take the minimum against, broadcast against this
+                tensor's layout.
+        """
+        Self.Storage.min(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
+        )
+
+    @always_inline
+    def max(
+        self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
+    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+        """Takes the elementwise maximum with `rhs`, in place.
+
+        Args:
+            rhs: The tensor to take the maximum against, broadcast against this
+                tensor's layout.
+        """
+        Self.Storage.max(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (rhs._storage, rhs.layout),
+        )
+
 
 @fieldwise_init
 struct NullableTileTensor[

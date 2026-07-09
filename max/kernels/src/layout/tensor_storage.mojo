@@ -534,6 +534,88 @@ trait TensorArith(TensorStorage):
         """
         ...
 
+    @staticmethod
+    def min[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Takes the elementwise minimum of `storage` and `other`, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
+    @staticmethod
+    def max[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Takes the elementwise maximum of `storage` and `other`, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+        ...
+
 
 struct PointerStorage[*, element_width: Int = 1](TensorArith):
     """Implements `TensorArith` backed by a raw `UnsafePointer`.
@@ -1232,6 +1314,102 @@ struct PointerStorage[*, element_width: Int = 1](TensorArith):
             return lhs / rhs
 
         Self._elementwise_binary_with_broadcast(storage, other, truediv)
+
+    @staticmethod
+    def min[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Takes the elementwise minimum of `storage` and `other`, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def min_fn(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return min(lhs, rhs)
+
+        Self._elementwise_binary_with_broadcast(storage, other, min_fn)
+
+    @staticmethod
+    def max[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Takes the elementwise maximum of `storage` and `other`, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def max_fn(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return max(lhs, rhs)
+
+        Self._elementwise_binary_with_broadcast(storage, other, max_fn)
 
 
 @always_inline
@@ -2037,3 +2215,99 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorArith):
             return lhs / rhs
 
         Self._elementwise_binary_with_broadcast(storage, other, truediv)
+
+    @staticmethod
+    def min[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Takes the elementwise minimum of `storage` and `other`, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def min_fn(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return min(lhs, rhs)
+
+        Self._elementwise_binary_with_broadcast(storage, other, min_fn)
+
+    @staticmethod
+    def max[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dtype: DType,
+    ](
+        storage: Tuple[
+            Self.StorageType[dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            Self.StorageType[dtype, other_origin, other_address_space],
+            OtherLayoutType,
+        ],
+    ):
+        """Takes the elementwise maximum of `storage` and `other`, in place.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the right-hand storage operand.
+            other_mut: The mutability of the right-hand storage operand.
+            other_origin: The origin of the right-hand storage operand.
+            other_address_space: The address space of the right-hand storage
+                operand.
+            dtype: The element data type of both storages.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the right-hand storage operand and its layout.
+        """
+
+        @always_inline
+        def max_fn(
+            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+        ) -> type_of(lhs):
+            return max(lhs, rhs)
+
+        Self._elementwise_binary_with_broadcast(storage, other, max_fn)
