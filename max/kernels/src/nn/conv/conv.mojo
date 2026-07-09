@@ -3467,7 +3467,7 @@ def _get_cudnn_meta(
         return ptr.as_unsafe_any_origin()
 
     var new_ptr_meta = alloc[CuDNNConvMeta](1)
-    new_ptr_meta.init_pointee_move(CuDNNConvMeta())
+    new_ptr_meta.unsafe_write(CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_key),
@@ -3587,7 +3587,7 @@ def _get_cached_cudnn_meta_nhwc_full(
         return ptr.as_unsafe_any_origin()
 
     var new_ptr_meta = alloc[CachedCuDNNMetaNHWCFull](1)
-    new_ptr_meta.init_pointee_move(CachedCuDNNMetaNHWCFull())
+    new_ptr_meta.unsafe_write(CachedCuDNNMetaNHWCFull())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_key),
@@ -3935,7 +3935,7 @@ def _get_cached_miopen_meta[
         return ptr.as_unsafe_any_origin()
 
     var new_ptr_meta = alloc[CachedMIOpenMeta[conv_rank]](1)
-    new_ptr_meta.init_pointee_move(CachedMIOpenMeta[conv_rank]())
+    new_ptr_meta.unsafe_write(CachedMIOpenMeta[conv_rank]())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_key),
@@ -6041,7 +6041,7 @@ def _conv3d_cudnn[
 
         # Store result in global cache.
         var ptr_entry = alloc[_Conv3dAlgoCacheEntry](1)
-        ptr_entry.init_pointee_move(
+        ptr_entry.unsafe_write(
             _Conv3dAlgoCacheEntry(
                 algo_value=rebind[Int8](algo),
                 workspace_size=workspace_size_var,
@@ -6126,7 +6126,7 @@ def _conv3d_cudnn[
             # calls skip the OOM-prone pick. InsertGlobal overwrites the
             # existing entry keyed by cache_key.
             var retry_entry = alloc[_Conv3dAlgoCacheEntry](1)
-            retry_entry.init_pointee_move(
+            retry_entry.unsafe_write(
                 _Conv3dAlgoCacheEntry(
                     algo_value=rebind[Int8](algo),
                     workspace_size=0,

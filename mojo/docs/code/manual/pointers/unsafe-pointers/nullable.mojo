@@ -33,7 +33,7 @@ def main():
 
     # Assign a real value to test the non-None path.
     var x_ptr = alloc[Int](1)
-    x_ptr.init_pointee_copy(42)
+    x_ptr.unsafe_write(42)
     ptr = x_ptr
     if ptr:
         # ptr is not None — safe to unwrap

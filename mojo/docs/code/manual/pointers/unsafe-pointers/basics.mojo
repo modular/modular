@@ -17,7 +17,7 @@ def test_alloc_and_init():
     # Allocate memory to hold a value
     var ptr = alloc[Int](1)
     # Initialize the allocated memory
-    ptr.init_pointee_copy(100)
+    ptr.unsafe_write(100)
     # end-alloc-and-init
 
     # start-dereference
@@ -48,7 +48,7 @@ def test_alloc_string():
     # start-alloc-string
     var str_ptr = alloc[String](1)
     # str_ptr[] = "Testing" # Undefined behavior!
-    str_ptr.init_pointee_move("Testing")
+    str_ptr.unsafe_write("Testing")
     str_ptr[] += " pointers"  # Works now
     # end-alloc-string
 
@@ -56,11 +56,11 @@ def test_alloc_string():
     str_ptr.free()
 
 
-def test_init_pointee_move_owned():
+def test_unsafe_write_owned():
     var str_ptr = alloc[String](1)
-    # start-init-pointee-move-owned
-    str_ptr.init_pointee_move("Owned string")
-    # end-init-pointee-move-owned
+    # start-unsafe-write-owned
+    str_ptr.unsafe_write("Owned string")
+    # end-unsafe-write-owned
 
     str_ptr.destroy_pointee()
     str_ptr.free()
@@ -79,5 +79,5 @@ def main():
     test_alloc_and_init()
     test_pointer_to_value()
     test_alloc_string()
-    test_init_pointee_move_owned()
+    test_unsafe_write_owned()
     test_pointer_to_string()

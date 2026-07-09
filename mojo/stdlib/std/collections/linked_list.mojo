@@ -415,7 +415,7 @@ struct LinkedList[ElementType: Movable](
         """
         var addr = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
         var value_ptr = UnsafePointer(to=addr[].value)
-        value_ptr.init_pointee_move(value^)
+        value_ptr.unsafe_write(value^)
         addr[].prev() = self._tail
         addr[].next() = Self._NodePointer()
         if self._tail:
@@ -436,7 +436,7 @@ struct LinkedList[ElementType: Movable](
         """
         var node = _make_node[Self.ElementType](value^, None, self._head)
         var addr = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
-        addr.init_pointee_move(node^)
+        addr.unsafe_write(node^)
         if self:
             self._head.value()[].prev() = addr
         else:
@@ -658,7 +658,7 @@ struct LinkedList[ElementType: Movable](
             var node = alloc(
                 Layout[Node[Self.ElementType]].single()
             ).unsafe_leak()
-            node.init_pointee_move(
+            node.unsafe_write(
                 _make_node[Self.ElementType](
                     elem^, Self._NodePointer(), Self._NodePointer()
                 )
@@ -684,7 +684,7 @@ struct LinkedList[ElementType: Movable](
         var next = curr_nn[].next()
         var node = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
         var data = UnsafePointer(to=node[].value)
-        data.init_pointee_move(elem^)
+        data.unsafe_write(elem^)
         node[].next() = next
         node[].prev() = current
         if next:

@@ -99,7 +99,7 @@ def test_unsafepointer_of_move_only_type() raises:
     comptime ObserveType = ObservableMoveOnly[actions_ptr.origin]
 
     var ptr = alloc[ObserveType](1)
-    ptr.init_pointee_move(ObserveType(42, actions_ptr))
+    ptr.unsafe_write(ObserveType(42, actions_ptr))
     assert_equal(len(actions_ptr[0]), 2)
     assert_equal(actions_ptr[0][0], "__init__")
     assert_equal(actions_ptr[0][1], "move ctor", msg="emplace_value")
@@ -124,7 +124,7 @@ def test_unsafepointer_move_pointee_move_count() raises:
 
     var value = MoveCounter(5)
     assert_equal(0, value.move_count)
-    ptr.init_pointee_move(value^)
+    ptr.unsafe_write(value^)
 
     # -----
     # Test that `UnsafePointer.move_pointee` performs exactly one move.
@@ -138,14 +138,14 @@ def test_unsafepointer_move_pointee_move_count() raises:
     assert_equal(2, ptr_2[].move_count)
 
 
-def test_unsafepointer_init_pointee_copy() raises:
+def test_unsafepointer_unsafe_write() raises:
     var ptr = alloc[ExplicitCopyOnly](1)
 
     var orig = ExplicitCopyOnly(5)
     assert_equal(orig.copy_count, 0)
 
     # Test initialize pointee from `Copyable` type
-    ptr.init_pointee_copy(orig)
+    ptr.unsafe_write(copy=orig)
 
     assert_equal(ptr[].value, 5)
     assert_equal(ptr[].copy_count, 1)

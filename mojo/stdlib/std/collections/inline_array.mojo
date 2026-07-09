@@ -455,12 +455,12 @@ struct InlineArray[ElementType: Movable, size: Int](
 
         for _ in range(0, unroll_end, batch_size):
             comptime for _ in range(batch_size):
-                ptr.init_pointee_copy(fill)
+                ptr.unsafe_write(copy=fill)
                 ptr += 1
 
         # Fill the remainder
         comptime for _ in range(unroll_end, Self.size):
-            ptr.init_pointee_copy(fill)
+            ptr.unsafe_write(copy=fill)
             ptr += 1
         debug_assert(
             ptr == (base + Self.size),
@@ -535,7 +535,7 @@ struct InlineArray[ElementType: Movable, size: Int](
             self = Self(uninitialized=True)
             var base = self.unsafe_ptr()
             for idx in range(Self.size):
-                (base + idx).init_pointee_copy(copy.unsafe_get(idx))
+                (base + idx).unsafe_write(copy=copy.unsafe_get(idx))
 
     def __init__(out self, *, deinit move: Self):
         """Move constructs the array from another array.

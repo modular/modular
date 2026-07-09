@@ -788,7 +788,7 @@ struct Span[
                 MutAnyOrigin
             ]()
             (ptr + middle + 1).init_pointee_move_from(middle_prev)
-            middle_prev.init_pointee_move(value)
+            middle_prev.unsafe_write(value)
 
     def apply[
         dtype: DType,
@@ -817,7 +817,7 @@ struct Span[
                     processed += w
 
         for i in range(length - processed):
-            (ptr + processed + i).init_pointee_move(func(ptr[processed + i]))
+            (ptr + processed + i).unsafe_write(func(ptr[processed + i]))
 
     def apply[
         dtype: DType,
@@ -853,7 +853,7 @@ struct Span[
         for i in range(length - processed):
             var vec = ptr[processed + i]
             if cond(vec):
-                (ptr + processed + i).init_pointee_move(func(vec))
+                (ptr + processed + i).unsafe_write(func(vec))
 
     def count[
         dtype: DType,

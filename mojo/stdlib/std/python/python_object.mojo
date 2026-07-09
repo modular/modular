@@ -1585,7 +1585,7 @@ def _unsafe_init[
      type object. Use of any other pointer is invalid.
     """
     ref mojo_obj = obj_ptr.bitcast[PyMojoObject[T]]().value()[]
-    UnsafePointer(to=mojo_obj.mojo_value).init_pointee_move(mojo_value^)
+    UnsafePointer(to=mojo_obj.mojo_value).unsafe_write(mojo_value^)
     mojo_obj.is_initialized = True
 
 

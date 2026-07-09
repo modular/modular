@@ -51,7 +51,7 @@ var ptr = allocation.unsafe_ptr()
 
 # initialize the memory
 for i in range(allocation.layout().count()):
-    (ptr + i).init_pointee_move("🔥")
+    (ptr + i).unsafe_write("🔥")
 
 # print the values
 for string in allocation.unsafe_span():
@@ -288,7 +288,7 @@ struct Allocation[T: AnyType](
         from std.memory.alloc import alloc, Layout
 
         var deletable = alloc(Layout[String](count=4)).into_deletable()
-        deletable.unsafe_ptr().init_pointee_move("hello")
+        deletable.unsafe_ptr().unsafe_write("hello")
 
         # Even though the allocation is automatically cleaned up, destructors
         # must still be manually run!
@@ -355,7 +355,7 @@ struct DeletableAllocation[T: AnyType](RegisterPassable, Writable):
     var deletable = alloc(Layout[Int32](count=4)).into_deletable()
     var ptr = deletable.unsafe_ptr()
     for i in range(4):
-        (ptr + i).init_pointee_move(i)
+        (ptr + i).unsafe_write(i)
     # `deletable` frees its storage when it is destroyed (after its last use).
     ```
     """
@@ -633,7 +633,7 @@ def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
     var allocation = alloc(Layout[Int32](count=4))
     var ptr = allocation.unsafe_ptr()
     for i in range(4):
-        (ptr + i).init_pointee_move(i)
+        (ptr + i).unsafe_write(i)
     dealloc(allocation^)
     ```
     """
@@ -790,7 +790,7 @@ struct Layout[T: AnyType](TrivialRegisterPassable, Writable):
 
         var layout = Layout[Int64].single()
         var allocation = alloc(layout)
-        allocation.unsafe_ptr().init_pointee_move(0)
+        allocation.unsafe_ptr().unsafe_write(0)
         dealloc(allocation^)
         ```
         """

@@ -1651,7 +1651,7 @@ def check_and_get_or_convert_arg[
     try:
         return check_and_get_arg[T](func_name, py_args, index)
     except e:
-        converted_arg_ptr.init_pointee_move(
+        converted_arg_ptr.unsafe_write(
             _try_convert_arg[T](
                 func_name,
                 py_args,
@@ -1696,7 +1696,7 @@ def check_and_get_or_convert_arg[
     try:
         return check_and_get_arg[Int](func_name, py_args, index)
     except e:
-        converted_arg_ptr.init_pointee_move(
+        converted_arg_ptr.unsafe_write(
             _try_convert_arg[Int](
                 func_name,
                 py_args,

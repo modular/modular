@@ -547,6 +547,21 @@ This version is still a work in progress.
 - The `Equatable` trait now allows for positional-only implementations, and
   argument on implementers no longer need to match the trait exactly.
 
+- `UnsafePointer.init_pointee_move()` and `UnsafePointer.init_pointee_copy()`
+  are now deprecated in favor of a single `unsafe_write()` method. Moving a
+  value in works the same as before:
+
+  ```mojo
+  ptr.unsafe_write(value^)
+  ```
+
+  To copy a value in instead of moving it, pass it as the `copy` keyword
+  argument:
+
+  ```mojo
+  ptr.unsafe_write(copy=value)
+  ```
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.

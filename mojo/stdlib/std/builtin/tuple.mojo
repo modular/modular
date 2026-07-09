@@ -99,7 +99,7 @@ struct Tuple[*element_types: Movable](
                 "Tuple default-construction requires all element types to"
                 " conform to `Defaultable`"
             )
-            UnsafePointer(to=self[i]).init_pointee_move({})
+            UnsafePointer(to=self[i]).unsafe_write({})
 
     @always_inline("nodebug")
     def __init__(out self, var *args: *Self.element_types):
@@ -116,7 +116,7 @@ struct Tuple[*element_types: Movable](
         # Move each element into the tuple storage.
         @parameter
         def init_elt[idx: Int](var elt: Self.element_types[idx]):
-            UnsafePointer(to=self[idx]).init_pointee_move(elt^)
+            UnsafePointer(to=self[idx]).unsafe_write(elt^)
 
         args^.consume_elements[init_elt]()
 
@@ -152,7 +152,7 @@ struct Tuple[*element_types: Movable](
             comptime assert conforms_to(Self.element_types[i], Copyable)
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
-            UnsafePointer(to=self[i]).init_pointee_copy(copy[i])
+            UnsafePointer(to=self[i]).unsafe_write(copy=copy[i])
 
     @always_inline("nodebug")
     def __init__(out self, *, deinit move: Self):

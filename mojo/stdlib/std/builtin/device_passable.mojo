@@ -166,7 +166,7 @@ trait DeviceTypeEncoder:
             )
 
         comptime if conforms_to(ValueType, Copyable):
-            dst.bitcast[ValueType]().init_pointee_copy(value)
+            dst.bitcast[ValueType]().unsafe_write(copy=value)
         else:
             comptime assert False, String(
                 t"encode: ValueType '{reflect[ValueType].base_name()}' must"

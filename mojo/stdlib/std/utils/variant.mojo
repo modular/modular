@@ -266,7 +266,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     def __init__[T: Movable](out self, var value: T):
         self = Self(unsafe_uninitialized=())
         self.get_discriminant() = UInt8(_get_type_index[T, *Self.Ts]())
-        self.unsafe_ptr[T]().init_pointee_move(value^)
+        self.unsafe_ptr[T]().unsafe_write(value^)
 
     @always_inline
     def __init__(out self, *, copy: Self):
@@ -278,7 +278,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
             comptime assert conforms_to(T, Copyable)
 
             if self.get_discriminant() == UInt8(i):
-                self.unsafe_ptr[T]().init_pointee_copy(copy.unsafe_ptr[T]()[])
+                self.unsafe_ptr[T]().unsafe_write(copy=copy.unsafe_ptr[T]()[])
                 return
 
     @always_inline
