@@ -53,6 +53,14 @@ RESULTS="${CS_RESULTS_DIR:-$WORKDIR/.derived/cs-findings}/$TOOL"
 mkdir -p "$RESULTS"
 
 COMMON=(
+  # Build the test binaries under the shared CI GPU config (same as the
+  # Nightly Kernel Allocator Sweep). This routes the heavy Mojo compiles to
+  # the remote/cached builders and builds in `opt` rather than the default
+  # `dbg`, so the `--debug-level line-tables` compile of large kernels (e.g.
+  # test_flash_attention) no longer balloons to ~200GB RSS and OOMs the
+  # runner ("lost communication"). `opt` also matches the "keep ptxas -O
+  # optimizations" intent noted above.
+  --config=ci-local-gpu
   --test_output=errors --curses=no --noshow_progress
   --nocache_test_results --keep_going
   "--test_timeout=900,2400,5400,10800"
@@ -87,15 +95,24 @@ esac
 LOG="$RESULTS/run.log"
 echo ">>> tool=$TOOL targets=$# results=$RESULTS" | tee "$LOG"
 
+# Targets go after a `--` separator so per-lane excludes expressed as negative
+# patterns (e.g. `-//pkg:target`) are parsed as target patterns, not flags.
 if [ "$TOOL" = "redzone" ]; then
   # No compute-sanitizer; the allocator validates guard patterns at free time.
-  ./bazelw test "$@" "${COMMON[@]}" \
-    --test_env=MODULAR_DEBUG_DEVICE_ALLOCATOR=out-of-bounds 2>&1 | tee -a "$LOG"
+  ./bazelw test "${COMMON[@]}" \
+    --test_env=MODULAR_DEBUG_DEVICE_ALLOCATOR=out-of-bounds \
+    -- "$@" 2>&1 | tee -a "$LOG"
 else
   RUNUNDER="$CS --tool $TOOL --target-processes all --launch-timeout 0 --error-exitcode 1 $EXTRA"
-  ./bazelw test "$@" "${COMMON[@]}" $POOL \
+  # Exclude filecheck tests under the compute-sanitizer lanes: they can't run
+  # under `--run_under`, and one (test_gather_nd_oob) is a deliberate
+  # expect_crash OOB that would surface a spurious memcheck "out of bounds"
+  # finding. Restrict to `gpu`-tagged tests while we're at it.
+  ./bazelw test "${COMMON[@]}" $POOL \
+    --test_tag_filters=gpu,-filecheck \
     --run_under="$RUNUNDER" \
-    --mojocopt=--debug-level --mojocopt=line-tables 2>&1 | tee -a "$LOG"
+    --mojocopt=--debug-level --mojocopt=line-tables \
+    -- "$@" 2>&1 | tee -a "$LOG"
 fi
 
 # --- Extract findings from each target's test.log -----------------------------
@@ -104,6 +121,16 @@ fi
 # that count also tallies "Internal Sanitizer Error" (the SM100 nvjet/cuBLAS
 # instrumentation gap), which would false-positive on every GEMM test that uses
 # a vendor reference. Those are reported separately as coverage gaps below.
+#
+# NOTE: we deliberately gate on the *device-side* initcheck marker
+# ("Uninitialized __global__ memory read" -- a real in-kernel read of
+# uninitialized global memory) and NOT on the *host-side* "Host API memory
+# access error / Uninitialized access ... on access by cudaMemcpy source".
+# The latter is dominated by benign noise: kernels legitimately leave masked
+# or padded output positions unwritten and the tests copy the whole buffer
+# back to host, which trips initcheck on ~30 nn tests. Gating on it would make
+# the lane permanently red on non-bugs; the device-side marker is the
+# high-signal one (it already catches e.g. the qslice_conv3d uninit read).
 MARKERS='Invalid __(global|shared|local|device)__|Race reported|Barrier error|Uninitialized __global__|misaligned address|is out of bounds|MemoryManager detected a device buffer (under|over)flow|CUDA_EXCEPTION|illegal memory access'
 echo "" | tee -a "$LOG"
 echo "==================== FINDINGS SUMMARY ($TOOL) ====================" | tee -a "$LOG"
@@ -131,3 +158,9 @@ done
 [ "$found_any" = 0 ] && echo "(no findings markers in scanned test logs)" | tee -a "$LOG"
 echo "==================================================================" | tee -a "$LOG"
 echo ">>> full logs under $RESULTS" | tee -a "$LOG"
+
+# Exit non-zero when a real violation marker was found, so this doubles as a CI
+# gate (and gives local callers a meaningful exit status). Internal Sanitizer
+# Errors and other bazel failures are intentionally NOT gated here -- they are
+# coverage gaps (e.g. SM100 cuBLAS) to triage from the logs, not regressions.
+exit "$found_any"
