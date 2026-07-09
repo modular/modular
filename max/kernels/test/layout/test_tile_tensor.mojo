@@ -1757,3 +1757,14 @@ def test_exp_scale() raises:
     assert_almost_equal(a[0, 1], exp(Float32(2.0)))
     assert_almost_equal(a[1, 0], exp(Float32(-2.0)))
     assert_almost_equal(a[1, 1], exp(Float32(1.0)))
+
+
+def test_tuple_getter() raises:
+    var data = InlineArray[Float32, 4](fill=0)
+    var a = TileTensor(data, row_major[2, 2]())
+    comptime for i in range(data.size):
+        data[i] = Float32(i)
+
+    assert_equal(a[(1, 1)], 3)
+    var a10 = (1, 0)
+    assert_equal(a[a10], 2)

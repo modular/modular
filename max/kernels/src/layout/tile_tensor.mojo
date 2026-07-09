@@ -623,6 +623,26 @@ struct TileTensor[
                 UnsafePointer(to=coord[i]).unsafe_write(coords[i])
             return self.load(coord)
 
+    @always_inline("nodebug")
+    def __getitem__[
+        *CoordLikes: CoordLike
+    ](self, coords: Tuple[*CoordLikes]) -> Self.ElementType:
+        """Retrieve a single element from the tensor at the specified coordinates.
+
+        Accepts either a single `Coord` argument or multiple scalar
+        `CoordLike` arguments packed into a `Coord`.
+
+        Parameters:
+            CoordLikes: The types of each index argument (`CoordLike`).
+
+        Args:
+            coords: The tuple containing coordinates specifying the element's position.
+
+        Returns:
+            The element at the specified position.
+        """
+        return self[Coord(coords)]
+
     @always_inline
     def slice[
         *IndexTypes: CoordLike
