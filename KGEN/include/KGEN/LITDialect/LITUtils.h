@@ -36,6 +36,9 @@ class ErrorOr;
 namespace KGEN {
 class FnEffects;
 class ParamDeclAttr;
+class ParamDeclRefAttr;
+class ParamIndexRefAttr;
+class SugarAttr;
 class ParamDeclArrayAttr;
 class ParameterEvaluator;
 class ParameterExprArrayAttr;
@@ -44,6 +47,7 @@ enum class PassingKind : uint32_t;
 enum class VariadicKind : uint32_t;
 
 namespace LIT {
+class ImplicitOriginRefAttr;
 
 /// This specifies how the argument or parameter is passed (e.g. `**x`).  This
 /// is not the same as PassingKind or ArgConventions.
@@ -73,12 +77,47 @@ bool isFirstLevelTypeExpr(TypedAttr attr);
 
 /// Print/Parse a (potentially) parametric mutability specifier and then a
 /// value.  The three forms are: "imm expr", "mut expr", "mut=<expr>, expr"
-/// without quotes.
+/// without quotes. This prints "kgen style" not user style.
 ParseResult parseOriginParamValue(AsmParser &p, TypedAttr &result);
 void printOriginParamValue(AsmPrinter &p, TypedAttr value);
 inline void printOriginParamValue(AsmPrinter &p, Operation *, TypedAttr value) {
   printOriginParamValue(p, value);
 }
+
+/// Printer for origin parameter expressions (for example inside
+/// `origin_of(x)`), suitable for use in user-facing diagnostics. Subclasses can
+/// customize how declaration references and other context-sensitive pieces are
+/// printed.
+class OriginPrinter {
+public:
+  virtual ~OriginPrinter() = default;
+
+  /// When true, use diagnostic pretty-printing (for example elide mutcast
+  /// wrappers and use `origin_of` syntax).
+  virtual bool isPrettyPrint() const { return true; }
+
+  /// Print a non-origin parameter (interior origin names, fallback cases).
+  virtual void printParam(raw_ostream &os, TypedAttr param) const;
+
+  /// Print a ParamDeclRefAttr as an origin reference.
+  virtual void printDeclRef(raw_ostream &os, ParamDeclRefAttr declRef) const;
+
+  /// Resolve a ParamIndexRefAttr to a ParamDeclRefAttr when possible.
+  virtual ParamDeclRefAttr resolveIndexRef(raw_ostream &os,
+                                           ParamIndexRefAttr idxRef) const;
+
+  /// Resolve an ImplicitOriginRefAttr to an argument name when possible.
+  virtual std::optional<llvm::StringRef>
+  resolveImplicitOriginRef(raw_ostream &os,
+                           ImplicitOriginRefAttr originRef) const;
+
+  /// Choose the SugarAttr operand to print.
+  virtual TypedAttr prepareSugarParam(raw_ostream &os, SugarAttr sugar) const;
+
+  /// Print an origin parameter expression. When \p elideOriginOf is true, omit
+  /// the outer `origin_of(` / `)` wrapper.
+  void print(raw_ostream &os, TypedAttr param, bool elideOriginOf) const;
+};
 
 /// Pretty print a nested symbol reference to a name.
 void printNestedSymbolReference(raw_ostream &os, SymbolRefAttr symbol);

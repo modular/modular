@@ -19,6 +19,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/MDialect/ParserUtils.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/IR/SymbolTable.h"
 #include "llvm/ADT/StringExtras.h"
@@ -105,6 +106,174 @@ void LIT::printOriginParamValue(AsmPrinter &p, TypedAttr value) {
 
   // Now that the type is specified, print the origin value itself.
   printParamValue(p, value);
+}
+
+void OriginPrinter::printParam(raw_ostream &os, TypedAttr param) const {
+  StreamAsmPrinter p(os);
+  printParamValue(p, param, {});
+}
+
+void OriginPrinter::printDeclRef(raw_ostream &os,
+                                 ParamDeclRefAttr declRef) const {
+  if (isPrettyPrint())
+    os << demangleParameterName(declRef.getName());
+  else
+    printAsMojoStringLiteral(declRef.getName(), os);
+}
+
+ParamDeclRefAttr
+OriginPrinter::resolveIndexRef(raw_ostream &os,
+                               ParamIndexRefAttr idxRef) const {
+  return {};
+}
+
+std::optional<llvm::StringRef>
+OriginPrinter::resolveImplicitOriginRef(raw_ostream &os,
+                                        ImplicitOriginRefAttr originRef) const {
+  return std::nullopt;
+}
+
+TypedAttr OriginPrinter::prepareSugarParam(raw_ostream &os,
+                                           SugarAttr sugar) const {
+  return sugar.getExpanded();
+}
+
+void OriginPrinter::print(raw_ostream &os, TypedAttr param,
+                          bool elideOriginOf) const {
+  if (auto originField = dyn_cast<OriginFieldAttr>(param)) {
+    if (isa<StaticOriginAttr>(originField.getBase())) {
+      if (originField.getField().str() == "__constants__" &&
+          originField.getType().isMutableKnown(false)) {
+        os << "StaticConstantOrigin";
+        return;
+      }
+    }
+  }
+
+  if (auto originUnion = dyn_cast<OriginUnionAttr>(param)) {
+    if (originUnion.getNumOperands() == 0) {
+      if (originUnion.getType().isMutableKnown(true))
+        os << "MutUntrackedOrigin";
+      else if (originUnion.getType().isMutableKnown(false))
+        os << "ImmutUntrackedOrigin";
+      else {
+        os << "UntrackedOrigin[";
+        printParam(os, originUnion.getType().getIsMutable());
+        os << "]";
+      }
+      return;
+    }
+
+    if (!isPrettyPrint())
+      os << '{';
+    else if (!elideOriginOf)
+      os << "origin_of(";
+
+    llvm::interleaveComma(originUnion.getOperands(), os, [&](TypedAttr elt) {
+      print(os, elt, /*elideOriginOf=*/true);
+    });
+
+    if (!isPrettyPrint())
+      os << '}';
+    else if (!elideOriginOf)
+      os << ')';
+    return;
+  }
+
+  if (auto mutcast = dyn_cast<OriginMutCastAttr>(param)) {
+    if (isPrettyPrint())
+      return print(os, mutcast.getOperand(), elideOriginOf);
+
+    if (mutcast.getType().isMutableKnown(false))
+      os << "(muttoimm ";
+    else
+      os << "(mutcast ";
+    print(os, mutcast.getOperand(), elideOriginOf);
+    os << ")";
+    return;
+  }
+
+  if (auto anyOrig = dyn_cast<AnyOriginAttr>(param)) {
+    if (anyOrig.getType().isMutableKnown(true))
+      os << "MutAnyOrigin";
+    else if (anyOrig.getType().isMutableKnown(false))
+      os << "ImmutAnyOrigin";
+    else
+      os << "SomeAnyOrigin";
+    return;
+  }
+
+  if (auto comptimeOrig = dyn_cast<ComptimeOriginAttr>(param)) {
+    os << "ComptimeOrigin";
+    return;
+  }
+
+  if (isa<UnboundAttr>(param)) {
+    os << "_";
+    return;
+  }
+
+  if (auto sugar = dyn_cast<SugarAttr>(param))
+    return print(os, prepareSugarParam(os, sugar), elideOriginOf);
+
+  if (auto poa = dyn_cast<ParamOperatorAttr>(param)) {
+    assert(poa.getOpcode() == POC::Rebind && "unexpected operator");
+    return print(os, poa.getOperand(0), elideOriginOf);
+  }
+
+  if (auto originRef = dyn_cast<ImplicitOriginRefAttr>(param)) {
+    if (auto argName = resolveImplicitOriginRef(os, originRef)) {
+      os << *argName;
+      return;
+    }
+    os << "*[" << originRef.getDepth() << ',' << originRef.getIndex() << "]";
+    return;
+  }
+
+  // Otherwise, this is a reference to a declaration or parameter.
+  if (isPrettyPrint() && !elideOriginOf)
+    os << "origin_of(";
+
+  // RAII type to print the closing paren when this scope returns.
+  struct ParenPrinter {
+    raw_ostream &os;
+    bool printParen;
+    ~ParenPrinter() {
+      if (printParen)
+        os << ")";
+    }
+  };
+  ParenPrinter parenGuard{os, isPrettyPrint() && !elideOriginOf};
+
+  if (auto originField = dyn_cast<OriginFieldAttr>(param)) {
+    print(os, originField.getBase(), /*elideOriginOf=*/true);
+    os << '.' << originField.getField().str();
+    return;
+  }
+
+  if (auto interior = dyn_cast<InteriorOriginAttr>(param)) {
+    print(os, interior.getBase(), /*elideOriginOf=*/true);
+    os << "[";
+    printParam(os, interior.getUserName());
+    os << "]";
+    return;
+  }
+
+  if (auto declRef = dyn_cast<ParamDeclRefAttr>(param)) {
+    printDeclRef(os, declRef);
+    return;
+  }
+
+  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param)) {
+    if (auto declRef = resolveIndexRef(os, indexRef))
+      print(os, declRef, elideOriginOf);
+    else
+      printParam(os, param);
+    return;
+  }
+
+  param.dump();
+  llvm_unreachable("unknown origin parameter");
 }
 
 ParseResult LIT::parseOriginParamValue(AsmParser &p, TypedAttr &result) {

@@ -1422,174 +1422,56 @@ void ASTType::printRefOriginParam(raw_ostream &os, TypedAttr param,
 /// in an `origin_of(x)` body.
 void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
                                SharedState *diagShared, bool elideOriginOf) {
+  struct ASTOriginPrinter : OriginPrinter {
+    SharedState *diagShared;
 
-  if (auto originField = dyn_cast<OriginFieldAttr>(param)) {
-    if (isa<StaticOriginAttr>(originField.getBase())) {
-      if (originField.getField().str() == "__constants__" &&
-          originField.getType().isMutableKnown(false)) {
-        // TODO(OriginDepTypes): Remove these.
-        os << "StaticConstantOrigin";
+    explicit ASTOriginPrinter(SharedState *diagShared)
+        : diagShared(diagShared) {}
+    bool isPrettyPrint() const override { return diagShared != nullptr; }
+    void printParam(raw_ostream &os, TypedAttr p) const override {
+      ASTType::printParam(os, p, {diagShared});
+    }
+    void printDeclRef(raw_ostream &os,
+                      ParamDeclRefAttr declRef) const override {
+      if (!diagShared) {
+        printAsMojoStringLiteral(declRef.getName(), os);
         return;
       }
-    }
-  }
-
-  if (auto originUnion = dyn_cast<OriginUnionAttr>(param)) {
-    if (originUnion.getNumOperands() == 0) {
-      if (originUnion.getType().isMutableKnown(true))
-        os << "MutUntrackedOrigin";
-      else if (originUnion.getType().isMutableKnown(false))
-        os << "ImmutUntrackedOrigin";
-      else {
-        os << "UntrackedOrigin[";
-        printParam(os, originUnion.getType().getIsMutable(), {diagShared});
-        os << "]";
+      if (ASTDecl *ctxDecl =
+              diagShared->declResolver->getDiagnosticDeclContext()) {
+        if (sugarIsa<OriginType>(declRef.getType())) {
+          IREmitter emitter(*ctxDecl, ExprContext::EC_Origin);
+          TypedAttr paramVal =
+              emitter.getStdlibOriginOf(declRef, ctxDecl->getLoc());
+          if (auto result = dyn_cast<ParamDeclRefAttr>(paramVal))
+            declRef = result;
+        }
       }
-      return;
+
+      prettyPrintParamName(declRef, *diagShared, os);
     }
 
-    if (!diagShared)
-      os << '{';
-    else if (!elideOriginOf)
-      os << "origin_of(";
-
-    llvm::interleaveComma(originUnion.getOperands(), os, [&](TypedAttr param) {
-      printOriginParam(os, param, diagShared, /*elideOriginOf=*/true);
-    });
-
-    if (!diagShared)
-      os << '}';
-    else if (!elideOriginOf)
-      os << ')';
-    return;
-  }
-
-  if (auto mutcast = dyn_cast<OriginMutCastAttr>(param)) {
-    if (diagShared)
-      return printOriginParam(os, mutcast.getOperand(), diagShared,
-                              elideOriginOf);
-
-    if (mutcast.getType().isMutableKnown(false))
-      os << "(muttoimm ";
-    else
-      os << "(mutcast ";
-    printOriginParam(os, mutcast.getOperand(), diagShared, elideOriginOf);
-    os << ")";
-    return;
-  }
-
-  if (auto anyOrig = dyn_cast<AnyOriginAttr>(param)) {
-    // TODO(OriginDepTypes): Remove these.
-    if (anyOrig.getType().isMutableKnown(true))
-      os << "MutAnyOrigin";
-    else if (anyOrig.getType().isMutableKnown(false))
-      os << "ImmutAnyOrigin";
-    else
-      os << "SomeAnyOrigin";
-    return;
-  }
-
-  if (auto comptimeOrig = dyn_cast<ComptimeOriginAttr>(param)) {
-    os << "ComptimeOrigin";
-    return;
-  }
-
-  if (isa<UnboundAttr>(param)) {
-    os << "_";
-    return;
-  }
-
-  if (auto sugar = dyn_cast<SugarAttr>(param)) {
-    if (diagShared)
-      param = sugar.getSugared();
-    else
-      param = sugar.getExpanded();
-    return printOriginParam(os, param, diagShared, elideOriginOf);
-  }
-
-  if (auto poa = dyn_cast<ParamOperatorAttr>(param)) {
-    assert(poa.getOpcode() == POC::Rebind && "unexpected operator");
-    return printOriginParam(os, poa.getOperand(0), diagShared, elideOriginOf);
-  }
-
-  if (auto originRef = dyn_cast<ImplicitOriginRefAttr>(param)) {
-    if (StringAttr argName =
-            findArgNameForImplicitOriginRef(originRef, diagShared)) {
-      os << argName.strref();
-      return;
+    ParamDeclRefAttr resolveIndexRef(raw_ostream &os,
+                                     ParamIndexRefAttr idxRef) const override {
+      return findDeclRefForIndexRef(idxRef, diagShared);
     }
-    os << "*[" << originRef.getDepth() << ',' << originRef.getIndex() << "]";
-    return;
-  }
 
-  // Otherwise, this is a reference to a declaration or parameter.
-  if (diagShared && !elideOriginOf)
-    os << "origin_of(";
+    std::optional<llvm::StringRef>
+    resolveImplicitOriginRef(raw_ostream &os,
+                             ImplicitOriginRefAttr originRef) const override {
+      if (StringAttr argName =
+              findArgNameForImplicitOriginRef(originRef, diagShared))
+        return argName.strref();
+      return std::nullopt;
+    }
 
-  // RAII type to print the closing paren when this scope returns.
-  struct ParenPrinter {
-    raw_ostream &os;
-    bool printParen;
-    ~ParenPrinter() {
-      if (printParen)
-        os << ")";
+    TypedAttr prepareSugarParam(raw_ostream &os,
+                                SugarAttr sugar) const override {
+      return diagShared ? sugar.getSugared() : sugar.getExpanded();
     }
   };
-  ParenPrinter x{os, diagShared && !elideOriginOf};
 
-  if (auto originField = dyn_cast<OriginFieldAttr>(param)) {
-    printOriginParam(os, originField.getBase(), diagShared,
-                     /*elideOriginOf=*/true);
-    os << '.' << originField.getField().str();
-    return;
-  }
-
-  if (auto interior = dyn_cast<InteriorOriginAttr>(param)) {
-    printOriginParam(os, interior.getBase(), diagShared,
-                     /*elideOriginOf=*/true);
-    os << "[";
-    printParam(os, interior.getUserName(), {diagShared});
-    os << "]";
-    return;
-  }
-
-  if (auto declRef = dyn_cast<ParamDeclRefAttr>(param)) {
-    // Escape any weird characters in the parameter name that might have
-    // been introduced with backticks.
-    if (!diagShared) {
-      printAsMojoStringLiteral(declRef.getName(), os);
-      return;
-    }
-
-    // If this is a !lit.origin parameter we are complaining about, see if we
-    // can find the corresponding Origin parameter.  This reduces us complaining
-    // about x._mlir_origin.
-    if (ASTDecl *ctxDecl =
-            diagShared->declResolver->getDiagnosticDeclContext()) {
-      if (sugarIsa<OriginType>(declRef.getType())) {
-        IREmitter emitter(*ctxDecl, ExprContext::EC_Origin);
-        TypedAttr paramVal =
-            emitter.getStdlibOriginOf(declRef, ctxDecl->getLoc());
-        if (auto result = dyn_cast<ParamDeclRefAttr>(paramVal))
-          declRef = result;
-      }
-    }
-
-    prettyPrintParamName(declRef, *diagShared, os);
-    return;
-  }
-
-  // If this is a ParamIndexRefAttr, try to resolve it and pretty print it.
-  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param)) {
-    if (auto declRef = findDeclRefForIndexRef(indexRef, diagShared))
-      printOriginParam(os, declRef, diagShared, elideOriginOf);
-    else
-      printParam(os, param, {diagShared});
-    return;
-  }
-
-  param.dump();
-  llvm_unreachable("unknown origin parameter");
+  ASTOriginPrinter(diagShared).print(os, param, elideOriginOf);
 }
 
 /// Given a parameter value of MLIR wrapper type like Bool or Int or DType,

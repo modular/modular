@@ -32,7 +32,7 @@ struct MyListInterior[T: AnyType]:
     ) -> ref[self.data.unsafe_origin_owned_rebase[origin_of(self), "element"](idx)[]] Self.T:
         return self.data.unsafe_origin_owned_rebase[origin_of(self), "element"](idx)[]
 
-def test0():
+def test_invalidate_base():
     # expected-note @+1 {{'list' declared here}}
     var list = MyListInterior[Int]()
 
@@ -61,7 +61,7 @@ struct TwoIntLists:
       self.second = MyListInterior[Int]()
 
 # Test that we can handle nested field sensitivity correctly.
-def test2():
+def test_field_sensitive_nested_invalidation():
     var list_of_two_intlists = MyListInterior[TwoIntLists]()
     ref first_list = list_of_two_intlists[0].first
     ref second_list = list_of_two_intlists[0].second
