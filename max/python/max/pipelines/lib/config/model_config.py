@@ -682,15 +682,26 @@ class MAXModelConfig(MAXModelConfigBase):
                 encoding=self._applied_dtype_cast_from
             )
 
-        if not weight_files and self.quantization_encoding in (
-            "float16",
-            "bfloat16",
+        if (
+            not weight_files
+            and self.subfolder is not None
+            and self.quantization_encoding in ("float16", "bfloat16")
         ):
             # A float16/bfloat16 graph can load float32 weights cast at load
-            # time by the component's weight adapter.  This mirrors the
-            # architecture-aware path in ``_resolve_weight_path`` and is what
-            # lets a mixed-precision diffusion pipeline run, e.g., a bfloat16
-            # VAE whose checkpoint ships float32 safetensors.
+            # time by the component's weight adapter, which lets a
+            # mixed-precision diffusion pipeline run (e.g. a bfloat16 text
+            # encoder whose checkpoint ships float32 safetensors).
+            #
+            # Scoped to diffuser sub-components (``subfolder`` set): they skip
+            # architecture validation, so this best-effort pass is their only
+            # resolution step. Architecture-validated models (LLMs and
+            # speculative-decoding draft models) must NOT bind weight_path to
+            # the float32 checkpoint here -- the downstream given-encoding
+            # validation would then flip quantization_encoding to float32 and
+            # drop the requested bfloat16 (breaking e.g. Kimi-K2.6 Eagle3). For
+            # those, the identical float32->bfloat16 fallback in
+            # ``_resolve_weight_path`` runs after the cast bookkeeping is
+            # recorded and resolves it correctly.
             weight_files = self.huggingface_weight_repo.files_for_encoding(
                 encoding="float32"
             )
