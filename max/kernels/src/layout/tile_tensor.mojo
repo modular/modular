@@ -35,8 +35,8 @@ from .swizzle import Swizzle
 
 from .tensor_storage import (
     DevicePointerStorage,
+    TensorOps,
     TensorStorage,
-    TensorArith,
     PointerStorage,
 )
 from .tile_layout import (
@@ -2664,7 +2664,7 @@ struct TileTensor[
     @always_inline
     def __iadd__(
         self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
-    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """Adds `rhs` into this tensor elementwise, in place.
 
         Args:
@@ -2678,7 +2678,7 @@ struct TileTensor[
     @always_inline
     def __imul__(
         self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
-    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """Multiplies this tensor by `rhs` elementwise, in place.
 
         Args:
@@ -2693,7 +2693,7 @@ struct TileTensor[
     @always_inline
     def __isub__(
         self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
-    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """Subtracts `rhs` from this tensor elementwise, in place.
 
         Args:
@@ -2707,7 +2707,7 @@ struct TileTensor[
     @always_inline
     def __ifloordiv__(
         self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
-    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """Floor-divides this tensor by `rhs` elementwise, in place.
 
         Args:
@@ -2722,7 +2722,7 @@ struct TileTensor[
     @always_inline
     def __itruediv__(
         self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
-    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """True-divides this tensor by `rhs` elementwise, in place.
 
         Args:
@@ -2737,7 +2737,7 @@ struct TileTensor[
     @always_inline
     def min(
         self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
-    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """Takes the elementwise minimum with `rhs`, in place.
 
         Args:
@@ -2752,7 +2752,7 @@ struct TileTensor[
     @always_inline
     def max(
         self, rhs: TileTensor[Self.dtype, Storage=Self.Storage, ...]
-    ) where Self.mut and conforms_to(Self.Storage, TensorArith):
+    ) where Self.mut and conforms_to(Self.Storage, TensorOps):
         """Takes the elementwise maximum with `rhs`, in place.
 
         Args:

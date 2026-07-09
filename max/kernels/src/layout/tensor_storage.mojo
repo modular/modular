@@ -559,7 +559,7 @@ def _copy_from[
             )
 
 
-trait TensorArith(TensorStorage):
+trait TensorOps(TensorStorage):
     """Extends `TensorStorage` with in-place elementwise arithmetic.
 
     A conforming type provides the same non-owning storage handle as
@@ -856,8 +856,8 @@ trait TensorArith(TensorStorage):
         ...
 
 
-struct PointerStorage[*, element_width: Int = 1](TensorArith):
-    """Implements `TensorArith` backed by a raw `UnsafePointer`.
+struct PointerStorage[*, element_width: Int = 1](TensorOps):
+    """Implements `TensorOps` backed by a raw `UnsafePointer`.
 
     `PointerStorage` is the default storage policy for `TileTensor`. Its
     `StorageType` handle is a plain `UnsafePointer`, and every operation is
@@ -1765,8 +1765,8 @@ def _device_leaf_ptr[
         abort("DevicePointerStorage operations are not supported on host")
 
 
-struct DevicePointerStorage[*, element_width: Int = 1](TensorArith):
-    """Implements `TensorArith` backed by a `DevicePointer` handle.
+struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
+    """Implements `TensorOps` backed by a `DevicePointer` handle.
 
     `DevicePointerStorage` is the device-pointer-backed analogue of
     `PointerStorage`, accepting the same `element_width` parameter. Its
