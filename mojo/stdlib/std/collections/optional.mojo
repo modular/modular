@@ -941,9 +941,7 @@ struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
 struct _NicheableOptionalRegStorage[
     T: TrivialRegisterPassable & UnsafeNicheable
 ](TrivialRegisterPassable, _OptionalRegStorageTraits):
-    comptime StorageType: TrivialRegisterPassable = downcast[
-        Self.T, UnsafeCustomNicheStorage
-    ].NicheStorage if conforms_to(
+    comptime StorageType: TrivialRegisterPassable = Self.T.NicheStorage if conforms_to(
         Self.T, UnsafeCustomNicheStorage
     ) else StaticTuple[
         Self.T, 1
@@ -980,9 +978,7 @@ struct _NicheableOptionalRegStorage[
 
 comptime _OptionalRegStorageFor[
     T: TrivialRegisterPassable
-]: _OptionalRegStorageTraits = _NicheableOptionalRegStorage[
-    downcast[T, TrivialRegisterPassable & UnsafeNicheable]
-] if conforms_to(
+]: _OptionalRegStorageTraits = _NicheableOptionalRegStorage[T] if conforms_to(
     T, UnsafeNicheable
 ) else _DefaultOptionalRegStorage[
     T

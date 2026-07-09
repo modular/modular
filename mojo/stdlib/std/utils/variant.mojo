@@ -143,9 +143,9 @@ struct _CustomNicheStorage[Storage: UnsafeCustomNicheStorage](
         )
 
 
-comptime _NicheStorageFor[T: AnyType] = _CustomNicheStorage[
-    downcast[T, UnsafeCustomNicheStorage]
-] if conforms_to(T, UnsafeCustomNicheStorage) else _DefaultNicheStorage[T]
+comptime _NicheStorageFor[T: AnyType] = _CustomNicheStorage[T] if conforms_to(
+    T, UnsafeCustomNicheStorage
+) else _DefaultNicheStorage[T]
 
 
 struct _NichedOptionalStorage[
@@ -352,7 +352,7 @@ comptime _IsNicheEligible[*Ts: AnyType]: Bool = (Ts.size == 2) and (
 where one is `UnsafeNicheable` and the other is an empty type."""
 
 comptime _NichedStorageFor[*Ts: AnyType] = _NichedOptionalStorage[
-    downcast[Ts[0], UnsafeNicheable],
+    Ts[0],
     downcast[Ts[1], TrivialRegisterPassable],
 ] if conforms_to(Ts[0], UnsafeNicheable) else _NichedOptionalStorage[
     downcast[Ts[1], UnsafeNicheable],

@@ -272,7 +272,7 @@ struct InlineArray[ElementType: Movable, size: Int](
     """The underlying storage for the array."""
 
     comptime _DeviceElementType: Movable = downcast[
-        downcast[Self.ElementType, DevicePassable].device_type, Movable
+        Self.ElementType.device_type, Movable
     ] if conforms_to(Self.ElementType, DevicePassable) else Self.ElementType
     """The device-side element type: the element's `device_type` when it is
     `DevicePassable`, otherwise the element type itself."""
