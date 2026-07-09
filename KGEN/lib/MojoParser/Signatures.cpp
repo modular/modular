@@ -2136,6 +2136,34 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
                           &tcSignature.paramList.deferredTypingContext);
     resultType = typeEmitter.emitExprType(resultArg.typeExpr);
 
+    // If the resultType is a generated type, ensure that it is convertible to a
+    // concrete type as we do not allow runtime generators, and we do not
+    // auto-parameterize on result type.
+    if (auto paramType = sugarDynCastIfPresent<ParamType>(resultType)) {
+      if (auto genType =
+              sugarDynCast<GeneratorType>(paramType.getParam().getType())) {
+        if (!genType.getInputParamTypes().empty()) {
+          shared.emitError(resultArg.typeExpr->getLoc())
+              << "result type cannot be parametric";
+          resultType = shared.getTypeCheckErrorType();
+        } else {
+          // If the generator type has no input parameters, we're good as long
+          // as any constraints on the generator can be discharged by the
+          // function's constraints.
+          for (ConstraintAttr c : genType.getBodyConstraints())
+            tcSignature.paramList.deferredTypingContext.deferredConstraints
+                .push_back({c, resultArg.typeExpr->getLoc()});
+          llvm::BitVector discharged(genType.getBodyConstraints().size(), true);
+          // Record the type as the discharged body type.
+          resultType = BindParamsAttr::get(
+              shared.getContext(), paramType.getParam(), /*paramValues=*/{},
+              /*discharged=*/
+              getDenseBoolArrayAttr(shared.getContext(), discharged),
+              &shared.getEvaluationContext());
+        }
+      }
+    }
+
     // On error, a diagnostic will be emitted, but we don't want to kill the
     // entire function definition.  We won't be able to correctly type check any
     // calls to this function though.

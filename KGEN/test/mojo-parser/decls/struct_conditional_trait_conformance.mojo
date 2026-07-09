@@ -378,3 +378,81 @@ struct Node[ElementType: ImplicitlyCopyable](Movable):
 
         # CHECK: lit.memcpy %value, %0
         self.value = value
+
+
+# ===========================================================================
+# Conditional `comptime` member referenced by a conditional method (MOCO-4214).
+# ===========================================================================
+trait Moco4214Op:
+    comptime Output: AnyType
+
+    def operate(self) -> Self.Output:
+        ...
+
+
+# CHECK-LABEL: lit.struct.decl @Moco4214List
+@fieldwise_init
+struct Moco4214List[T: AnyType](
+    Moco4214Op where conforms_to(T, Movable),
+):
+    comptime Output: AnyType where conforms_to(Self.T, Movable) = Int
+
+    # CHECK-LABEL: lit.fn @"operate(struct_conditional_trait_conformance::Moco4214List
+    # CHECK-SAME: -> !Int
+    def operate(self) -> Self.Output where conforms_to(Self.T, Movable):
+        return Int(123)
+
+
+struct Moco4214Payload(Movable):
+    var value: Int
+
+    def __init__(out self, value: Int):
+        self.value = value
+
+
+# --- Conditional `comptime` member referenced by a method ARGUMENT type. ----
+trait Moco4214ArgOp:
+    comptime Output: AnyType
+
+    def consume(self, x: Self.Output) -> Int:
+        ...
+
+
+# CHECK-LABEL: lit.struct.decl @Moco4214ArgList
+@fieldwise_init
+struct Moco4214ArgList[T: AnyType](
+    Moco4214ArgOp where conforms_to(T, Movable),
+):
+    comptime Output: AnyType where conforms_to(Self.T, Movable) = Int
+
+    # `x`'s block argument must be retyped to the witness `!Int`, so the body
+    # can return it where a concrete `Int` is expected.
+    # CHECK-LABEL: lit.fn @"consume(struct_conditional_trait_conformance::Moco4214ArgList
+    # CHECK-SAME: %x: !Int) -> !Int
+    def consume(self, x: Self.Output) -> Int where conforms_to(Self.T, Movable):
+        return x
+
+
+# --- Conditional `comptime` member as a `raises` method's RESULT type. ------
+# A `raises` method synthesizes both an `__error__` and a `__result__` block
+# argument; normalization must keep `__result__` in sync with `fullArgTypes`
+# even with `__error__` sitting in between it and the regular arguments.
+trait Moco4214RaiseOp:
+    comptime Output: AnyType
+
+    def make(self) raises -> Self.Output:
+        ...
+
+
+# CHECK-LABEL: lit.struct.decl @Moco4214RaiseList
+@fieldwise_init
+struct Moco4214RaiseList[T: AnyType](
+    Moco4214RaiseOp where conforms_to(T, Movable),
+):
+    comptime Output: AnyType where conforms_to(Self.T, Movable) = Moco4214Payload
+
+    # CHECK-LABEL: lit.fn @"make(struct_conditional_trait_conformance::Moco4214RaiseList
+    # CHECK-SAME: %__error__: !lit.ref<!Error,{{.*}}> byref_error
+    # CHECK-SAME: %__result__: !lit.ref<!Moco4214Payload,{{.*}}> byref_result
+    def make(self) raises -> Self.Output where conforms_to(Self.T, Movable):
+        return Moco4214Payload(456)
