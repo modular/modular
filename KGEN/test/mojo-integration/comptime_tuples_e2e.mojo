@@ -37,7 +37,7 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
     def __init__(out self, var value: Self.Element):
         self._cap = 4
         self._data = alloc[Self.Element](self._cap)
-        self._data.init_pointee_move(value^)
+        self._data.unsafe_write(value^)
         self._len = 1
 
     @always_inline
@@ -57,7 +57,7 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
         if copy._len > 0:
             self._data = alloc[Self.Element](copy._len)
             for i in range(copy._len):
-                (self._data + i).init_pointee_copy(copy._data[i])
+                (self._data + i).unsafe_write(copy._data[i])
         else:
             self._data = UnsafePointer[
                 Self.Element, MutUntrackedOrigin
@@ -74,9 +74,7 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
             var new_cap = self._cap * 2 if self._cap > 0 else 4
             var new_data = alloc[Self.Element](new_cap)
             for i in range(self._len):
-                (new_data + i).init_pointee_move(
-                    (self._data + i).take_pointee()
-                )
+                (new_data + i).unsafe_write((self._data + i).take_pointee())
             if self._cap > 0:
                 self._data.free()
             self._data = new_data
@@ -84,7 +82,7 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
 
     def _append(mut self, value: Self.Element):
         self._grow_if_needed()
-        (self._data + self._len).init_pointee_copy(value)
+        (self._data + self._len).unsafe_write(value)
         self._len += 1
 
     @always_inline
