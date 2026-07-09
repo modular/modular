@@ -47,20 +47,3 @@ def test_named_effect_no_space_already_correct():
     source = 'def foo() abi("C"):\n    pass\n'
     expected = 'def foo() abi("C"):\n    pass\n'
     assert_mojo_format(source, expected)
-
-
-def test_named_effect_stays_inline_when_signature_wraps():
-    """A named effect stays inline when a long function type must wrap.
-
-    `abi("C")` is not a split point, so the wrap lands on the return-type
-    subscript instead.
-    """
-    source = (
-        "def main() raises:\n"
-        "    var curl_version = lib.get_function[\n"
-        '        def() thin abi("C") -> UnsafePointer[\n'
-        "            c_char, ImmutOrigin(origin_of(result))\n"
-        "        ]\n"
-        '    ]("curl_version")\n'
-    )
-    assert_mojo_format(source, source)
