@@ -17,6 +17,7 @@ import io
 from typing import Any
 from unittest.mock import MagicMock
 
+import hf_repo_lock
 import pytest
 from max.pipelines.architectures.internvl.tokenizer import (
     InternVLProcessor,
@@ -34,10 +35,12 @@ from pytest_mock import MockerFixture
 from transformers import AutoConfig
 
 
-def _create_mock_pipeline_config(model_path: str) -> MagicMock:
+def _create_mock_pipeline_config(
+    model_path: str, revision: str | None = None
+) -> MagicMock:
     """Create a mock PipelineConfig with real HuggingFace config."""
     hf_config: Any = AutoConfig.from_pretrained(
-        model_path, trust_remote_code=True
+        model_path, revision=revision, trust_remote_code=True
     )
 
     mock_kv_cache = MagicMock()
@@ -57,6 +60,8 @@ def _create_mock_pipeline_config(model_path: str) -> MagicMock:
 async def test_internvl_tokenizer_with_image() -> None:
     """Test InternVL tokenizer adds image tokens correctly."""
     model_id = "OpenGVLab/InternVL3-1B-Instruct"
+    revision = hf_repo_lock.revision_for_hf_repo(model_id)
+    assert revision is not None
     test_text = "What is this?"
     image_token_id = 151667  # InternVL's <IMG_CONTEXT> token
     expected_image_tokens = 256  # 256 tokens per 448x448 image patch (after 14x14 patch embeddings and 0.5x downsampling)
@@ -69,7 +74,8 @@ async def test_internvl_tokenizer_with_image() -> None:
     # Create tokenizer with mock pipeline config.
     max_tokenizer = InternVLTokenizer(
         model_path=model_id,
-        pipeline_config=_create_mock_pipeline_config(model_id),
+        pipeline_config=_create_mock_pipeline_config(model_id, revision),
+        revision=revision,
         trust_remote_code=True,
     )
 

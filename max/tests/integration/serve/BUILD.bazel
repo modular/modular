@@ -66,10 +66,8 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/mpnet",
     ],
     tags = [
-        "manual",
         "no-sandbox",
         "requires-network",
-        "run-in-hf-workflow",
     ],
     # TODO(SERVOPT-949): Investigate and enable on macOS
     target_compatible_with = select({
@@ -258,7 +256,6 @@ modular_py_test(
         "//max/python/max/_entrypoints:pipelines",
     ],
     tags = [
-        "AITLIB-293",
         "manual",
         "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
@@ -271,6 +268,7 @@ modular_py_test(
     }),
     deps = [
         "//max/python/max/_entrypoints",
+        "//max/tests/integration:hf_repo_lock",
     ],
 )
 
@@ -285,9 +283,8 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/llama3",
     ],
     tags = [
-        "manual",
+        "no-sandbox",
         "requires-network",
-        "run-in-hf-workflow",
     ],
     # TODO(GEX-3155): Times out on remote macOS CI (~374s due to model compilation)
     target_compatible_with = select({
@@ -301,6 +298,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/serve:config",
+        "//max/tests/integration:hf_repo_lock",
         requirement("httpx"),
         requirement("pytest-asyncio"),
     ],
