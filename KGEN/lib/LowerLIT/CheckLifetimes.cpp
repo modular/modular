@@ -1554,17 +1554,39 @@ public:
     return originWithInteriorOrigins.count(origin);
   }
 
+  /// Given an InteriorOrigin and a set of operations that invalidate numbered
+  /// InteriorOrigins, return the operation that invalidated this origin if
+  /// known.
+  Operation *getOperationThatInvalidated(
+      InteriorOriginAttr interior,
+      SmallVectorImpl<Operation *> &invalidatingOps) const {
+    auto it = interiorOriginID.find(interior);
+    assert(it != interiorOriginID.end() &&
+           it->second < invalidatingOps.size() && "Unknown interior origin");
+    return invalidatingOps[it->second];
+  }
+
   // Given a mutation of an origin "o", invalidate any interior origins derived
   // from it, like "o[]" or "o.field[]".
   void invalidateOnMutation(TypedAttr mutatedOrigin,
-                            BitVector &liveInteriorOrigins) const {
+                            BitVector &liveInteriorOrigins,
+                            SmallVectorImpl<Operation *> &invalidatingOps,
+                            Operation &thisInvalidatingOp) const {
     if (interiorOriginInvalidationMap.empty())
       return;
     processOriginUnionElts(mutatedOrigin, [&](TypedAttr origin) {
       // Clear any interior origins derived from the mutated origin.
       auto it = interiorOriginInvalidationMap.find(origin);
-      if (it != interiorOriginInvalidationMap.end())
-        liveInteriorOrigins.reset(it->second);
+      if (it != interiorOriginInvalidationMap.end()) {
+        for (int id = it->second.find_first(); id >= 0;
+             id = it->second.find_next(id)) {
+          // When we clear it, remember what operation invalidated it.
+          if (liveInteriorOrigins[id]) {
+            liveInteriorOrigins.reset(id);
+            invalidatingOps[id] = &thisInvalidatingOp;
+          }
+        }
+      }
     });
   }
 
@@ -1741,13 +1763,19 @@ void InteriorOriginTracker::dump() const {
   for (auto &entry : interiorOriginID)
     invertedMap[entry.second] = entry.first;
 
-  for (auto [idx, entry] : llvm::enumerate(invertedMap))
-    os << "  #" << idx << " => " << entry << "\n";
+  OriginPrinter originPrinter;
+  for (auto [idx, entry] : llvm::enumerate(invertedMap)) {
+    os << "  #" << idx << " => ";
+    originPrinter.print(os, entry, /*elideOriginOf=*/true);
+    os << "\n";
+  }
 
   if (!interiorOriginInvalidationMap.empty()) {
     os << "Invalidation map:\n";
     for (auto &entry : interiorOriginInvalidationMap) {
-      os << "  " << entry.first << " => ";
+      os << "  ";
+      originPrinter.print(os, entry.first, /*elideOriginOf=*/true);
+      os << " => ";
       printBV(entry.second, os);
       os << "\n";
     }
@@ -1769,8 +1797,14 @@ struct TrackedAndInteriorLiveness {
   /// Bitvector of interior-origin validity (parallel to interior origin IDs).
   BitVector interior;
 
+  /// For an invalidated interior origin, this contains the operation that
+  /// caused it to be invalidated, allowing us to print a note. This is null if
+  /// unknown.
+  SmallVector<Operation *> invalidatingOp;
+
   TrackedAndInteriorLiveness(size_t numTrackedBits, size_t numInteriorBits)
-      : tracked(numTrackedBits), interior(numInteriorBits) {}
+      : tracked(numTrackedBits), interior(numInteriorBits),
+        invalidatingOp(numInteriorBits) {}
 
   static TrackedAndInteriorLiveness
   getEmptyWithMatchingSize(const TrackedAndInteriorLiveness &other) {
@@ -1785,14 +1819,20 @@ struct TrackedAndInteriorLiveness {
   /// Merge \p other into this state at a control-flow join.
   void mergeWith(const TrackedAndInteriorLiveness &other) {
     if (!other.isReachable())
-      return;
-    if (isReachable()) {
-      tracked &= other.tracked;
-      interior &= other.interior;
-    } else {
+      return; // 'other' isn't reachable, so just use 'this'.
+    if (!isReachable()) {
+      // 'this' isn't reachable, so just use 'other'.
       tracked = other.tracked;
       interior = other.interior;
+      invalidatingOp = other.invalidatingOp;
+      return;
     }
+    // Both are reachable, so merge them.
+    tracked &= other.tracked;
+    interior &= other.interior;
+    for (size_t i = 0, e = invalidatingOp.size(); i != e; ++i)
+      if (!invalidatingOp[i] && other.invalidatingOp[i])
+        invalidatingOp[i] = other.invalidatingOp[i];
   }
 
   void swap(TrackedAndInteriorLiveness &other) {
@@ -2038,7 +2078,8 @@ void UninitializedValueScan::invalidateInteriorOriginsForOperand(
   // Given a mutation of an origin "o", invalidate any interior origins derived
   // from it, like "o[]" or "o.field[]".
   interiorOriginTracker.invalidateOnMutation(
-      cast<RefType>(operand.getType()).getOrigin(), liveness.interior);
+      cast<RefType>(operand.getType()).getOrigin(), liveness.interior,
+      liveness.invalidatingOp, op);
 }
 
 /// Verify that the specified ValueRef is live at this point, diagnosing an
@@ -2148,11 +2189,20 @@ void UninitializedValueScan::diagnoseInteriorOriginUsageError(
     }
   }
 
-  // TODO: Add a bitvector to UVS to avoid redundant errors.
-  // TODO: The quality of this error message is not great.
-  auto diag = emitError(op.getLoc(), "use of invalidated interior reference");
-  if (auto userName = sugarDynCast<StringAttr>(interior.getUserName()))
-    diag << " '" << userName.getValue() << "'";
+  // TODO: If we get a lot of redundant diagnostics for invalidated origins, we
+  // can add a bitvector to UVS to squelch them.
+  SmallString<128> originStr;
+  llvm::raw_svector_ostream originOs(originStr);
+  OriginPrinter().print(originOs, interior, /*elideOriginOf=*/true);
+
+  auto diag = emitError(op.getLoc(), "use of invalidated interior reference '");
+  diag << originStr << "'";
+
+  if (Operation *invalidatingOp =
+          interiorOriginTracker.getOperationThatInvalidated(
+              interior, liveness.invalidatingOp)) {
+    diag.attachNote(invalidatingOp->getLoc()) << "origin was invalidated here";
+  }
 
   // We mark the liveness sentinel as having an error diagnosed to make sure the
   // pass fails.
