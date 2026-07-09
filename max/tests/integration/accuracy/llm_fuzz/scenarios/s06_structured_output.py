@@ -364,6 +364,101 @@ class StructuredOutputAttacks(BaseScenario):
                 )
             )
 
+        # ----- 7b. Backend-uncompilable schemas (backend-conditional) -----
+        # These schemas only a fail-closed backend (xgrammar) rejects at
+        # compile time; llguidance fails open and compiles them. So we probe
+        # all three, detect the backend's disposition at runtime (did it 4xx
+        # any of them?), and assert the 400 rejection ONLY when it fails
+        # closed -- any model that migrates to xgrammar gets this check for
+        # free, and llguidance models aren't false-failed. A crash/hang is a
+        # FAIL on every backend: that is the invariant admission validation
+        # protects.
+        uncompilable_schemas = {
+            # `false` -> router lowers to {"anyOf": [false]}, unsatisfiable
+            "boolean_false": {"name": "bf", "schema": False},
+            # $ref to a definition that does not exist
+            "unresolvable_ref": {
+                "name": "bad_ref",
+                "schema": {
+                    "type": "object",
+                    "properties": {"x": {"$ref": "#/$defs/Missing"}},
+                },
+            },
+            # unbalanced-paren regex terminal fails to compile
+            "invalid_regex_pattern": {
+                "name": "bad_regex",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "x": {"type": "string", "pattern": "("},
+                    },
+                },
+            },
+        }
+        uncompilable_responses = {}
+        for uname, js in uncompilable_schemas.items():
+            uncompilable_responses[uname] = await client.post_json(
+                base(
+                    response_format={"type": "json_schema", "json_schema": js}
+                ),
+                timeout=config.timeout * 0.5,
+            )
+        # Fail-closed iff the backend rejected (4xx) at least one without
+        # crashing. xgrammar rejects all three; llguidance accepts all three.
+        backend_fails_closed = any(
+            400 <= r.status < 500 for r in uncompilable_responses.values()
+        )
+        for uname, resp in uncompilable_responses.items():
+            if resp.error == "TIMEOUT":
+                verdict, detail = (
+                    Verdict.FAIL,
+                    "Server hung on uncompilable schema",
+                )
+            elif resp.status == 0:
+                verdict, detail = (
+                    Verdict.FAIL,
+                    "Connection failed (worker crash?) on uncompilable schema",
+                )
+            elif resp.status >= 500:
+                verdict, detail = (
+                    Verdict.FAIL,
+                    f"Server crash {resp.status} on uncompilable schema",
+                )
+            elif backend_fails_closed:
+                # xgrammar-class backend: admission validation must 400 these
+                # rather than let them crash the worker.
+                if 400 <= resp.status < 500:
+                    verdict, detail = (
+                        Verdict.PASS,
+                        "Fail-closed backend rejected",
+                    )
+                elif resp.status == 200:
+                    verdict, detail = (
+                        Verdict.FAIL,
+                        "Fail-closed backend accepted an uncompilable schema",
+                    )
+                else:
+                    verdict, detail = (
+                        Verdict.INTERESTING,
+                        f"Status {resp.status}",
+                    )
+            else:
+                # Fail-open backend (e.g. llguidance): compiling these is fine.
+                verdict, detail = (
+                    Verdict.PASS,
+                    "Fail-open backend compiled schema (no crash)",
+                )
+            results.append(
+                self.make_result(
+                    self.name,
+                    f"uncompilable_{uname}",
+                    verdict,
+                    status_code=resp.status,
+                    detail=detail,
+                    response_body=resp.body[:300],
+                )
+            )
+
         # ----- 8. JSON mode without instructing JSON in prompt -----
         # Some servers require "json" in the prompt when using json mode
         resp = await client.post_json(

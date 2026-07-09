@@ -48,6 +48,9 @@ from max.pipelines.context import (
 )
 from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    GrammarValidator,
+)
 from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lib.tool_parsing import (
     maybe_name_from_tool,
@@ -1531,6 +1534,7 @@ async def openai_create_chat_completion(
         response_format = _create_response_format(
             completion_request.response_format,
             enable_response_format_schema=pipeline_config.sampling.enable_structured_output,
+            grammar_validator=request.app.state.grammar_validator,
         )
 
         # For architectures with a grammar-based tool parser (e.g., Kimi),
@@ -1605,6 +1609,18 @@ async def openai_create_chat_completion(
                     tools_forced,
                     enforce_from_start,
                 )
+
+        # Admission-time validation. Rejects a tool-call grammar the active
+        # backend cannot compile with an InputError (HTTP 400) here.
+        grammar_validator = request.app.state.grammar_validator
+        if (
+            grammar_validator is not None
+            and response_format is not None
+            and response_format.type == "grammar"
+            and response_format.grammar is not None
+        ):
+            grammar_validator.check_tool_grammar(response_format.grammar)
+
         stream_options = None
         if completion_request.stream:
             stream_options = completion_request.stream_options
@@ -1873,6 +1889,7 @@ def _validate_json_schema(json_schema: dict[str, Any]) -> None:
 def _create_response_format(
     response_format: ResponseFormat | None,
     enable_response_format_schema: bool,
+    grammar_validator: GrammarValidator | None = None,
 ) -> TextGenerationResponseFormat | None:
     """Convert OpenAI response format to TextGenerationResponseFormat.
 
@@ -1900,8 +1917,8 @@ def _create_response_format(
 
     if response_type == "json_object":
         # For json_object mode (any valid JSON), use a permissive schema that
-        # accepts any JSON object. llguidance's grammar_from_json_schema supports
-        # this - an empty or minimal schema means "any valid JSON".
+        # accepts any JSON object; a minimal ``{"type": "object"}`` means "any
+        # valid JSON object" to both grammar backends.
         json_schema = {"type": "object"}
         # Normalize type to json_schema for the internal representation since both
         # json_object and json_schema use grammar-based constrained decoding.
@@ -1922,14 +1939,20 @@ def _create_response_format(
         elif schema is not None:
             json_schema = dict(schema)
 
-    # Validate the schema early to return 400 instead of crashing the model worker.
-    _validate_json_schema(json_schema)
-
     # Default a missing root ``type`` to ``"object"`` before the schema
     # reaches the grammar backend. An untyped root compiles to a grammar that
     # permits a bare unbounded top-level value, which lets a looping model run
     # to ``max_length`` (the runaway-output incident).
     json_schema = normalize_response_format_schema(json_schema)
+
+    # Validate against the active backend, which compiles the schema and checks
+    # grammar validity (rejecting what the worker can't compile with an InputError).
+    # Fall back to the backend-agnostic check when there is no validator.
+    if json_schema:
+        if grammar_validator is not None:
+            grammar_validator.check_json_schema(json.dumps(json_schema))
+        else:
+            _validate_json_schema(json_schema)
 
     # Enforce grammar from the first token only when there is an actual
     # schema to enforce. The json_schema can also be used to create a grammar,

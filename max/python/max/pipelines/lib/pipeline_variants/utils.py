@@ -385,7 +385,7 @@ class StructuredOutputHelper:
     """Whether user-provided json_schema is allowed."""
     vocab_size: int | None = None
     """Vocabulary size from the tokenizer, or None if disabled."""
-    backend: GrammarBackend | None = field(default=None, repr=False)
+    backend: GrammarBackend[Any] | None = field(default=None, repr=False)
     """Pluggable grammar backend (llguidance by default)."""
     tool_call_region_delimiters: StructuredOutputRegionDelimiters | None = None
     """Token sequences for tool call boundaries (conditional enforcement)."""

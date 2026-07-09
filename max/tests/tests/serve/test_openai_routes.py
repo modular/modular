@@ -898,6 +898,7 @@ def _make_disconnect_request(
             pipeline=pipeline,
             pipeline_config=pipeline_config,
             settings=Settings(api_types=[APIType.OPENAI], use_heartbeat=False),
+            grammar_validator=None,
         )
     )
     request.body = AsyncMock(return_value=body)
