@@ -44,12 +44,22 @@ def test_invalidate_base():
     # expected-error @+1 {{use of uninitialized value 'list'}}
     elt_ref1 += 4
 
-def test1():
+def test_invalidate_interior():
     var list = MyListInterior[Int]()
     ref elt_ref2 = list[4]
     elt_ref2 += 4
-    list.mutate()
-    # expected-error @+1 {{use of invalidated interior reference 'element'}}
+    list.mutate()   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    elt_ref2 += 4
+
+# simple control flow test.
+def test_if(cond: Bool):
+    var list = MyListInterior[Int]()
+    ref elt_ref2 = list[4]
+    elt_ref2 += 4
+    if cond:
+        list.mutate()   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
     elt_ref2 += 4
 
 struct TwoIntLists:
@@ -76,9 +86,9 @@ def test_field_sensitive_nested_invalidation():
 
     # Mutating the first list shouldn't invalidate the second list because of
     # nested field sensitivity.
-    first_list.mutate()
+    first_list.mutate()   # expected-note {{origin was invalidated here}}
     second_list_elt += 4
 
     # However, it should invalidate the first list.
-    # expected-error @+1 {{use of invalidated interior reference 'element'}}
+    # expected-error @+1 {{use of invalidated interior reference 'list_of_two_intlists["element"].first["element"]'}}
     first_list_elt += 4
