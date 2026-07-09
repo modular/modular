@@ -1179,16 +1179,20 @@ Type BindParamsAttr::getType() const {
                          /*evaluationContext=*/nullptr);
 }
 
-static TypedAttr simplifyBindParams(TypedAttr generator,
-                                    ArrayRef<TypedAttr> paramValues, Type type,
-                                    ParameterEvaluationContext *evalContext,
-                                    DenseBoolArrayAttr discharged) {
+TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
+                              ArrayRef<TypedAttr> paramValues,
+                              DenseBoolArrayAttr discharged,
+                              ParameterEvaluationContext *evaluationContext) {
+  Type type = inferBindParamsResultType(generator, paramValues, discharged,
+                                        evaluationContext);
+
+  // No bindings to apply: the generator already has the requested type.
   if (paramValues.empty() && (!discharged || discharged.empty()) &&
       isEqualCanon(generator.getType(), type))
     return generator;
 
-  // If the actual generator is a BindParamsAttr, then we can flatten the new
-  // bindings into the existing ones.
+  // If the generator is itself a BindParamsAttr, flatten the new bindings into
+  // the existing ones.
   if (auto bindParams = sugarDynCast<BindParamsAttr>(generator)) {
     SmallVector<TypedAttr> mergedParamValues =
         mergeParamBindings(bindParams.getParamValues(), paramValues);
@@ -1203,15 +1207,19 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
       mergedMask = mergeDischargedConstraints(generator.getContext(), innerMask,
                                               discharged, origBodyCount);
     }
-    return BindParamsAttr::get(bindParams.getContext(),
-                               bindParams.getGenerator(), mergedParamValues,
-                               mergedMask, evalContext);
+    TypedAttr flattened =
+        BindParamsAttr::get(bindParams.getContext(), bindParams.getGenerator(),
+                            mergedParamValues, mergedMask, evaluationContext);
+    assert((!flattened || isEqualCanon(flattened.getType(), type)) &&
+           "bind_params simplification must preserve the requested type");
+    return flattened;
   }
 
-  // Can simplify if the generator is a GeneratorAttr.
+  // If the generator is a GeneratorAttr, specialize it directly. A null nested
+  // evaluation propagates upwards as a null result.
   if (auto genAttr = sugarDynCast<GeneratorAttr>(generator)) {
     assert(
-        evalContext &&
+        evaluationContext &&
         "A foldable BindParamsAttr must be created with an evaluation context");
     SmallVector<TypedAttr> partialParamValues = normalizeBindParamsValues(
         cast<GeneratorType>(genAttr.getType()), paramValues);
@@ -1219,7 +1227,7 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
         denseBoolArrayAttrToBitVector(discharged);
     std::optional<PartiallySpecializedInputParams> specializationOpt =
         PartiallySpecializedInputParams::from(
-            genAttr.getInputParamTypes(), partialParamValues, evalContext,
+            genAttr.getInputParamTypes(), partialParamValues, evaluationContext,
             /*emitErrorFn=*/{}, dischargedBodyConstraints);
     if (!specializationOpt)
       return {};
@@ -1239,12 +1247,11 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
 
     llvm_unreachable("requested bind_params type is inconsistent with the "
                      "specialized generator");
-    return {};
   }
 
-  // If the actual generator is a SymbolConstantAttr, then we can simplify by
-  // folding the parameter values into it directly (this will be cleaned up once
-  // we remove param bindings from SymbolConstantAttr).
+  // If the generator is a SymbolConstantAttr, fold the parameter values into it
+  // directly (this will be cleaned up once we remove param bindings from
+  // SymbolConstantAttr).
   if (auto symbolConstant = sugarDynCast<SymbolConstantAttr>(generator)) {
     [[maybe_unused]] bool hasUnboundParameters =
         symbolConstant.getParamValues().empty();
@@ -1260,8 +1267,8 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
                                      ::cast<FuncTypeGeneratorType>(type),
                                      paramValues);
 
-    // We have to interleave the new values wherever there's an unbound thing
-    // so we preserve the order.
+    // We have to interleave the new values wherever there's an unbound thing so
+    // we preserve the order.
     SmallVector<TypedAttr> mergedParamValues =
         mergeParamBindings(symbolConstant.getParamValues(), paramValues);
 
@@ -1270,29 +1277,7 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
                                    mergedParamValues);
   }
 
-  return {};
-}
-
-TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
-                              ArrayRef<TypedAttr> paramValues,
-                              DenseBoolArrayAttr discharged,
-                              ParameterEvaluationContext *evaluationContext) {
-  Type type = inferBindParamsResultType(generator, paramValues, discharged,
-                                        evaluationContext);
-  if (auto simplified = simplifyBindParams(generator, paramValues, type,
-                                           evaluationContext, discharged)) {
-    assert(isEqualCanon(simplified.getType(), type) &&
-           "bind_params simplification must preserve the requested type");
-    return simplified;
-  }
-
-  // Only fail during elaborator materialization. Speculative evaluators should
-  // preserve residual bind_params expressions for later folding.
-  if (evaluationContext && evaluationContext->isMaterializationContext() &&
-      sugarDynCast<GeneratorAttr>(generator))
-    return {};
-
-  // Build the residual bind_params expression.
+  // No simplification applies. Build the BindParamsAttr directly.
   TypedAttr result =
       Base::get(generator.getContext(), generator, paramValues, discharged);
 
