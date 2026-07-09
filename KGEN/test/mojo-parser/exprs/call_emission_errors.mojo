@@ -258,7 +258,7 @@ def exclusivity[
     x = x^
 
     # expected-error @below {{argument of 'take_two_spans' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'spanlife' memory accessed through reference embedded in value of type 'MyMutSpan[spanlife]'}}
+    # expected-note @below {{'origin_of(spanlife)' memory accessed through reference embedded in value of type 'MyMutSpan[spanlife]'}}
     take_two_spans(span, span)
 
 
@@ -324,34 +324,34 @@ def inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
 
     # This is not.
     # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'a' value is passed through aliasing 'mut' argument}}
+    # expected-note @below {{'origin_of(a)' value is passed through aliasing 'mut' argument}}
     mutate_two(a, a)
 
     # This is ok: field sensitivity.
     mutate_two(s.a, s.b)
 
     # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'s.a' value is passed through aliasing 'mut' argument}}
+    # expected-note @below {{'origin_of(s.a)' value is passed through aliasing 'mut' argument}}
     mutate_two(s.a, s.a)
 
     # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'s' value is passed through aliasing 'mut' argument}}
+    # expected-note @below {{'origin_of(s)' value is passed through aliasing 'mut' argument}}
     mutate_two(s.a, s)
 
     # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'s.a' value is passed through aliasing 'mut' argument}}
+    # expected-note @below {{'origin_of(s.a)' value is passed through aliasing 'mut' argument}}
     mutate_two(s, s.a)
 
     # expected-error @below {{argument of 'take_two_owned' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'s' value is passed through aliasing 'var' argument}}
+    # expected-note @below {{'origin_of(s)' value is passed through aliasing 'var' argument}}
     take_two_owned(s^, s^)
 
     # expected-error @below {{argument of 'mutate_one_read_one' call allows reading a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'s.a' value is passed through aliasing 'read' argument}}
+    # expected-note @below {{'origin_of(s.a)' value is passed through aliasing 'read' argument}}
     mutate_one_read_one(s, s.a)
 
     # expected-error @below {{argument of 'mutate_two_AnyLifetime' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'a' value is passed through aliasing 'ref' argument}}
+    # expected-note @below {{'origin_of(a)' value is passed through aliasing 'ref' argument}}
     mutate_two_AnyLifetime(a, a)
 
     # These are all ok.
@@ -360,15 +360,15 @@ def inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     mutate_variadic_any(a, b)
 
     # expected-error @below {{argument of 'mutate_variadic_any' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'a' value is passed through aliasing 'mut' argument}}
+    # expected-note @below {{'origin_of(a)' value is passed through aliasing 'mut' argument}}
     mutate_variadic_any(a, a)
 
     # expected-error @below {{argument of 'mutate_variadic_any' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'a' value is passed through aliasing 'mut' argument}}
+    # expected-note @below {{'origin_of(a)' value is passed through aliasing 'mut' argument}}
     mutate_variadic_any(a, b, a)
 
     # expected-error @below {{argument of 'mutate_variadic_any' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'s' value is passed through aliasing 'mut' argument}}
+    # expected-note @below {{'origin_of(s)' value is passed through aliasing 'mut' argument}}
     mutate_variadic_any(s, s)
 
     # These are ok.
@@ -376,15 +376,15 @@ def inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     mutate_pack(a, s)
 
     # expected-error @below {{argument of 'mutate_pack' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'a' value is passed through aliasing 'mut' argument}}
+    # expected-note @below {{'origin_of(a)' value is passed through aliasing 'mut' argument}}
     mutate_pack(a, a)
 
     # expected-error @below {{argument of 'mutate_pack' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'a' value is passed through aliasing 'mut' argument}}
+    # expected-note @below {{'origin_of(a)' value is passed through aliasing 'mut' argument}}
     mutate_pack(a, b, a)
 
     # expected-error @below {{argument of 'mutate_pack' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'s' value is passed through aliasing 'mut' argument}}
+    # expected-note @below {{'origin_of(s)' value is passed through aliasing 'mut' argument}}
     mutate_pack(s, s)
 
 
@@ -395,7 +395,7 @@ def capture_exclusivity(var x: MemExample):
 
     # FIXME(MOCO-3241): Re-enable this.
     # xpected-error @below {{argument of call allows reading a memory location previously writable through implicit closure captures}}
-    # xpected-note @below {{'x' value is passed through aliasing 'read' argument}}
+    # xpected-note @below {{'origin_of(x)' value is passed through aliasing 'read' argument}}
     capture_and_read(x)
 
 
@@ -433,7 +433,7 @@ def take_owned_and_mutate_rp(var a: MyRPStruct2, mut b: MyRPStruct2):
 
 def rp_exclusivity(mut x: MyRPStruct2):
     # expected-error @below {{argument of 'take_owned_and_mutate_rp' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'x' value is passed through aliasing 'mut' argument}}
+    # expected-note @below {{'origin_of(x)' value is passed through aliasing 'mut' argument}}
     take_owned_and_mutate_rp(x^, x)
 
 
@@ -443,7 +443,7 @@ def take_and_mutate_rp(a: MyRPStruct, mut b: MyRPStruct2):
 
 def rp_exclusivity2(mut x: MyRPStruct2):
     # expected-error @below {{argument of 'take_and_mutate_rp' call allows writing a memory location previously readable through another aliased argument}}
-    # expected-note @below {{'x' value is passed through aliasing 'mut' argument}}
+    # expected-note @below {{'origin_of(x)' value is passed through aliasing 'mut' argument}}
     take_and_mutate_rp(x.b, x)
 
 
