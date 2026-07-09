@@ -478,9 +478,11 @@ modular_cc_library(
 # Mojo-reachable target depends on it.
 #
 # Range.cpp is dormant at this point in the stack, so nothing calls the backend
-# yet; #86355 wires Range.cpp's recording paths through it and links this target
-# into the MAX runtime (max._core). When linked into a process, RangeKineto.cpp's
-# static initializer registers the KinetoBackend function table.
+# yet; a later change wires Range.cpp's recording paths through it. max._core
+# (the only consumer) links this target and registers the KinetoBackend
+# function table by calling Detail::initKinetoBackend() from its nanobind
+# module init — an explicit call rather than a static initializer, per the C++
+# coding standard's ban on global constructors.
 #
 # Tracy and libkineto are mutually exclusive at build time (both subscribe to
 # CUPTI), so this is gated to Linux x86_64 with Tracy disabled.
@@ -490,27 +492,19 @@ modular_cc_library(
         "lib/Profiling/RangeBackend.h",
         "lib/Profiling/RangeKineto.cpp",
     ],
-    # -Wno-global-constructors: the backend registers itself through a
-    # file-scope Registrar whose constructor runs at load time (same pattern as
-    # :Profiling's TracyRocm constructor).
     copts = [
-        "-Wno-global-constructors",
         "-fvisibility=default",
     ],
-    # Nothing depends on this target until #86355 wires it into max._core, so
-    # the unused-targets linter would flag it (and its libkineto / CUPTI-stub /
-    # config-setting deps) as dead. "top-level" marks it a root for that linter
-    # query (bazel/internal/unused-targets.query) — the tag has no other
-    # consumer, so it has no build side effects — which also covers the
-    # `linux_x86_64_no_tracy` config_setting_group that can't carry a tag of its
-    # own. Drop the tag once #86355 gives it a real reverse dependency.
-    tags = ["top-level"],
     target_compatible_with = select({
         "//:linux_x86_64_no_tracy": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
         ":Profiling",
+        # libcuda_tracy_stub provides cuCtxGetCurrent (RangeKineto.cpp's
+        # CUDA-context probe) via on-demand dlopen of libcuda.so.1, avoiding a
+        # hard NEEDED entry on the real driver library.
+        "//bazel/third-party:libcuda_tracy_stub",
         "//bazel/third-party:libcudart_tracy_stub",
         "//bazel/third-party:libcupti_tracy_stub",
         "@libkineto",
