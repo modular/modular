@@ -1171,8 +1171,7 @@ struct Bench(Writable):
             fixed_iterations: Just run a fixed number of iterations.
         """
 
-        @parameter
-        def bench_fn(mut b: Bencher):
+        def bench_fn(mut b: Bencher) {ref}:
             """Executes benchmark for a target function.
 
             Args:
@@ -1185,9 +1184,8 @@ struct Bench(Writable):
             else:
                 func(b)
 
-        @parameter
         @always_inline
-        def benchmark_fn(num_iters: Int) raises -> Int:
+        def benchmark_fn(num_iters: Int) raises {ref} -> Int:
             """Executes benchmark for a target function.
 
             Args:
@@ -1210,10 +1208,11 @@ struct Bench(Writable):
         var res: Report
 
         if fixed_iterations:
-            res = _run_impl_fixed[benchmark_fn](fixed_iterations.value())
+            res = _run_impl_fixed(benchmark_fn, fixed_iterations.value())
         else:
             res = _run_impl(
-                _RunOptions[benchmark_fn](
+                _RunOptions(
+                    timing_fn=benchmark_fn,
                     num_warmup_iters=self.config.num_warmup_iters,
                     max_iters=self.config.max_iters,
                     min_runtime_secs=self.config.min_runtime_secs,

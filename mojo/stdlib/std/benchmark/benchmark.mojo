@@ -19,7 +19,7 @@ from std.benchmark import run, Unit
 from std.time import sleep
 ```
 
-You can pass any `fn` as a parameter into `run[...]()`, it will return
+You can pass any function as an argument into `run()`, it will return
 a `Report` where you can get the mean, duration, max, and more:
 
 ```mojo
@@ -29,7 +29,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var report = run[func2=sleeper]()
+var report = run(sleeper)
 print(report.mean())
 ```
 
@@ -46,7 +46,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var report = run[func2=sleeper]()
+var report = run(sleeper)
 report.print()
 ```
 
@@ -72,7 +72,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var report = run[func2=sleeper]()
+var report = run(sleeper)
 report.print_full()
 ```
 
@@ -113,7 +113,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var report = run[func2=sleeper]()
+var report = run(sleeper)
 report.print(Unit.ms)
 ```
 
@@ -138,7 +138,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var report = run[func2=sleeper]()
+var report = run(sleeper)
 print(report.mean("ms"))
 ```
 
@@ -156,7 +156,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var r = run[func2=sleeper](5)
+var r = run(sleeper, 5)
 ```
 
 ```output
@@ -173,7 +173,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var r = run[func2=sleeper](1, 2, 3, 4)
+var r = run(sleeper, 1, 2, 3, 4)
 ```
 
 Note that benchmarking continues until `min_runtime_secs` has
@@ -446,9 +446,8 @@ struct Report(Copyable, Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct _RunOptions[timing_fn: def(num_iters: Int) raises capturing[_] -> Int](
-    TrivialRegisterPassable
-):
+struct _RunOptions[TimingFn: def(Int) raises -> Int]:
+    var timing_fn: Self.TimingFn
     var num_warmup_iters: Int
     var max_iters: Int
     var min_runtime_secs: Float64
@@ -457,12 +456,14 @@ struct _RunOptions[timing_fn: def(num_iters: Int) raises capturing[_] -> Int](
 
     def __init__(
         out self,
+        var timing_fn: Self.TimingFn,
         num_warmup_iters: Int = 1,
         max_iters: Int = 1_000_000,
         min_runtime_secs: Float64 = 0.1,
         max_runtime_secs: Float64 = 60,
         max_batch_size: Int = 0,
     ):
+        self.timing_fn = timing_fn^
         self.num_warmup_iters = num_warmup_iters
         self.max_iters = max_iters
         self.min_runtime_secs = min_runtime_secs
@@ -475,6 +476,58 @@ struct _RunOptions[timing_fn: def(num_iters: Int) raises capturing[_] -> Int](
 # ===-----------------------------------------------------------------------===#
 
 
+def run(
+    f: Some[def() raises],
+    num_warmup_iters: Int = 1,
+    max_iters: Int = 1_000_000_000,
+    min_runtime_secs: Float64 = 0.1,
+    max_runtime_secs: Float64 = 60,
+    max_batch_size: Int = 0,
+) raises -> Report:
+    """Benchmarks the function passed in as an argument.
+
+    Benchmarking continues until `min_runtime_secs` has elapsed and either
+    `max_runtime_secs` OR `max_iters` is achieved.
+
+    Args:
+        f: The function to benchmark. Accepts a unified closure, so `f` can
+            be a thin function or a closure that captures state.
+        num_warmup_iters: Number of warmup iterations.
+        max_iters: Max number of iterations to run (default `1_000_000_000`).
+        min_runtime_secs: Lower bound on benchmarking time in secs (default `0.1`).
+        max_runtime_secs: Upper bound on benchmarking time in secs (default `60`).
+        max_batch_size: The maximum number of iterations to perform per time
+            measurement.
+
+    Returns:
+        Average execution time of func in ns.
+
+    Raises:
+        If the operation fails.
+    """
+
+    @always_inline
+    def benchmark_fn(num_iters: Int) raises {f} -> Int:
+        @always_inline
+        def iter_fn() raises {num_iters, f}:
+            for _ in range(num_iters):
+                f()
+
+        return Int(time_function(iter_fn))
+
+    return _run_impl(
+        _RunOptions(
+            timing_fn=benchmark_fn,
+            num_warmup_iters=num_warmup_iters,
+            max_iters=max_iters,
+            min_runtime_secs=min_runtime_secs,
+            max_runtime_secs=max_runtime_secs,
+            max_batch_size=max_batch_size,
+        )
+    )
+
+
+@deprecated("Use `run(f)` instead.")
 @always_inline
 def run[
     *, func1: def() thin raises -> None
@@ -508,7 +561,6 @@ def run[
         If the operation fails.
     """
 
-    @parameter
     @always_inline
     def benchmark_fn(num_iters: Int) raises -> Int:
         @always_inline
@@ -519,7 +571,8 @@ def run[
         return Int(time_function(iter_fn))
 
     return _run_impl(
-        _RunOptions[benchmark_fn](
+        _RunOptions(
+            timing_fn=benchmark_fn,
             num_warmup_iters=num_warmup_iters,
             max_iters=max_iters,
             min_runtime_secs=min_runtime_secs,
@@ -529,6 +582,7 @@ def run[
     )
 
 
+@deprecated("Use `run(f)` instead.")
 @always_inline
 def run[
     *, func2: def() thin -> None
@@ -562,19 +616,28 @@ def run[
         If the operation fails.
     """
 
-    @parameter
-    def raising_func() raises:
-        func2()
+    @always_inline
+    def benchmark_fn(num_iters: Int) raises -> Int:
+        @always_inline
+        def iter_fn() raises {read num_iters}:
+            for _ in range(num_iters):
+                func2()
 
-    return run[func3=raising_func](
-        num_warmup_iters,
-        max_iters,
-        min_runtime_secs,
-        max_runtime_secs,
-        max_batch_size,
+        return Int(time_function(iter_fn))
+
+    return _run_impl(
+        _RunOptions(
+            timing_fn=benchmark_fn,
+            num_warmup_iters=num_warmup_iters,
+            max_iters=max_iters,
+            min_runtime_secs=min_runtime_secs,
+            max_runtime_secs=max_runtime_secs,
+            max_batch_size=max_batch_size,
+        )
     )
 
 
+@deprecated("Use `run(f)` instead.")
 @always_inline
 def run[
     func3: def() raises capturing[_] -> None
@@ -608,7 +671,6 @@ def run[
         If the operation fails.
     """
 
-    @parameter
     @always_inline
     def benchmark_fn(num_iters: Int) raises -> Int:
         @always_inline
@@ -619,7 +681,8 @@ def run[
         return Int(time_function(iter_fn))
 
     return _run_impl(
-        _RunOptions[benchmark_fn](
+        _RunOptions(
+            timing_fn=benchmark_fn,
             num_warmup_iters=num_warmup_iters,
             max_iters=max_iters,
             min_runtime_secs=min_runtime_secs,
@@ -629,6 +692,7 @@ def run[
     )
 
 
+@deprecated("Use `run(f)` instead.")
 @always_inline
 def run[
     *, func4: def() capturing[_] -> None
@@ -662,16 +726,24 @@ def run[
         If the operation fails.
     """
 
-    @parameter
-    def raising_func() raises:
-        func4()
+    @always_inline
+    def benchmark_fn(num_iters: Int) raises -> Int:
+        @always_inline
+        def iter_fn() raises {read num_iters}:
+            for _ in range(num_iters):
+                func4()
 
-    return run[raising_func](
-        num_warmup_iters,
-        max_iters,
-        min_runtime_secs,
-        max_runtime_secs,
-        max_batch_size,
+        return Int(time_function(iter_fn))
+
+    return _run_impl(
+        _RunOptions(
+            timing_fn=benchmark_fn,
+            num_warmup_iters=num_warmup_iters,
+            max_iters=max_iters,
+            min_runtime_secs=min_runtime_secs,
+            max_runtime_secs=max_runtime_secs,
+            max_batch_size=max_batch_size,
+        )
     )
 
 
@@ -774,9 +846,9 @@ def _is_significant_measurement(
 
 
 @always_inline
-def _run_impl_fixed[
-    timing_fn: def(num_iters: Int) raises capturing[_] -> Int
-](fixed_iterations: Int) raises -> Report:
+def _run_impl_fixed(
+    timing_fn: Some[def(Int) raises -> Int], fixed_iterations: Int
+) raises -> Report:
     # Only run 'timing_fn' for the fixed number of iterations and return the report.
     var report = Report()
     report.runs.append(

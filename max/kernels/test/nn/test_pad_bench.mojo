@@ -49,7 +49,6 @@ def bench[
 ]() raises:
     comptime N = 100
 
-    @parameter
     def runner():
         try:
             for _ in range(N):
@@ -58,7 +57,7 @@ def bench[
         except e:
             abort(String(e))
 
-    var ms = std.benchmark.run[runner](1, 10)
+    var ms = std.benchmark.run(runner, 1, 10)
 
     pretty_print(
         name,

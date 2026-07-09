@@ -38,7 +38,6 @@ def test_stopping_criteria() raises:
     # is reached
 
     @always_inline
-    @parameter
     def time_me():
         sleep(0.002)
         clobber_memory()
@@ -51,8 +50,11 @@ def test_stopping_criteria() raises:
     var max_iters_1 = 1000_000_000
 
     def timer() raises {var lb, var ub, mut max_iters_1}:
-        var report = run[func4=time_me](
-            max_iters=max_iters_1, min_runtime_secs=lb, max_runtime_secs=ub
+        var report = run(
+            time_me,
+            max_iters=max_iters_1,
+            min_runtime_secs=lb,
+            max_runtime_secs=ub,
         )
         assert_true(report.mean() > 0)
         assert_true(report.iters() != max_iters_1)
@@ -65,7 +67,8 @@ def test_stopping_criteria() raises:
     var max_iters_2 = 1
 
     def timer2() raises {var ub_big, var lb, mut max_iters_2}:
-        var report = run[func4=time_me](
+        var report = run(
+            time_me,
             max_iters=max_iters_2,
             min_runtime_secs=lb,
             max_runtime_secs=Float64(ub_big),
@@ -83,7 +86,8 @@ def test_stopping_criteria() raises:
     var max_iters_3 = 3
 
     def timer3() raises {var ub_big, mut max_iters_3}:
-        var report = run[func4=time_me](
+        var report = run(
+            time_me,
             max_iters=max_iters_3,
             min_runtime_secs=0,
             max_runtime_secs=Float64(ub_big),
@@ -139,19 +143,19 @@ def sleeper():
 
 
 def test_non_capturing() raises:
-    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    var report = run(sleeper, min_runtime_secs=0.1, max_runtime_secs=0.3)
     assert_true(report.mean() > 0.001)
 
 
 def test_change_units() raises:
-    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    var report = run(sleeper, min_runtime_secs=0.1, max_runtime_secs=0.3)
     assert_true(report.mean("ms") > 1.0)
     assert_true(report.mean("us") > 1_000)
     assert_true(report.mean("ns") > 1_000_000.0)
 
 
 def test_report() raises:
-    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    var report = run(sleeper, min_runtime_secs=0.1, max_runtime_secs=0.3)
 
     var report_string = report.as_string()
     assert_true("Benchmark Report (s)" in report_string)
