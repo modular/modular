@@ -301,3 +301,33 @@ def trait_param[A: type_of(Trait1), T: A & Trait2](x: T):
 def use_trait_param():
     s1c = Struct1C()
     trait_param[Trait1C, Struct1C](s1c)
+
+
+# // -----
+
+# Check that a trait member binding `Self` to a parametric associated type
+# declared on another trait (`P.HandleFor[Self]`) gets its `Self` upcast to
+# the declaring trait's type when the member is inherited into a sub-trait,
+# rather than substituted bare with the sub-trait's `Self` (MOCO-4154).
+
+
+trait Plugin:
+    comptime HandleFor[From: Handle]: Handle
+
+
+trait Handle:
+    def transfer[P: Plugin](self) -> P.HandleFor[Self]:
+        ...
+
+
+trait SubHandle(Handle):
+    pass
+
+
+# CHECK-LABEL: lit.trait.decl @SubHandle
+# CHECK: lit.fn @"transfer
+# CHECK-SAME: %self: !lit.ref<:!SubHandle *"_Self`"
+# CHECK-SAME: :!AnyType_Handle upcast(:!SubHandle *"_Self`")
+# CHECK-SAME: inheritedFrom = @{{.*}}::@Handle
+def main():
+    pass

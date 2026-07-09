@@ -4230,7 +4230,10 @@ static void replaceTraitMethodSelfTypes(FnOp func, TypedAttr parentSelfType,
                                         TypedAttr traitSelfType) {
   assert(isa<ParamDeclRefAttr>(parentSelfType) &&
          isa<ParamDeclRefAttr>(traitSelfType));
-  AttrReplacer replacer(parentSelfType, traitSelfType);
+
+  TypedAttr upcastTraitSelfType =
+      UpcastAttr::get(parentSelfType.getType(), traitSelfType);
+  AttrReplacer replacer(parentSelfType, upcastTraitSelfType);
 
   // Update functionType, signature, and block argument types.
   func.setFuncTypeGenerator(replacer.replace(func.getFuncTypeGenerator()));
