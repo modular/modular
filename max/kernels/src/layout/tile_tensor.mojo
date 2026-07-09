@@ -71,37 +71,6 @@ def _default_invariant[mut: Bool]() -> Bool:
     return is_gpu() and mut == False
 
 
-def _copy_widen_factor[
-    dst_dtype: DType,
-    src_dtype: DType,
-    element_size: Int,
-    dst_row_major: Bool,
-    src_row_major: Bool,
-    num_elements: Int,
-]() -> Int:
-    """Returns the SIMD widen factor for `TileTensor.copy`.
-
-    Returns the number of elements to load/store together in a single
-    SIMD op. Returns 1 (no widening) unless both tensors are row-major
-    and element_size == 1, so that successive chunks cover contiguous
-    memory when walked in raw scalar order.
-    """
-
-    comptime if not dst_row_major or not src_row_major or element_size != 1:
-        return 1
-
-    # Use the narrower SIMD width so both load and store fit native lanes
-    comptime native = min(
-        simd_width_of[dst_dtype](), simd_width_of[src_dtype]()
-    )
-    var w = native
-    while w > 1:
-        if num_elements % w == 0:
-            return w
-        w //= 2
-    return 1
-
-
 struct TileTensor[
     mut: Bool,
     //,
@@ -1136,76 +1105,26 @@ struct TileTensor[
         the copy widens to SIMD load + cast + SIMD store,
         using the narrower of the two dtypes' native SIMD widths.
 
+        The copy loop lives in the storage policy (`Self.Storage.copy_from`);
+        this forwards `self` and `other` as `(storage, layout)` pairs.
+
         Constraints:
 
         - Both tensors must have statically known shapes with matching total
             element count.
-        - Both tensors must have the same logical element size.
         - Source and destination dtypes may differ; each logical element is
             cast to the destination dtype.
 
         Args:
             other: The source tensor to copy data from. Must have the same
-                `element_size` and total number of elements as `self`.
+                total number of elements as `self`.
         """
-        comptime OtherType = type_of(other)
-        comptime assert (
-            Self.LayoutType.shape_known and OtherType.LayoutType.shape_known
-        ), "TileTensor.copy_from requires statically known shapes"
-
-        comptime src_static = OtherType.LayoutType.static_product
-        comptime dst_static = Self.LayoutType.static_product
-
-        comptime assert (
-            src_static == dst_static
-        ), "TileTensor.copy_from requires matching total element count"
-
-        comptime num_elements = dst_static
-
-        comptime widen = _copy_widen_factor[
-            dst_dtype=Self.dtype,
-            src_dtype=OtherType.dtype,
-            element_size=Self.element_size,
-            dst_row_major=Self.is_row_major,
-            src_row_major=OtherType.is_row_major,
-            num_elements=num_elements,
-        ]()
-
-        comptime width = Self.element_size * widen
-        comptime dst_alignment = align_of[
-            SIMD[Self.dtype, width]
-        ]() if is_gpu() else 1
-        comptime src_alignment = align_of[
-            SIMD[OtherType.dtype, width]
-        ]() if is_gpu() else 1
-
-        comptime if widen > 1:
-            # Widening requires both tensors to be gap-free with unit
-            # inner stride. In that case the underlying memory is a
-            # `num_elements * element_size`-scalar contiguous run on
-            # each side, so we walk raw pointer offsets in chunks of
-            # `width` scalars instead of indexing through the layout
-            # (whose flat-index unravel is first-dim-fastest and
-            # doesn't step by 1 in memory for rank >= 2).
-            comptime num_scalars = num_elements * Self.element_size
-            comptime num_chunks = num_scalars // width
-            comptime for i in range(num_chunks):
-                self._store_storage[alignment=dst_alignment](
-                    i * width,
-                    other._load_storage[width=width, alignment=src_alignment](
-                        i * width
-                    ).cast[Self.dtype](),
-                )
-        else:
-            comptime for i in range(num_elements):
-                var src_offset = other.layout(Idx[i])
-                var dst_offset = self.layout(Idx[i])
-                self._store_storage[alignment=dst_alignment](
-                    dst_offset,
-                    other._load_storage[
-                        width=Self.element_size, alignment=src_alignment
-                    ](src_offset).cast[Self.dtype](),
-                )
+        # `other` may carry a different (e.g. offset-derived) storage policy;
+        # the storage-level copy takes it as a distinct `OtherStorage` operand.
+        Self.Storage.copy_from(
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+            (other._storage, other.layout),
+        )
 
     def _distance(
         self: Self.Immut,

@@ -17,9 +17,59 @@ from std.builtin.device_passable import DevicePassable
 from std.builtin.int import index
 from std.gpu.host import DevicePointer
 from std.os import abort
-from std.sys import size_of
+from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import is_gpu
 from layout import Coord, CoordLike, Idx, TensorLayout
+
+
+def _layout_row_major[L: TensorLayout]() -> Bool:
+    """Returns True if `L` has fully static, gap-free row-major strides.
+
+    Checks the flattened dimensions: the layout is row-major when each flat
+    stride equals the product of all trailing flat shapes (rightmost stride 1).
+    Used to decide whether `copy_from` can widen its loads/stores into a
+    contiguous raw-scalar walk.
+    """
+    comptime if not L.all_dims_known:
+        return False
+    comptime for i in range(L.flat_rank):
+        var expected = 1
+        comptime for j in range(i + 1, L.flat_rank):
+            expected *= L.static_shape[j]
+        if L.static_stride[i] != expected:
+            return False
+    return True
+
+
+def _copy_widen_factor[
+    dst_dtype: DType,
+    src_dtype: DType,
+    element_size: Int,
+    dst_row_major: Bool,
+    src_row_major: Bool,
+    num_elements: Int,
+]() -> Int:
+    """Returns the SIMD widen factor for `TensorStorage.copy_from`.
+
+    Returns the number of elements to load/store together in a single
+    SIMD op. Returns 1 (no widening) unless both tensors are row-major
+    and element_size == 1, so that successive chunks cover contiguous
+    memory when walked in raw scalar order.
+    """
+
+    comptime if not dst_row_major or not src_row_major or element_size != 1:
+        return 1
+
+    # Use the narrower SIMD width so both load and store fit native lanes
+    comptime native = min(
+        simd_width_of[dst_dtype](), simd_width_of[src_dtype]()
+    )
+    var w = native
+    while w > 1:
+        if num_elements % w == 0:
+            return w
+        w //= 2
+    return 1
 
 
 trait TensorStorage:
@@ -296,6 +346,71 @@ trait TensorStorage:
         ...
 
     @staticmethod
+    def copy_from[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dst_dtype: DType,
+        src_dtype: DType,
+        OtherStorage: TensorStorage,
+    ](
+        storage: Tuple[
+            Self.StorageType[dst_dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            OtherStorage.StorageType[
+                src_dtype, other_origin, other_address_space
+            ],
+            OtherLayoutType,
+        ],
+    ):
+        """Copies the elements of `other` into `storage`, in place.
+
+        Performs an element-by-element copy from `other` into `storage`,
+        respecting the layouts of both operands. Each logical element is loaded
+        from `other` using its layout and stored into `storage` using its own
+        layout, so the copy works correctly even when the two sides have
+        different shapes or strides (as long as they agree on total element
+        count). When both operands have fully static, row-major layouts and a
+        scalar logical element, the copy widens to SIMD load + cast + SIMD
+        store using the narrower of the two dtypes' native SIMD widths.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the source storage.
+            other_mut: The mutability of the source storage.
+            other_origin: The origin of the source storage.
+            other_address_space: The address space of the source storage.
+            dst_dtype: The element data type of the destination storage.
+            src_dtype: The element data type of the source storage.
+            OtherStorage: The storage policy of the source. May differ from
+                `Self` as long as the two policies are copy-compatible (same
+                logical element size).
+
+        Constraints:
+
+        - Both operands must have statically known shapes with matching total
+            element count.
+        - Both operands must have the same logical element size.
+        - Source and destination dtypes may differ; each logical element is
+            cast to the destination dtype.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the source storage and its layout.
+        """
+        ...
+
+    @staticmethod
     def distance[
         dtype: DType, address_space: AddressSpace, //
     ](
@@ -318,6 +433,130 @@ trait TensorStorage:
             when it precedes `other`.
         """
         ...
+
+
+@always_inline
+def _copy_from[
+    SelfLayoutType: TensorLayout,
+    self_origin: MutOrigin,
+    OtherLayoutType: TensorLayout,
+    other_mut: Bool,
+    other_origin: Origin[mut=other_mut],
+    //,
+    dst_dtype: DType,
+    src_dtype: DType,
+    self_address_space: AddressSpace,
+    other_address_space: AddressSpace,
+    DstStorage: TensorStorage,
+    OtherStorage: TensorStorage,
+](
+    storage: Tuple[
+        DstStorage.StorageType[dst_dtype, self_origin, self_address_space],
+        SelfLayoutType,
+    ],
+    other: Tuple[
+        OtherStorage.StorageType[src_dtype, other_origin, other_address_space],
+        OtherLayoutType,
+    ],
+):
+    """Shared copy loop backing every `TensorStorage.copy_from` implementation.
+
+    Copies each logical element of `other` into `storage`, loading through the
+    source policy (`OtherStorage`) and storing through the destination policy
+    (`DstStorage`). When both operands have fully static, row-major layouts and
+    a scalar logical element, the copy widens to SIMD load + cast + SIMD store
+    using the narrower of the two dtypes' native SIMD widths. Expressed entirely
+    in terms of each policy's `load`, `store`, and `unsafe_cast`.
+
+    Parameters:
+        SelfLayoutType: The layout type of the destination storage.
+        self_origin: The origin of the destination storage.
+        OtherLayoutType: The layout type of the source storage.
+        other_mut: The mutability of the source storage.
+        other_origin: The origin of the source storage.
+        dst_dtype: The element data type of the destination storage.
+        src_dtype: The element data type of the source storage.
+        self_address_space: The address space of the destination storage.
+        other_address_space: The address space of the source storage.
+        DstStorage: The storage policy of the destination.
+        OtherStorage: The storage policy of the source.
+
+    Args:
+        storage: A tuple of the destination storage (modified in place) and its
+            layout.
+        other: A tuple of the source storage and its layout.
+    """
+    ref dst_storage = storage[0]
+    ref dst_layout = storage[1]
+    ref src_layout = other[1]
+
+    # An immutable view of the source, needed because `load` requires an
+    # immutable-origin handle while the source may be mutable.
+    var src_storage = OtherStorage.unsafe_cast[
+        src_dtype,
+        other_origin.unsafe_mut_cast[False](),
+        other_address_space,
+    ](other[0])
+
+    comptime assert (
+        DstStorage.element_size == OtherStorage.element_size
+    ), "TensorStorage.copy_from requires matching logical element size"
+
+    comptime assert (
+        SelfLayoutType.shape_known and OtherLayoutType.shape_known
+    ), "TensorStorage.copy_from requires statically known shapes"
+
+    comptime src_static = OtherLayoutType.static_product
+    comptime dst_static = SelfLayoutType.static_product
+    comptime assert (
+        src_static == dst_static
+    ), "TensorStorage.copy_from requires matching total element count"
+
+    comptime num_elements = dst_static
+    comptime widen = _copy_widen_factor[
+        dst_dtype=dst_dtype,
+        src_dtype=src_dtype,
+        element_size=DstStorage.element_size,
+        dst_row_major=_layout_row_major[SelfLayoutType](),
+        src_row_major=_layout_row_major[OtherLayoutType](),
+        num_elements=num_elements,
+    ]()
+
+    comptime width = DstStorage.element_size * widen
+    comptime dst_alignment = align_of[
+        SIMD[dst_dtype, width]
+    ]() if is_gpu() else 1
+    comptime src_alignment = align_of[
+        SIMD[src_dtype, width]
+    ]() if is_gpu() else 1
+
+    comptime if widen > 1:
+        # Widening requires both operands to be gap-free with unit inner
+        # stride. In that case each side is a `num_elements * element_size`
+        # contiguous scalar run, so we walk raw scalar offsets in chunks of
+        # `width` scalars instead of indexing through the layout (whose
+        # flat-index unravel doesn't step by 1 in memory for rank >= 2).
+        comptime num_scalars = num_elements * DstStorage.element_size
+        comptime num_chunks = num_scalars // width
+        comptime for i in range(num_chunks):
+            DstStorage.store[alignment=dst_alignment](
+                dst_storage,
+                i * width,
+                OtherStorage.load[width=width, alignment=src_alignment](
+                    src_storage, i * width
+                ).cast[dst_dtype](),
+            )
+    else:
+        comptime for i in range(num_elements):
+            var src_offset = src_layout(Idx[i])
+            var dst_offset = dst_layout(Idx[i])
+            DstStorage.store[alignment=dst_alignment](
+                dst_storage,
+                dst_offset,
+                OtherStorage.load[
+                    width=DstStorage.element_size, alignment=src_alignment
+                ](src_storage, src_offset).cast[dst_dtype](),
+            )
 
 
 trait TensorArith(TensorStorage):
@@ -942,6 +1181,72 @@ struct PointerStorage[*, element_width: Int = 1](TensorArith):
             when it precedes `other`.
         """
         return (Int(storage) - Int(other)) // size_of[dtype]()
+
+    @staticmethod
+    @always_inline
+    def copy_from[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dst_dtype: DType,
+        src_dtype: DType,
+        OtherStorage: TensorStorage,
+    ](
+        storage: Tuple[
+            Self.StorageType[dst_dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            OtherStorage.StorageType[
+                src_dtype, other_origin, other_address_space
+            ],
+            OtherLayoutType,
+        ],
+    ):
+        """Copies the elements of `other` into `storage`, in place.
+
+        Loads each logical element from `other` through its (possibly
+        different) storage policy and stores it into `storage` through
+        `PointerStorage`, casting to the destination dtype. Delegates to the
+        shared `_copy_from` loop.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the source storage.
+            other_mut: The mutability of the source storage.
+            other_origin: The origin of the source storage.
+            other_address_space: The address space of the source storage.
+            dst_dtype: The element data type of the destination storage.
+            src_dtype: The element data type of the source storage.
+            OtherStorage: The storage policy of the source. May differ from
+                `Self` as long as the two policies are copy-compatible (same
+                logical element size).
+
+        Constraints:
+
+        - Both operands must have statically known shapes with matching total
+            element count.
+        - Both operands must have the same logical element size.
+        - Source and destination dtypes may differ; each logical element is
+            cast to the destination dtype.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the source storage and its layout.
+        """
+        _copy_from[
+            DstStorage=Self,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+        ](storage, other)
 
     @always_inline
     @staticmethod
@@ -1848,6 +2153,73 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorArith):
             # The element offsets are available on host without dereferencing;
             # their difference is the scalar-element distance (element_size 1).
             return storage.offset() - other.offset()
+
+    @staticmethod
+    @always_inline
+    def copy_from[
+        SelfLayoutType: TensorLayout,
+        self_origin: MutOrigin,
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_mut: Bool,
+        other_origin: Origin[mut=other_mut],
+        other_address_space: AddressSpace,
+        //,
+        dst_dtype: DType,
+        src_dtype: DType,
+        OtherStorage: TensorStorage,
+    ](
+        storage: Tuple[
+            Self.StorageType[dst_dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            OtherStorage.StorageType[
+                src_dtype, other_origin, other_address_space
+            ],
+            OtherLayoutType,
+        ],
+    ):
+        """Copies the elements of `other` into `storage`, in place.
+
+        Loads each logical element from `other` through its (possibly
+        different) storage policy and stores it into `storage` through
+        `DevicePointerStorage`, casting to the destination dtype. Delegates to
+        the shared `_copy_from` loop. Device-only: the underlying loads and
+        stores reinterpret the encoded device pointer and abort on host.
+
+        Parameters:
+            SelfLayoutType: The layout type of the destination storage.
+            self_origin: The origin of the destination storage.
+            self_address_space: The address space of the destination storage.
+            OtherLayoutType: The layout type of the source storage.
+            other_mut: The mutability of the source storage.
+            other_origin: The origin of the source storage.
+            other_address_space: The address space of the source storage.
+            dst_dtype: The element data type of the destination storage.
+            src_dtype: The element data type of the source storage.
+            OtherStorage: The storage policy of the source. May differ from
+                `Self` as long as the two policies are copy-compatible (same
+                logical element size).
+
+        Constraints:
+
+        - Both operands must have statically known shapes with matching total
+            element count.
+        - Both operands must have the same logical element size.
+        - Source and destination dtypes may differ; each logical element is
+            cast to the destination dtype.
+
+        Args:
+            storage: A tuple of the destination storage (modified in place) and
+                its layout.
+            other: A tuple of the source storage and its layout.
+        """
+        _copy_from[
+            DstStorage=Self,
+            self_address_space=self_address_space,
+            other_address_space=other_address_space,
+        ](storage, other)
 
     @always_inline
     @staticmethod
