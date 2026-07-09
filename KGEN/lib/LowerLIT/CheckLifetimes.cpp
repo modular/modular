@@ -1554,6 +1554,20 @@ public:
     return originWithInteriorOrigins.count(origin);
   }
 
+  // Given a mutation of an origin "o", invalidate any interior origins derived
+  // from it, like "o[]" or "o.field[]".
+  void invalidateOnMutation(TypedAttr mutatedOrigin,
+                            BitVector &liveInteriorOrigins) const {
+    if (interiorOriginInvalidationMap.empty())
+      return;
+    processOriginUnionElts(mutatedOrigin, [&](TypedAttr origin) {
+      // Clear any interior origins derived from the mutated origin.
+      auto it = interiorOriginInvalidationMap.find(origin);
+      if (it != interiorOriginInvalidationMap.end())
+        liveInteriorOrigins.reset(it->second);
+    });
+  }
+
 private:
   /// This method is called whenever we discover an interior origin.
   void addInteriorOrigin(InteriorOriginAttr interior);
@@ -1840,6 +1854,8 @@ private:
 
   SmallVector<InteriorOriginAttr> findInteriorOriginsInType(Type type);
   void establishInteriorOriginsFromDef(Type type);
+  void invalidateInteriorOriginsForOperand(Value operand, bool isDeref,
+                                           Operation &op);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -2012,6 +2028,19 @@ void UninitializedValueScan::establishInteriorOriginsFromDef(Type type) {
     interiorOriginTracker.markInteriorOriginLive(origin, liveness.interior);
 }
 
+void UninitializedValueScan::invalidateInteriorOriginsForOperand(
+    Value operand, bool isDeref, Operation &op) {
+  // Ignore the results of function calls etc.  These are defining the result,
+  // not mutating an already valid reference.
+  if (!isDeref)
+    return;
+
+  // Given a mutation of an origin "o", invalidate any interior origins derived
+  // from it, like "o[]" or "o.field[]".
+  interiorOriginTracker.invalidateOnMutation(
+      cast<RefType>(operand.getType()).getOrigin(), liveness.interior);
+}
+
 /// Verify that the specified ValueRef is live at this point, diagnosing an
 /// error at the specified operation if not.
 void UninitializedValueScan::checkUse(Value value, Operation &op,
@@ -2132,6 +2161,9 @@ void UninitializedValueScan::diagnoseInteriorOriginUsageError(
 
 void UninitializedValueScan::checkDef(Value value, Operation &op,
                                       bool isDeref) {
+  // Invalidate any interior origins derived from the defined value.
+  invalidateInteriorOriginsForOperand(value, isDeref, op);
+
   // Direct accesses are handled in a field sensitive way, and this can count as
   // an initialization.
   if (ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref)) {
@@ -2185,6 +2217,9 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
 
   // If tracked, marks its value as dead.
   valueRef.markBits(liveness.tracked, false);
+
+  // Invalidate any interior origins derived from the consumed value.
+  invalidateInteriorOriginsForOperand(value, isDeref, op);
 }
 
 /// The lit.ownership.mark_destroyed op consumes the whole object bit of
@@ -2217,13 +2252,14 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
   ValueRef fullObjectBit = access.getSubfield(access.getNumBits() - 1, 1);
 
   // If not, then there is an error which we diagnose.
-  if (!fullObjectBit.isAllPresent(liveness.tracked)) {
+  if (!fullObjectBit.isAllPresent(liveness.tracked))
     diagnoseUsageError(fullObjectBit, op);
-    return;
-  }
 
   // From this point on, the whole value is uninitialized.
   access.markBits(liveness.tracked, false);
+
+  // Invalidate any interior origins derived from the consumed value.
+  invalidateInteriorOriginsForOperand(value, /*isDeref=*/true, op);
 }
 
 /// Check any unstructured origins that are accessed by the operation.

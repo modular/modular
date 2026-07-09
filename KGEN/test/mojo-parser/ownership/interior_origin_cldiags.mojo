@@ -49,7 +49,7 @@ def test1():
     ref elt_ref2 = list[4]
     elt_ref2 += 4
     list.mutate()
-    # FIXME: mutating the list should invalidate it also.
+    # expected-error @+1 {{use of invalidated interior reference 'element'}}
     elt_ref2 += 4
 
 struct TwoIntLists:
@@ -80,5 +80,5 @@ def test2():
     second_list_elt += 4
 
     # However, it should invalidate the first list.
-    # FIXME: mutating the first list should invalidate this.
+    # expected-error @+1 {{use of invalidated interior reference 'element'}}
     first_list_elt += 4
