@@ -285,7 +285,7 @@ def tma_umma_kernel_sgs[
         transpose_b=transpose_b,
     ]()
 
-    comptime num_warps = num_threads // Int(WARP_SIZE)
+    comptime num_warps = num_threads // WARP_SIZE
     var warp_id = get_warp_id()
 
     comptime if num_threads > 128:

@@ -46,10 +46,10 @@ def kernel_copy_async_tma(descriptor: TMADescriptor):
     mbarrier_try_wait_parity_shared(mbar, 0, 10000000)
 
     _printf[
-        "(%lu, %lu) : %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g\n"
+        "(%ld, %ld) : %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g\n"
     ](
-        UInt(block_idx.x),
-        UInt(block_idx.y),
+        block_idx.x,
+        block_idx.y,
         shmem[0].cast[DType.float64](),
         shmem[1].cast[DType.float64](),
         shmem[2].cast[DType.float64](),

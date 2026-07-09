@@ -4,7 +4,6 @@ package(default_visibility = ["//visibility:private"])
 
 _FILECHECK_TESTS = [
     "test_list_getitem_invalid_index_int.mojo",
-    "test_list_getitem_invalid_index_uint.mojo",
     "test_optional_none_abort.mojo",
     "test_binary_heap_assert_empty_pop.mojo",
     "test_binary_heap_assert_empty_peek.mojo",
@@ -27,17 +26,12 @@ _MOJO_COMPILE_OPTS = {
         "-D",
         "BUILD_TYPE=debug",
     ],
-    "test_list_getitem_invalid_index_uint.mojo": [
-        "-D",
-        "BUILD_TYPE=debug",
-    ],
 }
 
 _EXPECT_CRASH = [
     "test_binary_heap_assert_empty_pop.mojo",
     "test_binary_heap_assert_empty_peek.mojo",
     "test_list_getitem_invalid_index_int.mojo",
-    "test_list_getitem_invalid_index_uint.mojo",
     "test_optional_none_abort.mojo",
     "test_check_bounds_assert_error.mojo",
     "test_negative_index_deque.mojo",

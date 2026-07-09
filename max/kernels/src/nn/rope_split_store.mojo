@@ -246,7 +246,10 @@ def _rope_split_store_ragged_impl[
             if col < qk_offset:
                 # K region: apply rope, store to k_cache.
                 var kv_col = col - q_dim
-                var hi, di = divmod(UInt(kv_col), UInt(kv_params.head_size))
+                var hi, di = divmod(
+                    UInt(kv_col),
+                    UInt(kv_params.head_size),
+                )
                 var freq_pos = get_freq_pos(
                     Int(di), global_token_idx, cache_pos
                 )
@@ -327,7 +330,10 @@ def _rope_split_store_ragged_impl[
                 alignment=align_qkv,
             ]()
             var v_col = col - qk_offset
-            var hi, di = divmod(UInt(v_col), UInt(kv_params.head_size))
+            var hi, di = divmod(
+                UInt(v_col),
+                UInt(kv_params.head_size),
+            )
             var cl = v_cache.value().cache_length(bi)
             v_cache.value().store(
                 bi,

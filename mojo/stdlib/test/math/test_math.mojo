@@ -698,8 +698,14 @@ def test_ceildiv() raises:
     assert_equal(ceildiv(Int(-55), Int(-8)), 7)
 
     # Test the UInt overload.
-    assert_equal(ceildiv(UInt(1), UInt(7)), UInt(1))
-    assert_equal(ceildiv(UInt(546), UInt(7)), UInt(78))
+    assert_equal(
+        ceildiv(UInt(1), UInt(7)),
+        UInt(1),
+    )
+    assert_equal(
+        ceildiv(UInt(546), UInt(7)),
+        UInt(78),
+    )
 
     # Test the SIMD overload.
     assert_equal(ceildiv(Float32(5), 2), ceildiv(5, 2))
@@ -714,8 +720,14 @@ def test_align_down() raises:
     assert_equal(align_down(-548, 7), -553)
 
     # Test the UInt overload.
-    assert_equal(align_down(UInt(1), UInt(7)), UInt(0))
-    assert_equal(align_down(UInt(546), UInt(7)), UInt(546))
+    assert_equal(
+        align_down(UInt(1), UInt(7)),
+        UInt(0),
+    )
+    assert_equal(
+        align_down(UInt(546), UInt(7)),
+        UInt(546),
+    )
 
     # Test the SIMD overload with various integer types.
     assert_equal(align_down(UInt32(385), UInt32(64)), UInt32(384))
@@ -742,8 +754,14 @@ def test_align_up() raises:
     assert_equal(align_up(-548, 7), -546)
 
     # Test the UInt overload.
-    assert_equal(align_up(UInt(1), UInt(7)), UInt(7))
-    assert_equal(align_up(UInt(546), UInt(7)), UInt(546))
+    assert_equal(
+        align_up(UInt(1), UInt(7)),
+        UInt(7),
+    )
+    assert_equal(
+        align_up(UInt(546), UInt(7)),
+        UInt(546),
+    )
 
     # Test the SIMD overload with various integer types.
     assert_equal(align_up(UInt32(385), UInt32(64)), UInt32(448))
@@ -768,9 +786,18 @@ def test_clamp() raises:
     assert_equal(clamp(Int(2), 0, 1), 1)
     assert_equal(clamp(Int(-2), 0, 1), 0)
 
-    assert_equal(clamp(UInt(1), UInt(0), UInt(1)), UInt(1))
-    assert_equal(clamp(UInt(2), UInt(0), UInt(1)), UInt(1))
-    assert_equal(clamp(UInt(1), UInt(2), UInt(4)), UInt(2))
+    assert_equal(
+        clamp(UInt(1), UInt(0), UInt(1)),
+        UInt(1),
+    )
+    assert_equal(
+        clamp(UInt(2), UInt(0), UInt(1)),
+        UInt(1),
+    )
+    assert_equal(
+        clamp(UInt(1), UInt(2), UInt(4)),
+        UInt(2),
+    )
 
     assert_equal(
         clamp(SIMD[DType.float32, 4](0, 1, 3, 4), 0, 1),
@@ -784,10 +811,27 @@ def test_fma() raises:
     assert_equal(fma(-2, 3, 4), -2)  # -2*3 + 4 = -2
     assert_equal(fma(0, 100, 5), 5)  # 0*100 + 5 = 5
 
-    # Test UInt (uses SIMD overload since UInt = Scalar[DType.uint])
-    assert_equal(fma(UInt(5), UInt(3), UInt(2)), UInt(17))
-    assert_equal(fma(UInt(1000000), UInt(1000), UInt(500)), UInt(1000000500))
-    assert_equal(fma(UInt(0), UInt(100), UInt(5)), UInt(5))
+    # Test UInt (uses SIMD overload since UInt = UInt)
+    assert_equal(
+        fma(UInt(5), UInt(3), UInt(2)),
+        UInt(17),
+    )
+    assert_equal(
+        fma(
+            UInt(1000000),
+            UInt(1000),
+            UInt(500),
+        ),
+        UInt(1000000500),
+    )
+    assert_equal(
+        fma(
+            UInt(0),
+            UInt(100),
+            UInt(5),
+        ),
+        UInt(5),
+    )
 
     # Test SIMD overload with float
     assert_almost_equal(fma(Float32(2.5), Float32(4.0), Float32(1.5)), 11.5)

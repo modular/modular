@@ -56,7 +56,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable):
     var loc: SourceLocation
     """Source code location information for the profiling block, including file, line, and column."""
 
-    var start_time: UInt
+    var start_time: Int
     """Start time of the profiling block in nanoseconds, captured using perf_counter_ns()."""
 
     @always_inline

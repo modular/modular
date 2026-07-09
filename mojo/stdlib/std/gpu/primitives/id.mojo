@@ -75,19 +75,6 @@ def _get_gcn_idx[offset: Int, dtype: DType]() -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-# Note: MOCO-3600 prevents this being a comptime alias.
-@always_inline("nodebug")
-def lane_id_uint() -> UInt:
-    """Returns the lane ID of the current thread within its warp.
-
-    See `lane_id()`.
-
-    Returns:
-        The lane ID (0 to WARP_SIZE-1) of the current thread.
-    """
-    return _lane_id[UInt]()
-
-
 @always_inline("nodebug")
 def lane_id() -> Int:
     """Returns the lane ID of the current thread within its warp.
@@ -142,24 +129,6 @@ def _lane_id[ResultType: _FromInt]() -> ResultType:
 # ===-----------------------------------------------------------------------===#
 # warp_id
 # ===-----------------------------------------------------------------------===#
-
-
-# Note: MOCO-3600 prevents this being a comptime alias.
-@always_inline("nodebug")
-def warp_id_uint[*, broadcast: Bool = False]() -> UInt:
-    """Returns the warp ID of the current thread within its block.
-
-    See `warp_id()`.
-
-    Parameters:
-        broadcast: If true, broadcasts the warp ID to all threads in the warp,
-                   ensuring that all threads in the same warp have the same
-                   value. This can be useful for certain warp-level algorithms.
-
-    Returns:
-        The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
-    """
-    return _warp_id[UInt, broadcast=broadcast]()
 
 
 @always_inline("nodebug")
@@ -242,8 +211,7 @@ struct _ThreadIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
     a thread within a block.
 
     Parameters:
-        ResultType: Type of index accessors, typically `Int` or `UInt`
-            (default).
+        ResultType: Type of index accessors, typically `Int`.
     """
 
     @always_inline("nodebug")
@@ -278,28 +246,6 @@ struct _ThreadIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
 
 
 comptime thread_idx = _ThreadIdx[Int]()
-"""Contains the thread index in the block, as `x`, `y`, and `z` values.
-
-Note: This accessor is in the process of migrating from `UInt` to `Int` values.
-
-To continue using `UInt` thread index values, you may import the `UInt`-returning
-alias:
-
-```mojo
-from std.gpu import thread_idx_uint as thread_idx
-```
-
-To use the default `Int`-returning accessor, import `thread_idx` directly:
-
-```mojo
-from std.gpu import thread_idx
-```
-
-This `thread_idx` accessor will change to yielding `Int` values in a future
-nightly.
-"""
-
-comptime thread_idx_uint = _ThreadIdx[UInt]()
 """Contains the thread index in the block, as `x`, `y`, and `z` values."""
 
 
@@ -313,8 +259,7 @@ struct _BlockIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
     a block within a grid.
 
     Parameters:
-        ResultType: Type of index accessors, typically `Int` or `UInt`
-            (default).
+        ResultType: Type of index accessors, typically `Int`.
     """
 
     @always_inline("nodebug")
@@ -349,9 +294,6 @@ struct _BlockIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
 
 
 comptime block_idx = _BlockIdx[Int]()
-"""Contains the block index in the grid, as `x`, `y`, and `z` values."""
-
-comptime block_idx_uint = _BlockIdx[UInt]()
 """Contains the block index in the grid, as `x`, `y`, and `z` values."""
 
 # ===-----------------------------------------------------------------------===#
@@ -416,11 +358,6 @@ comptime block_dim = _BlockDim[Int]()
 
 For example: `block_dim.y`."""
 
-comptime block_dim_uint = _BlockDim[UInt]()
-"""Contains the dimensions of the block as `x`, `y`, and `z` values.
-
-For example: `block_dim.y`."""
-
 
 # ===-----------------------------------------------------------------------===#
 # grid_dim
@@ -467,18 +404,14 @@ struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             )
         elif is_apple_gpu():
             comptime intrinsic_name = "llvm.air.threads_per_grid." + dim
-            var gridDim = UInt(
-                Int(
-                    llvm_intrinsic[
-                        intrinsic_name, Int32, has_side_effect=False
-                    ]()
-                )
+            var gridDim = Int(
+                llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]()
             )
             # Metal passes grid dimension as a gridDim.dim * blockDim.dim.
             # To make things compatible with NVidia and AMDGPU, divide result
             # by block_dim.dim
-            var i = gridDim // block_dim_uint.__getattr_param__[dim]()
-            return Self.ResultType(from_int=Int(i))
+            var i = ufloordiv(gridDim, block_dim.__getattr_param__[dim]())
+            return Self.ResultType(from_int=i)
         else:
             CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name(),
@@ -486,10 +419,6 @@ struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
 
 
 comptime grid_dim = _GridDim[Int]()
-"""Provides accessors for getting the `x`, `y`, and `z`
-dimensions of a grid."""
-
-comptime grid_dim_uint = _GridDim[UInt]()
 """Provides accessors for getting the `x`, `y`, and `z`
 dimensions of a grid."""
 
@@ -515,18 +444,14 @@ struct _GlobalIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             The `x`, `y`, or `z` dimension of the program.
         """
         _verify_xyz[dim]()
-        var t_idx = thread_idx_uint.__getattr_param__[dim]()
-        var b_idx = block_idx_uint.__getattr_param__[dim]()
-        var b_dim = block_dim_uint.__getattr_param__[dim]()
+        var t_idx = thread_idx.__getattr_param__[dim]()
+        var b_idx = block_idx.__getattr_param__[dim]()
+        var b_dim = block_dim.__getattr_param__[dim]()
 
-        return Self.ResultType(from_int=Int(std.math.fma(b_idx, b_dim, t_idx)))
+        return Self.ResultType(from_int=b_idx * b_dim + t_idx)
 
 
 comptime global_idx = _GlobalIdx[Int]()
-"""Contains the global offset of the kernel launch, as `x`, `y`, and `z`
-values."""
-
-comptime global_idx_uint = _GlobalIdx[UInt]()
 """Contains the global offset of the kernel launch, as `x`, `y`, and `z`
 values."""
 

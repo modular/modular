@@ -47,7 +47,7 @@ struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
         writer.write(self.writable[])
 
 
-def _format_nsec(nanoseconds: UInt) -> String:
+def _format_nsec(nanoseconds: Int) -> String:
     """Formats the given number of nanoseconds as milliseconds.
 
     The returned string is in the format of "NNN.NNN"
@@ -143,7 +143,7 @@ struct TestReport(Copyable, Writable):
     var name: String
     """The name of the test."""
 
-    var duration_ns: UInt
+    var duration_ns: Int
     """The duration of the test in nanoseconds."""
 
     var result: TestResult
@@ -153,7 +153,7 @@ struct TestReport(Copyable, Writable):
     """The error associated with a failing test."""
 
     @staticmethod
-    def passed(*, var name: String, duration_ns: UInt) -> Self:
+    def passed(*, var name: String, duration_ns: Int) -> Self:
         """Create a passing test report.
 
         Args:
@@ -170,9 +170,7 @@ struct TestReport(Copyable, Writable):
         }
 
     @staticmethod
-    def failed(
-        *, var name: String, duration_ns: UInt, var error: Error
-    ) -> Self:
+    def failed(*, var name: String, duration_ns: Int, var error: Error) -> Self:
         """Create a failing test report.
 
         Args:
@@ -207,7 +205,7 @@ struct TestReport(Copyable, Writable):
         out self,
         *,
         var name: String,
-        duration_ns: UInt,
+        duration_ns: Int,
         result: TestResult,
         var error: Optional[Error] = {},
     ):
@@ -262,7 +260,7 @@ struct TestSuiteReport(Copyable, Writable):
     var reports: List[TestReport]
     """The reports for each test in the suite."""
 
-    var total_duration_ns: UInt
+    var total_duration_ns: Int
     """The total duration of the suite in nanoseconds."""
 
     var failures: Int

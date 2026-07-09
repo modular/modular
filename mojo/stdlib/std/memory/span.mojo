@@ -715,8 +715,8 @@ struct Span[
         Raises:
             If a or b are larger than the length of the span.
         """
-        var length = UInt(len(self))
-        if a > Int(length) or b > Int(length):
+        var length = len(self)
+        if a > length or b > length:
             raise Error(
                 "index out of bounds (length: ",
                 length,
@@ -859,7 +859,7 @@ struct Span[
         dtype: DType,
         //,
         F: def[w: SIMDSize](v: SIMD[dtype, w]) -> SIMD[DType.bool, w],
-    ](self: Span[Scalar[dtype], _], func: F) -> UInt:
+    ](self: Span[Scalar[dtype], _], func: F) -> Int:
         """Count the amount of times the function returns `True`.
 
         Parameters:
@@ -883,7 +883,7 @@ struct Span[
             count += mask.reduce_bit_count()
 
         vectorize[simdwidth](length, do_count)
-        return UInt(count)
+        return count
 
     @always_inline
     def unsafe_subspan(self, *, offset: Int, length: Int) -> Self:
@@ -911,7 +911,7 @@ struct Span[
     def _binary_search_index[
         dtype: DType,
         //,
-    ](self: Span[Scalar[dtype], _], needle: Scalar[dtype]) -> Optional[UInt]:
+    ](self: Span[Scalar[dtype], _], needle: Scalar[dtype]) -> Optional[Int]:
         """Finds the index of `needle` with binary search.
         Args:
             needle: The value to binary search for.
@@ -931,7 +931,7 @@ struct Span[
             value = self.unsafe_get(cursor + half - 1)
             cursor += UInt(splat(value < needle)) & half
 
-        return Optional(cursor) if value == needle else None
+        return Optional(Int(cursor)) if value == needle else None
 
     def binary_search_by[
         func: def(Self.T) thin -> Int,

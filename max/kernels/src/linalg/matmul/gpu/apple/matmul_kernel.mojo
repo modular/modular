@@ -354,7 +354,7 @@ struct AppleM5MatMul[
     comptime NUM_SG_M = Self.BM // Self.SG_M
     comptime NUM_SG_N = Self.BN // Self.SG_N
     comptime NUM_SG = Self.NUM_SG_M * Self.NUM_SG_N
-    comptime THREADS_PER_BLOCK = Self.NUM_SG * Int(WARP_SIZE)
+    comptime THREADS_PER_BLOCK = Self.NUM_SG * WARP_SIZE
     comptime REDUCE_BLOCK = 256  # threads/block for the split-K reduce kernel
     # 2x2 (4 accumulators/simdgroup) is the benchmarked dense-GEMM optimum on M5
     # Max; 2x4 / 4x2 regress 26-60% -- the MMA pipeline is not latency-starved at

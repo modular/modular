@@ -1694,7 +1694,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var continuation_count = _count_utf8_continuation_bytes(self.as_bytes())
         return self.byte_length() - continuation_count
 
-    def is_codepoint_boundary(self, index: UInt) -> Bool:
+    def is_codepoint_boundary(self, index: Int) -> Bool:
         """Returns True if `index` is the position of the first byte in a UTF-8
         codepoint sequence, or is at the end of the string.
 
@@ -1781,8 +1781,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         # TODO: Example: Print the byte indices that are codepoints boundaries:
 
-        if index >= UInt(self.byte_length()):
-            return index == UInt(self.byte_length())
+        if index >= self.byte_length():
+            return index == self.byte_length()
 
         var byte = self.as_bytes()[index]
         # If this is not a continuation byte, then it must be a start byte.
@@ -2180,15 +2180,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         comptime if single_character:
             return length != 0 and _is_newline_char_utf8[include_r_n=True](
-                ptr, 0, ptr[0], UInt(length)
+                ptr, 0, ptr[0], length
             )
         else:
             var offset = 0
             for s in self.codepoint_slices():
                 var b_len = s.byte_length()
-                if not _is_newline_char_utf8(
-                    ptr, UInt(offset), ptr[offset], UInt(b_len)
-                ):
+                if not _is_newline_char_utf8(ptr, offset, ptr[offset], b_len):
                     return False
                 offset += b_len
             return length != 0
@@ -2213,29 +2211,29 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var output = List[Self.Immutable](capacity=128)  # guessing
         var ptr = self.get_immutable().unsafe_ptr()
         var length = self.byte_length()
-        var line_start = UInt(0)
+        var line_start = 0
         var prev_b0 = Byte(0)
 
         @always_inline
         @parameter
         def _splitlines[keep: Bool]():
-            while line_start < UInt(length):
+            while line_start < length:
                 var line_end = line_start
                 var is_new_line = False
                 var b0 = Byte(0)
                 var char_len = 0
 
-                while not is_new_line and line_end < UInt(length):
+                while not is_new_line and line_end < length:
                     b0 = ptr[line_end]
                     char_len = _utf8_first_byte_sequence_length(b0)
-                    assert line_end + UInt(char_len) <= UInt(
-                        length
+                    assert (
+                        line_end + char_len <= length
                     ), "corrupted sequence causing unsafe memory access"
                     # percentage-wise a newline is uncommon compared to a normal byte
                     is_new_line = unlikely(
-                        _is_newline_char_utf8(ptr, line_end, b0, UInt(char_len))
+                        _is_newline_char_utf8(ptr, line_end, b0, char_len)
                     )
-                    line_end += UInt(char_len)
+                    line_end += char_len
 
                 var str_len = line_end - line_start
 
@@ -2247,14 +2245,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 # pointer
                 comptime if keep:
                     var is_r = unlikely(b0 == `\r`)
-                    var may_be_r_n = is_r and likely(line_end < UInt(length))
-                    var is_r_n = UInt(
+                    var may_be_r_n = is_r and likely(line_end < length)
+                    var is_r_n = Int(
                         unlikely(may_be_r_n and ptr[line_end] == `\n`)
                     )
                     line_end += is_r_n
                     str_len += is_r_n
                 else:
-                    str_len -= UInt(splat(likely(is_new_line))) & UInt(char_len)
+                    str_len -= splat(likely(is_new_line)) & char_len
                     var is_r_n = unlikely(prev_b0 == `\r` and b0 == `\n`)
                     prev_b0 = b0
                     if is_r_n:  # the line was already appended
@@ -2680,8 +2678,8 @@ def _to_string_list[
 
 @always_inline
 def _unsafe_strlen(
-    ptr: UnsafePointer[mut=False, Byte, _], max: UInt = UInt.MAX
-) -> UInt:
+    ptr: UnsafePointer[mut=False, Byte, _], max: Int = Int.MAX
+) -> Int:
     """Get the length of a null-terminated string from a pointer.
 
     Args:
@@ -2694,7 +2692,7 @@ def _unsafe_strlen(
     Notes:
         The length does NOT include the null terminator.
     """
-    var offset = UInt(0)
+    var offset = 0
     while offset < max and ptr[offset]:
         offset += 1
     return offset

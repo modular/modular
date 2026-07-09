@@ -181,7 +181,7 @@ struct AppleM5Int8MatMul[
     comptime NUM_SG_M = Self.BM // Self.SG_M
     comptime NUM_SG_N = Self.BN // Self.SG_N
     comptime NUM_SG = Self.NUM_SG_M * Self.NUM_SG_N
-    comptime THREADS_PER_BLOCK = Self.NUM_SG * Int(WARP_SIZE)
+    comptime THREADS_PER_BLOCK = Self.NUM_SG * WARP_SIZE
 
     # int8 -> int32 widening MMA (2x2 accumulators, the M5 register optimum).
     comptime Mma = MmaOpApple[

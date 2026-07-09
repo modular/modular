@@ -476,7 +476,7 @@ struct Matmul2dFp4[
     comptime SF = NVFP4_SF_VECTOR_SIZE  # 16
 
     comptime NUM_SG = Self.num_sg_m * Self.num_sg_n
-    comptime THREADS_PER_BLOCK = Self.NUM_SG * Int(WARP_SIZE)
+    comptime THREADS_PER_BLOCK = Self.NUM_SG * WARP_SIZE
     # Threadgroup output tile.
     comptime TG_M = Self.MMA_M * Self.num_sg_m * Self.tm
     comptime TG_N = Self.MMA_N * Self.num_sg_n * Self.tn
@@ -522,7 +522,7 @@ struct Matmul2dFp4[
         scales `(N, ceil(K/16))`. Interior fast path (tile-aligned N, K%16==0).
         """
         var lane = Int(lane_id())
-        var sg_id = Int(thread_idx.x) // Int(WARP_SIZE)
+        var sg_id = Int(thread_idx.x) // WARP_SIZE
         var sg_m = sg_id // Self.num_sg_n
         var sg_n = sg_id % Self.num_sg_n
 
@@ -655,7 +655,7 @@ struct Matmul2dFp4[
 
         var lane = Int(lane_id())
         var tid = Int(thread_idx.x)
-        var sg_id = tid // Int(WARP_SIZE)
+        var sg_id = tid // WARP_SIZE
         var sg_m = sg_id // Self.num_sg_n
         var sg_n = sg_id % Self.num_sg_n
 

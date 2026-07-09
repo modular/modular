@@ -391,9 +391,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
 comptime HEAP_BUFFER_BYTES = get_defined_int["HEAP_BUFFER_BYTES", 2048]()
 """How much memory to pre-allocate for the heap buffer, will abort if exceeded."""
 
-comptime STACK_BUFFER_BYTES = UInt(
-    get_defined_int["STACK_BUFFER_BYTES", 4096]()
-)
+comptime STACK_BUFFER_BYTES = get_defined_int["STACK_BUFFER_BYTES", 4096]()
 """The size of the stack buffer for IO operations from CPU."""
 
 
@@ -482,7 +480,7 @@ struct _WriteBufferStack[
     origin: MutOrigin,
     W: Writer,
     //,
-    stack_buffer_bytes: UInt = STACK_BUFFER_BYTES,
+    stack_buffer_bytes: Int = STACK_BUFFER_BYTES,
 ](Writer):
     var data: InlineArray[UInt8, Int(Self.stack_buffer_bytes)]
     var pos: Int

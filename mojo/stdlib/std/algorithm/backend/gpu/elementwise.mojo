@@ -832,8 +832,8 @@ def _elementwise_impl_gpu[
     )
     var shape_idx = coord_to_index_list(shape)
 
-    var length = UInt(shape.product())
-    var use_32bit = length <= UInt(UInt32.MAX)
+    var length = Int(shape.product())
+    var use_32bit = length <= Int(UInt32.MAX)
 
     if length == 0:
         return
@@ -843,7 +843,7 @@ def _elementwise_impl_gpu[
     # actually enabled. This avoids per-instantiation comptime cost in the
     # common case where `_USE_CLC_WORK_STEALING` is off.
     comptime if _USE_CLC_WORK_STEALING and _has_sm_100x_or_newer():
-        var num_packed = ufloordiv(Int(length), simd_width)
+        var num_packed = ufloordiv(length, simd_width)
         var num_tiles = uceildiv(num_packed, block_size * elems_per_thread)
 
         if packed_elems_per_row < clc_min_packed_per_row or num_tiles <= 1:
@@ -973,11 +973,11 @@ def _dual_elementwise_impl_gpu[
         4 if has_nvidia_gpu_accelerator() else 1,
     ]()
 
-    var max_length = UInt(shape_0.product())
-    var len_1 = UInt(shape_1.product())
+    var max_length = Int(shape_0.product())
+    var len_1 = Int(shape_1.product())
     if len_1 > max_length:
         max_length = len_1
-    var use_32bit = max_length <= UInt(UInt32.MAX)
+    var use_32bit = max_length <= Int(UInt32.MAX)
 
     if max_length == 0:
         return

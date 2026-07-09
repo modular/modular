@@ -720,7 +720,7 @@ struct LinkedList[ElementType: Movable](
 
     def count(
         self, read elem: Self.ElementType
-    ) -> UInt where conforms_to(Self.ElementType, Equatable):
+    ) -> Int where conforms_to(Self.ElementType, Equatable):
         """Count the occurrences of `elem` in the list.
 
         Args:
@@ -740,7 +740,7 @@ struct LinkedList[ElementType: Movable](
 
             current = current.value()[].next()
 
-        return UInt(count)
+        return count
 
     def index(
         self,

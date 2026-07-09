@@ -552,7 +552,7 @@ def min[
 @always_inline
 def broadcast[
     dtype: DType, width: SIMDSize, //, *, block_size: Int
-](val: SIMD[dtype, width], src_thread: UInt = 0) -> SIMD[dtype, width]:
+](val: SIMD[dtype, width], src_thread: Int = 0) -> SIMD[dtype, width]:
     """Broadcasts a value from a source thread to all threads in a block.
 
     This function takes a SIMD value from the specified source thread and
@@ -607,7 +607,7 @@ def broadcast[
     block_dim_x: Int,
     block_dim_y: Int,
     block_dim_z: Int = 1,
-](val: SIMD[dtype, width], src_thread: UInt = 0) -> SIMD[dtype, width]:
+](val: SIMD[dtype, width], src_thread: Int = 0) -> SIMD[dtype, width]:
     """Broadcasts a value from a source thread to all threads in a multi-dimensional block.
 
     This function takes a SIMD value from the specified source thread (identified

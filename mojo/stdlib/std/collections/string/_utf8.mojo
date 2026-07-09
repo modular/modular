@@ -193,8 +193,8 @@ def _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
 
 def _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
     var ptr = span.unsafe_ptr()
-    var length = UInt(len(span))
-    var offset = UInt(0)
+    var length = Int(len(span))
+    var offset = 0
 
     while offset < length:
         var b0 = ptr[offset]
@@ -208,7 +208,7 @@ def _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
             return False
 
         for i in range(1, Int(byte_type)):
-            var idx = offset + UInt(i)
+            var idx = offset + i
             if idx >= length or not _is_utf8_continuation_byte(ptr[idx]):
                 return False
 
@@ -225,7 +225,7 @@ def _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
         elif b0 == 0xF4 and b1 > 0x8F:
             return False
 
-        offset += UInt(byte_type)
+        offset += Int(byte_type)
 
     return True
 
@@ -325,9 +325,9 @@ def _is_newline_char_utf8[
     include_r_n: Bool = False
 ](
     p: UnsafePointer[mut=False, Byte, ...],
-    eol_start: UInt,
+    eol_start: Int,
     b0: Byte,
-    char_len: UInt,
+    char_len: Int,
 ) -> Bool:
     """Returns whether the char is a newline char.
 

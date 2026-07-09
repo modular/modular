@@ -1017,7 +1017,7 @@ struct Timer(ImplicitlyCopyable):
     def __exit__(mut self):
         end_time = time.perf_counter_ns()
         elapsed_time_ms = round(
-            Float64(end_time - UInt(self.start_time)) / 1e6, 3
+            Float64(end_time - self.start_time) / 1e6, 3
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
@@ -1092,7 +1092,7 @@ struct ConditionalTimer(ImplicitlyCopyable):
     def __exit__(mut self):
         end_time = time.perf_counter_ns()
         elapsed_time_ms = round(
-            Float64(end_time - UInt(self.start_time)) / 1e6, 3
+            Float64(end_time - self.start_time) / 1e6, 3
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 

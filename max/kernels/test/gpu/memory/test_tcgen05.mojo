@@ -180,8 +180,8 @@ def tcgen05_cp_ld_roundtrip_kernel[
     # Spread data to the 4 quadrants accordingly, such that each thread will have
     # [thread_idx.x + 0, ..., thread_idx.x + 3] in it's registers after the `tcgen05.ld`.
 
-    var n = (UInt(thread_idx.x) // 2) % 2 * 4 + (UInt(thread_idx.x) // 8)
-    var k = (UInt(thread_idx.x) // 4) % 2 * 4 + (UInt(thread_idx.x) % 2) * 2
+    var n = (thread_idx.x // 2) % 2 * 4 + (thread_idx.x // 8)
+    var k = (thread_idx.x // 4) % 2 * 4 + (thread_idx.x % 2) * 2
 
     smem_tile[n, k + 0] = Float32(thread_idx.x * 4 + 0)
     smem_tile[n, k + 1] = Float32(thread_idx.x * 4 + 1)

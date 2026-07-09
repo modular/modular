@@ -206,14 +206,6 @@ def test_decimal_digit_count() raises:
     assert_equal(Int.MIN._decimal_digit_count(), 19)
 
 
-def test_int_uint() raises:
-    var u1 = UInt(42)
-    assert_equal(42, Int(u1))
-
-    var u2 = UInt(0)
-    assert_equal(0, Int(u2))
-
-
 def test_comparison() raises:
     assert_true(Int(5).__lt__(Int(10)))
     assert_true(Int(-10).__lt__(Int(-5)))

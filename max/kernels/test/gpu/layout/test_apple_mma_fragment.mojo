@@ -89,7 +89,7 @@ def _verify_fragments(
     sequential values [r * 16 + c].
     """
     var pass_ = True
-    for tid in range(Int(WARP_SIZE)):
+    for tid in range(WARP_SIZE):
         var layout = _apple_frag_layout(tid)
         var row_lo = layout[0]
         var col_base = layout[1]
@@ -541,8 +541,8 @@ def mma_shared_kernel(
     # 32 threads cooperatively copy 256 elements (8 per lane, strided).
     var lid = Int(lane_id())
     for i in range(8):
-        a_shared[i * Int(WARP_SIZE) + lid] = a_ptr[i * Int(WARP_SIZE) + lid]
-        b_shared[i * Int(WARP_SIZE) + lid] = b_ptr[i * Int(WARP_SIZE) + lid]
+        a_shared[i * WARP_SIZE + lid] = a_ptr[i * WARP_SIZE + lid]
+        b_shared[i * WARP_SIZE + lid] = b_ptr[i * WARP_SIZE + lid]
     barrier()
 
     var a_tile = TileTensor(a_shared, row_major[16, 16]())

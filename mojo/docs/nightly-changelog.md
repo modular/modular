@@ -671,6 +671,12 @@ This version is still a work in progress.
 
 ## Removed
 
+- Removed the `UInt`-returning GPU indexing accessors (`thread_idx_uint`,
+  `block_idx_uint`, `block_dim_uint`, `grid_dim_uint`, `global_idx_uint`,
+  `lane_id_uint`, `warp_id_uint`). Use the `Int`-returning `thread_idx`,
+  `block_idx`, `block_dim`, `grid_dim`, `global_idx`, `lane_id`, and
+  `warp_id` accessors instead.
+
 - Removed the `store_volatile()` and `load_volatile()` intrinsics from
   `std.gpu.intrinsics`. Use `UnsafePointer.store[volatile=True]()` and
   `UnsafePointer.load[volatile=True]()` instead, which work across all

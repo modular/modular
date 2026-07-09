@@ -95,7 +95,7 @@ struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
 
     @always_inline("nodebug")
     def __int__(self) -> Int:
-        return Int(self._value)
+        return self._value
 
     @always_inline
     def __eq__(self, other: Self) -> Bool:
@@ -114,8 +114,8 @@ struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
         return self != other
 
     @always_inline
-    def __hash__(self) -> UInt:
-        return UInt(Int(self._value))
+    def __hash__(self) -> Int:
+        return self._value
 
     @always_inline
     def write_to(self, mut writer: Some[Writer]):

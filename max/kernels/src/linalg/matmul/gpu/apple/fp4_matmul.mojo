@@ -139,7 +139,7 @@ struct AppleM5Fp4MatMul[
     comptime NUM_SG_M = Self.BM // Self.SG_M
     comptime NUM_SG_N = Self.BN // Self.SG_N
     comptime NUM_SG = Self.NUM_SG_M * Self.NUM_SG_N
-    comptime THREADS_PER_BLOCK = Self.NUM_SG * Int(WARP_SIZE)
+    comptime THREADS_PER_BLOCK = Self.NUM_SG * WARP_SIZE
 
     comptime Mma = MmaOpApple[
         DType.float32,
