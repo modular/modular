@@ -76,7 +76,7 @@ getTraitFunctionSignature(ASTDecl &declScope, FnOp traitFn,
       ParamBindings::getForDeclaredType(declScope, structSelfType, expr);
 
   // Only bind the `Self`, leave the rest unbound.
-  bindings.relaxBindingKindTo(ParamBindings::kUnbindAll);
+  bindings.relaxBindingKindTo(ParamBindings::kWithEllipsis);
 
   // Leave the rest alone.
   for (Type type : paramTypes.drop_front())
