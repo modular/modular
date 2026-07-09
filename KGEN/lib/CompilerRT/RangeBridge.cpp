@@ -20,7 +20,7 @@
 
 extern "C" {
 
-// Mojo-callable range begin / end. Both branch on M::Profiling::gKinetoEnabled
+// Mojo-callable range begin / end. Both branch on M::Profiling::isEnabled()
 // before doing any work, so they are safe to call from hot kernel-launch
 // paths even when profiling is disabled.
 //
