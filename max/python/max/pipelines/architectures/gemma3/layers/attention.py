@@ -242,7 +242,6 @@ class Gemma3Attention(Module, Shardable):
                     input_row_offsets=kwargs["input_row_offsets"],
                     mask_variant=MHAMaskVariant.NULL_MASK,
                     scale=self.scale,
-                    local_window_size=self.local_window_size,
                 )
 
             def _causal_attn() -> TensorValue:
@@ -254,7 +253,6 @@ class Gemma3Attention(Module, Shardable):
                     input_row_offsets=kwargs["input_row_offsets"],
                     mask_variant=MHAMaskVariant.CAUSAL_MASK,
                     scale=self.scale,
-                    local_window_size=self.local_window_size,
                 )
 
             attn_out = ops.cond(
@@ -273,7 +271,6 @@ class Gemma3Attention(Module, Shardable):
                 input_row_offsets=kwargs["input_row_offsets"],
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
                 scale=self.scale,
-                local_window_size=self.local_window_size,
             )
 
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])

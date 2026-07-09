@@ -44,6 +44,7 @@ from max.nn.attention.attention_with_rope import (
     DataParallelAttentionWithRope,
     TensorParallelAttentionWithRope,
 )
+from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
@@ -251,6 +252,13 @@ class Eagle3MHADraft(Module):
             has_bias=False,
             sliding_window=config.sliding_window,
         )
+        if config.sliding_window is not None:
+            # The flash-attention kernel only honors ``local_window_size`` when
+            # the mask variant is a windowed one; the default CAUSAL_MASK would
+            # silently run full causal and ignore the window.
+            attn_kwargs["mask_variant"] = (
+                MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
+            )
         if self.use_data_parallel_attention:
             self.self_attn: AttentionWithRope = DataParallelAttentionWithRope(
                 **attn_kwargs
