@@ -79,7 +79,7 @@ def test_runtime_unified_async_memory_result_raises() raises:
 def test_task_id_for_device_returns_int() raises:
     """Verify task_id_for_device returns a non-negative or -1 integer.
 
-    The function delegates to KGEN_CompilerRT_TaskIdForDevice.  Without a
+    The function delegates to MLRT_TaskIdForDevice.  Without a
     configured affinity map, the runtime may return -1 (no hint) or a valid
     worker index.  Either way, the return type must be Int and be >= -1.
     """

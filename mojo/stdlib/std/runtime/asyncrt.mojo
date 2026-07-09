@@ -202,7 +202,7 @@ def task_id_for_device(device_id: Int) -> Int:
         if no affinity mapping is configured.
     """
     return Int(
-        external_call["KGEN_CompilerRT_TaskIdForDevice", Int32](
+        external_call["MLRT_TaskIdForDevice", Int32](
             Int32(device_id),
         )
     )
