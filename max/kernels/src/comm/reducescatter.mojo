@@ -38,7 +38,12 @@ from std.gpu.intrinsics import (
     Scope,
 )
 from std.math import ceildiv
-from std.sys import simd_width_of, align_of, is_amd_gpu
+from std.sys import (
+    simd_width_of,
+    align_of,
+    has_amd_gpu_accelerator,
+    is_amd_gpu,
+)
 
 from .sync import (
     MAX_GPUS,
@@ -534,7 +539,8 @@ def reducescatter[
         rank_sigs: Signal pointers for synchronization between GPUs.
         ctx: Device context for THIS GPU.
         _max_num_blocks: Optional maximum number of thread blocks to launch.
-            If not specified, uses MAX_NUM_BLOCKS_UPPER_BOUND.
+            If not specified, uses an arch-specific default (128 on AMD,
+            else MAX_NUM_BLOCKS_UPPER_BOUND).
         local_rank: Optional rank of THIS GPU within the reduce-scatter group.
             Defaults to the physical device id for full-world collectives.
 
@@ -636,8 +642,13 @@ def reducescatter[
                 + ")"
             )
 
+    # AMD P2P reduce-scatter is PCIe-fabric-bound: ~128 blocks saturate it
+    # (CDNA4: 166.5 vs 148.8 GB/s at 1024); more only adds barrier overhead.
+    comptime _default_num_blocks = (
+        128 if has_amd_gpu_accelerator() else MAX_NUM_BLOCKS_UPPER_BOUND
+    )
     var max_num_blocks = (
-        _max_num_blocks.value() if _max_num_blocks else MAX_NUM_BLOCKS_UPPER_BOUND
+        _max_num_blocks.value() if _max_num_blocks else _default_num_blocks
     )
 
     # Default epilogue: store directly to output buffer
