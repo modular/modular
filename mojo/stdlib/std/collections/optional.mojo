@@ -784,8 +784,6 @@ struct Optional[T: Movable](
     ):
         result = UnsafePointer(to=self).bitcast[type_of(result)]()[]
 
-    # TODO(MOCO-3744): `To` cannot be inferred by the compiler
-    # and must be manually specified.
     def map[
         To: Movable,
         //,
@@ -815,7 +813,7 @@ struct Optional[T: Movable](
 
         ```mojo
         var opt = Optional("hello")
-        var length = opt.map[To=Int](String.byte_length)
+        var length = opt.map(String.byte_length)
         print(length.value())  # Output: 5
         ```
 
@@ -823,7 +821,7 @@ struct Optional[T: Movable](
 
         ```mojo
         var opt = Optional[String](None)
-        var length = opt.map[To=Int](String.byte_length)
+        var length = opt.map(String.byte_length)
         print(length.or_else(-1))  # Output: -1
         ```
         """
@@ -832,8 +830,6 @@ struct Optional[T: Movable](
         else:
             return None
 
-    # TODO(MOCO-3744): `To` cannot be inferred by the compiler
-    # and must be manually specified.
     def and_then[
         To: Movable,
         //,
@@ -870,7 +866,7 @@ struct Optional[T: Movable](
 
         def main():
             var opt = Optional("42")
-            var parsed = opt.and_then[To=Int](try_parse_int)
+            var parsed = opt.and_then(try_parse_int)
             print(parsed.value())  # Output: 42
         ```
 
@@ -879,7 +875,7 @@ struct Optional[T: Movable](
         ```mojo
         def main():
             var opt = Optional[String](None)
-            var parsed = opt.and_then[To=Int](try_parse_int)
+            var parsed = opt.and_then(try_parse_int)
             print(parsed.or_else(-1))  # Output: -1
         ```
         """

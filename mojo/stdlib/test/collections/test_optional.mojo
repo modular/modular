@@ -405,14 +405,14 @@ def double(var x: Int) -> Float64:
 
 def test_map_with_value() raises:
     var opt = Optional(21)
-    var result = opt^.map[To=Float64](double)
+    var result = opt^.map(double)
     assert_true(result)
     assert_equal(result.value(), 42.0)
 
 
 def test_map_with_none() raises:
     var opt = Optional[Int](None)
-    var result = opt^.map[To=Float64](double)
+    var result = opt^.map(double)
     assert_false(result)
 
 
@@ -422,7 +422,7 @@ def test_map_with_closure_that_takes_by_read() raises:
     def closure_by_read(s: String) -> String:
         return s + "42"
 
-    var result1 = opt.map[To=String](closure_by_read)
+    var result1 = opt.map(closure_by_read)
     assert_equal(result1[], "hello42")
 
 
@@ -435,20 +435,20 @@ def try_parse_int(var s: String) -> Optional[Int]:
 
 def test_and_then_with_value() raises:
     var opt = Optional("42")
-    var result = opt^.and_then[To=Int](try_parse_int)
+    var result = opt^.and_then(try_parse_int)
     assert_true(result)
     assert_equal(result.value(), 42)
 
 
 def test_and_then_with_value_returns_none() raises:
     var opt = Optional("not_a_number")
-    var result = opt^.and_then[To=Int](try_parse_int)
+    var result = opt^.and_then(try_parse_int)
     assert_false(result)
 
 
 def test_and_then_with_none() raises:
     var opt = Optional[String](None)
-    var result = opt^.and_then[To=Int](try_parse_int)
+    var result = opt^.and_then(try_parse_int)
     assert_false(result)
 
 
