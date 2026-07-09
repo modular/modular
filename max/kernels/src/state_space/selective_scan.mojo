@@ -22,7 +22,7 @@ from std.algorithm import sync_parallelize
 from std.gpu.host import DeviceContext
 import std.math
 from std.math import ceildiv, exp, exp2, rsqrt
-from state_space.causal_conv1d import silu
+from nn.activations import silu
 
 # ===----------------------------------------------------------------------=== #
 # Constants and Type Aliases
