@@ -339,6 +339,11 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // lowering happens, matching the server, which stops at semantic checking).
   // Note: docstring code blocks are not checked here (that is the server's
   // processDocStrings step).
+  //
+  // Unlike the server (a long-running process with no exit code, for which
+  // diagnostics are the only signal), this CLI command reports any
+  // error-severity diagnostic as a non-zero exit -- useful for scripts/tests
+  // that want a pass/fail signal without scraping stderr.
   if (clOptions.cmd == Command::kLSP) {
     if (!inputFileName.ends_with(".mojo"))
       return failure(
@@ -348,6 +353,18 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     // Route both parse and check diagnostics through one handler so they print
     // to stderr with source locations, mirroring checkModuleSemantics.
     mlir::SourceMgrDiagnosticHandler diagHandler(mgr, ctx);
+
+    // Track whether any error-severity diagnostic was emitted, without
+    // changing how diagHandler prints it. Handlers run most-recently-
+    // registered-first and stop at the first success(); returning failure()
+    // here always defers to diagHandler, which is registered first.
+    bool sawError = false;
+    mlir::ScopedDiagnosticHandler errorTracker(
+        ctx, [&](mlir::Diagnostic &diag) {
+          if (diag.getSeverity() == mlir::DiagnosticSeverity::Error)
+            sawError = true;
+          return failure();
+        });
 
     LIT::ParserConfig config(ctx, options);
     config.stripFilePrefix = clOptions.stripFilePrefix;
@@ -372,7 +389,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     // is the final IR the LSP path produces; `print` omits a trailing newline.
     clone->print(llvm::outs());
     llvm::outs() << "\n";
-    return mlir::success();
+    return failure(sawError);
   }
 
   // The set of files included during processing, used to generate the

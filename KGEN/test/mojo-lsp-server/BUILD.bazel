@@ -4,13 +4,10 @@ package(default_visibility = ["//visibility:private"])
 
 lit_tests(
     name = "mojo-lsp-server-misc",
-    srcs = glob(
-        [
-            "**/*.test",
-            "**/*.mojo",
-        ],
-        exclude = ["parse-stdlib/**"],
-    ),
+    srcs = glob([
+        "**/*.test",
+        "**/*.mojo",
+    ]),
     mojo_deps = [
         "@mojo//:std",
     ],
@@ -22,13 +19,12 @@ lit_tests(
 
 # Umbrella target: bt //KGEN/test/mojo-lsp-server runs everything.
 #
-# Note: parse-stdlib tests are intentionally excluded (commented out below)
-# because their "manual" tag is bypassed when listed in a test_suite, causing
-# them to run in CI where they time out on ARM/sanitizer builds.
+# Note: the parse-tree smoke test is intentionally excluded because its "manual"
+# tag is bypassed when listed in a test_suite, causing it to run in CI where it
+# times out on ARM/sanitizer builds. It runs via the LSP parse-tree nightly.
 test_suite(
     name = "mojo-lsp-server",
     tests = [
         ":mojo-lsp-server-misc",
-        # "//KGEN/test/mojo-lsp-server/parse-stdlib:mojo-lsp-server-parse-stdlib",
     ],
 )
