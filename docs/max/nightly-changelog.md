@@ -123,6 +123,12 @@ This version is still a work in progress.
   `host_kvcache_swap_space_gb` now sizes one shared host pool of that size for
   the whole deployment, rather than allocating a separate pool of that size per
   replica.
+- The dKV external KV-cache connector (`--kv-connector dkv`) now supports
+  data-parallel (DP) serving and shares its prefix cache across DP replicas on
+  the default single-tenant path, matching the `local` and `tiered` connectors.
+  Every replica resolves to the same replica-agnostic store, and the stored
+  block key carries no replica component, so a block offloaded through one
+  replica is served to any other.
 - The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
   into a single `rms_norm_rope` GPU kernel even when the RMSNorm is written "in
   float32" — that is, when a `bfloat16`/`float16` activation is upcast to

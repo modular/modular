@@ -268,6 +268,16 @@ def _validate_tenant_topology(
         )
 
 
+# The default (non-multi-tenant) DP identity every replica handshakes: one
+# shared, replica-agnostic store. Both fields are 0, so the dKV server keys a
+# SINGLE store for ``(tenant_id="", kv_shard_id=0, replica_id=0)`` and every DP
+# replica resolves to it — intentional cross-replica prefix sharing (the analog
+# of the local/tiered connectors' single shared host pool), exercised by the
+# dkv-e2e ``clin1452_dp.rs`` cross-replica roundtrip. See
+# :func:`_resolve_replica_identities` for the full contract.
+_DEFAULT_SHARED_STORE_REPLICA_IDENTITY = (0, 0)
+
+
 def _resolve_replica_identities(
     tenant_id: str,
     num_replicas: int,
@@ -278,14 +288,26 @@ def _resolve_replica_identities(
     Returns the shared ``kv_config_hash`` and, per DP replica in order, its
     ``(kv_shard_id, replica_id)``:
 
-    * Legacy path (empty ``tenant_id``): all-zero identity, so the dKV server
-      collapses every replica to one store — unchanged from before.
+    * Default path (empty ``tenant_id``): every DP replica resolves to the same
+      all-zero identity (:data:`_DEFAULT_SHARED_STORE_REPLICA_IDENTITY`), so the
+      dKV server routes them ALL to ONE shared, replica-agnostic store —
+      intentional DP prefix sharing (the analog of the ``local``/``tiered``
+      connectors' single shared host pool), not an accidental collapse. This is
+      sound because (a) the block key is replica-agnostic (the ``BlockKey``
+      proto's ``(tp_shard_id, group_id, seq_hash)``, built in ``connector.rs``,
+      no replica component), so a block any replica offloads is visible to all,
+      and (b)
+      CLIN-1343 gives each per-replica client a UNIQUE NIXL agent name +
+      port, so the N clients coexist in one process. Per-replica isolation
+      (peer reads, content-hash routing) is out of scope — CLIN-1478 slice-3.
     * Multi-tenant path: guards the topology (:func:`_validate_tenant_topology`)
       and maps each replica's one GPU (TP==1) to its share via
       :func:`_resolve_kv_share_identity`, sharing the layout ``kv_config_hash``.
 
     Args:
-        tenant_id: The resolved tenant identity (empty is the legacy path).
+        tenant_id: The resolved tenant identity (empty is the default
+            single-tenant path, resolving to one shared, replica-agnostic
+            store).
         num_replicas: Number of DP replicas (one dKV client each).
         params: KV-cache parameters (used only on the multi-tenant path).
 
@@ -298,7 +320,10 @@ def _resolve_replica_identities(
         ValueError: If ``num_replicas`` disagrees with ``data_parallel_degree``.
     """
     if not tenant_id:
-        return 0, [(0, 0)] * num_replicas
+        # Default path: all DP replicas resolve to ONE shared, replica-agnostic
+        # store (see _DEFAULT_SHARED_STORE_REPLICA_IDENTITY). The paired
+        # kv_config_hash is 0; the server ignores it on the empty-tenant path.
+        return 0, [_DEFAULT_SHARED_STORE_REPLICA_IDENTITY] * num_replicas
     _validate_tenant_topology(
         is_single_group=isinstance(params, KVCacheParams),
         tensor_parallel_degree=params.tensor_parallel_degree,
@@ -438,6 +463,14 @@ class DKVConnector:
     one replica's registered device buffers and carry no replica/group key), so
     this shim owns one Rust client per replica and routes each call to the
     client for the request's ``replica_idx``.
+
+    On the default path all replicas share ONE replica-agnostic store (see
+    :func:`_resolve_replica_identities`), so ``self._clients[replica_idx]``
+    selects only WHICH per-replica client (device endpoint) moves the
+    blocks, not which store is addressed — routing by the PROCESSING replica.
+    That selection in :meth:`load` / :meth:`offload` is the seam CLIN-1478
+    slice-3 later swaps to route by the content-hash OWNER replica
+    (``hash(seq_hash) % dp_size``) for multi-tenant per-replica isolation.
     """
 
     @traced
@@ -473,10 +506,11 @@ class DKVConnector:
 
         # Multi-tenant deployment identity (CLIN-1477). MODULAR_DKV_TENANT_ID is
         # injected by the operator (the trust boundary — not a user-facing
-        # override flag, which would be forgeable). Unset/empty is the legacy
+        # override flag, which would be forgeable). Unset/empty is the default
         # single-tenant path: every handshake identity field stays default and
-        # the dKV server collapses all replicas to one store, unchanged from
-        # before. When set, each GPU sends a distinct identity so the server
+        # every DP replica resolves to one shared, replica-agnostic store
+        # (intentional cross-replica prefix sharing, not an accidental
+        # collapse). When set, each GPU sends a distinct identity so the server
         # keys a distinct store per (tenant_id, kv_shard_id, replica_id).
         tenant_id = os.getenv("MODULAR_DKV_TENANT_ID", "")
         num_replicas = len(replica_kv_memory)
