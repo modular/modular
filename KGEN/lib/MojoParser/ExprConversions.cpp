@@ -2141,8 +2141,19 @@ CValue IREmitter::emitImplicitConversionToType(
                                      dest, additionalAssumptions);
   }
 
-  // We disable implicit conversions to prevent converting T -> S -> U in
-  // one step, and to avoid infinite conversion cycles.
+  // Before we try emitting constructor call, makes sure that the required type
+  // is concrete.
+  if (llvm::find_if(requiredType.getParamBindings(), [](TypedAttr param) {
+        return isa<UnboundAttr>(param);
+      }) != requiredType.getParamBindings().end()) {
+    emitError(expr->getLoc())
+        << "cannot construct a value with parametric type: " << requiredType
+        << expr->getRange();
+    dest.resetForError(*this);
+    return {};
+  }
+  //  We disable implicit conversions to prevent converting T -> S -> U in
+  //  one step, and to avoid infinite conversion cycles.
   return emitConstructorCall(requiredType,
                              CallOperands(CallSyntax::kImplicitConvert, expr,
                                           std::move(dest), {valueExpr}));
