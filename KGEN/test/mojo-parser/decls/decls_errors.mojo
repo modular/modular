@@ -1347,3 +1347,7 @@ comptime _something = MyParam.p # expected-error {{'p' refers to an unbound para
 
 def pack_error[Trait: type_of(AnyType), //, *element_types: Trait]():
     pass
+
+
+# expected-error @+1 {{cannot construct a value with parametric type: 'Origin[mut=_]'}}
+comptime A: Origin = AnyOrigin
