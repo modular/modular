@@ -117,6 +117,9 @@ SOFTMAX: dict[
 
 # Import handlers after defining kernels to avoid circular import issues.
 # handlers.py uses the kernel dictionaries defined above.
+# Re-export the warm-adoption query (from gc_compile) so a consumer can assert
+# the ops were force-loaded from the manifest rather than cold-compiled.
+from .gc_compile import adopted_from_manifest
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
 
 
@@ -138,6 +141,7 @@ __all__ = [
     "SOFTMAX",
     "UNARY_MIXED",
     "_MO_OP_HANDLERS",
+    "adopted_from_manifest",
     "lookup_handler",
     "register_op_handler",
 ]

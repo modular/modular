@@ -29,9 +29,11 @@ import from ``handlers.py``.
 
 import itertools
 import logging
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from math import prod
+from typing import Any
 
 from max import engine
 from max._interpreter_ops import gc_compile
@@ -123,24 +125,129 @@ def _build_matmul_graph(
 _swept = False
 
 
-@in_default_mlir_context
-def compile_matmul_sweep() -> None:
-    """Compile every supported (device, dtype) matmul target in one batched
-    ``load_all`` (parallel compile), warming the in-process cache.
+def _sweep_devices() -> list[Device]:
+    """Every device the matmul sweep spans: CPU + all accelerator slots."""
+    return list(_CPU_DEVICES) + list(_ACCELERATOR_DEVICES)
 
-    Used three ways, all the same call: the import-time precompile (``=1``);
-    the ``warm-interpreter-cache`` CLI; and lazy dispatch *adopting* a warm
-    stamp. In the adoption case the identical batched module hashes to the warm
-    on-disk cache key, so ``load_all`` is a fast load rather than a recompile.
+
+def build_matmul_module() -> Module:
+    """Build the full batched matmul module: every ``_COMPILATION_TARGETS`` slot
+    (CPU + all accelerators, all dtypes) in one module.
+
+    Host-ELF and cubins both embed self-contained in the exported MEF, so one
+    force-load populates every device class at once. Shared by the warm producer
+    (export) and :func:`compile_matmul_sweep` (compile into cache).
     """
-    global _swept
     module = Module()
     for compilation_target in _COMPILATION_TARGETS:
         _build_matmul_graph(module, compilation_target)
-    devices = {ct.device for ct in _COMPILATION_TARGETS}
-    session = engine.InferenceSession(devices=devices)
-    _MATMUL_MODEL_CACHE.update(session.load_all(module, weights_registry={}))
+    return module
+
+
+def build_matmul_module_for_device(device: Device) -> Module:
+    """Build the matmul module for a single device slot: every dtype target on
+    *device* (matched by label + id), and nothing else.
+
+    Per-slot counterpart of :func:`build_matmul_module`. The warm producer
+    exports one MEF per slot so the warm is device-count-independent: a k-GPU
+    consumer force-loads only slots ``0..k-1``, letting a warm made for a higher
+    count still adopt.
+    """
+    module = Module()
+    for compilation_target in _COMPILATION_TARGETS:
+        if (
+            compilation_target.device.label == device.label
+            and compilation_target.device.id == device.id
+        ):
+            _build_matmul_graph(module, compilation_target)
+    return module
+
+
+@in_default_mlir_context
+def compile_matmul_sweep() -> None:
+    """Warm the in-process matmul cache: force-load an adoptable manifest if one
+    is present, else compile every supported (device, dtype) target in one
+    batched ``load_all`` (parallel compile).
+
+    The manifest-first check is what makes the import-time precompile
+    (``_precompile_gc_models``) manifest-aware, precompile and lazy dispatch
+    funnel through the one :func:`_adopt_matmul_manifest_if_adoptable`. Absent an
+    adoptable manifest this is the batched compile used three ways, all the same
+    call: the precompile (``=1``); the ``warm-interpreter-cache`` CLI; and lazy
+    dispatch adopting a warm stamp (the identical batched module hashes to the
+    warm on-disk cache key, so ``load_all`` loads rather than recompiles).
+    """
+    global _swept
+    if _adopt_matmul_manifest_if_adoptable():
+        return
+    session = engine.InferenceSession(devices=_sweep_devices())
+    _MATMUL_MODEL_CACHE.update(
+        session.load_all(build_matmul_module(), weights_registry={})
+    )
     _swept = True
+
+
+def _adopt_matmul_from_manifest(manifest: dict[str, Any]) -> bool:
+    """Force-load the per-slot matmul MEFs named in the manifest.
+
+    Returns True iff every needed slot was force-loaded (models added to the
+    cache). Force-load (session.load_all by path) bypasses the compile + cache
+    key, so it adopts across a toolchain-ID mismatch the key-based path cannot.
+    The manifest holds one single-device MEF per slot; a k-GPU box loads the CPU
+    entry plus ``gpu:0..gpu:k-1`` into one multi-device session, which binds each
+    slot's graphs to the matching real device by embedded id, so a warm made
+    for more slots than this box has still adopts (extra slots go unloaded).
+    """
+    device_classes = ["cpu"] + [f"gpu:{i}" for i in range(accelerator_count())]
+    try:
+        session = engine.InferenceSession(devices=_sweep_devices())
+        loaded: dict[str, engine.Model] = {}
+        names: list[str] = []
+        for device_class in device_classes:
+            mef = gc_compile.manifest_entry_path(
+                manifest, "matmul", device_class
+            )
+            if mef is None or not mef.exists():
+                return False
+            loaded.update(session.load_all(str(mef), weights_registry={}))
+            names.append(mef.name)
+    except Exception:
+        logger.warning(
+            "Eager warm manifest force-load failed; compiling on demand.",
+            exc_info=True,
+        )
+        return False
+    _MATMUL_MODEL_CACHE.update(loaded)
+    gc_compile.note_manifest_adoption("matmul")
+    # Force-load bypasses the keyed cache lookup, so [modular-cache] logging is
+    # silent; the stderr marker + gc_compile.adopted_from_manifest signal it ran.
+    print(
+        f"[eager-warm] manifest force-load: matmul {names} ({len(loaded)} models)",
+        file=sys.stderr,
+        flush=True,
+    )
+    return True
+
+
+def _adopt_matmul_manifest_if_adoptable() -> bool:
+    """Force-load the matmul manifest if one is present and adoptable here.
+
+    The single adoption check both the lazy dispatch and the import-time
+    precompile (via :func:`compile_matmul_sweep`) funnel through, so the two
+    paths can't diverge. Marks ``_swept`` once the manifest is adoptable, so a
+    later dispatch won't re-attempt an adoptable-but-failing force-load; returns
+    True only when the force-load fully succeeded. On failure the triggering
+    dispatch degrades to a *batched* recompile when a warm stamp is also present
+    (the composed warm dir carries both, and :func:`compile_matmul_sweep`
+    re-checks this manifest once more before its batched ``load_all``), or to
+    per-target compilation when only a manifest was present.
+    """
+    global _swept
+    manifest = gc_compile.read_manifest()
+    if manifest is None or not gc_compile.manifest_adoptable(manifest):
+        return False
+    _swept = True
+    return _adopt_matmul_from_manifest(manifest)
 
 
 @in_default_mlir_context
@@ -158,9 +265,10 @@ def matmul_model(device: Device, dtype: DType) -> engine.Model:
 
     Lazy by default: compiled on first use and cached in ``_MATMUL_MODEL_CACHE``
     for the process lifetime. With ``MAX_EAGER_OP_PRECOMPILE=1`` it was
-    precompiled at import and this is a lookup. If a ``warm-interpreter-cache``
-    stamp is present for this context, the first miss adopts the warm with one
-    batched sweep (a cache load) instead of compiling each target singly.
+    precompiled at import and this is a lookup. On the first miss an available
+    warm cache is adopted whole instead of compiling each target singly --
+    force-loaded from a manifest when one is present and adoptable, else via a
+    batched sweep of a matching ``warm-interpreter-cache`` stamp.
 
     Args:
         device: The target device (CPU or GPU accelerator).
@@ -196,18 +304,24 @@ def matmul_model(device: Device, dtype: DType) -> engine.Model:
         if model is not None:
             return model
         global _swept
-        if not _swept and gc_compile.warm_stamp_matches():
-            # Mark _swept before attempting so a stale stamp can't loop; guard
-            # so an adoption failure falls through to per-target, not the op.
-            _swept = True
-            try:
-                compile_matmul_sweep()
-            except Exception:
-                logger.warning(
-                    "Eager interpreter warm-cache adoption failed; compiling"
-                    " matmul targets on demand.",
-                    exc_info=True,
-                )
+        if not _swept:
+            # Adopt a warm cache whole rather than compile per target: force-load
+            # an adoptable manifest first (bypasses the toolchain key; the same
+            # check the precompile path uses via compile_matmul_sweep), else a
+            # matching warm stamp's batched sweep.
+            if _adopt_matmul_manifest_if_adoptable():
+                pass
+            elif gc_compile.warm_stamp_matches():
+                # Key-based batched adoption (unchanged fallback).
+                _swept = True
+                try:
+                    compile_matmul_sweep()
+                except Exception:
+                    logger.warning(
+                        "Eager interpreter warm-cache adoption failed;"
+                        " compiling matmul targets on demand.",
+                        exc_info=True,
+                    )
             model = _MATMUL_MODEL_CACHE.get(target.graph_name)
             if model is not None:
                 return model

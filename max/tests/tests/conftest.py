@@ -20,11 +20,22 @@ import pytest
 from max import mlir
 from max._mlir_context import default_mlir_context
 from max.driver import set_virtual_cpu_target
+from python.runfiles import runfiles
 
 # Set at collection time, before any test imports max._interpreter_ops.
 _test_cpu_target = os.environ.get("MODULAR_TEST_VIRTUAL_CPU_TARGET")
 if _test_cpu_target:
     set_virtual_cpu_target(_test_cpu_target)
+
+# Point the eager warm cache at the build-time-warmed dir before the import-time
+# precompile adopts it. Gated on the env var so only a test that depends on a
+# warm dir (and sets this) opts in; other tests here are unaffected.
+_warm_rloc = os.environ.get("XARCH_WARM_RLOCATION")
+if _warm_rloc:
+    _runfiles = runfiles.Create()
+    _resolved = _runfiles.Rlocation(_warm_rloc) if _runfiles else None
+    if _resolved:
+        os.environ["MODULAR_DERIVED_PATH"] = _resolved
 
 
 @pytest.fixture(scope="function")
