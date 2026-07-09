@@ -385,6 +385,13 @@ class SpecDecodeState:
                 "Speculative decoding is not enabled in the pipeline config."
             )
 
+        # In compile-only mode (virtual device mode), put the persistent buffers
+        # below on the host: they are runtime-only spec-decode state, and
+        # VirtualDevice does not support memory allocation.
+        buffer_device: Device = (
+            CPU() if is_virtual_device_mode() else model.devices[0]
+        )
+
         kv_manager = load_kv_manager(
             params=model.kv_params,
             max_batch_size=max_batch_size,
@@ -404,27 +411,27 @@ class SpecDecodeState:
         persistent_draft_tokens = Buffer(
             dtype=DType.int64,
             shape=(total_max_batch, num_speculative_tokens),
-            device=model.devices[0],
+            device=buffer_device,
         )
         persistent_temperature = Buffer(
             dtype=DType.float32,
             shape=(total_max_batch,),
-            device=model.devices[0],
+            device=buffer_device,
         )
         persistent_top_k = Buffer(
             dtype=DType.int64,
             shape=(total_max_batch,),
-            device=model.devices[0],
+            device=buffer_device,
         )
         persistent_top_p = Buffer(
             dtype=DType.float32,
             shape=(total_max_batch,),
-            device=model.devices[0],
+            device=buffer_device,
         )
         persistent_seed = Buffer(
             dtype=DType.uint64,
             shape=(total_max_batch,),
-            device=model.devices[0],
+            device=buffer_device,
         )
 
         # The packed-int32 bitmask the async FSM callback fills lives in
@@ -438,7 +445,7 @@ class SpecDecodeState:
         persistent_accepted_draft_tokens_pinned: DevicePinnedBuffer | None = (
             None
         )
-        if vocab_size is not None:
+        if vocab_size is not None and not is_virtual_device_mode():
             persistent_bonus_tokens_pinned = DevicePinnedBuffer(
                 dtype=DType.int64,
                 shape=(total_max_batch,),
@@ -462,11 +469,11 @@ class SpecDecodeState:
         persistent_in_thinking_phase = Buffer(
             dtype=DType.bool,
             shape=(total_max_batch,),
-            device=model.devices[0],
+            device=buffer_device,
         )
 
         overlap_state: StructuredOutputOverlapState | None = None
-        if vocab_size is not None:
+        if vocab_size is not None and not is_virtual_device_mode():
             overlap_state = StructuredOutputOverlapState(
                 device=model.devices[0],
                 cpu=CPU(),
