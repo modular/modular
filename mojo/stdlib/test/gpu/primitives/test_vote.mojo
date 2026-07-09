@@ -73,7 +73,7 @@ def _check[
 
     # Reference: every lane receives the SAME full ballot, with bit `k` set iff
     # lane `k` voted `True`. The reference never sets a bit `>= WARP_SIZE`, so
-    # exact equality also rejects any phantom high bit (the Apple masking bug).
+    # exact equality also rejects any phantom high bit.
     var expected: UInt64 = 0
     for k in range(n):
         if preds[k] != 0:
@@ -126,11 +126,9 @@ def test_vote_single_middle_lane() raises:
 
 
 def test_vote_uint64_high_bits_masked() raises:
-    # Apple `simd_ballot` returns an i64 whose bits `>= WARP_SIZE` are UNDEFINED
-    # on a sub-64-lane SIMD-group; `vote` must mask them. Force a `uint64`
-    # return on backends where WARP_SIZE < 64 and assert no bit `>= WARP_SIZE`
-    # survives (exact equality against a low-bits-only reference). Gated off
-    # NVIDIA, which supports only a 32-bit return.
+    # Force a `uint64` return on backends where WARP_SIZE < 64 and assert no
+    # bit `>= WARP_SIZE` survives (exact equality against a low-bits-only
+    # reference). Gated off NVIDIA, which supports only a 32-bit return.
     comptime if _TARGET_VENDOR != Vendor.NVIDIA_GPU and WARP_SIZE < 64:
         with DeviceContext() as ctx:
             _check[DType.uint64](
