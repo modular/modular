@@ -485,7 +485,12 @@ modular_cc_library(
 # coding standard's ban on global constructors.
 #
 # Tracy and libkineto are mutually exclusive at build time (both subscribe to
-# CUPTI), so this is gated to Linux x86_64 with Tracy disabled.
+# CUPTI), so this is gated to Linux x86_64 with Tracy disabled. The max._core
+# edge is additionally opt-in via `--config=kineto` (//:linux_x86_64_kineto):
+# this target links shared-library stubs (libcuda / libcudart / libcupti) that
+# the external wheel / conda packages do not ship, so a default-configuration
+# max._core must stay free of it or `import max._core` fails outside bazel
+# with a missing libcuda-tracy-stub.so.
 modular_cc_library(
     name = "ProfilingKineto",
     srcs = [
