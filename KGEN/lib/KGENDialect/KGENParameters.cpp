@@ -56,6 +56,15 @@ IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
     mapping.try_emplace(param.getName(), idx);
 }
 
+IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclRefAttr> inputParams,
+                                   size_t offset)
+    : offset(offset) {
+
+  /// Populate the remapper with the given named input parameters.
+  for (auto [idx, param] : llvm::enumerate(inputParams))
+    mapping.try_emplace(param.getName(), idx);
+}
+
 void IndexRefRemapper::appendParamDecl(ParamDeclAttr paramDecl) {
   mapping.try_emplace(paramDecl.getName(), mapping.size());
 }

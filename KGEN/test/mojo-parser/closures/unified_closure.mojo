@@ -1475,7 +1475,7 @@ def trigger[xx: Int, func: def(Int) capturing -> Int]() -> Int:
 
 # CHECK-LABEL: lit.fn @"trigger[::Int,::DType]()"
 # CHECK: %[[WRAP:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct
-# CHECK-SAME: @{{.*}}::@"compute_init2[::Int]()`0x"<:!DType ?, :!Int ?>
+# CHECK-SAME: @{{.*}}::@"compute_init2[::Int]()`0x"<:!DType *(0,0), :!Int *(0,1)>
 # CHECK: %[[INIT:.*]] = lit.call @{{.*}}::@"def[dtype: DType, //, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper"::@"__init__()"{{.*}}(%[[WRAP]])
 # CHECK: %[[IMM:.*]] = lit.ref.immut %[[WRAP]]
 # CHECK: lit.call @{{.*}}::@"local_higher_order
@@ -1713,16 +1713,57 @@ def main():
 
 # COM: Use where clauses to infer parameters that depend on aliases
 
+
 def typed_raises[
-   R: AnyType,
-   F: def() raises R,
-   //,
+    R: AnyType,
+    F: def() raises R,
+    //,
 ](f: F):
-   pass
+    pass
+
 
 # CHECK-LABEL: lit.fn @"thing
 def thing():
-   def closure() raises Int:
-       pass
-   # CHECK: lit.call @{{.*}}::@"typed_raises{{.*}}"[{{.*}}]<:!AnyType !Int
-   typed_raises(closure)
+    def closure() raises Int:
+        pass
+
+    # CHECK: lit.call @{{.*}}::@"typed_raises{{.*}}"[{{.*}}]<:!AnyType !Int
+    typed_raises(closure)
+
+
+# // -----
+
+# COM: Verify a promoted method reference bridges a captured `Int` parameter to a
+# COM: differently-typed (`MyInt`) generator parameter. The captured `Self.width`
+# COM: is an `Int`, but `MySIMD.__add__` needs a `MyInt`, so a generator attr
+# COM: bridges the gap inside the `_PtrWrapper` Impl type,
+# COM: i.e. gen<:!Int x> __add__[MyInt(x)]().
+
+
+struct MyInt:
+    @implicit
+    def __init__(out self, value: Int):
+        pass
+
+
+struct MySIMD[width: MyInt]:
+    def __add__(self, other: MySIMD[Self.width]) -> MySIMD[Self.width]:
+        pass
+
+
+struct Foo[width: Int]:
+    @staticmethod
+    def helper(
+        func: Some[
+            def(MySIMD[Self.width], MySIMD[Self.width]) -> MySIMD[Self.width]
+        ],
+    ):
+        pass
+
+    # CHECK-LABEL: lit.fn @"add()"()
+    @staticmethod
+    def add():
+        # CHECK: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__" synth :
+        # CHECK-SAME: !lit.ref<!lit.struct<#PtrWrapper <:!Int width, :!lit.generator<<"width": !Int, +>
+        # CHECK-SAME: #kgen.gen<#kgen.func.symbol<@{{.*}}::@MySIMD::@"__add__({{.*}}MySIMD[$0],{{.*}}MySIMD[$0])"<:!MyInt
+        Self.helper(MySIMD[Self.width].__add__)

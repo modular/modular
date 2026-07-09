@@ -1097,7 +1097,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
   IREmitter emitter(declScope, EC_Type, &result.deferredTypingContext);
   bool hasErrors = false;
 
-  IndexRefRemapper remapper({});
+  IndexRefRemapper remapper(ArrayRef<ParamDeclAttr>{});
   for (auto [argIdx, arg] : llvm::enumerate(parsedParams.params)) {
     // Check for things supported in arguments that are not supported in
     // parameters.

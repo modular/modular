@@ -37,6 +37,14 @@ SymbolConstantAttr KGEN::extractSymbolConstantAttr(TypedAttr attr) {
         FuncTypeGeneratorType::get({}, funcSymbol.getType(), nullptr),
         funcSymbol.getParamValues());
   }
+  if (auto genSymbol = dyn_cast<GeneratorAttr>(attr)) {
+    assert(genSymbol.getInputParamTypes().empty());
+    auto funcSymbol = cast<FuncSymbolAttr>(genSymbol.getBody());
+    return SymbolConstantAttr::get(
+        funcSymbol.getSymbol(),
+        FuncTypeGeneratorType::get({}, funcSymbol.getType(), nullptr),
+        funcSymbol.getParamValues());
+  }
 
   return dyn_cast<SymbolConstantAttr>(attr);
 }
@@ -446,7 +454,8 @@ IREvaluatorContext::resolveTransparentThunkCallee(GeneratorOp generator,
   ParameterEvaluator evaluator(generator.getInputParams(),
                                symbol.getParamValues());
   evaluator.setEvaluationContext(this);
-  Attribute rebound = evaluator.getReboundAttribute(calleeExpr);
+  Attribute rebound =
+      extractSymbolConstantAttr(evaluator.getReboundAttribute(calleeExpr));
 
   if (error)
     return ErrorTreeOr<SymbolConstantAttr>(std::move(*error));
