@@ -705,3 +705,20 @@ This version is still a work in progress.
       var o = Outer(Inner(1, 2))
       print(o == o)
   ```
+
+- A method whose return type references a constrained `comptime` member (one
+  declared with a trailing `where` clause) is now accepted when the method's
+  own `where` clause discharges that member's constraint.
+
+  ```mojo
+  trait Operation:
+      comptime Output: AnyType
+
+      def operate(self) -> Self.Output: ...
+
+  struct MyList[T: AnyType](Operation where conforms_to(T, Movable)):
+      comptime Output: AnyType where conforms_to(Self.T, Movable) = Int
+
+      def operate(self) -> Self.Output where conforms_to(Self.T, Movable):
+          return Int(123)
+  ```
