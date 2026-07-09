@@ -16,3 +16,19 @@ mojo_test(
         "@mojo//:std",
     ],
 )
+
+# Tests programmatic Metal GPU frame capture. The test handles non-Metal
+# contexts gracefully, so it is not restricted to the Apple GPU toolchain.
+# It does need a GPU build, though: `DeviceContext` resolves
+# `GPUInfo.from_name[_accelerator_arch()]()` at compile time, which fails the
+# "Unknown GPU architecture" constraint on CPU-only platforms (e.g. Graviton).
+# `//:has_gpu` keeps it vendor-agnostic while excluding CPU-only build configs.
+mojo_test(
+    name = "test_metal_capture.mojo.test",
+    srcs = ["test_metal_capture.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "@mojo//:std",
+    ],
+)

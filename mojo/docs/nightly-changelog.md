@@ -576,6 +576,14 @@ This version is still a work in progress.
 
 ## GPU programming
 
+- Added programmatic Metal GPU frame capture in `std.gpu.host`:
+  `_start_metal_trace_capture(ctx, path)` and `_end_metal_trace_capture(ctx)`
+  bracket GPU work and write a `.gputrace` file for offline replay (requires
+  `MTL_CAPTURE_ENABLED=1`). A `_set_metal_gpu_print_enabled(ctx, enabled)`
+  toggle and the `MODULAR_DISABLE_METAL_GPU_PRINT` environment variable disable
+  Metal `os_log` GPU print; print is also suppressed during a capture, which
+  otherwise cannot be replayed.
+
 - `DeviceContext.load_function` now keys its runtime cache on the requested
   entry-point name as well as the blob. Loading two different entry points
   (for example `kernel_a` and `kernel_b`) from a single PTX/cubin blob no
