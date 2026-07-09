@@ -264,3 +264,33 @@ def capture_RTP(x : Int) :
     # expected-error @below{{register passible value 'x' can not be captured by 'mut'. Do you mean 'read'?}}
     def my_func() {mut x}:
         pass
+
+# ===----------------------------------------------------------------------=== #
+# By-copy / by-move unified closure captures still require a conforming type
+# when no scope assumption refines the generic bound (MOCO-4229 regression
+# guard: refinement must not swallow this diagnostic for a truly unbound T).
+# ===----------------------------------------------------------------------=== #
+
+trait NotImplicitlyCopyable:
+    pass
+
+
+# expected-error @below {{value of type 'T' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+def capture_by_copy_no_refinement[T: NotImplicitlyCopyable](z: T):
+    # expected-error @below {{cannot capture z by copy because it is not copyable.}}
+    def f() {var z}:
+        _ = z
+
+    f()
+
+
+trait NotMovable:
+    pass
+
+
+def capture_by_move_no_refinement[T: NotMovable](var z: T):
+    # expected-error @below {{Cannot capture z by move because the type is not movable}}
+    def h() {var z^}:
+        _ = z
+
+    h()

@@ -2488,7 +2488,14 @@ ClosureEmitter::buildParamCaptureInfo(ParamType paramType,
                                       UnitAttr &isMove, ASTDecl &nestedFnDecl,
                                       ASTDecl &moduleDecl) {
   MLIRContext *ctx = shared.getContext();
-  auto paramRef = dyn_cast<ParamDeclRefAttr>(paramType.getParam());
+  // The captured value's type may have been refined in the capturing scope,
+  // wrapping the parameter reference in a `DowncastAttr` that carries the
+  // additional trait bounds (see the by-copy refinement in addCaptureValue).
+  // Strip it to recover the underlying parameter reference; the witness
+  // conformance checks below already consult the scope assumptions via
+  // `nestedFnDecl`, so the refined bound is honored either way.
+  auto paramRef =
+      dyn_cast<ParamDeclRefAttr>(DowncastAttr::strip(paramType.getParam()));
   if (!paramRef) {
     shared.emitError(nestedFnDecl.getLoc(),
                      "cannot capture " + capture.getSpelling() +
@@ -3046,6 +3053,17 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
         << ". Do you mean 'read'?";
     return {};
   };
+
+  // Apply scope-based type refinement before by-value capture checks. A
+  // parameter may gain extra `conforms_to` constraints in the capturing scope;
+  // without rebinding to that refined type, move/copy validation would still
+  // see the original generic bound.
+  if (parsedConvention == CaptureConvention::kConventionMove ||
+      parsedConvention == CaptureConvention::kConventionCopy) {
+    SyntheticNode refineNode(location);
+    valueInParent =
+        maybeEmitRefinementRebind({valueInParent, &refineNode}, emitter);
+  }
 
   switch (parsedConvention) {
   case CaptureConvention::kConventionMove: {
