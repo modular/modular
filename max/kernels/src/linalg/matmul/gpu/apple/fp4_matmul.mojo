@@ -49,6 +49,7 @@ from std.collections import Optional
 from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
+from std.math import ceildiv
 from std.memory import stack_allocation
 from std.sys import align_of
 from std.utils import IndexList
@@ -64,6 +65,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
 )
 from linalg.matmul.gpu.apple.fp4_dequant import enqueue_fp4_materialize
+from linalg.matmul.gpu.apple.matmul_8x8 import gemm_kernel_apple_8x8
 from linalg.matmul.gpu.apple.matmul2d_fp4 import enqueue_matmul2d_fp4_smem
 from linalg.matmul.gpu.apple.matmul_kernel import (
     AppleM5MatMul,
@@ -760,12 +762,41 @@ def _enqueue_apple_fp4_materialize_dense[
 
     enqueue_fp4_materialize[DType.bfloat16](wdense_tt, packed, scales, ctx)
 
-    enqueue_apple_matmul[
-        in_type=DType.bfloat16,
-        c_type=c_type,
-        transpose_b=True,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c, a, wdense_tt.as_immut(), ctx)
+    if ctx.compute_capability() == 5:
+        enqueue_apple_matmul[
+            in_type=DType.bfloat16,
+            c_type=c_type,
+            transpose_b=True,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](c, a, wdense_tt.as_immut(), ctx)
+    else:
+        comptime apple_kernel = gemm_kernel_apple_8x8[
+            c_type,
+            DType.bfloat16,
+            DType.bfloat16,
+            type_of(c).LayoutType,
+            type_of(a).LayoutType,
+            type_of(wdense_tt).LayoutType,
+            type_of(c).Storage,
+            type_of(a).Storage,
+            type_of(wdense_tt).Storage,
+            transpose_b=True,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            BLOCK_M=64,
+            BLOCK_N=64,
+            BLOCK_K=16,
+            NUM_SIMDGROUPS=4,
+        ]
+        ctx.enqueue_function[apple_kernel](
+            c,
+            a,
+            wdense_tt.as_immut(),
+            m,
+            n,
+            k,
+            grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
+            block_dim=(4 * WARP_SIZE,),
+        )
 
     # Keep the transient weight alive through the async materialize + GEMM
     # enqueue (see the buffer-lifetime note in the docstring).
@@ -904,18 +935,12 @@ def enqueue_apple_fp4_matmul[
     dequantized to bf16 in threadgroup memory once per K-strip, then the dense
     bf16 MMA reads B from SMEM; weights stay packed in DRAM the whole time.
 
-    Raises:
-        If the attached GPU is not Apple M5 (`compute_capability == 5`).
+    On pre-M5 Apple silicon GPUs the M5-only fused /
+    matmul2d paths are skipped: the call routes unconditionally to
+    materialize->dense (FP4 decode to a transient bf16 buffer, then the pre-M5
+    dense bf16 `gemm_kernel_apple_8x8`).
     """
     var cc = ctx.compute_capability()
-    if cc != 5:
-        raise Error(
-            (
-                "enqueue_apple_fp4_matmul requires Apple M5"
-                " (compute_capability == 5); got compute_capability="
-            ),
-            cc,
-        )
 
     comptime assert (
         c_type == DType.float16
@@ -935,6 +960,26 @@ def enqueue_apple_fp4_matmul[
     debug_assert(
         k <= 65535, "Apple FP4 matmul: K must fit in UInt16; got K=", k
     )
+
+    # Pre-M5 (M1-M4): route unconditionally to materialize->dense, which
+    # decodes the FP4 weight to a transient bf16 buffer (hardware-neutral) and
+    # runs the pre-M5 dense bf16 `gemm_kernel_apple_8x8`.
+    if cc != 5:
+        # NVFP4's block size is 16, so K is always a multiple of 16 (hence 8)
+        # for well-formed weights, however to be safe we assert on a malformed
+        # K instead of producing silently bad results.
+        debug_assert(
+            k % 16 == 0,
+            (
+                "Apple pre-M5 FP4 matmul: K must be a multiple of 16 (NVFP4"
+                " block size); the 8x8 GEMM truncates ragged K. Got K="
+            ),
+            k,
+        )
+        _enqueue_apple_fp4_materialize_dense[c_type, elementwise_lambda_fn](
+            c, a, packed, scales, m, n, k, ctx
+        )
+        return
 
     # `matmul2d` W4A16 path (`enqueue_matmul2d_fp4_smem`). Its interior kernel is
     # tile-aligned (N % TG_N == 0, K % smem_bk == 0), so every route to it is

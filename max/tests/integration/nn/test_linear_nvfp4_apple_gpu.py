@@ -40,7 +40,6 @@ from max.driver import (
     Accelerator,
     Buffer,
     accelerator_api,
-    accelerator_architecture_name,
     accelerator_count,
 )
 from max.dtype import DType
@@ -84,20 +83,11 @@ _E2M1_TO_FLOAT = np.array(
 _SF_VECTOR_SIZE = 16
 
 
-def _skip_if_not_apple_m5() -> None:
+def _skip_if_not_apple() -> None:
     if accelerator_count() == 0:
         pytest.skip("No GPU available for the Apple NVFP4 Linear test")
     if accelerator_api() != "metal":
         pytest.skip("Apple W4A16 NVFP4 Linear path requires a Metal GPU")
-    # `enqueue_apple_fp4_matmul` requires Apple M5 (compute_capability == 5).
-    # Metal reports the compute capability as the leading integer of the
-    # architecture name (e.g. "2" on M2, "5-metal4" on M5).
-    generation = int(accelerator_architecture_name().split("-", 1)[0])
-    if generation != 5:
-        pytest.skip(
-            "Apple W4A16 NVFP4 Linear path requires Apple M5 "
-            f"(compute_capability == 5); got compute_capability={generation}"
-        )
 
 
 def _make_nvfp4_config() -> QuantConfig:
@@ -181,7 +171,7 @@ def _fp32_to_fp8_bytes(
 
 def test_linear_nvfp4_apple() -> None:
     """Numeric check: Apple NVFP4 Linear == bf16 dense matmul of dequant weight."""
-    _skip_if_not_apple_m5()
+    _skip_if_not_apple()
 
     rng = np.random.default_rng(0)
     # A FLUX.2 transformer block dim: N=out, K=in. K must be a multiple of 16.
