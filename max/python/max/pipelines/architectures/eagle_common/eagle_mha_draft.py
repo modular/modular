@@ -500,19 +500,50 @@ class Eagle3MHADraft(Module):
                 data_parallel_splits,
                 prefix=split_prefix,
             )
-            bcast_h_embed: list[TensorValue] = []
-            bcast_offsets: list[TensorValue] = []
-            for r, (rh, roff) in enumerate(
-                zip(replica_h_embed, replica_offsets, strict=True)
-            ):
-                start = r * self.tp_degree
-                end = start + self.tp_degree
-                bcast_h_embed.extend(
-                    ops.distributed_broadcast(rh, signal_buffers)[start:end]
-                )
-                bcast_offsets.extend(
-                    ops.distributed_broadcast(roff, signal_buffers)[start:end]
-                )
+            # Grouped allgather (group_size=tp) instead of dp_degree*2 full-set
+            # broadcasts. Each replica's split slice lives only on its leader
+            # rank; the other tp-1 ranks contribute an empty slice, and a
+            # tp-scoped allgather concatenates within each TP group so every
+            # rank receives its replica's slice (the empties add no rows, so the
+            # result is identical to the broadcast-and-slice above). Replaces 4
+            # all-device broadcast barriers -- which synchronize BOTH DP
+            # replicas and let one replica's skew stall the other -- with 2
+            # allgather barriers scoped to a single replica's TP group.
+            h_gather_inputs: list[TensorValue] = []
+            off_gather_inputs: list[TensorValue] = []
+            for i in range(num_devices):
+                d, r = divmod(i, self.tp_degree)
+                if r == 0:
+                    # Replica leader: contribute the real split slice.
+                    h_gather_inputs.append(replica_h_embed[d])
+                    off_gather_inputs.append(replica_offsets[d])
+                else:
+                    # Non-leader: contribute an empty (0-row) slice on this
+                    # device so the group allgather sees a matching shape.
+                    h_gather_inputs.append(
+                        ops.slice_tensor(
+                            h_embed[i],
+                            [(slice(0, 0), f"{split_prefix}_empty_h_{i}"), ...],
+                        )
+                    )
+                    off_gather_inputs.append(
+                        ops.slice_tensor(
+                            input_row_offsets_[i],
+                            [(slice(0, 0), f"{split_prefix}_empty_off_{i}")],
+                        )
+                    )
+            bcast_h_embed = ops.allgather(
+                h_gather_inputs,
+                signal_buffers,
+                axis=0,
+                group_size=self.tp_degree,
+            )
+            bcast_offsets = ops.allgather(
+                off_gather_inputs,
+                signal_buffers,
+                axis=0,
+                group_size=self.tp_degree,
+            )
             input_row_offsets_ = bcast_offsets
             # Rebind to a per-REPLICA seq dim (not per-device): every device in
             # a TP group holds the same replica sequence, so they must share one
