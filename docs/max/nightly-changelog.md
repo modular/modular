@@ -308,20 +308,34 @@ This version is still a work in progress.
   GPUs. Leaving it unset compiles for the build host's CPU, as before.
 
 - **Preview (no-op today)**: `InferenceSession.profiling` is a new namespace
-  that will control the libkineto-backed MAX profiler. The lifecycle methods
-  are callable but do not yet produce trace files; the libkineto-backed
-  Chrome-trace JSON output (compatible with
-  [HTA](https://github.com/facebookresearch/HolisticTraceAnalysis)) and the
-  `session.debug.profiling_*` setter mirrors land in subsequent nightlies.
-  The control surface is final: `session.profiling.start()` / `.stop()` /
-  `.wait_for_trace()` and the read-only `.state` and `.is_enabled` properties.
-  This API is orthogonal to the existing `session.gpu_profiling()` (NVTX/Nsight)
-  path.
-
-- `ProfilingConfig` gains six new fields for the libkineto profiler:
+  that will control the libkineto-backed MAX profiler. The control surface is
+  final and callable — `session.profiling.start()` / `.stop()` /
+  `.wait_for_trace()` and the read-only `.state` / `.is_enabled` — but it does
+  not record yet: libkineto-backed Chrome-trace JSON capture (compatible with
+  Meta's [HTA](https://github.com/facebookresearch/HolisticTraceAnalysis))
+  lands in a later nightly. This API is orthogonal to the existing
+  `session.gpu_profiling()` (NVTX/Nsight) path; see `max/docs/profiling.md`
+  in the repository for the user guide.
+- `ProfilingConfig` gains six new fields for the libkineto profiler, each
+  configurable from Python through the matching `session.debug.profiling_*`
+  setter or its `MODULAR_MAX_DEBUG_PROFILING_*` environment variable:
   `profiling_enabled`, `profiling_output_path`, `profiling_dynolog_enabled`,
   `profiling_warmup_steps`, `profiling_active_steps`, and
   `profiling_periodic_flush_seconds`.
+- `profiling_output_path` accepts template variables (`{pid}`, `{rank}`) and a
+  directory form (`/tmp/traces/`); the path is expanded per process (keyed on
+  rank, PID, timestamp, and a sequence counter) so that, once trace capture is
+  enabled, multi-process and multi-rank runs won't collide on a single fixed
+  filename. `{rank}` resolves to `MODULAR_RANK` / `OMPI_COMM_WORLD_RANK` /
+  `"0"`.
+- `max.engine.ProfilingError` is a new exception type the profiler will raise
+  to surface trace-write failures.
+- Forking while the profiler is enabled is safe for host applications that
+  embed `InferenceSession` and fork (Python `multiprocessing` with the `fork`
+  start method, pre-fork servers, or a bare `os.fork()`) — child processes
+  start with the profiler disabled and can call `start()` again; the parent
+  retains its enabled state across the fork. (MAX Serve itself launches
+  workers with the `spawn` start method and is unaffected.)
 
 - Eager execution in `max.experimental` now routes every realization through
   the `max.experimental.executor.Executor` abstraction. The out-of-the-box

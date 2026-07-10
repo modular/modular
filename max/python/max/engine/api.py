@@ -453,9 +453,9 @@ class ProfilingError(Exception):
     The most common causes are an unwritable
     :attr:`InferenceSession.debug.profiling_output_path`, a missing parent
     directory, or libkineto failing to flush its in-memory ring buffer (the
-    underlying I/O error appears on libkineto's stderr).  The exception
-    message includes the resolved output path so the failure can be
-    diagnosed without rerunning the workload.
+    underlying I/O error appears on libkineto's stderr).  For write
+    failures, the exception message includes the resolved output path so
+    the failure can be diagnosed without rerunning the workload.
 
     Raised by :meth:`InferenceSession.profiling.wait_for_trace`.
     """
@@ -533,8 +533,8 @@ class _ProfilingNamespace:
             ProfilingError: If libkineto could not write the trace file —
                 most commonly an unwritable
                 :attr:`InferenceSession.debug.profiling_output_path` or a
-                missing parent directory.  The exception message includes
-                the resolved output path.
+                missing parent directory.  For write failures, the
+                exception message includes the resolved output path.
         """
         _kineto_wait_for_trace()
         err = _kineto_last_trace_error()
