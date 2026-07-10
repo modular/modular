@@ -128,6 +128,25 @@ This version is still a work in progress.
 
 ## Language changes
 
+- User-written structs must now explicitly declare closure-trait conformance
+  in their inheritance list to satisfy a `def(...) -> ...` closure trait.
+  Previously a struct with a compatible `__call__` was accepted implicitly
+  (duck-typing). Declare the trait in the struct's inheritance list:
+
+  ```mojo
+  def apply[F: def(Int) -> Int](f: F, x: Int) -> Int:
+      return f(x)
+
+  struct Double(def(Int) -> Int):  # previously: `struct Double:`
+      def __call__(self, x: Int) capturing -> Int:
+          return x * 2
+
+  _ = apply(Double(), 5)
+  ```
+
+  Conformance is checked at struct definition rather than deferred to the use
+  site.
+
 - Relative imports must now use `from` (`from . import foo`); the `import .foo`
   form is no longer accepted.
 
