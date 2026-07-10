@@ -9,7 +9,7 @@
 # RUN: %t.dir/test_rollback | FileCheck %s
 
 from std.ffi import external_call
-from std.memory import UnsafePointer, alloc
+from std.memory import UnsafePointer, alloc, dealloc
 
 
 # 12-byte struct: two eightbytes, both INTEGER class (IntegerPair).
@@ -33,15 +33,17 @@ def test_struct_early():
 # Struct passed after five integer-class args: must roll back to the stack.
 # Under the old per-argument lowering the struct was split, corrupting it.
 def test_struct_after_five():
-    var p0 = alloc[Int32](1)
-    var p1 = alloc[Int32](1)
+    var p0_alloc = alloc[Int32]({count = 1})
+    var p0 = p0_alloc.unsafe_ptr()
+    var p1_alloc = alloc[Int32]({count = 1})
+    var p1 = p1_alloc.unsafe_ptr()
     var v = Int3(Int32(11), Int32(22), Int32(33))
     var status = external_call["check_struct_after_five", Int32](
         p0, p1, Int32(101), Int32(202), Int32(303), v
     )
     print("struct_after_five:", status)
-    p0.free()
-    p1.free()
+    dealloc(p0_alloc^)
+    dealloc(p1_alloc^)
 
 
 # CHECK: struct_after_five: 0

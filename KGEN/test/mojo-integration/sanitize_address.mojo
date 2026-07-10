@@ -17,5 +17,5 @@ def main() raises:
     # CHECK: WRITE of size 8
     # CHECK: #0 {{.*}} in sanitize_address::main() {{.*}}sanitize_address.mojo:[[@LINE+3]]
     # CHECK: is located 0 bytes after 8-byte region
-    var p = alloc[Int](1)
+    var p = alloc[Int]({count = 1}).unsafe_leak()
     p[1] = 4

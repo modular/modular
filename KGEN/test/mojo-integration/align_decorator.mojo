@@ -9,7 +9,7 @@
 # Integration tests for @align decorator - verifies runtime behavior.
 
 from std.sys import align_of, size_of
-from std.memory import UnsafePointer, alloc
+from std.memory import UnsafePointer, alloc, dealloc
 from std.testing import assert_equal, assert_true, TestSuite
 from std.collections import Optional
 
@@ -147,21 +147,23 @@ def test_heap_allocation_alignment() raises:
     so heap allocations should respect the @align decorator.
     """
     # Allocate on heap - should be 64-byte aligned
-    var heap_ptr = alloc[CacheAligned](1)
+    var heap_ptr_alloc = alloc[CacheAligned]({count = 1}).into_deletable()
+    var heap_ptr = heap_ptr_alloc.unsafe_ptr()
     var heap_addr = Int(heap_ptr)
     assert_true(
         (heap_addr & 63) == 0, "CacheAligned should be 64-byte aligned on heap"
     )
-    heap_ptr.free()
+    dealloc(heap_ptr_alloc^.into_allocation())
 
     # Large alignment on heap
-    var page_ptr = alloc[PageAligned](1)
+    var page_ptr_alloc = alloc[PageAligned]({count = 1}).into_deletable()
+    var page_ptr = page_ptr_alloc.unsafe_ptr()
     var page_addr = Int(page_ptr)
     assert_true(
         (page_addr & 4095) == 0,
         "PageAligned should be 4096-byte aligned on heap",
     )
-    page_ptr.free()
+    dealloc(page_ptr_alloc^.into_allocation())
 
 
 def test_stack_allocation_alignment() raises:
@@ -223,7 +225,8 @@ def test_array_alignment() raises:
     align_of[T](). This matches how C++ alignas works with arrays.
     """
     # Allocate array - base pointer should be 64-byte aligned
-    var arr = alloc[CacheAligned](4)
+    var arr_alloc = alloc[CacheAligned]({count = 4}).into_deletable()
+    var arr = arr_alloc.unsafe_ptr()
     var base_addr = Int(arr)
     assert_true(
         (base_addr & 63) == 0,
@@ -235,7 +238,7 @@ def test_array_alignment() raises:
     var stride = Int(arr + 1) - Int(arr)
     assert_equal(stride, 8)
 
-    arr.free()
+    dealloc(arr_alloc^.into_allocation())
 
 
 def test_cross_struct_alignment() raises:

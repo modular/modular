@@ -10,7 +10,7 @@
 # when alignment is specified via a struct parameter.
 
 from std.sys import align_of
-from std.memory import UnsafePointer, alloc
+from std.memory import UnsafePointer, alloc, dealloc
 from std.testing import assert_equal, assert_true, TestSuite
 
 
@@ -167,40 +167,44 @@ def test_parametric_field_offset_alignment() raises:
 def test_parametric_align_heap() raises:
     """Test that heap allocations respect parametric @align."""
     # Allocate on the heap with 64-byte alignment.
-    var ptr64 = alloc[AlignedBuffer[64]](1)
+    var ptr64_alloc = alloc[AlignedBuffer[64]]({count = 1}).into_deletable()
+    var ptr64 = ptr64_alloc.unsafe_ptr()
     var addr64 = Int(ptr64)
     assert_true(
         (addr64 & 63) == 0, "Heap AlignedBuffer[64] should be 64-byte aligned"
     )
-    ptr64.free()
+    dealloc(ptr64_alloc^.into_allocation())
 
     # Allocate on the heap with 128-byte alignment.
-    var ptr128 = alloc[AlignedBuffer[128]](1)
+    var ptr128_alloc = alloc[AlignedBuffer[128]]({count = 1}).into_deletable()
+    var ptr128 = ptr128_alloc.unsafe_ptr()
     var addr128 = Int(ptr128)
     assert_true(
         (addr128 & 127) == 0,
         "Heap AlignedBuffer[128] should be 128-byte aligned",
     )
-    ptr128.free()
+    dealloc(ptr128_alloc^.into_allocation())
 
     # Allocate on the heap with 256-byte alignment.
-    var ptr256 = alloc[AlignedBuffer[256]](1)
+    var ptr256_alloc = alloc[AlignedBuffer[256]]({count = 1}).into_deletable()
+    var ptr256 = ptr256_alloc.unsafe_ptr()
     var addr256 = Int(ptr256)
     assert_true(
         (addr256 & 255) == 0,
         "Heap AlignedBuffer[256] should be 256-byte aligned",
     )
-    ptr256.free()
+    dealloc(ptr256_alloc^.into_allocation())
 
     # Test multiple separate allocations to verify each respects alignment.
     for _ in range(4):
-        var ptr = alloc[AlignedBuffer[64]](1)
+        var ptr_alloc = alloc[AlignedBuffer[64]]({count = 1}).into_deletable()
+        var ptr = ptr_alloc.unsafe_ptr()
         var addr = Int(ptr)
         assert_true(
             (addr & 63) == 0,
             "Each separate heap allocation should be 64-byte aligned",
         )
-        ptr.free()
+        dealloc(ptr_alloc^.into_allocation())
 
 
 def main() raises:

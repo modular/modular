@@ -27,7 +27,7 @@ from std.sys import argv
 
 
 def step_b(n: Int):
-    var p = alloc[Int](1)
+    var p = alloc[Int]({count = 1}).unsafe_leak()
     p[n] = 42  # OOB write — ASAN reports this.
     print(p[0])  # Side effect to prevent dead-code elimination at O3.
 
