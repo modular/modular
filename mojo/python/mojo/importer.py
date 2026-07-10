@@ -169,7 +169,7 @@ def _cache_dir_is_writable(in_tree_cache_dir: Path, mojo_dir: Path) -> bool:
     return os.access(target, os.W_OK)
 
 
-def _redirected_cache_env_id() -> str | None:
+def _redirected_cache_env_id() -> str:
     """Returns a stable identifier for the current installed Mojo environment.
 
     Redirected caches are shared across multiple installed environments, so we
