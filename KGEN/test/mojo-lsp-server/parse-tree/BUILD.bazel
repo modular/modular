@@ -168,55 +168,28 @@ _KERNEL_PACKAGES = [
 ]
 
 # Same escape hatch as _NO_RUN_LIST, but paths are relative to max/kernels/src.
-# Two categories (revised 2026-07-09 after fixing _KERNEL_MOJOPKGS below --
-# see its comment -- turned 34 "nesting/visibility gap, out of scope" files
-# into 16 that are actually clean today (removed from this list entirely), 17
-# that hit one real crash bug, and 1 that was miscategorized from the start):
+# Two categories (revised 2026-07-09: the apple_accelerate.mojo
+# bytecode-reader crash previously documented here as its own category was
+# root-caused and fixed in SharedState::finalizeImportedBytecodeModules --
+# see that function's comment. 13 of the 17 files that used to crash are now
+# clean and removed from this list entirely; the other 4 turned out to
+# independently belong in one of the two categories below once the crash
+# stopped masking them):
 #
-# 1. Every file below transitively imports
-#    linalg/matmul/cpu/apple_accelerate.mojo, and finalizing its imported
-#    bytecode hits a genuine MLIR bytecode-reader bug -- 'hlcf.if' op
-#    operation destroyed but still has uses -- aborting in
-#    mlir::BytecodeReader::Impl::finalize (via
-#    SharedState::finalizeImportedBytecodeModules(), called from
-#    ~MojoParserContext). Confirmed via direct `kgen -lsp` runs on
-#    2026-07-09 using the fixed _KERNEL_MOJOPKGS: this is a real compiler
-#    crash reachable from legitimate kernel code, not a nesting/visibility
-#    artifact -- it was simply masked before by these same files failing on
-#    "unable to locate module" first, before ever reaching the code path
-#    that triggers it. TODO: file a KGEN bug for the bytecode-reader crash;
-#    keep these skipped until it's fixed.
-#    - distributed.mojo and msa.mojo also still fail to resolve
-#      'matmul_rs'/'msa' (the //Kernels/lib/... visibility gap -- see
-#      _KERNEL_MOJOPKGS's comment) before hitting the same crash further in.
-#    - mha.mojo and conv.mojo also have their own genuine diagnostics ahead
-#      of the crash ("use of unknown declaration 'k_type'"/"'output_type'");
-#      re-triage those two once the crash itself is fixed, they may not come
-#      back clean.
+# 1. //Kernels/lib/... Bazel-visibility gap: these files import `matmul_rs`/
+#    `msa`, which are visibility-scoped to specific consumers and unavailable
+#    to this standalone test (see _KERNEL_MOJOPKGS's comment below).
+#    "unable to locate module" is the only error; no crash, no other
+#    diagnostic.
 # 2. Genuine diagnostics on the file's own code, with no crash and no
 #    resolution failure anywhere in the output -- confirmed real via a
 #    direct `kgen -lsp` run. Needs owner triage: real bug vs. a
 #    standalone-check limitation around heavily-parameterized/generic kernel
 #    code checked outside its normal instantiation context.
 _KERNELS_NO_RUN_LIST = [
-    # 1. apple_accelerate.mojo bytecode-reader crash (see comment above).
-    "graph_compiler/builtin_kernels/attention.mojo",
-    "graph_compiler/builtin_kernels/conv.mojo",
+    # 1. //Kernels/lib/... visibility gap (see comment above).
     "graph_compiler/builtin_kernels/distributed.mojo",
-    "graph_compiler/builtin_kernels/elementwise.mojo",
-    "graph_compiler/builtin_kernels/ep.mojo",
-    "graph_compiler/builtin_kernels/gather_scatter.mojo",
-    "graph_compiler/builtin_kernels/kernels.mojo",
-    "graph_compiler/builtin_kernels/kv_cache.mojo",
-    "graph_compiler/builtin_kernels/linalg.mojo",
-    "graph_compiler/builtin_kernels/logprobs.mojo",
     "graph_compiler/builtin_kernels/msa.mojo",
-    "graph_compiler/builtin_kernels/quantization.mojo",
-    "graph_compiler/builtin_kernels/reductions.mojo",
-    "graph_compiler/builtin_primitives/primitives.mojo",
-    "nn/attention/gpu/mha.mojo",
-    "nn/conv/conv.mojo",
-    "nn/kv_cache.mojo",
     # 2. Genuine diagnostics on the file's own code; needs owner triage.
     "layout/element.mojo",
     # "attempt to resolve a recursive reference to declaration 'offset'" on
@@ -234,12 +207,21 @@ _KERNELS_NO_RUN_LIST = [
     # pre-existing diagnostic on the file's own code, same as the rest of
     # this category.
     "nn/attention/gpu/nvidia/sm100/mha_1q.mojo",
+    # "use of unknown declaration 'k_type'" at line 5530, confirmed via a
+    # direct `kgen -lsp` run. Previously hidden behind the
+    # apple_accelerate.mojo bytecode-reader crash (see comment above); needs
+    # its own triage now that the crash no longer masks it.
+    "nn/attention/gpu/mha.mojo",
+    # "use of unknown declaration 'output_type'" at line 5090, confirmed via a
+    # direct `kgen -lsp` run. Same situation as mha.mojo above -- previously
+    # hidden behind the fixed crash.
+    "nn/conv/conv.mojo",
 ]
 
 # ALL_MOJOPKGS minus the internal //Kernels/lib/... packages (msa,
 # matmul_rs): visibility-scoped to specific consumers and unavailable here --
 # any file that imports them still shows "unable to locate module" (see
-# _KERNELS_NO_RUN_LIST's crash category: msa.mojo, distributed.mojo).
+# _KERNELS_NO_RUN_LIST's visibility-gap category: msa.mojo, distributed.mojo).
 #
 # The graph_compiler sub-package targets (extensibility, builtin_kernels,
 # builtin_primitives) were excluded here too until 2026-07-09, on the theory
@@ -253,8 +235,10 @@ _KERNELS_NO_RUN_LIST = [
 # path, which is exactly why every file inside or importing them failed with
 # "unable to locate module". Restored 2026-07-09 after a direct `kgen -lsp`
 # run (using this same computed import path) confirmed it fixes 16 of the 34
-# previously-skipped files outright and unmasks -- rather than causes -- the
-# real crash behind the other 17; see _KERNELS_NO_RUN_LIST.
+# previously-skipped files outright and unmasks -- rather than causes -- a
+# real bytecode-reader crash behind 17 more, since fixed in
+# SharedState::finalizeImportedBytecodeModules (see its comment); see
+# _KERNELS_NO_RUN_LIST for what's left.
 _KERNEL_MOJOPKGS = [
     dep
     for dep in ALL_MOJOPKGS
