@@ -164,7 +164,7 @@ def some_fn_ret_int() -> Int: return 42
 
 # Issue #11288
 def test_overload_set():
-  # expected-error @+1 {{invalid call to 'some_fn_take_int': value passed to 'a' cannot be converted from 'def some_fn_ret_int() -> Int' to 'Int'}}
+  # expected-error @+1 {{invalid call to 'some_fn_take_int': value passed to 'a' cannot be converted from 'def some_fn_ret_int() thin -> Int' to 'Int'}}
   some_fn_take_int(some_fn_ret_int)
 
 def overloaded_arg(x: Int): pass # expected-note {{candidate declared here}}
@@ -178,23 +178,23 @@ def throws_int() raises Int:
     pass
 
 def test_func_type():
-    # expected-error @below {{def(Int) -> Int}}
+    # expected-error @below {{def(Int) thin -> Int}}
     comptime float0: def(Int) thin -> Int = test_func_type
-    # expected-error @below {{async def() -> None}}
+    # expected-error @below {{async def() thin -> None}}
     comptime float1: async def() thin -> None = test_func_type
-    # expected-error @below {{def[a: Int]() -> MemType}}
+    # expected-error @below {{def[a: Int]() thin -> MemType}}
     comptime float2: def[a: Int]() thin -> MemType = test_func_type
-    # expected-error @below {{def[a: Int](var Int) -> MemType}}
+    # expected-error @below {{def[a: Int](var Int) thin -> MemType}}
     comptime float3: def[a: Int](var Int) thin -> MemType = test_func_type
-    # expected-error @below {{def[a: Int](mut *Int) -> None}}
+    # expected-error @below {{def[a: Int](mut *Int) thin -> None}}
     comptime float4: def[a: Int](mut *Int) thin -> None = test_func_type
-    # expected-error @below {{'def(*MemType) raises capturing -> None'}}
+    # expected-error @below {{'def(*MemType) raises capturing thin -> None'}}
     comptime float5: def(*MemType) raises capturing -> None = test_func_type
-    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) capturing -> None'}}
+    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) capturing thin -> None'}}
     comptime float6: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) capturing -> None'}}
+    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) capturing thin -> None'}}
     comptime float6a: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def[T: TrivialRegisterPassable](mut *T) capturing -> None'}}
+    # expected-error @below {{'def[T: TrivialRegisterPassable](mut *T) capturing thin -> None'}}
     comptime float7: def[T: TrivialRegisterPassable](mut *T) capturing -> None = test_func_type
     # expected-error @below {{'def(var args: OwnedKwargsDict[Int]) -> None}}
     comptime float8: def(**args: Int) = test_func_type
@@ -206,13 +206,13 @@ def test_func_type():
     #comptime float10: def(a1: Int, /, a2: Int) = test_func_type
 
     def passing_kinds_1(a1: Int, /, *, a2: Int): pass
-    # expected-error @below {{'def passing_kinds_1(a1: Int, /, *, a2: Int) -> None'}}
+    # expected-error @below {{'def passing_kinds_1(a1: Int, /, *, a2: Int) thin -> None'}}
     _ : Int = passing_kinds_1
     def passing_kinds_2(a1: Int, /, a2: Int): pass
-    # expected-error @below {{'def passing_kinds_2(a1: Int, /, a2: Int) -> None'}}
+    # expected-error @below {{'def passing_kinds_2(a1: Int, /, a2: Int) thin -> None'}}
     _ : Int = passing_kinds_2
     def passing_kinds_3(a1: Int, *, a2: Int): pass
-    # expected-error @below {{'def passing_kinds_3(a1: Int, *, a2: Int) -> None'}}
+    # expected-error @below {{'def passing_kinds_3(a1: Int, *, a2: Int) thin -> None'}}
     _ : Int = passing_kinds_3
 
 
@@ -233,23 +233,23 @@ def test_func_type():
     comptime f7: def [*, Int] thin -> Int = test_func_type
     # expected-error @below {{unnamed parameter must be positional-only}}
     comptime f8 = def [Int, b: Int] capturing -> Int
-    # expected-error @below {{'def throws_int() raises Int -> None' value to 'def() raises String -> None'}}
+    # expected-error @below {{'def throws_int() raises Int thin -> None' value to 'def() raises String thin -> None'}}
     # expected-note @below {{error type of the first type is 'Int' but the second type is 'String'}}
     comptime f9: def () thin raises String = throws_int
 
     def has_foo_kw(*, foo: Int): pass
-    # expected-error @+1 {{cannot implicitly convert 'def has_foo_kw(*, foo: Int) -> None' value to 'def(*, bar: Int) -> None'}}
+    # expected-error @+1 {{cannot implicitly convert 'def has_foo_kw(*, foo: Int) thin -> None' value to 'def(*, bar: Int) thin -> None'}}
     var f10: def (*, bar: Int) thin -> None = has_foo_kw
 
 def param_passing_kinds():
     def f1[a: Int, //, b: Int]() -> None: pass
-    _ : Int = f1 # expected-error {{'def f1[a: Int, //, b: Int]() -> None'}}
+    _ : Int = f1 # expected-error {{'def f1[a: Int, //, b: Int]() thin -> None'}}
     def f2[a: Int, *, b: Int]() -> None: pass
-    _ : Int = f2 # expected-error {{'def f2[a: Int, *, b: Int]() -> None'}}
+    _ : Int = f2 # expected-error {{'def f2[a: Int, *, b: Int]() thin -> None'}}
     def f3[a: Int, *b: Int]() -> None: pass
-    _ : Int = f3 # expected-error {{'def f3[a: Int, *b: Int]() -> None'}}
+    _ : Int = f3 # expected-error {{'def f3[a: Int, *b: Int]() thin -> None'}}
     def f4(*, a: Int) -> None: pass
-    _ : Int = f4 # expected-error {{'def f4(*, a: Int) -> None'}}
+    _ : Int = f4 # expected-error {{'def f4(*, a: Int) thin -> None'}}
 #===----------------------------------------------------------------------===##
 # LValue and RValues
 ##===----------------------------------------------------------------------===##
@@ -849,7 +849,7 @@ def take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntPar
   take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())
 
 def test_signature():
-  # expected-error @+1 {{cannot implicitly convert 'def __init__() -> HasIntParam[1]' value to 'def(x: HasIntParam[1]) -> None' in 'var' initializer}}
+  # expected-error @+1 {{cannot implicitly convert 'def __init__() thin -> HasIntParam[1]' value to 'def(x: HasIntParam[1]) thin -> None' in 'var' initializer}}
   var x : def(x: HasIntParam[1]) thin -> None = HasIntParam[1].__init__
 
   # expected-error @+1 {{use of unknown declaration 'UndefinedStruct'}}

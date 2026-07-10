@@ -332,7 +332,7 @@ struct ChangedResultTypeStruct(ChangedResultTypeTrait, RegisterPassable):
         pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}ChangedResultTypeTrait
-    # CHECK-NEXT: kgen.witness "result_type{{.*}}" : !lit.generator<{{.*}}"__result__": !lit.ref<!ChangedResultTypeStruct, {{.*}}> byref_result) -> !kgen.none>{{.*}}def() -> traits::ChangedResultTypeStruct
+    # CHECK-NEXT: kgen.witness "result_type{{.*}}" : !lit.generator<{{.*}}"__result__": !lit.ref<!ChangedResultTypeStruct, {{.*}}> byref_result) -> !kgen.none>{{.*}}def() thin -> traits::ChangedResultTypeStruct
 
 # CHECK-LABEL: lit.fn @"convert_result_type
 def convert_result_type():
@@ -478,7 +478,7 @@ struct RegPassableRequiredType(RequiredType):
         pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}RequiredType
-    # CHECK: kgen.witness "use_it{{.*}}" : {{.*}}def(arg: ::Int) -> ::Int
+    # CHECK: kgen.witness "use_it{{.*}}" : {{.*}}def(arg: ::Int) thin -> ::Int
 
 
 # CHECK-LABEL: lit.fn @"bind_regpassable_required_type

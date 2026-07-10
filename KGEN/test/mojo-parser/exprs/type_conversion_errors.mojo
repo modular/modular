@@ -61,7 +61,7 @@ struct Constructible:
 
 
 def init_self_conversion():
-    # expected-error @below {{cannot implicitly convert 'def __init__(arg: Int) -> Constructible' value to 'def() -> None'}}
+    # expected-error @below {{cannot implicitly convert 'def __init__(arg: Int) thin -> Constructible' value to 'def() thin -> None'}}
     comptime f: def() thin -> None = Constructible.__init__
 
 
@@ -144,8 +144,9 @@ def stripping_raises():
     def fn_raises() raises:
         pass
 
-    # expected-error @+1 {{cannot implicitly convert 'def fn_raises() raises -> None' value to 'def() -> None'}}
+    # expected-error @+1 {{cannot implicitly convert 'def fn_raises() raises thin -> None' value to 'def() thin -> None'}}
     var fp: def() thin = fn_raises
 
-    # expected-error @+1 {{cannot implicitly convert 'def fn_raises() raises -> None' value to 'def() raises Int -> None'}}
+    # expected-error @+2 {{cannot implicitly convert 'def fn_raises() raises thin -> None' value to 'def() raises Int thin -> None'}}
+    # expected-note @+1 {{error type of the first type is 'Error' but the second type is 'Int'}}
     var fp2: def() thin raises Int = fn_raises

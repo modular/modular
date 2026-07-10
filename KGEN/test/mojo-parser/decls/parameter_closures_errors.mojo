@@ -20,7 +20,7 @@ def bind_fat_to_thin_main():
     def g(y: Int) -> Int:
         return x
 
-    # expected-error @below {{'bind_fat_to_thin_target' parameter 'g' has 'def(y: Int) -> Int' type, but value has type 'def(y: Int) capturing -> Int'}}
+    # expected-error @below {{'bind_fat_to_thin_target' parameter 'g' has 'def(y: Int) thin -> Int' type, but value has type 'def(y: Int) capturing thin -> Int'}}
     comptime Bound = bind_fat_to_thin_target[g]
     Bound(3)
 

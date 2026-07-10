@@ -50,7 +50,7 @@ def different_trait_types[
 # expected-note @below {{trait 'SimpleTrait' declared here}}
 trait SimpleTrait:
     # expected-note @below {{required function 'some_method' is not implemented}}
-    # expected-note @below {{no 'some_method' candidates have type 'def(self: ParamDoesNotConform[x]) -> None'}}
+    # expected-note @below {{no 'some_method' candidates have type 'def(self: ParamDoesNotConform[x]) thin -> None'}}
     def some_method(self):
         ...
 
@@ -75,7 +75,7 @@ struct DoesNotConform(SimpleTrait):
 
 # expected-error @below {{'ParamDoesNotConform[x]' does not implement all requirements for 'SimpleTrait'}}
 struct ParamDoesNotConform[x: Int](SimpleTrait):
-    # expected-note @below {{candidate declared here with type 'def(self: ParamDoesNotConform[x], y: Int) -> None' (specialized from 'def[x: Int, //](self: ParamDoesNotConform[x], y: Int) -> None')}}
+    # expected-note @below {{candidate declared here with type 'def(self: ParamDoesNotConform[x], y: Int) thin -> None' (specialized from 'def[x: Int, //](self: ParamDoesNotConform[x], y: Int) thin -> None')}}
     def some_method(self, y: Int):
         pass
 

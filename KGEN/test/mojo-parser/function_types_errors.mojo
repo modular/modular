@@ -11,7 +11,7 @@ def identity(x: Int) -> Int:
     return x
 
 
-# expected-error @below {{cannot implicitly convert 'def identity(x: Int) -> Int' value to 'def(Int) -> Int'}}
+# expected-error @below {{cannot implicitly convert 'def identity(x: Int) thin -> Int' value to 'def(Int) -> Int'}}
 comptime invalid_bare_fn_type: def(Int) -> Int = identity
 
 
@@ -28,7 +28,7 @@ def mut_ship_function(mut x: MemType):
 
 # We can convert from def(read MemType)->None to def(mut MemType)->None but not
 # vice versa (see TTSMFS).
-# expected-error @below {{cannot implicitly convert 'def mut_ship_function(mut x: MemType) -> None' value to 'def(MemType) -> None' in comptime initializer}}
+# expected-error @below {{cannot implicitly convert 'def mut_ship_function(mut x: MemType) thin -> None' value to 'def(MemType) thin -> None' in comptime initializer}}
 comptime read_ship_fn_alias: def(read MemType) thin -> None = mut_ship_function
 
 
@@ -52,7 +52,7 @@ def device_func(i: Int):
 
 
 def test_infer_variadic():
-    # expected-error @below {{converted from 'def device_func(i: Int) -> None' to 'def(x: Int, y: Int, *args: *ArgTypes) -> None'}}
+    # expected-error @below {{converted from 'def device_func(i: Int) thin -> None' to 'def(x: Int, y: Int, *args: *ArgTypes) thin -> None'}}
     infer_variadic[device_func]()
 
 
@@ -87,7 +87,7 @@ def device_func(i: ZInt, j: ZInt):
 
 def test_infer_variadic():
     # expected-error @below {{cannot bind type 'ZInt' to trait 'Sprongling'}}
-    # expected-error @below {{converted from 'def device_func(i: ZInt, j: ZInt) -> None' to 'def(*args: *ArgTypes) -> None'}}
+    # expected-error @below {{converted from 'def device_func(i: ZInt, j: ZInt) thin -> None' to 'def(*args: *ArgTypes) thin -> None'}}
     infer_variadic[device_func]()
 
 
@@ -149,13 +149,13 @@ def compile[
 
 
 def test_reject_generic_device_func_unusedT():
-    # expected-error @below {{converted from 'def device_func_unusedT[T: AnyType](a: Int, b: Bool) -> Int' to 'def(*args: *ArgTypes) -> Int'}}
+    # expected-error @below {{converted from 'def device_func_unusedT[T: AnyType](a: Int, b: Bool) thin -> Int' to 'def(*args: *ArgTypes) thin -> Int'}}
     var thing = compile[device_func_unusedT]()
 
 
 # Slightly different case, for no particular reason
 def test_reject_generic_device_func_usedT():
-    # expected-error @below {{converted from 'def device_func_usedT[T: AnyType](a: T, b: Bool) -> Int' to 'def(*args: *ArgTypes) -> Int'}}
+    # expected-error @below {{converted from 'def device_func_usedT[T: AnyType](a: T, b: Bool) thin -> Int' to 'def(*args: *ArgTypes) thin -> Int'}}
     var thing = compile[device_func_usedT]()
 
 
@@ -207,7 +207,7 @@ def compile[
 
 
 def main():
-    # expected-error @below {{converted from 'def device_func(a: Int, b: Bool) raises -> Int' to 'def(*args: *ArgTypes) -> Int'}}
+    # expected-error @below {{converted from 'def device_func(a: Int, b: Bool) raises thin -> Int' to 'def(*args: *ArgTypes) thin -> Int'}}
     compile[device_func]()
 
 
@@ -330,7 +330,7 @@ def plain(x: Int) -> Int:
 
 
 def test_plain_to_abi_c():
-    # expected-error @below {{cannot be converted from 'def plain(x: Int) -> Int' to 'def(Int) abi("C") -> Int'}}
+    # expected-error @below {{cannot be converted from 'def plain(x: Int) thin -> Int' to 'def(Int) abi("C") thin -> Int'}}
     takes_abi_c(plain)
 
 
@@ -347,7 +347,7 @@ def takes_plain(f: def(Int) thin -> Int):
 
 
 def test_abi_c_to_plain(f: def(Int) thin abi("C") -> Int):
-    # expected-error @below {{cannot be converted from 'def(Int) abi("C") -> Int' to 'def(Int) -> Int'}}
+    # expected-error @below {{cannot be converted from 'def(Int) abi("C") thin -> Int' to 'def(Int) thin -> Int'}}
     takes_plain(f)
 
 
@@ -424,5 +424,5 @@ def plain_func(i: Int):
 
 
 def test_infer_meta_variadic():
-    # expected-error @below {{value passed to 'func' cannot be converted from 'def plain_func(i: Int) -> None'}}
+    # expected-error @below {{value passed to 'func' cannot be converted from 'def plain_func(i: Int) thin -> None'}}
     infer_meta_variadic[plain_func]()

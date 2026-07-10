@@ -1634,7 +1634,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
     }
   }
 
-  os << " -> ";
+  os << " thin -> ";
   Type resultType = fnType.getUserResultType();
 
   if (fnType.isRefResult()) {

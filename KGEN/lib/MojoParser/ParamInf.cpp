@@ -599,6 +599,19 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
        << " has " << expectedType << " type, but value has type "
        << diagBindingVal.getType() << binding.expr->getRange();
 
+  // Add some extra note for binding a thin function to a closure trait, which
+  // would otherwise be confusing to many.
+  if (ClosureEmitter::isClosureType(shared, expectedType) &&
+      sugarIsa<FnLiteralTypeGeneratorType>(diagBindingVal.getType())) {
+    llvm::SMRange smRange =
+        shared.diags.convertToSMRange(binding.expr->getRange());
+    StringRef src(smRange.Start.getPointer(),
+                  smRange.End.getPointer() - smRange.Start.getPointer());
+    diag.attachNote(binding.expr->getLoc())
+        << "a thin function cannot bind to a closure trait; use 'type_of("
+        << src << ")' to pass its type instead";
+  }
+
   return failure();
 }
 
