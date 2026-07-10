@@ -1101,7 +1101,13 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   if (spDecls.isErroneous())
     return nullptr;
   for (ASTDecl *decl : spDecls.getIfSuccess()) {
-    if (cast<FnOp>(decl->getIfOperation()).getSpecialFunctionKind() == kind) {
+    // Skip disabled ASTDecls which have null operations.
+    if (decl->isDisabled())
+      continue;
+    auto fnOp = dyn_cast<FnOp>(decl->getIfOperation());
+    if (!fnOp)
+      continue;
+    if (fnOp.getSpecialFunctionKind() == kind) {
       // If has a user provided implementation, consider them as non-trivial.
       if (!decl->getCursor().isInvalid())
         return emitBoolAttr(BoolAttr::get(emitter.getContext(), false));
