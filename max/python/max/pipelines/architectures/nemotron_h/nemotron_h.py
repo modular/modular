@@ -30,7 +30,9 @@ against the verified HF reference and is ready to logit-verify once invocable.
 
 from __future__ import annotations
 
+import functools
 import math
+from collections.abc import Iterable, Sequence
 
 import numpy as np
 from max.dtype import DType
@@ -38,11 +40,14 @@ from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    ShardingStrategy,
     TensorType,
     TensorValue,
+    TensorValueLike,
     Weight,
     ops,
 )
+from max.graph.quantization import QuantizationEncoding
 from max.nn.attention import MHAMaskVariant
 from max.nn.embedding import Embedding
 from max.nn.kernels import (
@@ -56,7 +61,8 @@ from max.nn.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
+from max.nn.linear import MLP, Linear
+from max.nn.moe import MoE, MoEGate
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnLogits, logits_postprocess
@@ -117,6 +123,227 @@ class NemotronHMLP(Module):
 
     def __call__(self, x: TensorValue) -> TensorValue:
         return self.down_proj(_relu2(self.up_proj(x)))
+
+
+class NemotronHExpertMLP(MLP):
+    """Non-gated relu2 expert MLP: ``down(relu(up(x))**2)`` (no ``gate_proj``).
+
+    Serves two roles in :class:`NemotronHMoE`:
+
+    * routed experts (``mlp_cls``): the base :class:`~max.nn.moe.MoE` reads only
+      ``.up_proj.weight`` / ``.down_proj.weight`` to build the grouped-matmul
+      weight stacks and never calls ``__call__``, so the up/down Linears are all
+      that is required;
+    * the shared expert (``shared_mlp_cls``): ``MoE.__call__`` invokes
+      ``shared_experts(x)`` directly, so ``__call__`` runs the relu2 MLP.
+
+    The constructor keywords match what ``MoE`` passes to the expert MLP class.
+    """
+
+    def __init__(
+        self,
+        dtype: DType,
+        quantization_encoding: QuantizationEncoding | None,
+        hidden_dim: int,
+        feed_forward_length: int,
+        devices: list[DeviceRef],
+        quant_config: QuantConfig | None = None,
+    ) -> None:
+        # Subclass MLP so this is a valid `Callable[..., MLP]` expert factory
+        # for the base MoE. Init the MLP base with is_sharding=True: it sets the
+        # shared MLP attributes but skips building the gated gate/up/down
+        # projections. This expert is non-gated (no gate_proj) and builds only
+        # up/down below, so the base MLP projections must not be created.
+        super().__init__(
+            dtype=dtype,
+            quantization_encoding=quantization_encoding,
+            hidden_dim=hidden_dim,
+            feed_forward_length=feed_forward_length,
+            devices=devices,
+            quant_config=quant_config,
+            is_sharding=True,
+        )
+        dev = devices[0]
+        self.up_proj = Linear(
+            in_dim=hidden_dim,
+            out_dim=feed_forward_length,
+            dtype=dtype,
+            device=dev,
+            has_bias=False,
+            quant_config=quant_config,
+        )
+        self.down_proj = Linear(
+            in_dim=feed_forward_length,
+            out_dim=hidden_dim,
+            dtype=dtype,
+            device=dev,
+            has_bias=False,
+            quant_config=quant_config,
+        )
+
+    def __call__(self, x: TensorValueLike) -> TensorValue:
+        x = TensorValue(x)
+        return self.down_proj(_relu2(self.up_proj(x)))
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Gets the expert MLP sharding strategy."""
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Sets the sharding strategy for the up/down projections.
+
+        Overrides :attr:`MLP.sharding_strategy`, which also shards
+        ``gate_proj`` — this expert is non-gated and never builds one.
+        Tensor parallelism shards ``up_proj`` rowwise and ``down_proj``
+        columnwise, matching the base MLP.
+        """
+        self._sharding_strategy = strategy
+
+        if strategy.is_replicate:
+            self.up_proj.sharding_strategy = strategy
+            self.down_proj.sharding_strategy = strategy
+        elif strategy.is_tensor_parallel:
+            self.up_proj.sharding_strategy = ShardingStrategy.rowwise(
+                strategy.num_devices
+            )
+            self.down_proj.sharding_strategy = ShardingStrategy.columnwise(
+                strategy.num_devices
+            )
+        else:
+            raise ValueError(f"Unsupported sharding strategy: {strategy}")
+
+    def shard(
+        self, devices: Iterable[DeviceRef]
+    ) -> Sequence[NemotronHExpertMLP]:
+        """Creates sharded views of this expert MLP across multiple devices.
+
+        Overrides :meth:`MLP.shard`, which shards ``gate_proj`` (absent
+        here) and constructs base :class:`MLP` shards; this builds
+        :class:`NemotronHExpertMLP` shards from the sharded up/down
+        projections.
+
+        Args:
+            devices: Iterable of devices to place the shards on.
+
+        Returns:
+            Sharded :class:`NemotronHExpertMLP` instances, one per device.
+        """
+        if self.sharding_strategy is None:
+            raise ValueError("Sharding strategy is not set")
+
+        sharded_up_projs = self.up_proj.shard(devices)
+        sharded_down_projs = self.down_proj.shard(devices)
+
+        shards: list[NemotronHExpertMLP] = []
+        for device, up_proj, down_proj in zip(
+            devices, sharded_up_projs, sharded_down_projs, strict=True
+        ):
+            sharded = NemotronHExpertMLP(
+                dtype=self.up_proj.weight.dtype,
+                quantization_encoding=self.quantization_encoding,
+                hidden_dim=self.hidden_dim,
+                feed_forward_length=self.feed_forward_length,
+                devices=[device],
+                quant_config=self.quant_config,
+            )
+            sharded.up_proj = up_proj
+            sharded.down_proj = down_proj
+            # Keep the original weights reachable for stacking checks,
+            # mirroring MLP.shard.
+            sharded._parent_layer = self
+            shards.append(sharded)
+
+        return shards
+
+
+class NemotronHMoEGate(MoEGate):
+    """Sigmoid top-k router with an additive score-correction bias.
+
+    Nemotron-3's router is DeepSeek-style — sigmoid gate scores, an additive
+    ``e_score_correction_bias`` applied for *selection* only, and the pre-bias
+    scores used for the *weights* — but with ``n_group == topk_group == 1`` the
+    group-limited scheme degenerates to plain top-k. It therefore uses only
+    ``ops.top_k`` + ``ops.gather`` (both have native Apple/Metal branches) and
+    avoids ``moe_router_group_limited`` (``DeepseekV3TopKRouter``), whose
+    warp-collective ``WARP_SIZE % group_size`` constraint fails at 128 experts
+    with ``n_group == 1``.
+    """
+
+    def __init__(
+        self,
+        devices: list[DeviceRef],
+        hidden_dim: int,
+        num_experts: int,
+        num_experts_per_token: int,
+        dtype: DType,
+        routed_scaling_factor: float,
+        norm_topk_prob: bool,
+        correction_bias_dtype: DType = DType.float32,
+    ) -> None:
+        super().__init__(
+            devices=devices,
+            hidden_dim=hidden_dim,
+            num_experts=num_experts,
+            num_experts_per_token=num_experts_per_token,
+            dtype=dtype,
+        )
+        self.routed_scaling_factor = routed_scaling_factor
+        self.norm_topk_prob = norm_topk_prob
+        self.e_score_correction_bias = Weight(
+            "e_score_correction_bias",
+            shape=[num_experts],
+            device=devices[0],
+            dtype=correction_bias_dtype,
+        )
+
+    def __call__(
+        self, hidden_states: TensorValue
+    ) -> tuple[TensorValue, TensorValue]:
+        # Routing math in fp32 (matches the HF reference); the weights are cast
+        # back to the activation dtype for the downstream combine matmul in
+        # ``MoE.__call__``.
+        scores = ops.sigmoid(self.gate_score(hidden_states).cast(DType.float32))
+        bias = self.e_score_correction_bias.to(self.devices[0]).cast(
+            DType.float32
+        )
+        # Select experts on the bias-corrected scores.
+        sel = scores + bias
+        topk_sel, topk_idx = ops.top_k(
+            sel, k=self.num_experts_per_token, axis=-1
+        )
+        # Weight with the *pre-bias* sigmoid scores at the selected experts:
+        # scores[t, e] == sel[t, e] - bias[e]. Subtracting the gathered bias
+        # recovers those weights without a per-row take-along-axis gather
+        # (``ops.gather`` is numpy-take, not torch.gather); gathering the 1-D
+        # ``bias`` with the [tokens, k] indices yields ``bias[idx]`` directly.
+        topk_weight = topk_sel - ops.gather(bias, topk_idx, axis=0)
+        if self.norm_topk_prob:
+            topk_weight = topk_weight / ops.sum(topk_weight, axis=-1)
+        topk_weight = topk_weight * self.routed_scaling_factor
+        return topk_idx, topk_weight.cast(hidden_states.dtype)
+
+
+class NemotronHMoE(MoE):
+    """Nemotron-3 MoE mixer: 128 non-gated relu2 experts (top-6) + 1 shared.
+
+    Only :attr:`gate_up_proj` is overridden: the experts are non-gated (relu2,
+    no ``gate_proj``), so the routed-expert weight stack is the up-projection
+    only, ``[num_experts, moe_intermediate_size, hidden]``. Everything else
+    reuses the base :class:`~max.nn.moe.MoE` grouped-matmul routing, which on
+    Apple resolves to MAX's own ``naive_grouped_matmul`` (the else-branch of
+    ``grouped_matmul_ragged``).
+    """
+
+    @property
+    def gate_up_proj(self) -> TensorValue:
+        # Non-gated experts: the base property interleaves gate+up and would
+        # AttributeError on our gate-less experts. Stack the up projections
+        # only -> [num_experts, moe_intermediate_size, hidden].
+        return ops.stack(
+            [expert.up_proj.weight for expert in self.experts], axis=0
+        )
 
 
 class NemotronHAttention(Module):
@@ -473,6 +700,30 @@ class NemotronHBlock(Module):
             self.mixer = NemotronHMamba2Mixer(config, quant_config=quant_config)
         elif self.kind == "attention":
             self.mixer = NemotronHAttention(config, kv_layer_idx)
+        elif self.kind == "moe":
+            # Non-gated relu2 MoE, bf16 (the 30B-A3B has no quant config; the
+            # FP8 layer sets cover only mamba/mlp layers, so none is wired).
+            self.mixer = NemotronHMoE(
+                devices=config.devices,
+                hidden_dim=config.hidden_size,
+                num_experts=config.num_experts,
+                num_experts_per_token=config.num_experts_per_tok,
+                moe_dim=config.moe_intermediate_size,
+                gate_cls=functools.partial(
+                    NemotronHMoEGate,
+                    routed_scaling_factor=config.routed_scaling_factor,
+                    norm_topk_prob=config.norm_topk_prob,
+                ),
+                mlp_cls=NemotronHExpertMLP,
+                shared_mlp_cls=NemotronHExpertMLP,
+                has_shared_experts=True,
+                shared_experts_dim=config.moe_shared_expert_intermediate_size,
+                dtype=config.dtype,
+                apply_router_weight_first=False,
+                # Non-gated: relu2 over the whole up-projection (the moe_dim
+                # split arg from the base MoE is ignored).
+                gated_activation_fn=lambda gate_up, moe_dim: _relu2(gate_up),
+            )
         else:  # mlp
             self.mixer = NemotronHMLP(config, quant_config=quant_config)
 
@@ -602,7 +853,9 @@ class NemotronH(Module):
                     input_row_offsets,
                 )
                 kv_i += 1
-            else:  # mlp
+            elif block.kind in ("moe", "mlp"):
+                # MoE and MLP are both stateless (hidden states only; no
+                # SSM/KV state), so they dispatch identically.
                 out = block.mixer(normed)
             h = residual + out
 

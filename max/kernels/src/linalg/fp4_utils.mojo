@@ -104,6 +104,53 @@ def decode_e2m1_to_bf16[
 
 
 @always_inline
+def decode_e2m1_to_f16[
+    width: SIMDSize, //
+](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.float16, width]:
+    """Decodes E2M1 nibbles to float16 by exponent injection (Preston's trick).
+
+    The float16 twin of `decode_e2m1_to_f32_inject`, but -- unlike the f32/bf16
+    injection variants -- **correct on the Apple M5** (and any FTZ target). It
+    injects the 3 magnitude bits `(e1 e0 m0)` at float16 bits 11:9 and the sign
+    at bit 15, then renormalizes with a single `* 2^14` (a power of two, hence
+    exact). The result is **bit-identical** to `E2M1_TO_FLOAT32[nibble]` cast to
+    float16 for all 16 values (every `{+-0, +-0.5, ..., +-6}` is exactly
+    representable in float16), so `decode_e2m1_to_f16(n).cast[float32]()` equals
+    `decode_e2m1_to_f32(n)` bit-for-bit.
+
+    Why it is M5-safe where the f32/bf16 inject is not: the `+-0.5` codes
+    (`E == 0, m == 1`) route through the float16 subnormal `0x0200` / `0x8200`
+    (value `2^-15`), which `* 2^14` renormalizes to `+-0.5`. The Apple M5
+    flushes **f32/bf16** denormals to zero on arithmetic inputs (see
+    `patterns/apple-m5-denormal-flush-to-zero`) -- which is why
+    `decode_e2m1_to_f32_inject` decodes `+-0.5` to `+-0` there -- but it
+    **preserves float16 subnormals**, so this f16 decode keeps `+-0.5` exact
+    (verified on-device: all 16 codes match `E2M1_TO_FLOAT32`). Callers that
+    need f32/bf16 cast the f16 result afterwards; the cast of the now-normal
+    `+-0.5` is exact.
+
+    It is also cheaper than `decode_e2m1_to_f32` (no `uint32` widen, no
+    `select`, no `E == 0` compare) while staying bit-exact -- the reason to
+    prefer it on the M5 dequant path.
+
+    Parameters:
+        width: SIMD width (lane count) of the nibble vector.
+
+    Args:
+        nibble: One E2M1 nibble per lane in the low 4 bits (`0..15`).
+
+    Returns:
+        The decoded values as `SIMD[DType.float16, width]`, bit-identical to
+        casting `E2M1_TO_FLOAT32[nibble]` to float16.
+    """
+    # (e1 e0 m0) -> f16 bits 11:9 (exp low 2 bits + mantissa MSB); sign -> 15.
+    var mag = (nibble & 0x7) << 9
+    var sign = (nibble & 0x8) << 12
+    comptime c2_14 = bitcast[DType.float16](UInt16(0x7400))  # 2^14
+    return bitcast[DType.float16](sign | mag) * c2_14
+
+
+@always_inline
 def decode_e2m1_to_f32[
     width: SIMDSize, //
 ](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.float32, width]:

@@ -469,7 +469,10 @@ class MoEQuantized(MoE):
 
         permuted = ops.gather(
             x,
-            ops.cast(token_order // self.num_experts_per_token, DType.int32),
+            ops.cast(
+                ops.floor_div(token_order, self.num_experts_per_token),
+                DType.int32,
+            ),
             axis=0,
         )
 

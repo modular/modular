@@ -65,6 +65,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
 )
 from linalg.matmul.gpu.apple.fp4_dequant import enqueue_fp4_materialize
+from linalg.matmul.gpu.apple.fp4_gemv import enqueue_apple_fp4_gemv
 from linalg.matmul.gpu.apple.matmul_8x8 import gemm_kernel_apple_8x8
 from linalg.matmul.gpu.apple.matmul2d_fp4 import enqueue_matmul2d_fp4_smem
 from linalg.matmul.gpu.apple.matmul_kernel import (
@@ -906,9 +907,12 @@ def enqueue_apple_fp4_matmul[
             where it actually wins. See the `_M2D_*` threshold comments.
 
     The default strategy (`use_matmul2d=False`) is chosen by (K, M) -- all paths
-    produce bit-identical results (the dequant arithmetic + the bf16 MMA are the
-    same on every path):
+    produce bit-identical dequant (the E2M1 * |scale| arithmetic is the same on
+    every path; the GEMV differs only by its fp32 reduction order vs the MMA):
 
+    - Batch-1 decode (`M == 1`): the register-resident W4A16 GEMV
+      (`enqueue_apple_fp4_gemv`), no MMA to feed. See `fp4_gemv.mojo` for the
+      rationale (bandwidth win, ~1.53x at the Llama-8B down-proj shape).
     - Deep-K niche (`K >= 18432` AND `M >= 1024`, aligned interior): the
       `matmul2d` W4A16 kernel (`enqueue_matmul2d_fp4_smem`). At deep K the
       MAT->DENSE path below must read a large (>=226 MB) materialized bf16 weight
@@ -1014,6 +1018,14 @@ def enqueue_apple_fp4_matmul[
         if m2d_aligned:
             enqueue_matmul2d_fp4_smem[c_type=c_type](c, a, packed, scales, ctx)
             return
+
+    # (3) BATCH-1 DECODE: M == 1 -> register-resident W4A16 GEMV, no MMA; see
+    # fp4_gemv.mojo for the full rationale.
+    if m == 1:
+        enqueue_apple_fp4_gemv[c_type, elementwise_lambda_fn](
+            c, a, packed, scales, n, k, ctx
+        )
+        return
 
     # Three-way M-adaptive dispatch (two independent crossovers, both measured):
     if m >= _FP4_MATERIALIZE_M_THRESHOLD:
