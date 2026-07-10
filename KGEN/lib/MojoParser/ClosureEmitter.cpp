@@ -732,32 +732,37 @@ void ClosureEmitter::processClosureTraits(
   }
 }
 
-bool ClosureEmitter::isClosureType(SharedState &shared, Type type) {
-  auto definesClosure = [&](TraitType traitType) {
+std::optional<TraitDeclOp> ClosureEmitter::getClosureDecl(SharedState &shared,
+                                                          Type type) {
+  auto closureTrait = [&](TraitType traitType) -> std::optional<TraitDeclOp> {
     for (auto sym : traitType.getSymbols()) {
       ASTDecl &decl = shared.getDeclResolver().getDeclForTypeSymbol(sym);
       if (auto traitOp =
               dyn_cast_if_present<TraitDeclOp>(decl.getIfOperation())) {
         if (traitOp.getDefinesClosure())
-          return true;
+          return traitOp;
       }
     }
-    return false;
+    return std::nullopt;
   };
   if (auto traitType = dyn_cast<TraitType>(type))
-    return definesClosure(traitType);
+    return closureTrait(traitType);
   if (auto structType = dyn_cast<LIT::StructType>(type)) {
     ASTDecl &structDecl =
         shared.getDeclResolver().getDeclForTypeSymbol(structType.getSymbol());
     auto structDeclOp =
         dyn_cast_if_present<LIT::StructDeclOp>(structDecl.getIfOperation());
     if (!structDeclOp)
-      return false;
-    return definesClosure(structDeclOp.getCanonicalTrait());
+      return std::nullopt;
+    return closureTrait(structDeclOp.getCanonicalTrait());
   }
   if (auto refType = dyn_cast<RefType>(type))
-    return isClosureType(shared, refType.getElementType());
-  return false;
+    return getClosureDecl(shared, refType.getElementType());
+  return std::nullopt;
+}
+
+bool ClosureEmitter::isClosureType(SharedState &shared, Type type) {
+  return getClosureDecl(shared, type).has_value();
 }
 
 void ClosureEmitter::collectClosureExternalRefs(
@@ -769,12 +774,29 @@ void ClosureEmitter::collectClosureExternalRefs(
 
   // Collect alias ops - these represent external parameter references.
   auto collectAliases = [&](TraitDeclOp closureTrait) {
+    // The externalized reference names are exactly the trait's non-inherited
+    // aliases; only witness references to those names should be rewritten.
+    DenseSet<StringRef> aliasNames;
+    for (AliasDeclOp aliasOp : closureTrait.getOps<AliasDeclOp>())
+      if (!aliasOp.getInheritedFrom())
+        aliasNames.insert(aliasOp.getName());
+
+    // The dependent capture types are internalized to a get_witness attr;
+    // extern it back to a reference of the original parameter declaration.
+    mlir::AttrTypeReplacer externCapture;
+    externCapture.addReplacement([&](GetWitnessAttr witness) -> TypedAttr {
+      if (aliasNames.contains(witness.getWitnessName().strref()))
+        return ParamDeclRefAttr::get(witness.getWitnessName(),
+                                     witness.getType());
+      return witness;
+    });
     for (AliasDeclOp aliasOp : closureTrait.getOps<AliasDeclOp>()) {
       // Skip aliases that are inherited from a parent trait: Those are not
       // captured parameters by the closure.
       if (aliasOp.getInheritedFrom())
         continue;
-      refs.push_back({closureParam, aliasOp});
+      Type externalType = externCapture.replace(aliasOp.getType());
+      refs.push_back({closureParam, aliasOp.getName(), externalType});
     }
   };
   processClosureTraits(traitType, collectAliases);
@@ -1520,8 +1542,7 @@ selfContainedSymbolAndCaptures(PValue fnPValue,
 static std::pair<FnTypeGeneratorType, llvm::MapVector<StringRef, Type>>
 extractParameterReferencesIntoAliasRef(
     FnTypeGeneratorType dependentSignatureType, StringRef selfName,
-    llvm::function_ref<TypedAttr(ParamDeclRefAttr)>
-        externParameterRefReplacer) {
+    llvm::function_ref<TypedAttr(StringRef, Type)> externParameterRefReplacer) {
   DenseSet<StringRef> callParams;
   for (PogMetadataAttr pog :
        dependentSignatureType.getParamListAttrs().getPogs())
@@ -1535,9 +1556,14 @@ extractParameterReferencesIntoAliasRef(
       [&](ParamDeclRefAttr reference) -> TypedAttr {
         if (!callParams.contains(reference.getName().getValue())) {
           auto ptr = aliasMembers.find(reference.getName());
-          if (ptr == aliasMembers.end())
-            aliasMembers.insert({reference.getName(), reference.getType()});
-          return externParameterRefReplacer(reference);
+          if (ptr == aliasMembers.end()) {
+            Type replacedType = externRefReplacer.replace(reference.getType());
+            aliasMembers.insert({reference.getName(), replacedType});
+            return externParameterRefReplacer(reference.getName(),
+                                              replacedType);
+          } else {
+            return externParameterRefReplacer(ptr->first, ptr->second);
+          }
         }
         return reference;
       });
@@ -1559,9 +1585,10 @@ extractParameterReferencesIntoAliasRef(
   StringAttr traitName = StringAttr::get(
       ctx, getFlattenedSymbolName(getFullyResolvedSymbolRef(closureTrait)));
   StringRef selfName = ref.getName().getValue();
-  auto externParamReplacer = [&](ParamDeclRefAttr reference) -> TypedAttr {
-    return GetWitnessAttr::get(PValue(selfType), traitName, reference.getName(),
-                               reference.getType());
+  auto externParamReplacer = [&](StringRef witnessName,
+                                 Type witnessType) -> TypedAttr {
+    return GetWitnessAttr::get(PValue(selfType), traitName,
+                               StringAttr::get(ctx, witnessName), witnessType);
   };
   return extractParameterReferencesIntoAliasRef(dependentSignatureType,
                                                 selfName, externParamReplacer);
@@ -1640,16 +1667,16 @@ ASTDecl *ClosureEmitter::createClosureTrait(
         return ParamDeclRefAttr::get(it->second);
       return getWitness;
     });
-    llvm::append_range(parameters,
-                       llvm::map_range(sigParams, [&](ParamDeclAttr p) {
-                         return cast<ParamDeclAttr>(
-                             aliasReplacer.replace(replacer.replace(p)));
-                       }));
-    SmallVector<Type> argumentTypes;
-    llvm::append_range(
-        argumentTypes, llvm::map_range(sig.getArguments(), [&](Type original) {
-          return cast<Type>(aliasReplacer.replace(replacer.replace(original)));
-        }));
+    // Internalize all get_witness attr references to the corresponding
+    // parameter declaration.
+    llvm::append_range(parameters, sigParams);
+    for (ParamDeclAttr &p : parameters)
+      p = cast<ParamDeclAttr>(aliasReplacer.replace(replacer.replace(p)));
+
+    SmallVector<Type> argumentTypes =
+        llvm::map_to_vector(sig.getArguments(), [&](Type original) -> Type {
+          return aliasReplacer.replace(replacer.replace(original));
+        });
     Type result = cast<Type>(
         aliasReplacer.replace(replacer.replace(sig.getResultType())));
     // TODO: remove capturing when legacy closures are removed.
