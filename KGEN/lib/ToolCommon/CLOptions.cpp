@@ -178,7 +178,13 @@ bool KGENCLOptionsParser::parse(llvm::cl::Option &o, StringRef argName,
   }
 
   if (argName == "lsp") {
-    val = Command::kLSP;
+    if (argValue == "no-dump")
+      val = Command::kLSPNoDump;
+    else if (argValue.empty())
+      val = Command::kLSP;
+    else
+      return o.error("unsupported 'lsp' option value '" + argValue + "'");
+
     return false;
   }
   return o.error("unsupported option '" + argName + "'");

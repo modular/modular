@@ -3,16 +3,24 @@
 # that reproduces, what counts as a failure, and what is NOT covered.
 #
 # Unresolved imports surface as errors, so any scan root added here must be
-# covered by `mojo_deps` below.
+# covered by `mojo_deps` below. Since #90643, this also covers trees like
+# max/kernels/src whose files resolve other packages from a PRECOMPILED
+# `.mojoc` dependency rather than source -- `cloneDeclModuleForCompilation`
+# used to give such imported stubs an invalid 0-block body, which spuriously
+# failed MLIR verification; it now gives them a canonical unresolved body,
+# matching the real server.
 #
 # --- Running ---
 #   Whole stdlib:
 #     bt //KGEN/test/mojo-lsp-server/parse-tree:lsp-parse-smoke-stdlib
+#   Whole kernel tree:
+#     bt //KGEN/test/mojo-lsp-server/parse-tree:lsp-parse-smoke-kernels
 #   Single file (fast, for debugging a failure -- sets up
 #   MODULAR_MOJO_MAX_IMPORT_PATH automatically):
 #     br //KGEN/test/mojo-lsp-server/parse-tree:lsp-smoke-one -- \
 #         oss/modular/mojo/stdlib/std/sys/info.mojo
 
+load("@mojo//:mojo.bzl", "ALL_MOJOPKGS")
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test")
 
 package(default_visibility = ["//visibility:private"])
@@ -106,6 +114,191 @@ modular_py_binary(
     mojo_deps = [
         "@mojo//:std",
     ],
+    tags = [
+        "manual",
+        "no-pydeps",
+    ],
+    target_compatible_with = _SANITIZER_INCOMPATIBLE,
+    deps = [":lsp_smoke_lib"],
+)
+
+# Top-level kernel library packages under //max/kernels/src. Drives `data`
+# (via each package's `:srcs` filegroup) and, indirectly, `mojo_deps` pruning
+# below. NOTE: this does NOT curate the actual scanned file set --
+# `--scan-root-file` resolves through the runfiles symlink to the real on-disk
+# max/kernels/src tree, so the script always sees the full tree on disk. Real
+# exclusion happens via `--skip-file` (_KERNELS_NO_RUN_LIST). This list exists
+# so the intentionally-supported package set is visible in one place and so
+# `mojo_deps` only carries .mojoc's this test's *scanned* files actually need.
+#
+# graph_compiler's sub-packages (builtin_kernels, builtin_primitives,
+# extensibility) are excluded from this list: they have no `:srcs` filegroup
+# of their own, but per the NOTE above that doesn't matter for the scan --
+# file discovery always goes through the on-disk tree, not `data`.
+#
+# graph_compiler itself has no `__init__.mojo` (it's a container, not a
+# package -- see max/kernels/src/BUILD.bazel's own _EXCLUDED_KERNEL_LIBS), so
+# its sub-packages sit one directory level deeper than every other kernel
+# package. This used to be documented here as a suspected real gap in
+# import-path resolution for doubly-nested Mojo packages; as of 2026-07-09
+# that's confirmed false. Their imports are flat names (`import
+# extensibility`, not `graph_compiler.extensibility`), `resolveModulePath`
+# (KGEN/lib/MojoParser/SharedState.cpp) resolves by flat name against each
+# import-path directory with nothing nesting-specific about it, and
+# `//:install` ships their `.mojoc`s flat, same as every other kernel
+# package -- confirmed by direct `kgen -lsp` runs. The actual cause of the
+# old "unable to locate module" failures was this file's own
+# _KERNEL_MOJOPKGS excluding those 3 targets from the import path; see its
+# comment below.
+_KERNEL_PACKAGES = [
+    "comm",
+    "internal_utils",
+    "kv_cache",
+    "layout",
+    "linalg",
+    "nn",
+    "nvml",
+    "pipeline",
+    "profiling_range",
+    "quantization",
+    "shmem",
+    "state_space",
+    "structured_kernels",
+    "weights_registry",
+]
+
+# Same escape hatch as _NO_RUN_LIST, but paths are relative to max/kernels/src.
+# Two categories (revised 2026-07-09 after fixing _KERNEL_MOJOPKGS below --
+# see its comment -- turned 34 "nesting/visibility gap, out of scope" files
+# into 16 that are actually clean today (removed from this list entirely), 17
+# that hit one real crash bug, and 1 that was miscategorized from the start):
+#
+# 1. Every file below transitively imports
+#    linalg/matmul/cpu/apple_accelerate.mojo, and finalizing its imported
+#    bytecode hits a genuine MLIR bytecode-reader bug -- 'hlcf.if' op
+#    operation destroyed but still has uses -- aborting in
+#    mlir::BytecodeReader::Impl::finalize (via
+#    SharedState::finalizeImportedBytecodeModules(), called from
+#    ~MojoParserContext). Confirmed via direct `kgen -lsp` runs on
+#    2026-07-09 using the fixed _KERNEL_MOJOPKGS: this is a real compiler
+#    crash reachable from legitimate kernel code, not a nesting/visibility
+#    artifact -- it was simply masked before by these same files failing on
+#    "unable to locate module" first, before ever reaching the code path
+#    that triggers it. TODO: file a KGEN bug for the bytecode-reader crash;
+#    keep these skipped until it's fixed.
+#    - distributed.mojo and msa.mojo also still fail to resolve
+#      'matmul_rs'/'msa' (the //Kernels/lib/... visibility gap -- see
+#      _KERNEL_MOJOPKGS's comment) before hitting the same crash further in.
+#    - mha.mojo and conv.mojo also have their own genuine diagnostics ahead
+#      of the crash ("use of unknown declaration 'k_type'"/"'output_type'");
+#      re-triage those two once the crash itself is fixed, they may not come
+#      back clean.
+# 2. Genuine diagnostics on the file's own code, with no crash and no
+#    resolution failure anywhere in the output -- confirmed real via a
+#    direct `kgen -lsp` run. Needs owner triage: real bug vs. a
+#    standalone-check limitation around heavily-parameterized/generic kernel
+#    code checked outside its normal instantiation context.
+_KERNELS_NO_RUN_LIST = [
+    # 1. apple_accelerate.mojo bytecode-reader crash (see comment above).
+    "graph_compiler/builtin_kernels/attention.mojo",
+    "graph_compiler/builtin_kernels/conv.mojo",
+    "graph_compiler/builtin_kernels/distributed.mojo",
+    "graph_compiler/builtin_kernels/elementwise.mojo",
+    "graph_compiler/builtin_kernels/ep.mojo",
+    "graph_compiler/builtin_kernels/gather_scatter.mojo",
+    "graph_compiler/builtin_kernels/kernels.mojo",
+    "graph_compiler/builtin_kernels/kv_cache.mojo",
+    "graph_compiler/builtin_kernels/linalg.mojo",
+    "graph_compiler/builtin_kernels/logprobs.mojo",
+    "graph_compiler/builtin_kernels/msa.mojo",
+    "graph_compiler/builtin_kernels/quantization.mojo",
+    "graph_compiler/builtin_kernels/reductions.mojo",
+    "graph_compiler/builtin_primitives/primitives.mojo",
+    "nn/attention/gpu/mha.mojo",
+    "nn/conv/conv.mojo",
+    "nn/kv_cache.mojo",
+    # 2. Genuine diagnostics on the file's own code; needs owner triage.
+    "layout/element.mojo",
+    # "attempt to resolve a recursive reference to declaration 'offset'" on
+    # Storage.offset(), confirmed via a direct `kgen -lsp` run. Landed with
+    # #91181; may be a standalone-check limitation on this generic method
+    # rather than a real bug -- same category as layout/element.mojo above.
+    "layout/tensor_storage.mojo",
+    "linalg/grouped_matmul_sm100.mojo",
+    "linalg/matmul/gpu/_multistage_gemm_gpu.mojo",
+    "linalg/matmul/gpu/sm90/dispatch.mojo",
+    # "cannot implicitly convert 'Int' value to 'UInt32'" at
+    # `comptime q_tile_size: UInt32 = q_smem_size // 2` (line 2917), confirmed
+    # via a direct `kgen -lsp` run. Previously miscategorized alongside the
+    # nesting/visibility-gap files above; it isn't one -- an unrelated,
+    # pre-existing diagnostic on the file's own code, same as the rest of
+    # this category.
+    "nn/attention/gpu/nvidia/sm100/mha_1q.mojo",
+]
+
+# ALL_MOJOPKGS minus the internal //Kernels/lib/... packages (msa,
+# matmul_rs): visibility-scoped to specific consumers and unavailable here --
+# any file that imports them still shows "unable to locate module" (see
+# _KERNELS_NO_RUN_LIST's crash category: msa.mojo, distributed.mojo).
+#
+# The graph_compiler sub-package targets (extensibility, builtin_kernels,
+# builtin_primitives) were excluded here too until 2026-07-09, on the theory
+# that a mojo_library target's MojoInfo carries its own SOURCE .mojo files
+# (not just the compiled .mojoc) and that those would propagate into this
+# test's runfiles and silently re-add files to the scan. That's confirmed
+# false: `collect()`'s file discovery walks the *resolved* on-disk tree (see
+# the NOTE on _KERNEL_PACKAGES above), independent of whatever `mojo_deps`
+# puts in runfiles -- there's no duplication to worry about. Excluding these
+# 3 targets only meant their compiled `.mojoc` was missing from the import
+# path, which is exactly why every file inside or importing them failed with
+# "unable to locate module". Restored 2026-07-09 after a direct `kgen -lsp`
+# run (using this same computed import path) confirmed it fixes 16 of the 34
+# previously-skipped files outright and unmasks -- rather than causes -- the
+# real crash behind the other 17; see _KERNELS_NO_RUN_LIST.
+_KERNEL_MOJOPKGS = [
+    dep
+    for dep in ALL_MOJOPKGS
+    if not dep.startswith("//Kernels/lib/")
+]
+
+# Same `kgen -lsp` mechanism as lsp-parse-smoke-stdlib, scanning
+# max/kernels/src instead. Kernel files cross-import each other's packages
+# (e.g. nn -> layout, linalg -> comm) and universally import `std`, so every
+# precompiled kernel .mojopkg needs to be on the import path -- otherwise
+# cross-package imports fail to resolve and every such file shows a spurious
+# error. _KERNEL_MOJOPKGS (std + every //max:<pkg>) is the same set
+# `//:install` ships precompiled, so this matches production resolution
+# without recompiling anything per-test.
+#
+# size="large" (900s), not "medium": kernel files are heavier than stdlib's
+# and shard_count is capped at 50 (Bazel's hard limit) for ~480 files, so a
+# shard can see ~10 files instead of stdlib's ~5 -- large gives headroom for a
+# shard that draws several heavy files.
+modular_py_test(
+    name = "lsp-parse-smoke-kernels",
+    size = "large",
+    srcs = ["lsp_smoke_kernels_main.py"],
+    args = [
+        "--scan-root-file",
+        "$(rootpath //max/kernels/src:index.md)",
+    ] + [
+        arg
+        for f in _KERNELS_NO_RUN_LIST
+        for arg in [
+            "--skip-file",
+            f,
+        ]
+    ],
+    data = [
+        "//KGEN/tools/kgen",
+        "//max/kernels/src:index.md",
+    ] + [
+        "//max/kernels/src/%s:srcs" % pkg
+        for pkg in _KERNEL_PACKAGES
+    ],
+    main = "lsp_smoke_kernels_main.py",
+    mojo_deps = _KERNEL_MOJOPKGS,
+    shard_count = 50,
     tags = [
         "manual",
         "no-pydeps",

@@ -10,8 +10,8 @@ Canonical explanation of what this tests -- other files in this test (the
 BUILD target comments, the nightly workflow) refer back to this docstring
 instead of repeating it.
 
-For each file this runs a single `kgen -lsp FILE` invocation, which reproduces
-MojoDocument::checkModuleSemantics in-process: the lazy, error-tolerant parse
+For each file this runs a single `kgen -lsp=no-dump FILE` invocation, which
+reproduces MojoDocument::checkModuleSemantics in-process: the lazy, error-tolerant parse
 (parseFileForLSP) followed by the real check pipeline (runCheckLITPipeline) on
 the cloned module (cloneDeclModuleForCompilation), with kgen's CompilationOptions
 -- the exact passes/options the server's build composes, on the same in-memory
@@ -40,7 +40,7 @@ NOT covered: docstring code-block checking. The server also parses/checks ```moj
 blocks inside doc comments (processDocStrings) and publishes their errors; this
 tool does not, matching the server run WITH --no-docstring-checks. (That is what
 made list.mojo look like a disagreement -- its only "errors" were a doc example.)
-Docstring-aware checking stays with the real-server parse-stdlib target.
+No test currently covers docstring code-block checking.
 
 Usage (manual):
   python3 lsp_smoke_all.py PATH [PATH ...]          # dirs walked for *.mojo
@@ -151,7 +151,7 @@ def smoke(
     """
     path, _root = item
     t0 = time.monotonic()
-    cmd = [kgen, "-lsp", path]
+    cmd = [kgen, "-lsp=no-dump", path]
     rc, _ir, log, err = run(cmd, env)
     v = crash_verdict("LSP parse+check", rc, log)
     if v:
