@@ -166,7 +166,7 @@ struct OwnedPointer[T: AnyType](
         ]()
         comptime assert conforms_to(Self.T, ImplicitlyDeletable)
 
-        self._inner.unsafe_ptr().destroy_pointee()
+        self._inner.unsafe_ptr().unsafe_deinit_pointee()
         dealloc(self._inner^.unsafe_with_layout(Layout[Self.T].single()))
 
     # ===-------------------------------------------------------------------===#

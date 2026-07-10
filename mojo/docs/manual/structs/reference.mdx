@@ -109,7 +109,7 @@ def append(mut self, value: Self.ElementType):
     if self.next:
         var next_ptr = self.next.value()
         next_ptr[].free_chain()
-        next_ptr.destroy_pointee()
+        next_ptr.unsafe_deinit_pointee()
         next_ptr.free()
 
     self.next = Self.make_node(value)
@@ -160,7 +160,7 @@ def free_chain(self):
     while current:
         var current_ptr = current.value()
         next_node = current_ptr[].next
-        current_ptr.destroy_pointee()
+        current_ptr.unsafe_deinit_pointee()
         current_ptr.free()
         current = next_node
 ```
@@ -169,7 +169,7 @@ The "head" node stays allocated unless you explicitly free it yourself:
 
 ```mojo
 list_head[].free_chain()
-list_head.destroy_pointee()
+list_head.unsafe_deinit_pointee()
 list_head.free()
 ```
 
@@ -200,7 +200,7 @@ struct LinkedList[T]:
         var curr = self._head
         while curr:
             var next = curr.value()[].next
-            curr.value().destroy_pointee()
+            curr.value().unsafe_deinit_pointee()
             curr.value().free()
             curr = next
 ```
@@ -243,7 +243,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
         if self.next:
             var next_ptr = self.next.value()
             next_ptr[].free_chain()
-            next_ptr.destroy_pointee()
+            next_ptr.unsafe_deinit_pointee()
             next_ptr.free()
 
         self.next = Self.make_node(value)
@@ -272,7 +272,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
         while current:
             var current_ptr = current.value()
             next_node = current_ptr[].next
-            current_ptr.destroy_pointee()
+            current_ptr.unsafe_deinit_pointee()
             current_ptr.free()
             current = next_node
 
@@ -290,7 +290,7 @@ def main():
     # Demonstrates cleanup. In short-lived programs, the OS reclaims memory
     # at exit
     list_head[].free_chain()
-    list_head.destroy_pointee()
+    list_head.unsafe_deinit_pointee()
     list_head.free()
 ```
 

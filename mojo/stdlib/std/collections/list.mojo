@@ -1410,7 +1410,7 @@ struct List[T: Movable](
             the list. Instead, do `my_list.unsafe_set(len(my_list) - 1, value)`.
         """
         check_bounds[cpu_default=False](idx, len(self))
-        (self._data + idx).destroy_pointee()
+        (self._data + idx).unsafe_deinit_pointee()
         (self._data + idx).unsafe_write(value^)
 
     def count(self, value: Self.T) -> Int where conforms_to(Self.T, Equatable):

@@ -120,7 +120,7 @@ def steal():
         print(ptr[idx], end=" ")
     print()  # Output: 1 2 3 4
     for idx in range(4):
-        (ptr + idx).destroy_pointee()
+        (ptr + idx).unsafe_deinit_pointee()
     ptr.free()
 
 

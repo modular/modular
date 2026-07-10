@@ -44,5 +44,5 @@ def main():
     print(ptr[])
 
     for offset in range(6):
-        (float_ptr + offset).destroy_pointee()
+        (float_ptr + offset).unsafe_deinit_pointee()
     float_ptr.free()

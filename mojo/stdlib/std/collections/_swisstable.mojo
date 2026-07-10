@@ -529,7 +529,7 @@ struct SwissTable[
         ]():
             for i in range(self._capacity):
                 if is_occupied(self._ctrl[i]):
-                    (self._slots + i).destroy_pointee()
+                    (self._slots + i).unsafe_deinit_pointee()
 
     @always_inline
     def _delete_occupied_entries_with(

@@ -43,7 +43,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
         if self.next:
             var next_ptr = self.next.value()
             next_ptr[].free_chain()
-            next_ptr.destroy_pointee()
+            next_ptr.unsafe_deinit_pointee()
             next_ptr.free()
 
         self.next = Self.make_node(value)
@@ -72,7 +72,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
         while current:
             var current_ptr = current.value()
             next_node = current_ptr[].next
-            current_ptr.destroy_pointee()
+            current_ptr.unsafe_deinit_pointee()
             current_ptr.free()
             current = next_node
 
@@ -91,5 +91,5 @@ def main():
     # Demonstrates cleanup. In short-lived programs, the OS reclaims memory
     # at exit
     list_head[].free_chain()
-    list_head.destroy_pointee()
+    list_head.unsafe_deinit_pointee()
     list_head.free()

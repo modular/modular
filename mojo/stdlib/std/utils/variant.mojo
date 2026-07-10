@@ -303,7 +303,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
             comptime assert conforms_to(T, ImplicitlyDeletable)
 
             if self.get_discriminant() == UInt8(i):
-                self.unsafe_ptr[T]().destroy_pointee()
+                self.unsafe_ptr[T]().unsafe_deinit_pointee()
                 return
 
     @always_inline("nodebug")

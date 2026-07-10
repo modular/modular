@@ -91,7 +91,7 @@ struct MoveOnlyList[T: Movable & ImplicitlyDeletable]:
 
     def __del__(deinit self):
         for i in range(self._len):
-            (self._data + i).destroy_pointee()
+            (self._data + i).unsafe_deinit_pointee()
         if self._capacity > 0:
             self._data.free()
 

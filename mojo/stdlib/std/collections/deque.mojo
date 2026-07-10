@@ -268,7 +268,7 @@ struct Deque[ElementType: Movable](
         """Destroys all elements in the deque and frees its memory."""
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            (self._data + offset).destroy_pointee()
+            (self._data + offset).unsafe_deinit_pointee()
         self^._unsafe_assume_destroyed_and_deallocate()
 
     def destroy_with(
@@ -620,7 +620,7 @@ struct Deque[ElementType: Movable](
         """
         # checking for positive _maxlen first is important for speed
         if self._maxlen > 0 and len(self) == self._maxlen:
-            (self._data + self._head).destroy_pointee()
+            (self._data + self._head).unsafe_deinit_pointee()
             self._head = self._physical_index(self._head + 1)
 
         (self._data + self._tail).unsafe_write(value^)
@@ -644,7 +644,7 @@ struct Deque[ElementType: Movable](
         # checking for positive _maxlen first is important for speed
         if self._maxlen > 0 and len(self) == self._maxlen:
             self._tail = self._physical_index(self._tail - 1)
-            (self._data + self._tail).destroy_pointee()
+            (self._data + self._tail).unsafe_deinit_pointee()
 
         self._head = self._physical_index(self._head - 1)
         (self._data + self._head).unsafe_write(value^)
@@ -661,7 +661,7 @@ struct Deque[ElementType: Movable](
         """
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            (self._data + offset).destroy_pointee()
+            (self._data + offset).unsafe_deinit_pointee()
         dealloc(
             ThinAllocation(
                 unsafe_assume_ownership=self._data
@@ -706,7 +706,7 @@ struct Deque[ElementType: Movable](
 
         # pop excess `self` elements
         for _ in range(n_pop_self):
-            (self._data + self._head).destroy_pointee()
+            (self._data + self._head).unsafe_deinit_pointee()
             self._head = self._physical_index(self._head + 1)
 
         # move from `self` to new location if we have to re-allocate
@@ -719,7 +719,7 @@ struct Deque[ElementType: Movable](
 
         # pop excess elements from `values`
         for i in range(n_pop_values):
-            (values_data + i).destroy_pointee()
+            (values_data + i).unsafe_deinit_pointee()
 
         # move remaining elements from `values`
         src = values_data + n_pop_values
@@ -751,7 +751,7 @@ struct Deque[ElementType: Movable](
         # pop excess `self` elements
         for _ in range(n_pop_self):
             self._tail = self._physical_index(self._tail - 1)
-            (self._data + self._tail).destroy_pointee()
+            (self._data + self._tail).unsafe_deinit_pointee()
 
         # move from `self` to new location if we have to re-allocate
         if n_move_total >= self._capacity:
@@ -763,7 +763,7 @@ struct Deque[ElementType: Movable](
 
         # pop excess elements from `values`
         for i in range(n_pop_values):
-            (values_data + i).destroy_pointee()
+            (values_data + i).unsafe_deinit_pointee()
 
         # move remaining elements from `values`
         src = values_data + n_pop_values
@@ -876,7 +876,7 @@ struct Deque[ElementType: Movable](
         for idx in range(deque_len):
             offset = self._physical_index(self._head + idx)
             if (self._data + offset)[] == value:
-                (self._data + offset).destroy_pointee()
+                (self._data + offset).unsafe_deinit_pointee()
 
                 if idx < deque_len // 2:
                     for i in reversed(range(idx)):
@@ -1229,7 +1229,7 @@ struct _DequeIterOwned[T: Movable & ImplicitlyDeletable](
         # _head/_tail are never modified, so len(self._deque) stays constant.
         for i in range(self._index, len(self._deque)):
             var phys = self._deque._physical_index(self._deque._head + i)
-            (self._deque._data + phys).destroy_pointee()
+            (self._deque._data + phys).unsafe_deinit_pointee()
         # Zero out head/tail so Deque.__del__ only frees memory.
         self._deque._head = 0
         self._deque._tail = 0

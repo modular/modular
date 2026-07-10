@@ -1391,7 +1391,7 @@ struct MoggAsyncPackHelper:
         # MGP_RT_CreateOwnedAsyncMojoValue expects a type erased destructor
         @always_inline("nodebug")
         def erased_destructor(ptr: UnsafePointer[UInt8, MutUntrackedOrigin]):
-            ptr.bitcast[Type]().destroy_pointee()
+            ptr.bitcast[Type]().unsafe_deinit_pointee()
 
         var dst_ptr = external_call[
             "MGP_RT_MojoValueAllocateBuffer",

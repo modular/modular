@@ -1278,7 +1278,9 @@ struct VariadicList[
 
             for i in reversed(range(len(self))):
                 # Safety: We own the elements in this list.
-                UnsafePointer(to=self[i]).mut_cast[True]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[
+                    True
+                ]().unsafe_deinit_pointee()
 
     def consume_elements(
         deinit self,
@@ -1547,7 +1549,9 @@ struct VariadicPack[
                 comptime assert conforms_to(element_type, ImplicitlyDeletable)
 
                 # Safety: We own the elements in this pack.
-                UnsafePointer(to=self[i]).mut_cast[True]().destroy_pointee()
+                UnsafePointer(to=self[i]).mut_cast[
+                    True
+                ]().unsafe_deinit_pointee()
 
     def consume_elements[
         elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing

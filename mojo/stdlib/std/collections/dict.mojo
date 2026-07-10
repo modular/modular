@@ -1702,7 +1702,7 @@ struct Dict[
 
         if found:
             # Update existing entry: destroy old, move new in
-            (self._table._slots + slot_idx).destroy_pointee()
+            (self._table._slots + slot_idx).unsafe_deinit_pointee()
             (self._table._slots + slot_idx).unsafe_write(entry^)
         else:
             # New entry
