@@ -2837,14 +2837,22 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
 // DestructorInserter
 //===----------------------------------------------------------------------===//
 
-/// Emit a origin end marker for a value that is being consumed.
-static void emitLifetimeEnd(Value value, ImplicitLocOpBuilder &builder) {
-  // RefLoadOp can only be used on register passable values.  See if this is
-  // loading from a var box.
+/// Strip RefLoadOp/RebindOp sugar to find the underlying var decl, if any.
+/// RefLoadOp can only be used on register passable values, and a `comptime`
+/// type alias lowers to a RebindOp wrapping the aliased value; both need to
+/// be looked through so that lifetime start/end markers agree on which
+/// value they refer to.
+static Value stripToVarDeclLookThrough(Value value) {
   if (auto load = value.getDefiningOp<RefLoadOp>())
     value = load.getOperand();
   if (auto rebind = value.getDefiningOp<RebindOp>())
     value = rebind.getOperand();
+  return value;
+}
+
+/// Emit a origin end marker for a value that is being consumed.
+static void emitLifetimeEnd(Value value, ImplicitLocOpBuilder &builder) {
+  value = stripToVarDeclLookThrough(value);
 
   if (value.getDefiningOp<VarDeclOp>())
     VarLifetimeEndOp::create(builder, value);
@@ -4527,12 +4535,16 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
   if (ValueRef direct = valueSet.getDirectValueRef(value, isDeref)) {
     bool isFullUseDestroy = scheduleNeededDtors(direct, dtorInserter, value);
 
-    // Emit a lifetime start for the value if this is a var decl.
-    if (!dryRun && value.getDefiningOp<VarDeclOp>()) {
-      // Emit this above the operation.
-      ImplicitLocOpBuilder builder(op.getLoc(), &op);
-      emitDebugInit(value, direct, builder);
-      VarLifetimeStartOp::create(builder, value);
+    // Emit a lifetime start for the value if this is a var decl. Look through
+    // the same sugar as emitLifetimeEnd.
+    if (!dryRun) {
+      if (Value varDeclValue = stripToVarDeclLookThrough(value);
+          varDeclValue.getDefiningOp<VarDeclOp>()) {
+        // Emit this above the operation.
+        ImplicitLocOpBuilder builder(op.getLoc(), &op);
+        emitDebugInit(value, direct, builder);
+        VarLifetimeStartOp::create(builder, varDeclValue);
+      }
     }
 
     // If the destroyed value is a user-defined value that was just defined,
