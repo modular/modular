@@ -140,8 +140,8 @@ public:
 
   /// Plugin API for the custom bitcode-library linking policy: returns true if
   /// only the symbols referenced by unresolved extern functions should be
-  /// linked (the default), false if the full library must be linked (e.g.
-  /// Hexagon). Plugins that don't provide the symbol fall back to the default.
+  /// linked (the default), false if the full library must be linked. Plugins
+  /// that don't provide the symbol fall back to the default.
   REGISTER_GET_KGEN_PLUGIN_FN(OnlyLinkExternFunctionsInBitcodeLibs,
                               onlyLinkExternFunctionsInBitcodeLibs,
                               M::ErrorOr<bool>, CompilationOptions)

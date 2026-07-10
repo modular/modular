@@ -226,7 +226,7 @@ public:
   /// unresolved extern functions (`LinkOnlyNeeded`), and skipping the link
   /// entirely when there are no such references. The default is true. Backends
   /// whose bitcode library must be linked in full regardless of which symbols
-  /// are referenced (e.g. Hexagon, via its plugin backend) return false.
+  /// are referenced return false.
   virtual bool onlyLinkExternFunctionsInBitcodeLibs(
       const CompilationOptions &options) const {
     return true;

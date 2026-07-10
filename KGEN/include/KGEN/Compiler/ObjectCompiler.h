@@ -34,6 +34,7 @@ class ExecutionSession;
 
 namespace M::KGEN {
 struct SymbolAndMCInfo;
+class TargetBackend;
 
 //===----------------------------------------------------------------------===//
 // ObjectCompiler
@@ -107,10 +108,12 @@ public:
   }
 
 private:
-  /// Construct an ObjectCompiler with a specific set of exports.
+  /// Construct an ObjectCompiler with a specific set of exports. `backend` is
+  /// the (non-null) target backend resolved by `create` from `options`.
   ObjectCompiler(
       RCRef<Cache::BlobCacheBackend> transformCache, CompilationOptions options,
-      bool isJIT, MLIRContext &context, const std::string &linker,
+      const TargetBackend &backend, bool isJIT, MLIRContext &context,
+      const std::string &linker,
       PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
   /// Lower the given LLVM module to an object file (parLLC = false) or
@@ -143,6 +146,11 @@ private:
 
   /// The compilation options to use.
   CompilationOptions options;
+
+  /// The target backend for `options`' target. Always non-null: `create`
+  /// resolves it from `options.targetTriple` and errors out when the target
+  /// has no registered backend (i.e. an unsupported target).
+  const TargetBackend &backend;
 
   /// This is a bit odd, but since we use this layer to generate code for cases
   /// where we aren't going to immediately execute it, we need to be able to
