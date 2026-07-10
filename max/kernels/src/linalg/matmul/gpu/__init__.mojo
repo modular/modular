@@ -1350,6 +1350,25 @@ def _matmul_gpu[
                 block_dim=(NUM_WARPS * WARP_SIZE,),
             )
 
+        # Large transpose_b shapes with BK=64. Two A+B tiles don't fit LDS at
+        # this size, so the kernel uses its single-buffer register-staged
+        # pipeline (which needs coalesced/transpose_b loads).
+        comptime if transpose_b:
+            if m >= 128 and n >= 128 and k >= 64 and k % 64 == 0:
+                logger.info(
+                    "Executing: RDNA WMMA MATMUL kernel (128x128, BK=64)"
+                )
+                _enqueue_rdna_kernel[
+                    BLOCK_K=64,
+                    BLOCK_M=128,
+                    BLOCK_N=128,
+                    WARPS_M=4,
+                    WARPS_N=2,
+                    WARP_TILE_M=2,
+                    WARP_TILE_N=4,
+                ]()
+                return
+
         # Large shapes with BK=32: doubles compute per load, halves iterations.
         if m >= 128 and n >= 128 and k >= 32 and k % 32 == 0:
             logger.info("Executing: RDNA WMMA MATMUL kernel (128x128, BK=32)")
