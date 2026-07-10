@@ -223,21 +223,9 @@ class Settings(BaseSettings):
         default=False,
         description=(
             "When True, attaches a CPython garbage-collection callback in the "
-            "model worker that times every GC pass and logs slow pauses. Used "
-            "to diagnose whether stop-the-world GC collections are the source "
-            "of per-scheduler-iteration latency spikes. Purely diagnostic; "
-            "does not change GC behavior."
+            "model worker that times every GC pass and logs metrics."
         ),
         alias="MAX_SERVE_GC_DEBUG",
-    )
-    gc_debug_min_duration_ms: float = Field(
-        default=50.0,
-        description=(
-            "When gc_debug is enabled, GC pauses at or above this duration (in "
-            "milliseconds) are logged at WARNING; shorter pauses are logged at "
-            "DEBUG."
-        ),
-        alias="MAX_SERVE_GC_DEBUG_MIN_DURATION_MS",
     )
     gc_debug_top_objects: int = Field(
         default=0,
