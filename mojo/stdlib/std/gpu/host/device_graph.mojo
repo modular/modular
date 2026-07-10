@@ -178,6 +178,16 @@ struct DeviceGraph(ImplicitlyCopyable):
             "AsyncRT_DeviceGraph_release", NoneType, _DeviceGraphPtr[mut=True]
         ](self._handle)
 
+    @doc_hidden
+    def take_handle(deinit self) -> _DeviceGraphPtr[mut=True]:
+        """Surrenders the owning handle net-zero, suppressing the destructor.
+
+        Returns:
+            The owning `DeviceGraph*`; the caller must hand it to a runtime owner
+            that adopts it without an extra reference.
+        """
+        return self._handle
+
     def replay(self) raises:
         """Replays the captured sequence of GPU operations.
 

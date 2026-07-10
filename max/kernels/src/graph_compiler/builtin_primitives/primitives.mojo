@@ -31,7 +31,12 @@ from extensibility import (
 )
 from std.collections import InlineArray
 from std.gpu import block_idx
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceGraphBuilder
+from std.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    DeviceGraph,
+    DeviceGraphBuilder,
+)
 from std.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
 from std.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from std.memory import UnsafeMaybeUninit
@@ -1376,6 +1381,25 @@ struct MoggAsyncPackHelper:
         external_call["MGP_RT_CreateAsyncBufferRefFromStorage", NoneType](
             storage^.take_handle(), ptr, n, async_ptr
         )
+
+    def __init__(
+        out self,
+        var data: DeviceGraph,
+        async_ptr: AnyAsyncValueRefPtr,
+    ):
+        """Packs a `DeviceGraph` into an `AsyncValue[DeviceGraphRef]`.
+
+        The graph handle is surrendered net-zero (`take_handle`) and adopted by
+        the runtime, so no extra reference is created. Used to pack the graph
+        produced by `mgp.device_graph.create` so that `mgp.device_graph.execute`
+        can consume it as a first-class device-graph reference rather than an
+        opaque Mojo value.
+        """
+        # void MGP_RT_CreateAsyncDeviceGraphRefByTakingHandle(
+        #     DeviceGraph *handle, AnyAsyncValueRef *async)
+        external_call[
+            "MGP_RT_CreateAsyncDeviceGraphRefByTakingHandle", NoneType
+        ](data^.take_handle(), async_ptr)
 
     def __init__(
         out self,
