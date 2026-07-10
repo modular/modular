@@ -48,8 +48,8 @@ directory layout:
 
 Each file serves a distinct role:
 
-- `layers/`: holds custom layer implementations for components that differ
-  fundamentally from anything in `max.nn`.
+- `layers/`: holds custom layer implementations for components that `max.nn`
+  doesn't provide. See [Write a custom layer](/max/develop/layers).
 - `__init__.py`: exposes the `ARCHITECTURES` list that MAX reads to register
   each entry.
 - `arch.py`: registers the architecture with MAX, declaring its name (which must
@@ -307,7 +307,8 @@ block applies, whether attention and MLP share their input, which parameters are
 learnable. What those changes look like depends entirely on your model's
 architecture. [`max.nn`](/max/api/python/nn) provides the building blocks
 (attention layers, normalization, MLP, embeddings), and most structural
-differences can be expressed by composing from what's already there. The
+differences can be expressed by composing from what's already there.
+[Write a custom layer](/max/develop/layers) covers these build patterns. The
 examples below show two cases where a model's structure differed from the
 reference and required graph-level changes.
 
@@ -329,9 +330,11 @@ The parallel form requires one `input_layernorm` per block (not two) and a
 single residual add.
 
 When building any `nn.Module` that holds a list of layers, store them in
-[`LayerList`](/max/api/python/generated/max.nn.LayerList/) rather than a plain
-Python list. `LayerList` registers each layer in the `nn.Module` hierarchy
-under a numeric index (`0`, `1`, …), so weight names resolve to
+[`Sequential`](/max/api/python/generated/max.nn.Sequential/) rather than a
+plain Python list. `Sequential` (a subclass of
+[`LayerList`](/max/api/python/generated/max.nn.LayerList/), which you'll still
+see across existing architectures) registers each layer in the `nn.Module`
+hierarchy under a numeric index (`0`, `1`, …), so weight names resolve to
 `layers.0.*`, `layers.1.*`, and so on. A plain Python list doesn't register
 its items in the hierarchy: MAX won't find those weights during loading, and
 the layers run with uninitialized values.

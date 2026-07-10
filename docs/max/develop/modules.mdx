@@ -70,7 +70,9 @@ flows through them. In most cases, you can compose a module entirely with
 prebuilt modules, such as [`Linear`](/max/api/python/generated/max.nn.Linear/),
 [`Embedding`](/max/api/python/generated/max.nn.Embedding/),
 [`RMSNorm`](/max/api/python/generated/max.nn.RMSNorm/),
-[`LayerNorm`](/max/api/python/generated/max.nn.LayerNorm/), and others.
+[`LayerNorm`](/max/api/python/generated/max.nn.LayerNorm/), and others. When
+your architecture needs a component none of these provide, you write a custom
+layer; see [Write a custom layer](/max/develop/layers/).
 
 Here's a simple module that composes two built-in `Linear` modules:
 
