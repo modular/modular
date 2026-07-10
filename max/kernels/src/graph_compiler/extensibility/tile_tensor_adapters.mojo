@@ -14,7 +14,12 @@
 
 from layout import TileTensor
 
-from .tensor_arg_traits import DenseTensor, Output, TileTensorable
+from .tensor_arg_traits import (
+    DenseTensor,
+    MutableInput,
+    Output,
+    TileTensorable,
+)
 
 
 comptime TileProjection[
@@ -63,6 +68,29 @@ def to_tile_tensor[
 
     Args:
         tensor: The output dense tensor argument to project.
+
+    Returns:
+        A mutable `TileTensor` view over the argument's storage.
+    """
+    comptime assert conforms_to(TensorType, TileTensorable)
+    comptime assert TensorType.mut
+    return rebind[TileProjection[True, TensorType]](tensor.to_tile_tensor())
+
+
+@always_inline
+def to_tile_tensor[
+    TensorType: MutableInput & DenseTensor, //
+](tensor: TensorType) -> TileProjection[True, TensorType]:
+    """Projects a mutable-input dense tensor argument to a mutable `TileTensor`.
+
+    Mutable inputs are read-write by construction, so the trait bound selects
+    the mutable projection without call sites passing `mut=True`.
+
+    Parameters:
+        TensorType: The mutable-input dense tensor-argument type (inferred).
+
+    Args:
+        tensor: The mutable-input dense tensor argument to project.
 
     Returns:
         A mutable `TileTensor` view over the argument's storage.
