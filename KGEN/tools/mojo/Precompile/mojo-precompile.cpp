@@ -7,6 +7,8 @@
 #include "mojo-precompile.h"
 #include "../Common/Compilation.h"
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "Cache/CachedTransform.h"
 #include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
@@ -17,8 +19,6 @@
 #include "KGEN/Support/MojoPrecompiledFile.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/Config.h"
@@ -335,7 +335,7 @@ writeLLVMBitcodeToDenseAttr(MLIRContext *ctx, StringRef bitcodeFile) {
 /// Mojo programs.
 static ErrorOr<OwningOpRef<ModuleOp>>
 buildPackage(const PrecompileArgs &precompileArgs, ModuleOp theModule,
-             LIT::PackageOp parsedPackageOp, MLRT::CPUDevice &cpuDevice) {
+             LIT::PackageOp parsedPackageOp, AsyncRT::CPUDevice &cpuDevice) {
   // Add the dependencies of the package to the package itself. Every top-level
   // package other than the one being compiled is an imported precompiled
   // dependency (in the precompile flow, dependencies are always provided as
@@ -427,7 +427,7 @@ static int precompile(const State &subcommandState) {
 
   // Create our context (including the cpuDevice).
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo", Init::Options().withCPUDeviceOptions(MLRT::CPUDeviceOptions()),
+      "mojo", Init::Options().withCPUDeviceOptions(AsyncRT::CPUDeviceOptions()),
       "precompile");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
@@ -447,7 +447,7 @@ static int precompile(const State &subcommandState) {
 
   // Parse the input directory as a Mojo package. This returns a module op that
   // wraps the `lit.package` op, which represents the package contents.
-  MLRT::CPUDevice &cpuDevice = *ctx->get<MLRT::CPUDevice>();
+  AsyncRT::CPUDevice &cpuDevice = *ctx->get<AsyncRT::CPUDevice>();
   LIT::PackageOp packageOp;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
                                                     &precompileArgs.ctx);

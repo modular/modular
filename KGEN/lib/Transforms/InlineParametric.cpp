@@ -4,6 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Runtime/ForkJoin.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/AttrTypeMangler.h"
@@ -14,8 +16,6 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/CallGraphUtils.h"
 #include "KGEN/TransformUtils/InliningUtils.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/ForkJoin.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -357,7 +357,7 @@ namespace {
 /// be shared between both inliners.
 template <typename DerivedT, typename NodeT>
 struct InliningGraphBase : public CallGraphBase<DerivedT, NodeT> {
-  explicit InliningGraphBase(MLRT::CPUDevice &cpuDevice)
+  explicit InliningGraphBase(AsyncRT::CPUDevice &cpuDevice)
       : cpuDevice(cpuDevice), state(cpuDevice) {}
 
   using CallGraphBase<DerivedT, NodeT>::getDerived;
@@ -373,10 +373,10 @@ struct InliningGraphBase : public CallGraphBase<DerivedT, NodeT> {
   void complete(NodeT *node);
 
   /// The cpuDevice to use.
-  MLRT::CPUDevice &cpuDevice;
+  AsyncRT::CPUDevice &cpuDevice;
 
   /// The inlining task state.
-  MLRT::ForkJoin state;
+  AsyncRT::ForkJoin state;
   /// The number of nodes that complete processing. If this is not equal to the
   /// number of nodes, then there are cycles in the graph.
   std::atomic<size_t> numProcessed = 0;
@@ -464,7 +464,7 @@ struct ParametricInliningGraph
     : public InliningGraphBase<ParametricInliningGraph,
                                ParametricInliningGraphNode> {
   explicit ParametricInliningGraph(InlineLevel level,
-                                   MLRT::CPUDevice &cpuDevice,
+                                   AsyncRT::CPUDevice &cpuDevice,
                                    ParameterCollector::Analysis &paramCache,
                                    unsigned optimizationLevel,
                                    bool updateDebugInfo)
@@ -668,8 +668,8 @@ void InlineParametricPass::runOnOperation() {
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
-  MLRT::CPUDevice &cpuDevice =
-      *loadContext(&getContext())->get<MLRT::CPUDevice>();
+  AsyncRT::CPUDevice &cpuDevice =
+      *loadContext(&getContext())->get<AsyncRT::CPUDevice>();
   ParametricInliningGraph graph(
       nodebugOnly ? InlineLevel::AlwaysNoDebug : InlineLevel::Always, cpuDevice,
       paramCache, optimizationLevel, updateDebugInfo);
@@ -708,7 +708,7 @@ void InlineParametricPass::runOnOperation() {
 
   // Note: use the same threadpool as before, because that's what the thread
   // local caches are initialized for.
-  MLRT::ForkJoin state(cpuDevice);
+  AsyncRT::ForkJoin state(cpuDevice);
   for (ParametricInliningGraphNode &caller :
        llvm::make_second_range(graph.nodes))
     state.fork([&] { inlineReadyFn(caller); });

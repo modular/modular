@@ -115,14 +115,14 @@ private:
 
   /// Lower the given LLVM module to an object file (parLLC = false) or
   /// multiple object files per function (parLLC = true).
-  MLRT::AsyncValueRef<SymbolAndMCInfo> lowerLLVMModuleToObjects(
+  AsyncRT::AsyncValueRef<SymbolAndMCInfo> lowerLLVMModuleToObjects(
       llvm::unique_function<LLVMModuleAndContext()> produceModule, Location loc,
       llvm::TargetMachine &targetMachine, bool parLLC,
       std::optional<size_t> moduleIdx, unsigned numFunctionsBase);
 
   /// Split llvm module and compile them in parallel towards the end of codegen
   /// but stop before AsmPrint. Return the MC compilation results.
-  SmallVector<MLRT::AnyAsyncValueRef> emitArchiveParallelCompilation(
+  SmallVector<AsyncRT::AnyAsyncValueRef> emitArchiveParallelCompilation(
       LLVMModuleAndContext llvmModule, Location opLoc,
       llvm::TargetMachine &targetMachine,
       llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes);
@@ -156,7 +156,7 @@ private:
   MLIRContext &context;
 
   /// The AsyncRT cpuDevice.
-  MLRT::CPUDevice &cpuDevice;
+  AsyncRT::CPUDevice &cpuDevice;
 
   /// Mutex to protect deduplicating shared
   /// data structure among parallel splits.

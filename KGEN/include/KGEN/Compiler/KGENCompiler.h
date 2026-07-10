@@ -49,7 +49,7 @@ public:
   /// This doesn't not include check LIT and pre-elaboration passes.
   /// This allows the transform to be cached if chain is provided.
   ErrorOrSuccess runElaborationPipeline(
-      ModuleOp module, TargetInfoAttr target, MLRT::CPUDevice &cpuDevice,
+      ModuleOp module, TargetInfoAttr target, AsyncRT::CPUDevice &cpuDevice,
       std::optional<AnyAsyncValueRef> chain = std::nullopt,
       std::function<void(Operation *)> moreOnMiss = [](Operation *) {},
       std::function<void(Operation *)> moreOnHit = [](Operation *) {});

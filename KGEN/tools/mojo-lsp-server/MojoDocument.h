@@ -7,13 +7,13 @@
 #ifndef KGEN_TOOLS_MOJO_LSP_SERVER_MOJODOCUMENT_H
 #define KGEN_TOOLS_MOJO_LSP_SERVER_MOJODOCUMENT_H
 
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/tools/mojo-lsp-server/LSPTelemetryContext.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MojoServer.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/ReferenceCounted.h"
@@ -95,7 +95,7 @@ public:
   int64_t getVersion() const { return version; }
 
   /// Return the cpuDevice used for this document.
-  MLRT::CPUDevice &getRuntime() const { return cpuDevice; }
+  AsyncRT::CPUDevice &getRuntime() const { return cpuDevice; }
 
   /// Return the URIs of this document.
   ArrayRef<llvm::lsp::URIForFile> getURIs() const { return uris; }
@@ -277,7 +277,8 @@ public:
 protected:
   MojoDocument(Kind kind, ArrayRef<llvm::lsp::URIForFile> uris, int64_t version,
                SendDiagnosticsFnRef sendDiagnosticsFn,
-               MLRT::CPUDevice &cpuDevice, ArrayRef<std::string> includeDirs);
+               AsyncRT::CPUDevice &cpuDevice,
+               ArrayRef<std::string> includeDirs);
 
   /// A collection of MLIR and Mojo related entities used to invoke the parser.
   /// Its lifetime is tied to that of the AST objects gotten from the parser.
@@ -402,7 +403,7 @@ private:
   SendDiagnosticsFnRef sendDiagnosticsFn;
 
   /// The cpuDevice used when parsing the file.
-  MLRT::CPUDevice &cpuDevice;
+  AsyncRT::CPUDevice &cpuDevice;
 
   /// A flag indicating if this document version has been invalidated.
   std::atomic<bool> isInvalidated = false;
@@ -548,7 +549,7 @@ struct MojoTextDocument : public MojoDocument {
 public:
   MojoTextDocument(const llvm::lsp::URIForFile &uri, std::string &&contents,
                    int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
-                   MLRT::CPUDevice &cpuDevice,
+                   AsyncRT::CPUDevice &cpuDevice,
                    ArrayRef<std::string> includeDirs,
                    bool checkDocstringCodeBlocks = false);
   MojoTextDocument(const MojoDocument &) = delete;
@@ -661,7 +662,7 @@ public:
                        ArrayRef<llvm::lsp::NotebookCell> cellInfos,
                        ArrayRef<llvm::lsp::TextDocumentItem> cellDocuments,
                        SendDiagnosticsFnRef sendDiagnosticsFn,
-                       MLRT::CPUDevice &cpuDevice,
+                       AsyncRT::CPUDevice &cpuDevice,
                        ArrayRef<std::string> includeDirs);
   MojoNotebookDocument(const MojoDocument &) = delete;
   MojoNotebookDocument &operator=(const MojoDocument &) = delete;

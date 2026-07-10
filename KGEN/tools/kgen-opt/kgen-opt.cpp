@@ -8,6 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "Init/Init.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/ForceLinkMLIRC.h"
@@ -16,8 +18,6 @@
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -136,7 +136,7 @@ int main(int argc, char **argv) {
   mlir::PassRegistration<TestAlwaysFailPass>{};
 
   // Create our context.
-  MLRT::CPUDeviceOptions asyncrtOpts;
+  AsyncRT::CPUDeviceOptions asyncrtOpts;
   asyncrtOpts.withLeakCheckedAllocator();
   if (asyncrtSingleThread)
     asyncrtOpts.withSingleThreaded();
@@ -148,7 +148,7 @@ int main(int argc, char **argv) {
   }
   if (asyncrtSingleThread) {
     // Defend against upstream errors.
-    [[maybe_unused]] auto &cpuDevice = *(*ctxOr)->get<MLRT::CPUDevice>();
+    [[maybe_unused]] auto &cpuDevice = *(*ctxOr)->get<AsyncRT::CPUDevice>();
     assert(cpuDevice.getWorkQueue()->getParallelismLevel() == 1);
   }
   registerContext(registry, *ctxOr);

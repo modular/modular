@@ -44,9 +44,9 @@ namespace HLCF {
 class HLCFDialect;
 } // namespace HLCF
 
-namespace MLRT {
+namespace AsyncRT {
 class CPUDevice;
-} // namespace MLRT
+} // namespace AsyncRT
 
 namespace KGEN {
 class KGENCallOpInterface;

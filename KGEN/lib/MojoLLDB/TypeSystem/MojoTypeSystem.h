@@ -7,8 +7,8 @@
 #ifndef KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJOTYPESYSTEM_H
 #define KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJOTYPESYSTEM_H
 
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MojoDWARFParser.h"
 #include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -32,9 +32,9 @@ class SourceNameAttr;
 } // namespace DebugInfo
 } // namespace M
 
-namespace M::MLRT {
+namespace M::AsyncRT {
 class CPUDevice;
-} // namespace M::MLRT
+} // namespace M::AsyncRT
 
 namespace M::KGEN::Mojo {
 /// Forward declaration for use below.
@@ -55,7 +55,7 @@ public:
   LIT::SharedState &getSharedState();
 
   /// Return the AsyncRT cpuDevice for this type system.
-  MLRT::CPUDevice &getCPUDevice();
+  AsyncRT::CPUDevice &getCPUDevice();
 
   /// Return the Mojo parser context attached to this type system.
   MojoParserContext &getParserContext();

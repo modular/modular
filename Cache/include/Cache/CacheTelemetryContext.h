@@ -18,7 +18,7 @@
 #include <functional>
 #include <string>
 
-namespace M::MLRT {
+namespace M::AsyncRT {
 class CPUDevice;
 }
 

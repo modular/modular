@@ -22,9 +22,9 @@ namespace M {
 class AutoFixItHandler;
 } // namespace M
 
-namespace M::MLRT {
+namespace M::AsyncRT {
 class CPUDevice;
-} // namespace M::MLRT
+} // namespace M::AsyncRT
 namespace M::KGEN {
 class CompilationOptions;
 } // namespace M::KGEN

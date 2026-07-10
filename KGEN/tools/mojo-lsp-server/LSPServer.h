@@ -16,9 +16,9 @@ namespace llvm::lsp {
 class JSONTransport;
 } // namespace llvm::lsp
 
-namespace M::MLRT {
+namespace M::AsyncRT {
 class WorkQueue;
-} // namespace M::MLRT
+} // namespace M::AsyncRT
 
 namespace M::KGEN::LIT {
 /// Run the main loop using the given transport.

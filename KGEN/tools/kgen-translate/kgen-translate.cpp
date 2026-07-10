@@ -4,6 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "Init/Init.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/MojoParser/EntryPoint.h"
@@ -14,8 +16,6 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Driver/DiagnosticFormat.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -67,7 +67,7 @@ int main(int argc, char *argv[]) {
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "kgen-translate",
       Init::Options().withCPUDeviceOptions(
-          MLRT::CPUDeviceOptions().withMainWillNotDonate().withCPUAffinity(
+          AsyncRT::CPUDeviceOptions().withMainWillNotDonate().withCPUAffinity(
               false)));
   if (ctxOr.isError()) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";

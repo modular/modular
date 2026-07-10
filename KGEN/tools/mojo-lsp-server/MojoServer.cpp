@@ -11,6 +11,9 @@
 #include "MojoDocument.h"
 
 #include "../common/lsp-protocol/SemanticTokens.h"
+#include "AsyncRT/Runtime/Algorithms.h"
+#include "AsyncRT/Runtime/AnyAsyncValueRef.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -25,9 +28,6 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/AnyAsyncValueRef.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Config.h"
 #include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -758,7 +758,7 @@ struct MojoDocument::Context {
 MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
                            int64_t version,
                            SendDiagnosticsFnRef sendDiagnosticsFn,
-                           MLRT::CPUDevice &cpuDevice,
+                           AsyncRT::CPUDevice &cpuDevice,
                            ArrayRef<std::string> includeDirs)
     : kind(kind), uris(uris), version(version),
       sendDiagnosticsFn(sendDiagnosticsFn), cpuDevice(cpuDevice),
@@ -1927,7 +1927,7 @@ MojoDocStrings::CodeBlock::onSignatureHelp(llvm::SMLoc loc,
 MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
                                    std::string &&contents, int64_t version,
                                    SendDiagnosticsFnRef sendDiagnosticsFn,
-                                   MLRT::CPUDevice &cpuDevice,
+                                   AsyncRT::CPUDevice &cpuDevice,
                                    ArrayRef<std::string> includeDirs,
                                    bool checkDocstringCodeBlocks)
     : MojoDocument(Kind::kTextDocument, uri, version, sendDiagnosticsFn,
@@ -2061,7 +2061,7 @@ MojoNotebookDocument::MojoNotebookDocument(
     ArrayRef<lsp::URIForFile> notebookAndCellURIs, int64_t version,
     ArrayRef<lsp::NotebookCell> cellInfos,
     ArrayRef<lsp::TextDocumentItem> cellDocuments,
-    SendDiagnosticsFnRef sendDiagnosticsFn, MLRT::CPUDevice &cpuDevice,
+    SendDiagnosticsFnRef sendDiagnosticsFn, AsyncRT::CPUDevice &cpuDevice,
     ArrayRef<std::string> includeDirs)
     : MojoDocument(Kind::kNotebookDocument, notebookAndCellURIs, version,
                    sendDiagnosticsFn, cpuDevice, includeDirs) {
@@ -2324,7 +2324,7 @@ struct MojoServer::Impl {
       // invalidate these files and have the tasks early-out.
       if (!waitOnShutdown)
         file->invalidate();
-      MLRT::await(file->getTaskChain());
+      AsyncRT::await(file->getTaskChain());
     }
 
     {
@@ -2386,7 +2386,7 @@ struct MojoServer::Impl {
     auto [it, _] = files.try_emplace(uri.file(), MojoDocumentRef());
 
     // If a document already exists, invalidate that version.
-    MLRT::CPUDevice &cpuDevice = *ctx->get<MLRT::CPUDevice>();
+    AsyncRT::CPUDevice &cpuDevice = *ctx->get<AsyncRT::CPUDevice>();
     if (it->second) {
       it->second->invalidate();
     }
@@ -2497,7 +2497,7 @@ MojoServer::create(bool singleThreaded, bool waitOnShutdown,
                    bool checkDocstringCodeBlocks) {
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "mojo-lsp-server", Init::Options().withCPUDeviceOptions(
-                             MLRT::CPUDeviceOptions()
+                             AsyncRT::CPUDeviceOptions()
                                  .withSingleThreaded(singleThreaded)
                                  .withMainWillNotDonate()));
   if (ctxOr.isError())
@@ -2730,7 +2730,7 @@ void MojoServer::addNotebookDocument(
   MojoDocumentRef &file = impl->files[uri.file()];
 
   // If a document already exists, invalidate that version.
-  MLRT::CPUDevice &cpuDevice = *impl->ctx->get<MLRT::CPUDevice>();
+  AsyncRT::CPUDevice &cpuDevice = *impl->ctx->get<AsyncRT::CPUDevice>();
   if (file) {
     file->invalidate();
   }

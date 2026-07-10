@@ -4,13 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/ForwardDecls.h"
+#include "AsyncRT/Runtime/Algorithms.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
+#include "AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Cache/BlobCache.h"
 #include "Cache/Support/Keys.h"
 #include "Init/Init.h"
-#include "MLRT/AsyncRT/ForwardDecls.h"
-#include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
-#include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Support/ADT/SmartVariant.h"
 #include "Support/Buffer.h"
 #include "Support/CommandLine.h"
@@ -39,7 +39,7 @@
 #include <vector>
 
 using namespace M;
-using namespace MLRT;
+using namespace AsyncRT;
 using namespace Cache;
 
 namespace {
@@ -154,7 +154,7 @@ static AsyncValueRef<std::string>
 putObjectsIntoCache(BinaryBlobCacheKey::KeyTy key, BufferRef value,
                     StringRef input,
                     RCRef<BlobCache<BinaryBlobCacheKey>> &cache,
-                    MLRT::CPUDevice &cpuDevice, bool useHex) {
+                    AsyncRT::CPUDevice &cpuDevice, bool useHex) {
 
   AsyncValueRef<std::string> insert =
       cache->insert(cpuDevice, std::move(key), std::move(value));
@@ -187,7 +187,7 @@ int main(int argc, char **argv) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
     return 1;
   }
-  MLRT::CPUDevice &cpuDevice = *(*ctxOr)->get<MLRT::CPUDevice>();
+  AsyncRT::CPUDevice &cpuDevice = *(*ctxOr)->get<AsyncRT::CPUDevice>();
 
   auto backendPathOr = clOptions.getBackendPath();
   if (backendPathOr.isError())

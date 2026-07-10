@@ -6,12 +6,12 @@
 
 #include "mojo-doc.h"
 
+#include "AsyncRT/Runtime/Allocator.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
+#include "AsyncRT/Runtime/WorkQueue.h"
 #include "Init/Init.h"
 #include "KGEN/MojoTooling/DocGen.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "MLRT/AsyncRT/Runtime/Allocator.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
-#include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "Support/Driver/DriverSupport.h"
 
 #include "mlir/IR/DialectRegistry.h"

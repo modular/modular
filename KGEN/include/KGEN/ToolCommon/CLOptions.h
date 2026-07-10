@@ -7,8 +7,8 @@
 #ifndef KGEN_TOOLCOMMON_CLOPTIONS_H
 #define KGEN_TOOLCOMMON_CLOPTIONS_H
 
+#include "AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
-#include "MLRT/AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/ErrorOr.h"
 #include "Support/Profiling/TimeProfiler.h"
@@ -81,7 +81,7 @@ public:
              CommandLineFunc &val);
 };
 
-class KGENCommonOptions : public MLRT::CPUDeviceOptions {
+class KGENCommonOptions : public AsyncRT::CPUDeviceOptions {
 
 public:
   KGENCommonOptions() = default;
@@ -282,7 +282,7 @@ private:
 // CLOptions
 //===----------------------------------------------------------------------===//
 
-class KGENCommonCLOptions : public MLRT::RuntimeCLOptions {
+class KGENCommonCLOptions : public AsyncRT::RuntimeCLOptions {
 public:
   KGENCommonCLOptions(KGENCommonOptions &opts)
       : RuntimeCLOptions(opts), options(opts) {}

@@ -7,10 +7,10 @@
 #ifndef CACHE_BLOBCACHE_H
 #define CACHE_BLOBCACHE_H
 
-#include "MLRT/AsyncRT/ForwardDecls.h"
-#include "MLRT/AsyncRT/Runtime/AsyncValueRef.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
-#include "MLRT/AsyncRT/Support/Chain.h"
+#include "AsyncRT/ForwardDecls.h"
+#include "AsyncRT/Runtime/AsyncValueRef.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
+#include "AsyncRT/Support/Chain.h"
 #include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
@@ -41,35 +41,35 @@ public:
   /// Store the object `obj` with hash `keyHash`. This is expected to take
   /// ownership of the data in `obj` on success. Subclasses are expected to
   /// overwrite the current contents on a collision.
-  MLRT::AsyncValueRef<MLRT::Chain>
-  insert(MLRT::CPUDevice &cpuDevice, BufferRef keyHash, BufferRef obj,
+  AsyncRT::AsyncValueRef<AsyncRT::Chain>
+  insert(AsyncRT::CPUDevice &cpuDevice, BufferRef keyHash, BufferRef obj,
          std::optional<EncodedLocation> loc = std::nullopt);
 
   /// May be overwritten to provide an asynchronous insert.
-  virtual MLRT::AsyncValueRef<MLRT::Chain>
-  insertImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash, BufferRef obj,
+  virtual AsyncRT::AsyncValueRef<AsyncRT::Chain>
+  insertImpl(AsyncRT::CPUDevice &cpuDevice, BufferRef keyHash, BufferRef obj,
              std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Check if an item with key hash `keyHash` exists in this backend or in any
   /// of the delegates.
-  MLRT::AsyncValueRef<bool>
-  contains(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
+  AsyncRT::AsyncValueRef<bool>
+  contains(AsyncRT::CPUDevice &cpuDevice, BufferRef keyHash,
            std::optional<EncodedLocation> loc = std::nullopt);
 
   /// May be overwritten to provide an asynchronous contains.
-  virtual MLRT::AsyncValueRef<bool>
-  containsImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
+  virtual AsyncRT::AsyncValueRef<bool>
+  containsImpl(AsyncRT::CPUDevice &cpuDevice, BufferRef keyHash,
                std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Get the item with key hash `keyHash` from this backend or any of its
   /// delegates.
-  MLRT::AsyncValueRef<std::optional<BufferRef>>
-  find(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
+  AsyncRT::AsyncValueRef<std::optional<BufferRef>>
+  find(AsyncRT::CPUDevice &cpuDevice, BufferRef keyHash,
        std::optional<EncodedLocation> loc = std::nullopt);
 
   /// May be overwritten to provide an asynchronous find.
-  virtual MLRT::AsyncValueRef<std::optional<BufferRef>>
-  findImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
+  virtual AsyncRT::AsyncValueRef<std::optional<BufferRef>>
+  findImpl(AsyncRT::CPUDevice &cpuDevice, BufferRef keyHash,
            std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Subclasses that don't override insert should use this to provide the
@@ -136,8 +136,8 @@ public:
   /// user to use a strong hash function! Returns the cache key on success -
   /// this can be used for speeding up future hash computations or simply
   /// discarded.
-  MLRT::AsyncValueRef<Chain>
-  insertKeyed(MLRT::CPUDevice &cpuDevice, llvm::StringRef key, BufferRef obj,
+  AsyncRT::AsyncValueRef<Chain>
+  insertKeyed(AsyncRT::CPUDevice &cpuDevice, llvm::StringRef key, BufferRef obj,
               std::optional<EncodedLocation> loc = std::nullopt) {
     return backendList->insert(cpuDevice, Buffer::get(key), std::move(obj),
                                std::move(loc));
@@ -146,18 +146,18 @@ public:
     return backendList->insertSync(key, std::move(obj));
   }
 
-  MLRT::AsyncValueRef<std::string>
-  insert(MLRT::CPUDevice &cpuDevice, KeyTy key, BufferRef obj,
+  AsyncRT::AsyncValueRef<std::string>
+  insert(AsyncRT::CPUDevice &cpuDevice, KeyTy key, BufferRef obj,
          std::optional<EncodedLocation> loc = std::nullopt) {
     std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
-    MLRT::AsyncValueRef<MLRT::Chain> insertAsync =
+    AsyncRT::AsyncValueRef<AsyncRT::Chain> insertAsync =
         insertKeyed(cpuDevice, keyHash, std::move(obj), std::move(loc));
 
     // Allocate a space for the output.
-    auto out = MLRT::AsyncValueRef<std::string>::allocate(cpuDevice);
+    auto out = AsyncRT::AsyncValueRef<std::string>::allocate(cpuDevice);
     std::move(insertAsync)
         .andThenSync([keyHash = std::move(keyHash), out = out.copy()](
-                         AsyncValueRef<MLRT::Chain> &&insertAsync) mutable {
+                         AsyncValueRef<AsyncRT::Chain> &&insertAsync) mutable {
           // If insertion failed, propagate the error. Otherwise, hand over the
           // key hash.
           if (insertAsync.isError())
@@ -179,16 +179,16 @@ public:
   /// Check if any of the provided backends have the item. If `outKeyHash` is
   /// provided, it will be set to the key hash, regardless of whether the item
   /// exists or not.
-  MLRT::AsyncValueRef<bool>
-  containsKeyed(MLRT::CPUDevice &cpuDevice, llvm::StringRef key,
+  AsyncRT::AsyncValueRef<bool>
+  containsKeyed(AsyncRT::CPUDevice &cpuDevice, llvm::StringRef key,
                 std::optional<EncodedLocation> loc = std::nullopt) const {
     return backendList->contains(cpuDevice, Buffer::get(key), std::move(loc));
   }
   ErrorOr<bool> containsKeyedSync(llvm::StringRef key) const {
     return backendList->containsSync(key);
   }
-  MLRT::AsyncValueRef<bool>
-  contains(MLRT::CPUDevice &cpuDevice, KeyTy key,
+  AsyncRT::AsyncValueRef<bool>
+  contains(AsyncRT::CPUDevice &cpuDevice, KeyTy key,
            std::optional<EncodedLocation> loc = std::nullopt,
            std::string *outKeyHash = nullptr) const {
     std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
@@ -207,16 +207,16 @@ public:
   /// Get the item from any of the provided backends. If `outKeyHash` is
   /// provided, it will be set to the key hash, regardless of whether the item
   /// exists or not.
-  MLRT::AsyncValueRef<std::optional<BufferRef>>
-  findKeyed(MLRT::CPUDevice &cpuDevice, llvm::StringRef key,
+  AsyncRT::AsyncValueRef<std::optional<BufferRef>>
+  findKeyed(AsyncRT::CPUDevice &cpuDevice, llvm::StringRef key,
             std::optional<EncodedLocation> loc = std::nullopt) const {
     return backendList->find(cpuDevice, Buffer::get(key), std::move(loc));
   }
   ErrorOr<std::optional<BufferRef>> findKeyedSync(llvm::StringRef key) const {
     return backendList->findSync(key);
   }
-  MLRT::AsyncValueRef<std::optional<BufferRef>>
-  find(MLRT::CPUDevice &cpuDevice, KeyTy key,
+  AsyncRT::AsyncValueRef<std::optional<BufferRef>>
+  find(AsyncRT::CPUDevice &cpuDevice, KeyTy key,
        std::optional<EncodedLocation> loc = std::nullopt,
        std::string *outKeyHash = nullptr) const {
     std::string hash = KeyInfo::hashKey(std::forward<KeyTy>(key));

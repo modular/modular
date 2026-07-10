@@ -50,13 +50,13 @@ int main() {
   // Create our context for execution.
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "mojo-repl",
-      Init::Options().withCPUDeviceOptions(MLRT::CPUDeviceOptions()));
+      Init::Options().withCPUDeviceOptions(AsyncRT::CPUDeviceOptions()));
   if (ctxOr.isError()) {
     llvm::errs() << "unable to create context: " << ctxOr.getError() << "\n";
     return 1;
   }
   ContextRef ctx = std::move(*ctxOr);
-  MLRT::CPUDevice *cpuDevice = ctx->get<MLRT::CPUDevice>();
+  AsyncRT::CPUDevice *cpuDevice = ctx->get<AsyncRT::CPUDevice>();
 
   // In order to ensure that mojo has a cpuDevice for execution, inject
   // a global value. Normally this would be set by Mojo during startup,

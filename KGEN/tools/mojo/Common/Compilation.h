@@ -27,10 +27,10 @@ class TimingScope;
 } // namespace mlir
 
 namespace M {
-namespace MLRT {
+namespace AsyncRT {
 class CPUDevice;
 struct CPUDeviceOptions;
-} // namespace MLRT
+} // namespace AsyncRT
 
 namespace KGEN::LIT {
 struct ParserConfig;
@@ -197,7 +197,7 @@ ErrorOrSuccess parseTargetOptions(
 ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
-    MLRT::CPUDevice &cpuDevice, llvm::opt::OptSpecifier docDiagnoseMissingId,
+    AsyncRT::CPUDevice &cpuDevice, llvm::opt::OptSpecifier docDiagnoseMissingId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier stripFilePrefixId,
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdlibPath,
@@ -208,7 +208,7 @@ ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
 
 /// Configure cpuDevice options based on compilation options.
 /// Currently handles thread pool configuration based on numThreads.
-void configureCPUDeviceOptions(MLRT::CPUDeviceOptions &cpuDeviceOptions,
+void configureCPUDeviceOptions(AsyncRT::CPUDeviceOptions &cpuDeviceOptions,
                                const KGEN::CompilationOptions &options);
 
 } // namespace M

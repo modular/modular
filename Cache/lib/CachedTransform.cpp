@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CachedTransform.h"
-#include "MLRT/AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
-#include "MLRT/AsyncRT/ForwardDecls.h"
+#include "AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
+#include "AsyncRT/ForwardDecls.h"
 #include "Support/Buffer.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Error.h"
@@ -40,7 +40,7 @@
 
 using namespace M;
 using namespace Cache;
-using namespace MLRT;
+using namespace AsyncRT;
 
 //===----------------------------------------------------------------------===//
 // Generic Transformations

@@ -17,6 +17,8 @@ modular_cc_binary(
         "//KGEN:plugin_consumers",
     ],
     deps = [
+        "//AsyncRT:Runtime",
+        "//AsyncRT:RuntimeGlobals",
         "//Init",
         "//KGEN:Compiler",
         "//KGEN:CompilerRT",
@@ -28,8 +30,6 @@ modular_cc_binary(
         "//KGEN:Support",
         "//KGEN:SupportForceLinkMLIRC",
         "//KGEN:ToolCommon",
-        "//MLRT:AsyncRT/Runtime",
-        "//MLRT:AsyncRT/RuntimeGlobals",
         "//Support:Base",
         "//Support:Compiler",
         "//Support:Context",
