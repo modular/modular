@@ -19,6 +19,17 @@ trait ToCastInto:
         ...
 
 
+# Keep the target trait generic so contextual evaluation cannot merge it with
+# the source bound. The downcast must still preserve the source's stronger
+# trivial convention.
+# CHECK-LABEL: lit.fn @"raw_downcast_preserves_trivial_passability
+def raw_downcast_preserves_trivial_passability[
+    T: TrivialRegisterPassable, Trait: type_of(AnyType)
+](value: downcast[T, Trait]):
+    var copy = value
+    _ = copy
+
+
 # CHECK-LABEL: lit.fn @"trait_downcast_reg_type
 def trait_downcast_reg_type[T: TrivialRegisterPassable](x: T):
     # CHECK: lit.var.decl "y" var : !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable_ToCastInto downcast(:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable T), mut *"y`1">

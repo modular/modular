@@ -826,11 +826,58 @@ def reg_conjunction[
     return x.greet() + " | " + x.describe()
 
 
+def takes_trp_greet[
+    T: TrivialRegisterPassable
+](x: T) -> String where conforms_to(T, Greetable):
+    return x.greet()
+
+
+def takes_rp_greet[
+    T: RegisterPassable
+](x: T) -> String where conforms_to(T, Greetable):
+    return x.greet()
+
+
+# MOCO-4230: refining a generic from a non-register-passable bound up to
+# `TrivialRegisterPassable` via a where-clause, then passing it by value to a
+# `TrivialRegisterPassable`-bounded parameter (which loads it into an SSA
+# register). The refined bound must be honored at the SSA-load gate.
+def refine_trp_where_then_pass[
+    T: Movable
+](x: T) -> String where conforms_to(T, Greetable) and conforms_to(
+    T, TrivialRegisterPassable
+):
+    return takes_trp_greet(x)
+
+
+# Same shape, but the refinement comes from a `comptime assert` rather than a
+# where-clause.
+def refine_trp_assert_then_pass[
+    T: Movable
+](x: T) -> String where conforms_to(T, Greetable):
+    comptime assert conforms_to(T, TrivialRegisterPassable)
+    return takes_trp_greet(x)
+
+
+# The non-trivial `RegisterPassable` refinement in the same shape.
+def refine_rp_assert_then_pass[
+    T: Movable
+](x: T) -> String where conforms_to(T, Greetable):
+    comptime assert conforms_to(T, RegisterPassable)
+    return takes_rp_greet(x)
+
+
 def test_register_passable():
     # CHECK: Hello from RegGreeter
     print(reg_read(RegGreeter()))
     # CHECK: Hi from RegDescGreeter | RegDescGreeter described
     print(reg_conjunction(RegDescGreeter()))
+    # CHECK: refine-trp-where: Hello from RegGreeter
+    print("refine-trp-where:", refine_trp_where_then_pass(RegGreeter()))
+    # CHECK: refine-trp-assert: Hello from RegGreeter
+    print("refine-trp-assert:", refine_trp_assert_then_pass(RegGreeter()))
+    # CHECK: refine-rp-assert: Hello from RegGreeter
+    print("refine-rp-assert:", refine_rp_assert_then_pass(RegGreeter()))
 
 
 struct Wrapper[T: ImplicitlyDeletable & Movable]:
