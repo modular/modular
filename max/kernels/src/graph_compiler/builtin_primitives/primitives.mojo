@@ -68,7 +68,8 @@ from extensibility import (
 
 from std.utils import Index, IndexList, StaticTuple
 
-from .async_value import AnyAsyncValueRef
+from std.runtime.async_value import AnyAsyncValueRef
+
 from .buffer_plan import BufferPlanState, BufferPlanStats
 
 comptime MutByteBuffer = DynamicTensor[DType.int8, 1]

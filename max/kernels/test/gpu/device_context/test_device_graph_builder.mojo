@@ -13,7 +13,8 @@
 
 from std.math import ceildiv
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext, DeviceGraphBuilder
+from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
+from std.runtime.async_value import AnyAsyncValueRef
 from std.testing import assert_equal
 
 
@@ -78,7 +79,7 @@ def test_vec_add_kernel_node(ctx: DeviceContext) raises:
             block_dim=block_dim,
         )
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
 
     # Check values and zero out buffer for next run
@@ -122,7 +123,7 @@ def test_parameterized_kernel_node(ctx: DeviceContext) raises:
             block_dim=block_dim,
         )
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
 
     with out_dev.map_to_host() as out_host:
@@ -163,7 +164,7 @@ def test_closure_node(ctx: DeviceContext) raises:
             block_dim=block_dim,
         )
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
 
     _ = in0_dev^
@@ -186,7 +187,7 @@ def test_add_copy_to_device(ctx: DeviceContext) raises:
     def build(mut builder: DeviceGraphBuilder) raises {read}:
         _ = builder.add_copy(dev_buf, host_src)
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -212,7 +213,7 @@ def test_add_copy_from_device(ctx: DeviceContext) raises:
     def build(mut builder: DeviceGraphBuilder) raises {read}:
         _ = builder.add_copy(host_dst, dev_buf)
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -234,7 +235,7 @@ def test_add_copy_device_to_device(ctx: DeviceContext) raises:
     def build(mut builder: DeviceGraphBuilder) raises {read}:
         _ = builder.add_copy(dst_dev, src_dev)
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -262,7 +263,7 @@ def test_add_memset(ctx: DeviceContext) raises:
         # single node.
         _ = builder.add_memset(buf_u64, UInt64(0x0101010101010101))
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -357,7 +358,7 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
             dependencies=[b1],
         )
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -392,7 +393,7 @@ def test_add_memset_with_dependencies(ctx: DeviceContext) raises:
         var b1 = builder.add_memset(buf_b, UInt8(0xBB), dependencies=[b0])
         _ = builder.add_memset(buf_b, UInt8(0xCC), dependencies=[b1])
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -438,7 +439,7 @@ def test_add_copy_with_dependencies(ctx: DeviceContext) raises:
         var b0 = builder.add_copy(buf_b, host_b1, dependencies=[])
         _ = builder.add_copy(buf_b, host_b2, dependencies=[b0])
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -491,7 +492,7 @@ def test_region(ctx: DeviceContext) raises:
             buf_c, UInt8(0xCC), dependencies=[producers_join]
         )
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -524,7 +525,7 @@ def test_region_empty(ctx: DeviceContext) raises:
         # still instantiates and replays successfully.
         _ = builder.add_memset(buf, UInt8(0xEE), dependencies=[join])
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -578,7 +579,7 @@ def test_region_with_dependencies(ctx: DeviceContext) raises:
 
         _ = builder.region(consumer, dependencies=[join_a])
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 
@@ -639,7 +640,7 @@ def test_region_passthrough_dependencies(
             dependencies=[passthrough],
         )
 
-    var graph = ctx.create_device_graph(build)
+    var graph = DeviceGraph.create(ctx, build)
     graph.replay()
     ctx.synchronize()
 

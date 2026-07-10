@@ -11,7 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides a limited Mojo handle to the AsyncRT `AsyncValue` type.
+
+`AnyAsyncValueRef` is an owning, reference-counted handle to a C++ `AsyncValue`.
+It is used as the storage handle that keeps a device buffer's or tensor's
+backing memory alive (for example, inside the `OwnedByteBuffer` and
+`OwnedTensor` composites), mirroring the C++ `AnyAsyncValueRef` /
+`RCRef[AsyncValue]`.
+"""
+
 from std.ffi import _CPointer, external_call
+
 from std.gpu.host import DeviceBuffer
 
 
@@ -78,9 +88,10 @@ struct AnyAsyncValueRef(ImplicitlyCopyable, Movable):
             retained_storage_of: A pointer to the packed async value (slot) whose
                 backing storage should be retained.
         """
-        # AsyncValue *MGP_RT_RetainBufferStorage(void *async)
+        # AsyncValue *AsyncRT_AsyncValue_retainBufferStorage(
+        #     AnyAsyncValueRef *async)
         self._handle = external_call[
-            "MGP_RT_RetainBufferStorage", _AsyncValuePtr[mut=True]
+            "AsyncRT_AsyncValue_retainBufferStorage", _AsyncValuePtr[mut=True]
         ](retained_storage_of)
 
     def __init__(out self, *, retain_handle: OpaquePointer[MutAnyOrigin]):
@@ -93,9 +104,9 @@ struct AnyAsyncValueRef(ImplicitlyCopyable, Movable):
         Args:
             retain_handle: A pointer to a C++ `AnyAsyncValueRef` storage handle.
         """
-        # AsyncValue *MGP_RT_RetainAsyncValueHandle(AnyAsyncValueRef *handle)
+        # AsyncValue *AsyncRT_AsyncValue_retainHandle(AnyAsyncValueRef *handle)
         self._handle = external_call[
-            "MGP_RT_RetainAsyncValueHandle", _AsyncValuePtr[mut=True]
+            "AsyncRT_AsyncValue_retainHandle", _AsyncValuePtr[mut=True]
         ](retain_handle)
 
     def __init__(out self, *, var storage_buf: DeviceBuffer):
@@ -107,8 +118,11 @@ struct AnyAsyncValueRef(ImplicitlyCopyable, Movable):
         Args:
             storage_buf: The owning device buffer to wrap.
         """
+        # AsyncValue *AsyncRT_AsyncValue_createFromDeviceBuffer(
+        #     DeviceBuffer *handle)
         var handle = external_call[
-            "MGP_RT_CreateDeviceBufferRefAsyncValue", _AsyncValuePtr[mut=True]
+            "AsyncRT_AsyncValue_createFromDeviceBuffer",
+            _AsyncValuePtr[mut=True],
         ](storage_buf^.take_handle())
         self._handle = handle
 
