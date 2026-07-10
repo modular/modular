@@ -7,6 +7,7 @@
 #include "mojo-build.h"
 #include "../Common/Compilation.h"
 
+#include "AsyncRT/CompilerSupport/Context.h"
 #include "Cache/CachedTransform.h"
 #include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
@@ -18,7 +19,6 @@
 #include "KGEN/Support/Constants.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/Config.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
@@ -513,7 +513,7 @@ createOutputFile(const State &state, const llvm::opt::InputArgList &args,
 /// archive. Returns an unsuccessful exit code if the archive could not be
 /// created successfully, and nullopt otherwise.
 static std::optional<int>
-compileModuleToArchive(const State &state, MLRT::CPUDevice &cpuDevice,
+compileModuleToArchive(const State &state, AsyncRT::CPUDevice &cpuDevice,
                        MLIRContext &context, const CompilationOptions &options,
                        OwningOpRef<ModuleOp> module, TargetInfoAttr target,
                        BufferRef &archive, OutputType outputType,
@@ -915,7 +915,7 @@ static int build(const State &subcommandState) {
 
   warnBuildingForDebugWithDebugBuiltCompiler(state, options.debugLevel);
 
-  MLRT::CPUDeviceOptions cpuDeviceOptions;
+  AsyncRT::CPUDeviceOptions cpuDeviceOptions;
   configureCPUDeviceOptions(cpuDeviceOptions, options);
 
   // Create our context (including the cpuDevice).
@@ -952,7 +952,7 @@ static int build(const State &subcommandState) {
   }
 
   // Lower the input file to an MLIR module.
-  MLRT::CPUDevice &cpuDevice = *ctx->get<MLRT::CPUDevice>();
+  AsyncRT::CPUDevice &cpuDevice = *ctx->get<AsyncRT::CPUDevice>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &mlirCtx);
   ScopedMLIRWarningHandler warningHandler(&mlirCtx, options.disableWarnings,
                                           options.warningsAsErrors);

@@ -4,13 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/MemoryUtils.h"
 #include "KGEN/TransformUtils/SCCUtils.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 
@@ -395,8 +395,8 @@ void Graph::doRewrite(const Node *node) {
 void ArgPromotionPass::runOnOperation() {
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-  MLRT::CPUDevice &cpuDevice =
-      *loadContext(&getContext())->get<MLRT::CPUDevice>();
+  AsyncRT::CPUDevice &cpuDevice =
+      *loadContext(&getContext())->get<AsyncRT::CPUDevice>();
 
   // We need a target to run this pass.
   TargetInfoAttr target = lookupTargetInfo(getOperation());

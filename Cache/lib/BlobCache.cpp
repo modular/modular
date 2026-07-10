@@ -5,11 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/BlobCache.h"
+#include "AsyncRT/ForwardDecls.h"
+#include "AsyncRT/Runtime/Algorithms.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
+#include "AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Config/Version.h"
-#include "MLRT/AsyncRT/ForwardDecls.h"
-#include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
-#include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Support/Base64.h"
 #include "Support/Buffer.h"
 #include "Support/CacheLog.h"
@@ -43,7 +43,7 @@
 
 using namespace M;
 using namespace Cache;
-using namespace MLRT;
+using namespace AsyncRT;
 
 /// Provides a simple way to get an error given an optional encoded location and
 /// a standard Error.
@@ -96,7 +96,7 @@ static bool checkOrCreateWriteableDirectory(const std::filesystem::path &path) {
 //===----------------------------------------------------------------------===//
 
 AsyncValueRef<Chain>
-BlobCacheBackend::insert(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
+BlobCacheBackend::insert(AsyncRT::CPUDevice &cpuDevice, BufferRef keyHash,
                          BufferRef obj, std::optional<EncodedLocation> loc) {
   EncodedLocation location = loc.has_value()
                                  ? std::move(*loc)
@@ -141,7 +141,7 @@ ErrorOrSuccess BlobCacheBackend::insertSync(StringRef keyHash, BufferRef obj) {
 }
 
 AsyncValueRef<Chain>
-BlobCacheBackend::insertImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
+BlobCacheBackend::insertImpl(AsyncRT::CPUDevice &cpuDevice, BufferRef keyHash,
                              BufferRef obj,
                              std::optional<EncodedLocation> loc) {
   // Wrap the synchronous implementation by default.
@@ -159,7 +159,7 @@ BlobCacheBackend::insertImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
 }
 
 AsyncValueRef<bool>
-BlobCacheBackend::contains(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
+BlobCacheBackend::contains(AsyncRT::CPUDevice &cpuDevice, BufferRef keyHash,
                            std::optional<EncodedLocation> loc) {
   EncodedLocation location = loc.has_value()
                                  ? std::move(*loc)
@@ -207,7 +207,7 @@ ErrorOr<bool> BlobCacheBackend::containsSync(StringRef keyHash) {
 }
 
 AsyncValueRef<bool>
-BlobCacheBackend::containsImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
+BlobCacheBackend::containsImpl(AsyncRT::CPUDevice &cpuDevice, BufferRef keyHash,
                                std::optional<EncodedLocation> loc) {
   // Wrap the synchronous implementation by default.
   auto result = AsyncValueRef<bool>::allocate(cpuDevice);
@@ -224,7 +224,7 @@ BlobCacheBackend::containsImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
 }
 
 AsyncValueRef<std::optional<BufferRef>>
-BlobCacheBackend::find(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
+BlobCacheBackend::find(AsyncRT::CPUDevice &cpuDevice, BufferRef keyHash,
                        std::optional<EncodedLocation> loc) {
   EncodedLocation location = loc.has_value()
                                  ? std::move(*loc)
@@ -302,7 +302,7 @@ BlobCacheBackend::findSync(StringRef keyHash) {
 }
 
 AsyncValueRef<std::optional<BufferRef>>
-BlobCacheBackend::findImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
+BlobCacheBackend::findImpl(AsyncRT::CPUDevice &cpuDevice, BufferRef keyHash,
                            std::optional<EncodedLocation> loc) {
   // Wrap the synchronous execution by default.
   auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(cpuDevice);

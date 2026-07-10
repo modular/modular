@@ -5,12 +5,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLVMServer.h"
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "Init/Init.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/Support/Constants.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Context.h"
 #include "mlir/Parser/Parser.h"
 #include "llvm/Support/Base64.h"
@@ -56,7 +56,7 @@ LLVMServer::~LLVMServer() = default;
 ErrorOr<std::unique_ptr<LLVMServer>> LLVMServer::create(bool singleThreaded) {
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "compilation-server", Init::Options().withCPUDeviceOptions(
-                                MLRT::CPUDeviceOptions()
+                                AsyncRT::CPUDeviceOptions()
                                     .withSingleThreaded(singleThreaded)
                                     .withMainWillNotDonate()));
   if (ctxOr.isError())

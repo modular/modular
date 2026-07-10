@@ -27,9 +27,10 @@ namespace M::KGEN {
 
 /// This struct represents the expansion of a callgraph during elaboration.
 struct ParametricExpansionGraph {
-  ParametricExpansionGraph(MLRT::CPUDevice &cpuDevice)
-      : worklistCh(MLRT::AsyncValueRef<MLRT::Chain>::allocate(cpuDevice)),
-        quiesceChain(MLRT::AsyncValueRef<MLRT::Chain>::allocate(cpuDevice)) {}
+  ParametricExpansionGraph(AsyncRT::CPUDevice &cpuDevice)
+      : worklistCh(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(cpuDevice)),
+        quiesceChain(
+            AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(cpuDevice)) {}
 
   virtual ~ParametricExpansionGraph();
 
@@ -51,7 +52,7 @@ struct ParametricExpansionGraph {
   /// used to starve the workqueue before running evaluators, because evaluation
   /// cannot be reliably performed while the compiler is doing work on other
   /// threads.
-  MLRT::AsyncValueRef<MLRT::Chain> worklistCh;
+  AsyncRT::AsyncValueRef<AsyncRT::Chain> worklistCh;
 
   /// Concrete functions added directly to the expansion graph.
   std::vector<std::unique_ptr<PImplNode>> elaboratedNodes;
@@ -391,7 +392,7 @@ private:
       knownGraphs;
 
   /// The AsyncRT cpuDevice instance to use.
-  MLRT::CPUDevice &cpuDevice;
+  AsyncRT::CPUDevice &cpuDevice;
 
   /// The callgraph being expanded.
   ParametricExpansionGraph g;

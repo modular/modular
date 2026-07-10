@@ -5,10 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CachedTransform.h"
-#include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
-#include "MLRT/AsyncRT/Runtime/HostSystem.h"
-#include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
+#include "AsyncRT/Runtime/Algorithms.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
+#include "AsyncRT/Runtime/HostSystem.h"
+#include "AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Preprocessor.h"
 
@@ -23,7 +23,7 @@
 
 using namespace M;
 using namespace Cache;
-using namespace MLRT;
+using namespace AsyncRT;
 using namespace mlir;
 
 namespace {
@@ -83,7 +83,7 @@ struct TestPassDiagnosticValidator : public mlir::ScopedDiagnosticHandler {
 // on a cache miss and output of cacheHitFn on cache hit.
 TEST(CachedTransformTest, BufferReturn) {
   TempDir tempDir = createTempDir();
-  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(MLRT::CPUDeviceSource::Test,
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(AsyncRT::CPUDeviceSource::Test,
                                                 CPUDeviceOptions().forDebug());
   auto transformBackendChainOr =
       getLocalDefaultBackendChain(tempDir.getPath() / "xform");
@@ -115,7 +115,7 @@ TEST(CachedTransformTest, BufferReturn) {
   constexpr StringLiteral keyStr = "hello";
   WriteableBufferRef key = WriteableBuffer::get(0, {}, keyStr.size());
   key->write(keyStr.data(), keyStr.size());
-  EncodedLocation loc = MLRT::UnknownLocationDecoder::getEncodedLocation();
+  EncodedLocation loc = AsyncRT::UnknownLocationDecoder::getEncodedLocation();
 
   // First call should generate new hash
   AnyAsyncValueRef output =

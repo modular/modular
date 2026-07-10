@@ -5,6 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Compiler/KGENCompiler.h"
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Runtime/Algorithms.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/Compiler/SaveAsmOutput.h"
 #include "KGEN/ExecutionEngine/JIT/StaticArchiveLayer.h"
@@ -16,9 +19,6 @@
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/SlicingUtils.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "ObjectCompiler/KGENToLLVMPipeline.h"
 #include "Pipeline/Pipeline.h"
 #include "Support/ADT/DenseStringMap.h"
@@ -888,8 +888,9 @@ ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
   auto transformCache =
       RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
 
-  return runKGENPipeline(theModule, target, transformCache,
-                         ctx->get<MLRT::CPUDevice>()->getReadyChain().copy());
+  return runKGENPipeline(
+      theModule, target, transformCache,
+      ctx->get<AsyncRT::CPUDevice>()->getReadyChain().copy());
 }
 
 static mlir::PassManager
@@ -920,11 +921,11 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
   populateElaborateModulePasses(pm, target, options);
 
   // Run the passes as a cached transform.
-  MLRT::AnyAsyncValueRef ready = Cache::cachedTransform(
+  AsyncRT::AnyAsyncValueRef ready = Cache::cachedTransform(
       theModule, transformCache.copy(), std::move(chain), pm);
 
   // This await here is important since pm is local in this function.
-  MLRT::await(ready);
+  AsyncRT::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
 
@@ -958,15 +959,15 @@ ErrorOrSuccess KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
 
   buildGenerateLibraryPipeline(pm, options);
 
-  MLRT::CPUDevice &cpuDevice =
-      *loadContext(module.getContext())->get<MLRT::CPUDevice>();
-  MLRT::AnyAsyncValueRef ready = Cache::cachedTransform(
+  AsyncRT::CPUDevice &cpuDevice =
+      *loadContext(module.getContext())->get<AsyncRT::CPUDevice>();
+  AsyncRT::AnyAsyncValueRef ready = Cache::cachedTransform(
       module, transformCache.copy(),
       AsyncValueRef<Chain>::createReady(cpuDevice), pm,
       [](mlir::Operation *) {}, [](mlir::Operation *) {});
 
   // This await here is important since pm is local in this function.
-  MLRT::await(ready);
+  AsyncRT::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
 
@@ -995,7 +996,7 @@ LogicalResult KGENCompiler::runCheckLITPipeline(ModuleOp module) {
 /// Returns the same AnyAsyncValueRef for error handling in the caller
 /// if needed.
 ErrorOrSuccess KGENCompiler::runElaborationPipeline(
-    ModuleOp module, TargetInfoAttr target, MLRT::CPUDevice &cpuDevice,
+    ModuleOp module, TargetInfoAttr target, AsyncRT::CPUDevice &cpuDevice,
     std::optional<AnyAsyncValueRef> chain,
     std::function<void(Operation *)> moreOnMiss,
     std::function<void(Operation *)> moreOnHit) {
@@ -1025,7 +1026,7 @@ ErrorOrSuccess KGENCompiler::runElaborationPipeline(
       std::move(*chain), pm, std::move(moreOnMiss), std::move(moreOnHit));
 
   // This await here is important since pm is local in this function.
-  MLRT::await(ready);
+  AsyncRT::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
   return success();

@@ -7,7 +7,7 @@
 #ifndef ASYNCRT_INIT_INIT_H
 #define ASYNCRT_INIT_INIT_H
 
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Context.h"
 #include "Support/ErrorOr.h"
 
@@ -26,7 +26,7 @@ public:
   }
 
   Options &withCPUDeviceOptions(
-      const MLRT::CPUDeviceOptions &v = MLRT::CPUDeviceOptions()) {
+      const AsyncRT::CPUDeviceOptions &v = AsyncRT::CPUDeviceOptions()) {
     cpuDeviceOptions.emplace(v);
     return *this;
   }
@@ -44,13 +44,13 @@ public:
     return forceDisableCrashReporting;
   }
 
-  std::optional<MLRT::CPUDeviceOptions> getCPUDeviceOptions() const {
+  std::optional<AsyncRT::CPUDeviceOptions> getCPUDeviceOptions() const {
     return cpuDeviceOptions;
   }
 
 private:
   bool forceDisableCrashReporting = false;
-  std::optional<MLRT::CPUDeviceOptions> cpuDeviceOptions;
+  std::optional<AsyncRT::CPUDeviceOptions> cpuDeviceOptions;
 
   friend ErrorOr<ContextRef> getOrCreateContext(StringRef, const Options &,
                                                 StringRef);

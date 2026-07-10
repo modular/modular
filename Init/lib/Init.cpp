@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "Init/Init.h"
+#include "AsyncRT/Runtime/HostSystem.h"
 #include "Init/DevelopmentSignalHandler.h"
-#include "MLRT/AsyncRT/Runtime/HostSystem.h"
 #include "Support/Configuration.h"
 #include "Support/ContextGlobal.h"
 #include "Support/CrashReporting/CrashReporting.h"
@@ -66,11 +66,11 @@ ErrorOr<ContextRef> createContextImpl(StringRef programName,
   if (options.getCPUDeviceOptions()) {
     std::string profileFilename =
         llvm::sys::Process::GetEnv("MODULAR_PROFILE_FILENAME").value_or("");
-    MLRT::CPUDeviceOptions opts = *options.getCPUDeviceOptions();
+    AsyncRT::CPUDeviceOptions opts = *options.getCPUDeviceOptions();
     if (!profileFilename.empty())
       opts.profileFilename = profileFilename;
-    MLRT::CPUDeviceRef ref =
-        MLRT::getOrCreateCPUDevice(MLRT::CPUDeviceSource::MaxContext, opts);
+    AsyncRT::CPUDeviceRef ref = AsyncRT::getOrCreateCPUDevice(
+        AsyncRT::CPUDeviceSource::MaxContext, opts);
     ctx->setRuntime(GenericRCRef::fromRCRef(std::move(ref)));
   }
 

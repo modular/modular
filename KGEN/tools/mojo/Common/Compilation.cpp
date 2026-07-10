@@ -592,7 +592,7 @@ ErrorOrSuccess M::parseTargetOptions(
 ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
-    MLRT::CPUDevice &cpuDevice, llvm::opt::OptSpecifier docDiagnoseMissingId,
+    AsyncRT::CPUDevice &cpuDevice, llvm::opt::OptSpecifier docDiagnoseMissingId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier stripFilePrefixId,
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdLibPath,
@@ -714,7 +714,7 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   return module;
 }
 
-void M::configureCPUDeviceOptions(MLRT::CPUDeviceOptions &cpuDeviceOptions,
+void M::configureCPUDeviceOptions(AsyncRT::CPUDeviceOptions &cpuDeviceOptions,
                                   const KGEN::CompilationOptions &options) {
   if (options.numThreads != 0) {
     // AsyncRT has a sophisticated thread pool configuration system.

@@ -13,6 +13,8 @@
 #include "ElaboratorHelper.h"
 #include "ParametricIREvaluator.h"
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Runtime/ForkJoin.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -23,8 +25,6 @@
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/ForkJoin.h"
 #include "Support/Compiler/DiagnosticHandler.h"
 #include "Support/Compiler/Error.h"
 #include "Support/Compiler/ErrorTree.h"
@@ -44,7 +44,7 @@
 
 using namespace M;
 using namespace KGEN;
-using namespace MLRT;
+using namespace AsyncRT;
 
 /// Short living attribute that is needed to set on KGEN::FuncOp or
 /// KGEN::DeclareRegeionOp. This attribute will be converted to LLVMetadata
@@ -122,7 +122,7 @@ ParametricExpansionGraph::~ParametricExpansionGraph() {
   // tasks to the error state and await completion.
   for (auto &[key, node] : nodes.get())
     node->setToError();
-  MLRT::await(quiesceChain);
+  AsyncRT::await(quiesceChain);
 }
 
 void ParametricExpansionGraph::didCompleteTask() {
@@ -417,7 +417,7 @@ ParametricElaborator::ParametricElaborator(
     : InterpreterCache(target, config.optimizeInterpreter), target(target),
       options(options), config(config), oldSymTab(symtab),
       env(symtab.getOp()->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())),
-      cpuDevice(*loadContext(target.getContext())->get<MLRT::CPUDevice>()),
+      cpuDevice(*loadContext(target.getContext())->get<AsyncRT::CPUDevice>()),
       g(this->cpuDevice),
       paramCache(paramCache, cpuDevice.getWorkQueue()->getParallelismLevel()),
       compileAsmFn(compileAsmFn), compileOffloadFn(compileOffloadFn) {}
@@ -2412,11 +2412,12 @@ bool ParametricElaborator::diagnoseAndBreakRecursion(
     // dependency counter to 1 and wait for all chains to complete. Then
     // sccRemovedDeps on each node is checked to propagate any errors from
     // callees that errored during the first pass.
-    MLRT::andThenAsyncMoving(sccChains, [this, nodes = sccNodes.takeVector()](
-                                            MutableArrayRef<AnyAsyncValueRef>) {
-      for (PParamNode *node : nodes)
-        completeImplNodeProcessing(&node->impl);
-    });
+    AsyncRT::andThenAsyncMoving(sccChains,
+                                [this, nodes = sccNodes.takeVector()](
+                                    MutableArrayRef<AnyAsyncValueRef>) {
+                                  for (PParamNode *node : nodes)
+                                    completeImplNodeProcessing(&node->impl);
+                                });
   }
 
   // Now reschedule the nodes outside the loop to avoid races.
@@ -2594,7 +2595,7 @@ LogicalResult ParametricElaborator::run(
     unsigned cycleGeneration = 0;
     while (true) {
       signalWorklist();
-      MLRT::await(g.worklistCh);
+      AsyncRT::await(g.worklistCh);
       assert(g.numWorkItems == 0);
 
       // Check if all primary generators are done. If so, break.

@@ -4,6 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Runtime/ForkJoin.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -12,8 +14,6 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/CallGraphUtils.h"
 #include "KGEN/TransformUtils/InliningUtils.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/ForkJoin.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"
@@ -77,9 +77,10 @@ struct AlwaysInlineGraph
 
 struct CallGraphNode
     : CallGraphNodeBase<CallGraphNode, FuncOp, KGENCallOpInterface> {
-  explicit CallGraphNode(FuncOp func, MLRT::CPUDevice &cpuDevice)
+  explicit CallGraphNode(FuncOp func, AsyncRT::CPUDevice &cpuDevice)
       : CallGraphNodeBase(func),
-        doneInlining(MLRT::AsyncValueRef<MLRT::Chain>::allocate(cpuDevice)) {}
+        doneInlining(
+            AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(cpuDevice)) {}
   CallGraphNode(CallGraphNode &&other)
       : CallGraphNodeBase(std::move(other)),
         doneInlining(std::move(other.doneInlining)) {}
@@ -151,7 +152,7 @@ struct CallGraphNode
 
   /// Chain value to mark if inlining is done or not for synchronizing CallGraph
   /// dependencies.
-  MLRT::AsyncValueRef<MLRT::Chain> doneInlining;
+  AsyncRT::AsyncValueRef<AsyncRT::Chain> doneInlining;
 
   /// Nodes in the same SCC as the current one.
   llvm::SmallPtrSet<CallGraphNode *, 6> sccNodes;
@@ -170,12 +171,12 @@ struct CallGraphNode
 //===----------------------------------------------------------------------===//
 
 struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
-  CallGraph(MLRT::CPUDevice &cpuDevice, PerThreadPassManagers &pms,
+  CallGraph(AsyncRT::CPUDevice &cpuDevice, PerThreadPassManagers &pms,
             std::optional<StringAttr> updateAttrName, bool debugCallsite)
       : externalNode(nullptr, cpuDevice), cpuDevice(cpuDevice), pms(pms),
         updateAttrName(updateAttrName), debugCallsite(debugCallsite),
         numWorkItems(0),
-        done(MLRT::AsyncValueRef<MLRT::Chain>::allocate(cpuDevice)) {}
+        done(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(cpuDevice)) {}
 
   ~CallGraph() {
     // Clear up nodes first so they can safely destruct their borrowed reference
@@ -219,7 +220,7 @@ struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
 
 private:
   /// Reference to the AsyncRT cpuDevice for launch jobs in parallel.
-  MLRT::CPUDevice &cpuDevice;
+  AsyncRT::CPUDevice &cpuDevice;
 
   /// The pass managers to use.
   PerThreadPassManagers &pms;
@@ -245,7 +246,7 @@ private:
 
   /// Chain value to mark if all work items are done to mark main thread
   /// (this inlining pass)to be done.
-  MLRT::AsyncValueRef<MLRT::Chain> done;
+  AsyncRT::AsyncValueRef<AsyncRT::Chain> done;
 };
 
 } // namespace
@@ -454,7 +455,7 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
 
     completeFunctionProcessing(caller);
   };
-  MLRT::andThenAsyncMoving(calleeAsynchValues, std::move(inlineFunc));
+  AsyncRT::andThenAsyncMoving(calleeAsynchValues, std::move(inlineFunc));
 }
 
 void CallGraph::performInlining(uint64_t threshold) {
@@ -464,7 +465,7 @@ void CallGraph::performInlining(uint64_t threshold) {
   // Mark externalNode's work done (since it's not doing anything.)
   externalNode.doneInlining.copy().emplace();
   endWork();
-  MLRT::await(done);
+  AsyncRT::await(done);
 }
 
 void CallGraph::collectNonCallReferencedSymbols(Operation *module) {
@@ -623,8 +624,8 @@ void AutomaticInline::runOnOperation() {
     break;
   }
 
-  MLRT::CPUDevice &cpuDevice =
-      *loadContext(&getContext())->get<MLRT::CPUDevice>();
+  AsyncRT::CPUDevice &cpuDevice =
+      *loadContext(&getContext())->get<AsyncRT::CPUDevice>();
   PerThreadPassManagers pms(&getContext(), buildFuncPasses);
 
   AlwaysInlineGraph verifyGraph;
@@ -659,7 +660,7 @@ void AutomaticInline::runOnOperation() {
   // If we deferred debuginfo update, do that now.
   if (updateDebugInfo == InlinerDebugInfoUpdateTime::kDeferred) {
     VerboseCompilerTimeTraceScope traceScope("updateDebugInfo");
-    MLRT::ForkJoin state(cpuDevice);
+    AsyncRT::ForkJoin state(cpuDevice);
     for (auto &[func, node] : graph.nodes) {
       if (node.isFunctionDead() || node.callsites.empty())
         continue;

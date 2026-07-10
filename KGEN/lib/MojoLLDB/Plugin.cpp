@@ -10,12 +10,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoLLDB/Plugin.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "Commands/CommandObjectLLVMDebug.h"
 #include "Commands/CommandObjectMojo.h"
 #include "Init/Init.h"
 #include "Language/MojoLanguage.h"
 #include "Language/MojoLanguageRuntime.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "REPL/MojoREPL.h"
 #include "Support/CrashReporting/CrashReporting.h"
 #include "Support/SymbolExport.h"
@@ -65,7 +65,7 @@ static ErrorOr<ContextRef> getOrCreateGlobalContext() {
   std::call_once(g_context_init_flag, []() {
     auto ctxOr = Init::createContext(
         "mojo-lldb-plugin",
-        Init::Options().withCPUDeviceOptions(MLRT::CPUDeviceOptions()
+        Init::Options().withCPUDeviceOptions(AsyncRT::CPUDeviceOptions()
                                                  .withCPUAffinity(false)
                                                  .withMainWillNotDonate()));
     if (ctxOr.isError()) {

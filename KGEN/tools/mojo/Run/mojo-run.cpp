@@ -8,6 +8,8 @@
 #include "../Common/Compilation.h"
 #include "../Common/XlinkerResolution.h"
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
@@ -20,8 +22,6 @@
 #include "KGEN/Support/Constants.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/Config.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
@@ -222,7 +222,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 /// Executes the given module's `main` function, or returns an error indicating
 /// why it could not be executed.
 static ErrorOrSuccess executeMain(ExecutionEngine &engine,
-                                  MLRT::CPUDevice &cpuDevice,
+                                  AsyncRT::CPUDevice &cpuDevice,
                                   ArrayRef<const char *> arguments) {
   auto runFn = [arguments](void *fnPtr) -> ErrorOrSuccess {
     using FnType = int (*)(int, const char *const *);
@@ -250,7 +250,7 @@ static ErrorOrSuccess executeMain(ExecutionEngine &engine,
 /// references into its own arena so that the profiler is fully self-contained.
 static void internTimeTraceProfile(M::Context &maxContext) {
   std::optional<TimeTraceProfiler> &profilerOr =
-      maxContext.get<MLRT::CPUDevice>()->getProfiler();
+      maxContext.get<AsyncRT::CPUDevice>()->getProfiler();
   if (profilerOr)
     profilerOr->intern();
 }
@@ -259,7 +259,7 @@ static void internTimeTraceProfile(M::Context &maxContext) {
 /// along to that program, initializes an execution engine and executes the
 /// program. Returns a successful exit code if the program was executed
 /// successfully, and an unsuccessful exit code otherwise.
-static int executeModule(const State &state, MLRT::CPUDevice &cpuDevice,
+static int executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
                          MLIRContext &context,
                          const CompilationOptions &options,
                          OwningOpRef<ModuleOp> module, TargetInfoAttr target,
@@ -354,7 +354,7 @@ static int run(const State &subcommandState) {
 
   warnBuildingForDebugWithDebugBuiltCompiler(state, options.debugLevel);
 
-  MLRT::CPUDeviceOptions cpuDeviceOptions;
+  AsyncRT::CPUDeviceOptions cpuDeviceOptions;
   configureCPUDeviceOptions(cpuDeviceOptions, options);
 
   // Create our context (including the cpuDevice).
@@ -366,7 +366,7 @@ static int run(const State &subcommandState) {
   registerContext(mlirCtx, ctx);
 
   // Lower the input file to an MLIR module.
-  MLRT::CPUDevice &cpuDevice = *ctx->get<MLRT::CPUDevice>();
+  AsyncRT::CPUDevice &cpuDevice = *ctx->get<AsyncRT::CPUDevice>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &mlirCtx);
   ScopedMLIRWarningHandler warningHandler(&mlirCtx, options.disableWarnings,
                                           options.warningsAsErrors);

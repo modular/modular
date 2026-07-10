@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
 #include "Helpers.h"
 #include "Init/Init.h"
 #include "KGEN/HLCFDialect/HLCFInterfaces.h"
@@ -12,7 +13,6 @@
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/Walkers.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "PreOrderRegionIterator.h"
 #include "Support/Context.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -681,8 +681,9 @@ int main(int argc, char **argv) {
 
   // Create our context.
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "kgen-reduce", Init::Options().withCPUDeviceOptions(
-                         MLRT::CPUDeviceOptions().withLeakCheckedAllocator()));
+      "kgen-reduce",
+      Init::Options().withCPUDeviceOptions(
+          AsyncRT::CPUDeviceOptions().withLeakCheckedAllocator()));
   if (ctxOr.isError()) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
     return 1;

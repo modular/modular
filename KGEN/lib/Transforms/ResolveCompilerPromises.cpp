@@ -4,13 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/SCCUtils.h"
 #include "KGEN/TransformUtils/Walkers.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "Support/Context.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -326,8 +326,8 @@ void ResolveCompilerPromisesPass::runOnOperation() {
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
 
-  MLRT::CPUDevice &cpuDevice =
-      *loadContext(&getContext())->get<MLRT::CPUDevice>();
+  AsyncRT::CPUDevice &cpuDevice =
+      *loadContext(&getContext())->get<AsyncRT::CPUDevice>();
   CallGraph cg(symtab);
   cg.build(getOperation(), symtab);
   cg.run(cpuDevice);

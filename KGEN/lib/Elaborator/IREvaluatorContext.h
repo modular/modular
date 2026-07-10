@@ -122,10 +122,10 @@ private:
 //===----------------------------------------------------------------------===//
 struct ParamNodeBase {
   /// Create an expansion tree node to represent a generator instantiation.
-  ParamNodeBase(MLRT::CPUDevice &cpuDevice, GeneratorOpInterface gen,
+  ParamNodeBase(AsyncRT::CPUDevice &cpuDevice, GeneratorOpInterface gen,
                 ParameterExprArrayAttr vals, size_t depth)
       : gen(gen), inputParams(vals), depth(depth),
-        paramCh(MLRT::AsyncValueRef<MLRT::Chain>::allocate(cpuDevice)) {}
+        paramCh(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(cpuDevice)) {}
 
   /// Create a special root node. Root nodes can be identified with a null
   /// symbol.
@@ -159,7 +159,7 @@ protected:
   std::atomic<const void *> mangledName = nullptr;
 
   /// The chain to signal when this parameter node is done processing.
-  MLRT::AsyncValueRef<MLRT::Chain> paramCh;
+  AsyncRT::AsyncValueRef<AsyncRT::Chain> paramCh;
 
   /// Atomic to prevent race on emplace.
   std::atomic<uint8_t> done = false;

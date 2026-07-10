@@ -740,9 +740,9 @@ struct TimeTraceThreadProfiler {
   ///
   /// For example:
   ///
-  /// MLRT::CPUDeviceOptions rtOpt;
+  /// AsyncRT::CPUDeviceOptions rtOpt;
   /// rtOpt.runtimeProfilingTypeMask = 1 << Trace::typeBitshift(Trace::kOther);
-  /// auto rt = MLRT::getOrCreateCPUDevice(MLRT::CPUDeviceSource::Test,
+  /// auto rt = AsyncRT::getOrCreateCPUDevice(AsyncRT::CPUDeviceSource::Test,
   /// rtOpt);
   ///
   /// Creates a Runtime that will only record `kOther` type events.

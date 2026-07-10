@@ -4,15 +4,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
-#include "MLRT/AsyncRT/Runtime/HostSystem.h"
-#include "MLRT/AsyncRT/Runtime/TimerHeap.h"
+#include "AsyncRT/Runtime/Algorithms.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
+#include "AsyncRT/Runtime/HostSystem.h"
+#include "AsyncRT/Runtime/TimerHeap.h"
 #include "Support/SymbolExport.h"
 #include <memory>
 
 using namespace M;
-using namespace M::MLRT;
+using namespace M::AsyncRT;
 
 //===----------------------------------------------------------------------===//
 // Helpers

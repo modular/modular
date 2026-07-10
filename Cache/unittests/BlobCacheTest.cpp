@@ -5,12 +5,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/BlobCache.h"
-#include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/Allocator.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
-#include "MLRT/AsyncRT/Runtime/HostSystem.h"
-#include "MLRT/AsyncRT/Runtime/WorkQueue.h"
-#include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
+#include "AsyncRT/Runtime/Algorithms.h"
+#include "AsyncRT/Runtime/Allocator.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
+#include "AsyncRT/Runtime/HostSystem.h"
+#include "AsyncRT/Runtime/WorkQueue.h"
+#include "AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Preprocessor.h"
 #include "Support/RCRef.h"
@@ -23,7 +23,7 @@
 
 using namespace M;
 using namespace Cache;
-using namespace MLRT;
+using namespace AsyncRT;
 
 namespace {
 
@@ -46,14 +46,14 @@ static TempDir createTempDir() {
 class BlobCacheTest : public testing::Test {
 protected:
   TempDir tempDir;
-  MLRT::CPUDeviceRef cpuDevice;
+  AsyncRT::CPUDeviceRef cpuDevice;
   RCRef<BlobCache<StringKeyInfo>> cache;
 
   BlobCacheTest()
       : tempDir(createTempDir()),
         cpuDevice(getOrCreateCPUDevice(
-            MLRT::CPUDeviceSource::Test,
-            MLRT::CPUDeviceOptions().withLeakCheckedAllocator())),
+            AsyncRT::CPUDeviceSource::Test,
+            AsyncRT::CPUDeviceOptions().withLeakCheckedAllocator())),
         cache(RCRef<BlobCache<StringKeyInfo>>::create(
             getLocalDefaultBackendChain(tempDir.getPath()).takeValue())) {}
 };
@@ -425,15 +425,15 @@ static BufferRef makeValue(size_t size, int numThreads, int thread, int run) {
   return std::move(writeableValueBuffer);
 }
 
-static MLRT::EncodedLocation unknownLoc() {
-  return MLRT::UnknownLocationDecoder::getEncodedLocation();
+static AsyncRT::EncodedLocation unknownLoc() {
+  return AsyncRT::UnknownLocationDecoder::getEncodedLocation();
 }
 
-static MLRT::CPUDeviceRef makeCPUDevice() {
-  return MLRT::getOrCreateCPUDevice(MLRT::CPUDeviceSource::Test,
-                                    MLRT::CPUDeviceOptions()
-                                        .withLeakCheckedAllocator()
-                                        .withMainWillNotDonate());
+static AsyncRT::CPUDeviceRef makeCPUDevice() {
+  return AsyncRT::getOrCreateCPUDevice(AsyncRT::CPUDeviceSource::Test,
+                                       AsyncRT::CPUDeviceOptions()
+                                           .withLeakCheckedAllocator()
+                                           .withMainWillNotDonate());
 }
 
 TEST(FilesystemBackend, Hammer) {

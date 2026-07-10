@@ -10,6 +10,8 @@
 #include "../ExpressionParser/MojoExpressionVariable.h"
 #include "../ExpressionParser/MojoUserExpression.h"
 #include "../Utils/Errors.h"
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/DebugInfoEncoding.h"
 #include "KGEN/KGENDialect/KGENDType.h"
@@ -24,8 +26,6 @@
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MojoTypeDataLayout.h"
 #include "Plugins/SymbolFile/DWARF/DWARFDIE.h"
 #include "Support/Compiler/MLIRDType.h"
@@ -96,7 +96,7 @@ dereferenceIfREPLResult(lldb::opaque_compiler_type_t type) {
 
 struct MojoTypeSystem::Impl {
   Impl(ContextRef ctx, Target *target, const ArchSpec &archSpec)
-      : cpuDevice(*ctx->get<MLRT::CPUDevice>()), target(target),
+      : cpuDevice(*ctx->get<AsyncRT::CPUDevice>()), target(target),
         archSpec(archSpec) {
     // Register all of the various dialect state.
     DialectRegistry registry;
@@ -167,7 +167,7 @@ struct MojoTypeSystem::Impl {
   /// The AsyncRT cpuDevice to use for compilation/processing associated with
   /// this type system. This is derived from the context available in the
   /// MLIRContext.
-  MLRT::CPUDevice &cpuDevice;
+  AsyncRT::CPUDevice &cpuDevice;
 
   /// The compilation options to use when compiling.
   KGEN::CompilationOptions compilationOptions;
@@ -229,7 +229,7 @@ TargetInfoAttr MojoTypeSystem::GetTargetInfo() const {
   return impl->targetInfo;
 }
 
-MLRT::CPUDevice &MojoTypeSystem::getCPUDevice() { return impl->cpuDevice; }
+AsyncRT::CPUDevice &MojoTypeSystem::getCPUDevice() { return impl->cpuDevice; }
 
 //===----------------------------------------------------------------------===//
 // Initialization

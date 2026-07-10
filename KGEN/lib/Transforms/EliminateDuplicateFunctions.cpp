@@ -4,11 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Runtime/ForkJoin.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/CallGraphUtils.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/ForkJoin.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "llvm/ADT/SCCIterator.h"
 
@@ -81,16 +81,17 @@ struct CallGraphNode
     : public CallGraphNodeBase<CallGraphNode, FuncOp, KGENCallOpInterface> {
   using CallGraphNodeBase::CallGraphNodeBase;
   using CallGraphNodeBase::EdgeT;
-  CallGraphNode(FuncOp func, MLRT::CPUDevice &cpuDevice)
+  CallGraphNode(FuncOp func, AsyncRT::CPUDevice &cpuDevice)
       : CallGraphNodeBase(func),
-        doneDedup(MLRT::AsyncValueRef<MLRT::Chain>::allocate(cpuDevice)) {}
+        doneDedup(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(cpuDevice)) {
+  }
   CallGraphNode(CallGraphNode &&other)
       : CallGraphNodeBase(std::move(other)),
         doneDedup(std::move(other.doneDedup)) {}
 
   /// Chain value to mark if the deduplication is done or not for synchronizing
   /// CallGraph dependencies.
-  MLRT::AsyncValueRef<MLRT::Chain> doneDedup;
+  AsyncRT::AsyncValueRef<AsyncRT::Chain> doneDedup;
 
   /// The set of dependencies that has to be deduplicated before we can start
   /// working on this node.
@@ -100,7 +101,7 @@ struct CallGraphNode
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   // Construct and build the callgraph
   CallGraph(mlir::ModuleOp module, const SymbolTable &symtable,
-            MLRT::CPUDevice &cpuDevice);
+            AsyncRT::CPUDevice &cpuDevice);
 
   bool shouldAddToGraph(CallOpT call, CallGraphNode *node) {
     // Skip external functions.
@@ -132,11 +133,11 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   SmallVector<CallGraphNode *> workItems;
 
   /// Reference to the AsyncRT cpuDevice for launch jobs in parallel.
-  MLRT::CPUDevice &cpuDevice;
+  AsyncRT::CPUDevice &cpuDevice;
 
   /// Chain value to mark if all work items are done to mark main thread
   /// (this deduplication pass) to be done.
-  MLRT::AsyncValueRef<MLRT::Chain> done;
+  AsyncRT::AsyncValueRef<AsyncRT::Chain> done;
 
   // Map from the target FuncOp to callsites that need to be redirected.
   DenseSet<FuncOp, DuplicateFuncOpEquivalenceInfo> uniqueFuncSet;
@@ -165,9 +166,9 @@ struct GraphTraits<CallGraph *> : public GraphTraits<CallGraph::BaseT *> {};
 } // namespace llvm
 
 CallGraph::CallGraph(mlir::ModuleOp module, const SymbolTable &symtable,
-                     MLRT::CPUDevice &cpuDevice)
+                     AsyncRT::CPUDevice &cpuDevice)
     : externalNode(nullptr, cpuDevice), numWorkItems(0), cpuDevice(cpuDevice),
-      done(MLRT::AsyncValueRef<MLRT::Chain>::allocate(cpuDevice)),
+      done(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(cpuDevice)),
       uniqueFuncSet() {
   CallGraphBase::build(module, symtable, cpuDevice);
 
@@ -245,7 +246,7 @@ void CallGraph::deduplicateNode(CallGraphNode *node) {
     finishHandleNode(node);
   };
 
-  MLRT::andThenAsyncMoving(waitUtils, std::move(dedupFunc));
+  AsyncRT::andThenAsyncMoving(waitUtils, std::move(dedupFunc));
 }
 
 void CallGraph::startDeduplication() {
@@ -253,11 +254,11 @@ void CallGraph::startDeduplication() {
     deduplicateNode(node);
 
   finishHandleNode(&externalNode);
-  MLRT::await(done);
+  AsyncRT::await(done);
 }
 
 void CallGraph::replaceCallSitesWithLexMin() {
-  MLRT::ForkJoin state(cpuDevice);
+  AsyncRT::ForkJoin state(cpuDevice);
   for (CallGraphNode *node : workItems) {
     state.fork([node, this] {
       for (auto [call, _] : node->callsites) {
@@ -281,7 +282,7 @@ void EliminateDuplicateFunctionsPass::runOnOperation() {
   mlir::ModuleOp module = getOperation();
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-  auto &cpuDevice = *loadContext(&getContext())->get<MLRT::CPUDevice>();
+  auto &cpuDevice = *loadContext(&getContext())->get<AsyncRT::CPUDevice>();
 
   CallGraph cg(module, symtab, cpuDevice);
   cg.startDeduplication();

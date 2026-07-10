@@ -8,6 +8,8 @@
 #include "KGEN/Compiler/SaveAsmOutput.h"
 #include "Support/CacheLog.h"
 
+#include "AsyncRT/CompilerSupport/Context.h"
+#include "AsyncRT/Runtime/Algorithms.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Compiler/LLVMOptimizationPipeline.h"
 #include "KGEN/Compiler/Target/TargetBackend.h"
@@ -21,8 +23,6 @@
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLVMPassesPipeline.h"
-#include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/Algorithms.h"
 
 #include "KGENToLLVMPipeline.h"
 #include "LLVMAccessorHelper.h"
@@ -143,7 +143,7 @@ ObjectCompiler::ObjectCompiler(RCRef<Cache::BlobCacheBackend> transformCache,
           decltype(this->transformCache)::create(std::move(transformCache))),
       options(std::move(options)), isJIT(isJIT),
       pmOptions(std::move(pmOptions)), context(context),
-      cpuDevice(*loadContext(&context)->get<MLRT::CPUDevice>()),
+      cpuDevice(*loadContext(&context)->get<AsyncRT::CPUDevice>()),
       linker(linker) {}
 
 //===----------------------------------------------------------------------===//
@@ -201,7 +201,7 @@ private:
 static LogicalResult runLLVMOptPasses(llvm::Module &module,
                                       llvm::TargetMachine &targetMachine,
                                       const CompilationOptions &options,
-                                      MLRT::CPUDevice &cpuDevice) {
+                                      AsyncRT::CPUDevice &cpuDevice) {
   CompilerTimeTraceScope traceScope("llvm-optimize", module.getName());
   using namespace llvm;
 
@@ -338,10 +338,10 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
 
 /// Compile optimized llvm::Module module to object through the llc pipeline
 /// asynchronously and cache the transformation.
-static MLRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
+static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
     LLVMModuleAndContext module, Location loc,
     llvm::TargetMachine &targetMachine, std::mutex &tmMutex,
-    MLRT::CPUDevice &cpuDevice, bool isJIT, bool isParLLC,
+    AsyncRT::CPUDevice &cpuDevice, bool isJIT, bool isParLLC,
     CompilationOptions options, RCRef<Cache::TransformCache> transformCache,
     std::optional<size_t> moduleIdx, std::optional<size_t> splitIdx,
     unsigned numFunctionBase) {
@@ -366,7 +366,7 @@ static MLRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
     module.reset();
   }
 
-  auto output = MLRT::AsyncValueRef<MCInfo>::allocate(cpuDevice);
+  auto output = AsyncRT::AsyncValueRef<MCInfo>::allocate(cpuDevice);
 
   cpuDevice.getWorkQueue()->addTask(
       [nonBitcodeKeySize, loc, keyBuf = keyBuf.copy(), output = output.copy(),
@@ -375,7 +375,7 @@ static MLRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
         const TargetBackend *backend = TargetBackendRegistry::get().lookup(
             llvm::Triple(options.targetTriple));
         if (backend && backend->isCodegenInterprocedural() && isParLLC) {
-          return std::move(output).setToError(MLRT::getMLIRDiagnostic(
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "cannot do per function codegen for an inter-procedural backend.",
               loc));
         }
@@ -399,8 +399,8 @@ static MLRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
                 return std::move(*moduleOr);
               });
           if (createModuleResult) {
-            return std::move(output).setToError(
-                MLRT::getMLIRDiagnostic("failed to load LLVM IR bitcode", loc));
+            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                "failed to load LLVM IR bitcode", loc));
           }
         } else {
           moduleAndContext = std::move(inputModule);
@@ -411,8 +411,8 @@ static MLRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
         ErrorOr<std::unique_ptr<llvm::TargetMachine>> machineOr =
             createTargetMachine(options, isJIT);
         if (failed(machineOr)) {
-          return std::move(output).setToError(
-              MLRT::getMLIRDiagnostic("failed to create TargetMachine", loc));
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+              "failed to create TargetMachine", loc));
         }
 
         llvm::TargetMachine &llvmTargetMachine =
@@ -432,7 +432,7 @@ static MLRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
         if (failed(writeTempModule(saveTempsPrefix, ".pre-llc",
                                    *moduleAndContext))) {
           return std::move(output).setToError(
-              MLRT::getMLIRDiagnostic("failed save pre-llc llvm IR", loc));
+              AsyncRT::getMLIRDiagnostic("failed save pre-llc llvm IR", loc));
         }
 
         std::unique_ptr<llvm::MachineModuleInfo> machineModuleInfo;
@@ -445,15 +445,15 @@ static MLRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
                                 llvm::CodeGenFileType::ObjectFile,
                                 /*stopBeforeAsmPrint=*/true, numFunctionBase,
                                 &targetMachine))) {
-          return std::move(output).setToError(MLRT::getMLIRDiagnostic(
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "llc failed to codegen LLVM IR to object code", loc));
         }
 
         if (!options.saveTempsPrefix.empty()) {
           if (failed(writeTempModule(saveTempsPrefix, ".post-llc",
                                      *moduleAndContext))) {
-            return std::move(output).setToError(
-                MLRT::getMLIRDiagnostic("failed save post-llc llvm IR", loc));
+            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                "failed save post-llc llvm IR", loc));
           }
         }
 
@@ -492,7 +492,7 @@ static MLRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
 static LogicalResult optimizeLLVMModule(llvm::Module &module,
                                         llvm::TargetMachine &targetMachine,
                                         CompilationOptions &options,
-                                        MLRT::CPUDevice &cpuDevice,
+                                        AsyncRT::CPUDevice &cpuDevice,
                                         std::optional<size_t> moduleIdx) {
   llvm::DataLayout targetDataLayout =
       options.targetDataLayout.empty()
@@ -521,10 +521,10 @@ static LogicalResult optimizeLLVMModule(llvm::Module &module,
 /// isParLLC is true: split module into per function for parallel llc lowering
 ///                   and return multiple object files.
 /// isParLLC is false: compile module without splitting into one object file.
-static SmallVector<MLRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
+static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
     LLVMModuleAndContext module, mlir::Location loc,
     llvm::TargetMachine &targetMachine, std::mutex &tmMutex,
-    CompilationOptions &options, MLRT::CPUDevice &cpuDevice,
+    CompilationOptions &options, AsyncRT::CPUDevice &cpuDevice,
     RCRef<Cache::TransformCache> transformCache, bool isParLLC, bool isJIT,
     std::optional<size_t> moduleIdx, SymbolAndMCInfo &symbolAndMirInfo,
     unsigned numFunctionBase) {
@@ -536,7 +536,7 @@ static SmallVector<MLRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
                                    produceModule,
                                std::optional<int64_t> idx,
                                unsigned numFunctions, bool isParLLC) {
-    auto result = MLRT::AsyncValueRef<MCInfo>::allocate(cpuDevice);
+    auto result = AsyncRT::AsyncValueRef<MCInfo>::allocate(cpuDevice);
 
     cpuDevice.getWorkQueue()->addTask([produceModule = std::move(produceModule),
                                        loc, &cpuDevice, isJIT, isParLLC,
@@ -544,7 +544,7 @@ static SmallVector<MLRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
                                        moduleIdx, idx, result = result.copy(),
                                        numFunctions, &targetMachine,
                                        &tmMutex]() mutable {
-      MLRT::AnyAsyncValueRef output = compileOptimizedLLVMModuleToObject(
+      AsyncRT::AnyAsyncValueRef output = compileOptimizedLLVMModuleToObject(
           produceModule(), loc, targetMachine, tmMutex, cpuDevice, isJIT,
           isParLLC, options, cache, moduleIdx, idx, numFunctions);
       andThenSyncMoving(
@@ -560,7 +560,7 @@ static SmallVector<MLRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
     return result;
   };
 
-  SmallVector<MLRT::AnyAsyncValueRef> cacheResults;
+  SmallVector<AsyncRT::AnyAsyncValueRef> cacheResults;
   if (!isParLLC) {
     cacheResults.push_back(launchCompilation(forwardModule(std::move(module)),
                                              std::nullopt, numFunctionBase,
@@ -568,9 +568,9 @@ static SmallVector<MLRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
   } else {
     if (failed(writeTempModule(options.saveTempsPrefix, ".pre-llc-split",
                                *module))) {
-      auto error = MLRT::AnyAsyncValueRef::createError(
+      auto error = AsyncRT::AnyAsyncValueRef::createError(
           cpuDevice,
-          MLRT::getMLIRDiagnostic(
+          AsyncRT::getMLIRDiagnostic(
               "writing module to file before llc split failed", loc));
       cacheResults.push_back(std::move(error));
       return cacheResults;
@@ -840,7 +840,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   return llvmModule;
 }
 
-SmallVector<MLRT::AnyAsyncValueRef>
+SmallVector<AsyncRT::AnyAsyncValueRef>
 ObjectCompiler::emitArchiveParallelCompilation(
     LLVMModuleAndContext llvmModule, Location opLoc,
     llvm::TargetMachine &targetMachine,
@@ -863,7 +863,7 @@ ObjectCompiler::emitArchiveParallelCompilation(
                                           ? SplitStrategy::PerFunction
                                           : SplitStrategy::PerExported);
 
-  SmallVector<MLRT::AnyAsyncValueRef> cacheResults;
+  SmallVector<AsyncRT::AnyAsyncValueRef> cacheResults;
 
   if (noSplitting || strategy == SplitStrategy::None) {
     cacheResults.push_back(lowerLLVMModuleToObjects(
@@ -933,7 +933,7 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
   // We can't use the compilation for AsmPrint with binary here because
   // AsmPrint writes back to the MC results such as SymbolTables etc. which
   // is not reusable for a second run of AsmPrint.
-  auto output = MLRT::AsyncValueRef<BufferRef>::allocate(cpuDevice);
+  auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(cpuDevice);
   LLVMModuleAndContext llvmModule;
   if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
         return translateModuleToLLVMIR(ctx, module, options);
@@ -950,7 +950,7 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
 
   llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
 
-  SmallVector<MLRT::AnyAsyncValueRef> cachedResults =
+  SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults =
       emitArchiveParallelCompilation(std::move(llvmModule), module->getLoc(),
                                      tm, symbolLinkageTypes);
 
@@ -970,7 +970,7 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
                                  symbolLinkageTypes, /*originalFnOrdering=*/{});
 
         if (mcLinkResult.isError()) {
-          return std::move(output).setToError(MLRT::getMLIRDiagnostic(
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               Error(mcLinkResult.getError()), module->getLoc()));
         }
 
@@ -979,7 +979,7 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
                          linkedObj->getBufferSize());
         if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, ".s",
                                             toEmit))) {
-          return std::move(output).setToError(MLRT::getMLIRDiagnostic(
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "failed to save asm to saveTempsPrefix", module->getLoc()));
         }
         std::move(output).emplace(linkedObj.copy());
@@ -1022,8 +1022,8 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
   // Perform a cache aware transformation to translate the module to an archive
   // file.
   auto runTransformation = [&](Operation *op, WriteableBufferRef buf,
-                               MLRT::AnyAsyncValueRef chain) {
-    auto output = MLRT::AsyncValueRef<BufferRef>::allocate(cpuDevice);
+                               AsyncRT::AnyAsyncValueRef chain) {
+    auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(cpuDevice);
     chain.andThenSync([this, op, output = output.copy(), buf = buf.copy(), &tm,
                        emitAssembly]() mutable {
       // Lower the module to LLVM.
@@ -1034,7 +1034,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
             return lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
           })) {
         op->erase();
-        return std::move(output).setToError(MLRT::getMLIRDiagnostic(
+        return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
             Twine(
                 "failed to lower module to LLVM IR for archive compilation, ") +
                 err.getError(),
@@ -1044,7 +1044,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
       // Link bitcode libraries.
       if (failed(linkBitcodeLibraries(moduleLoc, *llvmModule, options,
                                       bitcodeLibs)))
-        return std::move(output).setToError(MLRT::getMLIRDiagnostic(
+        return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
             Error("failed to link bitcode libraries"), moduleLoc));
 
       // Split the module into multiple slices and compile each in parallel.
@@ -1077,7 +1077,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
 
       // Split the module into multiple slices and compile each in parallel.
       llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
-      SmallVector<MLRT::AnyAsyncValueRef> cachedResults =
+      SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults =
           emitArchiveParallelCompilation(std::move(llvmModule), moduleLoc, tm,
                                          symbolLinkageTypes);
 
@@ -1092,7 +1092,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
                                      symbolLinkageTypes, originalFnOrdering);
             if (mcLinkResult.isError()) {
 
-              return std::move(output).setToError(MLRT::getMLIRDiagnostic(
+              return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                   Error(mcLinkResult.getError()), moduleLoc));
             }
 
@@ -1104,7 +1104,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
                                linkedObj->getBufferSize());
               if (failed(writeBytesToTempWithHash(options.saveTempsPrefix,
                                                   postfix, toEmit))) {
-                return std::move(output).setToError(MLRT::getMLIRDiagnostic(
+                return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                     "failed to save asm to saveTempsPrefix", moduleLoc));
               }
               *buf << linkedObj->Buffer::getBuffer();
@@ -1121,7 +1121,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
                   emitArchiveSaveTemps(cast<ModuleOp>(op), moduleName);
               op->erase();
               if (saveTempsResult.isError()) {
-                return std::move(output).setToError(MLRT::getMLIRDiagnostic(
+                return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                     saveTempsResult.takeError(), moduleLoc));
               }
             }
@@ -1147,9 +1147,9 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
                      << ", relocModel=" << options.relocModel
                      << ", verboseOutput=" << options.verboseOutput << ')';
 
-  MLRT::AnyAsyncValueRef output = cachedTransform(
+  AsyncRT::AnyAsyncValueRef output = cachedTransform(
       module.release(), transformCache.copy(),
-      MLRT::AsyncValueRef<Chain>::createReady(cpuDevice),
+      AsyncRT::AsyncValueRef<Chain>::createReady(cpuDevice),
       std::move(produceArchiveKey), runTransformation, onCacheHit, outKeyHash);
   await(output);
 
@@ -1162,12 +1162,13 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
 // lowerLLVMModuleToObjects
 //===----------------------------------------------------------------------===//
 
-MLRT::AsyncValueRef<SymbolAndMCInfo> ObjectCompiler::lowerLLVMModuleToObjects(
+AsyncRT::AsyncValueRef<SymbolAndMCInfo>
+ObjectCompiler::lowerLLVMModuleToObjects(
     llvm::unique_function<LLVMModuleAndContext()> produceModule, Location loc,
     llvm::TargetMachine &targetMachine, bool parLLC,
     std::optional<size_t> moduleIdx, unsigned numFunctionsBase) {
 
-  auto result = MLRT::AsyncValueRef<SymbolAndMCInfo>::allocate(cpuDevice);
+  auto result = AsyncRT::AsyncValueRef<SymbolAndMCInfo>::allocate(cpuDevice);
 
   cpuDevice.getWorkQueue()->addTask(
       [this, result = result.copy(), produceModule = std::move(produceModule),
@@ -1180,7 +1181,7 @@ MLRT::AsyncValueRef<SymbolAndMCInfo> ObjectCompiler::lowerLLVMModuleToObjects(
         auto tmOr = createTargetMachine(this->options, isJIT);
         if (failed(tmOr)) {
           return std::move(result).setToError(
-              MLRT::getMLIRDiagnostic(tmOr.takeError(), loc));
+              AsyncRT::getMLIRDiagnostic(tmOr.takeError(), loc));
         }
         llvm::TargetMachine &tm = **tmOr;
 
@@ -1188,7 +1189,7 @@ MLRT::AsyncValueRef<SymbolAndMCInfo> ObjectCompiler::lowerLLVMModuleToObjects(
         if (failed(optimizeLLVMModule(*module, tm, options, cpuDevice,
                                       moduleIdx))) {
           return std::move(result).setToError(
-              MLRT::getMLIRDiagnostic("failed to optimize LLVM IR.", loc));
+              AsyncRT::getMLIRDiagnostic("failed to optimize LLVM IR.", loc));
         }
 
         {
@@ -1495,7 +1496,7 @@ getKernelIDFromLLVMModule(llvm::Module &module) {
 static AnyAsyncValueRef lowerLLVMModuleToObject(
     llvm::Module &inputModule, Location loc,
     RCRef<Cache::TransformCache> transformCache, size_t moduleIdx,
-    MLRT::CPUDevice &cpuDevice, CompilationOptions options, bool isJIT,
+    AsyncRT::CPUDevice &cpuDevice, CompilationOptions options, bool isJIT,
     bool shouldDeserialize, EmitAs emissionKind, std::string &linker) {
   WriteableBufferRef keyBuf = WriteableBuffer::get();
   options.print(*keyBuf << "compileLLVMModuleToObject(");
@@ -1515,8 +1516,8 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
                             emissionKind, keyBuf = keyBuf.copy(), &inputModule,
                             nonBitcodeKeySize, shouldDeserialize,
                             &linker](WriteableBufferRef buf,
-                                     MLRT::AnyAsyncValueRef chain) mutable {
-    auto output = MLRT::AsyncValueRef<BufferRef>::allocate(cpuDevice);
+                                     AsyncRT::AnyAsyncValueRef chain) mutable {
+    auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(cpuDevice);
 
     chain.andThenAsync([loc, &cpuDevice, emissionKind, output = output.copy(),
                         buf = buf.copy(), keyBuf = std::move(keyBuf), options,
@@ -1552,7 +1553,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
                   return std::move(*moduleOr);
                 })) {
           return std::move(output).setToError(
-              MLRT::getMLIRDiagnostic(err.takeError(), loc));
+              AsyncRT::getMLIRDiagnostic(err.takeError(), loc));
         }
       }
 
@@ -1567,7 +1568,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       if (emissionKind == EmitAs::LLVM_BITCODE) {
         if (ErrorOrSuccess err = ObjectCompiler::emitBitcode(module, *buf)) {
           return std::move(output).setToError(
-              MLRT::getMLIRDiagnostic(err.takeError(), loc));
+              AsyncRT::getMLIRDiagnostic(err.takeError(), loc));
         }
         std::move(output).emplace(buf.copy());
         return;
@@ -1590,7 +1591,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       auto tmOr = defaultCreateTargetMachine(adjustedOptions, isJIT);
       if (failed(tmOr)) {
         return std::move(output).setToError(
-            MLRT::getMLIRDiagnostic(tmOr.takeError(), loc));
+            AsyncRT::getMLIRDiagnostic(tmOr.takeError(), loc));
       }
       llvm::TargetMachine &tm = **tmOr;
 
@@ -1601,7 +1602,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       if (failed(
               optimizeLLVMModule(module, tm, options, cpuDevice, moduleIdx))) {
         return std::move(output).setToError(
-            MLRT::getMLIRDiagnostic("failed to optimize LLVM IR.", loc));
+            AsyncRT::getMLIRDiagnostic("failed to optimize LLVM IR.", loc));
       }
 
       if (emissionKind == EmitAs::LLVM_OPT) {
@@ -1612,7 +1613,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       if (emissionKind == EmitAs::LLVM_OPT_BITCODE) {
         if (ErrorOrSuccess err = ObjectCompiler::emitBitcode(module, *buf)) {
           return std::move(output).setToError(
-              MLRT::getMLIRDiagnostic(err.takeError(), loc));
+              AsyncRT::getMLIRDiagnostic(err.takeError(), loc));
         }
         std::move(output).emplace(buf.copy());
         return;
@@ -1655,7 +1656,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
           ErrorOr<BufferRef> asmOr = backend->emitAssembly(module, backendCtx);
           if (asmOr.isError())
             return std::move(output).setToError(
-                MLRT::getMLIRDiagnostic(asmOr.takeError(), loc));
+                AsyncRT::getMLIRDiagnostic(asmOr.takeError(), loc));
           (*buf) << (*asmOr)->getBuffer();
           std::move(output).emplace(buf.copy());
           return;
@@ -1664,7 +1665,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
         if (failed(runLlcPasses(module, options, tm, *buf, machineModuleInfo,
                                 mcContext, llvm::CodeGenFileType::AssemblyFile,
                                 /*stopBeforeAsmPrint=*/false, 0, nullptr))) {
-          return std::move(output).setToError(MLRT::getMLIRDiagnostic(
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "llc failed to codegen LLVM IR to object code", loc));
         }
 
@@ -1673,7 +1674,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
         StringRef toEmit(buf->getBufferStart(), buf->getBufferSize());
         if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, postfix,
                                             toEmit))) {
-          return std::move(output).setToError(MLRT::getMLIRDiagnostic(
+          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "failed to save asm to saveTempsPrefix", loc));
         }
 
@@ -1684,7 +1685,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
           ErrorOr<BufferRef> bufOr = backend->emitObject(module, backendCtx);
           if (bufOr.isError()) {
             return std::move(output).setToError(
-                MLRT::getMLIRDiagnostic(bufOr.takeError(), loc));
+                AsyncRT::getMLIRDiagnostic(bufOr.takeError(), loc));
           }
           (*buf) << (*bufOr)->getBuffer();
         } else {
@@ -1692,7 +1693,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
                                   machineModuleInfo, mcContext,
                                   llvm::CodeGenFileType::ObjectFile,
                                   /*stopBeforeAsmPrint=*/false, 0, nullptr))) {
-            return std::move(output).setToError(MLRT::getMLIRDiagnostic(
+            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                 "llc failed to codegen LLVM IR to object code", loc));
           }
           StringRef name = "mojo-object";
@@ -1707,7 +1708,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
               moduleName, linker);
           if (bufOr.isError()) {
             return std::move(output).setToError(
-                MLRT::getMLIRDiagnostic(bufOr.takeError(), loc));
+                AsyncRT::getMLIRDiagnostic(bufOr.takeError(), loc));
           }
           (*buf) << (*bufOr)->getBuffer();
         }
@@ -1720,21 +1721,22 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
 
   auto onCacheHit = [&](BufferRef buf) { return buf.copy(); };
   return Cache::cachedTransform(
-      MLRT::MLIRLocationDecoder::getEncodedLocation(loc), transformCache.copy(),
-      MLRT::AsyncValueRef<Chain>::createReady(cpuDevice), keyBuf.copy(),
+      AsyncRT::MLIRLocationDecoder::getEncodedLocation(loc),
+      transformCache.copy(),
+      AsyncRT::AsyncValueRef<Chain>::createReady(cpuDevice), keyBuf.copy(),
       std::move(runTransformation), onCacheHit);
 }
 
 static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     llvm::unique_function<LLVMModuleAndContext()> produceModule, Location loc,
     RCRef<Cache::TransformCache> transformCache,
-    std::optional<size_t> moduleIdx, MLRT::CPUDevice &cpuDevice,
+    std::optional<size_t> moduleIdx, AsyncRT::CPUDevice &cpuDevice,
     CompilationOptions options, bool isJIT,
     DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> &kernelEmissionKinds,
     std::string &linker, SmallVector<std::pair<bool, Attribute>> &bitcodeLibs) {
   auto resultBufs =
-      MLRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(cpuDevice);
-  auto resultKernelId = MLRT::AsyncValueRef<uint64_t>::allocate(cpuDevice);
+      AsyncRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(cpuDevice);
+  auto resultKernelId = AsyncRT::AsyncValueRef<uint64_t>::allocate(cpuDevice);
 
   cpuDevice.getWorkQueue()->addTask([resultBufs = resultBufs.copy(),
                                      resultKernelId = resultKernelId.copy(),
@@ -1752,9 +1754,10 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
         getKernelIDFromLLVMModule(*module);
     if (kernelIdFuncOr) {
       std::move(resultBufs)
-          .setToError(MLRT::getMLIRDiagnostic("Can't find kernelId", loc));
+          .setToError(AsyncRT::getMLIRDiagnostic("Can't find kernelId", loc));
       std::move(resultKernelId)
-          .setToError(MLRT::getMLIRDiagnostic(kernelIdFuncOr.takeError(), loc));
+          .setToError(
+              AsyncRT::getMLIRDiagnostic(kernelIdFuncOr.takeError(), loc));
       return;
     }
 
@@ -1763,8 +1766,8 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
         linkBitcodeLibraries(loc, *module, options, bitcodeLibs);
     if (failed(linkResult)) {
       std::move(resultBufs)
-          .setToError(
-              MLRT::getMLIRDiagnostic("failed to link bitcode libraries", loc));
+          .setToError(AsyncRT::getMLIRDiagnostic(
+              "failed to link bitcode libraries", loc));
       return;
     }
 
@@ -1775,7 +1778,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
       backend->attachCodegenAttributes(kernelEntry);
 
     SmallVector<EmitAs> emissionKinds;
-    SmallVector<MLRT::AnyAsyncValueRef> emissionResults;
+    SmallVector<AsyncRT::AnyAsyncValueRef> emissionResults;
     llvm::SmallSet<EmitAs, 4> &kinds = kernelEmissionKinds[kernelId];
     bool shouldDeserialize = kinds.size() > 1;
     bool shouldRunExtraAsm = !options.saveTempsPrefix.empty() &&
@@ -1802,7 +1805,8 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     }
 
     auto kernelBufs =
-        MLRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(cpuDevice);
+        AsyncRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(
+            cpuDevice);
 
     andThenSyncMoving(
         emissionResults,
@@ -1878,7 +1882,7 @@ ObjectCompiler::emitOffloadKernels(
 
   (void)writeTempModule(options.saveTempsPrefix, ".pre-split", *llvmModule);
 
-  SmallVector<MLRT::AnyAsyncValueRef> cachedResults;
+  SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults;
   auto handleSplit =
       [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
           std::optional<int64_t> idx, unsigned numFunctionsBase) {
@@ -1891,7 +1895,7 @@ ObjectCompiler::emitOffloadKernels(
 
   splitPerExported(std::move(llvmModule), handleSplit);
 
-  auto result = MLRT::AsyncValueRef<
+  auto result = AsyncRT::AsyncValueRef<
       DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>::allocate(cpuDevice);
 
   andThenSyncMoving(

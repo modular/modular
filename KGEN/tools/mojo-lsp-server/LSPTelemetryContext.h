@@ -9,7 +9,7 @@
 
 #include "Support/Telemetry/Telemetry.h"
 
-namespace M::MLRT {
+namespace M::AsyncRT {
 class CPUDevice;
 }
 
