@@ -621,7 +621,25 @@ ErrorOr<TypedAttr> FuncType::readFrom(int64_t addr,
 
   APInt value(ptrSize * 8, 0);
   llvm::LoadIntFromMemory(value, (const uint8_t *)*mem, ptrSize);
-  return state.getSymbol(value.getZExtValue());
+  ErrorOr<TypedAttr> symbol = state.getSymbol(value.getZExtValue());
+  if (!symbol.isError()) {
+    if (auto generatorType =
+            dyn_cast<M::KGEN::FuncTypeGeneratorType>(symbol->getType())) {
+      // structs that contain 'recursive' function pointers are not true
+      // recursion but require one level of typing to preserve symbol storage in
+      // the interpreter. Handle the resulting type mismatches with a bit cast.
+      if (generatorType.getBody() != *this) {
+        assert(isa<SymbolConstantAttr>(*symbol) &&
+               "func slot must hold a symbol constant");
+        auto symbolCst = cast<SymbolConstantAttr>(*symbol);
+        auto shallowGen =
+            cast<FuncTypeGeneratorType>(generatorType.getWithBody(*this));
+        symbol =
+            cast<TypedAttr>(FuncPtrBitcastAttr::get(symbolCst, shallowGen));
+      }
+    }
+  }
+  return symbol;
 }
 
 Type FuncType::parse(AsmParser &parser) {

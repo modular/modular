@@ -208,6 +208,33 @@ def DeclRefAttrInterface : AttrInterface<"DeclRefAttrInterface"> {
 }
 
 //===----------------------------------------------------------------------===//
+// CallableSymbolAttrInterface
+//===----------------------------------------------------------------------===//
+
+def CallableSymbolAttrInterface : AttrInterface<"CallableSymbolAttrInterface"> {
+  let description = [{
+    This interface describes typed attributes that refer to a concrete callable
+    symbol. The underlying symbol constant keeps the declaration identity and
+    true signature, while `getType()` returns the callable type presented by the
+    attribute at the use site.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Return the symbol for this callable reference.
+    }], "SymbolRefAttr", "getSymbol">,
+    InterfaceMethod<[{
+      Return the parameter bindings for this callable reference.
+    }], "ArrayRef<TypedAttr>", "getParamValues">,
+    InterfaceMethod<[{
+      Return the callable type presented at this use site.
+    }], "Type", "getType">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // FnMetadataAttrInterface
 //===----------------------------------------------------------------------===//
 

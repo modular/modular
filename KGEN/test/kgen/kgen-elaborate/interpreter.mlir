@@ -1151,3 +1151,45 @@ kgen.generator @call_global_const_uniquing() {
   %1 = kgen.param.constant: !kgen.pointer<struct<(array<1, scalar<ui128>>)>> = <B>
   kgen.return
 }
+
+// -----
+
+// COM: Recursive function-pointer struct field. A struct whose field type
+// COM: refers back to the containing struct is lowered with the recursive
+// COM: occurrence erased to `pointer<none>` (the "shallow" signature), but the
+// COM: function value stored into it keeps its full ("deep") signature. Reading
+// COM: the value back during comptime evaluation wraps it in a
+// COM: `#kgen.func_ptr_bitcast` that keeps the symbol at its deep type (so it
+// COM: still verifies against its declaration) while presenting the shallow
+// COM: type the struct field expects.
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:64:64">} {
+
+kgen.generator @recursive_fnptr_bar(%arg0: !kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+kgen.generator @recursive_fnptr_init(
+    %arg0: index,
+    %arg1: !kgen.generator<(!kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none>,
+    %arg2: !kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> byref_result) -> !kgen.none {
+  %0 = kgen.struct.gep %arg2[0] : <struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>>
+  pop.store %arg0, %0 : !kgen.pointer<index>
+  %1 = kgen.struct.gep %arg2[1] : <struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>>
+  %2 = pop.pointer.bitcast %1 : !kgen.pointer<(!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none> to !kgen.pointer<(!kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none>
+  pop.store %arg1, %2 : !kgen.pointer<(!kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none>
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+// Evaluating `@recursive_fnptr_init(3, @recursive_fnptr_bar)` into a result slot
+// folds to a struct constant whose function-pointer field is a
+// `func_ptr_bitcast` of the symbol.
+// CHECK-LABEL: kgen.func export @recursive_fnptr_driver
+kgen.generator export @recursive_fnptr_driver() {
+  // CHECK: kgen.param.constant: struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly> = <{ 3, #kgen.func_ptr_bitcast<#kgen.symbol.constant<@recursive_fnptr_bar> : !kgen.generator<(!kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none>> }>
+  kgen.param.constant: struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly> = <apply_result_slot(:(index, !kgen.generator<(!kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none>, !kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> byref_result) -> !kgen.none @recursive_fnptr_init, 3, @recursive_fnptr_bar)>
+  kgen.return
+}
+
+}
