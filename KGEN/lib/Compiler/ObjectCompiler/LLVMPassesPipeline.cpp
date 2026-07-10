@@ -104,7 +104,7 @@ static void addSanitizers(ModulePassManager &modulePassManager,
   if (backend) {
     backend->addSanitizers(modulePassManager, options);
   } else {
-    // No registered backend (e.g. hexagon): apply the default host policy.
+    // No registered backend: apply the default host policy.
     addAddressSanitizerPass(modulePassManager, options);
     addThreadSanitizerPass(modulePassManager, options);
   }

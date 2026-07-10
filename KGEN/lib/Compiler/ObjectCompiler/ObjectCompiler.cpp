@@ -130,18 +130,29 @@ ObjectCompiler::create(StringRef basePath, CompilationOptions options,
 
   std::string linker = *lldPath;
 
-  return std::unique_ptr<ObjectCompiler>(
-      new ObjectCompiler(std::move(*transformCache), std::move(options), isJIT,
-                         context, linker, std::move(pmOptions)));
+  // Resolve the target backend once, up front. A missing backend means the
+  // target is not supported by this build; fail here rather than silently
+  // falling back deeper in the pipeline.
+  const TargetBackend *backend =
+      TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
+  if (!backend)
+    return Error(Twine("no compiler backend is registered for target '") +
+                 options.targetTriple +
+                 "'; this target is not supported by this build");
+
+  return std::unique_ptr<ObjectCompiler>(new ObjectCompiler(
+      std::move(*transformCache), std::move(options), *backend, isJIT, context,
+      linker, std::move(pmOptions)));
 }
 
 ObjectCompiler::ObjectCompiler(RCRef<Cache::BlobCacheBackend> transformCache,
-                               CompilationOptions options, bool isJIT,
+                               CompilationOptions options,
+                               const TargetBackend &backend, bool isJIT,
                                MLIRContext &context, const std::string &linker,
                                PassManagerConfigOptions pmOptions)
     : transformCache(
           decltype(this->transformCache)::create(std::move(transformCache))),
-      options(std::move(options)), isJIT(isJIT),
+      options(std::move(options)), backend(backend), isJIT(isJIT),
       pmOptions(std::move(pmOptions)), context(context),
       cpuDevice(*loadContext(&context)->get<AsyncRT::CPUDevice>()),
       linker(linker) {}
@@ -344,7 +355,7 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
     AsyncRT::CPUDevice &cpuDevice, bool isJIT, bool isParLLC,
     CompilationOptions options, RCRef<Cache::TransformCache> transformCache,
     std::optional<size_t> moduleIdx, std::optional<size_t> splitIdx,
-    unsigned numFunctionBase) {
+    unsigned numFunctionBase, const TargetBackend &backend) {
   WriteableBufferRef keyBuf;
   size_t nonBitcodeKeySize = 0;
 
@@ -370,11 +381,9 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
 
   cpuDevice.getWorkQueue()->addTask(
       [nonBitcodeKeySize, loc, keyBuf = keyBuf.copy(), output = output.copy(),
-       options, isJIT, isParLLC, moduleIdx, splitIdx, numFunctionBase,
+       options, isJIT, isParLLC, moduleIdx, splitIdx, numFunctionBase, &backend,
        inputModule = std::move(module), &targetMachine, &tmMutex]() mutable {
-        const TargetBackend *backend = TargetBackendRegistry::get().lookup(
-            llvm::Triple(options.targetTriple));
-        if (backend && backend->isCodegenInterprocedural() && isParLLC) {
+        if (backend.isCodegenInterprocedural() && isParLLC) {
           return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "cannot do per function codegen for an inter-procedural backend.",
               loc));
@@ -527,7 +536,7 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
     CompilationOptions &options, AsyncRT::CPUDevice &cpuDevice,
     RCRef<Cache::TransformCache> transformCache, bool isParLLC, bool isJIT,
     std::optional<size_t> moduleIdx, SymbolAndMCInfo &symbolAndMirInfo,
-    unsigned numFunctionBase) {
+    unsigned numFunctionBase, const TargetBackend &backend) {
   CompilerTimeTraceScope traceScope("compile-optimized-llvm-to-object",
                                     module->getName());
 
@@ -542,11 +551,11 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
                                        loc, &cpuDevice, isJIT, isParLLC,
                                        &options, cache = transformCache.copy(),
                                        moduleIdx, idx, result = result.copy(),
-                                       numFunctions, &targetMachine,
+                                       numFunctions, &targetMachine, &backend,
                                        &tmMutex]() mutable {
       AsyncRT::AnyAsyncValueRef output = compileOptimizedLLVMModuleToObject(
           produceModule(), loc, targetMachine, tmMutex, cpuDevice, isJIT,
-          isParLLC, options, cache, moduleIdx, idx, numFunctions);
+          isParLLC, options, cache, moduleIdx, idx, numFunctions, backend);
       andThenSyncMoving(
           output, [result = std::move(result)](
                       MutableArrayRef<AnyAsyncValueRef> outputs) mutable {
@@ -595,11 +604,13 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
   // Each backend owns how its TargetMachine is built.
-  // Triples with no registered backend use the generic path directly.
-  if (const TargetBackend *backend = TargetBackendRegistry::get().lookup(
-          llvm::Triple(options.targetTriple)))
-    return backend->createTargetMachine(options, isJIT);
-  return defaultCreateTargetMachine(options, isJIT);
+  const TargetBackend *backend =
+      TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
+  if (!backend) {
+    return Error(
+        Twine("no backend registered for target " + options.targetTriple));
+  }
+  return backend->createTargetMachine(options, isJIT);
 }
 
 //===----------------------------------------------------------------------===//
@@ -682,18 +693,15 @@ loadBitcodeFromResource(llvm::LLVMContext &context,
 static ErrorOrSuccess
 linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
                      const CompilationOptions &options,
-                     SmallVector<std::pair<bool, Attribute>> &bitcodeLibs) {
+                     SmallVector<std::pair<bool, Attribute>> &bitcodeLibs,
+                     const TargetBackend &backend) {
   // Vendor device/runtime bitcode is linked by the target backend; backends
   // without device libraries no-op. Then fall through to the standard logic
   // for our custom bitcode libraries.
-  const TargetBackend *backend =
-      TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
-  if (backend) {
-    ErrorOrSuccess result =
-        backend->linkRuntimeLibraries(loc, llvmModule, options);
-    if (failed(result))
-      return result;
-  }
+  ErrorOrSuccess result =
+      backend.linkRuntimeLibraries(loc, llvmModule, options);
+  if (failed(result))
+    return result;
 
   // Use standard linking procedure for custom bitcode libraries.
   if (bitcodeLibs.empty())
@@ -712,10 +720,9 @@ linkBitcodeLibraries(Location loc, llvm::Module &llvmModule,
 
   // By default a backend links only the bitcode-library symbols referenced by
   // unresolved extern functions, and skips linking entirely when there are
-  // none. Some targets (e.g. Hexagon, via its plugin backend) must link the
-  // full library instead; they opt out through this backend policy.
-  bool onlyLinkExtern =
-      !backend || backend->onlyLinkExternFunctionsInBitcodeLibs(options);
+  // none. Some targets must link the full library instead; they opt out
+  // through this backend policy.
+  bool onlyLinkExtern = backend.onlyLinkExternFunctionsInBitcodeLibs(options);
   if (!hasExternFunctions && onlyLinkExtern)
     return success();
 
@@ -806,9 +813,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   // which does not register pass manager options.
   (void)pmOptions.configurePassManager(mgr);
 
-  if (const TargetBackend *backend = TargetBackendRegistry::get().lookup(
-          llvm::Triple(options.targetTriple)))
-    backend->prepareModuleForLowering(module, options);
+  backend.prepareModuleForLowering(module, options);
 
   LowerToLLVMOptions llvmOptions(
       options.optimizationLevel, options.getDIEmissionKind(),
@@ -850,18 +855,12 @@ ObjectCompiler::emitArchiveParallelCompilation(
   bool noSplitting = cpuDevice.getWorkQueue()->getParallelismLevel() < 2;
 
   // Disable parLLC for inter-procedural backends.
-  const TargetBackend *backend =
-      TargetBackendRegistry::get().lookup(llvm::Triple(options.targetTriple));
   bool parLLC = cpuDevice.getWorkQueue()->getParallelismLevel() >= 2 &&
                 options.enableParallelLLC &&
-                !(backend && backend->isCodegenInterprocedural());
+                !backend.isCodegenInterprocedural();
 
-  // How the module is divided into independently-codegen'd units. Targets with
-  // no registered backend fall back to the per-function/per-exported flag.
-  SplitStrategy strategy = backend ? backend->splitStrategy(options)
-                                   : (options.enableLLVMPerFunctionSplitting
-                                          ? SplitStrategy::PerFunction
-                                          : SplitStrategy::PerExported);
+  // How the module is divided into independently-codegen'd units.
+  SplitStrategy strategy = backend.splitStrategy(options);
 
   SmallVector<AsyncRT::AnyAsyncValueRef> cacheResults;
 
@@ -1043,15 +1042,13 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
 
       // Link bitcode libraries.
       if (failed(linkBitcodeLibraries(moduleLoc, *llvmModule, options,
-                                      bitcodeLibs)))
+                                      bitcodeLibs, backend)))
         return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
             Error("failed to link bitcode libraries"), moduleLoc));
 
       // Split the module into multiple slices and compile each in parallel.
-      const TargetBackend *backend = TargetBackendRegistry::get().lookup(
-          llvm::Triple(options.targetTriple));
       [[maybe_unused]] bool needsOriginalOrder =
-          backend && backend->requiresOriginalFunctionOrder();
+          backend.requiresOriginalFunctionOrder();
       assert((!needsOriginalOrder || emitAssembly) &&
              "backends requiring original function order should only emit "
              "assembly here");
@@ -1209,7 +1206,7 @@ ObjectCompiler::lowerLLVMModuleToObjects(
         SmallVector<AnyAsyncValueRef> buffers = compileOptimizedLLVMToObjects(
             std::move(module), loc, targetMachine, tmMutex, this->options,
             cpuDevice, transformCache, parLLC, isJIT, moduleIdx,
-            symbolAndMirInfo, numFunctionsBase);
+            symbolAndMirInfo, numFunctionsBase, backend);
 
         andThenAsyncMoving(
             buffers, [result = std::move(result),
@@ -1240,7 +1237,7 @@ ErrorOrSuccess ObjectCompiler::lowerAllFuncsToLLVMAndOptimize(
 
   // Link bitcode libraries.
   if (failed(linkBitcodeLibraries(module->getLoc(), *llvmModule, options,
-                                  bitcodeLibs)))
+                                  bitcodeLibs, backend)))
     return Error("failed to link bitcode libraries");
 
   auto machineOr = createTargetMachine(options, /*isJIT=*/false);
@@ -1288,12 +1285,13 @@ ErrorOrSuccess ObjectCompiler::emitBitcode(llvm::Module &llvmModule,
                                            llvm::raw_pwrite_stream &os) {
   CompilerTimeTraceScope traceScope("emitBitcode");
   // The backend owns the bitcode format (e.g. Metal emits AIR bitcode).
-  if (const TargetBackend *backend =
-          TargetBackendRegistry::get().lookup(llvmModule.getTargetTriple()))
-    backend->emitBitcode(llvmModule, os);
-  else
-    llvm::WriteBitcodeToFile(llvmModule, os,
-                             /*ShouldPreserveUseListOrder=*/true);
+  const TargetBackend *backend =
+      TargetBackendRegistry::get().lookup(llvmModule.getTargetTriple());
+  if (!backend) {
+    return Error(Twine("no backend registered for target " +
+                       llvmModule.getTargetTriple().str()));
+  }
+  backend->emitBitcode(llvmModule, os);
   return success();
 }
 
@@ -1305,7 +1303,8 @@ ErrorOrSuccess ObjectCompiler::emitBitcode(llvm::Module &llvmModule,
 static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
                                              CompilationOptions options,
                                              StringRef moduleName,
-                                             const std::string &linker) {
+                                             const std::string &linker,
+                                             const TargetBackend &backend) {
   llvm::StringRef libInExt = ".o";
   llvm::StringRef libOutExt = ".so";
   std::string objName = moduleName.str() + "-%%%%%%%" + libInExt.str();
@@ -1325,7 +1324,6 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
   sharedObjPath = sharedObjPath / sharedObjName;
 
   auto triple = llvm::Triple(options.targetTriple);
-  const TargetBackend *backend = TargetBackendRegistry::get().lookup(triple);
   std::string version = triple.getOSVersion().getAsString();
   std::string arch = "unknown";
   if (triple.getArch() == llvm::Triple::ArchType::aarch64)
@@ -1360,8 +1358,7 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
     }
     // Build ELF linker args, plus any backend-specific arguments.
     SmallVector<StringRef> args = {linker, "-flavor", linkerFlavor};
-    if (backend)
-      backend->appendLinkArgs(args, options);
+    backend.appendLinkArgs(args, options);
     args.push_back("-shared");
     if (!options.emissionLinkOptions.empty())
       args.push_back(options.emissionLinkOptions.c_str());
@@ -1393,10 +1390,8 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
     if (!errorMsg.empty())
       errorMsg.insert(0, ": ");
     std::string errorPrefix =
-        backend ? ("failed to generate " + backend->name() +
-                   " shared object binary")
-                      .str()
-                : std::string("failed to generate shared object binary");
+        ("failed to generate " + backend.name() + " shared object binary")
+            .str();
     if (linkerErrorFile) {
       std::string linkerOutput =
           llvm::MemoryBuffer::getFile(linkerErrorFile->getPath().string())
@@ -1451,7 +1446,7 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
 
   // Create shared object in buffer.
   ErrorOr<BufferRef> sharedObjBufOr =
-      createSharedObject(*bufOr, options, moduleName, linker);
+      createSharedObject(*bufOr, options, moduleName, linker, backend);
 
   if (sharedObjBufOr.isError())
     return sharedObjBufOr.takeError();
@@ -1493,11 +1488,13 @@ getKernelIDFromLLVMModule(llvm::Module &module) {
   return Error("Can't find kgen.offload.kernelid from the llvm split.");
 }
 
-static AnyAsyncValueRef lowerLLVMModuleToObject(
-    llvm::Module &inputModule, Location loc,
-    RCRef<Cache::TransformCache> transformCache, size_t moduleIdx,
-    AsyncRT::CPUDevice &cpuDevice, CompilationOptions options, bool isJIT,
-    bool shouldDeserialize, EmitAs emissionKind, std::string &linker) {
+static AnyAsyncValueRef
+lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
+                        RCRef<Cache::TransformCache> transformCache,
+                        size_t moduleIdx, AsyncRT::CPUDevice &cpuDevice,
+                        CompilationOptions options, bool isJIT,
+                        bool shouldDeserialize, EmitAs emissionKind,
+                        std::string &linker, const TargetBackend &backend) {
   WriteableBufferRef keyBuf = WriteableBuffer::get();
   options.print(*keyBuf << "compileLLVMModuleToObject(");
   *keyBuf << ")";
@@ -1514,7 +1511,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
 
   auto runTransformation = [loc, moduleIdx, isJIT, options, &cpuDevice,
                             emissionKind, keyBuf = keyBuf.copy(), &inputModule,
-                            nonBitcodeKeySize, shouldDeserialize,
+                            nonBitcodeKeySize, shouldDeserialize, &backend,
                             &linker](WriteableBufferRef buf,
                                      AsyncRT::AnyAsyncValueRef chain) mutable {
     auto output = AsyncRT::AsyncValueRef<BufferRef>::allocate(cpuDevice);
@@ -1522,7 +1519,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
     chain.andThenAsync([loc, &cpuDevice, emissionKind, output = output.copy(),
                         buf = buf.copy(), keyBuf = std::move(keyBuf), options,
                         isJIT, moduleIdx, &inputModule, nonBitcodeKeySize,
-                        shouldDeserialize, &linker]() mutable {
+                        shouldDeserialize, &backend, &linker]() mutable {
       CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectKernels");
 
       LLVMModuleAndContext deserializedModule;
@@ -1576,15 +1573,10 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
 
       // Create the target machine.
       std::string moduleTriple = module.getTargetTriple().getTriple();
-      const TargetBackend *backend =
-          TargetBackendRegistry::get().lookup(module.getTargetTriple());
 
-      CompilationOptions adjustedOptions = options;
-      if (backend) {
-        adjustedOptions =
-            backend->adjustOptionsForTargetMachine(options, moduleTriple);
-        module.setTargetTriple(llvm::Triple(adjustedOptions.targetTriple));
-      }
+      CompilationOptions adjustedOptions =
+          backend.adjustOptionsForTargetMachine(options, moduleTriple);
+      module.setTargetTriple(llvm::Triple(adjustedOptions.targetTriple));
 
       // `adjustedOptions` is already target-adjusted above, so build the
       // TargetMachine directly without re-dispatching through the backend.
@@ -1595,8 +1587,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       }
       llvm::TargetMachine &tm = **tmOr;
 
-      if (backend)
-        backend->finalizeModuleForTarget(module, tm, moduleTriple);
+      backend.finalizeModuleForTarget(module, tm, moduleTriple);
 
       // Optimize the llvm Module.
       if (failed(
@@ -1640,7 +1631,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       };
       auto linkObject = [&](BufferRef object,
                             StringRef moduleName) -> ErrorOr<BufferRef> {
-        return createSharedObject(object, options, moduleName, linker);
+        return createSharedObject(object, options, moduleName, linker, backend);
       };
       EmitContext backendCtx{options,
                              tm,
@@ -1652,66 +1643,20 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
                              linkObject};
 
       if (emissionKind == EmitAs::ASM) {
-        if (backend) {
-          ErrorOr<BufferRef> asmOr = backend->emitAssembly(module, backendCtx);
-          if (asmOr.isError())
-            return std::move(output).setToError(
-                AsyncRT::getMLIRDiagnostic(asmOr.takeError(), loc));
-          (*buf) << (*asmOr)->getBuffer();
-          std::move(output).emplace(buf.copy());
-          return;
-        }
-
-        if (failed(runLlcPasses(module, options, tm, *buf, machineModuleInfo,
-                                mcContext, llvm::CodeGenFileType::AssemblyFile,
-                                /*stopBeforeAsmPrint=*/false, 0, nullptr))) {
-          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-              "llc failed to codegen LLVM IR to object code", loc));
-        }
-
-        std::string postfix =
-            offloadAsmExt(llvm::Triple(options.targetTriple)).str();
-        StringRef toEmit(buf->getBufferStart(), buf->getBufferSize());
-        if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, postfix,
-                                            toEmit))) {
-          return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-              "failed to save asm to saveTempsPrefix", loc));
-        }
-
+        ErrorOr<BufferRef> asmOr = backend.emitAssembly(module, backendCtx);
+        if (asmOr.isError())
+          return std::move(output).setToError(
+              AsyncRT::getMLIRDiagnostic(asmOr.takeError(), loc));
+        (*buf) << (*asmOr)->getBuffer();
         std::move(output).emplace(buf.copy());
+        return;
       } else {
-        auto codeBuf = WriteableBuffer::get();
-        if (backend) {
-          ErrorOr<BufferRef> bufOr = backend->emitObject(module, backendCtx);
-          if (bufOr.isError()) {
-            return std::move(output).setToError(
-                AsyncRT::getMLIRDiagnostic(bufOr.takeError(), loc));
-          }
-          (*buf) << (*bufOr)->getBuffer();
-        } else {
-          if (failed(runLlcPasses(module, options, tm, *codeBuf,
-                                  machineModuleInfo, mcContext,
-                                  llvm::CodeGenFileType::ObjectFile,
-                                  /*stopBeforeAsmPrint=*/false, 0, nullptr))) {
-            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                "llc failed to codegen LLVM IR to object code", loc));
-          }
-          StringRef name = "mojo-object";
-          if (auto moduleLoc = loc->findInstanceOf<FileLineColLoc>())
-            name = llvm::sys::path::filename(moduleLoc.getFilename());
-          std::string moduleName = (name + Twine(moduleIdx)).str();
-
-          // Fallback for triples with no matching backend: link the object
-          // into a shared object via the default path.
-          ErrorOr<BufferRef> bufOr = createSharedObject(
-              BufferRef::create(codeBuf->Buffer::getBuffer()), options,
-              moduleName, linker);
-          if (bufOr.isError()) {
-            return std::move(output).setToError(
-                AsyncRT::getMLIRDiagnostic(bufOr.takeError(), loc));
-          }
-          (*buf) << (*bufOr)->getBuffer();
+        ErrorOr<BufferRef> bufOr = backend.emitObject(module, backendCtx);
+        if (bufOr.isError()) {
+          return std::move(output).setToError(
+              AsyncRT::getMLIRDiagnostic(bufOr.takeError(), loc));
         }
+        (*buf) << (*bufOr)->getBuffer();
 
         std::move(output).emplace(buf.copy());
       }
@@ -1733,7 +1678,8 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     std::optional<size_t> moduleIdx, AsyncRT::CPUDevice &cpuDevice,
     CompilationOptions options, bool isJIT,
     DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> &kernelEmissionKinds,
-    std::string &linker, SmallVector<std::pair<bool, Attribute>> &bitcodeLibs) {
+    std::string &linker, SmallVector<std::pair<bool, Attribute>> &bitcodeLibs,
+    const TargetBackend &backend) {
   auto resultBufs =
       AsyncRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(cpuDevice);
   auto resultKernelId = AsyncRT::AsyncValueRef<uint64_t>::allocate(cpuDevice);
@@ -1743,7 +1689,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
                                      produceModule = std::move(produceModule),
                                      loc, isJIT, options, &cpuDevice,
                                      transformCache = transformCache.copy(),
-                                     &kernelEmissionKinds, &linker,
+                                     &kernelEmissionKinds, &linker, &backend,
                                      &bitcodeLibs]() mutable {
     CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectKernels");
 
@@ -1763,7 +1709,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
 
     // Link bitcode libraries.
     ErrorOrSuccess linkResult =
-        linkBitcodeLibraries(loc, *module, options, bitcodeLibs);
+        linkBitcodeLibraries(loc, *module, options, bitcodeLibs, backend);
     if (failed(linkResult)) {
       std::move(resultBufs)
           .setToError(AsyncRT::getMLIRDiagnostic(
@@ -1773,9 +1719,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
 
     uint64_t kernelId = (*kernelIdFuncOr).first;
     llvm::Function *kernelEntry = (*kernelIdFuncOr).second;
-    if (const TargetBackend *backend = TargetBackendRegistry::get().lookup(
-            llvm::Triple(options.targetTriple)))
-      backend->attachCodegenAttributes(kernelEntry);
+    backend.attachCodegenAttributes(kernelEntry);
 
     SmallVector<EmitAs> emissionKinds;
     SmallVector<AsyncRT::AnyAsyncValueRef> emissionResults;
@@ -1790,7 +1734,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
       emissionKinds.push_back(kind);
       emissionResults.push_back(lowerLLVMModuleToObject(
           *module, loc, transformCache, kernelId, cpuDevice, options, isJIT,
-          shouldDeserialize, kind, linker));
+          shouldDeserialize, kind, linker, backend));
     }
 
     if (shouldRunExtraAsm) {
@@ -1801,7 +1745,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
       // codegen result.
       emissionResults.push_back(lowerLLVMModuleToObject(
           *module, loc, transformCache, kernelId, cpuDevice, options, isJIT,
-          shouldDeserialize, EmitAs::ASM, linker));
+          shouldDeserialize, EmitAs::ASM, linker, backend));
     }
 
     auto kernelBufs =
@@ -1888,7 +1832,7 @@ ObjectCompiler::emitOffloadKernels(
           std::optional<int64_t> idx, unsigned numFunctionsBase) {
         auto result = lowerLLVMModuleToObject(
             std::move(produceModule), moduleLoc, transformCache, idx, cpuDevice,
-            options, isJIT, kernelEmissionKinds, linker, bitcodeLibs);
+            options, isJIT, kernelEmissionKinds, linker, bitcodeLibs, backend);
         cachedResults.push_back(std::move(result.first));
         cachedResults.push_back(std::move(result.second));
       };
@@ -1899,7 +1843,7 @@ ObjectCompiler::emitOffloadKernels(
       DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>::allocate(cpuDevice);
 
   andThenSyncMoving(
-      cachedResults, [result = result.copy(), options = options](
+      cachedResults, [result = result.copy(), &backend = backend](
                          MutableArrayRef<AnyAsyncValueRef> values) mutable {
         DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>> results;
 
@@ -1908,9 +1852,7 @@ ObjectCompiler::emitOffloadKernels(
           AnyAsyncValueRef &kernelId = values[i + 1];
 
           if (kernelId.isError()) {
-            const TargetBackend *backend = TargetBackendRegistry::get().lookup(
-                llvm::Triple(options.targetTriple));
-            if (backend && backend->isOffload())
+            if (backend.isOffload())
               return std::move(result).setToError(kernelId.takeDiagnostic());
             else
               continue;
