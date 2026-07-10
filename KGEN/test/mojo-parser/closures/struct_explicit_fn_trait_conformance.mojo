@@ -36,7 +36,6 @@ struct MissingCall(def(Bool) -> Int):
 # expected-note @below {{trait 'def(String) -> Int' declared here}}
 struct WrongReturnType(def(String) -> Int):
     # expected-note @below {{candidate declared here with type 'def(self: WrongReturnType, x: String) capturing thin -> Bool'}}
-    # expected-note @below {{.self.origin of the first value is}}
     def __call__(self, x: String) capturing -> Bool:
         return True
 
@@ -61,7 +60,7 @@ struct TwoTraitsGood(def(Int) -> Int, def(String) -> String):
 # expected-note @below {{trait 'def(Float64) -> Float64' declared here}}
 struct TwoTraitsBadSecond(def(Int) -> Int, def(Float64) -> Float64):
     # expected-note @below {{candidate declared here with type 'def(self: TwoTraitsBadSecond, x: Int) capturing thin -> Int'}}
-    # expected-note @below {{.self.origin of the first value is}}
+    # expected-note @below {{.x of the first type is 'Float64' but the second type is 'Int'}}
     def __call__(self, x: Int) capturing -> Int:
         return x
 

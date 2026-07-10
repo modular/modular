@@ -95,6 +95,42 @@ void M::addToDiagnostic(MojoInflightDiag &&otherDiag, InflightDiag &diag) {
 }
 
 namespace {
+/// Two `ImplicitOriginRefAttr`s with the same `[depth, index]` coordinate are
+/// the positionally-corresponding implicit origins of their respective
+/// signatures (see `ImplicitOriginRefAttr` in LITAttrs.td).
+/// When diffing two
+/// independent signatures — e.g. a closure trait's synthesized `__call__`
+/// requirement against a struct's `__call__` — each carries its own `self`
+/// origin at coordinate `[0,0]`. That is not a user-meaningful difference: it
+/// renders as the uninformative `'*[0,0]' but ... '*[0,0]'` and, worse, hides
+/// the real difference (e.g. the return type) that lies later in the signature.
+/// Treat such refs as equal so the differ looks past them.
+static bool areCorrespondingImplicitOrigins(TypedAttr lhs, TypedAttr rhs) {
+  auto lo = sugarDynCast<ImplicitOriginRefAttr>(lhs);
+  auto ro = sugarDynCast<ImplicitOriginRefAttr>(rhs);
+  return lo && ro && lo.getDepth() == ro.getDepth() &&
+         lo.getIndex() == ro.getIndex();
+}
+
+/// Canonical type equality for diffing, but treating positionally-corresponding
+/// implicit origins (see `areCorrespondingImplicitOrigins`) as equal. Recurses
+/// through references so a `ref` differing only in such an origin is considered
+/// equal.
+static bool isEqualForDiff(ASTType lhs, ASTType rhs) {
+  if (lhs.isEqualCanon(rhs))
+    return true;
+  auto lref = dyn_cast<RefType>(lhs);
+  auto rref = dyn_cast<RefType>(rhs);
+  if (!lref || !rref)
+    return false;
+  if (!isEqualCanon(lref.getAddressSpace(), rref.getAddressSpace()))
+    return false;
+  if (!isEqualCanon(lref.getOrigin(), rref.getOrigin()) &&
+      !areCorrespondingImplicitOrigins(lref.getOrigin(), rref.getOrigin()))
+    return false;
+  return isEqualForDiff(lref.getElementType(), rref.getElementType());
+}
+
 /// This struct implements textual type+parameter "diffing" to help dig into
 /// long type names and identify what parts of them differ.
 ///
@@ -226,7 +262,7 @@ struct ParamDiffer {
             // can cause us to compare return types to arguments etc.  We don't
             // require name matches though.
             auto conv = lhsFn.getArgConvention(idx);
-            if (isEqualCanon(lhsArg, rhsArg) ||
+            if (isEqualForDiff(lhsArg, rhsArg) ||
                 conv != rhsFn.getArgConvention(idx) ||
                 lhsPogs.getVariadicKind(idx) != rhsPogs.getVariadicKind(idx))
               continue;
@@ -254,11 +290,18 @@ struct ParamDiffer {
           accessPath += ".address_space";
           return diff(lhsRef.getAddressSpace(), rhsRef.getAddressSpace());
         }
-        if (!isEqualCanon(lhsRef.getOrigin(), rhsRef.getOrigin())) {
+        if (!isEqualCanon(lhsRef.getOrigin(), rhsRef.getOrigin()) &&
+            !areCorrespondingImplicitOrigins(lhsRef.getOrigin(),
+                                             rhsRef.getOrigin())) {
           accessPath += ".origin";
           return diff(lhsRef.getOrigin(), rhsRef.getOrigin());
         }
-        return diff(lhsRef.getElementType(), rhsRef.getElementType());
+        // The origin may have been skipped as a corresponding implicit origin;
+        // only recurse into the element type if it is the actual difference.
+        // Otherwise the refs differ solely by that origin — nothing meaningful
+        // to report — so fall through to the atomic case.
+        if (!isEqualCanon(lhsRef.getElementType(), rhsRef.getElementType()))
+          return diff(lhsRef.getElementType(), rhsRef.getElementType());
       }
 
     // Check to see if these are two structs or struct meta types with differing
@@ -331,17 +374,28 @@ MojoInflightDiag::~MojoInflightDiag() {
     // SIMD types that disagree obviously.
     auto first = ASTType::getParamAsString(lhs.value, shared);
     if (first.size() > 30) {
-      const char *kind = LIT::isTypeExpr(differ.leftNested) ? "type" : "value";
-      attachNote(rhs.loc) << differ.accessPath << " of the first " << kind
-                          << " is '";
+      std::string leftStr, rightStr;
       {
         DeclResolver::DiagnosticDeclContextChanger x(lhs.ctxDecl);
-        *this << ASTType::getParamAsString(differ.leftNested, shared);
+        leftStr = ASTType::getParamAsString(differ.leftNested, shared);
       }
       {
         DeclResolver::DiagnosticDeclContextChanger x(rhs.ctxDecl);
-        *this << "' but the second " << kind << " is '";
-        *this << ASTType::getParamAsString(differ.rightNested, shared) << "'";
+        rightStr = ASTType::getParamAsString(differ.rightNested, shared);
+      }
+      // Only surface the diff if the two sub-values actually render
+      // differently. When they stringify identically (e.g. two distinct
+      // origins that both print as '*[0,0]'), the note would read
+      // "... is 'X' but ... is 'X'" — confusing noise that hides, rather than
+      // explains, the real difference. This is a general backstop; the common
+      // corresponding-origin case is already handled structurally by
+      // `isEqualForDiff`/`areCorrespondingImplicitOrigins` above.
+      if (leftStr != rightStr) {
+        const char *kind =
+            LIT::isTypeExpr(differ.leftNested) ? "type" : "value";
+        attachNote(rhs.loc) << differ.accessPath << " of the first " << kind
+                            << " is '" << leftStr << "' but the second " << kind
+                            << " is '" << rightStr << "'";
       }
     }
 
