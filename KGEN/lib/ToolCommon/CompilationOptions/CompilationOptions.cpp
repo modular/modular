@@ -13,7 +13,6 @@
 
 using namespace M;
 using namespace KGEN;
-using namespace M::Driver;
 using namespace std::string_literals;
 
 CompilationOptions::CompilationOptions(

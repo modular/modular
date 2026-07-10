@@ -805,8 +805,11 @@ int main(int argc, char **argv) {
   llvm::SourceMgr sourceManager;
   sourceManager.setIncludeDirs(clOptions.getIncludePaths());
   clOptions.addInputFilesToSourceMgrOrExit(sourceManager);
-  if (clOptions.targetAccelerator.empty())
+  if (clOptions.targetAccelerator.empty()) {
+#if MLRT_ACCELERATOR_SUPPORT
     clOptions.targetAccelerator = Driver::Device::getAcceleratorArchOrEmpty();
+#endif
+  }
 
   return failed(clOptions.configureMLIRContextAndExecute(
       sourceManager, [&](MLIRContext *ctx) -> LogicalResult {
