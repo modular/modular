@@ -561,6 +561,24 @@ class OpenAIChatResponseGenerator(
                         allow_none=True,
                         has_tool_calls=has_emitted_tool_calls,
                     )
+                    # While tokens are captured and hidden during tool-call
+                    # generation, the resolved delta can be empty: the parser
+                    # consumed the chunk (merged_stream_content is not None) but
+                    # produced no content, no tool-call fragment, and no
+                    # reasoning. Emitting it would push an empty packet to the
+                    # client. Skip it unless the chunk carries something the
+                    # client needs — a terminal finish_reason or log
+                    # probabilities.
+                    if (
+                        not content
+                        and not reasoning
+                        and not tool_call_chunks
+                        and finish_reason is None
+                        and logprobs_response is None
+                    ):
+                        n_reasoning_tokens += chunk.reasoning_token_count or 0
+                        n_tokens += chunk.token_count
+                        continue
                     reasoning_kwargs = {self._reasoning_field: reasoning}
                     choices = [
                         ChatCompletionStreamResponseChoice(
