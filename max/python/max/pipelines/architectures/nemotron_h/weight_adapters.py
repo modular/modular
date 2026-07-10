@@ -20,10 +20,6 @@ and applies dtype/shape fixups:
 * conv1d weight ``[dim, 1, K]`` is kept 3-D (MAX expects depthwise [dim,1,K]).
 * ``A_log`` / ``D`` / ``dt_bias`` cast to float32 (per-head scalars); the gated
   ``norm.weight`` cast to float32.
-* MoE (Nemotron-3 hybrids): the router gate ``mixer.gate.weight`` ->
-  ``mixer.gate.gate_score.weight`` (MAX ``MoEGate``); the
-  ``e_score_correction_bias`` cast to float32; the routed-experts and
-  shared-experts up/down projections map 1:1.
 * FP8 (modelopt per-tensor static): F8_E4M3 weights are kept as-is; scale
   tensors (``weight_scale`` / ``input_scale``) cast to float32. Excluded
   modules (lm_head, attn q/k/v/o, the mamba in/out_proj at [11,16,23,31], all
@@ -60,27 +56,15 @@ _RENAMES: list[tuple[str, str]] = [
     ("model.", ""),
 ]
 
-# Nearly all ``mixer.*`` names map 1:1 onto the MAX mixer Weights (the
-# gated-norm weight's MAX Weight is declared ``norm.weight``, matching the
-# checkpoint's ``mixer.norm.weight`` directly). The one exception is the MoE
-# router gate: HF stores it at ``mixer.gate.weight`` while the MAX ``MoEGate``
-# nests it under ``gate_score``. The MoE experts / shared_experts up/down
-# projections and ``mixer.gate.e_score_correction_bias`` all map 1:1.
-_MIXER_RENAMES: list[tuple[str, str]] = [
-    (".mixer.gate.weight", ".mixer.gate.gate_score.weight"),
-]
+# All ``mixer.*`` names map 1:1 onto the MAX mixer Weights. (The gated-norm
+# weight's MAX Weight is declared with name ``norm.weight``, so it matches the
+# checkpoint's ``mixer.norm.weight`` directly — no rename.)
+_MIXER_RENAMES: list[tuple[str, str]] = []
 
-# fp32 params: per-head SSM scalars, the mamba gated-norm weight, and the MoE
-# router correction bias. The block pre-norm (``blocks.{i}.norm.weight``) and
-# final ``norm_f.weight`` stay bf16, so the gated-norm suffix is the specific
-# ``.mixer.norm.weight``.
-_FP32_SUFFIXES = (
-    ".A_log",
-    ".D",
-    ".dt_bias",
-    ".mixer.norm.weight",
-    ".e_score_correction_bias",
-)
+# fp32 params: per-head SSM scalars + the mamba gated-norm weight. The block
+# pre-norm (``blocks.{i}.norm.weight``) and final ``norm_f.weight`` stay bf16,
+# so the gated-norm suffix is the specific ``.mixer.norm.weight``.
+_FP32_SUFFIXES = (".A_log", ".D", ".dt_bias", ".mixer.norm.weight")
 
 
 def _row_slice(

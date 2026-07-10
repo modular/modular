@@ -275,8 +275,7 @@ class MoE(Module[[Tensor], Tensor]):
         permutated_states = F.gather(
             x,
             F.cast(
-                F.floor_div(token_expert_order, self.num_experts_per_token),
-                DType.int32,
+                token_expert_order // self.num_experts_per_token, DType.int32
             ),
             axis=0,
         )

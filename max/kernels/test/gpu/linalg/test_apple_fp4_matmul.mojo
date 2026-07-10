@@ -799,18 +799,6 @@ def test_stage2_fused(ctx: DeviceContext) raises:
     # Stage 4.)
     _run_stage2_fused(ctx, 256, 256, 128, "mid-m-clean-bm128")
     _run_stage2_fused(ctx, 384, 200, 96, "mid-m-ragged-bm128")
-    # Batch-1 decode (M == 1): the dispatch routes these to the register-resident
-    # W4A16 GEMV (`enqueue_apple_fp4_gemv`), NOT the MMA path -- so `gemv ==
-    # materialize->dense` is a real bit-exact parity check of the GEMV decode
-    # (identical E2M1 * |scale| arith + fp32 accumulate as the dense oracle at
-    # M=1). The GEMV requires K % 16 == 0 (true for every NVFP4 Linear), so these
-    # keep K a multiple of 16; ragged N is exercised via the per-warp N guard.
-    # The three production shapes are the real Llama-8B decode Linears.
-    _run_stage2_fused(ctx, 1, 64, 256, "gemv-tiny")
-    _run_stage2_fused(ctx, 1, 200, 128, "gemv-ragged-n")
-    _run_stage2_fused(ctx, 1, 4096, 4096, "gemv-oproj")
-    _run_stage2_fused(ctx, 1, 4096, 14336, "gemv-downproj")
-    _run_stage2_fused(ctx, 1, 28672, 4096, "gemv-gateup")
 
 
 def test_stage3_global_scale(ctx: DeviceContext) raises:

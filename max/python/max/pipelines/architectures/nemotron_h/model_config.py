@@ -114,8 +114,7 @@ def resolve_attention_head_dim(huggingface_config: AutoConfig) -> int:
 def parse_hybrid_pattern(pattern: str) -> list[str]:
     """Map a Nemotron-H ``hybrid_override_pattern`` to per-layer kinds.
 
-    ``M`` -> ``"mamba"``, ``*`` -> ``"attention"``, ``-`` -> ``"mlp"``,
-    ``E`` -> ``"moe"`` (the Nemotron-3 MoE hybrids, e.g. 30B-A3B).
+    ``M`` -> ``"mamba"``, ``*`` -> ``"attention"``, ``-`` -> ``"mlp"``.
     """
     kinds: list[str] = []
     for ch in pattern:
@@ -125,12 +124,10 @@ def parse_hybrid_pattern(pattern: str) -> list[str]:
             kinds.append("attention")
         elif ch == "-":
             kinds.append("mlp")
-        elif ch == "E":
-            kinds.append("moe")
         else:
             raise ValueError(
                 f"invalid hybrid_override_pattern character {ch!r}; "
-                "expected 'M', '*', '-', or 'E'"
+                "expected 'M', '*', or '-'"
             )
     return kinds
 
@@ -171,18 +168,6 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     intermediate_size: int
     mlp_hidden_act: str = "relu2"
     mlp_bias: bool = False
-
-    # MoE (Nemotron-3 hybrids with ``E`` layers, e.g. 30B-A3B). These defaults
-    # leave the dense 4B/8B variants (no ``moe`` layers) unaffected.
-    num_experts: int = 0
-    # Mirrors the HF config key name; feeds the MAX-side
-    # ``num_experts_per_token`` MoE param. The ``_tok``/``_token`` split is
-    # deliberate.
-    num_experts_per_tok: int = 0
-    moe_intermediate_size: int = 0
-    moe_shared_expert_intermediate_size: int = 0
-    routed_scaling_factor: float = 1.0
-    norm_topk_prob: bool = True
 
     # Mamba-2 mixer
     mamba_num_heads: int
@@ -395,22 +380,6 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 huggingface_config, "mlp_hidden_act", "relu2"
             ),
             mlp_bias=getattr(huggingface_config, "mlp_bias", False),
-            # MoE fields (guarded: dense 4B/8B configs lack them and keep the
-            # dataclass defaults, so their code paths are unaffected).
-            num_experts=getattr(huggingface_config, "n_routed_experts", 0),
-            num_experts_per_tok=getattr(
-                huggingface_config, "num_experts_per_tok", 0
-            ),
-            moe_intermediate_size=getattr(
-                huggingface_config, "moe_intermediate_size", 0
-            ),
-            moe_shared_expert_intermediate_size=getattr(
-                huggingface_config, "moe_shared_expert_intermediate_size", 0
-            ),
-            routed_scaling_factor=getattr(
-                huggingface_config, "routed_scaling_factor", 1.0
-            ),
-            norm_topk_prob=getattr(huggingface_config, "norm_topk_prob", True),
             mamba_num_heads=huggingface_config.mamba_num_heads,
             mamba_head_dim=huggingface_config.mamba_head_dim,
             n_groups=huggingface_config.n_groups,

@@ -583,14 +583,7 @@ def _matmul_gpu[
         if (
             ctx.compute_capability() == 5
             and (not f32_in or _apple_m5_allow_lossy_f32_matmul())
-            # m > 1 (not m >= 64): the kernel already handles a partial M tile
-            # (per-simdgroup `_bounded_load`/`_bounded_store` + the row_base>=M
-            # early return), so 1 < m < 64 (concurrent-decode batch widths) is
-            # correct here. Routing it off the naive per-row fallback onto this
-            # co-batched GEMM is 6-27x faster at real Llama decode shapes
-            # (microbench, M5 Max). m == 1 stays on the gemv path: a rank-1
-            # update wastes the simdgroup MMA, so per-row gemv wins there.
-            and m > 1
+            and m >= 64
             and n >= 64
             and k >= 16
         ):

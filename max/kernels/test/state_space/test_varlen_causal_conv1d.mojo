@@ -13,8 +13,16 @@
 
 from std.math import exp
 
-from layout import TileTensor, row_major
-from std.random import rand
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
+from layout._fillers import random
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
     causal_conv1d_varlen_update_cpu,
@@ -57,60 +65,53 @@ def run_varlen_causal_conv1d_fwd[
     for i in range(batch):
         total_seqlen += seq_lengths[i]
 
-    # Allocate host memory as TileTensors over their backing heaps.
+    # Allocate host memory
+    comptime layout_2d = Layout.row_major[2]()
+    comptime layout_1d = Layout(UNKNOWN_VALUE)
+
     # x: (dim, total_seqlen) for varlen - sequences concatenated
     var x_heap = List(length=dim * total_seqlen, fill=Scalar[dtype](0))
-    var x_tt = TileTensor(x_heap, row_major(dim, total_seqlen))
+    var x_h = LayoutTensor[dtype, layout_2d, _](
+        x_heap, RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen))
+    )
 
     # weight: (dim, width)
     var weight_heap = List(length=dim * width, fill=Scalar[dtype](0))
-    var weight_tt = TileTensor(weight_heap, row_major(dim, width))
+    var weight_h = LayoutTensor[dtype, layout_2d, _](
+        weight_heap, RuntimeLayout[layout_2d].row_major(Index(dim, width))
+    )
 
     # bias: (dim,)
     var bias_heap = List(length=dim, fill=Scalar[dtype](0))
-    var bias_tt = TileTensor(
-        bias_heap,
-        row_major(
-            dim,
-        ),
+    var bias_h = LayoutTensor[dtype, layout_1d, _](
+        bias_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
     )
 
     # query_start_loc: (batch + 1,) - cumulative sequence lengths
     var query_start_loc_heap = List(
         length=batch + 1, fill=Scalar[DType.int32](0)
     )
-    var query_start_loc_tt = TileTensor(
+    var query_start_loc_h = LayoutTensor[DType.int32, layout_1d, _](
         query_start_loc_heap,
-        row_major(
-            batch + 1,
-        ),
+        RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
     )
     var cumsum = 0
-    query_start_loc_tt.raw_store(0, Scalar[DType.int32](0))
+    query_start_loc_h.ptr.store(0, Scalar[DType.int32](0))
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_tt.raw_store(i + 1, Scalar[DType.int32](cumsum))
+        query_start_loc_h.ptr.store(i + 1, Scalar[DType.int32](cumsum))
 
     # cache_indices: (batch,) - identity mapping
     var cache_indices_heap = List(length=batch, fill=Scalar[DType.int32](0))
-    var cache_indices_tt = TileTensor(
-        cache_indices_heap,
-        row_major(
-            batch,
-        ),
+    var cache_indices_h = LayoutTensor[DType.int32, layout_1d, _](
+        cache_indices_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
     for i in range(batch):
-        cache_indices_tt.raw_store(i, Scalar[DType.int32](i))
+        cache_indices_h.ptr.store(i, Scalar[DType.int32](i))
 
     # has_initial_state: (batch,) - all False
     var has_initial_state_heap = List(
         length=batch, fill=Scalar[DType.bool](False)
-    )
-    var has_initial_state_tt = TileTensor(
-        has_initial_state_heap,
-        row_major(
-            batch,
-        ),
     )
 
     # conv_states: (batch, dim, width - 1)
@@ -118,31 +119,64 @@ def run_varlen_causal_conv1d_fwd[
     var conv_states_heap = List(
         length=batch * dim * state_len, fill=Scalar[dtype](0)
     )
+
+    # output: (dim, total_seqlen)
+    var output_heap = List(length=dim * total_seqlen, fill=Scalar[dtype](0))
+    var output_h = LayoutTensor[dtype, layout_2d, _](
+        output_heap,
+        RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen)),
+    )
+
+    # reference output: (dim, total_seqlen)
+    var output_ref_heap = List(length=dim * total_seqlen, fill=Scalar[dtype](0))
+    var output_ref_h = LayoutTensor[dtype, layout_2d, _](
+        output_ref_heap,
+        RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen)),
+    )
+
+    # Initialize input data
+    random(x_h)
+    random(weight_h)
+    random(bias_h)
+
+    # Create TileTensor versions for kernel call
+    var x_tt = TileTensor(x_heap, row_major(dim, total_seqlen))
+    var weight_tt = TileTensor(weight_heap, row_major(dim, width))
+    var bias_tt = TileTensor(
+        bias_heap,
+        row_major(
+            dim,
+        ),
+    )
+    var query_start_loc_tt = TileTensor(
+        query_start_loc_heap,
+        row_major(
+            batch + 1,
+        ),
+    )
+    var cache_indices_tt = TileTensor(
+        cache_indices_heap,
+        row_major(
+            batch,
+        ),
+    )
+    var has_initial_state_tt = TileTensor(
+        has_initial_state_heap,
+        row_major(
+            batch,
+        ),
+    )
     var conv_states_tt = TileTensor(
         conv_states_heap,
         row_major(batch, dim, state_len),
     )
-
-    # output: (dim, total_seqlen)
-    var output_heap = List(length=dim * total_seqlen, fill=Scalar[dtype](0))
     var output_tt = TileTensor(output_heap, row_major(dim, total_seqlen))
 
-    # reference output: (dim, total_seqlen)
-    var output_ref_heap = List(length=dim * total_seqlen, fill=Scalar[dtype](0))
-    var output_ref_tt = TileTensor(
-        output_ref_heap, row_major(dim, total_seqlen)
-    )
-
-    # Initialize input data
-    rand[dtype](x_tt.ptr, dim * total_seqlen)
-    rand[dtype](weight_tt.ptr, dim * width)
-    rand[dtype](bias_tt.ptr, dim)
-
-    var x_buf = x_tt
-    var weight_buf = weight_tt
-    var bias_buf = bias_tt
-    var query_start_loc_buf = query_start_loc_tt
-    var output_ref_buf = output_ref_tt
+    var x_buf = x_h
+    var weight_buf = weight_h
+    var bias_buf = bias_h
+    var query_start_loc_buf = query_start_loc_h
+    var output_ref_buf = output_ref_h
 
     # Strides for row-major layout
     var x_dim_stride: UInt32 = UInt32(total_seqlen)
@@ -200,12 +234,12 @@ def run_varlen_causal_conv1d_fwd[
     # Reference implementation
     var width_minus_1: Int = width - 1
     for b in range(batch):
-        var seq_start = Int(query_start_loc_buf.raw_load(b))
-        var seq_end = Int(query_start_loc_buf.raw_load(b + 1))
+        var seq_start = Int(query_start_loc_buf.ptr.load(b))
+        var seq_end = Int(query_start_loc_buf.ptr.load(b + 1))
         var seqlen = seq_end - seq_start
 
         for d in range(dim):
-            var bias_val = bias_buf.raw_load(d)
+            var bias_val = bias_buf.ptr.load(d)
 
             for l in range(seqlen):
                 var conv_sum: Scalar[dtype] = bias_val
@@ -219,13 +253,13 @@ def run_varlen_causal_conv1d_fwd[
                             UInt32(d) * x_dim_stride
                             + UInt32((seq_start + input_l)) * x_seqlen_stride
                         )
-                        input_val = x_buf.raw_load(x_offset)
+                        input_val = x_buf.ptr.load(x_offset)
 
                     var weight_offset = (
                         UInt32(d) * weight_dim_stride
                         + UInt32(w_idx) * weight_width_stride
                     )
-                    var weight_val = weight_buf.raw_load(weight_offset)
+                    var weight_val = weight_buf.ptr.load(weight_offset)
                     conv_sum = conv_sum + input_val * weight_val
 
                 var out_val = conv_sum
@@ -236,14 +270,14 @@ def run_varlen_causal_conv1d_fwd[
                     UInt32(d) * out_dim_stride
                     + UInt32((seq_start + l)) * out_seqlen_stride
                 )
-                output_ref_buf.raw_store(out_offset, out_val)
+                output_ref_buf.ptr.store(out_offset, out_val)
 
     # Compare results
     var flattened_size = dim * total_seqlen
     for i in range(flattened_size):
         assert_almost_equal(
-            output_tt.ptr[i],
-            output_ref_tt.ptr[i],
+            output_h.ptr[i],
+            output_ref_h.ptr[i],
             rtol=rtol,
         )
 
@@ -261,45 +295,108 @@ def run_varlen_causal_conv1d_update[
 ) raises:
     """Test varlen causal conv1d update kernel against reference implementation.
     """
-    # Allocate host memory as TileTensors over their backing heaps.
+    # Allocate host memory
+    comptime layout_3d = Layout.row_major[3]()
+    comptime layout_2d = Layout.row_major[2]()
+    comptime layout_1d = Layout(UNKNOWN_VALUE)
+
     # x: (batch, dim, seqlen)
     var x_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
-    var x_tt2 = TileTensor(x_heap, row_major(batch, dim, seqlen))
+    var x_h = LayoutTensor[dtype, layout_3d, _](
+        x_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
+    )
 
     # weight: (dim, width)
     var weight_heap = List(length=dim * width, fill=Scalar[dtype](0))
-    var weight_tt2 = TileTensor(weight_heap, row_major(dim, width))
+    var weight_h = LayoutTensor[dtype, layout_2d, _](
+        weight_heap, RuntimeLayout[layout_2d].row_major(Index(dim, width))
+    )
 
     # bias: (dim,)
     var bias_heap = List(length=dim, fill=Scalar[dtype](0))
-    var bias_tt2 = TileTensor(
-        bias_heap,
-        row_major(
-            dim,
-        ),
+    var bias_h = LayoutTensor[dtype, layout_1d, _](
+        bias_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
     )
 
     # conv_state: (batch, dim, state_len)
     var conv_state_heap = List(
         length=batch * dim * state_len, fill=Scalar[dtype](0)
     )
-    var conv_state_tt2 = TileTensor(
+    var conv_state_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_heap,
-        row_major(batch, dim, state_len),
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
     )
 
     # cache_seqlens: (batch,) - can be empty
     var cache_seqlens_heap = List(length=batch, fill=Scalar[DType.int32](0))
-    var cache_seqlens_tt = TileTensor(
-        cache_seqlens_heap,
-        row_major(
-            batch,
-        ),
+    var cache_seqlens_h = LayoutTensor[DType.int32, layout_1d, _](
+        cache_seqlens_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
 
     # conv_state_indices: (batch,) - identity mapping
     var conv_state_indices_heap = List(
         length=batch, fill=Scalar[DType.int32](0)
+    )
+    var conv_state_indices_h = LayoutTensor[DType.int32, layout_1d, _](
+        conv_state_indices_heap,
+        RuntimeLayout[layout_1d].row_major(Index(batch)),
+    )
+    for i in range(batch):
+        conv_state_indices_h.ptr.store(i, Scalar[DType.int32](i))
+
+    # output: (batch, dim, seqlen)
+    var output_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
+    var output_h = LayoutTensor[dtype, layout_3d, _](
+        output_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
+    )
+
+    # reference output: (batch, dim, seqlen)
+    var output_ref_heap = List(
+        length=batch * dim * seqlen, fill=Scalar[dtype](0)
+    )
+    var output_ref_h = LayoutTensor[dtype, layout_3d, _](
+        output_ref_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
+    )
+
+    # Copy of conv_state for reference
+    var conv_state_ref_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    var conv_state_ref_h = LayoutTensor[dtype, layout_3d, _](
+        conv_state_ref_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
+    )
+
+    # Initialize input data
+    random(x_h)
+    random(conv_state_h)
+    random(weight_h)
+    random(bias_h)
+
+    # Copy conv_state for reference
+    for i in range(batch * dim * state_len):
+        conv_state_ref_h.ptr[i] = conv_state_h.ptr[i]
+
+    # Create TileTensor versions for kernel call
+    var x_tt2 = TileTensor(x_heap, row_major(batch, dim, seqlen))
+    var weight_tt2 = TileTensor(weight_heap, row_major(dim, width))
+    var bias_tt2 = TileTensor(
+        bias_heap,
+        row_major(
+            dim,
+        ),
+    )
+    var conv_state_tt2 = TileTensor(
+        conv_state_heap,
+        row_major(batch, dim, state_len),
+    )
+    var cache_seqlens_tt = TileTensor(
+        cache_seqlens_heap,
+        row_major(
+            batch,
+        ),
     )
     var conv_state_indices_tt = TileTensor(
         conv_state_indices_heap,
@@ -307,46 +404,14 @@ def run_varlen_causal_conv1d_update[
             batch,
         ),
     )
-    for i in range(batch):
-        conv_state_indices_tt.raw_store(i, Scalar[DType.int32](i))
-
-    # output: (batch, dim, seqlen)
-    var output_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
     var output_tt2 = TileTensor(output_heap, row_major(batch, dim, seqlen))
 
-    # reference output: (batch, dim, seqlen)
-    var output_ref_heap = List(
-        length=batch * dim * seqlen, fill=Scalar[dtype](0)
-    )
-    var output_ref_tt = TileTensor(
-        output_ref_heap, row_major(batch, dim, seqlen)
-    )
-
-    # Copy of conv_state for reference
-    var conv_state_ref_heap = List(
-        length=batch * dim * state_len, fill=Scalar[dtype](0)
-    )
-    var conv_state_ref_tt = TileTensor(
-        conv_state_ref_heap,
-        row_major(batch, dim, state_len),
-    )
-
-    # Initialize input data
-    rand[dtype](x_tt2.ptr, batch * dim * seqlen)
-    rand[dtype](conv_state_tt2.ptr, batch * dim * state_len)
-    rand[dtype](weight_tt2.ptr, dim * width)
-    rand[dtype](bias_tt2.ptr, dim)
-
-    # Copy conv_state for reference
-    for i in range(batch * dim * state_len):
-        conv_state_ref_tt.ptr[i] = conv_state_tt2.ptr[i]
-
-    var x_buf = x_tt2
-    var weight_buf = weight_tt2
-    var bias_buf = bias_tt2
-    var cache_seqlens_buf = cache_seqlens_tt
-    var output_ref_buf = output_ref_tt
-    var conv_state_ref_buf = conv_state_ref_tt
+    var x_buf = x_h
+    var weight_buf = weight_h
+    var bias_buf = bias_h
+    var cache_seqlens_buf = cache_seqlens_h
+    var output_ref_buf = output_ref_h
+    var conv_state_ref_buf = conv_state_ref_h
 
     # Strides for row-major layout
     var x_batch_stride: UInt32 = UInt32(dim * seqlen)
@@ -409,7 +474,7 @@ def run_varlen_causal_conv1d_update[
         var state_batch_idx = b
 
         for d in range(dim):
-            var bias_val = bias_buf.raw_load(d)
+            var bias_val = bias_buf.ptr.load(d)
 
             for l in range(seqlen):
                 var conv_sum: Scalar[dtype] = bias_val
@@ -422,7 +487,7 @@ def run_varlen_causal_conv1d_update[
                         # Read from state
                         var state_pos: Int
                         # has_cache_seqlens is True in our test, so use circular buffer
-                        var cache_seqlen = Int(cache_seqlens_buf.raw_load(b))
+                        var cache_seqlen = Int(cache_seqlens_buf.ptr.load(b))
                         state_pos = (
                             cache_seqlen + rel_pos + l + state_len
                         ) % state_len
@@ -434,7 +499,7 @@ def run_varlen_causal_conv1d_update[
                                 + UInt32(d) * conv_state_dim_stride
                                 + UInt32(state_pos) * conv_state_seqlen_stride
                             )
-                            input_val = conv_state_ref_buf.raw_load(
+                            input_val = conv_state_ref_buf.ptr.load(
                                 state_offset
                             )
                     else:
@@ -446,13 +511,13 @@ def run_varlen_causal_conv1d_update[
                                 + UInt32(d) * x_dim_stride
                                 + UInt32(x_l) * x_seqlen_stride
                             )
-                            input_val = x_buf.raw_load(x_offset)
+                            input_val = x_buf.ptr.load(x_offset)
 
                     var weight_offset = (
                         UInt32(d) * weight_dim_stride
                         + UInt32(w_idx) * weight_width_stride
                     )
-                    var weight_val = weight_buf.raw_load(weight_offset)
+                    var weight_val = weight_buf.ptr.load(weight_offset)
                     conv_sum = conv_sum + input_val * weight_val
 
                 var out_val = conv_sum
@@ -464,7 +529,7 @@ def run_varlen_causal_conv1d_update[
                     + UInt32(d) * out_dim_stride
                     + UInt32(l) * out_seqlen_stride
                 )
-                output_ref_buf.raw_store(out_offset, out_val)
+                output_ref_buf.ptr.store(out_offset, out_val)
 
             # Update state with new x values
             # This matches the CPU implementation logic exactly
@@ -474,11 +539,11 @@ def run_varlen_causal_conv1d_update[
                     + UInt32(d) * x_dim_stride
                     + UInt32(l) * x_seqlen_stride
                 )
-                var x_val = x_buf.raw_load(x_offset)
+                var x_val = x_buf.ptr.load(x_offset)
 
                 var state_pos: Int
                 # has_cache_seqlens is True in our test, so use circular buffer
-                var cache_seqlen = Int(cache_seqlens_buf.raw_load(b))
+                var cache_seqlen = Int(cache_seqlens_buf.ptr.load(b))
                 state_pos = (cache_seqlen + l) % state_len
 
                 var state_offset = (
@@ -486,14 +551,14 @@ def run_varlen_causal_conv1d_update[
                     + UInt32(d) * conv_state_dim_stride
                     + UInt32(state_pos) * conv_state_seqlen_stride
                 )
-                conv_state_ref_buf.raw_store(state_offset, x_val)
+                conv_state_ref_buf.ptr.store(state_offset, x_val)
 
     # Compare results
     var flattened_size = batch * dim * seqlen
     for i in range(flattened_size):
         assert_almost_equal(
-            output_tt2.ptr[i],
-            output_ref_tt.ptr[i],
+            output_h.ptr[i],
+            output_ref_h.ptr[i],
             rtol=rtol,
         )
 
@@ -501,8 +566,8 @@ def run_varlen_causal_conv1d_update[
     var conv_state_size = batch * dim * state_len
     for i in range(conv_state_size):
         assert_almost_equal(
-            conv_state_tt2.ptr[i],
-            conv_state_ref_tt.ptr[i],
+            conv_state_h.ptr[i],
+            conv_state_ref_h.ptr[i],
             rtol=rtol,
         )
 
@@ -522,45 +587,62 @@ def run_varlen_causal_conv1d_states[
     for i in range(batch):
         total_tokens += seq_lengths[i]
 
-    # Allocate host memory as TileTensors over their backing heaps.
+    # Allocate host memory
+    comptime layout_3d = Layout.row_major[3]()
+    comptime layout_2d = Layout.row_major[2]()
+    comptime layout_1d = Layout(UNKNOWN_VALUE)
+
     # x: (total_tokens, dim) - sequences concatenated
     var x_heap = List(length=total_tokens * dim, fill=Scalar[dtype](0))
-    var x_tt3 = TileTensor(x_heap, row_major(total_tokens, dim))
+    var x_h = LayoutTensor[dtype, layout_2d, _](
+        x_heap, RuntimeLayout[layout_2d].row_major(Index(total_tokens, dim))
+    )
 
     # cu_seqlens: (batch + 1,) - cumulative sequence lengths
     var cu_seqlens_heap = List(length=batch + 1, fill=Scalar[DType.int32](0))
+    var cu_seqlens_h = LayoutTensor[DType.int32, layout_1d, _](
+        cu_seqlens_heap, RuntimeLayout[layout_1d].row_major(Index(batch + 1))
+    )
+    var cumsum = 0
+    cu_seqlens_h.ptr.store(0, Scalar[DType.int32](0))
+    for i in range(batch):
+        cumsum += seq_lengths[i]
+        cu_seqlens_h.ptr.store(i + 1, Scalar[DType.int32](cumsum))
+
+    # states: (batch, dim, state_len)
+    var states_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    var states_h = LayoutTensor[dtype, layout_3d, _](
+        states_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
+    )
+
+    # reference states: (batch, dim, state_len)
+    var states_ref_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    var states_ref_h = LayoutTensor[dtype, layout_3d, _](
+        states_ref_heap,
+        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
+    )
+
+    # Initialize input data
+    random(x_h)
+
+    # Create TileTensor versions for kernel call
+    var x_tt3 = TileTensor(x_heap, row_major(total_tokens, dim))
     var cu_seqlens_tt = TileTensor(
         cu_seqlens_heap,
         row_major(
             batch + 1,
         ),
     )
-    var cumsum = 0
-    cu_seqlens_tt.raw_store(0, Scalar[DType.int32](0))
-    for i in range(batch):
-        cumsum += seq_lengths[i]
-        cu_seqlens_tt.raw_store(i + 1, Scalar[DType.int32](cumsum))
-
-    # states: (batch, dim, state_len)
-    var states_heap = List(
-        length=batch * dim * state_len, fill=Scalar[dtype](0)
-    )
     var states_tt = TileTensor(states_heap, row_major(batch, dim, state_len))
 
-    # reference states: (batch, dim, state_len)
-    var states_ref_heap = List(
-        length=batch * dim * state_len, fill=Scalar[dtype](0)
-    )
-    var states_ref_tt = TileTensor(
-        states_ref_heap, row_major(batch, dim, state_len)
-    )
-
-    # Initialize input data
-    rand[dtype](x_tt3.ptr, total_tokens * dim)
-
-    var x_buf = x_tt3
-    var cu_seqlens_buf = cu_seqlens_tt
-    var states_ref_buf = states_ref_tt
+    var x_buf = x_h
+    var cu_seqlens_buf = cu_seqlens_h
+    var states_ref_buf = states_ref_h
 
     # Strides for row-major layout
     var x_seqlen_stride: UInt32 = UInt32(dim)
@@ -591,8 +673,8 @@ def run_varlen_causal_conv1d_states[
 
     # Reference implementation
     for b in range(batch):
-        var end_idx = Int(cu_seqlens_buf.raw_load(b + 1))
-        var start_idx_seq = Int(cu_seqlens_buf.raw_load(b))
+        var end_idx = Int(cu_seqlens_buf.ptr.load(b + 1))
+        var start_idx_seq = Int(cu_seqlens_buf.ptr.load(b))
         var start_idx = max(start_idx_seq, end_idx - state_len)
         var num_elements = end_idx - start_idx
 
@@ -610,15 +692,15 @@ def run_varlen_causal_conv1d_states[
                     + UInt32(d) * states_dim_stride
                     + UInt32(states_seq_idx) * states_seqlen_stride
                 )
-                var val = x_buf.raw_load(x_offset)
-                states_ref_buf.raw_store(states_offset, val)
+                var val = x_buf.ptr.load(x_offset)
+                states_ref_buf.ptr.store(states_offset, val)
 
     # Compare results
     var flattened_size = batch * dim * state_len
     for i in range(flattened_size):
         assert_almost_equal(
-            states_tt.ptr[i],
-            states_ref_tt.ptr[i],
+            states_h.ptr[i],
+            states_ref_h.ptr[i],
             rtol=rtol,
         )
 

@@ -372,12 +372,6 @@ This version is still a work in progress.
 
 - Added `F.print`, which supports both single-device and multi-device tensors.
 
-- Added `max.graph.ops.floor_div` (and `F.floor_div`), element-wise floor
-  division matching Python `//`. Unlike `ops.div`, integer operands stay in
-  the integer domain instead of being promoted to `float64`, so integer floor
-  division compiles on backends without 64-bit float support (for example,
-  Metal GPUs).
-
 - Added `max.graph.default_custom_extensions()` and the
   `default_custom_extensions_scope()` context manager. Paths registered as
   defaults are merged into the `custom_extensions` of every new `Graph`, so a
