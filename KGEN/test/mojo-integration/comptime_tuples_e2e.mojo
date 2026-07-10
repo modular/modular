@@ -65,7 +65,7 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
 
     def __del__(deinit self):
         for i in range(self._len):
-            (self._data + i).destroy_pointee()
+            (self._data + i).unsafe_deinit_pointee()
         if self._cap > 0:
             self._data.free()
 
