@@ -572,6 +572,18 @@ def mgp_buffer_alloc(
     return OwnedByteBuffer(view, storage^)
 
 
+@register_internal("mgp.device_graph.alloc")
+@no_inline
+def mgp_device_graph_alloc(
+    byte_size: Int, builder: DeviceGraphBuilder
+) raises -> OwnedByteBuffer:
+    # The device-graph counterpart of `mgp_buffer_alloc`: it takes the recording
+    # builder instead of a device context. For now it just allocates via the
+    # builder's device context; later the builder can track device-graph
+    # memory-pool allocations here.
+    return mgp_buffer_alloc(byte_size, builder.context())
+
+
 @register_internal("mgp.buffer.constant")
 @export
 def mgp_buffer_constant(
