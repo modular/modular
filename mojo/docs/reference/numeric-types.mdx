@@ -4,12 +4,12 @@ sidebar_label: Numeric types
 sidebar_position: 8
 description: >
   Complete reference for Mojo numeric types. Covers SIMD,
-  DType, Scalar, Int, sized integers, floating-point
+  DType, Scalar, Int, UInt, sized integers, floating-point
   types, Byte, numeric literals, and explicit conversions.
 ---
 
 <!--
-VERIFIED: builtin/simd.mojo (SIMD, Scalar, Byte, sized
+VERIFIED: builtin/simd.mojo (SIMD, Scalar, UInt, Byte, sized
 type aliases, MAX/MIN/MAX_FINITE/MIN_FINITE),
 builtin/int.mojo (Int, Indexer, BITWIDTH),
 builtin/dtype.mojo (DType enum), builtin/int_literal.mojo
@@ -243,12 +243,26 @@ All integer types offer `MAX` and `MIN` as well:
 For example:
 
 ```mojo
+print(UInt.MIN)       # 0
+print(UInt.MAX)       # 18446744073709551615
+
 print(UInt8.MAX)      # 255
 print(Int8.MIN)       # -128
 print(UInt32.MAX)     # 4294967295
 print(Int32.MIN)     # -2147483648
 
 print(SIMD[DType.int16, 1].MIN)  # -32768
+```
+
+### `UInt` {#uint}
+
+`UInt` is a machine-width unsigned integer:
+
+```mojo
+def main():
+    var b: UInt = 42
+    comptime b_type = reflect[type_of(b)].name()
+    print("b:", b_type) # b: SIMD[DType.uint, 1]
 ```
 
 ### Sized integer types
@@ -272,7 +286,7 @@ pattern.
 
 **Using sized vs unsized integers**:
 
-- Use `Int` for counts, indices, loop bounds, and
+- Use `Int` and `UInt` for counts, indices, loop bounds, and
   general-purpose math. It's what the standard library expects and returns.
 
 - Use sized integers when width matters: file layouts, pixel data, hardware
