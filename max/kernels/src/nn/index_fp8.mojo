@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from std.math.uutils import ufloordiv, udivmod
 from std.sys import size_of, simd_width_of
+from std.sys.info import _has_blackwell_tcgen05
 from std.math import ceildiv
 from layout import (
     Coord,
@@ -31,6 +32,10 @@ from std.gpu.sync import barrier
 from std.gpu.memory import external_memory
 from nn.attention.mha_operand import RaggedMHAOperand, MHAOperand
 from nn.attention.gpu.nvidia.common import q_tma
+from nn.attention.gpu.sparse_index_fp8_sm100 import (
+    _BM_KEY,
+    fp8_index_score_sm100,
+)
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -319,48 +324,84 @@ def fp8_index[
     )
     var ks_operand = RaggedMHAOperand(ks_buf, cro_buf)
 
-    comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
-    comptime BM = block_tile_shape[0]
-    comptime BN = block_tile_shape[1]
-    comptime smem_use = size_of[IndexSmemStorage[dtype, num_heads, depth, BN]]()
-    comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
-
     comptime assert num_heads % 8 == 0, "num_heads must be a multiple of 8"
 
-    # RaggedMHAOperand.cache_length() returns full key length directly,
-    # so _is_cache_length_accurate=True skips adding seq_len in the kernel.
-    comptime kernel = fp8_index_kernel[
-        dtype,
-        type_of(output).LayoutType,
-        type_of(q).LayoutType,
-        type_of(q_s).LayoutType,
-        type_of(k_operand),
-        type_of(ks_operand),
-        block_tile_shape,
-        type_of(valid_length).LayoutType,
-        num_heads,
-        depth,
-        _is_cache_length_accurate=True,
-    ]
-
-    ctx.enqueue_function[kernel](
-        output,
-        q.as_immut(),
-        q_s,
-        k_operand,
-        ks_operand,
-        valid_length.as_immut(),
-        grid_dim=(
+    # RaggedMHAOperand.cache_length() returns full key length directly, so the
+    # SM100 tensor-core scorer and the scalar fallback both run with
+    # _is_cache_length_accurate=True (skip adding seq_len in the kernel).
+    # The scorer uses tcgen05/TMA (Blackwell-only), so gate on
+    # _has_blackwell_tcgen05(): H100/A100/other NVIDIA and AMD take the scalar
+    # fallback. The SM100 scorer stages a BM_key-row K tile with one TMA copy,
+    # so a paged K cache must have page_size == 0 (contiguous, as this ragged
+    # path is) or a multiple of BM_key; any other page_size falls back too.
+    comptime if (
+        _has_blackwell_tcgen05()
+        and num_heads == 64
+        and depth == 128
+        and (
+            type_of(k_operand).page_size == 0
+            or type_of(k_operand).page_size % _BM_KEY == 0
+        )
+    ):
+        fp8_index_score_sm100[
+            dtype,
+            type_of(k_operand),
+            type_of(ks_operand),
+            num_heads,
+            depth,
+            _is_cache_length_accurate=True,
+        ](
+            output,
+            q,
+            q_s.as_immut(),
+            k_operand,
+            ks_operand,
+            valid_length,
             batch_size,
-            max_seq_len,
-            ceildiv(max_num_keys, BM),
-        ),
-        block_dim=(16, 8, 1),
-        shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_available)
-        ),
-    )
+            max_num_keys,
+            ctx,
+        )
+    else:
+        comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
+        comptime BM = block_tile_shape[0]
+        comptime BN = block_tile_shape[1]
+        comptime smem_use = size_of[
+            IndexSmemStorage[dtype, num_heads, depth, BN]
+        ]()
+        comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
+
+        comptime kernel = fp8_index_kernel[
+            dtype,
+            type_of(output).LayoutType,
+            type_of(q).LayoutType,
+            type_of(q_s).LayoutType,
+            type_of(k_operand),
+            type_of(ks_operand),
+            block_tile_shape,
+            type_of(valid_length).LayoutType,
+            num_heads,
+            depth,
+            _is_cache_length_accurate=True,
+        ]
+
+        ctx.enqueue_function[kernel](
+            output,
+            q.as_immut(),
+            q_s,
+            k_operand,
+            ks_operand,
+            valid_length.as_immut(),
+            grid_dim=(
+                batch_size,
+                max_seq_len,
+                ceildiv(max_num_keys, BM),
+            ),
+            block_dim=(16, 8, 1),
+            shared_mem_bytes=smem_use,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(smem_available)
+            ),
+        )
 
 
 @__name(t"fp8_index_matmul_max_{dtype}")

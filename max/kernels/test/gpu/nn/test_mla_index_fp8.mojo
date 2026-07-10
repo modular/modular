@@ -15,11 +15,18 @@
 from std.gpu.host import DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
+    KVCollectionT,
     PagedKVCacheCollection,
 )
 from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.gpu.sparse_index_fp8_sm100 import fp8_index_score_sm100
+from nn.attention.mha_operand import (
+    KVCacheMHAOperand,
+    KVCacheScalesMHAOperand,
+)
 from nn.attention.mha_mask import MaskName
 from std.random import rand, random_ui64
+from std.sys.info import _has_blackwell_tcgen05
 from layout import (
     Idx,
     Layout,
@@ -30,8 +37,49 @@ from layout import (
     row_major,
 )
 from std.utils.index import IndexList
-from std.testing import assert_true
+from std.testing import assert_almost_equal, assert_true
 from std.collections import Set
+
+
+def _score_paged_sm100[
+    num_heads: Int,
+    depth: Int,
+    KCollectionT: KVCollectionT,
+](
+    output: TileTensor[DType.float32, ...],
+    q: TileTensor[mut=False, DType.float8_e4m3fn, ...],
+    q_s: TileTensor[mut=False, DType.float32, ...],
+    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    k_collection: KCollectionT,
+    batch_size: Int,
+    max_num_keys: Int,
+    ctx: DeviceContext,
+) raises:
+    # Mirrors the production op's scorer call: with `k_collection` a parameter
+    # its origins are provably disjoint from the mutable `output`, so the
+    # scorer call passes exclusivity checking. An inline call in the test body
+    # (local collection, MutAnyOrigin) trips a false aliasing error.
+    var k_cache = k_collection.get_key_cache(0)
+    var k_op = KVCacheMHAOperand(k_cache)
+    var ks_op = KVCacheScalesMHAOperand(k_cache)
+    fp8_index_score_sm100[
+        DType.float8_e4m3fn,
+        type_of(k_op),
+        type_of(ks_op),
+        num_heads,
+        depth,
+        _is_cache_length_accurate=False,
+    ](
+        output,
+        q,
+        q_s,
+        k_op,
+        ks_op,
+        input_row_offsets,
+        batch_size,
+        max_num_keys,
+        ctx,
+    )
 
 
 def test_mla_index_fp8_paged_variable_lengths[
@@ -41,6 +89,7 @@ def test_mla_index_fp8_paged_variable_lengths[
     top_k: Int,
     mask_name: StaticString = MaskName.NULL.name,
     strict_complete: Bool = False,
+    check_scores: Bool = False,
 ](seq_lens: List[Int], cache_lens: List[Int], ctx: DeviceContext,) raises:
     """Test mla_indexer_ragged_float8_paged with variable-length sequences.
 
@@ -60,6 +109,12 @@ def test_mla_index_fp8_paged_variable_lengths[
             catches the topk_gpu out_vals/out_idxs row-stride desync bug,
             where higher query rows collapsed to all -1 (see the regression
             cases in main()).
+        check_scores: When True (B200 only, NULL mask), run the SM100 tensor-core
+            scorer on the paged KV cache and compare every (token, key) logit
+            against a host reference computed over the paged layout. A wrong
+            paged TMA row mapping (page_size / LUT) reads the wrong K rows, so
+            this catches it -- coverage the index-only checks and
+            `test_index_fp8` (page_size == 0) never exercise.
 
     Args:
         seq_lens: Length of each sequence (new tokens) per batch item.
@@ -376,6 +431,74 @@ def test_mla_index_fp8_paged_variable_lengths[
                 )
             global_token_idx += 1
 
+    comptime if check_scores:
+        # tcgen05-only, so B200 only; on H100 this case still ran the scalar
+        # fallback + the index checks above.
+        comptime if _has_blackwell_tcgen05():
+            var sc_size = total_seq_len * total_num_keys_max
+            var sc_buf = ctx.enqueue_create_buffer[DType.float32](sc_size)
+            sc_buf.enqueue_fill(-Float32.MAX)
+            var sc_tile = TileTensor(
+                sc_buf, row_major(total_seq_len, total_num_keys_max)
+            )
+
+            _score_paged_sm100[num_heads, depth, type_of(k_collection)](
+                sc_tile,
+                q_tile.as_immut(),
+                qs_tile.as_immut(),
+                input_row_offsets_tile.as_immut(),
+                k_collection,
+                batch_size,
+                total_num_keys_max,
+                ctx,
+            )
+            ctx.synchronize()
+            var sc_host = ctx.enqueue_create_host_buffer[DType.float32](sc_size)
+            ctx.enqueue_copy(sc_host, sc_buf)
+            ctx.synchronize()
+
+            # Host reference over the paged layout: page = key // page_size,
+            # offset = key % page_size, block = LUT[batch, page]. A wrong TMA
+            # row mapping in the scorer reads different K rows -> mismatch.
+            with k_block_device.map_to_host() as k_host:
+                with ks_block_device.map_to_host() as ks_host:
+                    with k_lut_device.map_to_host() as lut_host:
+                        var g = 0
+                        for b in range(batch_size):
+                            var nk = cache_lens[b] + seq_lens[b]
+                            for _ in range(seq_lens[b]):
+                                for key in range(nk):
+                                    var page = key // page_size
+                                    var off = key % page_size
+                                    var blk = Int(
+                                        lut_host[b * pages_per_seq + page]
+                                    )
+                                    var kbase = (blk * page_size + off) * depth
+                                    var kscale = ks_host[blk * page_size + off]
+                                    var score = Float32(0)
+                                    for h in range(num_heads):
+                                        var dot = Float32(0)
+                                        for d in range(depth):
+                                            var qd = q_ptr[
+                                                (g * num_heads + h) * depth + d
+                                            ].cast[DType.float32]()
+                                            var kd = k_host[kbase + d].cast[
+                                                DType.float32
+                                            ]()
+                                            dot += qd * kd
+                                        score += (
+                                            max(dot, Float32(0))
+                                            * qs_ptr[g * num_heads + h]
+                                        )
+                                    assert_almost_equal(
+                                        sc_host[g * total_num_keys_max + key],
+                                        score * kscale,
+                                        atol=1e-2,
+                                        rtol=1e-2,
+                                    )
+                                g += 1
+            _ = sc_buf
+
     print("  Test passed!")
 
     # Cleanup
@@ -418,6 +541,98 @@ def main() raises:
         ](
             seq_lens=[4, 8, 2],
             cache_lens=[4, 8, 2],
+            ctx=ctx,
+        )
+
+        # ===== GLM indexer geometry (num_heads=64, depth=128): routes through
+        # the SM100 tensor-core scorer (fp8_index_score_sm100) =====
+        print("\n--- SM100 tensor-core scorer (num_heads=64, depth=128) ---")
+
+        # Dense NULL + strict_complete: the full valid set must be selected, so
+        # this asserts the tensor-core scores rank correctly vs the scalar ref.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=64,
+            top_k=256,
+            mask_name=MaskName.NULL.name,
+            strict_complete=True,
+        ](
+            seq_lens=[6, 4, 2, 1],
+            cache_lens=[64, 128, 32, 96],
+            ctx=ctx,
+        )
+
+        # CAUSAL MTP decode: SM100 scorer + the separate causal mask launch.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=64,
+            top_k=64,
+            mask_name=MaskName.CAUSAL.name,
+        ](
+            seq_lens=[6, 1, 4, 1],
+            cache_lens=[128, 64, 200, 50],
+            ctx=ctx,
+        )
+
+        # page_size=128 (multiple of BM_key=64, larger than one tile): must stay
+        # on the SM100 tensor-core path.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=128,
+            top_k=256,
+            mask_name=MaskName.NULL.name,
+            strict_complete=True,
+        ](
+            seq_lens=[6, 4, 2, 1],
+            cache_lens=[192, 128, 200, 96],
+            ctx=ctx,
+        )
+
+        # Paged score check (B200 only): the SM100 scorer's TMA row mapping is
+        # compared logit-by-logit against a host reference, for both a
+        # single-tile page (64 == BM_key) and a multi-tile page (128).  On H100
+        # these run the scalar fallback + index checks only.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=64,
+            top_k=64,
+            mask_name=MaskName.NULL.name,
+            check_scores=True,
+        ](
+            seq_lens=[4, 2],
+            cache_lens=[100, 60],
+            ctx=ctx,
+        )
+
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=128,
+            top_k=64,
+            mask_name=MaskName.NULL.name,
+            check_scores=True,
+        ](
+            seq_lens=[3, 2],
+            cache_lens=[200, 120],
+            ctx=ctx,
+        )
+
+        # page_size=32 (not a multiple of BM_key=64): the dispatch guard must
+        # fall back to the scalar kernel, which must still rank correctly.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=32,
+            top_k=256,
+            mask_name=MaskName.NULL.name,
+            strict_complete=True,
+        ](
+            seq_lens=[6, 4, 2, 1],
+            cache_lens=[64, 96, 32, 128],
             ctx=ctx,
         )
 

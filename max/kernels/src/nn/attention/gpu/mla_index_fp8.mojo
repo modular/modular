@@ -13,6 +13,7 @@
 """MLA FP8 index kernel for computing attention scores with paged KV cache."""
 
 from std.sys import size_of
+from std.sys.info import _has_blackwell_tcgen05
 from std.math import ceildiv
 
 from layout import (
@@ -28,6 +29,10 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from kv_cache.types import KVCollectionT
 
 from nn.index_fp8 import fp8_index_kernel, IndexSmemStorage
+from nn.attention.gpu.sparse_index_fp8_sm100 import (
+    _BM_KEY,
+    fp8_index_score_sm100,
+)
 from nn.attention.mha_mask import MHAMask, MaskName
 from nn.attention.mha_operand import KVCacheMHAOperand, KVCacheScalesMHAOperand
 from nn.attention.mha_utils import dispatch_mask
@@ -276,45 +281,81 @@ def mla_indexer_ragged_float8_paged[
     var k_operand = KVCacheMHAOperand(k_cache)
     var ks_operand = KVCacheScalesMHAOperand(k_cache)
 
-    comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
-    comptime BM = block_tile_shape[0]
-    comptime BN = block_tile_shape[1]
-    comptime smem_use = size_of[IndexSmemStorage[dtype, num_heads, depth, BN]]()
-    comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
-
-    # fp8_index_kernel computes scores aggregated across heads.
-    # Output is [total_seq_len, max_num_keys] with one score per (token, key) pair.
-    comptime kernel = fp8_index_kernel[
-        dtype,
-        type_of(scores_tile).LayoutType,
-        type_of(q).LayoutType,
-        type_of(q_s).LayoutType,
-        type_of(k_operand),
-        type_of(ks_operand),
-        block_tile_shape,
-        type_of(input_row_offsets.as_immut()).LayoutType,
-        num_heads,
-        depth,
-    ]
-
-    ctx.enqueue_function[kernel](
-        scores_tile,
-        q.as_immut(),
-        q_s,
-        k_operand,
-        ks_operand,
-        input_row_offsets.as_immut(),
-        grid_dim=(
+    # Both paths run with _is_cache_length_accurate=False: the KVCache
+    # cache_length excludes the new tokens.
+    # The scorer uses tcgen05/TMA (Blackwell-only), so gate on
+    # _has_blackwell_tcgen05(): H100/A100/other NVIDIA and AMD take the scalar
+    # fallback below. The SM100 scorer stages a BM_key-row K tile with one TMA
+    # copy, so a paged K cache must have page_size == 0 (contiguous) or a
+    # multiple of BM_key; any other page_size straddles a page boundary and
+    # falls back to the scalar kernel below.
+    comptime if (
+        _has_blackwell_tcgen05()
+        and num_heads == 64
+        and depth == 128
+        and (
+            type_of(k_operand).page_size == 0
+            or type_of(k_operand).page_size % _BM_KEY == 0
+        )
+    ):
+        fp8_index_score_sm100[
+            dtype,
+            type_of(k_operand),
+            type_of(ks_operand),
+            num_heads,
+            depth,
+            _is_cache_length_accurate=False,
+        ](
+            scores_tile,
+            q,
+            q_s.as_immut(),
+            k_operand,
+            ks_operand,
+            input_row_offsets,
             batch_size,
-            max_new_tokens,
-            ceildiv(max_num_keys, BM),
-        ),
-        block_dim=(16, 8, 1),
-        shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_available)
-        ),
-    )
+            max_num_keys,
+            ctx,
+        )
+    else:
+        comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
+        comptime BM = block_tile_shape[0]
+        comptime BN = block_tile_shape[1]
+        comptime smem_use = size_of[
+            IndexSmemStorage[dtype, num_heads, depth, BN]
+        ]()
+        comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
+
+        comptime kernel = fp8_index_kernel[
+            dtype,
+            type_of(scores_tile).LayoutType,
+            type_of(q).LayoutType,
+            type_of(q_s).LayoutType,
+            type_of(k_operand),
+            type_of(ks_operand),
+            block_tile_shape,
+            type_of(input_row_offsets.as_immut()).LayoutType,
+            num_heads,
+            depth,
+        ]
+
+        ctx.enqueue_function[kernel](
+            scores_tile,
+            q.as_immut(),
+            q_s,
+            k_operand,
+            ks_operand,
+            input_row_offsets.as_immut(),
+            grid_dim=(
+                batch_size,
+                max_new_tokens,
+                ceildiv(max_num_keys, BM),
+            ),
+            block_dim=(16, 8, 1),
+            shared_mem_bytes=smem_use,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(smem_available)
+            ),
+        )
 
     # Per-batch KV cache lengths (cached-prefix length).  Needed both by the
     # causal mask below (to map local query index → absolute position) and by
