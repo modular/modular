@@ -186,6 +186,20 @@ _KERNEL_PACKAGES = [
 #    direct `kgen -lsp` run. Needs owner triage: real bug vs. a
 #    standalone-check limitation around heavily-parameterized/generic kernel
 #    code checked outside its normal instantiation context.
+# 3. layout/__init__.mojo crashes standalone-resolving `LayoutTensor`'s
+#    default parameter `element_layout: Layout = Layout(1, 1)`
+#    (layout_tensor.mojo:263) via `CallParamInf::inferForCall`
+#    (KGEN/lib/MojoParser/ParamInf.cpp) -- a real KGEN assertion failure
+#    (DeclResolver.cpp:1491, "Unknown decl symbol!"), confirmed via a direct
+#    `kgen -lsp` run; not a bad edit (that default-param line is unchanged
+#    since March 2024). The other files below all transitively import
+#    `layout` and show the same generic "unable to locate module 'layout'"
+#    resolution failure -- almost certainly the same underlying crash,
+#    reached via the precompiled `layout.mojoc` path instead of source and
+#    reported instead of aborting. `nn/rand_uniform.mojo` additionally shows
+#    a false-positive "use of uninitialized value 'values'" (values IS
+#    initialized the line above) -- likely a standalone-check limitation,
+#    same category as (2) above. See MOCO-2845 for the tracking issue.
 _KERNELS_NO_RUN_LIST = [
     # 1. //Kernels/lib/... visibility gap (see comment above).
     "graph_compiler/builtin_kernels/distributed.mojo",
@@ -216,6 +230,17 @@ _KERNELS_NO_RUN_LIST = [
     # direct `kgen -lsp` run. Same situation as mha.mojo above -- previously
     # hidden behind the fixed crash.
     "nn/conv/conv.mojo",
+    # 3. LayoutTensor default-parameter resolution crash (see comment above).
+    "kv_cache/paged_sparse_kv_index_remap.mojo",
+    "layout/__init__.mojo",
+    "nn/arange.mojo",
+    "nn/rand_normal.mojo",
+    "nn/rand_uniform.mojo",
+    "nn/shard_and_stack.mojo",
+    "state_space/rms_norm_fused_residual_ops.mojo",
+    "state_space/selective_scan_ops.mojo",
+    "state_space/varlen_causal_conv1d_ops.mojo",
+    "state_space/varlen_selective_scan_ops.mojo",
 ]
 
 # ALL_MOJOPKGS minus the internal //Kernels/lib/... packages (msa,
