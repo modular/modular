@@ -72,8 +72,10 @@ struct PrecompileOptTable : public llvm::opt::PrecomputedOptTable {
 /// This function takes a parsed `lit.package` op and creates  a new
 /// `lit.package` op. This new `lit.package` op is one that can be serialized
 /// into MLIR bytecode and written to disk, as a `.mojoc` file. The generated
-/// package only contains stubs of the original package's contents, and is
-/// suitable for importing into other Mojo programs.
+/// package retains the full post-parse IR, including function bodies, in its
+/// regions, filtering out ops unneeded once packaged (import ops under a
+/// package, doc-string source locations). It is suitable for importing into
+/// other Mojo programs, where bodies are materialized lazily on demand.
 static std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>
 buildPackageModule(ModuleOp theModule, LIT::PackageOp parsedPackageOp) {
   OwningOpRef<ModuleOp> packageModule =
