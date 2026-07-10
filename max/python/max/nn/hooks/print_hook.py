@@ -34,10 +34,17 @@ logger = logging.getLogger("max.pipelines")
 
 
 class PrintHook(BasePrintHook):
-    """Hook that prints/saves layer tensor inputs and outputs.
+    """Hook that prints layer tensor inputs and outputs.
 
-    This class must be initialized added before the graph is built so the
-    print ops can be added to the graph.
+    Initialize the class before building the graph. This way, the hook can add
+    print ops to the graph.
+
+    Args:
+        export_path: Intended as the directory to write recorded tensors
+            into, but writing to disk isn't yet supported on the MAX execution
+            path. When set, the path is ignored.
+        filter: A list of layer names to restrict printing to. When ``None``,
+            every named layer is printed.
     """
 
     def __init__(
