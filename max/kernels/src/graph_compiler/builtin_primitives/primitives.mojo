@@ -68,7 +68,7 @@ from extensibility import (
 
 from std.utils import Index, IndexList, StaticTuple
 
-from std.runtime.async_value import AnyAsyncValueRef
+from std.runtime.async_value import AnyAsyncValueRef, _AsyncValuePtr
 
 from .buffer_plan import BufferPlanState, BufferPlanStats
 
@@ -171,6 +171,27 @@ struct OwnedByteBuffer(ImplicitlyCopyable, Movable):
         """
         return self.storage^
 
+    def async_pack(self) -> AnyAsyncValueRef:
+        """Packs the buffer into a freshly allocated `AsyncValue`.
+
+        Unlike `mogg.async.pack`, which fills a runtime-provided async slot, this
+        builds a brand-new `AsyncValue` holding a `TensorBufferRef` over the same
+        backing memory -- used to register a device-graph output. The storage
+        handle is copied (retained), so the borrowed composite stays valid.
+
+        Returns:
+            An owning reference to the new `AsyncValue`.
+        """
+        var ptr = self.unsafe_ptr()
+        var n = self.size()
+        var storage = AnyAsyncValueRef(copy=self.storage)
+        # AsyncValue *MGP_RT_CreateBufferRefAsyncValue(
+        #     AsyncValue *storage, void *data, size_t size)
+        var handle = external_call[
+            "MGP_RT_CreateBufferRefAsyncValue", _AsyncValuePtr[mut=True]
+        ](storage^.take_handle(), ptr, n)
+        return AnyAsyncValueRef(handle)
+
     def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[DType.int8]:
         """Wraps the view's memory in a non-owning `DeviceBuffer` for a copy.
 
@@ -256,6 +277,36 @@ struct OwnedTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
             The storage handle moved out of the composite.
         """
         return self.storage^
+
+    def async_pack(self) -> AnyAsyncValueRef:
+        """Packs the tensor into a freshly allocated `AsyncValue`.
+
+        The tensor analogue of `OwnedByteBuffer.async_pack`: builds a new
+        `AsyncValue` holding a tensor `TensorBufferRef` (view + spec) over the
+        same backing memory, for registering a device-graph output. The storage
+        handle is copied (retained), so the borrowed composite stays valid.
+
+        Returns:
+            An owning reference to the new `AsyncValue`.
+        """
+        var shape = self.shape()
+        var ptr = self.unsafe_ptr()
+        var n = self.bytecount()
+        var storage = AnyAsyncValueRef(copy=self.storage)
+        # AsyncValue *MGP_RT_CreateTensorRefAsyncValue(
+        #     AsyncValue *storage, void *data, size_t size, size_t rank,
+        #     const size_t *shape, DType dtype)
+        var handle = external_call[
+            "MGP_RT_CreateTensorRefAsyncValue", _AsyncValuePtr[mut=True]
+        ](
+            storage^.take_handle(),
+            ptr.bitcast[NoneType](),
+            n,
+            Self.rank,
+            UnsafePointer(to=shape.data),
+            self.dtype,
+        )
+        return AnyAsyncValueRef(handle)
 
 
 @no_inline

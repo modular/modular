@@ -284,6 +284,45 @@ def test_add_memset(ctx: DeviceContext) raises:
             assert_equal(host_u64[i], UInt64(0x0101010101010101))
 
 
+def test_add_output(ctx: DeviceContext) raises:
+    print("Test registering a graph output alongside a kernel node.")
+    comptime length = 1024
+    comptime block_dim = 256
+
+    var in0_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var in1_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
+
+    with in0_dev.map_to_host() as in0_host, in1_dev.map_to_host() as in1_host:
+        for i in range(length):
+            in0_host[i] = Float32(i)
+            in1_host[i] = Float32(length - i)
+
+    def build(mut builder: DeviceGraphBuilder) raises {read}:
+        _ = builder.add_function[vec_add](
+            out_dev,
+            in0_dev,
+            in1_dev,
+            length,
+            grid_dim=ceildiv(length, block_dim),
+            block_dim=block_dim,
+        )
+        # Register the result buffer as a graph output; the graph must still
+        # instantiate and replay correctly. Copy the buffer handle so `out_dev`
+        # remains valid for the host readback below.
+        assert_equal(builder.num_outputs(), 0)
+        builder.add_output(AnyAsyncValueRef(storage_buf=out_dev.copy()))
+        assert_equal(builder.num_outputs(), 1)
+
+    var graph = DeviceGraph.create(ctx, build)
+    graph.replay()
+    ctx.synchronize()
+
+    with out_dev.map_to_host() as out_host:
+        for i in range(length):
+            assert_equal(out_host[i], Float32(length))
+
+
 def test_add_function_with_dependencies(ctx: DeviceContext) raises:
     print(
         "Test add_function with explicit dependencies for two independent"
@@ -658,6 +697,7 @@ def main() raises:
         test_add_copy_from_device(ctx)
         test_add_copy_device_to_device(ctx)
         test_add_memset(ctx)
+        test_add_output(ctx)
         test_add_function_with_dependencies(ctx)
         test_add_memset_with_dependencies(ctx)
         test_add_copy_with_dependencies(ctx)

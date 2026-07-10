@@ -1129,6 +1129,39 @@ struct DeviceGraphBuilder[arena_origin: ImmutOrigin](Movable):
 
         return self.add_empty(dependencies=deps^)
 
+    def add_output(self, var output: AnyAsyncValueRef):
+        """Add a value as an output for the resulting device graph.
+
+        The graph records the output so its backing memory outlives the graph
+        that references it. Ownership of the async value is transferred to the
+        builder.
+
+        Args:
+            output: The async value to register as a graph output.
+        """
+        # void AsyncRT_DeviceGraphBuilder_addOutput(
+        #     DeviceGraphBuilder *builder, AsyncValue *output)
+        external_call[
+            "AsyncRT_DeviceGraphBuilder_addOutput",
+            NoneType,
+        ](self._handle, output^.take_handle())
+
+    def num_outputs(self) -> Int:
+        """Returns the number of outputs registered on the device graph.
+
+        Returns:
+            The number of outputs added via `add_output`.
+        """
+        # int64_t AsyncRT_DeviceGraphBuilder_numOutputs(
+        #     DeviceGraphBuilder *builder)
+        return Int(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_numOutputs",
+                Int64,
+                _DeviceGraphBuilderPtr[mut=True],
+            ](self._handle)
+        )
+
     @doc_hidden
     def instantiate(var self) raises -> DeviceGraph:
         """Instantiates the constructed graph into an executable device graph.
