@@ -2357,9 +2357,10 @@ LogicalResult SharedState::finalizeImportedBytecodeModules() {
     if (!module->bytecodeReader)
       continue;
 
-    // Finalize the bytecode, deleting any operations that weren't materialized.
+    // Finalize the bytecode. Any op that was never materialized is dropped,
+    // *unless* its results are still referenced by materialized IR.
     if (failed(module->bytecodeReader->finalize(
-            [&](Operation *op) { return false; })))
+            [&](Operation *op) { return !op->use_empty(); })))
       return failure();
     // Erase the temporary ModuleOp that was used to read bytecode.
     module->tmpModule.erase();
