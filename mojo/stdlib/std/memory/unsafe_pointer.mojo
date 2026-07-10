@@ -591,56 +591,6 @@ struct UnsafePointer[
             _type=type_of(self)._mlir_type
         ](other._mlir_value)
 
-    @deprecated(
-        "Implicitly converting an `UnsafePointer` to `MutUnsafeAnyOrigin` is"
-        " deprecated. `UnsafeAnyOrigin` is an unsafe escape hatch that silently"
-        " extends unrelated lifetimes and disables exclusivity checking, and it"
-        " is slated for removal, so it should never be applied implicitly."
-        " Prefer keeping a concrete origin; if you must discard it, make the"
-        " cast explicit with `as_unsafe_any_origin()`."
-    )
-    @always_inline("builtin")
-    @doc_hidden
-    @implicit
-    def __init__[
-        disambig: Int = 0  # FIXME: Work around name mangling conflict.
-    ](
-        other: UnsafePointer[mut=True, ...],
-        out self: UnsafePointer[
-            other.type,
-            MutAnyOrigin,
-            address_space=other.address_space,
-        ],
-    ):
-        self._mlir_value = __mlir_op.`pop.pointer.bitcast`[
-            _type=type_of(self)._mlir_type
-        ](other._mlir_value)
-
-    @deprecated(
-        "Implicitly converting an `UnsafePointer` to `ImmutUnsafeAnyOrigin` is"
-        " deprecated. `UnsafeAnyOrigin` is an unsafe escape hatch that silently"
-        " extends unrelated lifetimes and disables exclusivity checking, and it"
-        " is slated for removal, so it should never be applied implicitly."
-        " Prefer keeping a concrete origin; if you must discard it, make the"
-        " cast explicit with `as_unsafe_any_origin()`."
-    )
-    @always_inline("builtin")
-    @doc_hidden
-    @implicit
-    def __init__[
-        disambig2: Int = 0
-    ](
-        other: UnsafePointer[...],
-        out self: UnsafePointer[
-            other.type,
-            ImmutAnyOrigin,
-            address_space=other.address_space,
-        ],
-    ):
-        self._mlir_value = __mlir_op.`pop.pointer.bitcast`[
-            _type=type_of(self)._mlir_type
-        ](other._mlir_value)
-
     def __init__[
         T: ImplicitlyDeletable, //
     ](
@@ -996,25 +946,15 @@ struct UnsafePointer[
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
-    @deprecated(
-        "UnsafePointer is non-null by design, so Bool(ptr) is no longer"
+    @doc_hidden
+    @unavailable(
+        "UnsafePointer is non-null by design, so Bool(ptr) is not"
         " meaningful. To model a null pointer, use"
         " `Optional[UnsafePointer[...]]` and check with `Bool(opt_ptr)` / `!="
         " None`."
     )
     def __bool__(self) -> Bool:
-        """Return true if the pointer is non-null.
-
-        Deprecated: `UnsafePointer` is non-null by design, so `Bool(ptr)` is
-        no longer meaningful. To model a nullable pointer, use
-        `Optional[UnsafePointer[...]]` and check with `Bool(opt_ptr)` or
-        `!= None`.
-
-        Returns:
-            True if the pointer address is non-zero, False otherwise.
-        """
-        return Int(self) != 0
+        ...
 
     @always_inline
     def __int__(self) -> Int:
@@ -1907,18 +1847,6 @@ struct UnsafePointer[
                 ]._mlir_type,
             ](self._mlir_value)
         }
-
-    @doc_hidden
-    @always_inline("builtin")
-    @deprecated(use=as_unsafe_any_origin)
-    def as_any_origin(
-        self,
-    ) -> UnsafePointer[
-        Self.type,
-        AnyOrigin[mut=Self.mut],
-        address_space=Self.address_space,
-    ]:
-        return self.as_unsafe_any_origin()
 
     @always_inline("builtin")
     def address_space_cast[
