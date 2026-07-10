@@ -532,10 +532,9 @@ class PipelineConfig(ConfigFileModel):
                         self.models["main"].model_path,
                         new_model_path,
                     )
-                non_default_kwargs = _strip_default_model_kwargs(model_kwargs)
-                if non_default_kwargs:
+                if model_kwargs:
                     self.models = self.models.with_override(
-                        "main", **non_default_kwargs
+                        "main", **model_kwargs
                     )
             else:
                 model_path = model_kwargs.pop("model_path", "")
