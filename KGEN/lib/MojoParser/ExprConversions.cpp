@@ -1718,9 +1718,22 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(SharedState &shared,
       concreteType = ASTType(mmType.getType());
     }
 
-    // Assumptions needed: e.g. AnyTraitType[Copyable] → AnyTraitType[Movable]
-    // upcast when the Copyable conformance depends on caller assumptions.
     if (concreteType) {
+      // Check for closure rebindability, mirroring the AnyTraitType-metatype
+      // branch above.
+      for (const auto &symbol : anyTrait.getTraitType().getSymbols()) {
+        auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+        if (auto traitDeclOp =
+                dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
+            traitDeclOp && traitDeclOp.getDefinesClosure()) {
+          if (succeeded(shared.closureEmitter->isCompatibleWith(concreteType,
+                                                                &symbolDecl)))
+            return TriState::yes();
+        }
+      }
+
+      // Assumptions needed: e.g. AnyTraitType[Copyable] → AnyTraitType[Movable]
+      // upcast when the Copyable conformance depends on caller assumptions.
       auto assumptions = ASTDecl::getAssumptionsFromScope(declScope);
       if (scopeDependent && !assumptions.empty())
         *scopeDependent = true;
@@ -1997,11 +2010,24 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
       concreteType = ASTType(mmType.getType());
     }
 
-    if (concreteType &&
-        concreteType.doesConformTo(anyTrait.getTraitType(), shared, {})
-            .isTrue()) {
-      // This is just the trait itself, not a conformance, just upcast.
-      return PValue(TypeParamAttr::get(ASTType(typePValue), anyTrait));
+    if (concreteType) {
+      // Augment the witness table of a closure wrapper with a rebind if
+      // necessary, mirroring the AnyTraitType-metatype branch above.
+      for (const auto &symbol : anyTrait.getTraitType().getSymbols()) {
+        auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+        if (auto traitDeclOp =
+                dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
+            traitDeclOp && traitDeclOp.getDefinesClosure()) {
+          (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
+              concreteType, &symbolDecl);
+        }
+      }
+
+      if (concreteType.doesConformTo(anyTrait.getTraitType(), shared, {})
+              .isTrue()) {
+        // This is just the trait itself, not a conformance, just upcast.
+        return PValue(TypeParamAttr::get(ASTType(typePValue), anyTrait));
+      }
     }
   }
 
