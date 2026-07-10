@@ -56,8 +56,11 @@ struct StructDecl {
   /// The symbol ref for the type-value generator.
   SymbolRefAttr symRef;
 
-  /// Flags for tracking recursion during DFS.
-  bool visited = false, done = false;
+  /// True once this struct has been checked for illegal layout recursion.
+  bool done = false;
+  /// True if this struct lies on a lowering-recursion cycle and therefore needs
+  /// a pre-generated shallow (erased) layout for the AsType cycle breaker.
+  bool needsErasure = false;
 };
 
 struct StructDecls {

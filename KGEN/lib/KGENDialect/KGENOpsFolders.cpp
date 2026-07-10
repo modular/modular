@@ -711,11 +711,11 @@ LogicalResult CallIndirectOp::canonicalize(CallIndirectOp op,
 /// we know the callee at elaboration time.
 ErrorTreeOrSuccess CallIndirectOp::interpret(ArrayRef<Attribute> operands,
                                              InterpreterState &state) {
-  auto callee = dyn_cast<SymbolConstantAttr>(operands[0]);
-  if (!callee)
+  auto callable = dyn_cast<CallableSymbolAttrInterface>(operands[0]);
+  if (!callable)
     return ErrorTree(getLoc(), "couldn't resolve kgen.call_indirect callee");
 
-  auto bodyOr = state.lookupFunctionBody(callee.getSymbol());
+  auto bodyOr = state.lookupFunctionBody(callable.getSymbol());
   if (bodyOr.isError())
     return ErrorTree(getLoc(), bodyOr.takeError());
 
@@ -728,25 +728,22 @@ ErrorTreeOrSuccess CallIndirectOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 CallIndirectOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
-  auto callee = dyn_cast<SymbolConstantAttr>(operands[0]);
-  if (!callee)
+  auto callable = dyn_cast<CallableSymbolAttrInterface>(operands[0]);
+  if (!callable)
     return ErrorTree(getLoc(), "couldn't resolve kgen.call_indirect callee");
 
-  auto calleeAttr = cast<SymbolConstantAttr>(state.getReboundAttribute(callee));
-
-  auto bodyOr = state.lookupParametricFunctionBody(calleeAttr.getSymbol());
-  // calleeAttr.getParamValues());
+  auto bodyOr = state.lookupParametricFunctionBody(callable.getSymbol());
   if (bodyOr.isError())
     return ErrorTree(getLoc(), bodyOr.takeError());
 
   Region &body = *bodyOr->first;
-  state.pushParamValues(callee.getParamValues(), true);
-  state.pushEvalFrame(bodyOr->second, bodyOr->first, callee.getParamValues(),
+  state.pushParamValues(callable.getParamValues(), true);
+  state.pushEvalFrame(bodyOr->second, bodyOr->first, callable.getParamValues(),
                       9);
   if (auto err = state.callFunctionBody(body, operands.drop_front()))
     return err.takeError();
 
-  state.setDeclBindings(bodyOr->second, callee.getParamValues());
+  state.setDeclBindings(bodyOr->second, callable.getParamValues());
   return success();
 }
 

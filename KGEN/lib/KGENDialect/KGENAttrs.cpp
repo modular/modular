@@ -1617,6 +1617,40 @@ SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
                                    func->getLoc());
 }
 
+//===----------------------------------------------------------------------===//
+// FuncPtrBitcastAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+FuncPtrBitcastAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                           SymbolConstantAttr callee,
+                           FuncTypeGeneratorType type) {
+  FuncTypeGeneratorType symbolType = callee.getType();
+  if (!isEqualCanon(symbolType.getWithBody(type.getBody()), type))
+    return emitError()
+           << "func_ptr_bitcast must only change the function type body";
+  return success();
+}
+
+bool FuncPtrBitcastAttr::isConstant() const {
+  return getSymbolConstant().isConstant();
+}
+
+ParseResult parseFuncPtrBitcastCallee(AsmParser &p,
+                                      SymbolConstantAttr &callee) {
+  Attribute attr;
+  if (p.parseAttribute(attr))
+    return failure();
+  callee = dyn_cast<SymbolConstantAttr>(attr);
+  if (!callee)
+    return p.emitError(p.getCurrentLocation(), "expected symbol constant");
+  return success();
+}
+
+void printFuncPtrBitcastCallee(AsmPrinter &p, SymbolConstantAttr callee) {
+  p.printAttribute(callee);
+}
+
 ParseResult parseColonTypeSymbolConstant(AsmParser &p,
                                          SymbolConstantAttr &value) {
   mlir::SMLoc loc = p.getCurrentLocation();

@@ -1155,12 +1155,13 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
     return lowerStringToGlobalConstant(strAttr, b, tc, *imc);
   }
 
-  if (auto cst = dyn_cast<SymbolConstantAttr>(attr)) {
-    if (cst.getType().getBody().isCapturing())
+  if (auto callable = dyn_cast<CallableSymbolAttrInterface>(attr)) {
+    if (cast<FuncTypeGeneratorType>(callable.getType()).getBody().isCapturing())
       return Error("TODO: capturing closures cannot be materialized as runtime "
                    "values");
-    return LLVM::AddressOfOp::create(b, tc.convertType(cst.getType()),
-                                     cast<FlatSymbolRefAttr>(cst.getSymbol()));
+    return LLVM::AddressOfOp::create(
+        b, tc.convertType(callable.getType()),
+        cast<FlatSymbolRefAttr>(callable.getSymbol()));
   }
 
   //===--------------------------------------------------------------------===//

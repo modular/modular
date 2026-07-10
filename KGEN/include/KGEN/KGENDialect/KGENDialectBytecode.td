@@ -282,6 +282,11 @@ def FuncSymbolAttr : DialectAttribute<(attr
   ConcreteType<"FuncType">:$type
 )>;
 
+def FuncPtrBitcastAttr : DialectAttribute<(attr
+  ConcreteAttribute<"SymbolConstantAttr">:$callee,
+  ConcreteType<"FuncTypeGeneratorType">:$type
+)>;
+
 def GeneratorAttr : DialectAttribute<(attr
   TypeArray:$inputParamTypes,
   ConcreteAttribute<"TypedAttr">:$body,
@@ -644,7 +649,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     SIMDAttr,
     SIMDSplatAttr,
     PogMetadataAttr,
-    PogListAttr
+    PogListAttr,
+    FuncPtrBitcastAttr
   ];
 }
 

@@ -1588,7 +1588,8 @@ def KGEN_DTypeConstantAttr : KGEN_ExprAttr<"DTypeConstant", "dtype.constant",
 //===----------------------------------------------------------------------===//
 
 def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
-    [DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
+    [CallableSymbolAttrInterface,
+     DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
   let summary = "kgen.func or kgen.generator reference";
   let description = [{
     This is a value of FuncTypeGenerator type, which refers to a func or
@@ -1628,6 +1629,53 @@ def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
 
   let assemblyFormat = [{
     `<` $symbol `` custom<ParameterValues>($paramValues) `` `>`
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// FuncPtrBitcastAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_FuncPtrBitcastAttr : KGEN_ExprAttr<"FuncPtrBitcast", "func_ptr_bitcast",
+    [CallableSymbolAttrInterface]> {
+  let summary = "reinterpret a func/generator reference to another signature";
+  let description = [{
+    The `#kgen.func_ptr_bitcast` attribute is the compile-time analogue of a
+    `pop.pointer.bitcast` applied to a function pointer. It wraps a
+    `SymbolConstantAttr` -- which keeps the callee's true, declared signature --
+    and re-presents it under a different `FuncTypeGeneratorType`.
+
+    Example:
+
+    ```mlir
+    #kgen.func_ptr_bitcast<#kgen.symbol.constant<@bar> : !kgen.generator<(i64) -> none>>
+      : !kgen.generator<(...) -> none>
+    ```
+  }];
+
+  let parameters = (ins
+    "SymbolConstantAttr":$callee,
+    AttributeSelfTypeParameter<"", "FuncTypeGeneratorType">:$type
+  );
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+        "SymbolConstantAttr":$callee, "FuncTypeGeneratorType":$type), [{
+      return get(type.getContext(), callee, type);
+    }]>,
+  ];
+
+  let assemblyFormat = "`<` custom<FuncPtrBitcastCallee>($callee) `>`";
+  let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    /// Get the wrapped reference at its true (deep) signature.
+    SymbolConstantAttr getSymbolConstant() const { return getCallee(); }
+
+    SymbolRefAttr getSymbol() const { return getSymbolConstant().getSymbol(); }
+    ArrayRef<TypedAttr> getParamValues() const {
+      return getSymbolConstant().getParamValues();
+    }
   }];
 }
 

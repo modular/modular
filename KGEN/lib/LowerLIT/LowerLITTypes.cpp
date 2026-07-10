@@ -27,7 +27,9 @@
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PointerUnion.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 #include "Config/Version.h"
@@ -117,6 +119,11 @@ public:
 
     return cast<TypedAttr>(*attrOr);
   }
+
+  /// Table of "erased" struct layouts keyed by the concrete LIT struct
+  /// type (parameter values included). Pointer and function-generator fields
+  /// are erased to pointer-sized indirections.
+  llvm::DenseMap<LIT::StructType, Type> erasedStructs;
 };
 
 using TypeDomain = LowerLITReplacer::TypeDomain;
@@ -152,6 +159,76 @@ private:
   StructDecls &decls;
 };
 } // namespace
+
+static FailureOr<Type>
+lowerStructType(StructDecls &decls, LowerLITReplacer &replacer,
+                ParameterEvaluationContext &evalContext, MLIRContext *ctx,
+                Type noneType, LIT::StructType ref, bool eraseIndirections) {
+  StructDecl &decl = decls.get(ref.getName());
+  // Substitute the given parameters in.
+  ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
+  evaluator.setEvaluationContext(&evalContext);
+
+  // For the outer (non-erased) lowering, precompute and cache the erased layout
+  // so the AsType cycle-breaker can substitute it when the struct re-enters
+  // itself through an indirection.
+  if (!eraseIndirections && decl.needsErasure &&
+      !replacer.erasedStructs.contains(ref)) {
+    FailureOr<Type> erasedOr =
+        lowerStructType(decls, replacer, evalContext, ctx, noneType, ref,
+                        /*eraseIndirections=*/true);
+    if (failed(erasedOr))
+      return failure();
+    replacer.erasedStructs[ref] = *erasedOr;
+  }
+
+  SmallVector<Type> fieldTypes;
+  for (Type type : llvm::make_second_range(decl.fields)) {
+    if (auto ptrType = dyn_cast<PointerType>(type)) {
+      fieldTypes.push_back(PointerType::get(
+          noneType, evaluator.getReboundAttribute(ptrType.getAddressSpace()),
+          ptrType.getIsNonNull()));
+      continue;
+    }
+
+    Type reboundType = evaluator.getReboundType(type);
+    if (!reboundType)
+      return failure();
+    if (eraseIndirections &&
+        isa<LIT::StructType, FuncTypeGeneratorType>(reboundType)) {
+      fieldTypes.push_back(PointerType::get(noneType));
+      continue;
+    }
+
+    fieldTypes.push_back(reboundType);
+  }
+  if (decl.isSingleElement()) {
+    return replacer.replace(fieldTypes.front(), LowerLITReplacer::AsType);
+  }
+  // Replace each field type individually, then create the struct.
+  SmallVector<Type> replacedTypes;
+  replacedTypes.reserve(fieldTypes.size());
+  for (Type t : fieldTypes) {
+    auto replaced = replacer.replace(t, LowerLITReplacer::AsType);
+    if (failed(replaced) || !*replaced)
+      return failure();
+    replacedTypes.push_back(*replaced);
+  }
+  TypedAttr reboundAlignment = evaluator.getReboundAttribute(decl.minAlignment);
+  FailureOr<TypedAttr> loweredAlignmentOr =
+      replacer.replaceParameter(reboundAlignment);
+  if (failed(loweredAlignmentOr))
+    return failure();
+  // Resolve the parametric isMemoryOnly through the evaluator.
+  TypedAttr reboundIsMemoryOnly =
+      evaluator.getReboundAttribute(decl.isMemoryOnlyAttr);
+  FailureOr<TypedAttr> loweredIsMemoryOnlyOr =
+      replacer.replaceParameter(reboundIsMemoryOnly);
+  if (failed(loweredIsMemoryOnlyOr))
+    return failure();
+  return KGEN::StructType::get(ctx, replacedTypes, *loweredIsMemoryOnlyOr,
+                               *loweredAlignmentOr);
+}
 
 FailureOr<ResolvedStructHandle>
 LowerLITEvaluationContext::resolveStructOp(TypedAttr typeValue,
@@ -215,6 +292,7 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   auto typeType = TypeType::get(ctx);
   auto emptyStructType = KGEN::StructType::get(ctx, ArrayRef<Type>{});
   auto emptyStruct = StructAttr::get({}, emptyStructType);
+  auto noneType = KGEN::NoneType::get(ctx);
 
   replacer.addInferredDomainNonRecursiveReplacement(
       [&replacer, evalCtxPtr = &evalContext](
@@ -433,7 +511,23 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](OriginSetType) { return emptyStructType; });
 
-  auto noneType = KGEN::NoneType::get(ctx);
+  // When a function-typed field refers back to its containing struct, keep the
+  // outer function type intact for CTFE symbol storage, but lower the recursive
+  // struct occurrence to an erased, pointer-sized layout.
+  replacer.addCycleBreaker(
+      [&decls, &replacer](Type t) -> std::optional<Type> {
+        auto structTp = dyn_cast<LIT::StructType>(t);
+        if (!structTp)
+          return std::nullopt;
+        auto it = replacer.erasedStructs.find(structTp);
+        if (it == replacer.erasedStructs.end()) {
+          mlir::emitError(decls.get(structTp.getName()).loc,
+                          "struct has recursive reference to itself");
+          return Type();
+        }
+        return it->second;
+      },
+      TypeDomain::AsType);
 
   // #lit.struct -> #kgen.struct
   replacer.addInferredDomainNonRecursiveReplacement(
@@ -509,50 +603,9 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   // - For the AsValue type domain, convert into a symbol reference to the
   //   pre-created symbol generator op.
   replacer.addNonRecursiveReplacement(
-      [&, noneType, ctx,
-       evalCtxPtr = &evalContext](LIT::StructType ref) -> FailureOr<Type> {
-        StructDecl &decl = decls.get(ref.getName());
-        // Substitute the given parameters in.
-        ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
-        evaluator.setEvaluationContext(evalCtxPtr);
-        SmallVector<Type> fieldTypes;
-        for (auto [idx, type] :
-             llvm::enumerate(llvm::make_second_range(decl.fields))) {
-          if (auto ptrType = dyn_cast<PointerType>(type)) {
-            fieldTypes.push_back(PointerType::get(
-                noneType,
-                evaluator.getReboundAttribute(ptrType.getAddressSpace()),
-                ptrType.getIsNonNull()));
-          } else {
-            fieldTypes.push_back(evaluator.getReboundType(type));
-          }
-        }
-        if (decl.isSingleElement())
-          return replacer.replace(fieldTypes.front(), TypeDomain::AsType);
-        // Replace each field type individually, then create the struct.
-        SmallVector<Type> replacedTypes;
-        replacedTypes.reserve(fieldTypes.size());
-        for (Type t : fieldTypes) {
-          auto replaced = replacer.replace(t, TypeDomain::AsType);
-          if (failed(replaced))
-            return failure();
-          replacedTypes.push_back(*replaced);
-        }
-        TypedAttr reboundAlignment =
-            evaluator.getReboundAttribute(decl.minAlignment);
-        FailureOr<TypedAttr> loweredAlignmentOr =
-            replacer.replaceParameter(reboundAlignment);
-        if (failed(loweredAlignmentOr))
-          return failure();
-        // Resolve the parametric isMemoryOnly through the evaluator.
-        TypedAttr reboundIsMemoryOnly =
-            evaluator.getReboundAttribute(decl.isMemoryOnlyAttr);
-        FailureOr<TypedAttr> loweredIsMemoryOnlyOr =
-            replacer.replaceParameter(reboundIsMemoryOnly);
-        if (failed(loweredIsMemoryOnlyOr))
-          return failure();
-        return KGEN::StructType::get(ctx, replacedTypes, *loweredIsMemoryOnlyOr,
-                                     *loweredAlignmentOr);
+      [&, ctx, noneType](LIT::StructType ref) -> FailureOr<Type> {
+        return lowerStructType(decls, replacer, evalContext, ctx, noneType, ref,
+                               /*eraseIndirections=*/false);
       },
       TypeDomain::AsType);
 
@@ -587,36 +640,113 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
 
 // Check if there exists an illegal recursion among struct decls.
 static LogicalResult detectIllegalStructDeclsRecursion(StructDecls &decls) {
+  struct RecursionFrame {
+    Type funcType;
+    StringAttr structName;
+
+    bool isFuncType() const { return static_cast<bool>(funcType); }
+  };
+  enum class StructRecursionStatus { NoMatch, FunctionBoundary, Recursive };
+
+  SmallVector<RecursionFrame> recursionStack;
+  auto containsFuncType = [&](FuncTypeGeneratorType type) {
+    return llvm::any_of(recursionStack, [&](const RecursionFrame &frame) {
+      return frame.isFuncType() && frame.funcType == Type(type);
+    });
+  };
+  auto getStructRecursionStatus = [&](StringAttr name) {
+    bool crossedFuncType = false;
+    for (const RecursionFrame &frame : llvm::reverse(recursionStack)) {
+      if (frame.isFuncType())
+        crossedFuncType = true;
+      if (frame.structName == name)
+        return crossedFuncType ? StructRecursionStatus::FunctionBoundary
+                               : StructRecursionStatus::Recursive;
+    }
+    return StructRecursionStatus::NoMatch;
+  };
+
   // DFS through the parametric types to see if there is recursion.
   mlir::AttrTypeReplacer dfs;
-  auto computeLoweredType = [&](StructDecl &decl) -> LogicalResult {
-    // If we have already seen this type, then there is recursion.
-    if (decl.visited) {
+  auto walkFuncType =
+      [&](FuncTypeGeneratorType type) -> std::pair<Type, WalkResult> {
+    if (containsFuncType(type))
+      return std::make_pair(Type(type), WalkResult::skip());
+
+    recursionStack.push_back({Type(type), StringAttr()});
+    for (Type inputParamType : type.getInputParamTypes()) {
+      if (!dfs.replace(inputParamType)) {
+        recursionStack.pop_back();
+        return std::make_pair(Type(), WalkResult::interrupt());
+      }
+    }
+    if (!dfs.replace(type.getBody())) {
+      recursionStack.pop_back();
+      return std::make_pair(Type(), WalkResult::interrupt());
+    }
+    if (PogListAttr metadata = type.getMetadata()) {
+      if (!dfs.replace(metadata)) {
+        recursionStack.pop_back();
+        return std::make_pair(Type(), WalkResult::interrupt());
+      }
+    }
+    recursionStack.pop_back();
+    return std::make_pair(Type(type), WalkResult::skip());
+  };
+  dfs.addReplacement(
+      [&](FuncTypeGeneratorType type) { return walkFuncType(type); });
+  dfs.addReplacement([](PointerType type) {
+    return std::make_pair(Type(type), WalkResult::skip());
+  });
+
+  std::function<LogicalResult(StringAttr)> computeLoweredType =
+      [&](StringAttr name) -> LogicalResult {
+    StructDecl &decl = decls.get(name);
+    if (decl.done)
+      return success();
+
+    // If the struct is already in the active path, then there is recursion.
+    if (getStructRecursionStatus(name) == StructRecursionStatus::Recursive) {
       // TODO: Improve the error message. We could show the recursive path.
       mlir::emitError(decl.loc, "struct has recursive reference to itself");
       return failure();
     }
+    if (getStructRecursionStatus(name) ==
+        StructRecursionStatus::FunctionBoundary)
+      return success();
 
-    // Set the visited flag. If there are no invalid types, we will never visit
-    // this type again.
-    decl.visited = true;
+    recursionStack.push_back({Type(), name});
 
     // Now recurse on the field types.
-    for (auto [idx, type] :
-         llvm::enumerate(llvm::make_second_range(decl.fields))) {
-      // Skip the ones that will become opaque pointers.
-      if (!isa<PointerType>(type) && !dfs.replace(type))
+    for (Type type : llvm::make_second_range(decl.fields)) {
+      if (!dfs.replace(type)) {
+        recursionStack.pop_back();
         return failure();
+      }
     }
     // We know the type can be lowered.
+    recursionStack.pop_back();
     decl.done = true;
     return success();
   };
 
   dfs.addReplacement([&](LIT::StructType ref) -> std::pair<Type, WalkResult> {
+    StringAttr name = ref.getName();
+    // Break cycles by checking whether the reference points back into the
+    // active struct-layout path before crossing a function-typed field.
+    StructRecursionStatus status = getStructRecursionStatus(name);
+    if (status == StructRecursionStatus::Recursive) {
+      mlir::emitError(decls.get(name).loc,
+                      "struct has recursive reference to itself");
+      return {{}, WalkResult::interrupt()};
+    }
+    if (status == StructRecursionStatus::FunctionBoundary) {
+      decls.get(name).needsErasure = true;
+      return {ref, WalkResult::skip()};
+    }
+
     // Recurse into a the definition of a struct.
-    StructDecl &decl = decls.get(ref.getName());
-    if (!decl.done && failed(computeLoweredType(decl)))
+    if (failed(computeLoweredType(name)))
       return {{}, WalkResult::interrupt()};
     return {ref, WalkResult::skip()};
   });
@@ -627,11 +757,9 @@ static LogicalResult detectIllegalStructDeclsRecursion(StructDecls &decls) {
   });
 
   // Start from any struct and make sure our DFS terminates.
-  for (StructDecl &decl : llvm::make_second_range(decls.structDecls)) {
-    if (decl.done)
-      continue;
-
-    if (failed(computeLoweredType(decl)))
+  for (auto &[name, decl] : decls.structDecls) {
+    (void)decl;
+    if (failed(computeLoweredType(name)))
       return failure();
   }
   return success();
