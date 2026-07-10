@@ -1178,6 +1178,36 @@ async def test_reasoning_not_promoted_on_length(
     assert not message.content
 
 
+@pytest.mark.asyncio
+async def test_stop_sequence_not_found_leaves_message_intact(
+    patch_openai_metrics: None,
+) -> None:
+    """Regression: a stop_sequence recorded but not found in the joined
+    message (idx == -1, e.g. already stripped by the streaming coalescer's
+    stop truncation) must not slice off the last real character via a bare
+    ``[:-1]``. The non-streaming trim is guarded with ``if idx >= 0``."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=[
+            TokenGeneratorOutput(
+                status=GenerationStatus.END_OF_SEQUENCE,
+                decoded_tokens="hello world",
+                stop_sequence="STOP",
+                token_count=2,
+                prompt_token_count=1,
+            )
+        ]
+    )
+
+    response = await OpenAIChatResponseGenerator(mock_pipeline).complete(
+        [_make_mock_request()]
+    )
+    message = response.choices[0].message
+    assert message.content == "hello world"
+    assert response.choices[0].finish_reason == "stop"
+
+
 async def _run_stream(
     chunks: list[TokenGeneratorOutput],
     *,

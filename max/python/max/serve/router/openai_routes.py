@@ -762,7 +762,8 @@ class OpenAIChatResponseGenerator(
             finish_reason: Literal["stop", "length"]
             if len(stop_sequence) > 0:
                 idx = response_message.find(stop_sequence[0])
-                response_message = response_message[:idx]
+                if idx >= 0:
+                    response_message = response_message[:idx]
                 finish_reason = "stop"
             else:
                 finish_reason = get_finish_reason_from_status(

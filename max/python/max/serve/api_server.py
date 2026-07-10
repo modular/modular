@@ -188,6 +188,7 @@ async def lifespan(
                 lora_queue=lora_queue,
                 model_worker=model_worker,
                 reasoning_parser_name=serving_settings.reasoning_parser_name,
+                min_chunk_tokens=settings.stream_min_chunk_tokens,
             ),
             PipelineTask.EMBEDDINGS_GENERATION: lambda: TokenGeneratorPipeline(
                 model_name=serving_settings.pipeline_config.models.model_name,

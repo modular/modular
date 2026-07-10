@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Generic, cast
 
 from max.pipelines.context import (
@@ -76,6 +76,116 @@ class TokenGeneratorOutput:
     stop_sequence: str | None = None
 
 
+def _merge_outputs(chunks: list[TokenGeneratorOutput]) -> TokenGeneratorOutput:
+    """Combine several consecutive TokenGeneratorOutputs into one.
+
+    Decoded text concatenates directly because the detokenizer is stateful
+    across the whole request, so consecutive decoded pieces reassemble the
+    exact stream text. status/stop_sequence come from the last chunk; the
+    first-chunk fields take the first non-None value.
+    """
+    assert chunks
+    content_parts = [c.decoded_tokens for c in chunks if c.decoded_tokens]
+    reasoning_parts = [
+        c.decoded_reasoning_tokens for c in chunks if c.decoded_reasoning_tokens
+    ]
+    token_log_probs = [
+        p
+        for c in chunks
+        if c.token_log_probabilities
+        for p in c.token_log_probabilities
+    ]
+    top_log_probs = [
+        p
+        for c in chunks
+        if c.top_log_probabilities
+        for p in c.top_log_probabilities
+    ]
+
+    def _first_not_none(attr: str) -> Any:
+        for c in chunks:
+            v = getattr(c, attr)
+            if v is not None:
+                return v
+        return None
+
+    stop_sequence = None
+    for c in chunks:
+        if c.stop_sequence is not None:
+            stop_sequence = c.stop_sequence
+
+    return TokenGeneratorOutput(
+        status=chunks[-1].status,
+        decoded_tokens="".join(content_parts) if content_parts else None,
+        decoded_reasoning_tokens="".join(reasoning_parts)
+        if reasoning_parts
+        else None,
+        token_count=sum(c.token_count for c in chunks),
+        token_log_probabilities=token_log_probs or None,
+        top_log_probabilities=top_log_probs or None,
+        prompt_token_count=_first_not_none("prompt_token_count"),
+        cached_token_count=_first_not_none("cached_token_count"),
+        reasoning_token_count=sum(c.reasoning_token_count or 0 for c in chunks)
+        or None,
+        stop_sequence=stop_sequence,
+    )
+
+
+def _apply_stop_truncation(
+    merged: TokenGeneratorOutput,
+) -> TokenGeneratorOutput:
+    """Drop the stop string and anything after it from a flushed chunk's
+    content. The coalescer buffers, so a matched stop string is normally
+    wholly present in the merged text and located exactly by find().
+
+    Accepted limitation: a stop string split across an already-emitted prior
+    chunk boundary cannot be retroactively trimmed. This matches every
+    streaming implementation and is unchanged from today's behavior.
+    """
+    if merged.stop_sequence is None or not merged.decoded_tokens:
+        return merged
+    idx = merged.decoded_tokens.find(merged.stop_sequence)
+    if idx < 0:
+        return merged  # straddled an already-emitted chunk (rare) — accepted limitation
+    return replace(merged, decoded_tokens=merged.decoded_tokens[:idx] or None)
+
+
+async def _coalesce_chunks(
+    source: AsyncGenerator[TokenGeneratorOutput, None],
+    min_chunk_tokens: int,
+) -> AsyncGenerator[TokenGeneratorOutput, None]:
+    """Buffer streamed token chunks to a minimum size and drop empty deltas.
+
+    Flush rules:
+    - first visible chunk flushes as soon as it has text (TTFT unaffected);
+    - a terminal chunk (status.is_done) always flushes;
+    - the token floor only counts once there is non-empty text, so empty
+      deltas (partial multi-byte char / skipped special token) are buffered
+      until real text arrives and never emitted alone.
+    """
+    buffer: list[TokenGeneratorOutput] = []
+    buffered_tokens = 0
+    first_emitted = False
+    async for chunk in source:
+        buffer.append(chunk)
+        buffered_tokens += chunk.token_count + (
+            chunk.reasoning_token_count or 0
+        )
+        merged = _merge_outputs(buffer)
+        has_text = bool(merged.decoded_tokens) or bool(
+            merged.decoded_reasoning_tokens
+        )
+        must_flush = chunk.status.is_done
+        reached_floor = has_text and (
+            not first_emitted or buffered_tokens >= min_chunk_tokens
+        )
+        if must_flush or reached_floor:
+            yield _apply_stop_truncation(merged)  # Part B
+            buffer, buffered_tokens, first_emitted = [], 0, True
+    if buffer:
+        yield _apply_stop_truncation(_merge_outputs(buffer))
+
+
 class BasePipeline(Generic[BaseContextType, RequestType, PipelineOutputType]):
     def __init__(
         self,
@@ -109,10 +219,12 @@ class TokenGeneratorPipeline(
         self,
         *args,
         reasoning_parser_name: str | None = None,
+        min_chunk_tokens: int = 1,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._reasoning_parser_name = reasoning_parser_name
+        self._min_chunk_tokens = max(1, min_chunk_tokens)
 
     async def _reasoning_parser(self) -> ReasoningParser | None:
         if self._reasoning_parser_name is None:
@@ -446,6 +558,8 @@ class TokenGeneratorPipeline(
                         total_sw.elapsed_ms,
                     )
 
+        if self._min_chunk_tokens > 1:
+            return _coalesce_chunks(_generate(), self._min_chunk_tokens)
         return _generate()
 
     async def all_tokens(
