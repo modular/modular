@@ -53,6 +53,16 @@ def takeOwnedSomeTraitPack[*Ts: SomeTrait](var *rest: *Ts):
     pass
 
 
+comptime AliasedSomeTrait = SomeTrait
+
+
+# A `comptime` alias of a trait, used as a generic bound, forwarded as the sole
+# argument to a call whose parameter is a variadic pack bound by the same
+# (unaliased) trait.
+def forward_aliased_trait_bound_to_pack[T: AliasedSomeTrait](var value: T):
+    takeOwnedSomeTraitPack(value^)
+
+
 # CHECK-LABEL: lit.fn @"test_owned_trait
 def test_owned_trait():
     # CHECK-NEXT: %value1 = lit.var.decl
@@ -107,7 +117,7 @@ def test_owned_trait():
 # CHECK-LABEL: lit.fn @"takeInoutSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> true}, {{.*}}origin<true> *"rest
 # CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait_AnyType, :param_list<!SomeTrait_AnyType> {{.*}}Ts>>, imm *"rest`3"> mut|pack_vararg)
-def takeInoutSomeTraitPack[*Ts: SomeTrait](mut*rest: *Ts):
+def takeInoutSomeTraitPack[*Ts: SomeTrait](mut *rest: *Ts):
     pass
 
 
@@ -153,7 +163,7 @@ def test_inout():
 
 struct not_nested_struct[*Ts: AnyType]:
     @implicit
-    def __init__(out self, mut *args: * Self.Ts):
+    def __init__(out self, mut *args: *Self.Ts):
         pass
 
 
@@ -173,7 +183,7 @@ def test_empty_pack():
 # CHECK-SAME: Ts: !lit.struct<#TypeList <:!lit.anytrait<!AnyType> !AnyType{{.*}}> pos_vararg>
 struct MyTuple[*Ts: AnyType]:
     @implicit
-    def __init__(out self, *args: * Self.Ts):
+    def __init__(out self, *args: *Self.Ts):
         pass
 
 

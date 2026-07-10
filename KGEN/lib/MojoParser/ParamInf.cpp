@@ -2131,6 +2131,11 @@ VerifiedParamBindings CallParamInf::inferForCall() {
           } else {
             eltTypeValue = UpcastAttr::get(elementType, eltTypeValue);
           }
+        } else if (eltTypeValue.getType() != elementType) {
+          // If they're only canonically equal, not exactly equal, insert a
+          // conversion.
+          eltTypeValue = emitter.emitPValue({eltTypeValue, operand.expr},
+                                            EC_TypeParamValue, elementType);
         }
       }
 
