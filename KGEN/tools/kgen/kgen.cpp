@@ -232,6 +232,16 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     clOptions.withSingleThreaded();
   }
 
+  // `-lsp` already forces MLIR pass-manager multithreading off below (there is
+  // exactly one file, one clone, one check pipeline run: no parallel work to
+  // exploit). Without this, the AsyncRT work queue still defaults to a full
+  // thread pool, so every invocation pays thread-pool startup/teardown cost
+  // for threads that never do anything -- a measured ~15-20% of wall time on
+  // real kernel files, matching the real LSP server's `-mojo-test` mode, which
+  // does the same.
+  if (clOptions.cmd == Command::kLSP || clOptions.cmd == Command::kLSPNoDump)
+    clOptions.withSingleThreaded();
+
   // Register MLIR stuff
   registerAllKGENDialects(registry);
   registerKGENToLLVMTranslation(registry);
@@ -330,21 +340,22 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   KGENCompiler compiler(*ctx, options, std::move(pmOptions));
 
-  // The `lsp` command reproduces how the language server processes an open
-  // document (MojoDocument::checkModuleSemantics), all in-process: the lazy,
-  // error-tolerant parse (parseFileForLSP) followed by the check pipeline
-  // (runCheckLITPipeline) on the cloned module. Diagnostics are reported on
-  // stderr and the resulting checked module IR is printed to stdout; it then
-  // returns before the normal import/elaborate/emit path (no elaboration or
-  // lowering happens, matching the server, which stops at semantic checking).
-  // Note: docstring code blocks are not checked here (that is the server's
-  // processDocStrings step).
+  // The `lsp`/`lsp=no-dump` commands reproduce how the language server
+  // processes an open document (MojoDocument::checkModuleSemantics), all
+  // in-process: the lazy, error-tolerant parse (parseFileForLSP) followed by
+  // the check pipeline (runCheckLITPipeline) on the cloned module.
+  // Diagnostics are reported on stderr and (for plain `-lsp`) the resulting
+  // checked module IR is printed to stdout; it then returns before the
+  // normal import/elaborate/emit path (no elaboration or lowering happens,
+  // matching the server, which stops at semantic checking). Note: docstring
+  // code blocks are not checked here (that is the server's processDocStrings
+  // step).
   //
   // Unlike the server (a long-running process with no exit code, for which
   // diagnostics are the only signal), this CLI command reports any
   // error-severity diagnostic as a non-zero exit -- useful for scripts/tests
   // that want a pass/fail signal without scraping stderr.
-  if (clOptions.cmd == Command::kLSP) {
+  if (clOptions.cmd == Command::kLSP || clOptions.cmd == Command::kLSPNoDump) {
     if (!inputFileName.ends_with(".mojo"))
       return failure(
           clOptions.reportError("lsp command requires a .mojo file"));
@@ -387,8 +398,14 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
     // Print the checked module IR (post-check, pre-elaboration) to stdout. This
     // is the final IR the LSP path produces; `print` omits a trailing newline.
-    clone->print(llvm::outs());
-    llvm::outs() << "\n";
+    // Serializing it is not free (it is the whole cloned module, which for a
+    // file resolving imports from a large precompiled package can run to
+    // 10,000s of lines), so callers that only care about crashes/diagnostics
+    // and never read stdout can request -lsp=no-dump to skip it.
+    if (clOptions.cmd != Command::kLSPNoDump) {
+      clone->print(llvm::outs());
+      llvm::outs() << "\n";
+    }
     return failure(sawError);
   }
 

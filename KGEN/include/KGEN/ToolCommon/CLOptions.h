@@ -43,6 +43,7 @@ enum class Command {
   kEmitSharedObject,
   kExecute,
   kLSP,
+  kLSPNoDump,
 };
 
 //===----------------------------------------------------------------------===//
@@ -578,7 +579,13 @@ private:
           clEnumValN(Command::kLSP, "lsp",
                      "Process the input as the language server does: lazy "
                      "parse + check pipeline, printing the checked IR to "
-                     "stdout and reporting diagnostics on stderr.")),
+                     "stdout and reporting diagnostics on stderr."),
+          clEnumValN(Command::kLSPNoDump, "lsp=no-dump",
+                     "Same as -lsp, but skips printing the checked IR to "
+                     "stdout. Diagnostics on stderr and the exit status are "
+                     "unaffected; only useful when a caller checks for "
+                     "crashes/diagnostics and never reads stdout, since "
+                     "serializing the IR is not free.")),
       llvm::cl::location(options.cmd),
       llvm::cl::Required,
       llvm::cl::ValueOptional,
