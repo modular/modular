@@ -1012,36 +1012,63 @@ class DKVConnector:
         the default path, ``tp`` on the multi-tenant TP>1 path) with identical
         logical block ids and hashes. Returns the MIN loaded count across shards:
         a block is usable only if it landed on EVERY shard, and the block manager
-        frees blocks past the returned count.
+        frees ``blocks[num_loaded:]`` past the returned count (in
+        ``_get_full_blocks_from_host_prefix_cache``).
+
+        Freed-page ordering (why over-loading shards are drained first). Each
+        shard-client posts its own async H2D and returns its posted count before
+        the copy drains, so an over-loading shard (``count > num_loaded``) has
+        already enqueued H2D into pages the block manager is about to free; a
+        later same-batch reallocation of a freed page could otherwise be
+        clobbered by that stray in-flight read. Draining those shards via
+        :meth:`wait_for_loads` -- before the free -- closes that window on both
+        transports:
+
+        - Remote NIXL: the drain host-completes the reads, so they have landed
+          on return.
+        - Co-located same-host CUDA: the drain enqueues a cross-stream wait
+          (``cuStreamWaitEvent``) that orders the source device's compute stream
+          after the stray copy's end event, with no host block. That compute
+          stream is the device's default stream, and every reallocating writer
+          of a freed page runs on it too -- the forward pass, or the block
+          manager's cross-replica ``_copy_block_across_replicas`` whose
+          device-to-device copy issues on the destination's default stream -- so
+          each is FIFO-ordered after the enqueued wait. A reload that reuses the
+          page on the same copy stream is ordered by copy-stream FIFO.
+
+        Enqueuing the drain before the free is what places the ordering wait
+        ahead of every later reallocating writer.
         """
         dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
+        group = self._replica_client_groups[replica_idx]
         counts = [
             client.load(
                 group_id=_DKV_GROUP_FULL_ATTENTION,
                 device_block_ids=device_block_ids,
                 block_hashes=dkv_hashes,
             )
-            for client in self._replica_client_groups[replica_idx]
+            for client in group
         ]
+        num_loaded = min(counts)
         if len(set(counts)) > 1:
             _logger.debug(
                 "dKV load: shard-clients for replica %d returned differing "
-                "loaded-block counts %s; using min",
+                "loaded-block counts %s; using min %d",
                 replica_idx,
                 counts,
+                num_loaded,
             )
-        # TODO(CLIN-1512 TP-3): returning min is not enough once real per-GPU
-        # transfers land. A shard-count mismatch (partial offload failure, or
-        # independent per-store eviction) means an OVER-loading shard has already
-        # enqueued async H2D reads into device pages beyond `min`. The block
-        # manager (``_get_full_blocks_from_host_prefix_cache``) frees
-        # ``blocks[num_loaded:]`` immediately, so a later same-batch same-replica
-        # reallocation of a freed page can be clobbered by that stray in-flight
-        # read -> silent wrong KV. This is inert TODAY (cross-shard transfer is
-        # TP-3, not wired), but the fan-out + free path IS live. TP-3 must align
-        # shard loads (all shards agree before returning) or drain/cancel the
-        # stray reads before the free -- or fail loud on a count mismatch.
-        return min(counts)
+            # The outer ``len(set(counts)) > 1`` gate is only a hot-path/logging
+            # guard (divergence is implied by any ``count > num_loaded``); the
+            # inner ``count > num_loaded`` is what enforces correctness -- a
+            # shard at count == num_loaded read only pages the block manager
+            # keeps, so it is not drained and the common equal-count path pays
+            # no extra sync. See this method's docstring for the freed-page
+            # ordering proof (CLIN-1512 TP-3 correctness fix).
+            for client, count in zip(group, counts, strict=True):
+                if count > num_loaded:
+                    client.wait_for_loads()
+        return num_loaded
 
     def offload(
         self,
