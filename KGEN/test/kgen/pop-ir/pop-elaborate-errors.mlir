@@ -272,3 +272,27 @@ kgen.generator export @use_it_simd_invalid_reduce_and() {
 }
 
 }
+
+// -----
+
+// Test that inline_asm produces a helpful error message explaining that it
+// cannot be evaluated at compile time (MOCO-1771).
+
+// expected-note @below {{failed to interpret function @gpu_inline_asm}}
+kgen.generator @gpu_inline_asm() -> i64 {
+  // CHECK-PARAM: failed to fold operation pop.inline_asm
+  // CHECK-PARAM: Note: Inline assembly cannot be evaluated at compile time.
+  // The helpful note is part of the same error message, so use expected-note-re
+  // to match the beginning and the fact that the note is appended.
+  // expected-note-re @below {{failed to fold operation pop.inline_asm{{.*}}Note: Inline assembly cannot be evaluated at compile time. Inline assembly contains hardware-specific instructions that can only execute at runtime on the target hardware.}}
+  %0 = pop.inline_asm "createpolicy.fractional.L2::evict_first.b64 $0;", "=l", () : () -> i64
+  kgen.return %0 : i64
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @use_inline_asm_in_param() {
+  // CHECK-PARAM: failed to compile-time evaluate function call
+  // expected-note @below {{failed to compile-time evaluate function call}}
+  kgen.param.constant: i64 = <apply(:() -> i64 @gpu_inline_asm)>
+  kgen.return
+}

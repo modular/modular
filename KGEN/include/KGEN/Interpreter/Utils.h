@@ -45,6 +45,14 @@ inline ErrorTree reportFoldError(Operation *op, ArrayRef<Attribute> operands,
   os << '(';
   llvm::interleaveComma(operands, os);
   os << ')' << suffix;
+
+  // Provide a more helpful hint for inline assembly operations.
+  if (op->getName().getStringRef() == "pop.inline_asm") {
+    os << "\n\nNote: Inline assembly cannot be evaluated at compile time. "
+       << "Inline assembly contains hardware-specific instructions that can "
+       << "only execute at runtime on the target hardware.";
+  }
+
   return {op->getLoc(), Error(os.str())};
 }
 
