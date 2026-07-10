@@ -623,20 +623,19 @@ checking), then stops before elaboration:
 2. **Phase 2: Semantic Checking** - Runs `runCheckLITPipeline`
    (LowerSemanticCF, CheckLifetimes) to verify the package is semantically
    valid
-3. **Package Building** - Calls `buildPackageModule` to:
-   - Create a `lit.package` op with **stubs only** (function signatures and
-     type declarations, no bodies)
-   - Serialize the full post-semantic-checking IR into a
-     `postParseModuleAttr` (bytecode blob)
-   - Record package dependencies and attach any external bitcode libraries
-4. **Output** - Emits a `.mojoc` file containing MLIR bytecode with the
-   stripped `lit.package` stub and the full IR in the attribute
+3. **Package Building** - Calls `buildPackageModule` to rebuild a `lit.package`
+   op whose regions carry the full post-parse IR, including function bodies. It
+   filters out ops not needed once packaged (import ops directly under a
+   package, doc-string source locations) and records package dependencies and
+   external bitcode libraries.
+4. **Output** - Emits a `.mojoc` file: the `lit.package` op serialized to MLIR
+   bytecode.
 
 **Key Difference**: Package creation stops after semantic checking (Phase 2)
-and emits the IR as bytecode. The full IR (including function bodies) is
-preserved in the `postParseModuleAttr` so that elaboration can happen later
-when the package is imported and compiled with concrete parameter values from
-the importing code.
+and emits the IR as bytecode. The `lit.package` regions retain function bodies,
+so elaboration can happen later when the package is imported and compiled with
+concrete parameter values from the importing code. Bodies are materialized
+lazily on import.
 
 ### Package vs. Normal Compilation
 
@@ -651,26 +650,29 @@ the importing code.
 
 ```mlir
 lit.package @my_package {
-  // Stripped declarations (stubs only)
-  lit.fn @"my_func(::Int)"(%arg: !Int) -> !Int
+  // Declarations retain their bodies (LIT IR) inline in the regions.
+  lit.fn @"my_func(::Int)"(%arg: !Int) -> !Int {
+    // ... function body ...
+  }
 
   lit.struct.decl @MyStruct {
     lit.struct.field @x : !Int
-    lit.fn @"__init__(inout::Self,::Int)"(...)
+    lit.fn @"__init__(inout::Self,::Int)"(...) {
+      // ... function body ...
+    }
   }
 
   // Nested modules
   lit.file_module @submodule { ... }
 } {
   // Attributes
-  postParseModule = dense_resource<...> : vector<12345xi8>,
   dependencies = [@other_package]
 }
 ```
 
-The `postParseModuleAttr` contains the full post-parse IR serialized as
-bytecode. When the package is compiled, this bytecode is deserialized and
-merged into the compilation.
+The full IR, including function bodies, lives in the `lit.package` op's regions.
+On import, the op is deserialized from bytecode and bodies are materialized
+lazily.
 
 ### Package and module IR representation
 
@@ -778,14 +780,14 @@ When importing a `.mojoc` file (`createBinaryPackageState`):
 
 1. **Lazy Loading**: The bytecode is read using `mlir::BytecodeReader` with
    lazy loading enabled
-2. **Stub Registration**: The `lit.package` stub is inserted into the current
+2. **Package Registration**: The `lit.package` op is inserted into the current
    module
 3. **Thunk Deduplication**: Function conversion thunks are moved to the
    top-level module (deduplicated if already present)
 4. **Decl Registration**: Declarations are registered as "loaded from
    bytecode" with signatures already resolved
-5. **On-Demand Materialization**: Operations are only fully materialized when
-   needed (similar to when parsing from source files)
+5. **On-Demand Materialization**: Function bodies are materialized only when
+   needed, from the bytecode (similar to parsing from source files)
 
 ### Command-Line Usage
 
@@ -793,19 +795,16 @@ When importing a `.mojoc` file (`createBinaryPackageState`):
 # Create a .mojoc from a source directory
 mojo precompile my_package/ -o my_package.mojoc
 
-# Create a kgen module (full pre-elaboration IR)
-mojo precompile my_package/ --kgen-module -o my_package.mlirbc
-
 # Compile code that imports the precompiled package
 mojo build main.mojo -I .  # Finds my_package.mojoc in search paths
 ```
 
 ### Key Implementation Details
 
-1. **Stubs Only**: Package files contain only function signatures and type
-   declarations, not bodies
-2. **Deferred Elaboration**: The full IR is stored but not elaborated until
-   compilation time
+1. **Full IR Retained**: Package files carry the full post-parse IR, including
+   function bodies, in the `lit.package` op's regions
+2. **Deferred Elaboration**: The IR is stored but not elaborated until
+   compilation time of the importing code
 3. **Lazy Loading**: Binary packages use bytecode lazy loading to minimize
    memory usage
 4. **Thunk Deduplication**: Conversion function thunks are shared across
