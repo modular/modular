@@ -29,9 +29,15 @@ import extensibility as compiler
 # ===-----------------------------------------------------------------------===#
 
 from std.gpu.host import DeviceContext
-from layout.tile_tensor import row_major
 from std.gpu.host.info import is_gpu
-from layout import Coord, Idx, IntTuple, TileTensor, UNKNOWN_VALUE, row_major
+from layout import (
+    Coord,
+    Idx,
+    IntTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,

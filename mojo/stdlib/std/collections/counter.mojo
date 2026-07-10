@@ -266,7 +266,7 @@ struct Counter[
         """
         writer.write_string("{")
 
-        var items = self.most_common(UInt(len(self)))
+        var items = self.most_common(len(self))
         for i in range(len(items)):
             if i > 0:
                 writer.write_string(", ")
@@ -853,11 +853,11 @@ struct Counter[
         ```
         """
         var item_ref = self._data.popitem()
-        return CountTuple[Self.V](item_ref.key, UInt(item_ref.value))
+        return CountTuple[Self.V](item_ref.key, item_ref.value)
 
     # Special methods for counter
 
-    def total(self) -> UInt:
+    def total(self) -> Int:
         """Return the total of all counts in the `Counter`.
 
         Returns:
@@ -877,9 +877,9 @@ struct Counter[
         var total = 0
         for count in self.values():
             total += count
-        return UInt(total)
+        return total
 
-    def most_common(self, n: UInt) -> List[CountTuple[Self.V]]:
+    def most_common(self, n: Int) -> List[CountTuple[Self.V]]:
         """Return a list of the `n` most common elements and their counts from
         the most common to the least.
 
@@ -903,7 +903,7 @@ struct Counter[
         """
         var items: List[CountTuple[Self.V]] = List[CountTuple[Self.V]]()
         for item in self._data.items():
-            var t = CountTuple[Self.V](item.key, UInt(item.value))
+            var t = CountTuple[Self.V](item.key, item.value)
             items.append(t^)
 
         @parameter
@@ -1002,7 +1002,7 @@ struct CountTuple[V: KeyElement & Copyable & ImplicitlyDeletable](
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
-    def __init__(out self, value: Self.V, count: UInt):
+    def __init__(out self, value: Self.V, count: Int):
         """Create a new `CountTuple`.
 
         Args:

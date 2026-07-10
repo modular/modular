@@ -91,7 +91,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         self.write_bytes(string.as_bytes())
 
     @always_inline
-    def read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
+    def read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> Int:
         """Read a number of bytes from the file into a buffer.
 
         Args:
@@ -119,7 +119,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         )
         if read < 0:
             raise Error("Failed to read bytes.")
-        return UInt(read)
+        return read
 
     def isatty(self) -> Bool:
         """Checks whether a file descriptor refers to a terminal.

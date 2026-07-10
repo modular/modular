@@ -415,7 +415,7 @@ struct LinkedList[ElementType: Movable](
         """
         var addr = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
         var value_ptr = UnsafePointer(to=addr[].value)
-        value_ptr.init_pointee_move(value^)
+        value_ptr.unsafe_write(value^)
         addr[].prev() = self._tail
         addr[].next() = Self._NodePointer()
         if self._tail:
@@ -436,7 +436,7 @@ struct LinkedList[ElementType: Movable](
         """
         var node = _make_node[Self.ElementType](value^, None, self._head)
         var addr = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
-        addr.init_pointee_move(node^)
+        addr.unsafe_write(node^)
         if self:
             self._head.value()[].prev() = addr
         else:
@@ -631,14 +631,8 @@ struct LinkedList[ElementType: Movable](
         self._tail = Self._NodePointer()
         self._size = 0
 
-    # TODO(MSTDL-2808): Add `ImplicitlyDeletable` compliance to the `insert` and
-    # `extend` methods of `LinkedList`.
     @always_inline
-    def insert[
-        I: Indexer
-    ](mut self, idx: I, var elem: Self.ElementType) raises where conforms_to(
-        Self.ElementType, ImplicitlyDeletable
-    ):
+    def insert[I: Indexer](mut self, idx: I, var elem: Self.ElementType):
         """Insert an element `elem` into the list at index `idx`.
 
         Parameters:
@@ -648,24 +642,23 @@ struct LinkedList[ElementType: Movable](
             idx: The index to insert `elem` at `-len(self) <= idx <= len(self)`.
             elem: The item to insert into the list.
 
-        Raises:
-            When given an out of bounds index.
-
         Notes:
             Time Complexity: O(n) in len(self).
         """
 
-        # `insert` follows Python's list.insert() semantics: out-of-range
-        # negative indices clamp to 0 (head) rather than raising, so
-        # we don't use `check_bounds` here.
+        # `insert` follows Python's list.insert() semantics: negative indices
+        # clamp to 0 (head). Bounds-check after clamping, since `check_bounds`
+        # rejects negatives; the valid range is `[0, len(self)]` (an index of
+        # `len(self)` appends, anything past the tail aborts).
         var i = index(idx)
         i = max(i if i >= 0 else i + len(self), 0)
+        check_bounds(i, len(self) + 1)
 
         if i == 0:
             var node = alloc(
                 Layout[Node[Self.ElementType]].single()
             ).unsafe_leak()
-            node.init_pointee_move(
+            node.unsafe_write(
                 _make_node[Self.ElementType](
                     elem^, Self._NodePointer(), Self._NodePointer()
                 )
@@ -685,33 +678,25 @@ struct LinkedList[ElementType: Movable](
 
         i -= 1
 
+        # `i <= len(self)` (asserted above) guarantees a valid predecessor node.
         var current = self._get_node_ptr(i)
-        if current:
-            var curr_nn = current.value()
-            var next = curr_nn[].next()
-            var node = alloc(
-                Layout[Node[Self.ElementType]].single()
-            ).unsafe_leak()
-            var data = UnsafePointer(to=node[].value)
-            data[] = elem^
-            node[].next() = next
-            node[].prev() = current
-            if next:
-                next.value()[].prev() = node
-            curr_nn[].next() = node
-            if node[].next() == Self._NodePointer():
-                self._tail = node
-            if node[].prev() == Self._NodePointer():
-                self._head = node
-            self._size += 1
-        else:
-            raise Error("Index ", i, " out of bounds")
+        var curr_nn = current.value()
+        var next = curr_nn[].next()
+        var node = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
+        var data = UnsafePointer(to=node[].value)
+        data.unsafe_write(elem^)
+        node[].next() = next
+        node[].prev() = current
+        if next:
+            next.value()[].prev() = node
+        curr_nn[].next() = node
+        if node[].next() == Self._NodePointer():
+            self._tail = node
+        if node[].prev() == Self._NodePointer():
+            self._head = node
+        self._size += 1
 
-    # TODO(MSTDL-2808): Add `ImplicitlyDeletable` compliance to the `insert` and
-    # `extend` methods of `LinkedList`.
-    def extend(
-        mut self, var other: Self
-    ) where conforms_to(Self.ElementType, ImplicitlyDeletable):
+    def extend(mut self, deinit other: Self):
         """Extends the list with another.
 
         Args:
@@ -733,12 +718,9 @@ struct LinkedList[ElementType: Movable](
             self._tail = other._tail
             self._size = other._size
 
-        other._head = Self._NodePointer()
-        other._tail = Self._NodePointer()
-
     def count(
         self, read elem: Self.ElementType
-    ) -> UInt where conforms_to(Self.ElementType, Equatable):
+    ) -> Int where conforms_to(Self.ElementType, Equatable):
         """Count the occurrences of `elem` in the list.
 
         Args:
@@ -758,7 +740,7 @@ struct LinkedList[ElementType: Movable](
 
             current = current.value()[].next()
 
-        return UInt(count)
+        return count
 
     def index(
         self,

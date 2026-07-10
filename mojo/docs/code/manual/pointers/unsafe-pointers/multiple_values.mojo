@@ -16,7 +16,7 @@ def main():
     # start-alloc-multiple
     var float_ptr = alloc[Float64](6)
     for offset in range(6):
-        (float_ptr + offset).init_pointee_copy(0.0)
+        (float_ptr + offset).unsafe_write(0.0)
     # end-alloc-multiple
 
     # start-subscript-access

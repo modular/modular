@@ -16,8 +16,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import max.pipelines.lib.pipeline_variants.structured_output_backend as _sob
 import numpy as np
 import numpy.typing as npt
+import pytest
 from max.pipelines.context import (
     GenerationStatus,
     GrammarMatcher,
@@ -25,6 +27,7 @@ from max.pipelines.context import (
     TextContext,
     TokenBuffer,
 )
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib.pipeline_variants.structured_output_backend import (
     GrammarBackend,
 )
@@ -34,6 +37,7 @@ from max.pipelines.lib.pipeline_variants.utils import (
 )
 from max.pipelines.lib.tool_parsing import StructuralTagToolParser, register
 from max.pipelines.modeling.types import ParsedToolCall, RequestID
+from max.pipelines.sampling import DEFAULT_STRUCTURED_OUTPUT_BACKEND
 
 
 class _RecordingMatcher(GrammarMatcher):
@@ -63,7 +67,7 @@ class _RecordingMatcher(GrammarMatcher):
         return _RecordingMatcher()
 
 
-class _NoopBackend(GrammarBackend):
+class _NoopBackend(GrammarBackend[Any]):
     """GrammarBackend stub so Part 2's fills don't touch llguidance."""
 
     name = "noop"
@@ -73,6 +77,9 @@ class _NoopBackend(GrammarBackend):
 
     def create_matcher(self, grammar: Any) -> GrammarMatcher:
         return _RecordingMatcher()
+
+    def validate_grammar(self, grammar: Any) -> None:
+        return None
 
     def allocate_token_bitmask(
         self, batch_size: int, vocab_size: int
@@ -489,3 +496,70 @@ class TestAdvanceFsmAndComputeBitmasks:
 
         # Unconstrained rows: callback resets every row to all-valid (-1).
         assert (bitmask_out == -1).all()
+
+
+class _RaisingBackend(GrammarBackend[Any]):
+    """GrammarBackend stub whose compiles always raise, to exercise the
+    validator's exception translation."""
+
+    name = "boom"
+
+    def compile_json_schema(self, json_schema: Any) -> Any:
+        raise ValueError("cannot compile schema")
+
+    def create_matcher(self, grammar: Any) -> GrammarMatcher:
+        raise ValueError("cannot compile grammar")
+
+    def validate_grammar(self, grammar: Any) -> None:
+        return None
+
+    def allocate_token_bitmask(
+        self, batch_size: int, vocab_size: int
+    ) -> npt.NDArray[np.int32]:
+        raise NotImplementedError
+
+    def fill_next_token_bitmask(
+        self,
+        matcher: GrammarMatcher,
+        bitmask: npt.NDArray[np.int32],
+        index: int,
+    ) -> None:
+        raise NotImplementedError
+
+
+class TestGrammarValidation:
+    """A backend's GrammarValidator checks turn a compile failure into an
+    InputError (400)."""
+
+    def test_tool_grammar_ok_does_not_raise(self) -> None:
+        _NoopBackend().check_tool_grammar("<grammar>")
+
+    def test_tool_grammar_uncompilable_raises_input_error(self) -> None:
+        with pytest.raises(InputError, match="boom"):
+            _RaisingBackend().check_tool_grammar("<grammar>")
+
+    def test_json_schema_ok_does_not_raise(self) -> None:
+        _NoopBackend().check_json_schema('{"type": "object"}')
+
+    def test_json_schema_uncompilable_raises_input_error(self) -> None:
+        with pytest.raises(InputError, match="boom"):
+            _RaisingBackend().check_json_schema('{"type": "object"}')
+
+    def test_make_validator_none_falls_back_to_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A None backend_name (unresolved config) builds the validator with
+        the default backend -- mirroring StructuredOutputHelper.from_tokenizer
+        -- so admission still fires when the worker would otherwise silently
+        fall back to xgrammar on an unresolved config and crash."""
+        captured: dict[str, Any] = {}
+
+        def fake_make(
+            name: Any, delegate: Any, vocab_size: Any
+        ) -> GrammarBackend[Any]:
+            captured["name"] = name
+            return _NoopBackend()
+
+        monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
+        _sob.make_grammar_validator(None, object(), 128)
+        assert captured["name"] == DEFAULT_STRUCTURED_OUTPUT_BACKEND

@@ -6608,7 +6608,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 # This kernel captures 'scale_factor' from the enclosing scope
                 def scale_kernel() {var}:
                     var i = global_idx.x
-                    if i >= UInt(100):
+                    if i >= 100:
                         return
                     data[i] = data[i] * scale_factor
 
@@ -8024,7 +8024,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 self._handle,
                 dst._handle,
                 value,
-                UInt(size_of[dtype]()),
+                c_size_t(size_of[dtype]()),
             )
         )
 

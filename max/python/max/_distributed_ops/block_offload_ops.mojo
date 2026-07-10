@@ -259,7 +259,7 @@ def _do_broadcast_units[
     # Build the DeviceContextList once; copy it for each unit's launch.
     var ctx_array = InlineArray[DeviceContext, ngpus](uninitialized=True)
     for i in range(ngpus):
-        (ctx_array.unsafe_ptr() + i).init_pointee_move(
+        (ctx_array.unsafe_ptr() + i).unsafe_write(
             DeviceContext(
                 OpaquePointer[MutUntrackedOrigin](
                     unsafe_from_address=main_ctx_addr_arr[i]

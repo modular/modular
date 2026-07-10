@@ -26,6 +26,8 @@ class GenerateRequest(BaseModel):
 
     num_tokens: int = 10
     ignore_eos: bool = False
+    temperature: float = 1.0
+    """Sampling temperature. Set to ``0.0`` for greedy (deterministic) decoding."""
 
 
 ChatMessages: TypeAlias = list[dict[str, str]]

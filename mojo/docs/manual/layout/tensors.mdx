@@ -255,8 +255,9 @@ def initialize_tensor_from_cpu_example() raises:
 
 
     def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
-        if global_idx.y < UInt(tensor.shape[0]()) and global_idx.x < UInt(
-            tensor.shape[1]()
+        if (
+            global_idx.y < tensor.shape[0]()
+            and global_idx.x < tensor.shape[1]()
         ):
             tensor[global_idx.y, global_idx.x] = (
                 tensor[global_idx.y, global_idx.x] + 1

@@ -24,7 +24,7 @@ from std.benchmark import run, Unit
 from std.time import sleep
 ```
 
-You can pass any `fn` as a parameter into `run[...]()`, it will return
+You can pass any function as an argument into `run()`, it will return
 a `Report` where you can get the mean, duration, max, and more:
 
 ```mojo
@@ -34,7 +34,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var report = run[func2=sleeper]()
+var report = run(sleeper)
 print(report.mean())
 ```
 
@@ -51,7 +51,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var report = run[func2=sleeper]()
+var report = run(sleeper)
 report.print()
 ```
 
@@ -79,7 +79,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var report = run[func2=sleeper]()
+var report = run(sleeper)
 report.print_full()
 ```
 
@@ -122,7 +122,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var report = run[func2=sleeper]()
+var report = run(sleeper)
 report.print(Unit.ms)
 ```
 
@@ -149,7 +149,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var report = run[func2=sleeper]()
+var report = run(sleeper)
 print(report.mean("ms"))
 ```
 
@@ -167,7 +167,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var r = run[func2=sleeper](5)
+var r = run(sleeper, 5)
 ```
 
 ```output
@@ -184,7 +184,7 @@ from std.time import sleep
 def sleeper():
     sleep(.01)
 
-var r = run[func2=sleeper](1, 2, 3, 4)
+var r = run(sleeper, 1, 2, 3, 4)
 ```
 
 Note that the min total time will take precedence over max iterations

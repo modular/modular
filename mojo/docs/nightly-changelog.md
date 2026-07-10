@@ -434,11 +434,12 @@ This version is still a work in progress.
       requiring `ValueType` to be `ImplicitlyDeletable`.
   - `LinkedList[ElementType]`
     - Unlike `Dict`, a `LinkedList` with non-`ImplicitlyDeletable` elements can
-      be populated (`append`, `prepend`) and then torn down with
-      `destroy_with()`.
-    - Element-destroying operations (`insert`, `extend`, `clear`) still require
-      `ElementType` to be `ImplicitlyDeletable`. For deletable element types
-      (the common case) this is transparent.
+      be populated (`append`, `prepend`, `insert`, `extend`) and then torn down
+      with `destroy_with()`.
+    - Only `clear` still requires `ElementType` to be `ImplicitlyDeletable`. For
+      deletable element types (the common case) this is transparent.
+    - `LinkedList.insert()` no longer raises on an out-of-range index; like
+      `List.insert()`, it now aborts (checked when asserts are enabled).
     - Consuming iteration (`for x in list^`, the `IterableOwned` conformance)
       is likewise conditional, requiring `ElementType` to be
       `ImplicitlyDeletable`.
@@ -546,11 +547,42 @@ This version is still a work in progress.
 - The `Equatable` trait now allows for positional-only implementations, and
   argument on implementers no longer need to match the trait exactly.
 
+- `UnsafePointer.init_pointee_move()` and `UnsafePointer.init_pointee_copy()`
+  are now deprecated in favor of a single `unsafe_write()` method. Moving a
+  value in works the same as before:
+
+  ```mojo
+  ptr.unsafe_write(value^)
+  ```
+
+  To copy a value in instead of moving it, pass it as the `copy` keyword
+  argument:
+
+  ```mojo
+  ptr.unsafe_write(copy=value)
+  ```
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
 
+- `mojo-lsp-server` no longer parses or type-checks code blocks inside
+  docstrings by default. This checking rests on unstable foundations in the
+  LSP server and was prone to failing, producing false-positive diagnostics
+  unrelated to the code being edited, for little value in return. Pass
+  `-check-docstrings` when launching `mojo-lsp-server` from the command line
+  to re-enable the previous behavior. We plan to make this checking more
+  robust and re-enable it by default over time.
+
 ## GPU programming
+
+- Added programmatic Metal GPU frame capture in `std.gpu.host`:
+  `_start_metal_trace_capture(ctx, path)` and `_end_metal_trace_capture(ctx)`
+  bracket GPU work and write a `.gputrace` file for offline replay (requires
+  `MTL_CAPTURE_ENABLED=1`). A `_set_metal_gpu_print_enabled(ctx, enabled)`
+  toggle and the `MODULAR_DISABLE_METAL_GPU_PRINT` environment variable disable
+  Metal `os_log` GPU print; print is also suppressed during a capture, which
+  otherwise cannot be replayed.
 
 - `DeviceContext.load_function` now keys its runtime cache on the requested
   entry-point name as well as the blob. Loading two different entry points
@@ -589,6 +621,12 @@ This version is still a work in progress.
   lane holds the same bits and 0 otherwise. It uses NVIDIA's `match.all.sync`
   instruction, a `readfirstlane` ballot fold on AMD, and a shuffle-based check
   on Apple Silicon GPUs.
+
+- `warp.vote()` now works on Apple Silicon GPUs. Metal's AIR backend exposes no
+  usable ballot intrinsic, so it emulates the ballot with an XOR-butterfly
+  OR-reduction over `simd_shuffle_xor`, returning a 32-bit mask (or a
+  `DType.uint64` mask whose upper 32 bits are always zero); NVIDIA and AMD are
+  unchanged.
 
 - `DeviceGraphBuilder.collect_dependencies` now accepts an optional
   `dependencies` argument. The named predecessor handles are injected as
@@ -632,6 +670,12 @@ This version is still a work in progress.
 - Added support for the Steam Deck's RDNA2 Van Gogh APU.
 
 ## Removed
+
+- Removed the `UInt`-returning GPU indexing accessors (`thread_idx_uint`,
+  `block_idx_uint`, `block_dim_uint`, `grid_dim_uint`, `global_idx_uint`,
+  `lane_id_uint`, `warp_id_uint`). Use the `Int`-returning `thread_idx`,
+  `block_idx`, `block_dim`, `grid_dim`, `global_idx`, `lane_id`, and
+  `warp_id` accessors instead.
 
 - Removed the `store_volatile()` and `load_volatile()` intrinsics from
   `std.gpu.intrinsics`. Use `UnsafePointer.store[volatile=True]()` and
@@ -689,4 +733,21 @@ This version is still a work in progress.
   def main():
       var o = Outer(Inner(1, 2))
       print(o == o)
+  ```
+
+- A method whose return type references a constrained `comptime` member (one
+  declared with a trailing `where` clause) is now accepted when the method's
+  own `where` clause discharges that member's constraint.
+
+  ```mojo
+  trait Operation:
+      comptime Output: AnyType
+
+      def operate(self) -> Self.Output: ...
+
+  struct MyList[T: AnyType](Operation where conforms_to(T, Movable)):
+      comptime Output: AnyType where conforms_to(Self.T, Movable) = Int
+
+      def operate(self) -> Self.Output where conforms_to(Self.T, Movable):
+          return Int(123)
   ```

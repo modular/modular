@@ -3285,7 +3285,7 @@ def perm(n: Int, k: Int = -1) -> Int:
 
 
 def clamp(
-    val: UInt, lower_bound: type_of(val), upper_bound: type_of(val)
+    val: Int, lower_bound: type_of(val), upper_bound: type_of(val)
 ) -> type_of(val):
     """Clamps the integer value vector to be in a certain range.
 

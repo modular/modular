@@ -55,10 +55,10 @@ from max.experimental.cascade.http_runtime.client import HttpRuntimeProxy
 from max.experimental.cascade.http_runtime.subproc import (
     _wait_until_alive as _http_wait_until_alive,
 )
-from max.serve.process_control import subprocess_manager
-from max.tests.tests.cascade.dummy_textgen import (
+from max.experimental.cascade.pipelines.dummy_textgen import (
     build_dummy_textgen_pipeline,
 )
+from max.serve.process_control import subprocess_manager
 
 # Each entry is a zero-arg factory whose ``async with`` yields a connected
 # :py:class:`Runtime`. Parameterizing the fixture by factory (rather than by
