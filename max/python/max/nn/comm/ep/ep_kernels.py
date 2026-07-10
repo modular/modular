@@ -69,6 +69,17 @@ def ep_mxfp4_max_padded_m(config: EPConfig) -> int:
     (``a_scales_max_padded_m``)."""
     if not config.mxfp4_a_scales_preshuffled:
         return 0
+    return ep_mxfp4_down_slot_stride(config)
+
+
+def ep_mxfp4_down_slot_stride(config: EPConfig) -> int:
+    """Raw per-expert ``scale_4d`` slot stride
+    (= ``align_up(max_recv_tokens_per_expert, 32)``) for the LOCAL SwiGLU
+    down-proj A-scale fold (``fused_silu`` writes it, the down matmul reads it).
+    Unconditional and independent of the distributed up-proj fold
+    (``mxfp4_a_scales_preshuffled``), so it engages on the distributed-dispatch
+    path where that fold is off. ``ep_mxfp4_max_padded_m`` returns this gated on
+    that flag; the caller here gates on applicability."""
     n_ranks = config.n_gpus_per_node * config.n_nodes
     max_recv_per_expert = config.max_tokens_per_rank * n_ranks
     return ceildiv(max_recv_per_expert, 32) * 32

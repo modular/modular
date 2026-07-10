@@ -19,7 +19,11 @@ from typing import TypeVar
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
-from ..comm.ep.ep_kernels import ep_mxfp4_max_padded_m, fused_silu
+from ..comm.ep.ep_kernels import (
+    ep_mxfp4_down_slot_stride,
+    ep_mxfp4_max_padded_m,
+    fused_silu,
+)
 from ..kernels import moe_create_indices
 from .moe import MoE
 from .quant_strategy import (
@@ -72,9 +76,10 @@ class MoEQuantized(MoE):
         ``fused_silu``) A-scale directly into the grouped-matmul slot layout,
         dropping the standalone preshuffle kernels from the decode critical
         path. It is enabled whenever this is an MXFP4 preshuffled-B EP layer and
-        the selected dispatch path wires the fold. It implements standard SiLU
-        only, so OAI-clamped SwiGLU (e.g. gpt-oss) is excluded and routed
-        through the generic quantize path.
+        the selected dispatch path wires the fold. This dispatch-coupled fold
+        (up + down) covers standard SiLU only; OAI-clamped SwiGLU keeps it off
+        and instead folds just the down-proj A-scale locally in the fused
+        activation kernel (see ``ep_mxfp4_down_slot_stride`` in ``_local_ep_compute``).
 
         Args:
             dispatch_supports_fold: Whether the dispatch path selected for this
@@ -293,9 +298,10 @@ class MoEQuantized(MoE):
         # grouped-matmul A-scale directly into the matmul's per-expert slot
         # layout, so the standalone preshuffle kernels are dropped.  `ep_wait`
         # does this for the up/gate proj (KS224) and `fused_silu` for the down
-        # proj (KS64); both share the SAME graph-build-time `max_padded_M`
-        # (single source of truth — the dispatch producer wrote the up-proj
-        # scales with it, and the matmul reader MUST use the same constant).
+        # proj (KS64). For SiLU both share the SAME graph-build-time
+        # `max_padded_M`; for OAI-clamped SwiGLU the up fold stays off and the
+        # down proj folds locally via the independent `ep_mxfp4_down_slot_stride`.
+        # Each matmul reader MUST use the constant its own producer wrote with.
         # Read the flag the EP forward driver already resolved via
         # `configure_ep_scale_fusion` (single source of truth) so the matmul
         # reader and the dispatch producer agree on the slot layout.
@@ -313,6 +319,20 @@ class MoEQuantized(MoE):
         up_a_scales_preshuffled = (
             isinstance(strategy, Mxfp4Strategy) and mxfp4_ep_scale_fusion
         )
+        # Local SwiGLU down-proj A-scale fold: fold the down scale into the matmul
+        # slot layout, dropping the standalone preshuffle. Independent of the
+        # distributed up-fold above, so it engages on M3's distributed path.
+        mxfp4_down_slot_stride = (
+            ep_mxfp4_down_slot_stride(self.ep_batch_manager.config)
+            if (
+                self._ep_batch_manager
+                and self.use_swigluoai
+                and isinstance(strategy, Mxfp4Strategy)
+                and self.quant_config is not None
+                and self.quant_config.mxfp4_preshuffled_b
+            )
+            else 0
+        )
 
         if self._can_fuse_swiglu_nvfp4():
             assert isinstance(strategy, NvMxf4f8Strategy)
@@ -329,11 +349,12 @@ class MoEQuantized(MoE):
             )
         else:
             if isinstance(strategy, Mxfp4Strategy):
-                # MXFP4 EP down path: fuse activation (plain SiLU or clamped
-                # SwiGLU) + MXFP4 quantize into one kernel. With scale fusion
-                # on, ep_wait/fused_silu write the up/down A-scale (KS224/KS64)
-                # into the matmul slot layout; else max_padded_M==0 and the
-                # standalone preshuffle runs.
+                # MXFP4 EP down path: fuse activation (SiLU or clamped SwiGLU) +
+                # MXFP4 quantize in one kernel. Up-proj A-scale folds into the
+                # slot layout when the dispatch fold is on (KS224, ep_wait); the
+                # down-proj A-scale folds (KS64) when it's on OR, for OAI-SwiGLU,
+                # via the local down-slot stride; else the standalone preshuffle
+                # runs.
                 gate_up = strategy.grouped_matmul(
                     self.gate_up_proj,
                     gate_up_scales,
@@ -347,7 +368,8 @@ class MoEQuantized(MoE):
                     gate_up,
                     input_scales=None,
                     expert_inputs=expert_inputs,
-                    max_padded_M=mxfp4_ep_max_padded_m,
+                    max_padded_M=mxfp4_ep_max_padded_m
+                    or mxfp4_down_slot_stride,
                     clamp_activation=self.use_swigluoai,
                     swiglu_alpha=self.swiglu_alpha,
                     swiglu_limit=self.swiglu_limit,
@@ -388,17 +410,17 @@ class MoEQuantized(MoE):
 
         down_inputs = (down_in, silu_scales) + expert_inputs[2:]
         if isinstance(strategy, Mxfp4Strategy):
+            # Whichever producer wrote the down A-scale in slot layout (up-fold or
+            # local SwiGLU down-fold; the other is 0), the reader stride MUST match
+            # that constant, not the runtime per-expert max, or it reads wrong scales.
+            down_slot_stride = mxfp4_ep_max_padded_m or mxfp4_down_slot_stride
             return strategy.grouped_matmul(
                 self.down_proj,
                 down_scales,
                 expert_inputs=down_inputs,
                 estimated_total_m=estimated_total_m,
-                # KS64: fused_silu wrote the down-proj A-scale in slot layout.
-                a_scales_preshuffled=mxfp4_ep_max_padded_m > 0,
-                # Reader slot stride MUST equal the constant the producer wrote
-                # with (single source of truth) — not the runtime per-expert
-                # max — or the matmul reads the wrong expert's scales.
-                a_scales_max_padded_m=mxfp4_ep_max_padded_m,
+                a_scales_preshuffled=down_slot_stride > 0,
+                a_scales_max_padded_m=down_slot_stride,
             )
         return strategy.grouped_matmul(
             self.down_proj,
