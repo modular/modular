@@ -376,16 +376,7 @@ struct Variant[*Ts: Movable](
     Copyable where Ts.all_conforms_to[Copyable](),
     Equatable where Ts.all_conforms_to[Equatable](),
     Hashable where Ts.all_conforms_to[Hashable](),
-    # TODO(MOCO-3421): all_conforms_to[ImplicitlyCopyable] implies
-    # all_conforms_to[Copyable] since ImplicitlyCopyable refines Copyable, but
-    # the compiler can't infer parent trait constraints from derived ones yet.
-    # Remove the Copyable and Movable checks from this where clause once that's
-    # fixed.
-    ImplicitlyCopyable where (
-        Ts.all_conforms_to[ImplicitlyCopyable]()
-        and Ts.all_conforms_to[Copyable]()
-        and Ts.all_conforms_to[Movable]()
-    ),
+    ImplicitlyCopyable where Ts.all_conforms_to[ImplicitlyCopyable](),
     ImplicitlyDeletable,
     Movable,
     RegisterPassable where Ts.all_conforms_to[RegisterPassable](),

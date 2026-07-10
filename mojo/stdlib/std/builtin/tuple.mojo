@@ -38,14 +38,9 @@ struct Tuple[*element_types: Movable](
     Defaultable where element_types.all_conforms_to[Defaultable](),
     Equatable where element_types.all_conforms_to[Equatable](),
     Hashable where element_types.all_conforms_to[Hashable](),
-    # TODO(MOCO-3421): all_conforms_to[ImplicitlyCopyable] implies
-    # all_conforms_to[Copyable] since ImplicitlyCopyable refines Copyable, but
-    # the compiler can't infer parent trait constraints from derived ones yet.
-    # Remove the Copyable check from this where clause once that's fixed.
-    ImplicitlyCopyable where (
-        element_types.all_conforms_to[ImplicitlyCopyable]()
-        and element_types.all_conforms_to[Copyable]()
-    ),
+    ImplicitlyCopyable where element_types.all_conforms_to[
+        ImplicitlyCopyable
+    ](),
     # ImplicitlyDeletable and Movable are listed explicitly because
     # conditional conformances require all conformances to be stated.
     ImplicitlyDeletable,

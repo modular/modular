@@ -38,7 +38,6 @@ from std.utils import Variant
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
-from std.builtin.variadics import TypeList
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
 from std.memory import UnsafeMaybeUninit
@@ -93,13 +92,7 @@ struct EmptyOptionalError[T: AnyType](
 
 struct Optional[T: Movable](
     Boolable,
-    # TODO(MOCO-3640): Remove the _NoneType check once the compiler can
-    # synthesize copy constructors through variadic conditional conformances
-    # (TypeList.of[_NoneType, T]().all_conforms_to[Copyable]() when T: Copyable).
-    Copyable where (
-        conforms_to(T, Copyable)
-        and TypeList.of[T, _NoneType]().all_conforms_to[Copyable]()
-    ),
+    Copyable where conforms_to(T, Copyable),
     Defaultable,
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
