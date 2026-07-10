@@ -52,17 +52,23 @@ void M::KGEN::printFunctionSignature(LIT::FnOp fnOp, LIT::SharedState &shared,
   DeclResolver::DiagnosticDeclContextChanger scope(
       const_cast<LIT::ASTDecl *>(contextDecl));
 
+  Operation *parentOp = fnOp->getParentOp();
   bool isStatic = fnOp.getIsStatic();
-  bool isMethod = !isStatic && isa<StructDeclOp>(fnOp->getParentOp());
+  bool isMethod =
+      !isStatic && (isa<StructDeclOp>(parentOp) || isa<TraitDeclOp>(parentOp));
   bool isInit = fnOp.getSpecialFunctionInfo().isInitializer();
   FnTypeGeneratorType signature = fnOp.getFuncTypeGenerator();
 
   // Self-type substitution for `Self` keyword rendering. `Self` can be uttered
   // by static methods too (e.g. in a return type), so the substitution is
-  // gated on the enclosing decl being a struct - not on `isMethod`.
+  // gated on the enclosing decl being a struct or trait - not on `isMethod`.
+  // The motivation for checking for trait methods comes from printing
+  // compiler-synthesized closure `__call__` requirements on closures.`
   std::optional<ASTType> selfType;
-  if (auto parentStruct = dyn_cast<StructDeclOp>(fnOp->getParentOp()))
+  if (auto parentStruct = dyn_cast<StructDeclOp>(parentOp))
     selfType = ASTType(ASTDecl::computeSelfTypeForStruct(parentStruct));
+  else if (auto parentTrait = dyn_cast<TraitDeclOp>(parentOp))
+    selfType = ASTType(ASTDecl::computeSelfTypeForTrait(parentTrait));
 
   SmallVector<ParameterInfo, 2> params;
   ParameterEvaluator evaluator =

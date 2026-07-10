@@ -236,7 +236,13 @@ void renderArgumentInfo(const ArgumentInfo &a, SharedState &shared,
   }
   os << a.prefix;
   bool elideType = a.isSelf && a.type == "Self";
-  dumpIdentifierWithType(os, a.name, a.type, a.variadicKind, elideType);
+  // A compiler-synthesized implicit self (e.g. the `__call__` requirement of a
+  // closure trait) carries no source name; render it as `self` rather than
+  // leaving a blank argument slot.
+  StringRef name = a.name;
+  if (a.isSelf && name.empty())
+    name = "self";
+  dumpIdentifierWithType(os, name, a.type, a.variadicKind, elideType);
   if (a.defaultValue)
     os << " = " << getDefaultValueString(a.defaultValue, shared);
 }

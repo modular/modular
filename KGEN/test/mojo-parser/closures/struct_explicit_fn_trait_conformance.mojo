@@ -21,7 +21,7 @@ struct GoodCallable(def(Int) -> Int):
 
 # expected-error @below {{'MissingCall' does not implement all requirements for 'def(Bool) -> Int'}}
 # expected-note @below {{required function '__call__' is not implemented}}
-# expected-note @below {{def __call__(: _Self, : Bool, /) -> Int}}
+# expected-note @below {{def __call__(self, : Bool, /) -> Int}}
 # expected-note @below {{trait 'def(Bool) -> Int' declared here}}
 struct MissingCall(def(Bool) -> Int):
     pass
@@ -31,11 +31,11 @@ struct MissingCall(def(Bool) -> Int):
 # COM: Wrong return type is caught at struct declaration time.
 
 # expected-error @below {{'WrongReturnType' does not implement all requirements for 'def(String) -> Int'}}
-# expected-note @below {{no '__call__' candidates have type 'def(WrongReturnType, String) capturing -> Int'}}
-# expected-note @below {{def __call__(: _Self, : String, /) -> Int}}
+# expected-note @below {{no '__call__' candidates have type 'def(WrongReturnType, String) capturing thin -> Int'}}
+# expected-note @below {{def __call__(self, : String, /) -> Int}}
 # expected-note @below {{trait 'def(String) -> Int' declared here}}
 struct WrongReturnType(def(String) -> Int):
-    # expected-note @below {{candidate declared here with type 'def(self: WrongReturnType, x: String) capturing -> Bool'}}
+    # expected-note @below {{candidate declared here with type 'def(self: WrongReturnType, x: String) capturing thin -> Bool'}}
     # expected-note @below {{.self.origin of the first value is}}
     def __call__(self, x: String) capturing -> Bool:
         return True
@@ -56,16 +56,16 @@ struct TwoTraitsGood(def(Int) -> Int, def(String) -> String):
 # COM: Second closure trait conformance fails — error names the failing trait.
 
 # expected-error @below {{'TwoTraitsBadSecond' does not implement all requirements for 'def(Float64) -> Float64'}}
-# expected-note @below {{no '__call__' candidates have type 'def(TwoTraitsBadSecond, Float64) capturing -> Float64'}}
-# expected-note @below {{def __call__(: _Self, : Float64, /) -> Float64}}
+# expected-note @below {{no '__call__' candidates have type 'def(TwoTraitsBadSecond, Float64) capturing thin -> Float64'}}
+# expected-note @below {{def __call__(self, : Float64, /) -> Float64}}
 # expected-note @below {{trait 'def(Float64) -> Float64' declared here}}
 struct TwoTraitsBadSecond(def(Int) -> Int, def(Float64) -> Float64):
-    # expected-note @below {{candidate declared here with type 'def(self: TwoTraitsBadSecond, x: Int) capturing -> Int'}}
+    # expected-note @below {{candidate declared here with type 'def(self: TwoTraitsBadSecond, x: Int) capturing thin -> Int'}}
     # expected-note @below {{.self.origin of the first value is}}
     def __call__(self, x: Int) capturing -> Int:
         return x
 
-    # expected-note @below {{candidate declared here with type 'def(self: TwoTraitsBadSecond, x: Float64) capturing -> String'}}
+    # expected-note @below {{candidate declared here with type 'def(self: TwoTraitsBadSecond, x: Float64) capturing thin -> String'}}
     def __call__(self, x: Float64) capturing -> String:
         return ""
 
