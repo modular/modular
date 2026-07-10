@@ -16,7 +16,6 @@ These APIs are imported automatically, just like builtins.
 """
 
 
-from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 import std.format._utils as fmt
 from std.hashlib import Hasher
