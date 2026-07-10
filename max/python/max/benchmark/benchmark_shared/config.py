@@ -34,6 +34,7 @@ from .utils import int_or_none, parse_comma_separated
 DEFAULT_BENCHMARK_SEED = 0x5EED  # spells "SEED" (= 24301)
 
 BaseBackend = Literal[
+    "atom",
     "mcloud",
     "modular",
     "sglang",
@@ -42,6 +43,8 @@ BaseBackend = Literal[
 ]
 
 Backend = Literal[
+    "atom",
+    "atom-chat",
     "mcloud",
     "modular",
     "modular-chat",
@@ -64,6 +67,8 @@ Endpoint = Literal[
 ]
 
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
+    "atom": "/reset_prefix_cache",
+    "atom-chat": "/reset_prefix_cache",
     "modular": "/reset_prefix_cache",
     "modular-chat": "/reset_prefix_cache",
     "vllm": "/reset_prefix_cache",
