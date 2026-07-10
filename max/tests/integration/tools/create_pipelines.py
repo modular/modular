@@ -29,7 +29,7 @@ from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
 
 import diffusers
 
@@ -48,7 +48,7 @@ from max.pipelines.architectures.qwen3.text_encoder import (
     Qwen3TextEncoderKleinModel,
 )
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
-from max.pipelines.lib import PipelineRuntimeConfig
+from max.pipelines.lib import PipelineConfig, PipelineRuntimeConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
 from peft.peft_model import PeftModel
@@ -59,7 +59,6 @@ from test_common.test_data import (
     WAN_PIXEL_GENERATION_T2I,
     MockTextGenerationRequest,
 )
-from typing_extensions import NotRequired
 
 
 # This is required since the presence of peft changes
@@ -266,10 +265,6 @@ class PipelineOracle(ABC):
         )
 
 
-class _ModelConfigExtras(TypedDict):
-    huggingface_weight_revision: NotRequired[str]
-
-
 def _create_vision_max_pipeline(
     model_path: str,
     encoding: pipelines.SupportedEncoding,
@@ -290,31 +285,26 @@ def _create_vision_max_pipeline(
         )
     else:
         kv_cache = pipelines.KVCacheConfig()
-    model = pipelines.MAXModelConfig(
+    config = pipelines.PipelineArgs(
         device_specs=device_specs,
         quantization_encoding=encoding,
         model_path=model_path,
         huggingface_model_revision=revision,
+        huggingface_weight_revision=(
+            revision if set_weight_revision else "main"
+        ),
         trust_remote_code=trust_remote_code,
         max_length=max_length,
         kv_cache=kv_cache,
-        **(
-            _ModelConfigExtras(huggingface_weight_revision=revision)
-            if set_weight_revision
-            else _ModelConfigExtras()
+        enable_chunked_prefill=(
+            enable_chunked_prefill
+            if enable_chunked_prefill is not None
+            else True
         ),
     )
-    if enable_chunked_prefill is not None:
-        runtime = PipelineRuntimeConfig(
-            enable_chunked_prefill=enable_chunked_prefill
-        )
-    else:
-        runtime = PipelineRuntimeConfig()
-    config = pipelines.PipelineConfig(
-        models=ModelManifest({"main": model}),
-        runtime=runtime,
+    tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+        PipelineConfig.from_args(config)
     )
-    tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
     assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
     return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
@@ -701,22 +691,17 @@ class PixtralPipelineOracle(PipelineOracle):
         # TODO (AIPIPE-234): Implement MAX pipeline generation for Pixtral.
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         assert revision is not None
-        config = pipelines.PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": pipelines.MAXModelConfig(
-                        device_specs=device_specs,
-                        quantization_encoding=encoding,
-                        model_path=self.model_path,
-                        huggingface_model_revision=revision,
-                        max_length=self.max_length,
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(),
+        config = pipelines.PipelineArgs(
+            device_specs=device_specs,
+            quantization_encoding=encoding,
+            model_path=self.model_path,
+            huggingface_model_revision=revision,
+            max_length=self.max_length,
         )
         hf_repo_lock.apply_to_config(config)
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            PipelineConfig.from_args(config)
+        )
 
         assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
@@ -775,7 +760,7 @@ class _KimiK2_5BaseOracle(PipelineOracle):
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
-        config = pipelines.PipelineConfig.from_flat_kwargs(
+        config = pipelines.PipelineArgs.from_flat_kwargs(
             device_specs=device_specs,
             quantization_encoding=encoding,
             model_path=self.model_path,
@@ -788,7 +773,9 @@ class _KimiK2_5BaseOracle(PipelineOracle):
             data_parallel_degree=8,
         )
         hf_repo_lock.apply_to_config(config)
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            PipelineConfig.from_args(config)
+        )
         assert isinstance(pipeline, TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
@@ -864,7 +851,7 @@ class KimiK2_6PipelineOracle(KimiK2_5PipelineOracle):
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
-        config = pipelines.PipelineConfig.from_flat_kwargs(
+        config = pipelines.PipelineArgs.from_flat_kwargs(
             device_specs=device_specs,
             quantization_encoding=encoding,
             model_path=self.model_path,
@@ -878,7 +865,9 @@ class KimiK2_6PipelineOracle(KimiK2_5PipelineOracle):
             ep_use_allreduce=True,
         )
         hf_repo_lock.apply_to_config(config)
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            PipelineConfig.from_args(config)
+        )
         assert isinstance(pipeline, TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
@@ -941,7 +930,7 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
         gpu_count = max(
             1, sum(1 for d in device_specs if d.device_type == "gpu")
         )
-        config = pipelines.PipelineConfig.from_flat_kwargs(
+        config = pipelines.PipelineArgs.from_flat_kwargs(
             device_specs=device_specs,
             quantization_encoding=encoding,
             model_path=self.model_path,
@@ -954,7 +943,9 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
             data_parallel_degree=gpu_count,
         )
         hf_repo_lock.apply_to_config(config)
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            PipelineConfig.from_args(config)
+        )
         assert isinstance(pipeline, TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
@@ -1009,25 +1000,19 @@ class KimiK2_5DeepseekV3LocalPathPipelineOracle(
         encoding: pipelines.SupportedEncoding,
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        config = pipelines.PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": pipelines.MAXModelConfig(
-                        model_path=self.model_path,
-                        quantization_encoding=encoding,
-                        device_specs=device_specs,
-                        max_length=4096,
-                        trust_remote_code=self.trust_remote_code,
-                        data_parallel_degree=8,
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(
-                max_batch_input_tokens=4096,
-                ep_size=8,
-            ),
+        config = pipelines.PipelineArgs(
+            model_path=self.model_path,
+            quantization_encoding=encoding,
+            device_specs=device_specs,
+            max_length=4096,
+            trust_remote_code=self.trust_remote_code,
+            data_parallel_degree=8,
+            max_batch_input_tokens=4096,
+            ep_size=8,
         )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            PipelineConfig.from_args(config)
+        )
         assert isinstance(pipeline, TextGenerationPipelineInterface)
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
@@ -1138,13 +1123,13 @@ class GenericOracle(PipelineOracle):
         if not is_local_model:
             config_kwargs["huggingface_model_revision"] = model_revision
             config_kwargs["huggingface_weight_revision"] = model_revision
-        config = pipelines.PipelineConfig.from_flat_kwargs(**config_kwargs)
+        config = pipelines.PipelineArgs.from_flat_kwargs(**config_kwargs)
         if weight_repo_id and weight_repo_id != model_path:
             config.model._weights_repo_id = weight_repo_id
         if not is_local_model:
             hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
-            config, task=self.task
+            PipelineConfig.from_args(config), task=self.task
         )
         assert isinstance(
             pipeline,
@@ -1379,7 +1364,7 @@ class LoRAOracle(PipelineOracle):
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         lora_path = self._get_shared_adapter()
 
-        config = pipelines.PipelineConfig.from_flat_kwargs(
+        config = pipelines.PipelineArgs.from_flat_kwargs(
             device_specs=device_specs,
             quantization_encoding=encoding,
             model_path=self.model_path,
@@ -1392,7 +1377,9 @@ class LoRAOracle(PipelineOracle):
             trust_remote_code=True,
             **self.config_params,
         )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            PipelineConfig.from_args(config)
+        )
 
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
         assert pipeline._pipeline_model._lora_manager is not None
@@ -1519,7 +1506,7 @@ class ImageGenerationOracle(PipelineOracle):
                 **denoising_cache
             )
 
-        config = pipelines.PipelineConfig(
+        config = pipelines.PipelineArgs(
             models=models,
             runtime=PipelineRuntimeConfig(**runtime_kwargs),
         )
@@ -1527,7 +1514,7 @@ class ImageGenerationOracle(PipelineOracle):
         # retrieve resolves the manifest and picks the tokenizer/executor
         # from the arch registry, like production serving.
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
-            config, task=self.task
+            PipelineConfig.from_args(config), task=self.task
         )
 
         return MaxPipelineAndTokenizer(
@@ -1605,11 +1592,11 @@ class WanGenerationOracle(ImageGenerationOracle):
             self.model_path,
             device_specs=device_specs,
         )
-        config = pipelines.PipelineConfig(models=models)
+        config = pipelines.PipelineArgs(models=models)
         # retrieve resolves the manifest and picks the tokenizer/executor
         # from the arch registry (see ImageGenerationOracle).
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
-            config, task=self.task
+            PipelineConfig.from_args(config), task=self.task
         )
         return MaxPipelineAndTokenizer(
             pipeline=pipeline,  # type: ignore

@@ -22,26 +22,18 @@ import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines import PipelineArgs
+from max.pipelines.lib import KVCacheConfig
 from PIL import Image
 
-pipeline_config = PipelineConfig(
-    models=ModelManifest(
-        {
-            "main": MAXModelConfig(
-                model_path="OpenGVLab/InternVL3-1B-Instruct",
-                device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding="bfloat16",
-                trust_remote_code=True,
-                max_length=512,
-                kv_cache=KVCacheConfig(),
-            )
-        }
-    ),
-    runtime=PipelineRuntimeConfig(max_batch_size=1),
+pipeline_config = PipelineArgs(
+    model_path="OpenGVLab/InternVL3-1B-Instruct",
+    device_specs=[DeviceSpec.accelerator()],
+    quantization_encoding="bfloat16",
+    trust_remote_code=True,
+    max_length=512,
+    kv_cache=KVCacheConfig(),
+    max_batch_size=1,
 )
 
 

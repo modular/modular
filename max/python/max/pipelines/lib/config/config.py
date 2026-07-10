@@ -66,6 +66,8 @@ logger = logging.getLogger("max.pipelines")
 # --pipeline.models.main.model-path. mypy sees ModelManifest so methods like
 # .with_override(), .resolve(), .main_architecture_name type-check correctly.
 if TYPE_CHECKING:
+    from max.pipelines.lib.pipeline_args import PipelineArgs
+
     _ModelsType = ModelManifest
 else:
     _ModelsType = dict[str, MAXModelConfig]
@@ -1495,6 +1497,100 @@ class PipelineConfig(ConfigFileModel):
             The graph quantization encoding corresponding to the CLI encoding.
         """
         return self.model.graph_quantization_encoding
+
+    @classmethod
+    def from_args(cls, args: PipelineArgs) -> Self:
+        """Construct a :class:`PipelineConfig` from a :class:`PipelineArgs`.
+
+        Args:
+            args: Flat user-facing pipeline arguments.
+
+        Returns:
+            A fully constructed :class:`PipelineConfig` ready for
+            architecture-driven resolution via :meth:`resolve`.
+        """
+        from max.pipelines.lib.pipeline_runtime_config import (
+            PipelineRuntimeConfig,
+        )
+        from max.pipelines.sampling import SamplingConfig
+
+        from .profiling_config import ProfilingConfig
+
+        if args._manifest_override is not None:
+            manifest = args._manifest_override
+        else:
+            models_dict: dict[str, MAXModelConfig] = {"main": args.model}
+            if args.draft_model is not None:
+                models_dict["draft"] = args.draft_model.model_copy(deep=True)
+            manifest = ModelManifest(models_dict)
+
+        return cls(
+            models=manifest,
+            model_override=list(args.model_override),
+            sampling=SamplingConfig(
+                in_dtype=args.in_dtype,
+                out_dtype=args.out_dtype,
+                enable_structured_output=args.enable_structured_output,
+                structured_output_backend=args.structured_output_backend,
+                enable_variable_logits=args.enable_variable_logits,
+                enable_penalties=args.enable_penalties,
+                enable_min_tokens=args.enable_min_tokens,
+                sample_on_host=args.sample_on_host,
+            ),
+            runtime=PipelineRuntimeConfig(
+                pipeline_role=args.pipeline_role,
+                max_batch_size=args.max_batch_size,
+                max_queue_size_tg=args.max_queue_size_tg,
+                min_batch_size_tg=args.min_batch_size_tg,
+                ep_size=args.ep_size,
+                ep_use_allreduce=args.ep_use_allreduce,
+                eplb_profile=args.eplb_profile,
+                ce_delay_ms=args.ce_delay_ms,
+                enable_prioritize_first_decode=args.enable_prioritize_first_decode,
+                enable_chunked_prefill=args.enable_chunked_prefill,
+                enable_in_flight_batching=args.enable_in_flight_batching,
+                eplb_replicas_per_gpu=args.eplb_replicas_per_gpu,
+                max_num_steps=args.max_num_steps,
+                max_batch_input_tokens=args.max_batch_input_tokens,
+                use_experimental_kernels=args.use_experimental_kernels,
+                use_vendor_blas=args.use_vendor_blas,
+                use_vendor_ccl=args.use_vendor_ccl,
+                custom_architectures=list(args.custom_architectures),
+                execute_empty_batches=args.execute_empty_batches,
+                max_batch_total_tokens=args.max_batch_total_tokens,
+                device_graph_capture=args.device_graph_capture,
+                force=args.force,
+                kvcache_ce_watermark=args.kvcache_ce_watermark,
+                decode_stall_timeout_s=args.decode_stall_timeout_s,
+                decode_request_ttl_s=args.decode_request_ttl_s,
+                enable_overlap_scheduler=args.enable_overlap_scheduler,
+                allow_unsupported_logprobs=args.allow_unsupported_logprobs,
+                allow_extra_request_fields=args.allow_extra_request_fields,
+                prefer_module_v3=args.prefer_module_v3,
+                reasoning_parser=args.reasoning_parser,
+                tool_parser=args.tool_parser,
+                emit_reasoning_content=args.emit_reasoning_content,
+                temperature=args.temperature,
+                thinking_temperature=args.thinking_temperature,
+                max_vision_cache_entries=args.max_vision_cache_entries,
+                denoising_cache=args.denoising_cache.model_copy(deep=True),
+            ),
+            profiling=ProfilingConfig(
+                gpu_profiling=args.gpu_profiling,
+                profiling_enabled=args.profiling_enabled,
+                profiling_output_path=args.profiling_output_path,
+                profiling_dynolog_enabled=args.profiling_dynolog_enabled,
+                profiling_warmup_steps=args.profiling_warmup_steps,
+                profiling_active_steps=args.profiling_active_steps,
+                profiling_periodic_flush_seconds=args.profiling_periodic_flush_seconds,
+            ),
+            lora=args.lora.model_copy(deep=True) if args.lora else None,
+            speculative=args.speculative.model_copy(deep=True)
+            if args.speculative
+            else None,
+            task=args.task,
+            debug_verify_replay=args.debug_verify_replay,
+        )
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:

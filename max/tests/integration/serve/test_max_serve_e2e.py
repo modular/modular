@@ -50,9 +50,7 @@ def serve_main() -> None:
         serve_api_server_and_model_worker,
     )
     from max.driver import DeviceSpec
-    from max.pipelines import PipelineConfig
-    from max.pipelines.lib.config.model_config import MAXModelConfig
-    from max.pipelines.lib.model_manifest import ModelManifest
+    from max.pipelines import PipelineArgs
     from max.serve.config import Settings
 
     settings = Settings(
@@ -61,18 +59,12 @@ def serve_main() -> None:
     )
     assert MODEL_REVISION is not None
     # Configure pipeline with GGUF model for fast loading on CPU
-    pipeline_config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=MODEL,
-                    huggingface_model_revision=MODEL_REVISION,
-                    huggingface_weight_revision=MODEL_REVISION,
-                    device_specs=[DeviceSpec.cpu()],
-                    quantization_encoding="float32",
-                )
-            }
-        ),
+    pipeline_config = PipelineArgs(
+        model_path=MODEL,
+        huggingface_model_revision=MODEL_REVISION,
+        huggingface_weight_revision=MODEL_REVISION,
+        device_specs=[DeviceSpec.cpu()],
+        quantization_encoding="float32",
     )
     # Launch server (blocks until shutdown)
     serve_api_server_and_model_worker(settings, pipeline_config)

@@ -101,7 +101,9 @@ def revision_for_hf_repo(hf_repo_id: str) -> str | None:
     return None
 
 
-def apply_to_config(config: pipelines.PipelineConfig) -> None:
+def apply_to_config(
+    config: pipelines.PipelineArgs | pipelines.PipelineConfig,
+) -> None:
     model_revision = revision_for_hf_repo(config.model.model_path)
     if model_revision is None:
         raise ValueError(

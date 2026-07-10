@@ -23,6 +23,7 @@ import torch
 from max.driver import DeviceSpec
 from max.pipelines import (
     PIPELINE_REGISTRY,
+    PipelineArgs,
     PipelineConfig,
     TextGenerationPipeline,
     TextTokenizer,
@@ -211,7 +212,7 @@ def create_pipeline_config_with_lora(
     model_path: str = REPO_ID,
     max_num_loras: int = 2,
     max_lora_rank: int = 16,
-) -> PipelineConfig:
+) -> PipelineArgs:
     """Create a pipeline configuration with LoRA enabled.
 
     Args:
@@ -221,29 +222,23 @@ def create_pipeline_config_with_lora(
         max_lora_rank: Maximum LoRA rank
 
     Returns:
-        PipelineConfig: Configuration with LoRA settings
+        PipelineArgs: Configuration with LoRA settings
     """
-    return PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=model_path,
-                    quantization_encoding="bfloat16",  # Use bfloat16 for GPU
-                    device_specs=[DeviceSpec(device_type="gpu", id=0)],
-                    kv_cache=KVCacheConfig(
-                        enable_prefix_caching=False,  # LoRA requires prefix caching to be disabled
-                    ),
-                    max_length=512,
-                )
-            }
+    return PipelineArgs(
+        model_path=model_path,
+        quantization_encoding="bfloat16",  # Use bfloat16 for GPU
+        device_specs=[DeviceSpec(device_type="gpu", id=0)],
+        kv_cache=KVCacheConfig(
+            enable_prefix_caching=False,  # LoRA requires prefix caching to be disabled
         ),
+        max_length=512,
         lora=LoRAConfig(
             enable_lora=True,
             max_num_loras=max_num_loras,
             lora_paths=lora_paths,
             max_lora_rank=max_lora_rank,
         ),
-        runtime=PipelineRuntimeConfig(max_batch_size=4),
+        max_batch_size=4,
     )
 
 
@@ -282,7 +277,7 @@ def create_pipeline_with_lora(lora_paths: list[str]) -> TextGenerationPipeline: 
         TextGenerationPipeline: Pipeline with LoRA adapters loaded
     """
     config = create_pipeline_config_with_lora(lora_paths)
-    _, pipeline = PIPELINE_REGISTRY.retrieve(config)
+    _, pipeline = PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(config))
     assert isinstance(pipeline, TextGenerationPipeline)
     return pipeline
 

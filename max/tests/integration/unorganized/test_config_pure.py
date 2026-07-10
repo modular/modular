@@ -29,6 +29,7 @@ from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
     MAXModelConfig,
+    PipelineArgs,
     PipelineConfig,
     PipelineRuntimeConfig,
     SamplingConfig,
@@ -1190,23 +1191,15 @@ def test_config__test_retrieve_factory_with_known_architecture(
 ) -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=modular_ai_llama_3_1_local_path,
-                    quantization_encoding="bfloat16",
-                    max_length=1,
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            max_batch_size=1,
-            prefer_module_v3=True,
-        ),
+    config = PipelineArgs(
+        model_path=modular_ai_llama_3_1_local_path,
+        quantization_encoding="bfloat16",
+        max_length=1,
+        max_batch_size=1,
+        prefer_module_v3=True,
     )
 
-    _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
+    _, _ = PIPELINE_REGISTRY.retrieve_factory(PipelineConfig.from_args(config))
 
 
 @prepare_registry

@@ -16,10 +16,8 @@ import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines import PipelineArgs
+from max.pipelines.lib import KVCacheConfig
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     ListModelsResponse,
@@ -35,21 +33,15 @@ assert SMOLLM_135M_REVISION is not None
 @pytest.mark.parametrize(
     "pipeline_config",
     [
-        PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path=SMOLLM_135M_REPO_ID,
-                        huggingface_model_revision=SMOLLM_135M_REVISION,
-                        huggingface_weight_revision=SMOLLM_135M_REVISION,
-                        device_specs=[DeviceSpec.cpu()],
-                        quantization_encoding="float32",
-                        kv_cache=KVCacheConfig(),
-                        max_length=512,
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(max_batch_size=16),
+        PipelineArgs(
+            model_path=SMOLLM_135M_REPO_ID,
+            huggingface_model_revision=SMOLLM_135M_REVISION,
+            huggingface_weight_revision=SMOLLM_135M_REVISION,
+            device_specs=[DeviceSpec.cpu()],
+            quantization_encoding="float32",
+            kv_cache=KVCacheConfig(),
+            max_length=512,
+            max_batch_size=16,
         )
     ],
     indirect=True,
@@ -82,22 +74,16 @@ assert MODEL_REVISION is not None
 @pytest.mark.parametrize(
     "pipeline_config",
     [
-        PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path=MODEL_NAME,
-                        huggingface_model_revision=MODEL_REVISION,
-                        huggingface_weight_revision=MODEL_REVISION,
-                        served_model_name=MODEL_ALIAS,
-                        device_specs=[DeviceSpec.cpu()],
-                        quantization_encoding="float32",
-                        kv_cache=KVCacheConfig(),
-                        max_length=512,
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(max_batch_size=16),
+        PipelineArgs(
+            model_path=MODEL_NAME,
+            served_model_name=MODEL_ALIAS,
+            huggingface_model_revision=MODEL_REVISION,
+            huggingface_weight_revision=MODEL_REVISION,
+            device_specs=[DeviceSpec.cpu()],
+            quantization_encoding="float32",
+            kv_cache=KVCacheConfig(),
+            max_length=512,
+            max_batch_size=16,
         )
     ],
     indirect=True,

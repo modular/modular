@@ -21,10 +21,8 @@ import requests
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines import PipelineArgs
+from max.pipelines.lib import KVCacheConfig
 from max.serve.config import MetricLevel, MetricRecordingMethod
 from max.serve.schemas.openai import CreateChatCompletionResponse
 
@@ -98,21 +96,15 @@ def _metric_total(metrics_text: str, name: str) -> float:
 @pytest.mark.parametrize(
     "pipeline_config",
     [
-        PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path=MODEL_NAME,
-                        huggingface_model_revision=MODEL_REVISION,
-                        huggingface_weight_revision=MODEL_REVISION,
-                        device_specs=[DeviceSpec.cpu()],
-                        quantization_encoding="float32",
-                        kv_cache=KVCacheConfig(),
-                        max_length=512,
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(max_batch_size=16),
+        PipelineArgs(
+            model_path=MODEL_NAME,
+            huggingface_model_revision=MODEL_REVISION,
+            huggingface_weight_revision=MODEL_REVISION,
+            device_specs=[DeviceSpec.cpu()],
+            quantization_encoding="float32",
+            kv_cache=KVCacheConfig(),
+            max_length=512,
+            max_batch_size=16,
         )
     ],
     indirect=True,
@@ -240,21 +232,15 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
 @pytest.mark.parametrize(
     "pipeline_config",
     [
-        PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path=MODEL_NAME,
-                        huggingface_model_revision=MODEL_REVISION,
-                        huggingface_weight_revision=MODEL_REVISION,
-                        device_specs=[DeviceSpec.cpu()],
-                        quantization_encoding="float32",
-                        kv_cache=KVCacheConfig(),
-                        max_length=512,
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(max_batch_size=16),
+        PipelineArgs(
+            model_path=MODEL_NAME,
+            huggingface_model_revision=MODEL_REVISION,
+            huggingface_weight_revision=MODEL_REVISION,
+            device_specs=[DeviceSpec.cpu()],
+            quantization_encoding="float32",
+            kv_cache=KVCacheConfig(),
+            max_length=512,
+            max_batch_size=16,
         )
     ],
     indirect=True,
@@ -314,21 +300,15 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
 @pytest.mark.parametrize(
     "pipeline_config",
     [
-        PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path=MODEL_NAME,
-                        huggingface_model_revision=MODEL_REVISION,
-                        huggingface_weight_revision=MODEL_REVISION,
-                        device_specs=[DeviceSpec.cpu()],
-                        quantization_encoding="float32",
-                        kv_cache=KVCacheConfig(),
-                        max_length=512,
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(max_batch_size=16),
+        PipelineArgs(
+            model_path=MODEL_NAME,
+            huggingface_model_revision=MODEL_REVISION,
+            huggingface_weight_revision=MODEL_REVISION,
+            device_specs=[DeviceSpec.cpu()],
+            quantization_encoding="float32",
+            kv_cache=KVCacheConfig(),
+            max_length=512,
+            max_batch_size=16,
         )
     ],
     indirect=True,

@@ -27,16 +27,14 @@ import hf_repo_lock
 import numpy as np
 import pytest
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig
+from max.pipelines import PipelineArgs, PipelineConfig
 from max.pipelines.context import (
     SamplingParams,
     TextContext,
     TextGenerationResponseFormat,
 )
-from max.pipelines.lib import MAXModelConfig, SamplingConfig, TextTokenizer
+from max.pipelines.lib import MAXModelConfig, TextTokenizer
 from max.pipelines.lib.config import SpeculativeConfig
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
@@ -77,37 +75,29 @@ def test_eagle_structured_output_json_schema_gpu(
     )
     assert draft_revision is not None
 
-    pipeline_config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="meta-llama/Llama-3.2-3B-Instruct",
-                    quantization_encoding="bfloat16",
-                    device_specs=[DeviceSpec.accelerator()],
-                    huggingface_model_revision=target_revision,
-                    max_length=2048,
-                ),
-                "draft": MAXModelConfig(
-                    model_path="atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16",
-                    quantization_encoding="bfloat16",
-                    device_specs=[DeviceSpec.accelerator()],
-                    huggingface_model_revision=draft_revision,
-                ),
-            }
+    pipeline_config = PipelineArgs(
+        model_path="meta-llama/Llama-3.2-3B-Instruct",
+        quantization_encoding="bfloat16",
+        device_specs=[DeviceSpec.accelerator()],
+        huggingface_model_revision=target_revision,
+        max_length=2048,
+        draft_model=MAXModelConfig(
+            model_path="atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16",
+            quantization_encoding="bfloat16",
+            device_specs=[DeviceSpec.accelerator()],
+            huggingface_model_revision=draft_revision,
         ),
         speculative=SpeculativeConfig(
             speculative_method="eagle",
             num_speculative_tokens=2,
         ),
-        sampling=SamplingConfig(enable_structured_output=True),
-        runtime=PipelineRuntimeConfig(
-            max_batch_size=1,
-            enable_overlap_scheduler=True,
-        ),
+        enable_structured_output=True,
+        max_batch_size=1,
+        enable_overlap_scheduler=True,
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
-        pipeline_config
+        PipelineConfig.from_args(pipeline_config)
     )
     assert isinstance(tokenizer, TextTokenizer)
 
@@ -209,37 +199,29 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
     )
     assert draft_revision is not None
 
-    pipeline_config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="meta-llama/Llama-3.2-3B-Instruct",
-                    quantization_encoding="bfloat16",
-                    device_specs=[DeviceSpec.accelerator()],
-                    huggingface_model_revision=target_revision,
-                    max_length=2048,
-                ),
-                "draft": MAXModelConfig(
-                    model_path="atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16",
-                    quantization_encoding="bfloat16",
-                    device_specs=[DeviceSpec.accelerator()],
-                    huggingface_model_revision=draft_revision,
-                ),
-            }
+    pipeline_config = PipelineArgs(
+        model_path="meta-llama/Llama-3.2-3B-Instruct",
+        quantization_encoding="bfloat16",
+        device_specs=[DeviceSpec.accelerator()],
+        huggingface_model_revision=target_revision,
+        max_length=2048,
+        draft_model=MAXModelConfig(
+            model_path="atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16",
+            quantization_encoding="bfloat16",
+            device_specs=[DeviceSpec.accelerator()],
+            huggingface_model_revision=draft_revision,
         ),
         speculative=SpeculativeConfig(
             speculative_method="eagle",
             num_speculative_tokens=2,
         ),
-        sampling=SamplingConfig(enable_structured_output=True),
-        runtime=PipelineRuntimeConfig(
-            max_batch_size=2,
-            enable_overlap_scheduler=True,
-        ),
+        enable_structured_output=True,
+        max_batch_size=2,
+        enable_overlap_scheduler=True,
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
-        pipeline_config
+        PipelineConfig.from_args(pipeline_config)
     )
     assert isinstance(tokenizer, TextTokenizer)
 
@@ -398,37 +380,29 @@ def test_eagle_structured_output_no_first_decode_stall_gpu(
     )
     assert draft_revision is not None
 
-    pipeline_config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="meta-llama/Llama-3.2-3B-Instruct",
-                    quantization_encoding="bfloat16",
-                    device_specs=[DeviceSpec.accelerator()],
-                    huggingface_model_revision=target_revision,
-                    max_length=2048,
-                ),
-                "draft": MAXModelConfig(
-                    model_path="atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16",
-                    quantization_encoding="bfloat16",
-                    device_specs=[DeviceSpec.accelerator()],
-                    huggingface_model_revision=draft_revision,
-                ),
-            }
+    pipeline_config = PipelineArgs(
+        model_path="meta-llama/Llama-3.2-3B-Instruct",
+        quantization_encoding="bfloat16",
+        device_specs=[DeviceSpec.accelerator()],
+        huggingface_model_revision=target_revision,
+        max_length=2048,
+        draft_model=MAXModelConfig(
+            model_path="atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16",
+            quantization_encoding="bfloat16",
+            device_specs=[DeviceSpec.accelerator()],
+            huggingface_model_revision=draft_revision,
         ),
         speculative=SpeculativeConfig(
             speculative_method="eagle",
             num_speculative_tokens=2,
         ),
-        sampling=SamplingConfig(enable_structured_output=True),
-        runtime=PipelineRuntimeConfig(
-            max_batch_size=1,
-            enable_overlap_scheduler=True,
-        ),
+        enable_structured_output=True,
+        max_batch_size=1,
+        enable_overlap_scheduler=True,
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
-        pipeline_config
+        PipelineConfig.from_args(pipeline_config)
     )
     assert isinstance(tokenizer, TextTokenizer)
 

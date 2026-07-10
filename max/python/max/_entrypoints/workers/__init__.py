@@ -19,7 +19,8 @@ from types import FrameType
 from typing import Optional
 
 import uvloop
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY
+from max.pipelines.lib import PipelineArgs, PipelineConfig
 from max.pipelines.modeling.types import PipelineTask
 from max.serve.config import Settings
 from max.serve.pipelines.model_worker import start_model_worker
@@ -72,7 +73,7 @@ def sigint_handler(sig: int, frame: FrameType | None) -> None:
 
 def start_workers(
     settings: Settings,
-    pipeline_config: PipelineConfig,
+    pipeline_args: PipelineArgs,
 ) -> None:
     global _shutdown_event
 
@@ -85,9 +86,10 @@ def start_workers(
         logger.info("Starting MAX Workers...")
 
         # Load the Tokenizer and Pipeline Factory
+        pipeline_config = PipelineConfig.from_args(pipeline_args)
         _, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config,
-            task=pipeline_config.task,
+            task=pipeline_args.task,
         )
 
         try:

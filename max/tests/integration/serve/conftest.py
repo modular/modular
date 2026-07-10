@@ -24,6 +24,7 @@ from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.lib import (
     MAXModelConfig,
+    PipelineArgs,
     PipelineConfig,
     PipelineRuntimeConfig,
 )
@@ -98,24 +99,22 @@ def settings_config(request: pytest.FixtureRequest):  # noqa: ANN201
 
 @pytest.fixture(scope="function")
 def app(
-    pipeline_config: PipelineConfig, settings_config: Mapping[str, Any]
+    pipeline_config: PipelineArgs, settings_config: Mapping[str, Any]
 ) -> FastAPI:
     """The FastAPI app used to serve the model."""
 
     pipeline_task = PipelineTask.TEXT_GENERATION
-    if (
-        pipeline_config.model.model_path
-        == "sentence-transformers/all-mpnet-base-v2"
-    ):
+    if pipeline_config.model_path == "sentence-transformers/all-mpnet-base-v2":
         pipeline_task = PipelineTask.EMBEDDINGS_GENERATION
 
+    pipeline_cfg = PipelineConfig.from_args(pipeline_config)
     tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
-        pipeline_config, task=pipeline_task
+        pipeline_cfg, task=pipeline_task
     )
 
     serving_settings = ServingTokenGeneratorSettings(
         model_factory=pipeline_factory,
-        pipeline_config=pipeline_config,
+        pipeline_config=pipeline_cfg,
         tokenizer=tokenizer,
         task=pipeline_task,
     )

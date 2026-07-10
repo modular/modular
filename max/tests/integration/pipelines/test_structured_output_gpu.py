@@ -19,20 +19,16 @@ from typing import cast
 import hf_repo_lock
 import numpy as np
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig, TextGenerationPipeline
+from max.pipelines import PipelineArgs, PipelineConfig, TextGenerationPipeline
 from max.pipelines.context import (
     SamplingParams,
     TextContext,
     TextGenerationResponseFormat,
 )
 from max.pipelines.lib import (
-    MAXModelConfig,
     OverlapTextGenerationPipeline,
-    SamplingConfig,
     TextTokenizer,
 )
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import PipelineRegistry
 from max.pipelines.modeling.types import (
     RequestID,
@@ -51,24 +47,18 @@ def test_smollm_with_structured_output_gpu(
         "HuggingFaceTB/SmolLM2-135M-Instruct"
     )
     assert revision is not None
-    pipeline_config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
-                    quantization_encoding="bfloat16",
-                    device_specs=[DeviceSpec.accelerator()],
-                    huggingface_model_revision=revision,
-                    max_length=8192,
-                )
-            }
-        ),
-        sampling=SamplingConfig(enable_structured_output=True),
-        runtime=PipelineRuntimeConfig(max_batch_size=1),
+    pipeline_config = PipelineArgs(
+        model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
+        quantization_encoding="bfloat16",
+        device_specs=[DeviceSpec.accelerator()],
+        huggingface_model_revision=revision,
+        max_length=8192,
+        enable_structured_output=True,
+        max_batch_size=1,
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
-        pipeline_config
+        PipelineConfig.from_args(pipeline_config)
     )
     assert isinstance(tokenizer, TextTokenizer)
 
@@ -171,29 +161,23 @@ def test_multistep_structured_output_gpu(
         "HuggingFaceTB/SmolLM2-135M-Instruct"
     )
     assert revision is not None
-    pipeline_config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
-                    quantization_encoding="bfloat16",
-                    device_specs=[DeviceSpec.accelerator()],
-                    huggingface_model_revision=revision,
-                    max_length=8192,
-                )
-            }
-        ),
-        sampling=SamplingConfig(enable_structured_output=True),
+    pipeline_config = PipelineArgs(
+        model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
+        quantization_encoding="bfloat16",
+        device_specs=[DeviceSpec.accelerator()],
+        huggingface_model_revision=revision,
+        max_length=8192,
+        enable_structured_output=True,
         # Disable overlap scheduler: multi-step execution (num_steps > 1) is
         # only supported in TextGenerationPipeline, not OverlapTextGenerationPipeline.
         # Use force=True to prevent auto-enable from overriding our setting.
-        runtime=PipelineRuntimeConfig(
-            max_batch_size=1, enable_overlap_scheduler=False, force=True
-        ),
+        max_batch_size=1,
+        enable_overlap_scheduler=False,
+        force=True,
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
-        pipeline_config
+        PipelineConfig.from_args(pipeline_config)
     )
     assert isinstance(tokenizer, TextTokenizer)
 
@@ -270,29 +254,23 @@ def test_multi_step_guided_decoding_gpu(
         "HuggingFaceTB/SmolLM2-135M-Instruct"
     )
     assert revision is not None
-    pipeline_config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
-                    quantization_encoding="bfloat16",
-                    device_specs=[DeviceSpec.accelerator()],
-                    huggingface_model_revision=revision,
-                    max_length=8192,
-                )
-            }
-        ),
-        sampling=SamplingConfig(enable_structured_output=True),
+    pipeline_config = PipelineArgs(
+        model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
+        quantization_encoding="bfloat16",
+        device_specs=[DeviceSpec.accelerator()],
+        huggingface_model_revision=revision,
+        max_length=8192,
+        enable_structured_output=True,
         # Disable overlap scheduler: multi-step execution (num_steps > 1) is
         # only supported in TextGenerationPipeline, not OverlapTextGenerationPipeline.
         # Use force=True to prevent auto-enable from overriding our setting.
-        runtime=PipelineRuntimeConfig(
-            max_batch_size=1, enable_overlap_scheduler=False, force=True
-        ),
+        max_batch_size=1,
+        enable_overlap_scheduler=False,
+        force=True,
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
-        pipeline_config
+        PipelineConfig.from_args(pipeline_config)
     )
     assert isinstance(tokenizer, TextTokenizer)
 
@@ -357,27 +335,19 @@ def test_overlap_pipeline_structured_output_gpu(
         "HuggingFaceTB/SmolLM2-135M-Instruct"
     )
     assert revision is not None
-    pipeline_config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
-                    quantization_encoding="bfloat16",
-                    device_specs=[DeviceSpec.accelerator()],
-                    huggingface_model_revision=revision,
-                    max_length=8192,
-                )
-            }
-        ),
-        sampling=SamplingConfig(enable_structured_output=True),
-        runtime=PipelineRuntimeConfig(
-            max_batch_size=1,
-            enable_overlap_scheduler=True,
-        ),
+    pipeline_config = PipelineArgs(
+        model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
+        quantization_encoding="bfloat16",
+        device_specs=[DeviceSpec.accelerator()],
+        huggingface_model_revision=revision,
+        max_length=8192,
+        enable_structured_output=True,
+        max_batch_size=1,
+        enable_overlap_scheduler=True,
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
-        pipeline_config
+        PipelineConfig.from_args(pipeline_config)
     )
     assert isinstance(tokenizer, TextTokenizer)
 
@@ -471,28 +441,22 @@ def test_heterogeneous_batch_structured_output_gpu(
         "HuggingFaceTB/SmolLM2-135M-Instruct"
     )
     assert revision is not None
-    pipeline_config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
-                    quantization_encoding="bfloat16",
-                    device_specs=[DeviceSpec.accelerator()],
-                    huggingface_model_revision=revision,
-                    max_length=8192,
-                )
-            }
-        ),
-        sampling=SamplingConfig(enable_structured_output=True),
+    pipeline_config = PipelineArgs(
+        model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
+        quantization_encoding="bfloat16",
+        device_specs=[DeviceSpec.accelerator()],
+        huggingface_model_revision=revision,
+        max_length=8192,
+        enable_structured_output=True,
         # Use batch_size=2 for heterogeneous batch testing.
         # Disable overlap scheduler for simpler output handling.
-        runtime=PipelineRuntimeConfig(
-            max_batch_size=2, enable_overlap_scheduler=False, force=True
-        ),
+        max_batch_size=2,
+        enable_overlap_scheduler=False,
+        force=True,
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
-        pipeline_config
+        PipelineConfig.from_args(pipeline_config)
     )
     assert isinstance(tokenizer, TextTokenizer)
 

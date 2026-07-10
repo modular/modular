@@ -277,7 +277,7 @@ def cli_serve(
     """
     from max._entrypoints.cli.serve import serve_api_server_and_model_worker
     from max._entrypoints.workers import start_workers
-    from max.pipelines import PipelineConfig
+    from max.pipelines import PipelineArgs
     from max.pipelines.context import SamplingParams, SamplingParamsInput
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging
@@ -301,15 +301,15 @@ def cli_serve(
 
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
 
     # Log Pipeline and Sampling Configuration
     if pretty_print_config:
         # Log Default Sampling Configuration (only for single-model pipelines)
-        if "main" in pipeline_config.models:
+        if pipeline_args.model_path:
             sampling_params = SamplingParams.from_input_and_generation_config(
                 SamplingParamsInput(),
-                sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
+                sampling_params_defaults=pipeline_args.model.sampling_params_defaults,
             )
             sampling_params.log_sampling_info()
 
@@ -322,11 +322,11 @@ def cli_serve(
     if headless:
         start_workers(
             settings=settings,
-            pipeline_config=pipeline_config,
+            pipeline_args=pipeline_args,
         )
     else:
         serve_api_server_and_model_worker(
-            settings=settings, pipeline_config=pipeline_config
+            settings=settings, pipeline_args=pipeline_args
         )
 
 
@@ -413,7 +413,6 @@ def cli_pipeline(
     accepting image inputs for multimodal models.
     """
     from max._entrypoints.cli.generate import generate_text_for_pipeline
-    from max.pipelines import PipelineConfig
     from max.pipelines.context import SamplingParams, SamplingParamsInput
     from max.profiler import maybe_reexec_under_nsys
 
@@ -443,12 +442,14 @@ def cli_pipeline(
     )
 
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
+    from max.pipelines import PipelineArgs
+
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
     generate_text_for_pipeline(
-        pipeline_config,
+        pipeline_args,
         sampling_params=SamplingParams.from_input_and_generation_config(
             params,
-            sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
+            sampling_params_defaults=pipeline_args.model.sampling_params_defaults,
         ),
         prompt=prompt,
         image_urls=image_url,
@@ -479,11 +480,11 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     embeddings that can be used for various downstream tasks.
     """
     from max._entrypoints.cli.encode import pipeline_encode
-    from max.pipelines import PipelineConfig
+    from max.pipelines import PipelineArgs
 
     # Load tokenizer & pipeline.
-    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
-    pipeline_encode(pipeline_config, prompt=prompt, num_warmups=num_warmups)
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    pipeline_encode(pipeline_args, prompt=prompt, num_warmups=num_warmups)
 
 
 @main.command(name="warm-cache", cls=WithLazyPipelineOptions)
@@ -499,7 +500,7 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
 )
 def cli_warm_cache(target: str | None, **config_kwargs) -> None:
     """Load and compile the model to prepare caches."""
-    from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+    from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 
     # Log what we're doing if target mode is enabled
     if target:
@@ -510,8 +511,8 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
             f"Compiling for target: {api} ({target_arch}) using virtual devices"
         )
 
-    pipeline_config = PipelineConfig.from_flat_kwargs(**config_kwargs)
-    _ = PIPELINE_REGISTRY.retrieve(pipeline_config)
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(pipeline_args))
 
 
 @main.command(name="warm-interpreter-cache")

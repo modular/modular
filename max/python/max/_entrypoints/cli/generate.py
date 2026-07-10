@@ -26,7 +26,6 @@ import requests
 from max.pipelines import (
     PIPELINE_REGISTRY,
     GenerateMixin,
-    PipelineConfig,
     TextAndVisionTokenizer,
     TextTokenizer,
 )
@@ -36,6 +35,7 @@ from max.pipelines.context import (
     SamplingParams,
     TextContext,
 )
+from max.pipelines.lib import PipelineArgs, PipelineConfig
 from max.pipelines.logging_utils import log_basic_config
 from max.pipelines.modeling.types import (
     ImageContentPart,
@@ -131,7 +131,7 @@ async def stream_text_to_console(
 
 
 def generate_text_for_pipeline(
-    pipeline_config: PipelineConfig,
+    pipeline_args: PipelineArgs,
     sampling_params: SamplingParams,
     prompt: str,
     image_urls: Iterable[str] = (),
@@ -144,6 +144,7 @@ def generate_text_for_pipeline(
     # nsys, ``cudaProfilerStop`` triggers the ``.nsys-rep`` write — delaying
     # it past the metrics report keeps the normal generate output (text +
     # stats) from being buried inside nsys's file-writing progress lines.
+    pipeline_config = PipelineConfig.from_args(pipeline_args)
     tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config
     )
