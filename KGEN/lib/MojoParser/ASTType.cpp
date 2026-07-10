@@ -623,12 +623,47 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
                                              SharedState &shared,
                                              TypeConvention genericDefault) {
   assert(type.mlirType && "getRegisterPassability called with null mlirType");
-  // Downcast preserves register passability, strip it before querying the
-  // property.
-  //
-  // FIXME: we should instead make downcast an actual downcast.
+
+  auto checkPR = [&](ASTType ty, ASTDecl *decl, StringRef traitName) {
+    auto trait = shared.lookupBuiltinTraitType(traitName, loc);
+    // If builtin is not enabled (let's kill this!), we just assume __mlir_type
+    // to be register-passable (by no means this is correct, but just to pass
+    // some existing tests).
+    if (!trait)
+      return !decl;
+
+    FailureOr<TriState> upCast = IREmitter::canMetaTypeUpCastTo(
+        shared, loc, ty.extractMetaType(), trait, decl);
+    return succeeded(upCast) && upCast->isTrue();
+  };
+
+  // A type refinement (e.g. from
+  // `comptime assert conforms_to(T, TrivialRegisterPassable)`) wraps the
+  // parameter reference in a DowncastAttr whose bound records the refined
+  // trait set. That refined bound can prove register passability even when the
+  // declared bound cannot, so consult it directly.
   if (auto paramRefTy = sugarDynCast<ParamType>(type.mlirType))
-    type = DowncastAttr::strip(paramRefTy.getParam());
+    if (auto downcast = dyn_cast<DowncastAttr>(paramRefTy.getParam())) {
+      ASTDecl *refinedDecl = type.getDecl(shared);
+      TypeConvention refinedConvention = TypeConvention::MemoryOnly;
+      if (checkPR(type, refinedDecl, "TrivialRegisterPassable"))
+        refinedConvention = TypeConvention::RegisterPassableTrivial;
+      else if (checkPR(type, refinedDecl, "RegisterPassable"))
+        refinedConvention = TypeConvention::RegisterPassable;
+
+      // Explicit trait downcasts can add a trait without merging the input
+      // type's full bound into the result. A downcast preserves the input value
+      // representation, so use the stronger convention proved by either side.
+      TypeConvention inputConvention = getRegisterPassability(
+          ASTType(DowncastAttr::strip(downcast)), loc, shared, genericDefault);
+      if (refinedConvention == TypeConvention::RegisterPassableTrivial ||
+          inputConvention == TypeConvention::RegisterPassableTrivial)
+        return TypeConvention::RegisterPassableTrivial;
+      if (refinedConvention == TypeConvention::RegisterPassable ||
+          inputConvention == TypeConvention::RegisterPassable)
+        return TypeConvention::RegisterPassable;
+      return inputConvention;
+    }
 
   ASTDecl *decl = type.getDecl(shared);
   if (sugarIsa<StructMetaType>(type.mlirType)) {
@@ -646,23 +681,10 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
                   decl->getIfOperation()))
     return TypeConvention::MemoryOnly;
 
-  auto checkPR = [&](StringRef traitName) {
-    auto trait = shared.lookupBuiltinTraitType(traitName, loc);
-    // If builtin is not enabled (let's kill this!), we just assume __mlir_type
-    // to be register-passable (by no means this is correct, but just to pass
-    // some existing tests).
-    if (!trait)
-      return !decl;
-
-    FailureOr<TriState> upCast = IREmitter::canMetaTypeUpCastTo(
-        shared, loc, type.extractMetaType(), trait, decl);
-    return succeeded(upCast) && upCast->isTrue();
-  };
-
-  if (checkPR("TrivialRegisterPassable"))
+  if (checkPR(type, decl, "TrivialRegisterPassable"))
     return TypeConvention::RegisterPassableTrivial;
 
-  if (checkPR("RegisterPassable"))
+  if (checkPR(type, decl, "RegisterPassable"))
     return TypeConvention::RegisterPassable;
 
   if (decl && isa<TraitType>(type.extractMetaType())) {
