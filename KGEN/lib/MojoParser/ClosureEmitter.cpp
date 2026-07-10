@@ -412,7 +412,8 @@ std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
   auto closureTrait =
       TraitDeclOp::create(b, location, StringAttr::get(ctx, originalName));
   ASTDecl &traitDecl = shared.declResolver->addFullyResolvedDecl(
-      &*closureTrait, name, moduleDecl.getLoc(), &shared.getTopLevelDecl());
+      &*closureTrait, name, nestedFunctionOrTypeLocation,
+      &shared.getTopLevelDecl());
 
   closureTrait.setDefinesClosure(true);
   // Populate the trait with parent and self methods.
@@ -3585,6 +3586,11 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
       return success();
     }
   }
+  // Require explicit trait conformance for user-written structs. Only
+  // compiler-synthesized structs (the closure wrappers) may implicitly conform
+  // and fall through.
+  if (!structDeclOp.isSynthetic())
+    return failure();
 
   // This trait defines a closure which means it has a single call function.
   if (structDecl.resolvedness < DeclResolvedness::body) {
