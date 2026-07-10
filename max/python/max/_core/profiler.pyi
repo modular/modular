@@ -97,3 +97,15 @@ def kineto_is_enabled() -> bool:
     Suitable for use on the hot path to elide expensive trace-name
     construction when off.
     """
+
+def kineto_last_trace_error() -> str:
+    """
+    Return the most recent trace-serialization error message.
+
+    Empty on success, or before any disable has run.
+
+    Used by ``InferenceSession.profiling.wait_for_trace()`` to raise
+    :class:`max.engine.ProfilingError` when the configured output path
+    was unwritable or libkineto could not serialize the in-memory trace.
+    Cleared automatically at the next ``start()``.
+    """

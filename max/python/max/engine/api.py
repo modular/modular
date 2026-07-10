@@ -45,6 +45,9 @@ from max._core.profiler import (
     kineto_is_enabled as _kineto_is_enabled,
 )
 from max._core.profiler import (
+    kineto_last_trace_error as _kineto_last_trace_error,
+)
+from max._core.profiler import (
     kineto_state as _kineto_state,
 )
 from max._core.profiler import (
@@ -444,6 +447,20 @@ class CompiledModel:
         self._compiled.result().export_mef(str(path))
 
 
+class ProfilingError(Exception):
+    """Raised when the libkineto profiler fails to serialize its trace.
+
+    The most common causes are an unwritable
+    :attr:`InferenceSession.debug.profiling_output_path`, a missing parent
+    directory, or libkineto failing to flush its in-memory ring buffer (the
+    underlying I/O error appears on libkineto's stderr).  The exception
+    message includes the resolved output path so the failure can be
+    diagnosed without rerunning the workload.
+
+    Raised by :meth:`InferenceSession.profiling.wait_for_trace`.
+    """
+
+
 class _ProfilingNamespace:
     """Runtime control surface for the libkineto-backed MAX profiler.
 
@@ -502,12 +519,27 @@ class _ProfilingNamespace:
         Unregisters CUPTI callbacks and finalizes the trace file; use
         :meth:`wait_for_trace` if you need to ensure serialization is
         complete before reading it.
+
+        This method does not raise on a serialization failure — the error is
+        recorded and surfaced by :meth:`wait_for_trace`, so call that to
+        observe whether the trace was written.
         """
         _kineto_disable()
 
     def wait_for_trace(self) -> None:
-        """Block until the most recent :meth:`stop` finishes serializing."""
+        """Block until the most recent :meth:`stop` finishes serializing.
+
+        Raises:
+            ProfilingError: If libkineto could not write the trace file —
+                most commonly an unwritable
+                :attr:`InferenceSession.debug.profiling_output_path` or a
+                missing parent directory.  The exception message includes
+                the resolved output path.
+        """
         _kineto_wait_for_trace()
+        err = _kineto_last_trace_error()
+        if err:
+            raise ProfilingError(err)
 
     @property
     def state(self) -> Literal["idle", "warmup", "active", "flushing"]:

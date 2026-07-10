@@ -24,5 +24,6 @@ from .api import (
     LogLevel,
     Model,
     PrintStyle,
+    ProfilingError,
     TensorSpec,
 )
