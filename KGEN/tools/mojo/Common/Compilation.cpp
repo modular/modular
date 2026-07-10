@@ -519,10 +519,13 @@ ErrorOrSuccess M::parseTargetOptions(
   if (!targetAccelerator.empty()) {
     compilationOptions.targetAccelerator = targetAccelerator.str();
     compilationOptions.isCrossCompilation = true;
-  } else {
+  }
+#if MLRT_ACCELERATOR_SUPPORT
+  else {
     compilationOptions.targetAccelerator =
         M::Driver::Device::getAcceleratorArchOrEmpty();
   }
+#endif
 
   if (!mcmodel.empty()) {
     if (!llvm::is_contained({"small", "medium", "large"}, mcmodel)) {

@@ -879,6 +879,7 @@ modular_cc_library(
 modular_cc_library(
     name = "ToolCommon.headers",
     hdrs = glob(["include/KGEN/ToolCommon/*.h"]),
+    defines = ["MLRT_ACCELERATOR_SUPPORT=1"],
     tags = ["no-clang-tidy-headers"],
     visibility = ["//visibility:private"],
     deps = [
