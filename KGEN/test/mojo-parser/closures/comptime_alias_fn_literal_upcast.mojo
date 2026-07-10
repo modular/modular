@@ -35,7 +35,7 @@ def wrap_cb(a: Int) -> Int:
 # CHECK: lit.fn @"driver()"()
 # CHECK: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__" synth
 # CHECK-SAME: !lit.ref<!lit.struct<#PtrWrapper
-# CHECK: lit.call {{.*}}@"def(a: Int) -> Int_PtrWrapper"::@"__init__()"
+# CHECK: lit.call {{.*}}@"def(a: Int) thin -> Int_PtrWrapper"::@"__init__()"
 # CHECK: lit.call {{.*}}@"repro[def(Int) -> Int]($0)"
 # CHECK-SAME: <:!alias_CallbackType{{[0-9]+}} #kgen.type<!lit.struct<#PtrWrapper
 def driver() -> Int:

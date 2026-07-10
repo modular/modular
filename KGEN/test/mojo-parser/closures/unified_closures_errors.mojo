@@ -127,7 +127,8 @@ def takesClosure[T: def(Int) -> Int](cb: T, x: Int) -> Int:
 
 
 def useTopLevelClosure():
-    # expected-error @below {{invalid call to 'takesClosure': 'takesClosure' parameter 'T' has 'def(Int) -> Int' type, but value has type 'def topLevel(x: String) -> String'}}
+    # expected-error @below {{invalid call to 'takesClosure': 'takesClosure' parameter 'T' has 'def(Int) -> Int' type, but value has type 'def topLevel(x: String) thin -> String'}}
+    # expected-note @below {{a thin function cannot bind to a closure trait; use 'type_of(topLevel)' to pass its type instead}}
     takesClosure[topLevel](topLevel, 1)
 
 

@@ -1060,7 +1060,7 @@ struct FnTypeParamBound[T: def(UnsafePointer[Int, MutAnyOrigin])]:
 ##===----------------------------------------------------------------------===##
 
 trait CFMTrait: # expected-note {{trait 'CFMTrait' declared here}}
-    # expected-note @below {{no 'f1' candidates have type 'def(self: CFMStructFail) -> None'}}
+    # expected-note @below {{no 'f1' candidates have type 'def(self: CFMStructFail) thin -> None'}}
     def f1(self):
         ...
 
@@ -1070,7 +1070,7 @@ trait CFMTrait: # expected-note {{trait 'CFMTrait' declared here}}
 
 # struct implements CFMTrait but does not have f2().
 struct CFMStructFail(TrivialRegisterPassable, CFMTrait): # expected-error {{'CFMStructFail' does not implement all requirements for 'CFMTrait'}}
-  def f1(self, x: Int): # expected-note {{candidate declared here with type 'def(self: CFMStructFail, x: Int) -> None'}}
+  def f1(self, x: Int): # expected-note {{candidate declared here with type 'def(self: CFMStructFail, x: Int) thin -> None'}}
     pass
 
 struct NoTraits(TrivialRegisterPassable):
@@ -1114,12 +1114,12 @@ struct InheritsTwice(Father, Father):
 # Parser crash when trait implementation parameters don't match the definition
 # expected-note @below {{trait 'TraitWithIntParamOnMethodReallyLongName' declared here}}
 trait TraitWithIntParamOnMethodReallyLongName:
-  # expected-note @below {{no 'f' candidates have type 'def[n: Int](self: UseTraitWithIntParamOnMethodReallyLongName) -> None'}}
+  # expected-note @below {{no 'f' candidates have type 'def[n: Int](self: UseTraitWithIntParamOnMethodReallyLongName) thin -> None'}}
   def f[n: Int](self):
     ...
 # expected-error @below {{'UseTraitWithIntParamOnMethodReallyLongName' does not implement all requirements for 'TraitWithIntParamOnMethodReallyLongName'}}
 struct UseTraitWithIntParamOnMethodReallyLongName(TraitWithIntParamOnMethodReallyLongName):
-  # expected-note @below {{candidate declared here with type 'def[n: Bool](self: UseTraitWithIntParamOnMethodReallyLongName) -> None'}}
+  # expected-note @below {{candidate declared here with type 'def[n: Bool](self: UseTraitWithIntParamOnMethodReallyLongName) thin -> None'}}
   # expected-note @below {{.n of the first type is 'Int' but the second type is 'Bool'}}
   def f[n: Bool](self):
     pass

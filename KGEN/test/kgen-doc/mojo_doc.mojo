@@ -58,7 +58,7 @@ comptime alias_cond = 2 if is_nvidia_gpu() else 1
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_fn",
 # CHECK:  "path": "/mojo_doc/#alias_fn",
-# CHECK:  "value": "def(Int, Int) -> None"
+# CHECK:  "value": "def(Int, Int) thin -> None"
 comptime alias_fn = def(Int, Int) thin -> None
 
 
@@ -344,13 +344,13 @@ def fn_with_params_and_return(arg: Int) -> Int:
 # CHECK: "overloads":
 # CHECK:     "args":
 # CHECK:         "name": "arg_fn"
-# CHECK:         "type": "def(S, S) capturing -> Bool"
+# CHECK:         "type": "def(S, S) capturing thin -> Bool"
 # CHECK:     "parameters":
 # CHECK:         "name": "T"
 # CHECK:         "path": "/std/builtin/anytype/AnyType"
 # CHECK:         "type": "AnyType"
 # CHECK:         "name": "param_fn"
-# CHECK:         "type": "def(T, T) capturing -> Bool"
+# CHECK:         "type": "def(T, T) capturing thin -> Bool"
 # CHECK:         "default": "T"
 # CHECK:         "name": "S"
 # CHECK:         "path": "/std/builtin/anytype/AnyType"
@@ -358,7 +358,7 @@ def fn_with_params_and_return(arg: Int) -> Int:
 # CHECK:     "returns": {
 # CHECK:       "type": "S"
 # CHECK:     },
-# CHECK:     "signature": "def fn_with_fn_param_and_arg[T: AnyType, param_fn: def(T, T) capturing -> Bool, S: AnyType = T](arg_fn: def(S, S) capturing -> Bool) -> S"
+# CHECK:     "signature": "def fn_with_fn_param_and_arg[T: AnyType, param_fn: def(T, T) capturing thin -> Bool, S: AnyType = T](arg_fn: def(S, S) capturing thin -> Bool) -> S"
 
 
 def fn_with_fn_param_and_arg[
@@ -378,7 +378,7 @@ def fn_with_fn_param_and_arg[
 # CHECK:         "name": "origins"
 # CHECK:         "type": "OriginSet"
 # CHECK:         "name": "input_fn_1d"
-# CHECK:         "type": "def[_simd_width: Int](Int) capturing -> SIMD[dtype, _simd_width]"
+# CHECK:         "type": "def[_simd_width: Int](Int) capturing thin -> SIMD[dtype, _simd_width]"
 
 
 def logsoftmax[
@@ -403,7 +403,7 @@ def vectorize_unified[func: def[width: Int](idx: Int) -> None](closure: func):
 
 
 # FIXME(MOCO-3730): sugar regression.
-# CHECK: "signature": "def tile_and_unswitch[workgroup_function: def[width: Int, sw: Bool](Int, Int) capturing -> None, *tile_size_list: Int](offset: Int, upperbound: Int)",
+# CHECK: "signature": "def tile_and_unswitch[workgroup_function: def[width: Int, sw: Bool](Int, Int) capturing thin -> None, *tile_size_list: Int](offset: Int, upperbound: Int)",
 
 
 def tile_and_unswitch[
@@ -973,12 +973,12 @@ struct StructWithAutoParamScalar[a: Scalar]:
 # CHECK:      "path": "/std/builtin/anytype/AnyType"
 # CHECK:      "type": "AnyType"
 # CHECK:      "name": "param_fn"
-# CHECK:      "type": "def(T, T) capturing -> Bool"
+# CHECK:      "type": "def(T, T) capturing thin -> Bool"
 # CHECK:      "default": "T",
 # CHECK:      "name": "S"
 # CHECK:      "path": "/std/builtin/anytype/AnyType"
 # CHECK:      "type": "AnyType"
-# CHECK: "signature": "struct StructWithFnParam[T: AnyType, param_fn: def(T, T) capturing -> Bool, S: AnyType = T]",
+# CHECK: "signature": "struct StructWithFnParam[T: AnyType, param_fn: def(T, T) capturing thin -> Bool, S: AnyType = T]",
 
 
 struct StructWithFnParam[

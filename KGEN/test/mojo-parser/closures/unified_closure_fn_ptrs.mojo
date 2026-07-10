@@ -8,7 +8,7 @@
 # COM: Verify generated wrapper structure
 
 # CHECK: lit.trait.decl @"def(x: Int) -> Int"
-# CHECK: lit.struct.decl @"def(x: Int) -> Int_PtrWrapper"<Impl: !lit.generator<("x": !Int1) -> !Int1>
+# CHECK: lit.struct.decl @"def(x: Int) thin -> Int_PtrWrapper"<Impl: !lit.generator<("x": !Int1) -> !Int1>
 
 # CHECK: lit.fn @"__call__
 # CHECK-SAME: kgen.transparent_thunk_callee_expr = #kgen.param.decl.ref<"Impl">
@@ -24,7 +24,7 @@
 
 # CHECK: lit.fn @"wrap_fn()"
 # CHECK: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__" synth
-# CHECK: %0 = lit.call {{.*}}:@"def(x: Int) -> Int_PtrWrapper"::@"__init__()"
+# CHECK: %0 = lit.call {{.*}}:@"def(x: Int) thin -> Int_PtrWrapper"::@"__init__()"
 # CHECK: %1 = lit.ref.immut %__call_result_tmp__
 
 
@@ -44,7 +44,7 @@ def wrap_fn() -> Int:
 
 # COM: Verify that wrappers are deduplicated
 
-# CHECK-COUNT-1: lit.struct.decl @"def(x: Int) -> Int_PtrWrapper"
+# CHECK-COUNT-1: lit.struct.decl @"def(x: Int) thin -> Int_PtrWrapper"
 
 
 def a(x: Int) -> Int:

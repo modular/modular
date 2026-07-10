@@ -638,7 +638,7 @@ struct MiniSpan[dtype_tag: Int]:
         return 0
 
 
-# CHECK: lit.struct.decl @"def[w: Int](vec: ToySIMD[1, w]) -> ToyMask[1, w]_{{.*}}"
+# CHECK: lit.struct.decl @"def[w: Int](vec: ToySIMD[1, w]) thin -> ToyMask[1, w]_{{.*}}"
 # CHECK: kgen.conformance @"def[{{.*}}w: Int](vec: ToySIMD[dtype_tag, w]) -> ToyMask[dtype_tag, w]" {
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK: kgen.witness "dtype_tag" : !Int = {1}
@@ -801,7 +801,7 @@ struct V[dtype: Int, width: Int](RegisterPassable):
     var _v: Int
 
 
-# CHECK: lit.struct.decl @"def[width: Int]() -> V[42, width]_PtrWrapper"
+# CHECK: lit.struct.decl @"def[width: Int]() thin -> V[42, width]_PtrWrapper"
 
 # CHECK: lit.fn @"__call__$def{{.*}} -> V{{.*}}"
 # CHECK: kgen.rebind %{{.*}} : {{.*}}{42}{{.*}} to {{.*}}_dtype{{.*}}
@@ -1455,7 +1455,7 @@ def trigger[xx: Int, func: def(Int) capturing -> Int]() -> Int:
     # CHECK: lit.alias.decl *"X`": !Int1 = <apply(
     # CHECK-SAME: @"take_closure_param[def[n: Int](arg: Int) -> Int]($0)"
     # CHECK-SAME: store_to_mem(apply_result_slot(
-    # CHECK-SAME: @"def[n: Int](arg: Int) capturing -> Int_PtrWrapper"::@"__init__()"
+    # CHECK-SAME: @"def[n: Int](arg: Int) capturing thin -> Int_PtrWrapper"::@"__init__()"
     comptime X = take_closure_param[type_of(wrapped_ok)](wrapped_ok)
     # CHECK: lit.call @{{.*}}::@"take_closure_param
     var Y = take_closure_param[type_of(wrapped_ok)](wrapped_ok)
@@ -1467,16 +1467,16 @@ def trigger[xx: Int, func: def(Int) capturing -> Int]() -> Int:
 # COM: build a wrapper whose Impl type is self-contained while preserving the
 # COM: promoted function symbol's native parameter ordering.
 
-# CHECK-LABEL: lit.struct.decl @"def[dtype: DType, //, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper"
+# CHECK-LABEL: lit.struct.decl @"def[dtype: DType, //, simd_width: Int]() thin -> SIMD[dtype, simd_width]_PtrWrapper"
 # CHECK: lit.alias.decl dtype: !DType = <__capture_dtype>
-# CHECK: lit.fn @"__call__[::DType,::Int](unified_closure::def[dtype: DType, //, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper[$0, $1])"
+# CHECK: lit.fn @"__call__[::DType,::Int](unified_closure::def[dtype: DType, //, simd_width: Int]() thin -> SIMD[dtype, simd_width]_PtrWrapper[$0, $1])"
 # CHECK: {{.*}} = lit.call tail[!lit.generator<() -> !lit.struct<#SIMD <:!DType _dtype, :!Int simd_width>>>: bind_params(:!lit.generator<<"dtype": !DType, +, "simd_width": !Int>() -> !lit.struct<#SIMD <:!DType *(0,0), :!Int *(0,1)>>> Impl, :!DType _dtype, :!Int simd_width)]()
 # CHECK: kgen.witness "dtype" : !DType = __capture_dtype
 
 # CHECK-LABEL: lit.fn @"trigger[::Int,::DType]()"
 # CHECK: %[[WRAP:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct
 # CHECK-SAME: @{{.*}}::@"compute_init2[::Int]()`0x"<:!DType *(0,0), :!Int *(0,1)>
-# CHECK: %[[INIT:.*]] = lit.call @{{.*}}::@"def[dtype: DType, //, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper"::@"__init__()"{{.*}}(%[[WRAP]])
+# CHECK: %[[INIT:.*]] = lit.call @{{.*}}::@"def[dtype: DType, //, simd_width: Int]() thin -> SIMD[dtype, simd_width]_PtrWrapper"::@"__init__()"{{.*}}(%[[WRAP]])
 # CHECK: %[[IMM:.*]] = lit.ref.immut %[[WRAP]]
 # CHECK: lit.call @{{.*}}::@"local_higher_order
 

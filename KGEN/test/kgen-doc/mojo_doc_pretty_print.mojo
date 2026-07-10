@@ -32,8 +32,8 @@ def baz() -> List[Int]:
 
 
 # CHECK: "name": "higher_order"
-# CHECK: "type": "def(List[Int]) -> Int"
-# CHECK: "signature": "def higher_order(f: def(List[Int]) -> Int) -> def(List[Int]) -> Int"
+# CHECK: "type": "def(List[Int]) thin -> Int"
+# CHECK: "signature": "def higher_order(f: def(List[Int]) thin -> Int) -> def(List[Int]) thin -> Int"
 def higher_order(
     f: def(List[Int]) thin -> Int,
 ) -> def(List[Int]) thin -> Int:

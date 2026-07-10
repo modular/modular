@@ -35,7 +35,7 @@ def use() -> Int:
     return where_refines(plain)
 
 
-# CHECK: lit.struct.decl @"def() -> Int_PtrWrapper"
+# CHECK: lit.struct.decl @"def() thin -> Int_PtrWrapper"
 # CHECK: kgen.conformance @"std::builtin::stubs::ImplicitlyDeletable"
 # CHECK: kgen.conformance @"std::builtin::stubs::Movable"
 # CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
