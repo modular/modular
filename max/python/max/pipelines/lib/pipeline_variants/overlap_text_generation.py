@@ -1271,6 +1271,9 @@ class RealizeFutureTokenProcessor:
             synchronous-fill bitmask, or ``None`` (see ``realized_draft_tokens_host``).
         """
         assert isinstance(model_inputs, _HasRaggedTokens)
+        assert not prev_batch._is_processed, (
+            "Cannot realize device inputs from an already host-processed batch"
+        )
         realized_draft_tokens_host: npt.NDArray[np.int64] | None = None
         mappings = self._compute_mappings(prev_batch, inputs)
 
@@ -2307,6 +2310,7 @@ class OverlapTextGenerationPipeline(
         if (
             self._prev_batch is not None
             and self._realize_future_token_processor is not None
+            and not self._prev_batch._is_processed
         ):
             realized_draft_tokens_host = (
                 self._realize_future_token_processor.realize_future_tokens(
@@ -2799,7 +2803,10 @@ class OverlapTextGenerationPipeline(
         prev_context_batch = prev_batch.inputs.flat_batch
         prev_rids = {ctx.request_id for ctx in prev_context_batch}
         all_continuing = all(
-            ctx.request_id in prev_rids and not ctx.is_initial_prompt
+            (
+                (ctx.request_id in prev_rids and not ctx.is_initial_prompt)
+                or ctx._is_padding_ctx  # Padding contexts shouldn't affect continuation
+            )
             for ctx in curr_context_batch
         )
         if not all_continuing:

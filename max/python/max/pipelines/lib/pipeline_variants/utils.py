@@ -897,7 +897,11 @@ class StructuredOutputHelper:
             # what keeps the batch-level ``skip_fsm_advance`` contract intact
             # for the producing batch's later sync.
             for ctx_idx, ctx in enumerate(context_batch):
-                if ctx.matcher is None or ctx.is_initial_prompt:
+                if (
+                    ctx.matcher is None
+                    or ctx.is_initial_prompt
+                    or ctx._is_padding_ctx
+                ):
                     continue
 
                 # Advance the enforcement state machine through committed
@@ -995,6 +999,8 @@ class StructuredOutputHelper:
                 # raising -- a raise propagates to the callback's except and
                 # blanket-resets the *whole* rectangle to -1, unconstraining
                 # every other (correctly continuing) request in the batch.
+                if ctx._is_padding_ctx:
+                    continue
                 src = rid_to_src.get(ctx.request_id)
                 if src is None:
                     logger.error(

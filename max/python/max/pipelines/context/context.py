@@ -456,6 +456,7 @@ class TextContext:
         _status: Current generation status (active, finished, etc)
         _log_probabilities_data: Token log probabilities data
         _is_initial_prompt: Whether this is the initial prompt encoding
+        _is_padding_ctx: Whether this context is a DP batch padding context
         _draft_offset: Offset for draft decoding
         _spec_decoding_state: Optional per-request speculative decoding state
         vocab_size: Optional vocabulary size for validating generated token IDs
@@ -491,6 +492,7 @@ class TextContext:
     )
 
     _is_initial_prompt: bool = field(default=True)
+    _is_padding_ctx: bool = field(default=False)
     _draft_offset: int = field(default=0)
     _spec_decoding_state: SpecDecodingState | None = field(default=None)
 

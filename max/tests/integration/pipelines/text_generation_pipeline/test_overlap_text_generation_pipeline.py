@@ -1682,6 +1682,39 @@ class TestEnqueuePrevBitmaskCallback:
         assert mock_spec_state.has_precomputed_bitmask is True
         mock_overlap_state.enqueue_async_callback.assert_called_once()
 
+    def test_dp_padding_row_preserves_callback_path(self) -> None:
+        """A fresh padding row does not turn steady decode into a mixed batch."""
+        producer = TextContext(
+            request_id=RequestID("producer"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        producer.update(new_token=10)
+        padding = TextContext(
+            request_id=RequestID("ordinary-id"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([0])),
+            _is_padding_ctx=True,
+        )
+        padding.update(new_token=0)
+
+        pipeline, mock_spec_state, mock_overlap_state = (
+            self._make_pipeline_with_spec_state([producer])
+        )
+
+        with patch.object(
+            pipeline,
+            "_build_bitmask_callback",
+            return_value=lambda: None,
+        ):
+            result = pipeline._enqueue_prev_bitmask_callback(
+                curr_context_batch=[producer, padding],
+            )
+
+        assert result is True
+        assert mock_spec_state.has_precomputed_bitmask is True
+        mock_overlap_state.enqueue_async_callback.assert_called_once()
+
 
 class TestInitializeBitmaskWithGrammar:
     """Tests for initialize_bitmask behavior with grammar field.

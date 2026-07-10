@@ -159,6 +159,7 @@ class DPBatchPadder:
                 max_length=self._max_length,
                 tokens=TokenBuffer(np.zeros(1, dtype=np.int64)),
                 model_name=self._model_name,
+                _is_padding_ctx=True,
             )
             ctx.update(0)
             self._kv_manager.alloc_dummy(
