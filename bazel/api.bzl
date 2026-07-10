@@ -13,6 +13,7 @@ load("//bazel/internal:modular_py_library.bzl", _modular_py_library = "modular_p
 load("//bazel/internal:modular_py_test.bzl", _modular_py_test = "modular_py_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_venv.bzl", _modular_py_venv = "modular_py_venv")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_run_binary_test.bzl", _modular_run_binary_test = "modular_run_binary_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_shared_library.bzl", _modular_shared_library = "modular_shared_library")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_sphinx_docs.bzl", _modular_sphinx_docs = "modular_sphinx_docs")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_versioned_expand_template.bzl", _modular_versioned_expand_template = "modular_versioned_expand_template")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_binary.bzl", _mojo_binary = "mojo_binary")  # buildifier: disable=bzl-visibility
@@ -29,6 +30,7 @@ modular_multi_py_version_test = _modular_multi_py_version_test
 modular_py_library = _modular_py_library
 modular_py_venv = _modular_py_venv
 modular_run_binary_test = _modular_run_binary_test
+modular_shared_library = _modular_shared_library
 modular_versioned_expand_template = _modular_versioned_expand_template
 mojo_binary = _mojo_binary
 mojo_test = _mojo_test
