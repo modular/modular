@@ -46,6 +46,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
     KVCacheParams,
     KVHashAlgo,
+    MHAKVCacheParams,
     ReplicatedKVCacheMemory,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
@@ -349,6 +350,7 @@ def _resolve_kv_share_identity(
     global_device_index: int,
     tensor_parallel_degree: int,
     replicates_kv_across_tp: bool,
+    kv_head_group_size: int = 1,
 ) -> tuple[int, int]:
     """Resolves ``(kv_shard_id, replica_id)`` for one GPU's KV share.
 
@@ -362,21 +364,24 @@ def _resolve_kv_share_identity(
       byte-identical copy of the latent KV, so the grid flattens to
       ``[dp*tp][1]`` — one shard (``kv_shard_id == 0``), each GPU its own replica
       (``replica_id == global_device_index``); dedup group size ``dp*tp``.
-    * otherwise (MHA/GQA head-sharded, or TP==1): the TP rank is the shard and
-      the DP index is the replica — ``kv_shard_id == global_device_index % tp``,
-      ``replica_id == global_device_index // tp``; dedup group size ``dp``.
+    * otherwise (MHA/GQA head-sharded, or TP==1): each contiguous group of
+      ``kv_head_group_size`` (``g``) TP ranks holds the same KV-head slice, so
+      the shard is the head index ``tp_rank // g`` and the replica index expands
+      to ``dp_i * g + (tp_rank % g)``. With ``g == 1`` (the default; no head
+      replication) this is ``kv_shard_id == tp_rank``, ``replica_id == dp_i``.
 
     Invariant (the acceptance criterion): two GPUs get identical ``kv_shard_id``
-    exactly when they hold byte-identical KV. Replicated: all share
-    ``kv_shard_id == 0`` and all are byte-identical. Head-sharded: equal TP rank
-    holds the same head slice (byte-identical across DP replicas), a different
-    rank a different slice.
+    exactly when they hold the same KV-head slice — equal ``tp_rank // g``.
+    Replicated: all share ``kv_shard_id == 0``. Head-sharded (``g == 1``): equal
+    TP rank. Head-replicated (``g > 1``): equal head group.
 
     Args:
         global_device_index: Replica-major flat GPU index in the ``[dp][tp]``
             grid.
         tensor_parallel_degree: TP degree (``n_devices // dp``).
         replicates_kv_across_tp: Whether every TP rank holds identical KV.
+        kv_head_group_size: Number of TP ranks that replicate one KV head
+            (``tp // n_kv_heads`` under ``allow_kv_head_replication``, else 1).
 
     Returns:
         ``(kv_shard_id, replica_id)`` for the ``ExchangeMetadata`` handshake.
@@ -389,10 +394,80 @@ def _resolve_kv_share_identity(
         raise ValueError(
             f"global_device_index must be >= 0, got {global_device_index}"
         )
+    if kv_head_group_size < 1:
+        raise ValueError(
+            f"kv_head_group_size must be >= 1, got {kv_head_group_size}"
+        )
     if replicates_kv_across_tp:
         return 0, global_device_index
     replica_id, tp_rank = divmod(global_device_index, tensor_parallel_degree)
-    return tp_rank, replica_id
+    g = kv_head_group_size
+    return tp_rank // g, replica_id * g + (tp_rank % g)
+
+
+def _per_gpu_units(
+    units: Sequence[KVCacheMemory], tp: int, replicates: bool
+) -> list[KVCacheMemory]:
+    """Splits one replica's KV memory into one single-shard unit per TP rank.
+
+    The multi-tenant path registers one GPU per client, so each TP rank needs a
+    unit wrapping exactly that GPU's buffer, in TP-rank order (index ``j`` is
+    rank ``j`` on device ``j``):
+
+    * ``replicates`` (MLA): the replica is a single
+      :class:`~max.nn.kv_cache.cache_params.ReplicatedKVCacheMemory` whose
+      ``all_buffers`` are the ``tp`` byte-identical per-device buffers in TP-rank
+      order; wrap ``all_buffers[j]`` in a fresh single-shard unit so each client
+      registers exactly its own GPU's buffer.
+    * otherwise (MHA/GQA head-sharded): the replica is already ``tp`` single-
+      shard units, one per GPU; return them unchanged.
+
+    Args:
+        units: The replica's KV memory units (one replicated unit for MLA, ``tp``
+            per-GPU units otherwise).
+        tp: Tensor-parallel degree (number of GPUs per replica).
+        replicates: Whether the replica is MLA replicated KV.
+
+    Returns:
+        ``tp`` single-shard :class:`KVCacheMemory` units in TP-rank order.
+
+    Raises:
+        NotImplementedError: If an MLA replica has more than one unit (e.g. a
+            quantized MLA cache emitting FP8 scales as a second replicated unit),
+            which this per-GPU split would silently drop.
+    """
+    if replicates:
+        # A non-quantized MLA replica is exactly one ReplicatedKVCacheMemory. A
+        # quantized MLA cache would emit a SECOND replicated unit (FP8 scales);
+        # taking only units[0] would drop the scale bytes -- the same silent-drop
+        # class the non-MLA ``len(units) != tp`` guard catches. Fail loud instead
+        # (multi-unit MLA concatenation + a kv_config_hash v2 bump is #91286 /
+        # CLIN-1460, deliberately not duplicated here).
+        if len(units) != 1:
+            raise NotImplementedError(
+                "Multi-tenant dKV MLA TP>1 requires exactly one replicated KV "
+                f"unit per replica, but got {len(units)}. Quantized (FP8 scale) "
+                "MLA caches, whose scales are a second replicated unit, are not "
+                "supported on the dKV connector yet (CLIN-1460)."
+            )
+        bufs = units[0].all_buffers
+        # The replicated unit must hold exactly one buffer per TP rank (rank j
+        # on device j); a mismatch means a topology/tp disagreement, so reject.
+        if len(bufs) != tp:
+            raise NotImplementedError(
+                "Multi-tenant dKV MLA TP>1 expects the replicated unit to "
+                f"hold exactly {tp} per-device buffers, but all_buffers has "
+                f"{len(bufs)}."
+            )
+        # Each peer buffer becomes its own single-buffer KVCacheMemory, so the
+        # per-GPU client registers a single-buffer store (``is_mla`` derives
+        # False in _make_client). That is correct: the Rust MLA broadcast/stride
+        # machinery is gated on ``device_buffers.len() >= 2`` (connector.rs
+        # num_participating_shards), so it is inert for a single-buffer per-GPU
+        # store -- each MT MLA GPU is its own independent single-shard store, not
+        # the one-client-registers-all-TP NVLink-broadcast layout MT drops.
+        return [KVCacheMemory(buffer=bufs[j]) for j in range(tp)]
+    return [units[j] for j in range(tp)]
 
 
 def _validate_tenant_topology(*, is_single_group: bool) -> None:
@@ -402,11 +477,8 @@ def _validate_tenant_topology(*, is_single_group: bool) -> None:
     ``device_id``, ``numa_node``) are scalars that name one GPU's share. TP>1 is
     carried by splitting the handshake per GPU (one client / connection per GPU,
     each sending its own ``kv_shard_id``); see :func:`_resolve_replica_identities`
-    and :meth:`DKVConnector.__init__`. The remaining TP>1 case still deferred is
-    MLA replicated KV (``replicates_kv_across_tp``), which is guarded in
-    :func:`_resolve_replica_identities` (CLIN-1512 TP-2). Multi-group caches
-    (hybrid / SWA / speculative) are likewise not yet wired through this
-    connector.
+    and :meth:`DKVConnector.__init__`. Multi-group caches (hybrid / SWA /
+    speculative) are not yet wired through this connector.
 
     Args:
         is_single_group: Whether the cache is single-group (full attention).
@@ -459,8 +531,9 @@ def _resolve_replica_identities(
       and maps each GPU (replica-major flat index ``i * tp + j``) to its share
       via :func:`_resolve_kv_share_identity`, sharing the layout
       ``kv_config_hash``. The list has one entry per GPU (``dp * tp`` entries);
-      TP==1 collapses to one per replica. MLA replicated KV with TP>1 is deferred
-      (CLIN-1512 TP-2) because its per-GPU buffer split is not yet wired.
+      TP==1 collapses to one per replica. Covers head-sharded (MHA/GQA) and MLA
+      replicated KV alike: :func:`_resolve_kv_share_identity` gives MLA every GPU
+      its own store (``kv_shard_id == 0``, ``replica_id == i * tp + j``).
 
     Args:
         tenant_id: The resolved tenant identity (empty is the default
@@ -479,8 +552,7 @@ def _resolve_replica_identities(
         multi-tenant path.
 
     Raises:
-        NotImplementedError: If the multi-tenant topology is unsupported
-            (multi-group cache, or MLA replicated KV with ``TP > 1``).
+        NotImplementedError: If the multi-tenant cache is multi-group.
         ValueError: If ``num_replicas`` disagrees with ``data_parallel_degree``.
     """
     if not tenant_id:
@@ -498,15 +570,25 @@ def _resolve_replica_identities(
         )
     tp = params.tensor_parallel_degree
     replicates = params.replicates_kv_across_tp
-    if replicates and tp > 1:
-        raise NotImplementedError(
-            "MLA multi-tenant TP>1 (replicated KV, per-GPU buffer split) is a "
-            "follow-up (CLIN-1512 TP-2)"
-        )
+    # Under GQA ``allow_kv_head_replication`` (TP wider than n_kv_heads, evenly),
+    # each KV head is replicated across a contiguous group of
+    # ``g = tp // n_kv_heads`` TP ranks; those devices hold the same head slice
+    # and must share ``kv_shard_id``. Otherwise g == 1 (head-sharded / TP==1),
+    # which keeps the identity byte-identical to the pre-head-replication rule.
+    kv_head_group_size = (
+        tp // params.n_kv_heads
+        if isinstance(params, MHAKVCacheParams)
+        and params.allow_kv_head_replication
+        and tp % params.n_kv_heads == 0
+        and tp > params.n_kv_heads
+        else 1
+    )
     # One identity per GPU in replica-major order: replica ``i``'s TP rank ``j``
     # has flat index ``i * tp + j``. TP==1 collapses to one identity per replica.
     identities = [
-        _resolve_kv_share_identity(i * tp + j, tp, replicates)
+        _resolve_kv_share_identity(
+            i * tp + j, tp, replicates, kv_head_group_size
+        )
         for i in range(num_replicas)
         for j in range(tp)
     ]
@@ -634,10 +716,11 @@ class DKVConnector:
     * Default / pure-DP path: one client per replica registering that replica's
       full TP GPU set (TP rank kept in the block key), so each group holds a
       single client — :meth:`load` / :meth:`offload` issue exactly one call.
-    * Multi-tenant TP>1 (non-MLA): one client per GPU, so replica ``i``'s group
-      holds its ``tp`` shard-clients, each addressing a distinct per-GPU store
-      (``kv_shard_id = tp_rank``); :meth:`load` / :meth:`offload` fan out to all
-      shard-clients of the processing replica.
+    * Multi-tenant TP>1: one client per GPU, so replica ``i``'s group holds its
+      ``tp`` shard-clients, each addressing a distinct per-GPU store; for
+      head-sharded (MHA/GQA) caches the store key is the TP rank, and for MLA
+      replicated KV each GPU is its own replica. :meth:`load` / :meth:`offload`
+      fan out to all shard-clients of the processing replica.
 
     On the default path all replicas share ONE replica-agnostic store (see
     :func:`_resolve_replica_identities`), so the group for ``replica_idx``
@@ -771,21 +854,24 @@ class DKVConnector:
                 )
             self._replica_client_groups = [[c] for c in self._clients]
         else:
-            # Multi-tenant TP>1 (non-MLA): promote the TP rank to the STORE key
+            # Multi-tenant TP>1: promote the TP rank to the STORE key
             # (kv_shard_id), so each GPU gets its own store / client / connection
             # / handshake, registering exactly one buffer (tp_shard_id == 0).
             # replica_identities has one entry per GPU (dp * tp), replica-major.
+            # _per_gpu_units yields that GPU's single-shard unit for both the
+            # head-sharded (one unit per GPU already) and MLA replicated
+            # (one ReplicatedKVCacheMemory split across all_buffers) layouts.
+            replicates = params.replicates_kv_across_tp
             for i in range(num_replicas):
                 units = replica_kv_memory[i]
-                # The per-GPU split indexes one KV buffer per TP rank. A
-                # quantized (FP8 scale) or multi-cache buffer yields more units
-                # than TP shards, which this split would silently drop, so fail
-                # loudly rather than register a partial cache. Concatenating
-                # those units per shard (via _group_units_by_shard, as the
-                # default / TP==1 path already does) on the MT TP>1 split is a
-                # follow-up, CLIN-1518. (MLA replicated KV is one unit for all
-                # shards, so it is rejected above, not split here.)
-                if len(units) != tp:
+                # Head-sharded expects exactly one KV buffer per TP rank. A
+                # quantized (FP8 scale) or multi-cache buffer yields more
+                # units than TP shards, which the per-GPU split would silently
+                # drop, so fail loudly. Concatenating those units per shard
+                # (via _group_units_by_shard) on the MT TP>1 split is a
+                # follow-up, CLIN-1518. MLA is one replicated unit for all
+                # shards, so this count check does not apply to it.
+                if not replicates and len(units) != tp:
                     raise NotImplementedError(
                         "Multi-tenant dKV TP>1 requires exactly one KV buffer "
                         f"per GPU, but replica {i} has {len(units)} units for "
@@ -793,13 +879,14 @@ class DKVConnector:
                         "buffers are not supported on the dKV connector yet "
                         "(CLIN-1460)."
                     )
+                per_gpu = _per_gpu_units(units, tp, replicates)
                 group: list[object] = []
                 for j in range(tp):
                     kv_shard_id, replica_id = replica_identities[i * tp + j]
                     factory = functools.partial(
                         self._make_client,
                         _DkvConnectorClient,
-                        [units[j]],
+                        [per_gpu[j]],
                         local_block_store_endpoint,
                         listen_port,
                         backend,
