@@ -1608,6 +1608,41 @@ struct Dict[
         self._table.clear()
         self._order.clear()
 
+    def clear_with(
+        mut self, destroy_func: Some[def(var Self.K, var Self.V)], /
+    ):
+        """Remove all elements, disposing each entry with a closure.
+
+        The closure counterpart of `clear`: instead of destroying each entry in
+        place, it hands the key and value to `destroy_func`. Use this to clear a
+        `Dict` whose keys or values are not `ImplicitlyDeletable`. The
+        dictionary's capacity is retained, so it can be reused without
+        reallocating.
+
+        Args:
+            destroy_func: A closure called once per entry to dispose its key and
+                value.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+
+        var cleared = List[Int]()
+
+        def dispose(var key: String, var value: Int) {mut}:
+            cleared.append(value)
+
+        my_dict.clear_with(dispose)
+        print(len(my_dict))     # => 0
+        print(len(cleared))     # => 2
+        ```
+        """
+        self._table.clear_with(destroy_func)
+        self._order.clear()
+
     def setdefault(
         mut self, var key: Self.K, var default: Self.V
     ) -> ref[self] Self.V where conforms_to(

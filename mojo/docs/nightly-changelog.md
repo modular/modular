@@ -274,6 +274,12 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
+  Instead of destroying each entry in place, it hands the key and value to
+  `destroy_func`, so it can clear a `Dict` whose key or value type is not
+  `ImplicitlyDeletable`. The dictionary's capacity is retained, so it stays
+  reusable.
+
 - `reversed()` now works on typed ranges such as
   `reversed(range(Int16(1), 10, 2))`. The `ReversibleRange` trait gained an
   associated `ReversedType` iterator instead of hard-coding its `__reversed__()`
@@ -288,7 +294,7 @@ This version is still a work in progress.
   from std.python.numpy import from_numpy_array, to_numpy_array
 
   var values: List[Float64] = [1.0, 2.0, 3.0]
-  var array = to_numpy_array(values)                 # NumPy array (copies)
+  var array = to_numpy_array(values)                 # NumPy array (copies) 
   var span = from_numpy_array[DType.float64](array)  # borrow array as a Span
   ```
 

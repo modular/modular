@@ -1568,5 +1568,47 @@ def test_dict_destroy_with_empty() raises:
     assert_equal(calls, 0)
 
 
+def test_dict_clear_with() raises:
+    # `clear_with` must hand every entry's key/value to the closure exactly
+    # once, empty the dict, and leave it reusable (capacity retained). Uses a
+    # deletable value type since the disposal path is what's under test.
+    var d = Dict[Int, Int]()
+    d[1] = 10
+    d[2] = 20
+    d[3] = 30
+
+    var cleared = List[Int]()
+
+    def dispose(var key: Int, var value: Int) {mut}:
+        cleared.append(value)
+
+    d.clear_with(dispose)
+
+    # Every entry disposed exactly once, and the dict is now empty.
+    assert_equal(len(cleared), 3)
+    assert_true(10 in cleared)
+    assert_true(20 in cleared)
+    assert_true(30 in cleared)
+    assert_equal(len(d), 0)
+
+    # Capacity is retained, so the dict is immediately reusable.
+    d[4] = 40
+    assert_equal(len(d), 1)
+    assert_equal(d[4], 40)
+
+
+def test_dict_clear_with_empty() raises:
+    var d = Dict[Int, ExplicitDestroy]()
+    var calls = 0
+
+    def dispose(var key: Int, var value: ExplicitDestroy) {mut}:
+        calls += 1
+        value^.destroy()
+
+    d.clear_with(dispose)
+    d^.destroy_with(dispose)
+    assert_equal(calls, 0)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
