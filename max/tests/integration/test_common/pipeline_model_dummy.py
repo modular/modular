@@ -223,7 +223,10 @@ class DummyTextTokenizer(TextTokenizer):
     ) -> None:
         assert pipeline_config.model is not None
         self.max_length = pipeline_config.model.max_length or 100
-        self.delegate = DummyTextTokenizer.Delegate(max_length=self.max_length)
+        # Named _delegate: a public `delegate` attribute signals a HuggingFace
+        # tokenizer, which structured-output setup would hand to a grammar
+        # backend that only accepts real HF tokenizers.
+        self._delegate = DummyTextTokenizer.Delegate(max_length=self.max_length)
 
     @property
     def eos(self) -> int:
@@ -263,12 +266,12 @@ class DummyTextTokenizer(TextTokenizer):
     async def encode(
         self, prompt: str | Sequence[int], add_special_tokens: bool = True
     ) -> npt.NDArray[np.integer[Any]]:
-        return self.delegate.encode(prompt, add_special_tokens)
+        return self._delegate.encode(prompt, add_special_tokens)
 
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
-        return self.delegate.decode(encoded, **kwargs)
+        return self._delegate.decode(encoded, **kwargs)
 
     class Delegate:
         def __init__(self, max_length: int) -> None:
