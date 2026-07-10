@@ -92,7 +92,7 @@ def main():
 # CHECK: error: name conflict between parameter 'a' in the default trait method and a parameter in the struct
 # CHECK-NEXT: struct ConflictStruct[a: Int](diags_package.ConflictTraitName):
 # CHECK: note: trait method declared here
-# CHECK-NEXT: def test[a: Int](self: _Self)    # note - synthetic signature
+# CHECK-NEXT: def test[a: Int](self)    # note - synthetic signature
 struct ConflictStruct[a: Int](diags_package.ConflictTraitName):
     pass
 
@@ -100,9 +100,9 @@ struct ConflictStruct[a: Int](diags_package.ConflictTraitName):
 # CHECK: error: trait method requirement 'test' has conflicting default implementations in 'ConflictTraitMethod' and 'OtherConflictTraitMethod'; you must implement it manually
 # CHECK-NEXT: struct ConflictMethod(diags_package.OtherConflictTraitMethod):
 # CHECK: note: original default implementation from trait 'ConflictTraitMethod' here
-# CHECK-NEXT: def test(self: _Self) -> Bool    # note - synthetic signature
+# CHECK-NEXT: def test(self) -> Bool    # note - synthetic signature
 # CHECK: note: conflicting implementation from trait 'OtherConflictTraitMethod' here
-# CHECK-NEXT: def test(self: _Self) -> Bool    # note - synthetic signature
+# CHECK-NEXT: def test(self) -> Bool    # note - synthetic signature
 struct ConflictMethod(diags_package.OtherConflictTraitMethod):
     pass
 
@@ -110,7 +110,7 @@ struct ConflictMethod(diags_package.OtherConflictTraitMethod):
 # CHECK: error: 'StructViolation' does not implement all requirements for 'NoDefaultFunc'
 # CHECK-NEXT: struct StructViolation(diags_package.StillNoDefaultFunc):
 # CHECK: note: required function 'doSomething' is not implemented
-# CHECK-NEXT: def doSomething(self: _Self)    # note - synthetic signature
+# CHECK-NEXT: def doSomething(self)    # note - synthetic signature
 # CHECK: note: trait 'NoDefaultFunc' declared here
 # CHECK-NEXT: trait NoDefaultFunc    # note - synthetic signature
 struct StructViolation(diags_package.StillNoDefaultFunc):
@@ -120,7 +120,7 @@ struct StructViolation(diags_package.StillNoDefaultFunc):
 
 # CHECK: note: method 'handle' has constraints that cannot be proven or disproven from conformance constraint
 # CHECK: note: required by trait method here
-# CHECK-NEXT: def handle(self: _Self)    # note - synthetic signature
+# CHECK-NEXT: def handle(self)    # note - synthetic signature
 # CHECK: note: trait 'UnprovableCandidateTrait' declared here
 # CHECK-NEXT: trait UnprovableCandidateTrait    # note - synthetic signature
 struct UnprovableWithValidCandidate[T: Movable](
