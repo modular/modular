@@ -10,7 +10,7 @@ struct A(ImplicitlyCopyable):
     var x: UnsafePointer[Scalar[DType.invalid], MutUntrackedOrigin]
 
     def __init__(out self):
-        var y = alloc[Int8](1)
+        var y = alloc[Int8]({count = 1}).unsafe_leak()
         self.x = y.bitcast[Scalar[DType.invalid]]()
 
 

@@ -7,7 +7,7 @@
 # RUN: mojo -O0 %s | FileCheck %s
 
 from std.utils.variant import Variant
-from std.memory import alloc
+from std.memory import ThinAllocation, alloc, dealloc
 
 
 # NOTE: This struct uses UnsafePointer-based storage instead of List because
@@ -36,7 +36,7 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
     @always_inline
     def __init__(out self, var value: Self.Element):
         self._cap = 4
-        self._data = alloc[Self.Element](self._cap)
+        self._data = alloc[Self.Element]({count = self._cap}).unsafe_leak()
         self._data.unsafe_write(value^)
         self._len = 1
 
@@ -55,7 +55,7 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
         self._len = copy._len
         self._cap = copy._len
         if copy._len > 0:
-            self._data = alloc[Self.Element](copy._len)
+            self._data = alloc[Self.Element]({count = copy._len}).unsafe_leak()
             for i in range(copy._len):
                 (self._data + i).unsafe_write(copy._data[i])
         else:
@@ -67,16 +67,24 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
         for i in range(self._len):
             (self._data + i).unsafe_deinit_pointee()
         if self._cap > 0:
-            self._data.free()
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._data
+                ).unsafe_with_layout({count = self._cap})
+            )
 
     def _grow_if_needed(mut self):
         if self._len >= self._cap:
             var new_cap = self._cap * 2 if self._cap > 0 else 4
-            var new_data = alloc[Self.Element](new_cap)
+            var new_data = alloc[Self.Element]({count = new_cap}).unsafe_leak()
             for i in range(self._len):
                 (new_data + i).unsafe_write((self._data + i).take_pointee())
             if self._cap > 0:
-                self._data.free()
+                dealloc(
+                    ThinAllocation(
+                        unsafe_assume_ownership=self._data
+                    ).unsafe_with_layout({count = self._cap})
+                )
             self._data = new_data
             self._cap = new_cap
 

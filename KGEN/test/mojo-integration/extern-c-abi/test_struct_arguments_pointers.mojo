@@ -9,7 +9,7 @@
 # RUN: %t.dir/test_pointers | FileCheck %s
 
 from std.ffi import external_call
-from std.memory import UnsafePointer, alloc
+from std.memory import UnsafePointer, alloc, dealloc
 
 
 # ============================================================================
@@ -23,7 +23,8 @@ struct PtrInt32Struct(TrivialRegisterPassable):
 
 
 def test_ptr_int32():
-    var p = alloc[Int32](1)
+    var p_alloc = alloc[Int32]({count = 1})
+    var p = p_alloc.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
     p[] = 999
     var s = PtrInt32Struct(p, Int32(200))
     var result = external_call["c_func_ptr_int32", PtrInt32Struct](s)
@@ -31,7 +32,7 @@ def test_ptr_int32():
     print("ptr_int32:", result.i)
     # Verify original allocation still accessible
     print("ptr_int32_val:", p[])
-    p.free()
+    dealloc(p_alloc^)
 
 
 # CHECK: ptr_int32: 201
@@ -51,9 +52,12 @@ struct ThreePtrStruct(TrivialRegisterPassable):
 
 
 def test_three_ptr():
-    var pa = alloc[Int32](1)
-    var pb = alloc[Int32](1)
-    var pc = alloc[Int32](1)
+    var pa_alloc = alloc[Int32]({count = 1})
+    var pa = pa_alloc.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+    var pb_alloc = alloc[Int32]({count = 1})
+    var pb = pb_alloc.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+    var pc_alloc = alloc[Int32]({count = 1})
+    var pc = pc_alloc.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
     pa[] = 111
     pb[] = 222
     pc[] = 333
@@ -61,9 +65,9 @@ def test_three_ptr():
     var result = external_call["c_func_three_ptr", ThreePtrStruct](s)
     # C advances each pointer by 1 byte, but original allocations are intact
     print("three_ptr:", pa[], pb[], pc[])
-    pa.free()
-    pb.free()
-    pc.free()
+    dealloc(pa_alloc^)
+    dealloc(pb_alloc^)
+    dealloc(pc_alloc^)
 
 
 # CHECK: three_ptr: 111 222 333
