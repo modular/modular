@@ -37,6 +37,9 @@ from . import (
     graph as graph,
 )
 from . import (
+    metrics as metrics,
+)
+from . import (
     mlrt as mlrt,
 )
 from . import (
