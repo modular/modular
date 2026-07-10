@@ -376,12 +376,9 @@ def mla_indexer_ragged_float8_paged[
         row_major(total_seq_len, effective_k),
     )
 
-    # Dispatch to the fast bitonic-sort path when N fits in SMEM (N ≤ 2048).
-    # The two-stage sequential-extraction topk_gpu is O(k² / BLOCK) and takes
-    # ~2 ms at k=N=2048; the bitonic sort runs in O(N log² N) ≈ 1–2 µs.
-    # Fall back to topk_gpu for N > PERSISTENT_TOPK_MAX_N (large-context where
-    # k << N and the extraction approach is more efficient).
-    if max_num_keys <= PERSISTENT_TOPK_MAX_N:
+    # The bitonic path can only select up to the champion width
+    # (PERSISTENT_TOPK_MAX_N); topk_gpu handles the rare k above it.
+    if effective_k <= PERSISTENT_TOPK_MAX_N:
         persistent_topk_block(
             ctx,
             rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](

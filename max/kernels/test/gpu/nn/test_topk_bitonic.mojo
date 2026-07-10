@@ -81,7 +81,7 @@ def _run_and_check(
     3. The set of output indices matches the CPU reference set.
     4. No duplicate indices appear in the output.
     """
-    assert N <= PERSISTENT_TOPK_MAX_N, "N exceeds kernel limit"
+    assert K <= PERSISTENT_TOPK_MAX_N, "K exceeds champion width"
     assert K <= N, "K must be <= N"
     assert len(scores_host) == N, "scores_host length mismatch"
 
@@ -430,6 +430,67 @@ def test_single_element(ctx: DeviceContext) raises:
 
 
 # ===----------------------------------------------------------------------=== #
+# Streaming path (N > 2048) — the GLM 5.x long-context / prefill regime.
+# ===----------------------------------------------------------------------=== #
+
+
+def test_streaming_n16384_random(ctx: DeviceContext) raises:
+    """N=16384 (8 tiles), K=2048 random — the long-context decode shape."""
+    comptime N = 16384
+    comptime K = 2048
+    var a: UInt32 = 1664525
+    var c: UInt32 = 1013904223
+    var state: UInt32 = 0x12345678
+    var scores = List[Float32](capacity=N)
+    for _ in range(N):
+        state = a * state + c
+        scores.append(Float32(Int32(state)) / Float32(2**31) * 100.0)
+    _run_and_check(ctx, scores, N, K, "streaming_n16384_random")
+    print("PASS test_streaming_n16384_random")
+
+
+def test_streaming_n16006_nonmultiple(ctx: DeviceContext) raises:
+    """N=16006 (not a multiple of the 2048 tile), K=2048 — partial last tile."""
+    comptime N = 16006
+    comptime K = 2048
+    var a: UInt32 = 22695477
+    var c: UInt32 = 1
+    var state: UInt32 = 0xCAFEBABE
+    var scores = List[Float32](capacity=N)
+    for _ in range(N):
+        state = a * state + c
+        scores.append(Float32(Int32(state)) / Float32(2**31) * 7.0)
+    _run_and_check(ctx, scores, N, K, "streaming_n16006_nonmultiple")
+    print("PASS test_streaming_n16006_nonmultiple")
+
+
+def test_streaming_n163840_ascending(ctx: DeviceContext) raises:
+    """N=163840 (80 tiles, GLM max context), K=2048 — the max-shape stress."""
+    comptime N = 163840
+    comptime K = 2048
+    var scores = List[Float32](capacity=N)
+    for i in range(N):
+        scores.append(Float32(i))
+    _run_and_check(ctx, scores, N, K, "streaming_n163840_ascending")
+    print("PASS test_streaming_n163840_ascending")
+
+
+def test_streaming_masked_and_ties(ctx: DeviceContext) raises:
+    """N=8192 with a masked (-1e30) prefix and heavy ties (causal-mask regime).
+    """
+    comptime N = 8192
+    comptime K = 2048
+    var scores = List[Float32](capacity=N)
+    for i in range(N):
+        if i < N // 2:
+            scores.append(Float32(-1.0e30))
+        else:
+            scores.append(Float32(1.0) if (i % 3 == 0) else Float32(2.0))
+    _run_and_check(ctx, scores, N, K, "streaming_masked_and_ties")
+    print("PASS test_streaming_masked_and_ties")
+
+
+# ===----------------------------------------------------------------------=== #
 # Entry point
 # ===----------------------------------------------------------------------=== #
 
@@ -450,4 +511,8 @@ def main() raises:
         test_sorted_input_already_descending(ctx)
         test_sorted_input_ascending(ctx)
         test_single_element(ctx)
+        test_streaming_n16384_random(ctx)
+        test_streaming_n16006_nonmultiple(ctx)
+        test_streaming_n163840_ascending(ctx)
+        test_streaming_masked_and_ties(ctx)
     print("ALL TESTS PASSED")

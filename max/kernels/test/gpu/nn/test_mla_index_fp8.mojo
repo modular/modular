@@ -516,6 +516,20 @@ def main() raises:
             ctx=ctx,
         )
 
+        # Long-context (16000-token cache) exercises the N > 2048
+        # streaming top-k path end-to-end.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=64,
+            top_k=2048,
+            mask_name=MaskName.CAUSAL.name,
+        ](
+            seq_lens=[1],
+            cache_lens=[16000],
+            ctx=ctx,
+        )
+
         # ===== Regression: topk out_vals/out_idxs row-stride desync =====
         # GLM-5.1 / DSv3.2 prefix-cached prefill: a multi-token chunk on top of
         # a cached prefix where max_num_keys < top_k, so effective_k =
