@@ -187,9 +187,11 @@ struct _NichedOptionalStorage[
             self._memory = {}
             self._memory.as_uninit[U]()[].init_from(value^)
         else:
-            # This is the empty "none" type.
+            # This is the empty "none" type. `U` is refined to
+            # `TrivialRegisterPassable` above, so an explicit `^` transfer of
+            # `value` is a no-op the compiler rejects; a plain discard suffices.
             comptime assert conforms_to(U, TrivialRegisterPassable)
-            _ = value^
+            _ = value
             self = Self()
 
     @always_inline
