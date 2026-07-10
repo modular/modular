@@ -1,14 +1,30 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library")
 
-# gazelle:default_visibility //MLRT:consumers
+# gazelle:default_visibility //AsyncRT:consumers
 # gazelle:default_features layering_check,parse_headers
 
 package(
-    default_visibility = ["//MLRT:consumers"],
+    default_visibility = ["//AsyncRT:consumers"],
     features = [
         "layering_check",
         "parse_headers",
+    ],
+)
+
+package_group(
+    name = "consumers",
+    packages = [
+        "//AsyncRT/...",
+        "//Cache/...",
+        "//GraphCompiler/...",
+        "//Init/...",
+        "//KGEN/...",
+        "//MLRT/...",
+        "//Target/...",
+        "//bazel/...",
+        "//max/...",
+        "//utils/...",
     ],
 )
 
@@ -66,7 +82,6 @@ modular_cc_library(
         ":alloc_logging_setting": ["MODULAR_ALLOC_LOGGING=1"],
         "//conditions:default": ["MODULAR_ALLOC_LOGGING=0"],
     }),
-    visibility = ["//MLRT:consumers"],
     deps = [
         ":RuntimeGlobals",
         ":Support",
@@ -95,7 +110,6 @@ modular_shared_library(
     ],
     includes = ["include"],
     output_name = "AsyncRTRuntimeGlobals",
-    visibility = ["//MLRT:consumers"],
     deps = [
         ":Support",
         "//Support:ADT",
@@ -119,7 +133,6 @@ modular_cc_library(
     srcs = glob(["lib/Support/*.cpp"]),
     hdrs = glob(["include/AsyncRT/Support/*.h"]),
     includes = ["include"],
-    visibility = ["//MLRT:consumers"],
     deps = [
         "//Support:Base",
         "//Support:MArchTarget",
