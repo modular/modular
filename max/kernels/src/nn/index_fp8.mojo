@@ -197,18 +197,20 @@ def fp8_index_kernel[
         q_smem_tt, q_src_tt
     )
 
+    comptime num_threads = thread_dim_x * thread_dim_y
+    comptime assert (
+        depth % simd_width == 0
+    ), "depth must be a multiple of the SIMD width"
+
     for i in range(BM // BN):
         var current_key_offset = key_offset + i * BN
         if current_key_offset >= num_keys:
             break
-
-        # Load K tile via MHAOperand
-        for k_row in range(BN):
+        for k_row in range(tid, BN, num_threads):
+            var row_base = k_row * depth
             if current_key_offset + k_row >= num_keys:
-                # Zero-fill OOB rows
-                for d_idx in range(depth):
-                    if tid == k_row % 128:
-                        k_smem_ptr[k_row * depth + d_idx] = Scalar[dtype](0)
+                comptime for d in range(0, depth, simd_width):
+                    k_smem_ptr.store(row_base + d, SIMD[dtype, simd_width](0))
             else:
                 var k_ptr = k_operand.block_paged_ptr[1](
                     UInt32(batch_idx),
@@ -216,11 +218,11 @@ def fp8_index_kernel[
                     UInt32(0),  # head_idx = 0 for MLA (single head for K)
                     UInt32(0),
                 )
-                for d_idx in range(depth):
-                    if tid == k_row % 128:
-                        k_smem_ptr[k_row * depth + d_idx] = k_ptr[d_idx].cast[
-                            dtype
-                        ]()
+                comptime for d in range(0, depth, simd_width):
+                    k_smem_ptr.store(
+                        row_base + d,
+                        k_ptr.load[width=simd_width](d).cast[dtype](),
+                    )
 
         barrier()
 
