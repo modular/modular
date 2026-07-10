@@ -107,3 +107,17 @@ struct TrivialFieldGen[T: Movable & ImplicitlyDeletable](Movable):
 # CHECK: lit.alias.decl __copy_ctor_is_trivial: !Bool = <{:scalar<bool> true}>
 struct TestTrivialRegisterPassable[T: TrivialRegisterPassable](Copyable):
     var _value: Self.T
+
+
+# MOCO-3862: overriding a base trait's defaulted `__init__` while conforming to
+# a builtin `Copyable`/`Movable`/`ImplicitlyDeletable` trait must not crash
+# trivial-special-function synthesis.
+trait DefaultsInit:
+    def __init__(out self, x: Int):
+        _ = x
+
+
+# CHECK-LABEL: lit.struct.decl @OverridesDefaultInit
+struct OverridesDefaultInit(DefaultsInit, Copyable):
+    def __init__(out self, x: Int):
+        pass
