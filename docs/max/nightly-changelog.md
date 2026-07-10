@@ -129,6 +129,13 @@ This version is still a work in progress.
   Every replica resolves to the same replica-agnostic store, and the stored
   block key carries no replica component, so a block offloaded through one
   replica is served to any other.
+- The dKV external KV-cache connector now supports tensor parallelism
+  (TP greater than 1) on the multi-tenant path for head-sharded (non-MLA)
+  models. Each GPU handshakes its own per-shard store (keyed by its TP rank),
+  and every KV load/offload fans out across the processing replica's shard
+  clients with identical block ids and hashes; a block counts as loaded only
+  once every shard has it. MLA (replicated-KV) TP greater than 1 and GQA head
+  replication remain follow-ups.
 - The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
   into a single `rms_norm_rope` GPU kernel even when the RMSNorm is written "in
   float32" — that is, when a `bfloat16`/`float16` activation is upcast to

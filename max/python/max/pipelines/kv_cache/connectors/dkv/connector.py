@@ -395,39 +395,30 @@ def _resolve_kv_share_identity(
     return tp_rank, replica_id
 
 
-def _validate_tenant_topology(
-    *, is_single_group: bool, tensor_parallel_degree: int
-) -> None:
+def _validate_tenant_topology(*, is_single_group: bool) -> None:
     """Guards the model topology a multi-tenant dKV handshake can represent.
 
     The ``ExchangeMetadata`` identity fields (``kv_shard_id``, ``replica_id``,
-    ``device_id``, ``numa_node``) are scalars that name one GPU's share, and MAX
-    issues one handshake per DP replica. That faithfully carries per-GPU identity
-    only when each replica maps to exactly one GPU, i.e. ``TP == 1`` (which
-    covers the v1 target Kimi K2.5 at DP=8/TP=1, and any TP=1 deployment). For
-    ``TP > 1`` a replica spans several GPUs whose distinct per-GPU identities a
-    single request cannot carry, so a per-GPU handshake split is required — a
-    documented follow-up. (The general :func:`_resolve_kv_share_identity` rule
-    would also need refining for ``allow_kv_head_replication``, where distinct TP
-    ranks hold byte-identical GQA heads.) Multi-group caches (hybrid / SWA /
-    speculative) are likewise not yet wired through this connector.
+    ``device_id``, ``numa_node``) are scalars that name one GPU's share. TP>1 is
+    carried by splitting the handshake per GPU (one client / connection per GPU,
+    each sending its own ``kv_shard_id``); see :func:`_resolve_replica_identities`
+    and :meth:`DKVConnector.__init__`. The remaining TP>1 case still deferred is
+    MLA replicated KV (``replicates_kv_across_tp``), which is guarded in
+    :func:`_resolve_replica_identities` (CLIN-1512 TP-2). Multi-group caches
+    (hybrid / SWA / speculative) are likewise not yet wired through this
+    connector.
+
+    Args:
+        is_single_group: Whether the cache is single-group (full attention).
 
     Raises:
-        NotImplementedError: If the cache is multi-group, or ``TP != 1``.
+        NotImplementedError: If the cache is multi-group.
     """
     if not is_single_group:
         raise NotImplementedError(
             "Multi-tenant dKV (MODULAR_DKV_TENANT_ID set) requires a single-group "
             "KV cache; hybrid / sliding-window / speculative multi-cache models "
             "are not wired through the dKV connector yet."
-        )
-    if tensor_parallel_degree != 1:
-        raise NotImplementedError(
-            "Multi-tenant dKV (MODULAR_DKV_TENANT_ID set) currently supports "
-            f"tensor_parallel_degree == 1 only, got {tensor_parallel_degree}. "
-            "Each DP replica must map to exactly one GPU so the per-replica "
-            "ExchangeMetadata handshake carries that GPU's scalar identity; a "
-            "per-GPU handshake split for TP>1 is a follow-up."
         )
 
 
@@ -465,25 +456,31 @@ def _resolve_replica_identities(
       port, so the N clients coexist in one process. Per-replica isolation
       (peer reads, content-hash routing) is out of scope — CLIN-1478 slice-3.
     * Multi-tenant path: guards the topology (:func:`_validate_tenant_topology`)
-      and maps each replica's one GPU (TP==1) to its share via
-      :func:`_resolve_kv_share_identity`, sharing the layout ``kv_config_hash``.
+      and maps each GPU (replica-major flat index ``i * tp + j``) to its share
+      via :func:`_resolve_kv_share_identity`, sharing the layout
+      ``kv_config_hash``. The list has one entry per GPU (``dp * tp`` entries);
+      TP==1 collapses to one per replica. MLA replicated KV with TP>1 is deferred
+      (CLIN-1512 TP-2) because its per-GPU buffer split is not yet wired.
 
     Args:
         tenant_id: The resolved tenant identity (empty is the default
             single-tenant path, resolving to one shared, replica-agnostic
             store).
-        num_replicas: Number of DP replicas (one dKV client each).
+        num_replicas: Number of DP replicas (one dKV client each on the default
+            path; ``tp`` per-GPU clients each on the multi-tenant path).
         params: KV-cache parameters (used only on the multi-tenant path).
         unit_strides: Per-page byte stride of one shard's buffer units in
             canonical order, folded into the layout hash (used only on the
             multi-tenant path).
 
     Returns:
-        ``(kv_config_hash, [(kv_shard_id, replica_id), ...])``.
+        ``(kv_config_hash, [(kv_shard_id, replica_id), ...])`` — one identity per
+        DP replica on the default path, one per GPU (``dp * tp``) on the
+        multi-tenant path.
 
     Raises:
         NotImplementedError: If the multi-tenant topology is unsupported
-            (multi-group cache, or ``TP != 1``).
+            (multi-group cache, or MLA replicated KV with ``TP > 1``).
         ValueError: If ``num_replicas`` disagrees with ``data_parallel_degree``.
     """
     if not tenant_id:
@@ -491,10 +488,7 @@ def _resolve_replica_identities(
         # store (see _DEFAULT_SHARED_STORE_REPLICA_IDENTITY). The paired
         # kv_config_hash is 0; the server ignores it on the empty-tenant path.
         return 0, [_DEFAULT_SHARED_STORE_REPLICA_IDENTITY] * num_replicas
-    _validate_tenant_topology(
-        is_single_group=isinstance(params, KVCacheParams),
-        tensor_parallel_degree=params.tensor_parallel_degree,
-    )
+    _validate_tenant_topology(is_single_group=isinstance(params, KVCacheParams))
     assert isinstance(params, KVCacheParams)  # narrowed by the guard above
     if num_replicas != params.data_parallel_degree:
         raise ValueError(
@@ -504,11 +498,17 @@ def _resolve_replica_identities(
         )
     tp = params.tensor_parallel_degree
     replicates = params.replicates_kv_across_tp
-    # TP==1 (guarded), so the replica's one GPU has replica-major flat index
-    # ``idx * tp + 0 == idx``.
+    if replicates and tp > 1:
+        raise NotImplementedError(
+            "MLA multi-tenant TP>1 (replicated KV, per-GPU buffer split) is a "
+            "follow-up (CLIN-1512 TP-2)"
+        )
+    # One identity per GPU in replica-major order: replica ``i``'s TP rank ``j``
+    # has flat index ``i * tp + j``. TP==1 collapses to one identity per replica.
     identities = [
-        _resolve_kv_share_identity(idx * tp, tp, replicates)
-        for idx in range(num_replicas)
+        _resolve_kv_share_identity(i * tp + j, tp, replicates)
+        for i in range(num_replicas)
+        for j in range(tp)
     ]
     return _kv_config_hash(params, unit_strides), identities
 
@@ -626,18 +626,26 @@ class DKVConnector:
     """``KVConnector`` backed by the ``dkv_connector`` Rust client.
 
     A single instance serves every DP replica. The underlying Rust client is
-    inherently per-replica (its ``load``/``offload`` reference block ids into
-    one replica's registered device buffers and carry no replica/group key), so
-    this shim owns one Rust client per replica and routes each call to the
-    client for the request's ``replica_idx``.
+    inherently per-endpoint (its ``load``/``offload`` reference block ids into
+    one registered device-buffer set and carry no replica/group key), so this
+    shim owns a group of clients per DP replica (``self._replica_client_groups``)
+    and fans each call out to the group for the request's ``replica_idx``.
+
+    * Default / pure-DP path: one client per replica registering that replica's
+      full TP GPU set (TP rank kept in the block key), so each group holds a
+      single client — :meth:`load` / :meth:`offload` issue exactly one call.
+    * Multi-tenant TP>1 (non-MLA): one client per GPU, so replica ``i``'s group
+      holds its ``tp`` shard-clients, each addressing a distinct per-GPU store
+      (``kv_shard_id = tp_rank``); :meth:`load` / :meth:`offload` fan out to all
+      shard-clients of the processing replica.
 
     On the default path all replicas share ONE replica-agnostic store (see
-    :func:`_resolve_replica_identities`), so ``self._clients[replica_idx]``
-    selects only WHICH per-replica client (device endpoint) moves the
-    blocks, not which store is addressed — routing by the PROCESSING replica.
-    That selection in :meth:`load` / :meth:`offload` is the seam CLIN-1478
-    slice-3 later swaps to route by the content-hash OWNER replica
-    (``hash(seq_hash) % dp_size``) for multi-tenant per-replica isolation.
+    :func:`_resolve_replica_identities`), so the group for ``replica_idx``
+    selects only WHICH endpoint moves the blocks, not which store is addressed —
+    routing by the PROCESSING replica. That selection in :meth:`load` /
+    :meth:`offload` is the seam CLIN-1478 slice-3 later swaps to route by the
+    content-hash OWNER replica (``hash(seq_hash) % dp_size``) for multi-tenant
+    per-replica isolation.
     """
 
     @traced
@@ -705,49 +713,116 @@ class DKVConnector:
             )
         )
 
-        # One Rust client per replica, each registering only its replica's
-        # device buffers with NIXL, in that replica's canonical device order.
         # Each client's connect + handshake ("admission") is retried on transient
-        # failures (dKV still starting); model readiness is gated on ALL replicas
+        # failures (dKV still starting); model readiness is gated on ALL clients
         # admitting, so a client whose retry budget is exhausted raises here and
-        # fails model load rather than serving with a partial dKV.
+        # fails model load rather than serving with a partial dKV. ``load`` /
+        # ``offload`` fan out per DP replica over ``self._replica_client_groups``;
+        # ``self._clients`` is the flat list every client-wide fan-out
+        # (wait_for_*, metrics, reset_metrics) iterates.
         self._clients = []
-        for idx, (
-            kv_memory,
-            replica_devices,
-            (kv_shard_id, replica_id),
-        ) in enumerate(
-            zip(
-                replica_kv_memory,
-                devices_per_replica,
-                replica_identities,
-                strict=True,
-            )
-        ):
-            factory = functools.partial(
-                self._make_client,
-                _DkvConnectorClient,
+        self._replica_client_groups = []
+        # tensor_parallel_degree is a KVCacheParamInterface member, valid on
+        # every path; _resolve_replica_identities above validated params is a
+        # KVCacheParams whenever tenant_id is set.
+        tp = params.tensor_parallel_degree
+        if not tenant_id or tp == 1:
+            # Default / pure-DP path AND multi-tenant TP==1: one client per DP
+            # replica, registering that replica's full TP GPU set (TP rank kept
+            # in the block key) with units concatenated per shard by
+            # _make_client. Byte-identical to the pre-CLIN-1512 path. MT TP==1
+            # keeps its tenant identity here: replica_identities carries
+            # (kv_shard_id=0, replica_id=dp_i) and tenant_id is threaded into
+            # every client, so a multi-unit (FP8 / multi-cache) MT TP==1 cache
+            # builds one concatenated client per replica instead of hitting the
+            # per-GPU split's one-buffer-per-GPU guard. Each group holds one
+            # client so load/offload issue one call.
+            for idx, (
                 kv_memory,
-                local_block_store_endpoint,
-                listen_port,
-                backend,
                 replica_devices,
-                tenant_id=tenant_id,
-                kv_config_hash=kv_config_hash,
-                kv_shard_id=kv_shard_id,
-                replica_id=replica_id,
-            )
-            self._clients.append(
-                _admit_with_retry(
-                    factory,
-                    timeout_s=admission_timeout_s,
-                    label=f"replica {idx}",
+                (kv_shard_id, replica_id),
+            ) in enumerate(
+                zip(
+                    replica_kv_memory,
+                    devices_per_replica,
+                    replica_identities,
+                    strict=True,
                 )
-            )
+            ):
+                factory = functools.partial(
+                    self._make_client,
+                    _DkvConnectorClient,
+                    kv_memory,
+                    local_block_store_endpoint,
+                    listen_port,
+                    backend,
+                    replica_devices,
+                    tenant_id=tenant_id,
+                    kv_config_hash=kv_config_hash,
+                    kv_shard_id=kv_shard_id,
+                    replica_id=replica_id,
+                )
+                self._clients.append(
+                    _admit_with_retry(
+                        factory,
+                        timeout_s=admission_timeout_s,
+                        label=f"replica {idx}",
+                    )
+                )
+            self._replica_client_groups = [[c] for c in self._clients]
+        else:
+            # Multi-tenant TP>1 (non-MLA): promote the TP rank to the STORE key
+            # (kv_shard_id), so each GPU gets its own store / client / connection
+            # / handshake, registering exactly one buffer (tp_shard_id == 0).
+            # replica_identities has one entry per GPU (dp * tp), replica-major.
+            for i in range(num_replicas):
+                units = replica_kv_memory[i]
+                # The per-GPU split indexes one KV buffer per TP rank. A
+                # quantized (FP8 scale) or multi-cache buffer yields more units
+                # than TP shards, which this split would silently drop, so fail
+                # loudly rather than register a partial cache. Concatenating
+                # those units per shard (via _group_units_by_shard, as the
+                # default / TP==1 path already does) on the MT TP>1 split is a
+                # follow-up, CLIN-1518. (MLA replicated KV is one unit for all
+                # shards, so it is rejected above, not split here.)
+                if len(units) != tp:
+                    raise NotImplementedError(
+                        "Multi-tenant dKV TP>1 requires exactly one KV buffer "
+                        f"per GPU, but replica {i} has {len(units)} units for "
+                        f"{tp} TP shards. Quantized (FP8 scale) and multi-cache "
+                        "buffers are not supported on the dKV connector yet "
+                        "(CLIN-1460)."
+                    )
+                group: list[object] = []
+                for j in range(tp):
+                    kv_shard_id, replica_id = replica_identities[i * tp + j]
+                    factory = functools.partial(
+                        self._make_client,
+                        _DkvConnectorClient,
+                        [units[j]],
+                        local_block_store_endpoint,
+                        listen_port,
+                        backend,
+                        [devices_per_replica[i][j]],
+                        tenant_id=tenant_id,
+                        kv_config_hash=kv_config_hash,
+                        kv_shard_id=kv_shard_id,
+                        replica_id=replica_id,
+                    )
+                    client = _admit_with_retry(
+                        factory,
+                        timeout_s=admission_timeout_s,
+                        label=f"replica {i} shard {j}",
+                    )
+                    self._clients.append(client)
+                    group.append(client)
+                self._replica_client_groups.append(group)
 
         if tenant_id:
             _logger.info(
-                "dKV admitted all %d replica handshake(s) for tenant %r",
+                "dKV admitted all %d handshake(s) across %d replica(s) for "
+                "tenant %r",
+                len(self._clients),
                 num_replicas,
                 tenant_id,
             )
@@ -845,12 +920,41 @@ class DKVConnector:
         :func:`to_block_hash_bytes`: 8 bytes for ``ahash64`` / ``sha256_64``
         or 32 bytes for full ``sha256``. 32-byte digests are truncated to
         their first 8 bytes at the dkv boundary (see :func:`_to_dkv_u64`).
+
+        Fans out to every shard-client of the processing replica (one client on
+        the default path, ``tp`` on the multi-tenant TP>1 path) with identical
+        logical block ids and hashes. Returns the MIN loaded count across shards:
+        a block is usable only if it landed on EVERY shard, and the block manager
+        frees blocks past the returned count.
         """
-        return self._clients[replica_idx].load(
-            group_id=_DKV_GROUP_FULL_ATTENTION,
-            device_block_ids=device_block_ids,
-            block_hashes=[_to_dkv_u64(h) for h in block_hashes],
-        )
+        dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
+        counts = [
+            client.load(
+                group_id=_DKV_GROUP_FULL_ATTENTION,
+                device_block_ids=device_block_ids,
+                block_hashes=dkv_hashes,
+            )
+            for client in self._replica_client_groups[replica_idx]
+        ]
+        if len(set(counts)) > 1:
+            _logger.debug(
+                "dKV load: shard-clients for replica %d returned differing "
+                "loaded-block counts %s; using min",
+                replica_idx,
+                counts,
+            )
+        # TODO(CLIN-1512 TP-3): returning min is not enough once real per-GPU
+        # transfers land. A shard-count mismatch (partial offload failure, or
+        # independent per-store eviction) means an OVER-loading shard has already
+        # enqueued async H2D reads into device pages beyond `min`. The block
+        # manager (``_get_full_blocks_from_host_prefix_cache``) frees
+        # ``blocks[num_loaded:]`` immediately, so a later same-batch same-replica
+        # reallocation of a freed page can be clobbered by that stray in-flight
+        # read -> silent wrong KV. This is inert TODAY (cross-shard transfer is
+        # TP-3, not wired), but the fan-out + free path IS live. TP-3 must align
+        # shard loads (all shards agree before returning) or drain/cancel the
+        # stray reads before the free -- or fail loud on a count mismatch.
+        return min(counts)
 
     def offload(
         self,
@@ -870,12 +974,18 @@ class DKVConnector:
         by composite key ``(tp_shard_id, group, seq_hash)`` and does not
         chain blocks under a parent, so the Rust client builds the keys
         (and the NUMA striping plan) from the hashes alone.
+
+        Fans out to every shard-client of the processing replica (one client on
+        the default path, ``tp`` on the multi-tenant TP>1 path) with identical
+        logical block ids and hashes.
         """
-        self._clients[replica_idx].offload(
-            group_id=_DKV_GROUP_FULL_ATTENTION,
-            block_ids=block_ids,
-            block_hashes=[_to_dkv_u64(h) for h in block_hashes],
-        )
+        dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
+        for client in self._replica_client_groups[replica_idx]:
+            client.offload(
+                group_id=_DKV_GROUP_FULL_ATTENTION,
+                block_ids=block_ids,
+                block_hashes=dkv_hashes,
+            )
 
     def wait_for_loads(self) -> None:
         for client in self._clients:
