@@ -1767,3 +1767,36 @@ struct Foo[width: Int]:
         # CHECK-SAME: !lit.ref<!lit.struct<#PtrWrapper <:!Int width, :!lit.generator<<"width": !Int, +>
         # CHECK-SAME: #kgen.gen<#kgen.func.symbol<@{{.*}}::@MySIMD::@"__add__({{.*}}MySIMD[$0],{{.*}}MySIMD[$0])"<:!MyInt
         Self.helper(MySIMD[Self.width].__add__)
+
+
+# // -----
+
+
+# CHECK: lit.trait.decl @"def{{.*}}mut Builder[origin]{{.*}}definesClosure
+# CHECK: lit.alias.decl {{.*}}origin.mut`{{.*}}: !Bool
+# CHECK: lit.alias.decl {{.*}}origin._mlir_origin`1{{.*}}: origin<
+#
+# Capture dependencies are interned using get_witness attr
+#
+# CHECK: lit.alias.decl origin: !lit.struct<
+# CHECK-SAME: get_witness<{{.*}}"origin.mut`">
+# CHECK-SAME: get_witness<{{.*}}"origin._mlir_origin`1">
+
+
+struct Builder[origin: Origin](Movable):
+    var x: Int
+
+    def test(mut self) raises:
+        pass
+
+    # CHECK-LABEL: lit.fn @"region[
+    # CHECK: lit.call
+    # CHECK-SAME: bind_params
+    # CHECK-SAME: get_witness<{{.*}}work.T{{.*}}__call__
+    # COM: The three captured origin parameters are bound, in order, to `self`'s
+    # COM: Builder origin params (`origin.mut`, `origin._mlir_origin`, `origin`).
+    # CHECK-SAME: , :!Bool *"origin.mut`", :origin<{{.*}}> *"origin._mlir_origin`1", :!lit.struct<{{.*}}> origin)
+    # CHECK-SAME: (%work, %self,
+    def region(mut self, work: Some[def(mut Self) raises]) raises:
+        work(self)
+        pass

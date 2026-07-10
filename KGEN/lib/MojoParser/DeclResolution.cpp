@@ -1763,8 +1763,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
                                                           closureExternalRefs);
   ClosureParamCaptures closureParamCaptures;
   for (const ClosureExternalRef &ref : closureExternalRefs) {
-    AliasDeclOp aliasOp = ref.aliasOp;
-    ClosureParamCapture capturedParam{aliasOp.getName(), aliasOp.getType()};
+    ClosureParamCapture capturedParam{ref.externalName, ref.externalType};
     closureParamCaptures[ref.closureParam.getName()].push_back(capturedParam);
   }
   shared.setClosureParamCaptures(decl, std::move(closureParamCaptures));
@@ -1776,22 +1775,25 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // assumptions at this point.
   SmallVector<ConstraintAttr> closureExternalRefConstraints;
   for (const ClosureExternalRef &ref : closureExternalRefs) {
-    AliasDeclOp aliasOp = ref.aliasOp;
     ParamDeclAttr closureParam = ref.closureParam;
 
+    std::optional<TraitDeclOp> closureTraitOr = ClosureEmitter::getClosureDecl(
+        shared, getCanonicalType(closureParam.getType()));
+    assert(closureTraitOr && "expected closure type");
+
     // Get the trait name for the GetWitnessAttr.
-    auto closureTrait = aliasOp->getParentOfType<TraitDeclOp>();
+    TraitDeclOp closureTrait = *closureTraitOr;
     StringAttr traitName = builder.getStringAttr(
         getFlattenedSymbolName(getFullyResolvedSymbolRef(closureTrait)));
 
     // LHS: C.T - GetWitnessAttr accessing the alias on the closure param
     TypedAttr witnessAttr =
         GetWitnessAttr::get(ParamDeclRefAttr::get(closureParam), traitName,
-                            aliasOp.getName(), aliasOp.getType());
+                            ref.externalName, ref.externalType);
 
     // RHS: T - reference to the function parameter with the same name
     TypedAttr funcParamRef =
-        ParamDeclRefAttr::get(aliasOp.getName(), aliasOp.getType());
+        ParamDeclRefAttr::get(ref.externalName, ref.externalType);
 
     // Create eq constraint: eq(C.T, T)
     TypedAttr eqConstraint =

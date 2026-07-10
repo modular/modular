@@ -34,13 +34,15 @@ struct AdapteeParts {
 };
 
 /// Information about a closure parameter's external reference that needs
-/// a where clause constraint. Contains the closure parameter name and the
-/// alias representing the external reference.
+/// a where clause constraint. Contains the closure parameter along with the
+/// name and type of the externalized reference.
 struct ClosureExternalRef {
   /// The closure-typed parameter (e.g., "C" in `C: def(T) -> T`)
   ParamDeclAttr closureParam;
-  /// The alias in the closure trait representing the external param reference
-  AliasDeclOp aliasOp;
+
+  /// The externalized name/type for the capture.
+  StringAttr externalName;
+  Type externalType;
 };
 
 class ClosureEmitter : public FunctionEmitter {
@@ -68,6 +70,12 @@ public:
   /// Iterate over closure traits in a TraitType and invoke a callback for each.
   void processClosureTraits(TraitType traitType,
                             std::function<void(TraitDeclOp)> const &callback);
+
+  /// Return the closure-defining trait declaration backing \p type, if \p type
+  /// is a compiler-synthesized closure type. Looks through struct wrappers and
+  /// reference types. Returns std::nullopt otherwise.
+  static std::optional<TraitDeclOp> getClosureDecl(SharedState &shared,
+                                                   Type type);
 
   /// Return true if \p type is a compiler-synthesized closure type.
   static bool isClosureType(SharedState &shared, Type type);
