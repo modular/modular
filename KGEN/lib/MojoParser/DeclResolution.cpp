@@ -3062,10 +3062,10 @@ static bool processAlignDecoratorHelper(ExprNode *alignExpr,
 /// Process a decorator that is resolved at the signature phase of resolution
 /// and return success, otherwise failure if it is handled later.
 /// `sigDecl` is the fully-resolved signature scope with struct parameters.
-static LogicalResult
-processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
-                                SharedState &shared, ASTDecl &sigDecl,
-                                SmallVectorImpl<SymbolRefAttr> &traits) {
+static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
+                                                     StructDeclOp structOp,
+                                                     SharedState &shared,
+                                                     ASTDecl &sigDecl) {
   ASTDecl *parentDecl = sigDecl.getParentDecl();
 
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
@@ -3222,14 +3222,14 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // propagated constraints) and for the actual injection into parentTraits,
   // so the trait names are stated only once here.
   ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait("AnyType", decl.getLoc());
-  ASTDecl *implDestrDecl =
+  ASTDecl *implicitDelDecl =
       shared.lookupBuiltinTrait("ImplicitlyDeletable", decl.getLoc());
 
   DenseSet<SymbolRefAttr> compilerInjectedTraits;
   if (anyTypeDecl)
     compilerInjectedTraits.insert(anyTypeDecl->getSymbolRef());
-  if (implDestrDecl)
-    compilerInjectedTraits.insert(implDestrDecl->getSymbolRef());
+  if (implicitDelDecl)
+    compilerInjectedTraits.insert(implicitDelDecl->getSymbolRef());
 
   // Build the final constraint map from the parsed constraints.
   DenseMap<SymbolRefAttr, ConstraintAttr> traitConstraints;
@@ -3267,7 +3267,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   Decorators(decl).applySignatureDecorators(
       decoratorExprs, [&](ExprNode *decorator) {
         return processStructSignatureDecorator(decorator, structOp, shared,
-                                               sigDecl, parentTraits);
+                                               sigDecl);
       });
 
   // Propagate signature errors and decls.
@@ -3308,19 +3308,14 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
         std::make_optional(llvm::StringRef(linearTypeErrorMsg)));
   } else {
     // The type is not marked with `@explicit_destroy`
-    if (implDestrDecl &&
-        !explicitTraits.contains(implDestrDecl->getSymbolRef())) {
-      // The type does not already have an explicit `ImplicitlyDeletable`
-      // conformance (possibly conditional) written by the user.
-      //
-      // (An explicit conformance makes adding the implicit one unnecessary, and
-      // injecting a second unconditional conformance here would override the
-      // user's where-clause and make the struct unconditionally
-      // ImplicitlyDeletable.)
-      //
-      // So proceed to injecting the implicit unconditional ImplicitlyDeletable
-      // conformance that every struct gets by default.
-      parentTraits.push_back(implDestrDecl->getSymbolRef());
+    //
+    // So proceed to injecting the implicit unconditional ImplicitlyDeletable
+    // conformance that every struct otherwise gets by default.
+    //
+    // If the user added an explicit conformance with a narrower constraint,
+    // that will override this.
+    if (implicitDelDecl) {
+      parentTraits.push_back(implicitDelDecl->getSymbolRef());
     }
   }
 
@@ -3331,81 +3326,82 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   structOp.setCanonicalTrait(
       TraitType::get(getContext(), parentTraits, constraintsArray));
 
-  // Validate that @explicit_destroy + unconditional ImplicitlyDeletable is
-  // still an error. The combination is only valid when ImplicitlyDeletable
-  // has a non-trivial where-clause constraint (conditional conformance).
-  if (!linearTypeErrorMsg.empty()) {
-    for (auto [i, symbol] : llvm::enumerate(parentTraits)) {
-      if (symbol.getLeafReference() == "ImplicitlyDeletable" &&
-          isTriviallyTrueConstraint(constraintsArray[i])) {
-        shared.emitError(decl.getLoc())
-            << "@explicit_destroy cannot be combined with unconditional "
-               "conformance to 'ImplicitlyDeletable'; use a where-clause "
-               "for conditional conformance or remove @explicit_destroy";
-        decl.setErroneous();
-        return failure();
-      }
-    }
-  }
-
   // Always generate SourceName for structs (even on non-debug builds).
   structOp.setSourceNameAttr(shared.getSourceName(structOp));
 
-  // Check for unsupported conditional conformance to TrivialRegisterPassable,
-  // and finalize the linear-type message for conditional ImplicitlyDeletable.
-  //
-  // TrivialRegisterPassable depends on struct body (field triviality for
-  // copy/move/del) which creates parser cycle risks and requires composing
-  // the user's where-clause with field-level triviality witnesses.
-  //
-  // Conditional conformance to ImplicitlyDeletable IS allowed: when its
-  // where-clause is not satisfied the type is linear, so we synthesize a
-  // default linear-type error message here if the user did not provide one
-  // via @explicit_destroy. CheckLifetimes consults that message when
-  // automatic destruction is unavailable for a given instantiation.
-  //
-  // Conditional conformance to RegisterPassable IS allowed. The struct stays
-  // pessimistically MemoryOnly at declaration time; the parametric
-  // isMemoryOnly bit on the KGEN struct type is resolved per-instantiation.
   if (TraitType canonTrait = structOp.getCanonicalTrait()) {
+    ArrayRef<SymbolRefAttr> traitSymbols = canonTrait.getSymbols();
     ArrayRef<ConstraintAttr> traitConstraints = canonTrait.getConstraints();
+
+    // Finalize conformance to `ImplicitlyDeletable`.
+    //
+    // - ImplicitlyDeletable where True =>
+    //     issue an error if the user wrote `@explicit_destroy`, since the
+    //     message will never be used.
+    // - ImplicitlyDeletable where (False | cond) =>
+    //     must set the linear type error message attr for CheckLifetimes to
+    //     use, so synthesize one if the user didn't set one.
+    for (auto [i, symbol] : llvm::enumerate(traitSymbols)) {
+      if (symbol.getLeafReference() != "ImplicitlyDeletable")
+        continue;
+      // Constraints is either empty (same as all true) or parallel with symbols
+      ConstraintAttr constraint =
+          i < traitConstraints.size() ? traitConstraints[i] : ConstraintAttr();
+
+      if (isTriviallyTrueConstraint(constraint)) {
+        // Unconditional ImplicitlyDeletable cannot be combined with
+        // @explicit_destroy.
+        if (!linearTypeErrorMsg.empty()) {
+          shared.emitError(decl.getLoc())
+              << "@explicit_destroy cannot be combined with unconditional "
+                 "conformance to 'ImplicitlyDeletable'; use a where-clause "
+                 "for conditional conformance or remove @explicit_destroy";
+          decl.setErroneous();
+          return failure();
+        }
+      } else if (!structOp.getLinearTypeErrorMsg().has_value()) {
+        // Non-unconditional ImplicitlyDeletable: the struct is linear.
+        // Synthesize a default message since the user didn't provide one.
+        std::string defaultMsg = [&] {
+          if (isTriviallyFalseConstraint(constraint)) {
+            // `ImplicitlyDeletable where False`: an unconditional opt-out.
+            return "type '" + structOp.getDeclName().str() +
+                   "' is not implicitly deletable and must be explicitly "
+                   "destroyed";
+          } else {
+            // `ImplicitlyDeletable where <cond>`: linear when unsatisfied.
+            return "type '" + structOp.getDeclName().str() +
+                   "' does not conditionally conform to 'ImplicitlyDeletable' "
+                   "for these parameters";
+          }
+        }();
+        structOp.setLinearTypeErrorMsg(
+            std::make_optional(llvm::StringRef(defaultMsg)));
+      }
+      break;
+    }
+
+    // Check for unsupported conditional conformance to TrivialRegisterPassable,
+    // and finalize the linear-type message for conditional ImplicitlyDeletable.
+    //
+    // TrivialRegisterPassable depends on struct body (field triviality for
+    // copy/move/del) which creates parser cycle risks and requires composing
+    // the user's where-clause with field-level triviality witnesses.
+    //
+    // Conditional conformance to RegisterPassable IS allowed. The struct stays
+    // pessimistically MemoryOnly at declaration time; the parametric
+    // isMemoryOnly bit on the KGEN struct type is resolved per-instantiation.
     if (!traitConstraints.empty()) {
-      ArrayRef<SymbolRefAttr> traitSymbols = canonTrait.getSymbols();
-      for (size_t i = 0; i < traitSymbols.size(); ++i) {
+      for (auto [i, symbol] : llvm::enumerate(traitSymbols)) {
         if (isTriviallyTrueConstraint(traitConstraints[i]))
           continue;
-        StringRef traitName = traitSymbols[i].getLeafReference();
+        StringRef traitName = symbol.getLeafReference();
         if (traitName == "TrivialRegisterPassable") {
           shared.emitError(traitConstraints[i].getLoc())
               << "conditional conformance to 'TrivialRegisterPassable' is "
                  "not supported";
           decl.setErroneous();
           return failure();
-        }
-        if (traitName == "ImplicitlyDeletable") {
-          // A struct that conditionally conforms to ImplicitlyDeletable is a
-          // linear type whenever its where-clause is not satisfied. If the
-          // user did not supply a custom message via @explicit_destroy,
-          // set a generic default so that CheckLifetimes has a
-          // diagnostic to emit when automatic destruction is unavailable.
-          if (!structOp.getLinearTypeErrorMsg().has_value()) {
-            std::string defaultMsg = [&] {
-              if (isTriviallyFalseConstraint(traitConstraints[i])) {
-                // `ImplicitlyDeletable where False`: an unconditional opt-out.
-                return "type '" + structOp.getDeclName().str() +
-                       "' is not implicitly deletable and must be explicitly "
-                       "destroyed";
-              } else {
-                // `ImplicitlyDeletable where <cond>`: linear when unsatisfied.
-                return "type '" + structOp.getDeclName().str() +
-                       "' does not conditionally conform to "
-                       "'ImplicitlyDeletable' "
-                       "for these parameters";
-              }
-            }();
-            structOp.setLinearTypeErrorMsg(
-                std::make_optional(llvm::StringRef(defaultMsg)));
-          }
         }
       }
     }
