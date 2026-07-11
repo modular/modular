@@ -32,7 +32,6 @@ struct MissingCall(def(Bool) -> Int):
 
 # expected-error @below {{'WrongReturnType' does not implement all requirements for 'def(String) -> Int'}}
 # expected-note @below {{no '__call__' candidates have type 'def(WrongReturnType, String) capturing thin -> Int'}}
-# expected-note @below {{def __call__(self, : String, /) -> Int}}
 # expected-note @below {{trait 'def(String) -> Int' declared here}}
 struct WrongReturnType(def(String) -> Int):
     # expected-note @below {{candidate declared here with type 'def(self: WrongReturnType, x: String) capturing thin -> Bool'}}
@@ -56,7 +55,6 @@ struct TwoTraitsGood(def(Int) -> Int, def(String) -> String):
 
 # expected-error @below {{'TwoTraitsBadSecond' does not implement all requirements for 'def(Float64) -> Float64'}}
 # expected-note @below {{no '__call__' candidates have type 'def(TwoTraitsBadSecond, Float64) capturing thin -> Float64'}}
-# expected-note @below {{def __call__(self, : Float64, /) -> Float64}}
 # expected-note @below {{trait 'def(Float64) -> Float64' declared here}}
 struct TwoTraitsBadSecond(def(Int) -> Int, def(Float64) -> Float64):
     # expected-note @below {{candidate declared here with type 'def(self: TwoTraitsBadSecond, x: Int) capturing thin -> Int'}}
