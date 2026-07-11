@@ -2447,7 +2447,7 @@ void UninitializedValueScan::scanFunction(FunctionLikeOp func) {
 void UninitializedValueScan::scanBlock(Block &block) {
   SmallVector<std::pair<Value, OperandEffect>> operandEffects;
   SmallVector<ResultEffect> resultEffects;
-  SmallVector<TypedAttr> originEffects;
+  SmallVector<std::pair<TypedAttr, Value>> originEffects;
   SmallVector<TypedAttr> definedOrigins;
   for (Operation &op : block) {
     operandEffects.clear();
@@ -2570,7 +2570,8 @@ void UninitializedValueScan::scanBlock(Block &block) {
     }
 
     // Process any origins accessed indirectly.
-    for (auto origin : originEffects) {
+    for (auto [origin, value] : originEffects) {
+      (void)value;
       checkOriginAccesses(origin, op);
       hasAnyOrigin |= sugarIsa<AnyOriginAttr>(origin);
     }
@@ -3878,7 +3879,7 @@ void DestructorInsertion::scanBlock(Block &block) {
   // Process each operation bottom-up in the block.
   SmallVector<std::pair<Value, OperandEffect>> operandEffects;
   SmallVector<ResultEffect> resultEffects;
-  SmallVector<TypedAttr> originEffects;
+  SmallVector<std::pair<TypedAttr, Value>> originEffects;
 
   SmallVector<Operation *> opsToRemove;
 
@@ -3998,8 +3999,10 @@ void DestructorInsertion::scanBlock(Block &block) {
     }
 
     // Process any other origins accessed indirectly.
-    for (auto origin : originEffects)
+    for (auto [origin, value] : originEffects) {
+      (void)value;
       checkOriginAccesses(origin, dtorInserter);
+    }
 
     // If the operation used a #lit.any.origin value, then we treat it as an
     // implicit use of all tracked values.  This ensures that the values are not

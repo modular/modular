@@ -243,10 +243,12 @@ Value OriginTrackable::findUnderlyingValueFromField(Value value) {
 
 /// This is a helper for LIT::getOperationEffects split out since calls are so
 /// interesting.
-static void getCallOpEffects(
-    Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
-    SmallVectorImpl<ResultEffect> &results, SmallVectorImpl<TypedAttr> &origins,
-    CachedOriginFinder &originFinder) {
+static void
+getCallOpEffects(Operation &op,
+                 SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
+                 SmallVectorImpl<ResultEffect> &results,
+                 SmallVectorImpl<std::pair<TypedAttr, Value>> &origins,
+                 CachedOriginFinder &originFinder) {
   FuncType signature;
   PogListAttr pogs;
   OperandRange callArguments = op.getOperands();
@@ -308,7 +310,6 @@ static void getCallOpEffects(
     llvm_unreachable("invalid input convention");
   };
 
-  SmallVector<Type> typesAccessibleByCallee;
   auto addArgument = [&](Value arg, ArgConvention conv,
                          bool noIndirect = false) {
     // Get normal argument effect.
@@ -336,8 +337,9 @@ static void getCallOpEffects(
 
     // In addition to the direct (field-sensitive) effect of loading/storing
     // the bits, the callee may do whatever it wants with origins embedded
-    // in the type.  Collect all of these so we can process them.
-    typesAccessibleByCallee.push_back(argType);
+    // in the type.
+    for (TypedAttr origin : originFinder.findOriginsIn({argType}))
+      origins.push_back({origin, arg});
   };
 
   for (auto [idx, arg, convention] :
@@ -374,7 +376,7 @@ static void getCallOpEffects(
       // This hack makes sure we extend the lifetime of the VarDecl containing
       // the variadic list. VariadicList itself should capture the origin.
       if (extraOrigin)
-        origins.push_back(extraOrigin);
+        origins.push_back({extraOrigin, arg});
 
       // Also add the list/pack itself so the VariadicList/VariadicPack
       // doesn't get destroyed too early.  We already handled all the
@@ -387,13 +389,10 @@ static void getCallOpEffects(
     addArgument(arg, convention);
   }
 
-  // Look at the types accessible by the callee to see if there are any
-  // origin accesses.
-  {
-    SmallVector<TypedAttr> originsUsedByTypes = originFinder.findOriginsIn(
-        typesAccessibleByCallee, signature.getCaptureOrigins());
-    origins.append(originsUsedByTypes.begin(), originsUsedByTypes.end());
-  }
+  // The callee may also access origins from its capture set.
+  for (TypedAttr origin :
+       originFinder.findOriginsIn({}, signature.getCaptureOrigins()))
+    origins.push_back({origin, Value()});
 
   // If the result is defining an owned register value, then we treat this as
   // a definition
@@ -409,7 +408,8 @@ static void getCallOpEffects(
 /// values. This information is used by both phases of CheckLifetimes.
 OverallOpValueEffect LIT::getOperationEffects(
     Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
-    SmallVectorImpl<ResultEffect> &results, SmallVectorImpl<TypedAttr> &origins,
+    SmallVectorImpl<ResultEffect> &results,
+    SmallVectorImpl<std::pair<TypedAttr, Value>> &origins,
     CachedOriginFinder &originFinder) {
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
