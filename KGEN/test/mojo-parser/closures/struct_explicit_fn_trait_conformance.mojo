@@ -58,7 +58,7 @@ struct TwoTraitsGood(def(Int) -> Int, def(String) -> String):
 # expected-note @below {{trait 'def(Float64) -> Float64' declared here}}
 struct TwoTraitsBadSecond(def(Int) -> Int, def(Float64) -> Float64):
     # expected-note @below {{candidate declared here with type 'def(self: TwoTraitsBadSecond, x: Int) capturing thin -> Int'}}
-    # expected-note @below {{.x of the first type is 'Float64' but the second type is 'Int'}}
+    # expected-note @below {{.x.dtype of the first value is 'DType.float64' but the second value is 'DType.int'}}
     def __call__(self, x: Int) capturing -> Int:
         return x
 

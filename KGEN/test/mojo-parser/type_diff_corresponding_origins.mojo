@@ -26,6 +26,6 @@ trait LongishTraitNameForTheDiff:
 # expected-error @below {{'StructWithLongishNameForDiff' does not implement all requirements for 'LongishTraitNameForTheDiff'}}
 struct StructWithLongishNameForDiff(LongishTraitNameForTheDiff):
     # expected-note @below {{candidate declared here with type 'def(self: StructWithLongishNameForDiff, argument: Int) thin -> None'}}
-    # expected-note @below {{.argument of the first type is 'Float64' but the second type is 'Int'}}
+    # expected-note @below {{.argument.dtype of the first value is 'DType.float64' but the second value is 'DType.int'}}
     def method_with_a_name(self, argument: Int):
         pass
