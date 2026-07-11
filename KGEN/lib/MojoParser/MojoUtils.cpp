@@ -99,8 +99,12 @@ TypedAttr LIT::computeArgumentsOrigin(AsyncCallOp call,
                                       CachedOriginFinder &originFinder) {
   SmallVector<std::pair<Value, OperandEffect>> operands;
   SmallVector<ResultEffect> results;
+  SmallVector<std::pair<TypedAttr, Value>> originEffects;
+  LIT::getOperationEffects(*call, operands, results, originEffects,
+                           originFinder);
   SmallVector<TypedAttr> origins;
-  LIT::getOperationEffects(*call, operands, results, origins, originFinder);
+  for (auto [origin, value] : originEffects)
+    origins.push_back(origin);
   for (Value value : call.getOperands())
     if (auto ref = dyn_cast<RefType>(value.getType()))
       origins.push_back(ref.getOrigin());

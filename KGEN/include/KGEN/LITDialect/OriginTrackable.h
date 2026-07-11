@@ -194,10 +194,12 @@ enum class OverallOpValueEffect {
 /// This computes the effects that an operation has on any operands, result
 /// values, and other declared origins. This information is used by both
 /// phases of CheckLifetimes.
-OverallOpValueEffect getOperationEffects(
-    Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
-    SmallVectorImpl<ResultEffect> &results, SmallVectorImpl<TypedAttr> &origins,
-    CachedOriginFinder &originFinder);
+OverallOpValueEffect
+getOperationEffects(Operation &op,
+                    SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
+                    SmallVectorImpl<ResultEffect> &results,
+                    SmallVectorImpl<std::pair<TypedAttr, Value>> &origins,
+                    CachedOriginFinder &originFinder);
 
 } // namespace LIT
 } // namespace M::KGEN
