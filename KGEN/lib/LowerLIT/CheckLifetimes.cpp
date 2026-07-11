@@ -1495,6 +1495,84 @@ SmallVector<ValueRef> ValueSet::getValueRefsForAccess(
 // InteriorOrigin tracking
 //===----------------------------------------------------------------------===//
 
+namespace {
+/// Liveness state for tracked values and interior origins at a program point.
+struct TrackedAndInteriorLiveness {
+  /// Bitvector of tracked value/field liveness.  Slot #0 is a reachability
+  /// sentinel used by control-flow merge.
+  BitVector tracked;
+
+  /// For each interior origin, this contains one of three states:
+  /// - Never initialized: False + the operation is null.
+  /// -       Invalidated: False + the operation that invalidated it.
+  /// -             Valid: True + the first operation that defined it.
+  using InteriorEntry = llvm::PointerIntPair<Operation *, 1, bool>;
+  SmallVector<InteriorEntry> interior;
+
+  TrackedAndInteriorLiveness(size_t numTrackedBits, size_t numInteriorBits)
+      : tracked(numTrackedBits), interior(numInteriorBits) {}
+
+  static TrackedAndInteriorLiveness
+  getEmptyWithMatchingSize(const TrackedAndInteriorLiveness &other) {
+    return TrackedAndInteriorLiveness(other.tracked.size(),
+                                      other.interior.size());
+  }
+
+  size_t countNumValuesLive() const { return tracked.count(); }
+  bool isReachable() const { return tracked[0]; }
+  void markReachable(bool value) { tracked[0] = value; }
+
+  /// Merge \p other into this state at a control-flow join.
+  void mergeWith(const TrackedAndInteriorLiveness &other) {
+    if (!other.isReachable())
+      return; // 'other' isn't reachable, so just use 'this'.
+    if (!isReachable()) {
+      // 'this' isn't reachable, so just use 'other'.
+      tracked = other.tracked;
+      interior = other.interior;
+      return;
+    }
+    // Both are reachable, so merge them.
+    tracked &= other.tracked;
+    for (size_t i = 0, e = interior.size(); i != e; ++i) {
+      if (interior[i].getInt() && !other.interior[i].getInt()) {
+        // We're invalided if the other one is.
+        interior[i] = other.interior[i];
+      } else if (!interior[i].getPointer() && other.interior[i].getPointer()) {
+        interior[i].setPointer(other.interior[i].getPointer());
+      } else if (interior[i].getInt() && other.interior[i].getInt() &&
+                 interior[i].getPointer() && other.interior[i].getPointer()) {
+        // If both are live, we should pick the common ancestor.
+        assert(0 && "FIXME: Implement merge");
+      }
+    }
+  }
+
+  void swap(TrackedAndInteriorLiveness &other) {
+    tracked.swap(other.tracked);
+    interior.swap(other.interior);
+  }
+
+  /// Print tracked value liveness and, when present, interior-origin validity.
+  raw_ostream &print(const ValueSet &valueSet, raw_ostream &os) const {
+    valueSet.printBV(tracked, os);
+    if (!interior.empty()) {
+      os << ", interior = {";
+      for (size_t i = 0, e = interior.size(); i != e; ++i) {
+        if (interior[i].getInt())
+          os << " #" << i;
+      }
+      os << " }";
+    }
+    return os;
+  }
+
+  LLVM_DUMP_METHOD void dump(const ValueSet &valueSet) const {
+    print(valueSet, llvm::errs());
+  }
+};
+} // namespace
+
 // These data structures keep track of all of the interior origins found in a
 // function. This allows us to use bitvector dataflow to push around their
 // liveness and allows us to understand what origins need to be invalidated when
@@ -1536,18 +1614,26 @@ public:
   size_t getNumInteriorOrigins() const { return nextInteriorOriginID; }
 
   /// Mark the given interior origin as live in the given bitvector.
-  void markInteriorOriginLive(InteriorOriginAttr o, BitVector &liveness) const {
+  void markInteriorOriginLive(InteriorOriginAttr o,
+                              TrackedAndInteriorLiveness &liveness,
+                              Operation &op) const {
     auto it = interiorOriginID.find(o);
-    assert(it != interiorOriginID.end() && it->second < liveness.size() &&
-           "Unknown interior origin");
-    liveness.set(it->second);
+    assert(it != interiorOriginID.end() &&
+           it->second < liveness.interior.size() && "Unknown interior origin");
+    // If the entry was previously invalid, mark it as now live.
+    auto &entry = liveness.interior[it->second];
+    if (!entry.getInt()) {
+      entry.setInt(true);
+      entry.setPointer(&op);
+    }
   }
 
-  bool isInteriorOriginLive(InteriorOriginAttr o, BitVector &liveness) const {
+  bool isInteriorOriginLive(InteriorOriginAttr o,
+                            TrackedAndInteriorLiveness &liveness) const {
     auto it = interiorOriginID.find(o);
-    assert(it != interiorOriginID.end() && it->second < liveness.size() &&
-           "Unknown interior origin");
-    return liveness[it->second];
+    assert(it != interiorOriginID.end() &&
+           it->second < liveness.interior.size() && "Unknown interior origin");
+    return liveness.interior[it->second].getInt();
   }
 
   bool originHasInteriorOrigins(TypedAttr origin) const {
@@ -1557,34 +1643,34 @@ public:
   /// Given an InteriorOrigin and a set of operations that invalidate numbered
   /// InteriorOrigins, return the operation that invalidated this origin if
   /// known.
-  Operation *getOperationThatInvalidated(
-      InteriorOriginAttr interior,
-      SmallVectorImpl<Operation *> &invalidatingOps) const {
+  Operation *
+  getOperationThatInvalidated(InteriorOriginAttr interior,
+                              TrackedAndInteriorLiveness &liveness) const {
     auto it = interiorOriginID.find(interior);
     assert(it != interiorOriginID.end() &&
-           it->second < invalidatingOps.size() && "Unknown interior origin");
-    return invalidatingOps[it->second];
+           it->second < liveness.interior.size() && "Unknown interior origin");
+    return liveness.interior[it->second].getPointer();
   }
 
   // Given a mutation of an origin "o", invalidate any interior origins derived
   // from it, like "o[]" or "o.field[]".
   void invalidateOnMutation(TypedAttr mutatedOrigin,
-                            BitVector &liveInteriorOrigins,
-                            SmallVectorImpl<Operation *> &invalidatingOps,
+                            TrackedAndInteriorLiveness &liveness,
                             Operation &thisInvalidatingOp) const {
     if (interiorOriginInvalidationMap.empty())
       return;
     processOriginUnionElts(mutatedOrigin, [&](TypedAttr origin) {
       // Clear any interior origins derived from the mutated origin.
       auto it = interiorOriginInvalidationMap.find(origin);
-      if (it != interiorOriginInvalidationMap.end()) {
-        for (int id = it->second.find_first(); id >= 0;
-             id = it->second.find_next(id)) {
-          // When we clear it, remember what operation invalidated it.
-          if (liveInteriorOrigins[id]) {
-            liveInteriorOrigins.reset(id);
-            invalidatingOps[id] = &thisInvalidatingOp;
-          }
+      if (it == interiorOriginInvalidationMap.end())
+        return;
+      // Zap entries invalided due to the mutation.
+      for (ssize_t id = it->second.find_first(); id >= 0;
+           id = it->second.find_next(id)) {
+        // When we clear it, remember what operation invalidated it.
+        if (liveness.interior[id].getInt()) {
+          liveness.interior[id].setInt(false);
+          liveness.interior[id].setPointer(&thisInvalidatingOp);
         }
       }
     });
@@ -1739,7 +1825,7 @@ void InteriorOriginTracker::addInteriorOrigin(InteriorOriginAttr interior) {
 void InteriorOriginTracker::printBV(const BitVector &interiorOriginBits,
                                     llvm::raw_ostream &os) {
   os << "{";
-  for (int id = interiorOriginBits.find_first(); id >= 0;
+  for (ssize_t id = interiorOriginBits.find_first(); id >= 0;
        id = interiorOriginBits.find_next(id))
     os << " #" << id;
   os << " }";
@@ -1788,73 +1874,6 @@ void InteriorOriginTracker::dump() const {
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// Liveness state for tracked values and interior origins at a program point.
-struct TrackedAndInteriorLiveness {
-  /// Bitvector of tracked value/field liveness.  Slot #0 is a reachability
-  /// sentinel used by control-flow merge.
-  BitVector tracked;
-
-  /// Bitvector of interior-origin validity (parallel to interior origin IDs).
-  BitVector interior;
-
-  /// For an invalidated interior origin, this contains the operation that
-  /// caused it to be invalidated, allowing us to print a note. This is null if
-  /// unknown.
-  SmallVector<Operation *> invalidatingOp;
-
-  TrackedAndInteriorLiveness(size_t numTrackedBits, size_t numInteriorBits)
-      : tracked(numTrackedBits), interior(numInteriorBits),
-        invalidatingOp(numInteriorBits) {}
-
-  static TrackedAndInteriorLiveness
-  getEmptyWithMatchingSize(const TrackedAndInteriorLiveness &other) {
-    return TrackedAndInteriorLiveness(other.tracked.size(),
-                                      other.interior.size());
-  }
-
-  size_t countNumValuesLive() const { return tracked.count(); }
-  bool isReachable() const { return tracked[0]; }
-  void markReachable(bool value) { tracked[0] = value; }
-
-  /// Merge \p other into this state at a control-flow join.
-  void mergeWith(const TrackedAndInteriorLiveness &other) {
-    if (!other.isReachable())
-      return; // 'other' isn't reachable, so just use 'this'.
-    if (!isReachable()) {
-      // 'this' isn't reachable, so just use 'other'.
-      tracked = other.tracked;
-      interior = other.interior;
-      invalidatingOp = other.invalidatingOp;
-      return;
-    }
-    // Both are reachable, so merge them.
-    tracked &= other.tracked;
-    interior &= other.interior;
-    for (size_t i = 0, e = invalidatingOp.size(); i != e; ++i)
-      if (!invalidatingOp[i] && other.invalidatingOp[i])
-        invalidatingOp[i] = other.invalidatingOp[i];
-  }
-
-  void swap(TrackedAndInteriorLiveness &other) {
-    tracked.swap(other.tracked);
-    interior.swap(other.interior);
-  }
-
-  /// Print tracked value liveness and, when present, interior-origin validity.
-  raw_ostream &print(const ValueSet &valueSet, raw_ostream &os) const {
-    valueSet.printBV(tracked, os);
-    if (!interior.empty()) {
-      os << ", interior = ";
-      InteriorOriginTracker::printBV(interior, os);
-    }
-    return os;
-  }
-
-  LLVM_DUMP_METHOD void dump(const ValueSet &valueSet) const {
-    print(valueSet, llvm::errs());
-  }
-};
-
 /// This helper class implements the second pass over a function body, which
 /// identifies and complains about uses of uninitialized values.
 ///
@@ -1893,7 +1912,7 @@ private:
   void handleAnyOriginUse(Operation &op, ArrayRef<TypedAttr> definedOrigins);
 
   SmallVector<InteriorOriginAttr> findInteriorOriginsInType(Type type);
-  void establishInteriorOriginsFromDef(Type type);
+  void establishInteriorOriginsFromDef(Type type, Operation &op);
   void invalidateInteriorOriginsForOperand(Value operand, bool isDeref,
                                            Operation &op);
 
@@ -2059,13 +2078,14 @@ UninitializedValueScan::findInteriorOriginsInType(Type type) {
   return result;
 }
 
-void UninitializedValueScan::establishInteriorOriginsFromDef(Type type) {
+void UninitializedValueScan::establishInteriorOriginsFromDef(Type type,
+                                                             Operation &op) {
   // Don't scan anything if no interior origins are accessed.
   if (liveness.interior.empty())
     return;
 
   for (InteriorOriginAttr origin : findInteriorOriginsInType(type))
-    interiorOriginTracker.markInteriorOriginLive(origin, liveness.interior);
+    interiorOriginTracker.markInteriorOriginLive(origin, liveness, op);
 }
 
 void UninitializedValueScan::invalidateInteriorOriginsForOperand(
@@ -2078,8 +2098,7 @@ void UninitializedValueScan::invalidateInteriorOriginsForOperand(
   // Given a mutation of an origin "o", invalidate any interior origins derived
   // from it, like "o[]" or "o.field[]".
   interiorOriginTracker.invalidateOnMutation(
-      cast<RefType>(operand.getType()).getOrigin(), liveness.interior,
-      liveness.invalidatingOp, op);
+      cast<RefType>(operand.getType()).getOrigin(), liveness, op);
 }
 
 /// Verify that the specified ValueRef is live at this point, diagnosing an
@@ -2108,7 +2127,7 @@ void UninitializedValueScan::checkUse(Value value, Operation &op,
   // Verify that any accessed interior origins are also live.
   for (auto origin : interiorOrigins) {
     // The referenced value fields must be live.
-    if (!interiorOriginTracker.isInteriorOriginLive(origin, liveness.interior))
+    if (!interiorOriginTracker.isInteriorOriginLive(origin, liveness))
       diagnoseInteriorOriginUsageError(origin, op);
   }
 }
@@ -2199,8 +2218,8 @@ void UninitializedValueScan::diagnoseInteriorOriginUsageError(
   diag << originStr << "'";
 
   if (Operation *invalidatingOp =
-          interiorOriginTracker.getOperationThatInvalidated(
-              interior, liveness.invalidatingOp)) {
+          interiorOriginTracker.getOperationThatInvalidated(interior,
+                                                            liveness)) {
     diag.attachNote(invalidatingOp->getLoc()) << "origin was invalidated here";
   }
 
@@ -2224,7 +2243,7 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
     // Notice any interior origins that are embedded in the result type so we
     // know they're alive at this point.
     establishInteriorOriginsFromDef(
-        ValueRef::getDereferencedType(value.getType(), isDeref));
+        ValueRef::getDereferencedType(value.getType(), isDeref), op);
     return;
   }
 
@@ -2242,7 +2261,7 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
 
   // Mark any defined interior origins as live.
   for (auto origin : interiorOrigins)
-    interiorOriginTracker.markInteriorOriginLive(origin, liveness.interior);
+    interiorOriginTracker.markInteriorOriginLive(origin, liveness, op);
 }
 
 void UninitializedValueScan::checkConsume(Value value, Operation &op,
@@ -2327,7 +2346,7 @@ void UninitializedValueScan::checkOriginAccesses(TypedAttr origin,
   // Verify that any accessed interior origins are also live.
   for (auto origin : interiorOrigins) {
     // The referenced value fields must be live.
-    if (!interiorOriginTracker.isInteriorOriginLive(origin, liveness.interior))
+    if (!interiorOriginTracker.isInteriorOriginLive(origin, liveness))
       diagnoseInteriorOriginUsageError(origin, op);
   }
 }
@@ -2513,7 +2532,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
         // Ref results don't matter for tracking ownership, but they can return
         // interior origins, which indicate they are alive.  Notice them.
         if (auto refType = sugarDynCast<RefType>(result.getType()))
-          establishInteriorOriginsFromDef(refType);
+          establishInteriorOriginsFromDef(refType, op);
         continue;
       case ResultEffect::regDefine:
         assert(trackable && !trackable.isIndirect && endsUninit &&
