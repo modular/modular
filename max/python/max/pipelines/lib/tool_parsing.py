@@ -407,6 +407,16 @@ class StructuralTagToolParser(ABC):
         self._buffer = ""
         self._state = StreamingState()
 
+    def set_streaming_tool_schemas(
+        self, schemas: Mapping[str, dict[str, Any]]
+    ) -> None:
+        """No-op: these parsers do not need schema-driven streaming.
+
+        Schema-driven parsers (e.g. MiniMax-M3) override this; see
+        ``ToolParser.set_streaming_tool_schemas`` for when that is required.
+        """
+        return None
+
     # ----- Hooks (subclasses override) ----------------------------------
 
     @abstractmethod

@@ -426,6 +426,12 @@ class OpenAIChatResponseGenerator(
         # Reset parser state for new streaming session
         if self.parse_tool_calls:
             self.parser.reset()
+            # Thread per-tool parameter schemas into the parser, enabling
+            # schema-driven incremental argument streaming for XML/tag-based
+            # tool parsers that opt in. No-op for parsers that don't override
+            # it.
+            if self._tool_schemas:
+                self.parser.set_streaming_tool_schemas(self._tool_schemas)
             self._stream_tool_names.clear()
             self._stream_tool_args.clear()
 
