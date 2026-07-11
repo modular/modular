@@ -20,9 +20,7 @@ namespace M::KGEN {
 
 class HostBackend : public TargetBackend {
 public:
-  llvm::StringRef name() const override { return "host"; }
-
-  bool matches(const llvm::Triple &triple) const override;
+  const TargetTraits *traits() const override;
 
   SplitStrategy
   splitStrategy(const CompilationOptions &options) const override {
@@ -37,10 +35,6 @@ public:
   ErrorOr<BufferRef> createArchive(llvm::MutableArrayRef<BufferRef> objects,
                                    llvm::StringRef moduleName,
                                    EmitContext &ctx) const override;
-
-  llvm::StringRef getAsmExtension() const override { return ".s"; }
-  llvm::StringRef getLLVMExtension() const override { return ".ll"; }
-  llvm::StringRef getObjectExtension() const override { return ".o"; }
 };
 
 } // namespace M::KGEN

@@ -16,8 +16,11 @@
 #define KGEN_KGENTOLLVM_TARGET_TARGETLOWERING_H
 
 #include "KGEN/KGENDialect/KGENDType.h"
+#include "KGEN/KGENDialect/KGENEnums.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Target/TargetTraits.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/Types.h"
 #include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
@@ -64,10 +67,21 @@ class TargetLowering {
 public:
   virtual ~TargetLowering() = default;
 
-  /// Short name of the target lowering, used for diagnostics.
-  virtual llvm::StringRef name() const = 0;
-  /// Whether this lowering handles `triple`.
-  virtual bool matches(const llvm::Triple &triple) const = 0;
+  /// Cheap per-target metadata, or null on a dispatcher lowering that resolves
+  /// to another lowering. Concrete targets override this; the default
+  /// `name()`/`matches()` delegate to it.
+  virtual const TargetTraits *traits() const { return nullptr; }
+
+  /// Short name of the target lowering, used for diagnostics. Defaults to the
+  /// traits' name; a dispatcher lowering overrides this directly.
+  virtual llvm::StringRef name() const {
+    return traits() ? traits()->name() : llvm::StringRef();
+  }
+  /// Whether this lowering handles `triple`. Defaults to the traits' match; a
+  /// dispatcher lowering overrides this directly.
+  virtual bool matches(const llvm::Triple &triple) const {
+    return traits() && traits()->matches(triple);
+  }
 
   /// Resolves `triple` to the concrete lowering that should handle it, or null
   /// if this one does not. The default returns `this` when `matches`; a
@@ -128,6 +142,32 @@ public:
   /// borrowed pointer argument to a kernel by value. Only queried for targets
   /// whose `isExportedKernel` returns true, so the default is empty.
   virtual llvm::StringRef getKernelByValArgAttrName() const { return {}; }
+
+  /// Returns the memory-form type this target requires for a kernel argument of
+  /// `type` that would otherwise be passed in registers, or a null type if it
+  /// imposes no such requirement. The default imposes nothing.
+  virtual mlir::Type lowerKernelArgToMemory(mlir::Type type) const {
+    return {};
+  }
+
+  /// Returns the indirected (wrapped) type this target requires for a kernel
+  /// argument of `type` with calling `convention`, or a null type if none. The
+  /// default imposes nothing.
+  virtual mlir::Type
+  getKernelArgIndirectionType(mlir::Type type, ArgConvention convention) const {
+    return {};
+  }
+
+  /// Returns whether the KGEN verifier should run this target's `verifyOp`
+  /// checks. The default is false.
+  virtual bool needsVerification() const { return false; }
+
+  /// Verifies that `op` is legal on this target, emitting a diagnostic on `op`
+  /// and returning failure if not. Only called when `needsVerification` is
+  /// true. The default accepts everything.
+  virtual mlir::LogicalResult verifyOp(mlir::Operation *op) const {
+    return mlir::success();
+  }
 
   /// Translates a kernel-argument annotation `attr` (carried via the
   /// `@__llvm_metadata` decorator) into LLVM argument attributes on `argAttrs`.

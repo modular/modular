@@ -1150,8 +1150,8 @@ def KGENVerifierPass : Pass<"kgen-verifier"> {
     settings.
   }];
   let options = [
-    Option<"verifyGPU", "verify-gpu", "bool", "true",
-           "Run GPU-specific verification (e.g. reject heap allocation).">,
+    Option<"useMLIRVerifierOnly", "use-mlir-verifier-only", "bool", "false",
+           "Only run MLIR verifier.">,
   ];
 }
 

@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Compiler/SaveAsmOutput.h"
-#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/StringExtras.h"
@@ -50,20 +49,6 @@ mlir::LogicalResult writeBytesToTempWithHash(const std::string &saveTempsPrefix,
 //===----------------------------------------------------------------------===//
 // Offload output naming helpers
 //===----------------------------------------------------------------------===//
-
-llvm::StringRef offloadAsmExt(const llvm::Triple &triple) {
-  return triple.isNVPTX()        ? ".ptx"
-         : triple.isAMDGCN()     ? ".amdgcn"
-         : isMetalTriple(triple) ? ".ll"
-                                 : ".s";
-}
-
-llvm::StringRef offloadLLVMExt(const llvm::Triple &triple) {
-  return triple.isNVPTX()        ? ".nvptx.ll"
-         : triple.isAMDGCN()     ? ".amdgcn.ll"
-         : isMetalTriple(triple) ? ".metal.ll"
-                                 : ".ll";
-}
 
 std::string reserveOffloadOutputBaseName(mlir::StringAttr rawName,
                                          llvm::StringRef ext,

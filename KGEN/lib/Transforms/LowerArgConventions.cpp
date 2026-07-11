@@ -20,9 +20,9 @@
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
-#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/MDialect/MTypeInterfaces.h"
+#include "Target/TargetLowering.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Threading.h"
@@ -43,8 +43,6 @@ static StructType getIfParamPack(Type type) {
       return packStruct;
   return {};
 }
-
-static Type lowerTypeForGPU(Type type);
 
 /// If the specified value has uses, replace them with a dummy value.
 static void replaceUsesWithDummy(Value v, ImplicitLocOpBuilder &b,
@@ -80,11 +78,11 @@ static Type lowerPointerType(Type type, TargetInfoAttr target,
     if (structType.isDefinitelyMemoryOnly())
       return {};
 
-  // For GPU lowering, avoid promoting pointers whose element will be forced
-  // back to memory form.
-  if (target && isGPUTriple(target.getTriple())) {
-    if (auto structType = dyn_cast<StructType>(elType);
-        structType && !structType.getIsParamPack() && lowerTypeForGPU(elType))
+  // Don't promote a pointer whose element this target keeps in memory form.
+  if (target) {
+    if (const TargetLowering *lowering =
+            TargetLoweringRegistry::get().lookup(target.getTriple());
+        lowering && lowering->lowerKernelArgToMemory(elType))
       return {};
   }
 
@@ -108,26 +106,6 @@ static Type lowerPointerType(Type type, TargetInfoAttr target,
 
   // We must be dealing with something register passable (e.g. index).
   return elType;
-}
-
-/// Return the pointer to the given type. For now, only support struct types
-/// with a pointer, but it can be extended if needed.
-static Type lowerTypeForGPU(Type type) {
-  auto structType = dyn_cast<StructType>(type);
-  if (!structType || structType.getIsParamPack())
-    return nullptr;
-
-  bool hasPointer = false;
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&hasPointer](PointerType ptr) {
-    hasPointer = true;
-    return nullptr;
-  });
-  replacer.replace(type);
-  if (!hasPointer)
-    return nullptr;
-
-  return PointerType::get(type);
 }
 
 namespace {
@@ -270,20 +248,16 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
 
   Type type = transform->typeOfValueAt(operandIndex);
   ArgConvention convention = conventions[argConventionIndex];
-  bool needsGPUTransform =
-      transform->target && isGPUTriple(transform->target.getTriple());
-  if (transform->target && isMetalTriple(transform->target.getTriple())) {
-    // HACK HACK HACK:
-    // Need to add extra indirection for `kgen.pointer<none>` when compiling
-    // metal kernel. This is needed, because MetalDeviceContext cannot
-    // distinguish `ptr` and `{ { ptr }, {} }` arguments when it tries to set
-    // MTL::Buffer: when argument is a `ptr` there should be existing tracked
-    // MTL::Buffer created for DeviceBuffer; while for the latter the driver
-    // needs to create new MTL::Buffer. Because these 2 cases have different IR
-    // generated, there is no driver's solution that fits all.
-    if (auto ptr = dyn_cast<PointerType>(type);
-        ptr && convention == ArgConvention::ReadReg) {
-      transform->applyValueTransform(operandIndex, PointerType::get(ptr));
+  const TargetLowering *lowering =
+      transform->target
+          ? TargetLoweringRegistry::get().lookup(transform->target.getTriple())
+          : nullptr;
+
+  // Apply any extra indirection this target requires for a register argument.
+  if (lowering) {
+    if (Type indirected =
+            lowering->getKernelArgIndirectionType(type, convention)) {
+      transform->applyValueTransform(operandIndex, indirected);
       conventions[argConventionIndex] = ArgConvention::ReadMem;
     }
   }
@@ -328,10 +302,11 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
                             argConventionIndex, ++depth);
   }
 
-  /// LIFT REG (GPU ONLY)
-  if (!needsGPUTransform)
+  /// LIFT REG. Lower an argument this target cannot pass in registers back to
+  /// its memory form.
+  if (!lowering)
     return;
-  if (Type newArgTy = lowerTypeForGPU(type)) {
+  if (Type newArgTy = lowering->lowerKernelArgToMemory(type)) {
     transform->applyValueTransform(operandIndex, newArgTy);
     conventions[argConventionIndex] = ArgConvention::ReadMem;
   }

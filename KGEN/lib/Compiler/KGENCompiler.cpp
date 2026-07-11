@@ -27,6 +27,7 @@
 #include "Support/Config.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
+#include "Target/TargetTraits.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/CAPI/IR.h"
 #include "mlir/CAPI/Rewrite.h"
@@ -728,10 +729,16 @@ static ElaboratorCompileOffloadRetType compileOffloads(
               kind == compilationOptions.offloadOutputKind) {
             mlir::StringAttr rawName = iter->second.nameForFile;
             llvm::Triple triple(target.getTripleStr());
+            const TargetTraits *traits =
+                TargetTraitsRegistry::get().lookup(triple);
+            if (!traits)
+              return Error(Twine("no target traits registered for target '") +
+                           target.getTripleStr() +
+                           "'; this target is not supported by this build");
             llvm::StringRef ext =
                 compilationOptions.offloadOutputKind == EmitAs::LLVM
-                    ? offloadLLVMExt(triple)
-                    : offloadAsmExt(triple);
+                    ? traits->getLLVMExtension()
+                    : traits->getAsmExtension();
             std::string baseName =
                 reserveOffloadOutputBaseName(rawName, ext, kernelNameCounts);
             std::string path = offloadOutputPath(

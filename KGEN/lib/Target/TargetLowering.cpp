@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGENToLLVM/Target/TargetLowering.h"
+#include "Target/TargetLowering.h"
 
 #include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
 #include "llvm/Support/ManagedStatic.h"

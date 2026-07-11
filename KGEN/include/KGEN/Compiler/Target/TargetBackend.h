@@ -17,6 +17,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
+#include "Target/TargetTraits.h"
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
@@ -94,10 +95,21 @@ class TargetBackend {
 public:
   virtual ~TargetBackend() = default;
 
-  /// Short name of the backend, e.g. "host", "nvptx", "amdgpu".
-  virtual llvm::StringRef name() const = 0;
-  /// Whether this backend handles `triple`.
-  virtual bool matches(const llvm::Triple &triple) const = 0;
+  /// Cheap per-target metadata (name, triple match, output extensions), or null
+  /// on a dispatcher backend that resolves to another backend. Concrete targets
+  /// override this; the default `name()`/`matches()` delegate to it.
+  virtual const TargetTraits *traits() const { return nullptr; }
+
+  /// Short name of the backend, e.g. "host", "nvptx". Defaults to the traits'
+  /// name; a dispatcher backend overrides this directly.
+  virtual llvm::StringRef name() const {
+    return traits() ? traits()->name() : llvm::StringRef();
+  }
+  /// Whether this backend handles `triple`. Defaults to the traits' match; a
+  /// dispatcher backend overrides this directly.
+  virtual bool matches(const llvm::Triple &triple) const {
+    return traits() && traits()->matches(triple);
+  }
 
   /// Resolves `triple` to the concrete backend that should handle it, or null
   /// if this backend does not. The default returns `this` when `matches`; a
@@ -247,10 +259,6 @@ public:
   virtual ErrorOr<BufferRef>
   createArchive(llvm::MutableArrayRef<BufferRef> objects,
                 llvm::StringRef moduleName, EmitContext &ctx) const = 0;
-
-  virtual llvm::StringRef getAsmExtension() const = 0;
-  virtual llvm::StringRef getLLVMExtension() const = 0;
-  virtual llvm::StringRef getObjectExtension() const = 0;
 };
 
 /// Registry of `TargetBackend`s, dispatched by triple.
