@@ -83,10 +83,6 @@ replaceIndexRefsWithNamedRefs(FunctionType functionType,
 ASTType getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
                               FnTypeGeneratorType sig, TypedAttr origin);
 
-/// Compute the union of reference origins captured by an async call.
-TypedAttr computeArgumentsOrigin(AsyncCallOp call,
-                                 CachedOriginFinder &originFinder);
-
 /// Materialize an async call result into the corresponding `Coroutine[...]`
 /// or `RaisingCoroutine[...]` value.
 CValue materializeAsyncCallAsCoroutine(IREmitter &emitter, AsyncCallOp call,
