@@ -14,12 +14,12 @@ from std.builtin.stubs import _get_kgen_string
 
 
 # Method overloading.
-# CHECK-LABEL: lit.fn @"testThing({{.*}}Int)"
+# CHECK-LABEL: lit.fn @"testThing(::SIMD[::DType(int), ::SIMDSize(1)])"
 def testThing(a: Int) -> FloatDyn:
     return 1.0
 
 
-# CHECK-LABEL: lit.fn @"testThing({{.*}}Int,{{.*}}Int)"
+# CHECK-LABEL: lit.fn @"testThing(::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)])"
 def testThing(a: Int, b: Int) -> Int:
     return 1
 
@@ -77,28 +77,28 @@ def trait_pack[T: ImplicitlyCopyable, *Ts: ImplicitlyCopyable](first: T, *rest: 
 
 # CHECK-LABEL: lit.fn @"callOverload
 def callOverload(a: Int):
-    # CHECK: lit.call {{.*}}@"testThing({{.*}}Int)"(%a)
+    # CHECK: lit.call {{.*}}@"testThing({{.*}}SIMD[::DType(int), ::SIMDSize(1)])"(%a)
     _ = testThing(a)
-    # CHECK: lit.call {{.*}}@"testThing({{.*}}Int,{{.*}}Int)"(%a, %a)
+    # CHECK: lit.call {{.*}}@"testThing({{.*}}SIMD[::DType(int), ::SIMDSize(1)],{{.*}}SIMD[::DType(int), ::SIMDSize(1)])"(%a, %a)
     _ = testThing(a, a)
 
-    # CHECK: = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::Int)")>
+    # CHECK: = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::SIMD[::DType(int), ::SIMDSize(1)])")>
     var float1: IntToFloat32Type = testThing
 
-    # CHECK: %3 = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::Int)")>
+    # CHECK: %3 = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::SIMD[::DType(int), ::SIMDSize(1)])")>
     # CHECK-NEXT: lit.ref.store %3, %float1
     float1 = testThing
 
-    # CHECK: %4 = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::Int)")>
+    # CHECK: %4 = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::SIMD[::DType(int), ::SIMDSize(1)])")>
     var float2: IntToFloat32Type = testThing
 
-    # CHECK: lit.call {{.*}}@"takeIntToFloat32Param[def({{.*}}Int) thin -> {{.*}}FloatDyn]()"<:
-    # CHECK-SAME: !alias_IntToFloat32Type1 rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::Int)")>()
+    # CHECK: lit.call {{.*}}@"takeIntToFloat32Param[def({{.*}}SIMD[::DType(int), ::SIMDSize(1)]) thin -> {{.*}}FloatDyn]()"<:
+    # CHECK-SAME: !alias_IntToFloat32Type1 rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::SIMD[::DType(int), ::SIMDSize(1)])")>()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
     # less specific.
-    # CHECK: lit.call {{.*}}@"varargOverload({{.*}}Int)"(%{{.*}})
+    # CHECK: lit.call {{.*}}@"varargOverload({{.*}}SIMD[::DType(int), ::SIMDSize(1)])"(%{{.*}})
     varargOverload(2)
 
     # CHECK:  lit.call {{.*}}@"varargOverload()"()
@@ -106,7 +106,7 @@ def callOverload(a: Int):
 
     # Expect packs to behave similarly to varargs.
     # CHECK: %[[IDX3:.*]] = {{.*}}constant{{.*}}3
-    # CHECK: lit.call {{.*}}@"packOverload({{.*}}Int)"(%[[IDX3]])
+    # CHECK: lit.call {{.*}}@"packOverload({{.*}}SIMD[::DType(int), ::SIMDSize(1)])"(%[[IDX3]])
     packOverload(3)
     # CHECK:  lit.call {{.*}}@"packOverload()"()
     packOverload()
@@ -143,13 +143,13 @@ def paramOverload[*x: Int](y: Int):
 
 # CHECK-LABEL: lit.fn @"callParametricOverload
 def callParametricOverload[a: Int, b: Int, c: Int](x: Int):
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload[{{.*}}Int]()"
+    # CHECK-NEXT: lit.call {{.*}}@"paramOverload[{{.*}}SIMD[::DType(int), ::SIMDSize(1)]]()"
     paramOverload[a]()
 
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:param_list<!Int> [a, b, c]
     paramOverload[a, b, c]()
 
-    # CHECK-NEXT: lit.call {{.*}}@"paramOverload({{.*}}Int)"
+    # CHECK-NEXT: lit.call {{.*}}@"paramOverload({{.*}}SIMD[::DType(int), ::SIMDSize(1)])"
     paramOverload(x)
 
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:param_list<!Int> [a, b], {{.*}}>(%x)
@@ -170,7 +170,7 @@ def take_variadic_struct[*Ts: TrivialRegisterPassable](a: VariadicStruct[*Ts]):
 
 # CHECK-LABEL: lit.fn @"variadic_params()"
 def variadic_params():
-    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:param_list<!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !FloatDyn], {{.*}}, :!Int {4}>
+    # CHECK-NEXT: call {{.*}}param_func[{{.*}}SIMD[::DType(int), ::SIMDSize(1)]]()"<:param_list<!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !FloatDyn], {{.*}}, :!Int {:scalar<index> 4}>
     VariadicStruct[Int, FloatDyn].param_func[4]()
     # CHECK: call {{.*}}take_variadic_struct{{.*}}<:param_list<!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !FloatDyn],
     take_variadic_struct(VariadicStruct[Int, FloatDyn]())
@@ -192,7 +192,7 @@ def returnParameter[a: __mlir_type.index]() -> __mlir_type.index:
 def callReturnParam() -> __mlir_type.index:
     # CHECK-NEXT: %0 = lit.call {{.*}}@"returnParameter[index]()"<3>()
     # CHECK-NEXT: return %0
-    return returnParameter[Int(3)._mlir_value]()
+    return returnParameter[Int(3).__mlir_index__()]()
 
 
 def paramRefFunc[T: TrivialRegisterPassable](x: T):
@@ -224,14 +224,15 @@ def testMutatingAdd(var a: MutatingAdd, b: MutatingAdd):
 
 
 # CHECK-LABEL: lit.fn @"testContextSensitiveKeyword
-# CHECK-SAME: (%out2: !Int) -> !Int
+# CHECK-SAME: (%out2: !Int) -> !alias_Int1
 def testContextSensitiveKeyword(out x: Int, out2: Int):
     # Check that we handle the result slot correctly.
 
     # CHECK-NEXT: %x = lit.var.decl "x"
-    # CHECK-NEXT: lit.ref.store %out2, %x
-    # CHECK-NEXT: %0 = lit.load.consume %x
-    # CHECK-NEXT: lit.return %0
+    # CHECK-NEXT: [[RB:%.*]] = kgen.rebind %out2
+    # CHECK-NEXT: lit.ref.store [[RB]], %x
+    # CHECK-NEXT: [[LD:%.*]] = lit.load.consume %x
+    # CHECK-NEXT: lit.return [[LD]]
 
     # out is an argument specifier, but that's a context sensitive keyword.
     # The identifier can be used like normal as well.
@@ -248,10 +249,12 @@ def testContextSensitiveKeyword(out x: Int, out2: Int):
 # CHECK-SAME:  %b: !lit.ref<!StructWithInit, imm {{.*}}> read_mem)
 def ownedConventionMem(var a: StructWithInit, b: StructWithInit):
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
-    # CHECK: %1 = lit.ref.load [[AX]]
+    # CHECK: [[AXR:%.*]] = kgen.rebind [[AX]]
+    # CHECK: = lit.ref.load [[AXR]]
     _ = a.x+1
     # CHECK: [[BY:%.*]] = lit.ref.struct.ger %b[y]
-    # CHECK: = lit.ref.load [[BY]]
+    # CHECK: [[BYR:%.*]] = kgen.rebind [[BY]]
+    # CHECK: = lit.ref.load [[BYR]]
     _ = b.y+1
 
     # It is ok to mutate owned values.
@@ -280,14 +283,16 @@ def ownedConventionReg(
     triv: RPStructWithInitTrivial,
 ):
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
-    # CHECK:  = lit.ref.load [[AX]]
+    # CHECK: [[AXR:%.*]] = kgen.rebind [[AX]]
+    # CHECK:  = lit.ref.load [[AXR]]
     _ = a.x+1
     # CHECK: [[BY:%.*]] = lit.ref.struct.ger %b[y]
-    # CHECK:  = lit.ref.load [[BY]]
+    # CHECK: [[BYR:%.*]] = kgen.rebind [[BY]]
+    # CHECK:  = lit.ref.load [[BYR]]
     _ = b.y+1
 
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
-    # CHECK: [[ONE:%.*]]  = kgen.param.constant: !Int = <{1}>
+    # CHECK: [[ONE:%.*]]  = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
     # CHECK: lit.ref.store [[ONE]], [[AX]]
     a.x = 1
 
@@ -345,7 +350,7 @@ def named_result_return_expr(out out: SomeResultType):
 
 
 # CHECK-LABEL: lit.fn @"defaultArgument
-# CHECK-SAME: %c: !Int = {5})
+# CHECK-SAME: %c: !Int = {:scalar<index> 5})
 def defaultArgument(a: Int, b: Int = 3, c: Int = 5) -> Int:
     return a + b
 
@@ -366,7 +371,7 @@ def callDefaultArgument(x: Int) -> Int:
 
 
 # CHECK-LABEL: lit.fn @"defaultArgumentReferencesParameter
-# CHECK: to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int p, "_mlir_value">), 87))
+# CHECK: scalar<index> = add(#lit.struct.extract<:!Int p, "_mlir_value">, 87)
 def defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 
@@ -425,7 +430,7 @@ struct Outer[X: Int]:
         pass
 
 
-# CHECK-LABEL: lit.fn @"variadics{{.*}}Int*)"{{.*}}(%a: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg)
+# CHECK-LABEL: lit.fn @"variadics{{.*}}SIMD[::DType(int), ::SIMDSize(1)]*)"{{.*}}(%a: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg)
 def variadics(*a: Int):
     # CHECK-NEXT: %none = kgen.param.constant
     pass
@@ -453,7 +458,7 @@ def callVariadic[p: Int](x: Int):
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK: lit.call {{.*}}@"variadics{{.*}}Int*)"{{.*}}([[T2]])
+    # CHECK: lit.call {{.*}}@"variadics{{.*}}SIMD[::DType(int), ::SIMDSize(1)]*)"{{.*}}([[T2]])
     variadics()
     # CHECK: [[C7:%.*]] = kgen.param.constant{{.*}}7
     # CHECK: [[C11:%.*]] = kgen.param.constant{{.*}}11
@@ -463,7 +468,7 @@ def callVariadic[p: Int](x: Int):
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK: lit.call {{.*}}@"variadics{{.*}}Int*)"{{.*}}([[T2]])
+    # CHECK: lit.call {{.*}}@"variadics{{.*}}SIMD[::DType(int), ::SIMDSize(1)]*)"{{.*}}([[T2]])
     variadics(7, 11)
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create [%{{.*}}]
@@ -471,7 +476,7 @@ def callVariadic[p: Int](x: Int):
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK: lit.call {{.*}}@"variadics{{.*}}Int*)"{{.*}}([[T2]])
+    # CHECK: lit.call {{.*}}@"variadics{{.*}}SIMD[::DType(int), ::SIMDSize(1)]*)"{{.*}}([[T2]])
     variadics(x)
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create [{{.*}}]
@@ -479,21 +484,21 @@ def callVariadic[p: Int](x: Int):
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK-NEXT: lit.call {{.*}}@"variadics{{.*}}Int*)"{{.*}}([[T2]])
+    # CHECK-NEXT: lit.call {{.*}}@"variadics{{.*}}SIMD[::DType(int), ::SIMDSize(1)]*)"{{.*}}([[T2]])
     variadics(x, 1)
 
     # CHECK: lit.alias.decl *"EmptyVariadic
     # CHECK-SAME: "a": !lit.ref<!lit.struct<#VariadicList{{.*}}, #interp.pointer<0>)))
     comptime EmptyVariadic = variadics()
     # CHECK: lit.alias.decl *"NonEmptyVariadic
-    # CHECK-SAME: @"variadics{{.*}}Int*)"{{.*}}[store_to_mem(p), store_to_mem({1})]
+    # CHECK-SAME: @"variadics{{.*}}SIMD[::DType(int), ::SIMDSize(1)]*)"{{.*}}[store_to_mem(p), store_to_mem({:scalar<index> 1})]
     comptime NonEmptyVariadic = variadics(p, 1)
 
     # CHECK: lit.call {{.*}}parameterizedVariadic{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int
     parameterizedVariadic(1, 2)
     # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable !Int
     _ = ParameterizedStruct(3)
-    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__{{.*}}<:param_list<!Int> [{4}, {5}]
+    # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__{{.*}}<:param_list<!Int> [{:scalar<index> 4}, {:scalar<index> 5}]
     _ = VarArgsParameterizedStruct[4, 5]()
     # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__{{.*}}<:param_list<!Int> []
     _ = VarArgsParameterizedStruct()
@@ -509,8 +514,8 @@ def variadic_mem_only(*values: MemStruct) -> Int:
 
 # CHECK-LABEL: lit.fn @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 def test_variadic_mem_only[x: MemStruct, y: MemStruct]():
-    # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :!lit.generator<[1]("values": {{.*}}#VariadicList{{.*}}:!AnyType !MemStruct, :!Bool {:scalar<bool> false}>>, imm #lit.comptime.origin> read_mem|pos_vararg) -> !Int> {{.*}}::@"variadic_mem_only{{.*}}::MemStruct*)"
+    # CHECK: lit.alias.decl {{.*}}: !alias_Int1 = <apply(
+    # CHECK-SAME: :!lit.generator<[1]("values": {{.*}}#VariadicList{{.*}}:!AnyType !MemStruct, :!Bool {:scalar<bool> false}>>, imm #lit.comptime.origin> read_mem|pos_vararg) -> !alias_Int1> {{.*}}::@"variadic_mem_only{{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)])
     comptime b = variadic_mem_only(x, y)
 
@@ -522,7 +527,7 @@ def test_variadic_mem_only[x: MemStruct, y: MemStruct]():
 
 # CHECK-LABEL: lit.fn @"defAlwaysRaises()"[{{.*}}](?, %__error__: {{.*}}, %__result__: {{.*}}) throws -> !kgen.scalar<bool> attributes {sourceName = "defAlwaysRaises"
 def defAlwaysRaises() raises -> Int:
-    # CHECK: [[RESULT:%.*]] = kgen{{.*}}{0}
+    # CHECK: [[RESULT:%.*]] = kgen{{.*}}{:scalar<index> 0}
     # CHECK: lit.ref.store [[RESULT]], %__result__
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: lit.return [[FALSE]]
@@ -537,7 +542,7 @@ def defCanAlsoRaise() raises Int -> Int:
 
 # CHECK-LABEL: lit.fn @"fnThatRaises()"{{.*}} throws -> !kgen.scalar<bool>
 def fnThatRaises() raises -> Int:
-    # CHECK: [[RESULT:%.*]] = kgen{{.*}}{0}
+    # CHECK: [[RESULT:%.*]] = kgen{{.*}}{:scalar<index> 0}
     # CHECK-NEXT: lit.ref.store [[RESULT]], %__result__
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: lit.return [[FALSE]]
@@ -559,8 +564,8 @@ def raisesReturnsNone() raises:
 def raisesReturnsVariant() -> __mlir_type[`!kgen.variant<`, Error, `, index>`]:
     return __mlir_op.`kgen.variant.create`[
         _type = __mlir_type[`!kgen.variant<`, Error, `, index>`],
-        index = Int(1)._mlir_value,
-    ](Int(1)._mlir_value)
+        index = Int(1).__mlir_index__(),
+    ](Int(1).__mlir_index__())
 
 
 # CHECK-LABEL: lit.fn @"raise_and_return{{.*}} throws -> !kgen.scalar<bool>
@@ -585,7 +590,7 @@ def test_raising_computed_getter() raises:
     var a = RaisingGetterSetter()[2]
 
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn1
-# CHECK-SAME: %__error__: !lit.ref<!Int, mut *"__error__`"> byref_error
+# CHECK-SAME: %__error__: !lit.ref<:meta<!Int> #alias_Int, mut *"__error__`"> byref_error
 # CHECK-SAME: ) throws -> !kgen.scalar<bool>
 def test_typed_raises_fn1() raises Int -> String:
     pass
@@ -599,12 +604,13 @@ def test_typed_raises_fn3() raises Float32:
     # raising Float32.  We need a temporary for the implicit conversion.
 
     # CHECK-NEXT: %anonymous2A = lit.var.decl
-    # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl{{.*}}!lit.ref<!Int
+    # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl{{.*}}!lit.ref<:meta<!Int>
     # CHECK-NEXT: lit.try %__call_error_tmp__
     # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2{{.*}}(%__call_error_tmp__, %anonymous2A)
     # CHECK-NEXT: lit.try.yield
     # CHECK-NEXT: } except {
-    # CHECK-NEXT:    = lit.ref.load %__call_error_tmp__
+    # CHECK-NEXT:    [[ERB:%.*]] = kgen.rebind %__call_error_tmp__
+    # CHECK-NEXT:    = lit.ref.load [[ERB]]
     # CHECK-NEXT:    lit.call {{.*}}SIMD::@"__init__
     # CHECK-NEXT:    = kgen.rebind
     # CHECK-NEXT:    lit.ref.store {{.*}}, %__error__
@@ -665,7 +671,7 @@ def call_test_typed_raises_fn() raises Int:
 
 
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn8
-# CHECK-SAME: %__error__: !lit.ref<!Int, mut *"__error__`"> byref_error
+# CHECK-SAME: %__error__: !lit.ref<:meta<!Int> #alias_Int, mut *"__error__`"> byref_error
 # CHECK-SAME: ) throws -> !kgen.scalar<bool>
 def test_typed_raises_fn8() raises Int -> String:
     pass
@@ -770,12 +776,13 @@ struct StructWithInit:
     var x: Int
     var y: Int
 
-    # CHECK: lit.fn @"__init__({{.*}}Int)"
+    # CHECK: lit.fn @"__init__({{.*}}SIMD[::DType(int), ::SIMDSize(1)])"
     # CHECK-SAME: %self: !lit.ref<!StructWithInit, mut {{.*}}> byref_result)
     @implicit
     def __init__(out self, a: Int):
         # CHECK: %0 = lit.ref.struct.ger %self[x]
-        # CHECK: lit.ref.store %a, %0
+        # CHECK: [[AR:%.*]] = kgen.rebind %a
+        # CHECK: lit.ref.store [[AR]], %0
         self.x = a
         # CHECK: [[YP:%.*]] = lit.ref.struct.ger %self[y]
         # CHECK: [[XP:%.*]] = lit.ref.struct.ger %self[x]
@@ -796,9 +803,11 @@ struct StructWithInit:
             self = StructWithInit(a)
         else:
             # CHECK: [[XP:%.*]] = lit.ref.struct.ger %self[x]
-            # CHECK: lit.ref.store %a, [[XP]]
+            # CHECK: [[AR:%.*]] = kgen.rebind %a
+            # CHECK: lit.ref.store [[AR]], [[XP]]
             # CHECK: [[YP:%.*]] = lit.ref.struct.ger %self[y]
-            # CHECK: lit.ref.store %b, [[YP]]
+            # CHECK: [[BR:%.*]] = kgen.rebind %b
+            # CHECK: lit.ref.store [[BR]], [[YP]]
             self.x = a
             self.y = b
 
@@ -814,10 +823,10 @@ struct StructExample(ImplicitlyCopyable, RegisterPassable):
     def __init__(out self):
         pass
 
-    # CHECK: lit.fn @"maybe_static({{.*}}Int)"(%x: !Int) {{.*}}isStatic
+    # CHECK: lit.fn @"maybe_static({{.*}}SIMD[::DType(int), ::SIMDSize(1)])"(%x: !Int) {{.*}}isStatic
     @staticmethod
     def maybe_static(x: Int):
-        # CHECK: %0 = {{.*}}{4}
+        # CHECK: %0 = {{.*}}{:scalar<index> 4}
         # CHECK: lit.call {{.*}}@StructExample::@"maybe_static{{.*}}"(%0)
         StructExample.maybe_static(4)
         pass
@@ -825,7 +834,7 @@ struct StructExample(ImplicitlyCopyable, RegisterPassable):
     # This isn't static.
     # CHECK: lit.fn @"maybe_static
     def maybe_static(self, x: EmptyStruct):
-        # CHECK: %0 = {{.*}}{4}
+        # CHECK: %0 = {{.*}}{:scalar<index> 4}
         # CHECK: lit.call {{.*}}@StructExample::@"maybe_static{{.*}}"(%0)
         StructExample.maybe_static(4)
         pass
@@ -864,7 +873,7 @@ def callMaybeStatic(a: Int, b: EmptyStruct):
 def initializersAsFunctions():
     # Register passable trivial.
     # CHECK-NEXT: %def_ptr1 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::Int)")]()
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::SIMD[::DType(int), ::SIMDSize(1)])")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr1
     var def_ptr1: def (:Int) thin -> MyInt = MyInt.__init__
 
@@ -884,7 +893,7 @@ def initializersAsFunctions():
 
     # Memory
     # CHECK-NEXT: %def_ptr5 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::Int)")
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::SIMD[::DType(int), ::SIMDSize(1)])")
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr5
     var def_ptr5: def (Int) thin -> StructWithInit = StructWithInit.__init__
 
@@ -947,7 +956,7 @@ async def awaitSomething():
 
 
 # CHECK-LABEL: lit.fn @"coroutine
-# CHECK-SAME: [mut [[LT:.*]]](?, %__result__: !lit.ref<!Int, mut [[LT]]> byref_result) async -> !kgen.none
+# CHECK-SAME: [mut [[LT:.*]]](?, %__result__: !lit.ref<:meta<!Int> #alias_Int, mut [[LT]]> byref_result) async -> !kgen.none
 async def coroutine() -> Int:
     # CHECK: lit.ref.store %0, %__result__
     # CHECK: lit.return %none
@@ -958,7 +967,7 @@ async def coroutine() -> Int:
 struct StructWithAsync:
     # CHECK-LABEL: lit.fn @"do_something{{.*}}({{.*}}) async
     async def do_something(self: StructWithAsync):
-        # CHECK-NEXT: [[CORO:%.*]] = lit.async.call[!lit.generator<[1](?, "__result__": !lit.ref<!Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
+        # CHECK-NEXT: [[CORO:%.*]] = lit.async.call[!lit.generator<[1](?, "__result__": !lit.ref<:meta<!Int> #alias_Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
         # CHECK-NEXT: %1 = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
         # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType !Int, :origin.set {}>(%1)
         _ = coroutine()
@@ -998,7 +1007,7 @@ async def use_inline_async() -> Int:
     # CHECK: [[TMP2:%.*]] = kgen.rebind [[ASYNC_RESULT]] : !co.routine to !alias_AnyCoroutine1
     # CHECK: [[TMP:%.*]] = lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[TMP2]]) :
     # CHECK: lit.ref.store [[TMP]], [[CORO:%.*]] : <
-    # CHECK: lit.call {{.*}}Coroutine{{.*}}__await__{{.*}}([[CORO]], %__result__)
+    # CHECK: lit.call {{.*}}Coroutine{{.*}}__await__{{.*}}([[CORO]], %{{.*}})
     return await inline_async()
 
 
@@ -1042,7 +1051,7 @@ async def mem_result() -> Awaitable:
     var coro = mem_result()
 
 
-# CHECK-LABEL: lit.fn @"mem_raises{{.*}}(?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!Int, {{.*}}> byref_result) throws|async -> !kgen.scalar<bool>
+# CHECK-LABEL: lit.fn @"mem_raises{{.*}}(?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<:meta<!Int> #alias_Int, {{.*}}> byref_result) throws|async -> !kgen.scalar<bool>
 async def mem_raises() raises -> Int:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_raises()"][imm {}, imm {}]()
     # CHECK: [[CORO2:%.*]] = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
@@ -1077,9 +1086,9 @@ def topLevelFunction() -> Int:
         # CHECK-NEXT: lit.ref.load %a
         return a
 
-    # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut *"a`"}:() capturing -> !Int> = <*"nestedFunction()">
+    # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut *"a`"}:() capturing -> !alias_Int1> = <*"nestedFunction()">
     comptime b = nestedFunction
-    # CHECK: lit.call[!lit.generator<:{mut *"a`"}:() capturing -> !Int>: *"nestedFunction()"]()
+    # CHECK: lit.call[!lit.generator<:{mut *"a`"}:() capturing -> !alias_Int1>: *"nestedFunction()"]()
     return nestedFunction()
 
 
@@ -1095,9 +1104,9 @@ struct SomeStruct:
             # CHECK-NEXT: lit.ref.load %a
             return a
 
-        # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut [[A_LT:\*"a`.*"]]}:() capturing -> !Int> = <*"nestedFunction()">
+        # CHECK: lit.alias.decl *"b{{.*}}": !lit.generator<:{mut [[A_LT:\*"a`.*"]]}:() capturing -> !alias_Int1> = <*"nestedFunction()">
         comptime b = nestedFunction
-        # CHECK: lit.call[!lit.generator<:{mut [[A_LT]]}:() capturing -> !Int>: *"nestedFunction()"]()
+        # CHECK: lit.call[!lit.generator<:{mut [[A_LT]]}:() capturing -> !alias_Int1>: *"nestedFunction()"]()
         return nestedFunction()
 
 
@@ -1241,7 +1250,7 @@ def topLevelParamFn[a_param: __mlir_type.index]():
     # CHECK: lit.alias.decl *"thinref{{.*}}": !lit.generator<<"b_param": index>
     comptime thinref = nestedFunction
     # CHECK: lit.call tail @decls::@"nestedFunction[index](){{.*}}"<2>()
-    nestedFunction[Int(2)._mlir_value]()
+    nestedFunction[Int(2).__mlir_index__()]()
 
     var value = 0
 
@@ -1250,7 +1259,7 @@ def topLevelParamFn[a_param: __mlir_type.index]():
     def capturingNestedFunction() -> Int:
         return value
 
-    # CHECK: lit.alias.decl *"fatRef{{.*}}": !lit.generator<() capturing -> !Int> = <*"capturingNestedFunction()">
+    # CHECK: lit.alias.decl *"fatRef{{.*}}": !lit.generator<() capturing -> !alias_Int1> = <*"capturingNestedFunction()">
     comptime fatRef = capturingNestedFunction
 
 
@@ -1262,7 +1271,7 @@ struct SomeParamStruct[c_param: Int]:
 
         # CHECK: lit.alias.decl *"reff{{.*}}": !lit.generator<<"b_param": !Int>
         comptime reff = nestedFunction
-        # CHECK: lit.call tail @decls::@"nestedFunction[::Int](){{.*}}"<{{.*}}2{{.*}}>()
+        # CHECK: lit.call tail @decls::@"nestedFunction[::SIMD[::DType(int), ::SIMDSize(1)]](){{.*}}"<{{.*}}2{{.*}}>()
         nestedFunction[2]()
 
 
@@ -1428,57 +1437,57 @@ struct OverloadedKwArgs:
 
 # CHECK-LABEL: lit.fn @"testOverloadKwArgs
 def testOverloadKwArgs():
-    # CHECK-NEXT: %0 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %0 = kgen.param.constant: !Int = <{:scalar<index> 1}>
     # CHECK-NEXT: %x = lit.var.decl
     # CHECK-NEXT: %1 = lit.call {{.*}}@OverloadedKwArgs{{.*}}single
     var x = OverloadedKwArgs(1)
 
-    # CHECK-NEXT: %2 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %2 = kgen.param.constant: !Int = <{:scalar<index> 1}>
     # CHECK-NEXT: %3 = lit.call {{.*}}@OverloadedKwArgs{{.*}}single
     x = OverloadedKwArgs(single=1)
 
-    # CHECK-NEXT: %4 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %4 = kgen.param.constant: !Int = <{:scalar<index> 1}>
     # CHECK-NEXT: %5 = lit.call {{.*}}@OverloadedKwArgs{{.*}}double
     x = OverloadedKwArgs(double=1)
 
-    # CHECK-NEXT: %6 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %6 = kgen.param.constant: !Int = <{:scalar<index> 1}>
     # CHECK-NEXT: %7 = lit.call {{.*}}@OverloadedKwArgs{{.*}}triple
     x = OverloadedKwArgs(triple=1)
 
-    # CHECK-NEXT: %8 = kgen.param.constant: !Int = <{1}>
-    # CHECK-NEXT: %9 = kgen.param.constant: !Int = <{42}>
+    # CHECK-NEXT: %8 = kgen.param.constant: !Int = <{:scalar<index> 1}>
+    # CHECK-NEXT: %9 = kgen.param.constant: !Int = <{:scalar<index> 42}>
     # CHECK-NEXT: %10 = lit.call {{.*}}@OverloadedKwArgs::@"__setitem__{{.*}}"idx"
     x[1] = 42
 
-    # CHECK-NEXT: %11 = kgen.param.constant: !Int = <{42}>
-    # CHECK-NEXT: %12 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %11 = kgen.param.constant: !Int = <{:scalar<index> 42}>
+    # CHECK-NEXT: %12 = kgen.param.constant: !Int = <{:scalar<index> 1}>
     # CHECK-NEXT: %13 = lit.call {{.*}}@OverloadedKwArgs::@"__setitem__{{.*}}"idx2"
     x[idx2=1] = 42
 
     # CHECK-NEXT: %14 = lit.ref.immut %x : <!OverloadedKwArgs, mut *"x`">
-    # CHECK-NEXT: %15 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %15 = kgen.param.constant: !Int = <{:scalar<index> 1}>
     # CHECK-NEXT: %16 = lit.call {{.*}}@OverloadedKwArgs::@"__getitem__{{.*}}idx
     # CHECK-NEXT: %y = lit.var.decl
-    # CHECK-NEXT: lit.ref.store %16, %y : <!Int, mut *"y`1">
+    # CHECK-NEXT: lit.ref.store %16, %y : <:meta<!Int> #alias_Int, mut *"y`1">
     # CHECK-NEXT: %17 = lit.ref.immut %x : <!OverloadedKwArgs, mut *"x`">
     var y = x[1]
 
-    # CHECK-NEXT: %18 = kgen.param.constant: !Int = <{1}
+    # CHECK-NEXT: %18 = kgen.param.constant: !Int = <{:scalar<index> 1}
     # CHECK-NEXT: %19 = lit.call {{.*}}@OverloadedKwArgs::@"__getitem__{{.*}}idx2
-    # CHECK-NEXT: lit.ref.store %19, %y : <!Int, mut *"y`1">
+    # CHECK-NEXT: lit.ref.store %19, %y : <:meta<!Int> #alias_Int, mut *"y`1">
     y = x[idx2=1]
 
-    # CHECK-NEXT: %20 = kgen.param.constant: !Int = <{1}>
-    # CHECK-NEXT: %21 = kgen.param.constant: !Int = <{2}>
-    # CHECK-NEXT: %22 = kgen.param.constant: !Int = <{3}>
+    # CHECK-NEXT: %20 = kgen.param.constant: !Int = <{:scalar<index> 1}>
+    # CHECK-NEXT: %21 = kgen.param.constant: !Int = <{:scalar<index> 2}>
+    # CHECK-NEXT: %22 = kgen.param.constant: !Int = <{:scalar<index> 3}>
     # CHECK-NEXT: %23 = lit.call {{.*}}@OverloadedKwArgs{{.*}}"y"
     # CHECK-NEXT: %z = lit.var.decl "z" var : !lit.ref<none, mut *"z`2">
     # CHECK-NEXT: lit.ref.store %23, %z : <none, mut *"z`2">
     var z = x.overloaded_fn(1, y=2, z=3)
 
-    # CHECK-NEXT: %24 = kgen.param.constant: !Int = <{1}>
-    # CHECK-NEXT: %25 = kgen.param.constant: !Int = <{2}>
-    # CHECK-NEXT: %26 = kgen.param.constant: !Int = <{3}>
+    # CHECK-NEXT: %24 = kgen.param.constant: !Int = <{:scalar<index> 1}>
+    # CHECK-NEXT: %25 = kgen.param.constant: !Int = <{:scalar<index> 2}>
+    # CHECK-NEXT: %26 = kgen.param.constant: !Int = <{:scalar<index> 3}>
     # CHECK-NEXT: %27 = lit.call {{.*}}@OverloadedKwArgs{{.*}}"y2"
     # CHECK-NEXT: lit.ref.store %27, %z : <none, mut *"z`2">
     z = x.overloaded_fn(1, y2=2, z=3)
@@ -1519,7 +1528,7 @@ def need_positive_int[x: Int]() where x > 0:
     pass
 
 # CHECK-LABEL: lit.struct.decl @ConstraintStruct
-# CHECK-SAME: <a: !Int,{{.*}}<sugar_preserved({{.*}}ge(:scalar<index> from_builtin(#lit.struct.extract<:!Int a, "_mlir_value">), 1)), #loc{{.*}}>
+# CHECK-SAME: <a: !Int,{{.*}}<sugar_preserved({{.*}}ge(:scalar<index> #lit.struct.extract<:!Int a, "_mlir_value">, 1)), #loc{{.*}}>
 struct ConstraintStruct[a: Int] where a > 0:
     comptime b = Self.a + 1
 
@@ -1531,17 +1540,17 @@ struct ConstraintStruct[a: Int] where a > 0:
         need_positive_int[Self.a]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
-# CHECK-SAME: <x: !Int,{{.*}}<sugar_preserved({{.*}}ge(:scalar<index> from_builtin(#lit.struct.extract<:!Int x, "_mlir_value">), 1)), #loc{{.*}}>
+# CHECK-SAME: <x: !Int,{{.*}}<sugar_preserved({{.*}}ge(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">, 1)), #loc{{.*}}>
 def use_constraint_struct[x: Int, cs: ConstraintStruct[x]]() where x > 0:
     need_positive_int[x]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
-# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int, +, cs: !lit.struct<#ConstraintStruct <:!Int *"cs.a`">, <{<sugar_preserved(#lit.struct.extract<:!Bool apply(:!lit.generator<("lhs": !Int, "rhs": !Int) -> !Bool> @std::@builtin::@stubs::@Int::@"__gt__(::Int,::Int)", *"cs.a`", {0}), "_mlir_value">, ge(:scalar<index> from_builtin(#lit.struct.extract<:!Int *"cs.a`", "_mlir_value">), 1)), #loc236>}>>>() -> !kgen.none attributes {sourceName = "use_constraint_struct_autoparam", specialFnKind = 0 : i8} {
+# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int, +, cs: !lit.struct<#ConstraintStruct <:!Int *"cs.a`">, <{<sugar_preserved(#lit.struct.extract<:!Bool apply(:!lit.generator<("self": !Int, "rhs": !Int) -> !Bool> @std::@builtin::@stubs::@SIMD::@"__gt__(::SIMD[$0, $1],::SIMD[$0, $1])"<:!DType {:dtype index}, :!SIMDSize {1}>, *"cs.a`", {:scalar<index> 0}), "_mlir_value">, ge(:scalar<index> #lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)), #loc236>}>>>() -> !kgen.none attributes {sourceName = "use_constraint_struct_autoparam", specialFnKind = 0 : i8} {
 def use_constraint_struct_autoparam[cs: ConstraintStruct[_]]():
     pass
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct_in_constraint
-# CHECK-SAME: <x: !Int, {<sugar_preserved({{.*}}ge(:scalar<index> from_builtin(#lit.struct.extract<:!Int x, "_mlir_value">), 1)){{.*}}>, <sugar_preserved({{.*}}ge(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int x, "_mlir_value">), 1), 2)){{.*}}>}
+# CHECK-SAME: <x: !Int, {<sugar_preserved({{.*}}ge(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">, 1)){{.*}}>, <sugar_preserved({{.*}}ge(:scalar<index> add(#lit.struct.extract<:!Int x, "_mlir_value">, 1), 2)){{.*}}>}
 def use_constraint_struct_in_constraint[x: Int]()
     where x > 0
     where ConstraintStruct[x].b > 1:

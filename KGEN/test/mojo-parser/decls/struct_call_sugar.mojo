@@ -18,5 +18,5 @@ struct PCall:
 # CHECK: lit.fn @"main()"
 def main():
     var pc = PCall()
-    # CHECK: lit.call {{.*}}::@PCall::@"__call__[::Int,{{.*}}]({{.*}}::PCall%,::Int)"
+    # CHECK: lit.call {{.*}}::@PCall::@"__call__[::SIMD[::DType(int), ::SIMDSize(1)],{{.*}}]({{.*}}::PCall%,::SIMD[::DType(int), ::SIMDSize(1)])"
     _ = pc[1](2)

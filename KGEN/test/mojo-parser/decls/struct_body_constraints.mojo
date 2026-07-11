@@ -111,7 +111,7 @@ struct PositiveOnly[N: Int]
 
 
 # expected-error @below {{lacking evidence to prove correctness}}
-# expected-note @below {{add a trailing 'where' clause that requires '(K > 0)'}}
+# expected-note @below {{add a trailing 'where' clause that requires '(K > Int(0))'}}
 def bad_signature_use[K: Int](x: PositiveOnly[K]):
     pass
 

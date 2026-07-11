@@ -27,6 +27,6 @@ def power(lhs: Int, rhs: Int) -> MemPair:
 
 
 # CHECK: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(!Int, !Int, !lit.ref<!MemPair, mut *"__result__`">) -> (!kgen.none): DW_CC_normal>
-# CHECK: #power_name = #debuginfo.source_name<(fn)"power"(#Int_name, #Int_name) from <(module)"debuginfo">>
+# CHECK: #power_name = #debuginfo.source_name<(fn)"power"(#SIMD_name, #SIMD_name) from <(module)"debuginfo">>
 # CHECK: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, sourceName = #power_name, linkageName = "power{{.*}}", file = #{{.*}}, line = [[LN:[0-9]+]], scopeLine = [[LN]], subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
 # CHECK: #[[LOC_FUNC]] = loc(fused<#[[SP]]>

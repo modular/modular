@@ -43,13 +43,13 @@ def test_variadic_kwargs():
 
     # CHECK: %[[X_KEY:.*]] = kgen.param.constant: {{.*}}#StringLiteral <:string "x">
     # CHECK: %[[X_VAL:.*]] = lit.var.decl {{.*}}!Int,
-    # CHECK: %[[IDX9:.*]] = kgen.param.constant: !Int = <{9}>
+    # CHECK: %[[IDX9:.*]] = kgen.param.constant: !Int = <{:scalar<index> 9}>
     # CHECK: lit.ref.store %[[IDX9]], %[[X_VAL]]
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"_insert{{.*}}(%[[DICT_VAR]], %[[X_KEY]], %[[X_VAL]])
 
     # CHECK: %[[S_KEY:.*]] = kgen.param.constant: {{.*}}#StringLiteral <:string "stuff">
     # CHECK: %[[S_VAL:.*]] = lit.var.decl {{.*}}!Int,
-    # CHECK: %[[IDX8:.*]] = kgen.param.constant: !Int = <{8}>
+    # CHECK: %[[IDX8:.*]] = kgen.param.constant: !Int = <{:scalar<index> 8}>
     # CHECK: lit.ref.store %[[IDX8]], %[[S_VAL]]
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"_insert{{.*}}(%[[DICT_VAR]], %[[S_KEY]], %[[S_VAL]])
 
@@ -110,6 +110,6 @@ def takes_kw(**kwargs: MemOnly) -> Int:
 def test_takes_kw_in_assignment(x: MemOnly):
     # CHECK: %[[DICT_VAR:.*]] = lit.var.decl{{.*}}#OwnedKwargsDict <:!AnyType_Copyable_ImplicitlyCopyable_Movable !MemOnly>
     # CHECK: %[[RES:.*]] = lit.call {{.*}}@"takes_kw{{.*}}(%[[DICT_VAR]])
-    # CHECK: %b = lit.var.decl "b" var : !lit.ref<!Int,
+    # CHECK: %b = lit.var.decl "b" var : !lit.ref<:meta<!Int> #alias_Int,
     # CHECK: lit.ref.store %[[RES]], %b
     var b = takes_kw(y=x, z=x)

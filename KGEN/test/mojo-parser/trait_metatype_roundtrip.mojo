@@ -29,7 +29,7 @@ def param_func[T: Trait](value: T) -> Int:
 
 # CHECK-LABEL: lit.fn @"top
 def top[pvalue: SomeStruct[2]]():
-    # CHECK: lit.alias.decl [[alias_decl:.*]]: !lit.struct<#SomeStruct <:!Int {2}>> = <pvalue>
+    # CHECK: lit.alias.decl [[alias_decl:.*]]: !lit.struct<#SomeStruct <:!Int {:scalar<index> 2}>> = <pvalue>
     comptime alias_decl = pvalue
     # CHECK: result{{.*}} = <apply{{.*}} store_to_mem(#alias_alias_decl))>
     comptime result = param_func(alias_decl)

@@ -93,16 +93,16 @@ def use_int(a: Int):
 
 # CHECK-LABEL: lit.fn @"access_param_from_metatype()"
 def access_param_from_metatype():
-    # CHECK-NEXT: lit.alias.decl *"f1`": meta<!lit.struct<#StefStressTest <:!Int {1}>>>
+    # CHECK-NEXT: lit.alias.decl *"f1`": meta<!lit.struct<#StefStressTest <:!Int {:scalar<index> 1}>>>
     comptime f1 = StefStressTest[0].increment()
-    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{1}>
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>
     # CHECK: lit.call {{.*}}@"use_int{{.*}}([[TMP]])
     use_int(f1.x)
 
-    # CHECK: lit.call {{.*}}@"increment()"{{.*}}<:!Int {0}>
-    # CHECK: lit.call {{.*}}@"increment()"{{.*}}<:!Int {1}>
-    # CHECK: [[TMP1:%.*]] = kgen.param.constant: !Int = <{2}>
-    # CHECK-NEXT: lit.call tail {{.*}}@"use_int(::Int)"([[TMP1]])
+    # CHECK: lit.call {{.*}}@"increment()"{{.*}}<:!Int {:scalar<index> 0}>
+    # CHECK: lit.call {{.*}}@"increment()"{{.*}}<:!Int {:scalar<index> 1}>
+    # CHECK: [[TMP1:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
+    # CHECK-NEXT: lit.call tail {{.*}}@"use_int(::SIMD[::DType(int), ::SIMDSize(1)])"([[TMP1]])
     use_int((StefStressTest[0].increment().increment()).x)
 
 
@@ -113,5 +113,5 @@ def meta_type_to_trait[T: type_of(Copyable), //, W: T](t: W):
 
 
 def meta_type_to_trait_driver():
-    # CHECK: lit.call @metatypes::@"meta_type_to_trait[{{.*}}]<:!lit.anytrait<!AnyType_Copyable_Movable> !mt_Int, :!mt_Int !Int>(%1)
+    # CHECK: lit.call @metatypes::@"meta_type_to_trait[{{.*}}]<:!lit.anytrait<!AnyType_Copyable_Movable> meta<!Int>, :meta<!Int> #alias_Int>(%1)
     meta_type_to_trait[Int](1)

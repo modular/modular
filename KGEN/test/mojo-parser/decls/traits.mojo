@@ -205,7 +205,7 @@ def infer_trait[T: SimpleTrait](value: T):
 def test_metatype_to_trait():
     # CHECK: call {{.*}}take_simple_trait{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait !TraitStruct
     take_simple_trait[TraitStruct]()
-    # CHECK: call {{.*}}take_simple_trait{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait {{.*}}@ParametricTraitStruct<:!Int {2}>
+    # CHECK: call {{.*}}take_simple_trait{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait {{.*}}@ParametricTraitStruct<:!Int {:scalar<index> 2}>
     take_simple_trait[ParametricTraitStruct[2]]()
 
 
@@ -215,7 +215,7 @@ def test_infer_trait(
 ):
     # CHECK: call {{.*}}infer_trait{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait !TraitStruct
     infer_trait(a)
-    # CHECK: call {{.*}}infer_trait{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait {{.*}}@ParametricTraitStruct<:!Int {2}>
+    # CHECK: call {{.*}}infer_trait{{.*}}<:!AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait {{.*}}@ParametricTraitStruct<:!Int {:scalar<index> 2}>
     infer_trait(b)
 
 
@@ -478,7 +478,7 @@ struct RegPassableRequiredType(RequiredType):
         pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}RequiredType
-    # CHECK: kgen.witness "use_it{{.*}}" : {{.*}}def(arg: ::Int) thin -> ::Int
+    # CHECK: kgen.witness "use_it{{.*}}" : {{.*}}def(arg: ::SIMD[::DType(int), ::SIMDSize(1)]) thin -> ::SIMD[::DType(int), ::SIMDSize(1)]
 
 
 # CHECK-LABEL: lit.fn @"bind_regpassable_required_type

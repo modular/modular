@@ -24,17 +24,17 @@ def var_decls():
     # CHECK: %y = lit.var.decl "y" var
     var y: Int
 
-    # CHECK: %[[Y:.*]] = lit.ref.load %y
+    # CHECK: %[[Y:.*]] = lit.ref.load %{{.*}}
     # CHECK: %[[F:.*]] = lit.call {{.*}}::@"fudge_int{{.*}}(%[[Y]])
     # CHECK: lit.ref.store %[[F]], %y
     y = fudge_int(y)
 
-    # CHECK: %z = lit.var.decl {{.*}} : !lit.ref<!Int,
+    # CHECK: %z = lit.var.decl {{.*}} : !lit.ref<:meta<!Int> #alias_Int,
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %y
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
     var z = y
     z = 42
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: !Int = <{42}>
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 42})>
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
 
 
@@ -96,7 +96,7 @@ def var_decls_implicit() raises -> None:
     # CHECK: %x = lit.var.decl "x" imp
     x = 123
 
-    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{42}>
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 42}>
     # CHECK: [[F:%.*]] = lit.call {{.*}}::@"fudge_int{{.*}}([[TMP]])
     # CHECK: lit.ref.store [[F]], %x
     x = fudge_int(42)
@@ -152,7 +152,7 @@ def reuse_implicit(a: Int, cond: __mlir_type.`!kgen.scalar<bool>`) raises:
 
 # CHECK-LABEL: lit.fn @"addrSpaces
 def addrSpaces[lt1: MutOrigin, lt2: ImmutOrigin, as1: AddressSpace]():
-    # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut {{.*}}lt1{{.*}}, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "_mlir_value">>
+    # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut {{.*}}lt1{{.*}}, #lit.struct.extract<:!SIMDSize #lit.struct.extract<:!AddressSpace as1, "_value">, "_mlir_value">>
     var ref1: Pointer[MemExample, lt1, as1]._mlir_type
 
     # CHECK: lit.alias.decl [[AS2:.*]]: !AddressSpace = {{.*}} {42}

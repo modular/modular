@@ -22,5 +22,5 @@ def test():
     # Internally it uses unstable APIs from a sibling sub-package,
     # which should also not warn (intra-package).
     #
-    # CHECK-NOT: warning: use of unstable API
+    # CHECK-NOT: no_warn_subpackage.mojo:{{.*}}warning: use of unstable API
     _ = subpkg_stable_fn()

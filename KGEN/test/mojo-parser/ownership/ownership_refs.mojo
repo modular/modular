@@ -225,7 +225,7 @@ def testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
 
 # CHECK-LABEL: lit.fn @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
-# CHECK-SAME: !lit.struct<#Pointer <{{.*}}:origin<false> *"a`">> *?, :!AddressSpace {_value: !Int = {0}}>>
+# CHECK-SAME: !lit.struct<#Pointer <{{.*}}:origin<false> *"a`">> *?, :!AddressSpace {_value: !SIMDSize = {0}}>>
 def testLifetimeOf1(a: MemExample) -> Pointer[MemExample, origin_of(a)]:
   return Pointer(to=a)
 
@@ -557,6 +557,6 @@ def test_interior0():
     var list = MyListInterior[Int]()
     # CHECK: lit.call {{.*}}MyListInterior::@"__getitem__
     ref elt = list[4]
-    # CHECK: lit.call {{.*}}Int::@"__iadd__
+    # CHECK: lit.call {{.*}}SIMD::@"__iadd__
     elt += 4
     # CHECK: lit.call {{.*}}MyListInterior::@"__del__

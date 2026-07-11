@@ -524,16 +524,16 @@ def takeWith4(a: StructWithFlexParam[4]):
 
 def test_print_apply_expressions():
     # expected-note @below {{.T of the first type is '__MLIRType[None]' but the second type is 'Int'}}
-    # expected-error @below {{from 'StructWithFlexParam[vararg_example(0, 1, 2, 3, 4, other=5)]' to}}
+    # expected-error @below {{invalid call to 'takeWith4': value passed to 'a' cannot be converted from 'StructWithFlexParam[vararg_example(Int(0), Int(1), Int(2), Int(3), Int(4), other=Int(5))]' to 'StructWithFlexParam[Int(4)]'}}
     takeWith4(StructWithFlexParam[vararg_example(0, 1, 2, 3, 4, other=5)]())
     # expected-note @below {{.T of the first type is '__MLIRType[None]' but the second type is 'Int'}}
-    # expected-error @below {{from 'StructWithFlexParam[pack_example[Int, String](0, String("foo"), other=5)]' to}}
+    # expected-error @below {{invalid call to 'takeWith4': value passed to 'a' cannot be converted from 'StructWithFlexParam[pack_example[Int, String](Int(0), String("foo"), other=Int(5))]' to 'StructWithFlexParam[Int(4)]'}}
     takeWith4(StructWithFlexParam[pack_example(0, "foo", other=5)]())
     # expected-note @below {{.T of the first type is '__MLIRType[None]' but the second type is 'Int'}}
-    # expected-error @below {{from 'StructWithFlexParam[generic_example(0)]' to}}
+    # expected-error @below {{from 'StructWithFlexParam[generic_example(Int(0))]' to}}
     takeWith4(StructWithFlexParam[generic_example(0)]())
     # expected-note @below {{.T of the first type is '__MLIRType[None]' but the second type is 'Int'}}
-    # expected-error @below {{from 'StructWithFlexParam[vararg_example(other=5)]' to}}
+    # expected-error @below {{invalid call to 'takeWith4': value passed to 'a' cannot be converted from 'StructWithFlexParam[vararg_example(other=Int(5))]' to 'StructWithFlexParam[Int(4)]'}}
     takeWith4(StructWithFlexParam[vararg_example(other=5)]())
 
 

@@ -119,9 +119,11 @@ def test_writeback1[x: Int, y: Int](mut a: IndexArray, mut b: IndexArrayArray):
     # CHECK-NEXT: %[[V1:.*]] = lit.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])
     # CHECK-NEXT: %[[LT:.*]] = lit.var.decl "anonymous*" synth
     # CHECK-NEXT: lit.ref.store %[[V1]], %[[LT]]
-    # CHECK-NEXT: lit.call {{.*}}takes_inout_int{{.*}}(%[[LT]])
+    # CHECK-NEXT: %[[LTR:.*]] = kgen.rebind %[[LT]] {{.*}} to !lit.ref<!Int
+    # CHECK-NEXT: lit.call {{.*}}takes_inout_int{{.*}}(%[[LTR]])
+    # CHECK-NEXT: %[[LTR2:.*]] = kgen.rebind %[[LT]] {{.*}} to !lit.ref<!Int
     # CHECK-NEXT: %[[V3:.*]] = kgen.param.constant: !Int = <x>
-    # CHECK-NEXT: %[[V4:.*]] = lit.ref.load %[[LT]]
+    # CHECK-NEXT: %[[V4:.*]] = lit.ref.load %[[LTR2]]
     # CHECK-NEXT: lit.call {{.*}}__setitem__{{.*}}(%a, %[[V3]], %[[V4]])
     takes_inout_int(a[x])
 
@@ -136,15 +138,17 @@ def test_writeback2[x: Int, y: Int](mut a: IndexArray, mut b: IndexArrayArray):
 
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant: !Int = <x>
     # CHECK-NEXT: lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[LT2]])
-    # CHECK-NEXT: %[[LT1:.*]] = lit.var.decl {{.*}}!lit.ref<!Int
+    # CHECK-NEXT: %[[LT1:.*]] = lit.var.decl {{.*}}!lit.ref<:meta<!Int> #alias_Int
     # CHECK-NEXT: lit.ref.store %[[V5]], %[[LT1]]
-    # CHECK-NEXT: lit.call {{.*}}takes_inout_int{{.*}}(%[[LT1]])
+    # CHECK-NEXT: %[[LT1R:.*]] = kgen.rebind %[[LT1]] {{.*}} to !lit.ref<!Int
+    # CHECK-NEXT: lit.call {{.*}}takes_inout_int{{.*}}(%[[LT1R]])
+    # CHECK-NEXT: %[[LT1R2:.*]] = kgen.rebind %[[LT1]] {{.*}} to !lit.ref<!Int
 
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant: !Int = <x>
     # CHECK-NEXT: %[[LT3:.*]] = lit.var.decl {{.*}}!IndexArray
     # CHECK-NEXT: lit.call {{.*}}__getitem__{{.*}}(%b, %[[C1]], %[[LT3]])
     # CHECK-NEXT: %[[C2:.*]] = kgen.param.constant: !Int = <y>
-    # CHECK-NEXT: %[[V9:.*]] = lit.ref.load %[[LT1]]
+    # CHECK-NEXT: %[[V9:.*]] = lit.ref.load %[[LT1R2]]
     # CHECK-NEXT: lit.call {{.*}}__setitem__{{.*}}(%[[LT3]], %[[C2]], %[[V9]])
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant: !Int = <x>
     # CHECK-NEXT: %[[V11:.*]] = lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[LT3]])
@@ -161,7 +165,7 @@ struct RegWeirdArray(RegisterPassable):
 
 # CHECK-LABEL: lit.fn @"test_dlvalue_to_pvalue
 def test_dlvalue_to_pvalue[arr: RegWeirdArray, y: Int]():
-    # CHECK-NEXT: lit.alias.decl *"x{{.*}}": !Int = <apply({{.*}}@RegWeirdArray::@"__getitem__{{.*}}"), store_to_mem(arr), y)>
+    # CHECK-NEXT: lit.alias.decl *"x{{.*}}": !alias_Int1 = <apply({{.*}}@RegWeirdArray::@"__getitem__{{.*}}"), store_to_mem(arr), y)>
     comptime x = arr[y]
 
 
@@ -188,7 +192,7 @@ def test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
     _ = a.x
     # CHECK: lit.call {{.*}}__getattr_param__{{.*}}!lit.struct<#StringLiteral <:string "y">> *?>(%a)
     _ = a.y
-    # CHECK: lit.call {{.*}}__getitem_param__{{.*}}<:!Int {2}, :!Int {4}>(%b)
+    # CHECK: lit.call {{.*}}__getitem_param__{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 4}>(%b)
     _ = b[2, 4]
 
 
@@ -226,7 +230,7 @@ def testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
     # Setter needs to pass the new value as 'val', not in the variadics.
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create [{{.*}}]
-    # CHECK: lit.call {{.*}}VariadicIndexList::@"__setitem__{{.*}}(%foo, {{.*}}, %the_value)
+    # CHECK: lit.call {{.*}}VariadicIndexList::@"__setitem__{{.*}}(%foo, {{.*}}, {{.*}})
     foo[i, i, i, i] = the_value
 
 
@@ -279,11 +283,12 @@ def test_ref_subscript_binding(mut d: MinimalDict) raises -> ref[d[0]] Int:
     # Check that a ref returned by the getitem is directly passed.
 
     # CHECK-NEXT: [[DIMM:%.*]] = lit.ref.immut %d
-    # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>
+    # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}@MinimalDict::@"__getitem__{{.*}}([[DIMM]], [[ZERO]], %__error__, %__call_result_tmp__)
     # CHECK-NEXT: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
-    # CHECK-NEXT: lit.call {{.*}}take_ref{{.*}}([[REF]])
+    # CHECK-NEXT: [[REFR:%.*]] = kgen.rebind [[REF]] {{.*}} to !lit.ref<!Int
+    # CHECK-NEXT: lit.call {{.*}}take_ref{{.*}}([[REFR]])
     take_ref(d[0])
 
     ref some_ref = d[0]

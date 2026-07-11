@@ -88,9 +88,9 @@ struct MiniPack[
             pass
 
     # CHECK-LABEL: lit.fn @"refine_param_list_get_after_assert
-    # CHECK: kgen.param.assert <sugar_preserved({{.*}}conforms_to(:!kgen.param<{{.*}}element_trait> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>{{.*}}>
+    # CHECK: kgen.param.assert <sugar_preserved({{.*}}conforms_to(:!kgen.param<{{.*}}element_trait> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, to_builtin(:scalar<index> #lit.struct.extract<:!Int i, "_mlir_value">)>{{.*}}>
     # CHECK: [[ITEM:%.*]] = lit.call tail @type_refinement_ir::@MiniPack::@"get_element
-    # CHECK: [[REBIND:%.*]] = kgen.rebind [[ITEM]] : {{.*}}#kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>{{.*}} to {{.*}}downcast(:!kgen.param<{{.*}}> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>){{.*}}
+    # CHECK: [[REBIND:%.*]] = kgen.rebind [[ITEM]] : {{.*}}#kgen.param_list.get<{{.*}}element_types.values{{.*}}, to_builtin(:scalar<index> #lit.struct.extract<:!Int i, "_mlir_value">)>{{.*}} to {{.*}}downcast(:!kgen.param<{{.*}}> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, to_builtin(:scalar<index> #lit.struct.extract<:!Int i, "_mlir_value">)>){{.*}}
     # CHECK: lit.call{{.*}}@"use_extra{{.*}}([[REBIND]])
     def refine_param_list_get_after_assert[i: Int](self):
         comptime element_type = Self.element_types[i]
@@ -108,12 +108,12 @@ struct BaseMiniPack[
             pass
 
     # CHECK-LABEL: lit.fn @"refine_param_list_get_preserves_parametric_bound
-    # CHECK: kgen.param.assert <sugar_preserved({{.*}}conforms_to(:!kgen.param<{{.*}}element_trait> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>{{.*}}>
+    # CHECK: kgen.param.assert <sugar_preserved({{.*}}conforms_to(:!kgen.param<{{.*}}element_trait> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, to_builtin(:scalar<index> #lit.struct.extract<:!Int i, "_mlir_value">)>{{.*}}>
     # CHECK: [[EXTRA_ITEM:%.*]] = lit.call tail @type_refinement_ir::@BaseMiniPack::@"get_element
-    # CHECK: [[EXTRA_REBIND:%.*]] = kgen.rebind [[EXTRA_ITEM]] : {{.*}}#kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>{{.*}} to {{.*}}Base_Extra downcast(:!kgen.param<{{.*}}> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>){{.*}}
+    # CHECK: [[EXTRA_REBIND:%.*]] = kgen.rebind [[EXTRA_ITEM]] : {{.*}}#kgen.param_list.get<{{.*}}element_types.values{{.*}}, to_builtin(:scalar<index> #lit.struct.extract<:!Int i, "_mlir_value">)>{{.*}} to {{.*}}Base_Extra downcast(:!kgen.param<{{.*}}> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, to_builtin(:scalar<index> #lit.struct.extract<:!Int i, "_mlir_value">)>){{.*}}
     # CHECK: lit.call{{.*}}@"use_extra{{.*}}([[EXTRA_REBIND]])
     # CHECK: [[BASE_ITEM:%.*]] = lit.call tail @type_refinement_ir::@BaseMiniPack::@"get_element
-    # CHECK: [[BASE_REBIND:%.*]] = kgen.rebind [[BASE_ITEM]] : {{.*}}#kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>{{.*}} to {{.*}}Base_Extra downcast(:!kgen.param<{{.*}}> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>){{.*}}
+    # CHECK: [[BASE_REBIND:%.*]] = kgen.rebind [[BASE_ITEM]] : {{.*}}#kgen.param_list.get<{{.*}}element_types.values{{.*}}, to_builtin(:scalar<index> #lit.struct.extract<:!Int i, "_mlir_value">)>{{.*}} to {{.*}}Base_Extra downcast(:!kgen.param<{{.*}}> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, to_builtin(:scalar<index> #lit.struct.extract<:!Int i, "_mlir_value">)>){{.*}}
     # CHECK: lit.call{{.*}}@"use_base{{.*}}([[BASE_REBIND]])
     def refine_param_list_get_preserves_parametric_bound[i: Int](self):
         comptime element_type = Self.element_types[i]

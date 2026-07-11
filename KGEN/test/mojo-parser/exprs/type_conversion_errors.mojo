@@ -122,7 +122,7 @@ struct MyBool:
 
 
 def test_bad_conversion(a: MySIMD[0]):
-    # expected-error @+1 {{cannot implicitly convert 'MySIMD[0]' value to 'MySIMD[1]'}}
+    # expected-error @+1 {{cannot implicitly convert 'MySIMD[Int(0)]' value to 'MySIMD[Int(1)]'}}
     var b: MySIMD[1] = a
 
 

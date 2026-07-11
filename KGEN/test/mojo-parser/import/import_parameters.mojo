@@ -11,7 +11,7 @@ from test_package.module import ParameterizedType
 
 # CHECK-LABEL: lit.fn @"reference_params_through_imported_struct
 def reference_params_through_imported_struct():
-    # CHECK: kgen.param.constant: !Int = <{10}>
+    # CHECK: kgen.param.constant: !Int = <{:scalar<index> 10}>
     var cached_type: ParameterizedType[10]
     var value = cached_type.value
 

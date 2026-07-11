@@ -125,7 +125,7 @@ def test_unmaterializable_value_in_tstring():
 
 def test_runtime_value_in_comptime_tstring():
     var x = 42
-    # expected-error @below {{cannot use dynamic value in comptime initializer}}
+    # expected-error @below {{cannot use a dynamic value in comptime initializer}}
     comptime tstring = t"Value: {x}"
 
 # =============================================================================
@@ -181,7 +181,7 @@ def test_raw_incomplete_expression():
 
 def test_raw_runtime_value_in_comptime_tstring():
     var x = 42
-    # expected-error @below {{cannot use dynamic value in comptime initializer}}
+    # expected-error @below {{cannot use a dynamic value in comptime initializer}}
     comptime tstring = rt"Value: {x}"
 
 

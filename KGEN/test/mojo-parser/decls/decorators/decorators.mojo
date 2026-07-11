@@ -52,7 +52,7 @@ struct DecoratedStruct:
 # CHECK: lit.fn @"test_always_inline()"() -> index always_inline
 @always_inline
 def test_always_inline() -> __mlir_type.index:
-    return Int(1)._mlir_value
+    return Int(1).__mlir_index__()
 
 
 # CHECK-LABEL: lit.fn @"test_always_inline_no_debug
@@ -107,7 +107,7 @@ struct AIBuiltinPair(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.fn @"test_ai_builtin_pair
 def test_ai_builtin_pair():
-    # CHECK-NEXT: lit.alias.decl *"example{{.*}}!AIBuiltinPair {a: !Int = {1}, b: !Int = {2}}
+    # CHECK-NEXT: lit.alias.decl *"example{{.*}}!AIBuiltinPair {a: !Int = {:scalar<index> 1}, b: !Int = {:scalar<index> 2}}
     comptime example = AIBuiltinPair(1, 2)
 
 
@@ -254,7 +254,7 @@ def register_internal(x: StaticString):
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder1">
 # CHECK: decorators <{{.*}}:string "custom.op"
-# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder1
+# CHECK: lit.fn @"__init__(::SIMD[::DType(int), ::SIMDSize(1)])"(%a: !alias_Int1) -> !DecoratorOrder1
 @register_internal("custom.op")
 @deprecated("DecoratorOrder1")
 @fieldwise_init
@@ -266,7 +266,7 @@ struct DecoratorOrder1(TrivialRegisterPassable):
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder2">
 # CHECK: decorators <{{.*}}:string "custom.op"
-# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder2
+# CHECK: lit.fn @"__init__(::SIMD[::DType(int), ::SIMDSize(1)])"(%a: !alias_Int1) -> !DecoratorOrder2
 @deprecated("DecoratorOrder2")
 @register_internal("custom.op")
 @fieldwise_init
@@ -278,7 +278,7 @@ struct DecoratorOrder2(TrivialRegisterPassable):
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder3">
 # CHECK: decorators <{{.*}}:string "custom.op"
-# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder3
+# CHECK: lit.fn @"__init__(::SIMD[::DType(int), ::SIMDSize(1)])"(%a: !alias_Int1) -> !DecoratorOrder3
 @fieldwise_init
 @deprecated("DecoratorOrder3")
 @register_internal("custom.op")
@@ -290,7 +290,7 @@ struct DecoratorOrder3(TrivialRegisterPassable):
 # CHECK-SAME: register_passable_trivial
 # CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder4">
 # CHECK: decorators <{{.*}}:string "custom.op"
-# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder4
+# CHECK: lit.fn @"__init__(::SIMD[::DType(int), ::SIMDSize(1)])"(%a: !alias_Int1) -> !DecoratorOrder4
 @fieldwise_init
 @register_internal("custom.op")
 @deprecated("DecoratorOrder4")
@@ -347,7 +347,7 @@ struct ValueMem(ImplicitlyCopyable):
 # CHECK-NEXT: lit.ref.store [[TMP]], %3
 
 # CHECK: lit.fn @"__init__(
-# CHECK-SAME:  %a: !Int,
+# CHECK-SAME:  %a: !alias_Int1,
 # CHECK-SAME:  %b: !lit.ref<!StructExample, mut *"b`"> owned_in_mem,
 # CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> byref_result
 # CHECK-SAME: ) -> !kgen.none always_inline_no_debug attributes {isStatic, sourceName = "__init__", specialFnKind = 2 : i8, synthetic} {
@@ -417,7 +417,7 @@ struct ValueReg(ImplicitlyCopyable, RegisterPassable):
 
 # CHECK: lit.fn @"__init__(
 # CHECK-SAME:  (
-# CHECK-SAME:  %a: !Int,
+# CHECK-SAME:  %a: !alias_Int1,
 # CHECK-SAME:  %b: !lit.ref<!StructExample, mut *"b`"> owned_in_mem
 # CHECK-SAME: ) -> !ValueReg
 # CHECK-NEXT: %self = lit.var.decl "self"
@@ -438,7 +438,7 @@ struct Foo(ImplicitlyCopyable):
     var self: Int
 
 
-# CHECK: lit.fn @"__init__{{.*}}(%a: !Int, %self: !Int, ?, %self_0[self]: !lit.ref<!Foo, mut {{.*}}> byref_result)
+# CHECK: lit.fn @"__init__{{.*}}(%a: !alias_Int1, %self: !alias_Int1, ?, %self_0[self]: !lit.ref<!Foo, mut {{.*}}> byref_result)
 
 
 # CHECK-LABEL: lit.struct.decl @ParamVarArg
@@ -481,7 +481,7 @@ struct VarArgInit(TrivialRegisterPassable):
     def __init__(out self, *values: ValueMem):
         self.a = 42
 
-    # CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !VarArgInit
+    # CHECK: lit.fn @"__init__(::SIMD[::DType(int), ::SIMDSize(1)])"(%a: !alias_Int1) -> !VarArgInit
 
 
 # COM: Body resolution of `Node` will recurse on itself. Make sure that the

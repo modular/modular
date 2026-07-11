@@ -139,7 +139,7 @@ struct FieldwiseInitExample1[T: Movable & ImplicitlyDeletable]:
 
 # CHECK-LABEL: lit.struct.decl @FieldwiseInitExample1
 # CHECK: lit.fn @"__init__
-# CHECK-SAME: (%x: !Int, %y: !lit.ref<:!AnyType_ImplicitlyDeletable_Movable T, mut *"y`"> owned_in_mem,
+# CHECK-SAME: (%x: !alias_Int1, %y: !lit.ref<:!AnyType_ImplicitlyDeletable_Movable T, mut *"y`"> owned_in_mem,
 # CHECK-SAME: %self: !lit.ref<{{.*}}> byref_result)
 # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[x]
 # CHECK-NEXT: lit.ref.store %x, [[TMP]]
@@ -155,7 +155,7 @@ struct FieldwiseInitExample2:
 
 
 # CHECK-LABEL: lit.fn @"testFieldwiseInitExample2
-# CHECK: FieldwiseInitExample2::@"__init__{{.*}}(%a, %b)
+# CHECK: FieldwiseInitExample2::@"__init__{{.*}}(%0, %b)
 def testFieldwiseInitExample2(a: Int):
     var b: FieldwiseInitExample2 = a
 

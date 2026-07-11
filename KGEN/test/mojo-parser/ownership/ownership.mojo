@@ -164,7 +164,7 @@ def test_parameterized():
   # expected-warning @+1 {{assignment to 'x' was never used}}
   var x = Parameterized[4]()
   # CHECK: lit.call {{.*}}@"__init__{{.*}}(%x)
-  # CHECK: lit.call {{.*}}__del__{{.*}}<:!Int {4}>(%x)
+  # CHECK: lit.call {{.*}}__del__{{.*}}<:!Int {:scalar<index> 4}>(%x)
 
 struct Complicated:
   var a: MemExample
@@ -772,8 +772,9 @@ def variadic_field_sensitivity():
 def variadic_inout_mems(mut *mems: MemExample):
   # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__getitem__{{.*}}(%mems, [[ZERO]])
-  # CHECK-NEXT: [[XREF:%.*]] = lit.ref.struct.ger [[REF]][x]
+  # CHECK-NEXT: [[XGER:%.*]] = lit.ref.struct.ger [[REF]][x]
   # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant
+  # CHECK-NEXT: [[XREF:%.*]] = kgen.rebind [[XGER]]
   # CHECK-NEXT: lit.call {{.*}}__iadd__{{.*}}([[XREF]], [[ONE]])
   mems[0].x += 1
 
@@ -1314,7 +1315,7 @@ def testConds3(cond: __mlir_type.`!kgen.scalar<bool>`, var a: MemExample, var b:
   consume(t2^)
 
 # CHECK-LABEL: lit.fn @"my_min1
-# CHECK-SAME: !lit.ref<!Int, mut=and(*"x_is_mut`", *"y_is_mut`2"), {(mutcast mut=*"x_is_mut`", *"x_is_origin`1"), (mutcast mut=*"y_is_mut`2", *"y_is_origin`3")}>
+# CHECK-SAME: !lit.ref<:meta<!Int> #alias_Int, mut=and(*"x_is_mut`", *"y_is_mut`2"), {(mutcast mut=*"x_is_mut`", *"x_is_origin`1"), (mutcast mut=*"y_is_mut`2", *"y_is_origin`3")}>
 def my_min1(cond: __mlir_type.`!kgen.scalar<bool>`, ref x: Int, ref y: Int) -> ref [x, y] Int:
   # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %x
@@ -1324,7 +1325,8 @@ def my_min1(cond: __mlir_type.`!kgen.scalar<bool>`, ref x: Int, ref y: Int) -> r
   # CHECK-NEXT:    hlcf.yield [[TMP]]{{.*}}
   # CHECK-NEXT: }
 
-  # CHECK-NEXT: kgen.return [[IF]]
+  # CHECK-NEXT: [[RET:%.*]] = kgen.rebind [[IF]]
+  # CHECK-NEXT: kgen.return [[RET]]
   return x if cond else y
 
 # CHECK-LABEL: lit.fn @"my_min2
@@ -1474,7 +1476,7 @@ struct TestRaiseFromInit:
         # CHECK-NEXT: %0 = lit.ref.struct.ger %self[y]
         # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}(%0)
         # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%0)
-        # CHECK-NEXT: kgen.param.constant: !Int = <{42}>
+        # CHECK-NEXT: kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 42})>
         self.y = String()
         raise 42
 

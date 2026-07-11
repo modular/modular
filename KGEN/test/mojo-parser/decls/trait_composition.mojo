@@ -210,7 +210,7 @@ trait IntConstructable:
 
 # CHECK-LABEL: lit.fn @"useIntConstructable
 def useIntConstructable[T: Defaultable & IntConstructable]() -> T:
-    # CHECK: %[[INT33:.*]] = {{.*}} !Int = <{33}>
+    # CHECK: %[[INT33:.*]] = {{.*}} !Int = <{:scalar<index> 33}>
     # CHECK: lit.call tail[
     # CHECK-SAME: #kgen.get_witness<:!AnyType_Defaultable_IntConstructable T{{.*}}, "trait_composition::IntConstructable", "__init__{{.*}}">
     # CHECK-SAME: %[[INT33]]

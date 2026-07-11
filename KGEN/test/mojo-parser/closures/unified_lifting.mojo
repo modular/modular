@@ -11,7 +11,7 @@
 # CHECK-NOT: kgen.struct.generator @"outer()::stateless"
 # CHECK-NOT: lit.struct.decl @"def() -> Int_Mova_Impl_Copy_Impl"
 
-# CHECK-DAG: [[INT:!.*]] = !lit.struct<@{{.*}}::@Int>
+# CHECK-DAG: [[INT:!.*]] = !kgen.param<:meta<{{.*}}> #alias_Int>
 # CHECK-DAG: lit.fn @"outer()"() -> [[INT]]
 # CHECK-DAG: lit.fn @"stateless()`{{.*}}"() -> [[INT]] attributes {{{.*}}sourceName = "stateless"
 
@@ -27,9 +27,9 @@ def outer() -> Int:
 
 # COM: Verify that stateless closures with the same name in different functions don't collide.
 
-# CHECK: lit.fn @"one()"() -> !Int
+# CHECK: lit.fn @"one()"() -> !alias_Int1
 # CHECK: %0 = lit.call tail @{{.*}}::@"[[STATELESS1:stateless.*]]"()
-# CHECK: lit.fn @"two()"() -> !Int
+# CHECK: lit.fn @"two()"() -> !alias_Int1
 # CHECK-NOT: %0 = lit.call tail @{{.*}}::@"[[STATELESS1]]"()
 
 

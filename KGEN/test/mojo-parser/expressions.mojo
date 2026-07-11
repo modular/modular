@@ -19,7 +19,7 @@ struct MemoryOnlyInt(ImplicitlyCopyable):
   @implicit
   def __init__(out self, a: Int = 42):
     # CHECK: %0 = lit.ref.struct.ger %self[x]
-    # CHECK: %1 = {{.*}}constant: !Int = <{1}>
+    # CHECK: %1 = {{.*}}constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
     # CHECK: lit.ref.store %1, %0
     self.x = 1
   def __del__(deinit self): pass
@@ -65,13 +65,13 @@ struct MemoryOnlyPair(ImplicitlyCopyable):
   def method(var self, var arg: MemoryOnlyInt):
     # CHECK: %0 = lit.ref.struct.ger %self[y]
     # CHECK: %1 = lit.ref.struct.ger %arg[x]
-    # CHECK: %2 = lit.ref.load %0
-    # CHECK: %3 = lit.ref.load %1
-    # CHECK: %4 = lit.call {{.*}}__add__{{.*}}"(%2, %3)
+    # CHECK: %4 = lit.ref.load %2
+    # CHECK: %5 = lit.ref.load %3
+    # CHECK: %6 = lit.call {{.*}}__add__{{.*}}(%4, %5)
     _ = self.y+arg.x
 
 def inferred_function_with_memory_result[
-  width: Int](x: SIMD[DType.float32, width]) -> MemoryOnlyInt: pass
+  width: SIMDSize](x: SIMD[DType.float32, width]) -> MemoryOnlyInt: pass
 
 # CHECK-LABEL: lit.fn @"memoryOnlyOps
 def memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
@@ -135,7 +135,7 @@ def memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: lit.ownership.use [[TMP]]
 
   # Memory-only default argument with memory-only result.
-  # CHECK-NEXT: %[[C42:.*]] = {{.*}}constant: !Int = <{42}>
+  # CHECK-NEXT: %[[C42:.*]] = {{.*}}constant: !Int = <{:scalar<index> 42}>
   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%[[C42]], [[TMP]])
   _ = MemoryOnlyInt()
@@ -193,7 +193,8 @@ struct RegPassable(ImplicitlyCopyable, RegisterPassable):
   # CHECK-LABEL: lit.fn @"__init__
   # CHECK-NEXT: %self = lit.var.decl "self" initoutarg
   # CHECK-NEXT: [[VALREF:%.*]] = lit.ref.struct.ger %self[value]
-  # CHECK-NEXT: lit.ref.store %value, [[VALREF]]
+  # CHECK-NEXT: [[VAL:%.*]] = kgen.rebind %value
+  # CHECK-NEXT: lit.ref.store [[VAL]], [[VALREF]]
   # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %self
   # CHECK-NEXT: lit.return [[TMP]]
   @implicit
@@ -222,9 +223,9 @@ struct StructWithFuncParam[comparator: def[T: TrivialRegisterPassable] (T) thin 
 
 # CHECK-LABEL: lit.fn @"simpleMath
 def simpleMath(a: Int, b: Int) -> Int:
-  # CHECK: %0 = lit.call {{.*}}Int::@"__mul__{{.*}}(%b, %a)
-  # CHECK: %1 = lit.call {{.*}}Int::@"__sub__{{.*}}(%a, %0)
-  # CHECK: lit.return %1 : !Int
+  # CHECK: %0 = lit.call {{.*}}SIMD::@"__mul__{{.*}}(%b, %a)
+  # CHECK: %1 = lit.call {{.*}}SIMD::@"__sub__{{.*}}(%a, %0)
+  # CHECK: lit.return %2 : !alias_Int1
   return a-b*a
 
 # CHECK-LABEL: lit.fn @"precedence_associativity
@@ -232,44 +233,64 @@ def precedence_associativity(a: Int):
   # CHECK: %z = lit.var.decl "z" var
   var z: Int = 0
 
-  # CHECK: [[SEVENTEENINT:%.*]] = kgen{{.*}}{17}
+  # CHECK: [[SEVENTEENINT:%.*]] = kgen{{.*}}{:scalar<index> 17}
   # CHECK-NEXT: lit.ref.store [[SEVENTEENINT]], %z
   z = 17  # Implicit conversion
 
-  # CHECK-NEXT: %[[Z:.*]] = lit.ref.load %z
-  # CHECK-NEXT: %[[POW0:.*]] = lit.call {{.*}}Int::@"__pow__{{.*}}(%a, %[[Z]])
-  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}{2}
-  # CHECK-NEXT: %[[POW1:.*]] = lit.call {{.*}}Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
-  # CHECK-NEXT: lit.ref.store %[[POW1]], %z
+  # CHECK-NEXT: %[[ZREF:.*]] = kgen.rebind %z
+  # CHECK-NEXT: %[[Z:.*]] = lit.ref.load %[[ZREF]]
+  # CHECK-NEXT: %[[POW0:.*]] = lit.call {{.*}}SIMD::@"__pow__{{.*}}(%a, %[[Z]])
+  # CHECK-NEXT: %[[POW0A:.*]] = kgen.rebind %[[POW0]]
+  # CHECK-NEXT: %[[POW0B:.*]] = kgen.rebind %[[POW0A]]
+  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}{:scalar<index> 2}
+  # CHECK-NEXT: %[[POW1:.*]] = lit.call {{.*}}SIMD::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0B]])
+  # CHECK-NEXT: %[[POW1R:.*]] = kgen.rebind %[[POW1]]
+  # CHECK-NEXT: lit.ref.store %[[POW1R]], %z
   z = 2**(a**z)
-  # CHECK-NEXT: %[[Z:.*]] = lit.ref.load %z
-  # CHECK-NEXT: %[[POW0:.*]] = lit.call {{.*}}Int::@"__pow__{{.*}}(%a, %[[Z]])
-  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}{2}
-  # CHECK-NEXT: %[[POW1:.*]] = lit.call {{.*}}Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
-  # CHECK-NEXT: lit.ref.store %[[POW1]], %z
+  # CHECK-NEXT: %[[ZREF:.*]] = kgen.rebind %z
+  # CHECK-NEXT: %[[Z:.*]] = lit.ref.load %[[ZREF]]
+  # CHECK-NEXT: %[[POW0:.*]] = lit.call {{.*}}SIMD::@"__pow__{{.*}}(%a, %[[Z]])
+  # CHECK-NEXT: %[[POW0A:.*]] = kgen.rebind %[[POW0]]
+  # CHECK-NEXT: %[[POW0B:.*]] = kgen.rebind %[[POW0A]]
+  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}{:scalar<index> 2}
+  # CHECK-NEXT: %[[POW1:.*]] = lit.call {{.*}}SIMD::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0B]])
+  # CHECK-NEXT: %[[POW1R:.*]] = kgen.rebind %[[POW1]]
+  # CHECK-NEXT: lit.ref.store %[[POW1R]], %z
   z = 2**a**z
-  # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %z
-  # CHECK-NEXT:  %[[MUL:.*]] = kgen.param.constant: !Int = <{-6}
-  # CHECK-NEXT:  %[[ADD:.*]] = lit.call {{.*}}Int::@"__add__{{.*}}(%[[Z]], %[[MUL]])
-  # CHECK-NEXT:  lit.ref.store %[[ADD]], %z
+  # CHECK-NEXT:  %[[ZREF:.*]] = kgen.rebind %z
+  # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %[[ZREF]]
+  # CHECK-NEXT:  %[[MUL:.*]] = kgen.param.constant: !Int = <{:scalar<index> -6}
+  # CHECK-NEXT:  %[[ADD:.*]] = lit.call {{.*}}SIMD::@"__add__{{.*}}(%[[Z]], %[[MUL]])
+  # CHECK-NEXT:  %[[ADDR:.*]] = kgen.rebind %[[ADD]]
+  # CHECK-NEXT:  lit.ref.store %[[ADDR]], %z
   z = z + 3 * -2
-  # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %z
-  # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = kgen.param.constant: !Int = <{-2}>
-  # CHECK-NEXT:  %[[ADD:.*]] = lit.call {{.*}}Int::@"__add__{{.*}}(%[[Z]], %[[FLOOR_DIV]])
-  # CHECK-NEXT:  lit.ref.store %[[ADD]], %z
+  # CHECK-NEXT:  %[[ZREF:.*]] = kgen.rebind %z
+  # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %[[ZREF]]
+  # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = kgen.param.constant: !Int = <{:scalar<index> -2}>
+  # CHECK-NEXT:  %[[ADD:.*]] = lit.call {{.*}}SIMD::@"__add__{{.*}}(%[[Z]], %[[FLOOR_DIV]])
+  # CHECK-NEXT:  %[[ADDR:.*]] = kgen.rebind %[[ADD]]
+  # CHECK-NEXT:  lit.ref.store %[[ADDR]], %z
   z = z + 3 // -2
-  # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %z
-  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen{{.*}}{3}
-  # CHECK-NEXT:  %[[ADD:.*]] = lit.call {{.*}}Int::@"__add__{{.*}}(%[[Z]], %[[INT_THREE]])
-  # CHECK-NEXT:  %[[NEG:.*]] = kgen{{.*}}{-2}
-  # CHECK-NEXT:  %[[MUL:.*]] =  lit.call {{.*}}Int::@"__mul__{{.*}}(%[[ADD]], %[[NEG]])
-  # CHECK-NEXT:  lit.ref.store %[[MUL]], %z
+  # CHECK-NEXT:  %[[ZREF:.*]] = kgen.rebind %z
+  # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %[[ZREF]]
+  # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen{{.*}}{:scalar<index> 3}
+  # CHECK-NEXT:  %[[ADD:.*]] = lit.call {{.*}}SIMD::@"__add__{{.*}}(%[[Z]], %[[INT_THREE]])
+  # CHECK-NEXT:  %[[ADDA:.*]] = kgen.rebind %[[ADD]]
+  # CHECK-NEXT:  %[[ADDB:.*]] = kgen.rebind %[[ADDA]]
+  # CHECK-NEXT:  %[[NEG:.*]] = kgen{{.*}}{:scalar<index> -2}
+  # CHECK-NEXT:  %[[MUL:.*]] =  lit.call {{.*}}SIMD::@"__mul__{{.*}}(%[[ADDB]], %[[NEG]])
+  # CHECK-NEXT:  %[[MULR:.*]] = kgen.rebind %[[MUL]]
+  # CHECK-NEXT:  lit.ref.store %[[MULR]], %z
   z = (z + 3) * -+2
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen{{.*}}{2}
-  # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %z
-  # CHECK-NEXT:  %[[POW:.*]] = lit.call {{.*}}Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[Z]])
-  # CHECK-NEXT:  %[[NEG:.*]] = lit.call {{.*}}Int::@"__neg__{{.*}}(%[[POW]])
-  # CHECK-NEXT:  lit.ref.store %[[NEG]], %z
+  # CHECK-NEXT:  %[[ZREF:.*]] = kgen.rebind %z
+  # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen{{.*}}{:scalar<index> 2}
+  # CHECK-NEXT:  %[[Z:.*]] = lit.ref.load %[[ZREF]]
+  # CHECK-NEXT:  %[[POW:.*]] = lit.call {{.*}}SIMD::@"__pow__{{.*}}(%[[INT_TWO]], %[[Z]])
+  # CHECK-NEXT:  %[[POWA:.*]] = kgen.rebind %[[POW]]
+  # CHECK-NEXT:  %[[POWB:.*]] = kgen.rebind %[[POWA]]
+  # CHECK-NEXT:  %[[NEG:.*]] = lit.call {{.*}}SIMD::@"__neg__{{.*}}(%[[POWB]])
+  # CHECK-NEXT:  %[[NEGR:.*]] = kgen.rebind %[[NEG]]
+  # CHECK-NEXT:  lit.ref.store %[[NEGR]], %z
   z = -2**z
 
   # div tests
@@ -280,26 +301,28 @@ def precedence_associativity(a: Int):
   var r1 = Float32(33.0) / 42.0
 
   # COM: test if-else operator associativity
-  # CHECK: %[[C:.*]] = lit.ref.load %c
-  # CHECK-NEXT: %[[TEN:.*]] = kgen.param.constant: !Int = <{10}>
+  # CHECK: %[[CREF:.*]] = kgen.rebind %c
+  # CHECK-NEXT: %[[C:.*]] = lit.ref.load %[[CREF]]
+  # CHECK-NEXT: %[[TEN:.*]] = kgen.param.constant: !Int = <{:scalar<index> 10}>
   # CHECK-NEXT: %[[EQ:.*]] = lit.call {{.*}}__eq__{{.*}}(%[[C]], %[[TEN]])
   # CHECK-NEXT: %[[EQSB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}%[[EQ]]
-  # CHECK-NEXT: %[[RESULT:.*]] = hlcf.if %[[EQSB]] -> !Int {
-  # CHECK-NEXT:   %[[ZERO:.*]] = kgen.param.constant: !Int = <{0}>
-  # CHECK-NEXT:   hlcf.yield %[[ZERO]] : !Int
+  # CHECK-NEXT: %[[RESULT:.*]] = hlcf.if %[[EQSB]] -> !alias_Int1 {
+  # CHECK-NEXT:   %[[ZERO:.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 0})>
+  # CHECK-NEXT:   hlcf.yield %[[ZERO]] : !alias_Int1
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:  %[[C:.*]] = lit.ref.load %c
-  # CHECK-NEXT:  %[[ELEVEN:.*]] = kgen.param.constant: !Int = <{11}>
+  # CHECK-NEXT:  %[[CREF:.*]] = kgen.rebind %c
+  # CHECK-NEXT:  %[[C:.*]] = lit.ref.load %[[CREF]]
+  # CHECK-NEXT:  %[[ELEVEN:.*]] = kgen.param.constant: !Int = <{:scalar<index> 11}>
   # CHECK-NEXT:  %[[EQ:.*]] = lit.call {{.*}}__eq__{{.*}}(%[[C]], %[[ELEVEN]])
   # CHECK-NEXT:  %[[EQSB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}(%[[EQ]])
-  # CHECK-NEXT:  %[[RIGHT_IF_RESULT:.*]] = hlcf.if %[[EQSB]] -> !Int {
-  # CHECK-NEXT:    %[[ONE:.*]] = kgen.param.constant: !Int = <{1}>
-  # CHECK-NEXT:    hlcf.yield %[[ONE]] : !Int
+  # CHECK-NEXT:  %[[RIGHT_IF_RESULT:.*]] = hlcf.if %[[EQSB]] -> !alias_Int1 {
+  # CHECK-NEXT:    %[[ONE:.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
+  # CHECK-NEXT:    hlcf.yield %[[ONE]] : !alias_Int1
   # CHECK-NEXT:  } else {
-  # CHECK-NEXT:    %[[TWO:.*]] = kgen.param.constant: !Int = <{2}>
-  # CHECK-NEXT:    hlcf.yield %[[TWO]] : !Int
+  # CHECK-NEXT:    %[[TWO:.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 2})>
+  # CHECK-NEXT:    hlcf.yield %[[TWO]] : !alias_Int1
   # CHECK-NEXT:  }
-  # CHECK-NEXT:  hlcf.yield %[[RIGHT_IF_RESULT]] : !Int
+  # CHECK-NEXT:  hlcf.yield %[[RIGHT_IF_RESULT]] : !alias_Int1
   # CHECK-NEXT:}
   var c = 10
   z = 0 if c == 10 else 1 if c == 11 else 2
@@ -363,9 +386,9 @@ def reverse_operators(a: RHS):
 
 # CHECK-LABEL: lit.fn @"precedence_matmul
 def precedence_matmul(z: RegPassable) -> RegPassable:
-  # CHECK:  [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
+  # CHECK:  [[THREE:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 3}>
   # CHECK-NEXT:  [[THREERP:%.*]] = lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[THREE]])
-  # CHECK-NEXT:  [[TWO:%.*]] = kgen.param.constant: !Int = <{2}>
+  # CHECK-NEXT:  [[TWO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
   # CHECK-NEXT:  [[TWORP:%.*]] = lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[TWO]])
   # CHECK-NEXT:  [[TWOTMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT:  lit.ref.store [[TWORP]], [[TWOTMP]]
@@ -389,29 +412,30 @@ def precedence_matmul(z: RegPassable) -> RegPassable:
 
 # CHECK-LABEL: lit.fn @"precedence_bitwise
 def precedence_bitwise(a: Int, b: Int, c: Int) -> Int:
-  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}{2}
-  # CHECK-NEXT: %[[MUL:.*]] = lit.call {{.*}}Int::@"__mul__{{.*}}(%a, %[[INT_TWO]])
-  # CHECK-NEXT: %[[AND:.*]] = lit.call {{.*}}Int::@"__and__{{.*}}(%[[MUL]], %b)
-  # CHECK-NEXT: %[[INT_FOUR:.*]] = kgen{{.*}}{4}
-  # CHECK-NEXT: %[[XOR:.*]] = lit.call {{.*}}Int::@"__xor__{{.*}}(%[[INT_FOUR]], %c)
-  # CHECK-NEXT: %[[OR:.*]] = lit.call {{.*}}Int::@"__or__{{.*}}(%[[AND]], %[[XOR]])
-  # CHECK-NEXT: lit.return %[[OR]]
+  # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}{:scalar<index> 2}
+  # CHECK-NEXT: %[[MUL:.*]] = lit.call {{.*}}SIMD::@"__mul__{{.*}}(%a, %[[INT_TWO]])
+  # CHECK-NEXT: %[[AND:.*]] = lit.call {{.*}}SIMD::@"__and__{{.*}}(%[[MUL]], %b)
+  # CHECK-NEXT: %[[INT_FOUR:.*]] = kgen{{.*}}{:scalar<index> 4}
+  # CHECK-NEXT: %[[XOR:.*]] = lit.call {{.*}}SIMD::@"__xor__{{.*}}(%[[INT_FOUR]], %c)
+  # CHECK-NEXT: %[[OR:.*]] = lit.call {{.*}}SIMD::@"__or__{{.*}}(%[[AND]], %[[XOR]])
+  # CHECK-NEXT: %[[ORR:.*]] = kgen.rebind %[[OR]]
+  # CHECK-NEXT: lit.return %[[ORR]]
   return a * 2 & b | 4 ^ c
 
 # CHECK-LABEL: @"comparisons
 def comparisons(a: Int, b: Int):
    var res: Bool
-   # CHECK: lit.call {{.*}}Int::@"__lt__{{.*}}(%a, %b)
+   # CHECK: lit.call {{.*}}SIMD::@"__lt__{{.*}}(%a, %b)
    res = a < b
-   # CHECK: lit.call {{.*}}Int::@"__le__{{.*}}(%a, %b)
+   # CHECK: lit.call {{.*}}SIMD::@"__le__{{.*}}(%a, %b)
    res = a <= b
-   # CHECK: lit.call {{.*}}Int::@"__gt__{{.*}}(%a, %b)
+   # CHECK: lit.call {{.*}}SIMD::@"__gt__{{.*}}(%a, %b)
    res = a > b
-   # CHECK: lit.call {{.*}}Int::@"__ge__{{.*}}(%a, %b)
+   # CHECK: lit.call {{.*}}SIMD::@"__ge__{{.*}}(%a, %b)
    res = a >= b
-   # CHECK: lit.call {{.*}}Int::@"__eq__{{.*}}(%a, %b)
+   # CHECK: lit.call {{.*}}SIMD::@"__eq__{{.*}}(%a, %b)
    res = a == b
-   # CHECK: lit.call {{.*}}Int::@"__ne__{{.*}}(%a, %b)
+   # CHECK: lit.call {{.*}}SIMD::@"__ne__{{.*}}(%a, %b)
    res = a != b
 
 trait Boolable:
@@ -434,7 +458,7 @@ def unary(a: Bool, b: Int, c: Boolish, d: MemBoolish):
   # CHECK: %1 = lit.call {{.*}}Bool::@"__invert__({{.*}}Bool)"(%0)
   _ = not a
 
-  # CHECK: [[EQ:%.*]] = lit.call {{.*}}Int::@"__eq__(::Int,::Int)"
+  # CHECK: [[EQ:%.*]] = lit.call {{.*}}SIMD::@"__eq__(::SIMD[$0, $1],::SIMD[$0, $1])"
   # CHECK: [[EQBOOL:%.*]] = lit.call {{.*}}Bool::@"__bool__({{.*}}Bool)"([[EQ]])
   # CHECK:  = lit.call {{.*}}Bool::@"__invert__({{.*}}Bool)"([[EQBOOL]])
   _ = not b == 0
@@ -545,11 +569,12 @@ def paramAndOr[a: Boolish, b: Boolish]():
 def do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %z = lit.var.decl "z" var
   var z : Int
-  # CHECK-NEXT: %[[INT_5:.*]] = kgen{{.*}}{5}
-  # CHECK-NEXT: %[[MUL:.*]] = lit.call {{.*}}Int::@"__mul__{{.*}}(%[[INT_5]], %a)
-  # CHECK-NEXT: %[[INT_42:.*]] = kgen{{.*}}{42}
-  # CHECK-NEXT: %[[ADD:.*]] = lit.call {{.*}}Int::@"__add__{{.*}}(%[[INT_42]], %[[MUL]])
-  # CHECK-NEXT: lit.ref.store %[[ADD]], %z
+  # CHECK-NEXT: %[[INT_5:.*]] = kgen{{.*}}{:scalar<index> 5}
+  # CHECK-NEXT: %[[MUL:.*]] = lit.call {{.*}}SIMD::@"__mul__{{.*}}(%[[INT_5]], %a)
+  # CHECK-NEXT: %[[INT_42:.*]] = kgen{{.*}}{:scalar<index> 42}
+  # CHECK-NEXT: %[[ADD:.*]] = lit.call {{.*}}SIMD::@"__add__{{.*}}(%[[INT_42]], %[[MUL]])
+  # CHECK-NEXT: %[[ADDR:.*]] = kgen.rebind %[[ADD]]
+  # CHECK-NEXT: lit.ref.store %[[ADDR]], %z
   z = 42 + 5*a
 
   # CHECK-NEXT: %x = lit.var.decl "x" var
@@ -573,10 +598,10 @@ def test_if_cond(var cond: Bool, memCond: MemBoolish):
     # CHECK: %[[COND:.*]] = lit.ref.load %cond
     # CHECK: %[[LIT_BOOLSB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLSB]]
-    # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}{2}
+    # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}{:scalar<index> 2}
     # CHECK-NEXT:   hlcf.yield %[[INT_TWO]]
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   %[[INT_THREE:.*]] = kgen{{.*}}{3}
+    # CHECK-NEXT:   %[[INT_THREE:.*]] = kgen{{.*}}{:scalar<index> 3}
     # CHECK-NEXT:   hlcf.yield %[[INT_THREE]]
     # CHECK-NEXT: }
     # CHECK-NEXT: lit.ref.store %[[IF_RES]], %i
@@ -591,57 +616,57 @@ def test_if_cond(var cond: Bool, memCond: MemBoolish):
 
 # CHECK-LABEL: lit.fn @"test_param_if_cond{{.*}}"<cond: !Bool>
 def test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, {2}, {3})>
+  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !alias_Int1 = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, rebind(:!Int {:scalar<index> 2}), rebind(:!Int {:scalar<index> 3}))>
   comptime i = 2 if cond else 3
 
   # CHECK-NEXT: lit.alias.decl *"j{{.*}} = <cond({{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">
-  # CHECK-SAME: :!pop.float_literal #pop.float_literal<2|1>{{.*}}:!pop.int_literal 3>
-  comptime j = 2.0 if cond else 3
+  # CHECK-SAME: :!pop.float_literal #pop.float_literal<2|1>{{.*}}{:scalar<index> 3})>
+  comptime j = 2.0 if cond else Int(3)
 
-  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = <#alias_i>
+  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !alias_Int1 = <#alias_i>
   return i
 
-# CHECK-LABEL: lit.fn @"callable_mv[def(::Int) thin -> ::Int](::Int)"
-# CHECK-SAME: <callable: !lit.generator<(!Int, |) -> !Int>>(%a: !Int) -> !Int
+# CHECK-LABEL: lit.fn @"callable_mv[def(::SIMD[::DType(int), ::SIMDSize(1)]) thin -> ::SIMD[::DType(int), ::SIMDSize(1)]](::SIMD[::DType(int), ::SIMDSize(1)])"
+# CHECK-SAME: <callable: !lit.generator<(!Int, |) -> !alias_Int1>>(%a: !Int) -> !alias_Int1
 def callable_mv[callable: def (Int) thin -> Int](a: Int) -> Int:
-  # CHECK-NEXT: lit.call tail[!lit.generator<(!Int, |) -> !Int>: callable](%a)
+  # CHECK-NEXT: lit.call tail[!lit.generator<(!Int, |) -> !alias_Int1>: callable](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.fn @"callable_mv_inputs{{.*}})"<
-# CHECK-SAME: callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>, b: !Int>(%a: !Int) -> !Int
+# CHECK-SAME: callable: !lit.generator<<"x": !Int>(!Int, |) -> !alias_Int1>, b: !Int>(%a: !Int) -> !alias_Int1
 def callable_mv_inputs[callable: def[x: Int](Int) thin -> Int, b: Int](a: Int) -> Int:
-  # CHECK-NEXT: lit.call tail[!lit.generator<(!Int, |) -> !Int>: bind_params({{.*}}callable, :!Int b)](%a)
+  # CHECK-NEXT: lit.call tail[!lit.generator<(!Int, |) -> !alias_Int1>: bind_params({{.*}}callable, :!Int b)](%a)
   return callable[b](a)
 
-# CHECK-LABEL: lit.fn @"takeIndexParam{{.*}}"<a: !Int>() -> !Int
+# CHECK-LABEL: lit.fn @"takeIndexParam{{.*}}"<a: !Int>() -> !alias_Int1
 def takeIndexParam[a: Int]() -> Int:
   return a + 1
 
-# CHECK-LABEL: lit.fn @"returnIndex()"() -> !Int
+# CHECK-LABEL: lit.fn @"returnIndex()"() -> !alias_Int1
 def returnIndex() -> Int:
   return 0
 
-# CHECK-LABEL: lit.fn @"returnIndex2()"() -> !Int
+# CHECK-LABEL: lit.fn @"returnIndex2()"() -> !alias_Int1
 def returnIndex2() -> Int:
   # CHECK-NEXT: %0 = lit.call {{.*}}takeIndexParam{{.*}}"<:!Int apply({{.*}}@{{.*}}returnIndex()")>()
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
-# CHECK-LABEL: lit.fn @"callInParam[def[::Int](::Int) thin -> ::Int]()"
-# CHECK-SAME: <callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>>() -> !Int
+# CHECK-LABEL: lit.fn @"callInParam[def[::SIMD[::DType(int), ::SIMDSize(1)]](::SIMD[::DType(int), ::SIMDSize(1)]) thin -> ::SIMD[::DType(int), ::SIMDSize(1)]]()"
+# CHECK-SAME: <callable: !lit.generator<<"x": !Int>(!Int, |) -> !alias_Int1>>() -> !alias_Int1
 def callInParam[callable: def[x: Int](Int) thin -> Int]() -> Int:
-  # CHECK-NEXT: %0 = lit.call {{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_params({{.*}}callable, :!Int {1}), {1})>()
+  # CHECK-NEXT: %0 = lit.call {{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_params({{.*}}callable, :!Int {:scalar<index> 1}), {:scalar<index> 1})>()
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 
 # CHECK-LABEL: lit.fn @"parameterExprs{{.*}}()"
 # CHECK-SAME: <a: !Int, a2: !Int>
 def parameterExprs[a: Int, a2: Int]():
-  # CHECK: lit.alias.decl *"b{{.*}}": !Int = <{0}>
+  # CHECK: lit.alias.decl *"b{{.*}}": !Int = <{:scalar<index> 0}>
   comptime b = a-a
-  # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{{.*}}to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int a, "_mlir_value">), 42)){{.*}}>
+  # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{{.*}}add(#lit.struct.extract<:!Int a, "_mlir_value">, 42){{.*}}>
   comptime c = a+42
-  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <{{.*}}to_builtin(:scalar<index> mul(from_builtin(#lit.struct.extract<:!Int a, "_mlir_value">), from_builtin(#lit.struct.extract<:!Int a2, "_mlir_value">))){{.*}}>
+  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <{{.*}}mul(#lit.struct.extract<:!Int a, "_mlir_value">, #lit.struct.extract<:!Int a2, "_mlir_value">){{.*}}>
   comptime d = a*a2
 
 ##===----------------------------------------------------------------------===##
@@ -654,14 +679,14 @@ def patterns():
   var z2: Int
 
   (((z2))) = 42  # Paren patterns
-  # CHECK: [[TMP:%.*]] = {{.*}}constant: !Int = <{42}>
+  # CHECK: [[TMP:%.*]] = {{.*}}constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 42})>
   # CHECK: lit.ref.store [[TMP]], %z2
 
   var someInt : Int
   (someInt) += someInt
   # CHECK: %someInt = lit.var.decl "someInt" var
-  # CHECK:  %1 = lit.ref.load %someInt
-  # CHECK:   = lit.call {{.*}}Int::@"__iadd__{{.*}}(%someInt, %1)
+  # CHECK:  %2 = lit.ref.load %1
+  # CHECK:   = lit.call {{.*}}SIMD::@"__iadd__{{.*}}(%3, %2)
 
   # Discard pattern with different types.
   (_) = someInt
@@ -681,7 +706,7 @@ def patterns():
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
-# CHECK-LABEL: lit.fn @"byval_byref_function(::Int,::Int&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> mut) -> !kgen.none
+# CHECK-LABEL: lit.fn @"byval_byref_function(::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)]&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> mut) -> !kgen.none
 def byval_byref_function(a: Int, mut b: Int):
   # CHECK-NEXT: lit.ref.store %a, %b
   b = a
@@ -698,13 +723,13 @@ def byval_byref_function(a: Int, mut b: Int):
 def lvaluesAndRValues() -> __mlir_type.index:
   # CHECK: [[VALUE:%.*]] = kgen.param.constant = <4>
   # CHECK: lit.return [[VALUE]] : index
-  return Int(4)._mlir_value
+  return Int(4).__mlir_index__()
 
 # CHECK-LABEL: lit.fn @"mvalueStructField()"
 def mvalueStructField():
-  # CHECK: lit.alias.decl [[INT:.*]]: !Int = <{4}>
+  # CHECK: lit.alias.decl [[INT:.*]]: !Int = <{:scalar<index> 4}>
   comptime Index = Int(4)
-  # CHECK: lit.alias.decl *"value{{.*}}" = <sugar_preserved(#lit.struct.extract<{{.*}}, 4)>
+  # CHECK: lit.alias.decl *"value{{.*}} = <sugar_preserved(#lit.struct.extract<{{.*}}, 4)>
   comptime value = Index._mlir_value
   comptime foldToValue = Int(5)._mlir_value
 
@@ -717,41 +742,43 @@ def basic_assignments(a0: Int, b: Int, c: RegPassable, d: RegPassable):
   var a = a0
   # CHECK-NEXT:      %a = lit.var.decl "a" var
   # CHECK-NEXT: lit.ref.store %a0, %a
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}(%a, %b)
+  # CHECK-NEXT: lit.call {{.*}}SIMD::@"__iadd__{{.*}}(%a, %b)
   a += b
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__isub__{{.*}}(%a, %b)
+  # CHECK-NEXT: lit.call {{.*}}SIMD::@"__isub__{{.*}}(%a, %b)
   a -= b
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__imul__{{.*}}(%a, %b)
+  # CHECK-NEXT: lit.call {{.*}}SIMD::@"__imul__{{.*}}(%a, %b)
   a *= b
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__ifloordiv__{{.*}}(%a, %b)
+  # CHECK-NEXT: lit.call {{.*}}SIMD::@"__ifloordiv__{{.*}}(%a, %b)
   a //= b
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__imod__{{.*}}(%a, %b)
+  # CHECK-NEXT: lit.call {{.*}}SIMD::@"__imod__{{.*}}(%a, %b)
   a %= b
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__ipow__{{.*}}(%a, %b)
+  # CHECK-NEXT: lit.call {{.*}}SIMD::@"__ipow__{{.*}}(%a, %b)
   a **= b
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__irshift__{{.*}}(%a, %b)
+  # CHECK-NEXT: lit.call {{.*}}SIMD::@"__irshift__{{.*}}(%a, %b)
   a >>= b
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__ilshift__{{.*}}(%a, %b)
+  # CHECK-NEXT: lit.call {{.*}}SIMD::@"__ilshift__{{.*}}(%a, %b)
   a <<= b
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__iand__{{.*}}(%a, %b)
+  # CHECK-NEXT: lit.call {{.*}}SIMD::@"__iand__{{.*}}(%a, %b)
   a &= b
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__ixor__{{.*}}(%a, %b)
+  # CHECK-NEXT: lit.call {{.*}}SIMD::@"__ixor__{{.*}}(%a, %b)
   a ^= b
-  # CHECK-NEXT: lit.call {{.*}}Int::@"__ior__{{.*}}(%a, %b)
+  # CHECK-NEXT: lit.call {{.*}}SIMD::@"__ior__{{.*}}(%a, %b)
   a |= b
 
   var x: Int
   # CHECK-NEXT: %x = lit.var.decl
-  # CHECK-NEXT: %[[FOUR:.*]] = kgen.param.constant: !Int = <{4}>
+  # CHECK-NEXT: %[[FOUR:.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 4})>
   # CHECK-NEXT: lit.ref.store %[[FOUR]], %x
-  # CHECK-NEXT: lit.ref.store %[[FOUR]], %a
+  # CHECK-NEXT: %[[FOURI:.*]] = kgen.rebind %[[FOUR]]
+  # CHECK-NEXT: lit.ref.store %[[FOURI]], %a
   a = x = 4
 
   # Walrus
-  # CHECK-NEXT: %[[SEVEN:.*]] = kgen.param.constant: !Int = <{7}>
+  # CHECK-NEXT: %[[SEVEN:.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 7})>
   # CHECK-NEXT: lit.ref.store %[[SEVEN]], %x
+  # CHECK-NEXT: %[[SEVENI:.*]] = kgen.rebind %[[SEVEN]]
   # CHECK-NEXT: %[[A:.*]] = lit.ref.load %a
-  # CHECK-NEXT: lit.call {{.*}}simpleMath{{.*}}(%[[A]], %[[SEVEN]])
+  # CHECK-NEXT: lit.call {{.*}}simpleMath{{.*}}(%[[A]], %[[SEVENI]])
   _ = simpleMath(a, x := 7)
 
 # Issue #20145: Walrus operator should implicitly declare variable in def functions.
@@ -762,20 +789,22 @@ def walrus_implicit_decl() raises:
   # CHECK:      %b = lit.var.decl "b" imp
   # CHECK:      %a = lit.var.decl "a" imp
 
-  # CHECK-NEXT: [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
+  # CHECK-NEXT: [[THREE:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 3})>
   # CHECK-NEXT: lit.ref.store [[THREE]], %a
-  # CHECK-NEXT: [[VAR_A:%.*]] = lit.ref.load %a
-  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}simpleMath{{.*}}([[THREE]], [[VAR_A]])
+  # CHECK-NEXT: [[THREEI:%.*]] = kgen.rebind [[THREE]]
+  # CHECK-NEXT: [[AREF:%.*]] = kgen.rebind %a
+  # CHECK-NEXT: [[VAR_A:%.*]] = lit.ref.load [[AREF]]
+  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}simpleMath{{.*}}([[THREEI]], [[VAR_A]])
   _ = simpleMath(a := 3, a)
   # CHECK-NEXT: lit.ownership.use [[TMP]]
 
   # CHECK-NEXT: hlcf.elif {
-  # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: !Int = <{4}>
+  # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 4})>
   # CHECK-NEXT: lit.ref.store [[FOUR]], %b
   if b := 4:
     b = simpleMath(b, b)
 
-  # CHECK: [[FIVE:%.*]] = kgen.param.constant: !Int = <{5}>
+  # CHECK: [[FIVE:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 5})>
   # CHECK-NEXT: lit.ref.store [[FIVE]], %c
   # CHECK-NEXT: lit.ref.store [[FIVE]], %d
   d = c := 5
@@ -897,7 +926,7 @@ def testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, var moi: MemoryO
   # CHECK-SAME: : !lit.ref<!MemoryOnlyInt, mut *"__call_result_tmp__`
   # CHECK: lit.call {{.*}}__getitem__{{.*}}(%arr, %x, [[ANON]])
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[ANON]][x]
-  # CHECK: %[[C1:.*]] = {{.*}}constant: !Int = <{1}>
+  # CHECK: %[[C1:.*]] = {{.*}}constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
   # CHECK: lit.ref.store %[[C1:.*]], [[XP]]
   # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x].x = 1
@@ -917,7 +946,7 @@ def testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, var moi: MemoryO
   # CHECK: lit.call {{.*}}__getitem__{{.*}}(%arr, %x, [[STORETMP]])
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[STORETMP]][x]
   # CHECK: lit.ref.load [[XP]]
-  # CHECK: lit.call {{.*}}Int::@"__iadd__
+  # CHECK: lit.call {{.*}}SIMD::@"__iadd__
   # CHECK: [[STORETMP:%.*]] = lit.var.decl "__call_result_tmp__" {{.*}} : !lit.ref<!MemoryOnlyInt,
   # CHECK: lit.call {{.*}}__getitem__{{.*}}(%arr, %x, [[STORETMP]])
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[STORETMP]][x]
@@ -967,7 +996,7 @@ def dynamic_attribute():
     var a = obj.some_attr
 
     # CHECK: [[IMMREF:%.*]] = lit.ref.immut %obj
-    # CHECK: %[[VALUE:.*]] = kgen.param.constant: !Int = <{42}>
+    # CHECK: %[[VALUE:.*]] = kgen.param.constant: !Int = <{:scalar<index> 42}>
     # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}<:string "some_attr">([[IMMREF]], {{.*}}, %[[VALUE]])
     obj.some_attr = 42
 
@@ -984,7 +1013,7 @@ struct CallableStruct:
 
 # CHECK-LABEL: lit.fn @"test_call_method()"
 def test_call_method():
-    # CHECK: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK: %[[C2:.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
     # CHECK-NEXT: lit.call {{.*}}@"__call__{{.*}}(%{{.*}}, %[[C2]])
     var value = CallableStruct(5)
     _ = value(2)
@@ -1012,7 +1041,7 @@ def function_types():
   # CHECK-SAME: read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
   comptime p2 = async def[*Ts: AnyType](* *Ts) thin -> None
 
-  # CHECK: lit.var.decl "float0"{{.*}}(!Int, |) -> !Int
+  # CHECK: lit.var.decl "float0"{{.*}}(!Int, |) -> !alias_Int1
   var float0: def(Int) thin -> Int
 
   # CHECK: lit.var.decl "float1"{{.*}}(!lit.ref<!MemoryType, imm {{.*}}> read_mem, |, ?, "__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result) -> !kgen.none
@@ -1036,11 +1065,11 @@ def function_types():
   # CHECK: lit.var.decl "float7"{{.*}}(!lit.ref<!lit.struct<#VariadicList <:!Bool {:scalar<bool> false}, :origin<false> *(0,0), :!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> *(0,0)>> *(0,1), :!AnyType !Int, :!Bool {:scalar<bool> false}>>, imm *[0,0]> read_mem|pos_vararg, ?, {{.*}}) throws -> !kgen.scalar<bool>
   var float7: def(*Int) thin raises -> None
 
-  # CHECK: lit.var.decl "float12"{{.*}}<(!Int = {10}, {{.*}}StringLiteral <:string "foo">
+  # CHECK: lit.var.decl "float12"{{.*}}<(!Int = {:scalar<index> 10}, {{.*}}StringLiteral <:string "foo">
   # CHECK-SAME: , |) -> !kgen.none>
   var float12: def(Int = 10, StaticString = "foo") thin -> None
 
-  # CHECK: lit.var.decl "named"{{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> read_mem) -> !Int>
+  # CHECK: lit.var.decl "named"{{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> read_mem) -> !alias_Int1>
   var named: def(x: MemoryType) thin -> Int
 
 # CHECK-LABEL: lit.struct.decl @Mem
@@ -1104,10 +1133,10 @@ def testTransferWarning():
 # CHECK: lit.alias.decl *"bigggNumber{{.*}}#IntLiteral <:!pop.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936>> = <*?>
 comptime bigggNumber = 2 << 255
 def useBigNumber() -> Int:
-  # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{512}>
+  # CHECK: [[VAR:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 512})>
   var notSoBig = bigggNumber // (2 << 246)
   # Easy min-Index
-  # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{-9223372036854775808}>
+  # CHECK: [[VAR:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> -9223372036854775808})>
   var minInt = -(2<<62)
   return notSoBig
 
@@ -1127,7 +1156,7 @@ def setitemParamToDLValue():
   comptime x = 3
   var coords = IndexList[3](0)
   # The main check is just that it's not erroring.
-  # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{-3}>
+  # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{:scalar<index> -3}>
   # CHECK: lit.call {{.*}}IndexList{{.*}}__setitem__{{.*}}[[VAR]]
   coords[] = -x
 

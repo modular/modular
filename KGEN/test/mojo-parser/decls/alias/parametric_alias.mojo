@@ -10,27 +10,25 @@
 # declarations
 ##===----------------------------------------------------------------------===##
 
-# CHECK: ![[INT_META:.*]] = !lit.meta<!Int>
-
-# CHECK: lit.alias.decl *"noParam{{.*}}": !Int = <{78}>
+# CHECK: lit.alias.decl *"noParam{{.*}}": !alias_Int1 = <rebind(:!Int {:scalar<index> 78})>
 comptime noParam: Int = 78
 
-# CHECK: lit.alias.decl *"emptyParams{{.*}}": !Int = <{89}>
+# CHECK: lit.alias.decl *"emptyParams{{.*}}": !alias_Int1 = <rebind(:!Int {:scalar<index> 89})>
 comptime emptyParams[]: Int = 89
 
-# CHECK: lit.alias.decl *"idInt{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<*(0,0)>>
+# CHECK: lit.alias.decl *"idInt{{.*}}": !lit.generator<<"x": !Int>!alias_Int1> = <#kgen.gen<rebind(:!Int *(0,0))>>
 comptime idInt[x: Int]: Int = x
 
-# CHECK: lit.alias.decl *"myIntAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">))){{.*}}>>
+# CHECK: lit.alias.decl *"myIntAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">){{.*}}>>
 comptime myIntAdd[x: Int, y: Int] = x + y
 
-# CHECK: lit.alias.decl *"myDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = {1}>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">))){{.*}}>>
+# CHECK: lit.alias.decl *"myDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = {:scalar<index> 1}>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">){{.*}}>>
 comptime myDefaultAdd[x: Int, y: Int = 1] = x + y
 
-# CHECK: lit.alias.decl *"myDependentDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = *(0,0)>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">))){{.*}}>>
+# CHECK: lit.alias.decl *"myDependentDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = *(0,0)>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}scalar<index> = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">){{.*}}>>
 comptime myDependentDefaultAdd[x: Int, y: Int = x] = x + y
 
-# CHECK: lit.alias.decl *"myIntFMA{{.*}}": !lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> add(mul(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">)), from_builtin(#lit.struct.extract<:!Int *(0,2), "_mlir_value">))){{.*}})>>
+# CHECK: lit.alias.decl *"myIntFMA{{.*}}": !lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">), #lit.struct.extract<:!Int *(0,2), "_mlir_value">){{.*}})>>
 comptime myIntFMA[x: Int, y: Int, z: Int] = x * y + z
 
 # CHECK: lit.alias.decl *"myTypeSelector`0x7": !lit.generator<<"cond": !Bool, "t_type": !AnyType, "f_type": !AnyType>!AnyType> = <#kgen.gen<
@@ -97,13 +95,13 @@ struct PS[a: Int, b: Int, c: Int]:
     pass
 
 
-# CHECK: lit.alias.decl *"PS_xy3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>meta<!lit.struct<#PS <:!Int *(0,0), :!Int *(0,1), :!Int {3}>>>> = <#kgen.gen<@parametric_alias::@PS<:!Int *(0,0), :!Int *(0,1), :!Int {3}>>>
+# CHECK: lit.alias.decl *"PS_xy3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>meta<!lit.struct<#PS <:!Int *(0,0), :!Int *(0,1), :!Int {:scalar<index> 3}>>>> = <#kgen.gen<@parametric_alias::@PS<:!Int *(0,0), :!Int *(0,1), :!Int {:scalar<index> 3}>>>
 comptime PS_xy3[x: Int, y: Int] = PS[x, y, 3]
 
-# CHECK: lit.alias.decl *"PS_21x{{.*}}": !lit.generator<<"x": !Int>meta<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int *(0,0)>>>> = <#kgen.gen<@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int *(0,0)>>>
+# CHECK: lit.alias.decl *"PS_21x{{.*}}": !lit.generator<<"x": !Int>meta<!lit.struct<#PS <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int *(0,0)>>>> = <#kgen.gen<@parametric_alias::@PS<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int *(0,0)>>>
 comptime PS_21x[x: Int] = PS[2, 1, x]
 
-# CHECK: lit.alias.decl *"PS_21xy{{.*}}": !lit.generator<<"x": !Int, "y": !Int>meta<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int sugar_builtin(apply({{.*}}to_builtin(:scalar<index> mul(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">))){{.*}}>>>> = <#kgen.gen<@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int sugar_builtin(apply({{.*}}to_builtin(:scalar<index> mul(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">))){{.*}})>>>
+# CHECK: lit.alias.decl *"PS_21xy{{.*}}": !lit.generator<<"x": !Int, "y": !Int>meta<!lit.struct<#PS <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int sugar_builtin(apply({{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">){{.*}}>>>> = <#kgen.gen<@parametric_alias::@PS<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int sugar_builtin(apply({{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">){{.*}})>>>
 comptime PS_21xy[x: Int, y: Int] = PS[2, 1, x * y]
 
 
@@ -115,7 +113,7 @@ trait MyTrait:
 
 # CHECK: lit.struct.decl @MyStruct
 struct MyStruct[a: Int, b: Int](MyTrait):
-    # CHECK-NEXT: lit.alias.decl *"ParamType{{.*}}": !lit.generator<<"a1": !Int>![[INT_META]]> = <#kgen.gen<!Int>>
+    # CHECK-NEXT: lit.alias.decl *"ParamType{{.*}}": !lit.generator<<"a1": !Int>meta<!Int>> = <#kgen.gen<#alias_Int>>
     comptime ParamType[a1: Int] = Int
     # CHECK: kgen.conformance @"{{.*}}::MyTrait"
     # CHECK-NEXT: kgen.witness "ParamType" : !lit.generator<<"a": !Int>!AnyType> = #kgen.gen<!Int>
@@ -158,7 +156,7 @@ comptime __SomeImpl[Trait: TrivialRegisterPassable, T: Trait] = T
 # CHECK: lit.alias.decl *"Some{{.*}}": !lit.generator<<"Trait": !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable>!lit.generator<<"T": !kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable *(1,0)>>!kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable *(1,0)>>> = <#kgen.gen<#kgen.gen<*(0,0)>>>
 comptime Some[Trait: TrivialRegisterPassable] = __SomeImpl[Trait, ...]
 
-# CHECK: lit.alias.decl *"myDouble{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> mul(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), 2)){{.*}})>>
+# CHECK: lit.alias.decl *"myDouble{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2){{.*}})>>
 comptime myDouble[x: Int] = myDependentDefaultAdd[x]
 
 
@@ -182,20 +180,20 @@ def implicit_conversions():
 
 # CHECK-LABEL: lit.fn @"test_type_equality()"
 def test_type_equality():
-    # CHECK-NEXT: %[[PS_345:.*]] = lit.var.decl "ps_345" {{.*}}<#PS <:!Int {3}, :!Int {4}, :!Int {5}>
-    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {3}, :!Int {4}, :!Int {5}>(%[[PS_345]])
+    # CHECK-NEXT: %[[PS_345:.*]] = lit.var.decl "ps_345" {{.*}}<#PS <:!Int {:scalar<index> 3}, :!Int {:scalar<index> 4}, :!Int {:scalar<index> 5}>
+    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 3}, :!Int {:scalar<index> 4}, :!Int {:scalar<index> 5}>(%[[PS_345]])
     var ps_345: PS[3, 4, 5] = PS[idInt[3], myIntAdd[2, 2], myDefaultAdd[4]]()
 
-    # CHECK-NEXT: %[[PS_215:.*]] = lit.var.decl "ps_215" {{.*}}<#PS <:!Int {2}, :!Int {1}, :!Int {5}>
-    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {2}, :!Int {1}, :!Int {5}>(%[[PS_215]])
+    # CHECK-NEXT: %[[PS_215:.*]] = lit.var.decl "ps_215" {{.*}}<#PS <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 5}>
+    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 5}>(%[[PS_215]])
     var ps_215: PS_21x[5] = PS[2, 1, 5]()
 
-    # CHECK-NEXT: %[[PS_216:.*]] = lit.var.decl "ps_216" {{.*}}<#PS <:!Int {2}, :!Int {1}, :!Int {6}>
-    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {2}, :!Int {1}, :!Int {6}>(%[[PS_216]])
+    # CHECK-NEXT: %[[PS_216:.*]] = lit.var.decl "ps_216" {{.*}}<#PS <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 6}>
+    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 6}>(%[[PS_216]])
     var ps_216: PS_21x[6] = PS_21xy[2, 3]()
 
-    # CHECK-NEXT: %[[PS_213:.*]] = lit.var.decl "ps_213" {{.*}}<#PS <:!Int {2}, :!Int {1}, :!Int {3}>
-    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {2}, :!Int {1}, :!Int {3}>(%[[PS_213]])
+    # CHECK-NEXT: %[[PS_213:.*]] = lit.var.decl "ps_213" {{.*}}<#PS <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 3}>
+    # CHECK-NEXT: @PS::@"__init__()"{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 3}>(%[[PS_213]])
     var ps_213: PS_21x[myIntFMA[1, 3, 0]] = PS_xy3[2, 1]()
 
 
@@ -206,37 +204,37 @@ def two_identical_inputs[T: AnyType](x: T, y: T):
 # CHECK-LABEL: fn @"test_type_inference()"
 def test_type_inference():
     # CHECK: lit.call @parametric_alias::@"two_identical_inputs
-    # CHECK-SAME: <:!AnyType @parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int {5}>>
-    # CHECK-SAME: "x": !lit.ref<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int {5}>>
-    # CHECK-SAME: "y": !lit.ref<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int {5}>>
+    # CHECK-SAME: <:!AnyType @parametric_alias::@PS<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 5}>>
+    # CHECK-SAME: "x": !lit.ref<!lit.struct<#PS <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 5}>>
+    # CHECK-SAME: "y": !lit.ref<!lit.struct<#PS <:!Int {:scalar<index> 2}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 5}>>
     two_identical_inputs(PS_21x[5](), PS[2, 1, 5]())
 
 
 # CHECK-LABEL: fn @"partial_binding()"
 def partial_binding():
-    # CHECK: lit.alias.decl *"myIntMulPlus3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> add(mul(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">)), 3)){{.*}})>>
+    # CHECK: lit.alias.decl *"myIntMulPlus3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">), 3){{.*}})>>
     comptime myIntMulPlus3 = myIntFMA[z=3, ...]
-    # CHECK: lit.alias.decl *"myIntMul2Plus3{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> add(mul(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), 2), 3)){{.*}})>>
+    # CHECK: lit.alias.decl *"myIntMul2Plus3{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2), 3){{.*}})>>
     comptime myIntMul2Plus3 = myIntMulPlus3[y=2, ...]
-    # CHECK: lit.alias.decl *"myEleven{{.*}}": !Int = <{11}>
+    # CHECK: lit.alias.decl *"myEleven{{.*}}": !Int = <{:scalar<index> 11}>
     comptime myEleven = myIntMul2Plus3[x=4]
 
 
 # CHECK-LABEL: fn @"nested_generators()"
 def nested_generators():
-    # CHECK-NEXT: lit.alias.decl *"myCurriedIntAdd{{.*}}": !lit.generator<<"x": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<sugar_builtin(apply(:!lit.generator<("lhs": !Int, "rhs": !Int) -> !Int> @std::@builtin::@stubs::@Int::@"__add__(::Int,::Int)", *(1,0), *(0,0)), {_mlir_value = to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(1,0), "_mlir_value">)))})>>>
+    # CHECK-NEXT: lit.alias.decl *"myCurriedIntAdd{{.*}}": !lit.generator<<"x": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(1,0), "_mlir_value">){{.*}})>>>
     comptime myCurriedIntAdd[x: Int] = myIntAdd[x, _]
 
-    # CHECK-NEXT: lit.alias.decl *"myRenamedCurriedIntAdd{{.*}}": !lit.generator<<"a": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<sugar_builtin(apply({{.*}}_mlir_value = to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(1,0), "_mlir_value">))){{.*}}>>
+    # CHECK-NEXT: lit.alias.decl *"myRenamedCurriedIntAdd{{.*}}": !lit.generator<<"a": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(1,0), "_mlir_value">){{.*}}>>
     comptime myRenamedCurriedIntAdd[a: Int] = myCurriedIntAdd[a]
 
-    # CHECK-NEXT: lit.alias.decl *"myAdd2{{.*}}": !lit.generator<<"y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}_mlir_value = to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), 2)){{.*}}>>
+    # CHECK-NEXT: lit.alias.decl *"myAdd2{{.*}}": !lit.generator<<"y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2){{.*}}>>
     comptime myAdd2 = myRenamedCurriedIntAdd[2]
 
-    # CHECK-NEXT: lit.alias.decl *"myFive{{.*}}": !Int = <{5}>
+    # CHECK-NEXT: lit.alias.decl *"myFive{{.*}}": !Int = <{:scalar<index> 5}>
     comptime myFive = myAdd2[3]
 
-    # CHECK-NEXT: lit.alias.decl *"mySix{{.*}}": !Int = <{6}>
+    # CHECK-NEXT: lit.alias.decl *"mySix{{.*}}": !Int = <{:scalar<index> 6}>
     comptime mySix = myRenamedCurriedIntAdd[2][4]
 
 
@@ -302,7 +300,7 @@ def call___init___via_various_kinds_of_things():
 
 
 comptime MyStructGenerator[b: Int] = MyStruct[1, b]
-# CHECK: lit.alias.decl *"MyStructGeneratorDotA{{.*}}": !Int = <{1}>
+# CHECK: lit.alias.decl *"MyStructGeneratorDotA{{.*}}": !Int = <{:scalar<index> 1}>
 comptime MyStructGeneratorDotA = MyStructGenerator.a
 
 
@@ -327,18 +325,18 @@ comptime WherePositive[n: Int, //] where n > 0 = WhereTag[n]
 
 
 # CHECK: lit.fn @"where_arg
-# CHECK-SAME: {<sugar_preserved({{.*}}@std::@builtin::@stubs::@Int::@"__gt__(::Int,::Int)"{{.*}}
+# CHECK-SAME: {<sugar_preserved({{.*}}@std::@builtin::@stubs::@SIMD::@"__gt__(::SIMD[$0, $1],::SIMD[$0, $1])"{{.*}}
 def where_arg(p: WherePositive):
     pass
 
 
 # CHECK: lit.fn @"where_param
-# CHECK-SAME: {<sugar_preserved({{.*}}@std::@builtin::@stubs::@Int::@"__gt__(::Int,::Int)"{{.*}}
+# CHECK-SAME: {<sugar_preserved({{.*}}@std::@builtin::@stubs::@SIMD::@"__gt__(::SIMD[$0, $1],::SIMD[$0, $1])"{{.*}}
 def where_param[p: WherePositive]():
     pass
 
 
 # CHECK: lit.fn @"where_variadic
-# CHECK-SAME: {<sugar_preserved({{.*}}@std::@builtin::@stubs::@Int::@"__gt__(::Int,::Int)"{{.*}}
+# CHECK-SAME: {<sugar_preserved({{.*}}@std::@builtin::@stubs::@SIMD::@"__gt__(::SIMD[$0, $1],::SIMD[$0, $1])"{{.*}}
 def where_variadic(*p: WherePositive):
     pass

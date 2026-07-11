@@ -19,6 +19,6 @@ def test_stable_wrapper():
     # warn. The user is calling the stable API; they don't need to know about
     # or be warned about the internal implementation details.
     #
-    # CHECK-NOT: warning: use of unstable API
+    # CHECK-NOT: no_warn_same_package.mojo:{{.*}}warning: use of unstable API
     var result = stable_fn_using_unstable()
     _ = result

@@ -21,7 +21,7 @@ def throwing_fn() raises -> Int:
 
 def literal_promotion[cond: Bool]():
     # This needs to coerce to the materialization type of float literal
-    comptime a = 2.0 if cond else 3
+    comptime a = 2.0 if cond else Int(3)
 
 
 ##===----------------------------------------------------------------------===##
@@ -68,7 +68,7 @@ def test_var_decl_patterns(c: Bool) raises:
     # Var patterns in a def are emitted inline, not at top of function.
 
     # CHECK-NEXT: %x = lit.var.decl "x"
-    # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <{42}>
+    # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 42})>
     # CHECK-NEXT: lit.ref.store [[VAL]], %x
     (var x) = 42
 
@@ -79,14 +79,14 @@ def test_var_decl_patterns(c: Bool) raises:
     # CHECK: hlcf.elif {
     # CHECK: } then {
     # CHECK-NEXT: [[X2:%.*]] = lit.var.decl "x"
-    # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <{42}>
+    # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 42})>
     # CHECK-NEXT: lit.ref.store [[VAL]], [[X2]]
     if c:
         (var x) = 42
 
     # This must load X to add to it.
-    # CHECK: lit.ref.load %x
-    # CHECK: lit.call {{.*}}Int::@"__add__{{.*}}
+    # CHECK: kgen.rebind %x
+    # CHECK: lit.call {{.*}}SIMD::@"__add__{{.*}}
     (var _) = x + 1
 
     # This should not load X.
@@ -120,13 +120,13 @@ def test_var_decl_patterns(c: Bool) raises:
 
 # CHECK-LABEL: lit.fn @"test_ref_decl_patterns
 def test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
-    # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>
+    # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
     # CHECK-NEXT: [[ASUB:%.*]] = lit.call {{.*}}List::@"__getitem__{{.*}}(%a, [[ZERO]])
     # CHECK-NEXT: %r = lit.var.decl "r" ref
     # CHECK-NEXT: lit.ref.store [[ASUB]], %r
     ref r = a[0]
 
-    # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>
+    # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
     # CHECK-NEXT: [[BSUB:%.*]] = lit.call {{.*}}List::@"__getitem__{{.*}}(%b, [[ZERO]])
     # CHECK-NEXT: %r2 = lit.var.decl "r2" ref
     # CHECK-NEXT: lit.ref.store [[BSUB]], %r2
@@ -140,13 +140,13 @@ def test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
     # CHECK-NEXT: [[R2REF:%.*]] = lit.ref.load %r2
     # CHECK-NEXT: [[RREF:%.*]] = lit.ref.load %r
     # CHECK-NEXT: [[RVAL:%.*]] = lit.ref.load [[RREF]]
-    # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[R2REF]], [[RVAL]])
+    # CHECK-NEXT: lit.call {{.*}}SIMD::@"__iadd__{{.*}}([[R2REF]], [[RVAL]])
     r2 += r
 
     # CHECK-NEXT: [[R2REF:%.*]] = lit.ref.load %r2
     # CHECK-NEXT: [[R3REF:%.*]] = lit.ref.load %r3
     # CHECK-NEXT: [[R3VAL:%.*]] = lit.ref.load [[R3REF]]
-    # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[R2REF]], [[R3VAL]])
+    # CHECK-NEXT: lit.call {{.*}}SIMD::@"__iadd__{{.*}}([[R2REF]], [[R3VAL]])
     r2 += r3
 
     # CHECK-NEXT: [[R2VAL:%.*]] = lit.ref.load %r2
@@ -155,8 +155,8 @@ def test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
     ref r4 = r2
 
     # CHECK-NEXT: [[R4REF:%.*]] = lit.ref.load %r4
-    # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant: !Int = <{1}>
-    # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[R4REF]], [[ONE]])
+    # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>
+    # CHECK-NEXT: lit.call {{.*}}SIMD::@"__iadd__{{.*}}([[R4REF]], [[ONE]])
     r4 += 1
 
     # Not useful, but this should work.
@@ -173,7 +173,7 @@ def test_type_patterns():
     # CHECK-NEXT: lit.call {{.*}}marker
     marker()
 
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!Int,
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<:meta<!Int> #alias_Int,
     (var a): Int
 
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: {{.*}}int_literal 4>
@@ -236,10 +236,10 @@ def typeof_dynval_in_param(x: _index):
 
     # CHECK-NEXT: lit.alias.decl *"a`1": non_struct_type = <index>
     comptime a = type_of(x)
-    # CHECK-NEXT: lit.alias.decl *"b`2": !mt_Int = <!Int>
+    # CHECK-NEXT: lit.alias.decl *"b`2": meta<!Int> = <#alias_Int>
     comptime b = type_of(y.__len__())
 
-    # CHECK-NEXT: lit.alias.decl *"c`3": !mt_Int = <!Int>
+    # CHECK-NEXT: lit.alias.decl *"c`3": meta<!Int> = <#alias_Int>
     comptime c = type_of(throwing_fn())
 
 
@@ -353,7 +353,11 @@ struct TypeE(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.fn @"test_mergewith
 def test_mergewith(
-    cond: __mlir_type.`!kgen.scalar<bool>`, a: TypeA, b: TypeB, c: TypeC, d: TypeD
+    cond: __mlir_type.`!kgen.scalar<bool>`,
+    a: TypeA,
+    b: TypeB,
+    c: TypeC,
+    d: TypeD,
 ):
     # One merges to the other.
     _ = a if cond else b

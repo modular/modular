@@ -425,7 +425,6 @@ def bad_tuple(a: Int):
   (c, d) = a
 
   var iTup : Tuple[Int, Int]
-  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[2]' value to 'Int'}}
   iTup = (1, 2.0)
 
 
@@ -814,14 +813,14 @@ struct HasKWOnlyParam[*, kwplz: Int]: pass
 
 # expected-note @+1 {{function declared here}}
 def test_kw_only[a: Int](arg: HasKWOnlyParam[kwplz=a]):
-  # expected-error @+1 {{cannot be converted from 'HasKWOnlyParam[kwplz=a]' to 'HasKWOnlyParam[kwplz=42]'}}
+  # expected-error @+1 {{invalid call to 'test_kw_only': value passed to 'arg' cannot be converted from 'HasKWOnlyParam[kwplz=a]' to 'HasKWOnlyParam[kwplz=Int(42)]'}}
   test_kw_only[42](arg)
 
 struct HasMultipleOnlyParam[x: Int = 1, y: Int = 4]: pass
 
 # expected-note @+1 {{function declared here}}
 def test_mixedkw_only[a: Int](arg: HasMultipleOnlyParam[1, a]):
-  # expected-error @+1 {{cannot be converted from 'HasMultipleOnlyParam[y=a]' to 'HasMultipleOnlyParam[y=42]'}}
+  # expected-error @+1 {{invalid call to 'test_mixedkw_only': value passed to 'arg' cannot be converted from 'HasMultipleOnlyParam[y=a]' to 'HasMultipleOnlyParam[y=Int(42)]'}}
   test_mixedkw_only[42](arg)
 
 def int_fn(arg: Int) -> Int: return arg+1
@@ -829,9 +828,9 @@ struct HasDependent[x: Int, y: Int = int_fn(x)]: pass
 
 # expected-note @+1 {{function declared here}}
 def test_dependent[a: Int](arg: HasDependent[a], arg2: HasDependent[a, 4]):
-  # expected-error @+1 {{value passed to 'arg' cannot be converted from 'HasDependent[a]' to 'HasDependent[42]'}}
+  # expected-error @+1 {{invalid call to 'test_dependent': value passed to 'arg' cannot be converted from 'HasDependent[a]' to 'HasDependent[Int(42)]'}}
   test_dependent[42](arg, arg2)
-  # expected-error @below {{value passed to 'arg2' cannot be converted from 'HasDependent[a]' to 'HasDependent[a, 4]'}}
+  # expected-error @below {{invalid call to 'test_dependent': value passed to 'arg2' cannot be converted from 'HasDependent[a]' to 'HasDependent[a, Int(4)]'}}
   # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
   test_dependent(arg, arg)
 
@@ -845,11 +844,11 @@ comptime HasIntParamAlias[p: Int] = HasIntParam[p]
 
 # expected-note @below {{function declared here}}
 def take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntParam[width * 4]):
-  # expected-error @below {{cannot be converted from 'HasIntParam[(x.value * 4)]' to 'HasIntParam[(Int(x) * 4)]'}}
+  # expected-error @below {{invalid call to 'take_dep_args': value passed to 'b' cannot be converted from 'HasIntParam[(x.value * 4)]' to 'HasIntParam[(SIMD(x) * Int(4))]'}}
   take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())
 
 def test_signature():
-  # expected-error @+1 {{cannot implicitly convert 'def __init__() thin -> HasIntParam[1]' value to 'def(x: HasIntParam[1]) thin -> None' in 'var' initializer}}
+  # expected-error @+1 {{cannot implicitly convert 'def __init__() thin -> HasIntParam[Int(1)]' value to 'def(x: HasIntParam[Int(1)]) thin -> None' in 'var' initializer}}
   var x : def(x: HasIntParam[1]) thin -> None = HasIntParam[1].__init__
 
   # expected-error @+1 {{use of unknown declaration 'UndefinedStruct'}}
@@ -1059,26 +1058,26 @@ def get_data() -> IdealSIMD: return IdealSIMD()
 def sugar_test1(x: type_of(HasIntParam[1])): pass
 
 def sugar_test():
-    # expected-error @below {{cannot be converted from 'AnyStruct[HasIntParam[int_fn(0)]]' to 'AnyStruct[HasIntParam[1]]'}}
-    # expected-note @below {{.p of the first value is 'int_fn(0)' but the second value is '1'}}
+    # expected-error @below {{invalid call to 'sugar_test1': value passed to 'x' cannot be converted from 'AnyStruct[HasIntParam[int_fn(Int(0))]]' to 'AnyStruct[HasIntParam[Int(1)]]'}}
+    # expected-note @below {{.p of the first value is 'int_fn(Int(0))' but the second value is 'Int(1)'}}
     # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
     sugar_test1(HasIntParam[int_fn(0)])
 
     var a = get_data()  # Ok
     var b : SIMD[DType.int32, 4]
 
-    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, 4]'}}
-    # expected-note @below {{'IdealSIMD' is aka 'SIMD[DType.int32, ideal_width]'}}
+    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, SIMDSize(4)]'}}
+    # expected-note @below {{'IdealSIMD' is aka 'SIMD[DType.int32, Int((mul some_complex_calculation(), 4))]'}}
     b = get_data()
 
     var c = a.join(a) # c has twice the width.
 
-    # expected-error @below {{cannot implicitly convert 'SIMD[DType.int32, (2 * ideal_width)]' value to 'SIMD[DType.int32, 4]'}}
-    # expected-note @below {{.size of the first value is '(2 * ideal_width)' but the second value is '4'}}
+    # expected-error @below {{cannot implicitly convert 'SIMD[DType.int32, (SIMDSize(Int((mul some_complex_calculation(), 4))) * SIMDSize(2))]' value to 'SIMD[DType.int32, SIMDSize(4)]'}}
+    # expected-note @below {{.size of the first value is '(SIMDSize(Int((mul some_complex_calculation(), 4))) * SIMDSize(2))' but the second value is 'SIMDSize(4)'}}
     b = c
 
-    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, 4]'}}
-    # expected-note @below {{'IdealSIMD' is aka 'SIMD[DType.int32, ideal_width]'}}
+    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, SIMDSize(4)]'}}
+    # expected-note @below {{'IdealSIMD' is aka 'SIMD[DType.int32, Int((mul some_complex_calculation(), 4))]'}}
     b = a+a
 
 

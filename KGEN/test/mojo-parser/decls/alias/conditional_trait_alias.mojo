@@ -15,7 +15,7 @@ struct ConditionallyConforms[value: Int](RequiresIntAlias) where value > 0:
     # Ensure the generator constraint has been discharged in the witness.
     comptime Value: Int where Self.value > 0 = Self.value
     # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"
-    # CHECK-NEXT: kgen.witness "Value" : !Int = value
+    # CHECK-NEXT: kgen.witness "Value" : !alias_Int1 = rebind(:!Int value)
 
 
 struct ConditionallyConformsInferred[value: Int](RequiresIntAlias) where (
@@ -25,7 +25,7 @@ struct ConditionallyConformsInferred[value: Int](RequiresIntAlias) where (
     # initializer (no explicit ': Int' type annotation).
     comptime Value where Self.value > 0 = Self.value
     # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"
-    # CHECK-NEXT: kgen.witness "Value" : !Int = value
+    # CHECK-NEXT: kgen.witness "Value" : !alias_Int1 = rebind(:!Int value)
 
 
 trait RequiresParametricIntAlias:
@@ -40,9 +40,9 @@ struct ConditionallyConformsParametric[value: Int](
         Self.value + offset
     )
     # CHECK: kgen.conformance @"{{.*}}RequiresParametricIntAlias"
-    # CHECK-NEXT: kgen.witness "Value" : !lit.generator<<"offset": !Int>!Int> = #kgen.gen<
-    # CHECK-SAME: @"__add__(::Int,::Int)", value, *(0,0)
-    # CHECK-SAME: add(from_builtin(#lit.struct.extract<:!Int value, "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">))
+    # CHECK-NEXT: kgen.witness "Value" : !lit.generator<<"offset": !Int>!alias_Int1> = #kgen.gen<
+    # CHECK-SAME: @"__add__(::SIMD[$0, $1],::SIMD[$0, $1])"{{.*}}, value, *(0,0)
+    # CHECK-SAME: add(#lit.struct.extract<:!Int value, "_mlir_value">, #lit.struct.extract<:!Int *(0,0), "_mlir_value">)
 
 
 # A `where` clause attached to the conformance list itself (conditional
@@ -55,7 +55,7 @@ struct ConditionallyConformsParametric[value: Int](
 struct ConfListConditional[value: Int = -1](RequiresIntAlias where value > 0):
     comptime Value: Int where Self.value > 0 = Self.value
     # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"
-    # CHECK-NEXT: kgen.witness "Value" : !Int = value
+    # CHECK-NEXT: kgen.witness "Value" : !alias_Int1 = rebind(:!Int value)
 
 
 # Same, but parametric: the body constraint is discharged while the `offset`
@@ -67,8 +67,8 @@ struct ConfListConditionalParametric[value: Int = -1](
 ):
     comptime Value[offset: Int]: Int where Self.value > 0 = Self.value + offset
     # CHECK: kgen.conformance @"{{.*}}RequiresParametricIntAlias"
-    # CHECK-NEXT: kgen.witness "Value" : !lit.generator<<"offset": !Int>!Int> = #kgen.gen<
-    # CHECK-SAME: @"__add__(::Int,::Int)", value, *(0,0)
+    # CHECK-NEXT: kgen.witness "Value" : !lit.generator<<"offset": !Int>!alias_Int1> = #kgen.gen<
+    # CHECK-SAME: @"__add__(::SIMD[$0, $1],::SIMD[$0, $1])"{{.*}}, value, *(0,0)
 
 
 # The conformance constraint may be strictly stronger than the member's `where`
@@ -81,4 +81,4 @@ struct ConfListConditionalConjunction[value: Int = -1, other: Int = -1](
 ):
     comptime Value: Int where Self.value > 0 = Self.value
     # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"
-    # CHECK-NEXT: kgen.witness "Value" : !Int = value
+    # CHECK-NEXT: kgen.witness "Value" : !alias_Int1 = rebind(:!Int value)

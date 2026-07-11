@@ -83,12 +83,14 @@ def tuples_lv(i0: Int, f0: FloatDyn):
     # Tuple LValue
     # CHECK: [[IMMTUP:%.*]] = lit.ref.immut %iTup
     # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}([[IMMTUP]])
-    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
+    # CHECK: [[ELTREB:%.*]] = kgen.rebind [[ELT]]
+    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTREB]]
     # CHECK: lit.ref.store [[ELTV]], %i1
 
     # CHECK: [[IMMTUP:%.*]] = lit.ref.immut %iTup
     # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}([[IMMTUP]])
-    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
+    # CHECK: [[ELTREB:%.*]] = kgen.rebind [[ELT]]
+    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTREB]]
     # CHECK: lit.ref.store [[ELTV]], %i2
     (i1, i2) = iTup
 
@@ -100,16 +102,19 @@ def tuples_lv(i0: Int, f0: FloatDyn):
     # CHECK: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}({{.*}}, [[TMPVAR]])
 
     # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}>(
-    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
+    # CHECK: [[ELTREB:%.*]] = kgen.rebind [[ELT]]
+    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTREB]]
     # CHECK: lit.ref.store [[ELTV]], %i1
 
     # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}>(
-    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]
+    # CHECK: [[ELTREB:%.*]] = kgen.rebind [[ELT]]
+    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTREB]]
     # CHECK: lit.ref.store [[ELTV]], %i2
     (i1, i2) = (i2, i1)
 
     # CHECK: [[ELT:%.*]] = lit.call {{.*}}__getitem_param__{{.*}}(%iTup)
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
+    # CHECK-NEXT: [[I1REB:%.*]] = kgen.rebind %i1
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load [[I1REB]]
     # CHECK-NEXT: lit.ref.store [[TMP]], [[ELT]]
     iTup[1] = i1
 
@@ -185,7 +190,7 @@ def returnTup1b() -> Tuple[Int]:
 # CHECK-LABEL: lit.fn @"returnTup2
 # CHECK-SAME:  %__result__: !lit.ref<{{.*}}#Tuple <:param_list<!AnyType_Movable> [!Int, !FloatDyn]
 def returnTup2() -> Tuple[Int, FloatDyn]:
-    # CHECK:  = kgen.param.constant: !Int = <{4}>
+    # CHECK:  = kgen.param.constant: !Int = <{:scalar<index> 4}>
     # CHECK:  = kgen.param.constant: !FloatDyn = <{{.*}}{:scalar<f64> "2"}
     # CHECK: lit.ref.pack.create({{.*}}) : !lit.ref.pack<:param_list<!AnyType_Movable> [!Int, !FloatDyn]
     return (Int(4), 2.0)
@@ -213,13 +218,15 @@ def takesSugarTuple[T: ImplicitlyCopyable](elements: Tuple[T, T]):
 def index_homogenous_tuple[idx: Int]():
     var tup = (1, 2, 3, 4)
     # CHECK: %test1 = lit.var.decl "test1"
-    # CHECK-NEXT: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}:!Int {1}{{.*}}(%tup)
-    # CHECK-NEXT: [[INTVAL:%.*]] = lit.ref.load [[ELTPTR]]
+    # CHECK-NEXT: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}:!Int {:scalar<index> 1}{{.*}}(%tup)
+    # CHECK-NEXT: [[ELTREB:%.*]] = kgen.rebind [[ELTPTR]]
+    # CHECK-NEXT: [[INTVAL:%.*]] = lit.ref.load [[ELTREB]]
     # CHECK-NEXT: lit.ref.store [[INTVAL]], %test1
     var test1: Int = tup[1]
 
     # CHECK: %test2 = lit.var.decl "test2"
     # CHECK-NEXT: [[ELTPTR:%.*]] = lit.call {{.*}}Tuple::@"__getitem_param__{{.*}}:!Int idx{{.*}}(%tup)
-    # CHECK-NEXT: [[INTVAL:%.*]] = lit.ref.load [[ELTPTR]]
+    # CHECK-NEXT: [[ELTREB:%.*]] = kgen.rebind [[ELTPTR]]
+    # CHECK-NEXT: [[INTVAL:%.*]] = lit.ref.load [[ELTREB]]
     # CHECK-NEXT: lit.ref.store [[INTVAL]], %test2
     var test2: Int = tup[idx]

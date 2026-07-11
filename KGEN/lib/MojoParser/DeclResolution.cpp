@@ -2963,8 +2963,12 @@ static ParseResult resolveConformanceList(
       // Check for API author error: stable trait cannot inherit from unstable.
       // Only applies when `decl` is a trait (not a struct conforming to a
       // trait).
-      if (isa<TraitDeclOp>(decl.getIfOperation()))
+      if (isa<TraitDeclOp>(decl.getIfOperation())) {
+        // Need to sig resolve to get stable marker.
+        if (failed(shared.declResolver->resolveSignature(traitDecl, SMLoc())))
+          return failure();
         checkStableTraitInheritance(decl, traitDecl, declScope, shared);
+      }
 
       TraitType canonicalParent =
           cast_or_null<TraitDeclOp>(traitDecl.getIfOperation())

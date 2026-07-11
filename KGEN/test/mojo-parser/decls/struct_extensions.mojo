@@ -208,7 +208,7 @@ struct StructWithCapturingLambda[T: Int, my_lambda: capturing_lambda_type]:
     # methods get 'capturing' when the struct has a capturing def parameter.
     # Further below, we'll CHECK that the same thing happens for extensions.
     # CHECK-LABEL: lit.fn @"helper_with_capturing_lambda
-    # CHECK-SAME: capturing -> !Int
+    # CHECK-SAME: capturing -> !alias_Int1
     def helper_with_capturing_lambda(self) -> Int:
         return Self.T
 
@@ -217,7 +217,7 @@ __extension StructWithCapturingLambda:
     # CHECK-LABEL: lit.fn @"user_from_extension
     # This is the important check, that extension methods also get 'capturing'
     # if the struct has any capturing def parameters.
-    # CHECK-SAME: ) capturing -> !Int attributes
+    # CHECK-SAME: ) capturing -> !alias_Int1 attributes
     def user_from_extension(self) -> Int:
         return Self.helper_with_capturing_lambda(self)
 
@@ -253,7 +253,7 @@ __extension Spaceship(Flying):
 
 
 # CHECK: kgen.conformance @"struct_extensions::Flying" {
-# CHECK-NEXT: kgen.witness "fly_to($0&,::Int)"
+# CHECK-NEXT: kgen.witness "fly_to($0&,::SIMD[::DType(int), ::SIMDSize(1)])"
 # CHECK-SAME: = @struct_extensions::@"extension:Spaceship"::@"fly_to
 # ConformanceOp's immediateParents should match the trait's immediateParents.
 # CHECK-NEXT: } attributes {immediateParents = #M<symbols[]>, traitRef = @struct_extensions::@Flying}

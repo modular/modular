@@ -37,6 +37,6 @@ def main():
     # `IndexList[3](1, 2, 3)`, not the `fill=0` default.
     #
     # CHECK: lit.call @{{.*}}::@"baz
-    # CHECK-SAME: <:!Int {2}, :!lit.struct<#IndexList <:!Int {3}, :!DType {:dtype index}>>
-    # CHECK-SAME: store_to_mem([store_to_mem({1}), store_to_mem({2}), store_to_mem({3})])
+    # CHECK-SAME: <:!Int {:scalar<index> 2}, :!lit.struct<#IndexList <:!Int {:scalar<index> 3}, :!DType {:dtype index}>>
+    # CHECK-SAME: store_to_mem([store_to_mem({:scalar<index> 1}), store_to_mem({:scalar<index> 2}), store_to_mem({:scalar<index> 3})])
     baz[output_shape=IndexList[3](1, 2, 3)](cfg)

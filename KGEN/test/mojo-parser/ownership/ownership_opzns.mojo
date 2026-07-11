@@ -189,9 +189,10 @@ def passFieldToOwnedInt(var a: MemExample):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %a[x]
     # CHECK-NEXT: %1 = lit.ref.load %0
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+    # CHECK-NEXT: [[RB:%.*]] = kgen.rebind %1
     # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*
     # CHECK-NEXT: lit.var.lifetime.start [[ANON]]
-    # CHECK-NEXT: lit.ref.store %1, [[ANON]]
+    # CHECK-NEXT: lit.ref.store [[RB]], [[ANON]]
     # CHECK-NEXT: lit.call {{.*}}takeOwnedInt{{.*}}([[ANON]])
     # CHECK-NEXT: lit.var.lifetime.end [[ANON]]
     takeOwnedInt(a.x)

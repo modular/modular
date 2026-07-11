@@ -120,6 +120,7 @@ def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: [[ONE:%.+]] = kgen.param.constant: scalar<bool> = <true>
     # CHECK-NEXT: hlcf.elif.yield [[ONE]]
     # CHECK-NEXT: } then {
+    # expected-warning @below {{'if' condition always evaluates to 'True'; 'else' branch is unreachable}}
     if True:
         # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %d
         # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
@@ -473,7 +474,6 @@ def testErrorReturn() raises:
     # CHECK: try
     with MyStringReturningCtx() as ctx:
         # CHECK-NOT: @MyStringReturningCtx::@"__del__
-        # expected-warning @below {{assignment to 'x' was never used}}
         var x = ctx.read()
         input = "hello"
     # CHECK: except
@@ -626,6 +626,7 @@ def test_elif(cond: Bool, cond2: Bool):
 
     # Last use of mem2 is in this condition.
     # CHECK-NEXT: lit.ref.struct.ger %mem2[x]
+    # CHECK-NEXT: kgen.rebind
     # CHECK-NEXT: lit.ref.load
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
     # CHECK: hlcf.elif.yield
