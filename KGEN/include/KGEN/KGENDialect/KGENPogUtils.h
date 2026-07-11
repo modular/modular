@@ -37,6 +37,12 @@ namespace M::KGEN {
 /// former is useful when printing the name.
 StringRef demangleParameterName(StringRef name, bool forUser = false);
 
+/// Return true if the parameter is not exposed to the user.
+inline bool isHiddenGeneratorParam(PassingKind passingKind, StringRef name) {
+  return passingKind == PassingKind::Implicit ||
+         (passingKind == PassingKind::Inferred && name.contains('.'));
+}
+
 //===----------------------------------------------------------------------===//
 // Parsing and Printing
 //===----------------------------------------------------------------------===//

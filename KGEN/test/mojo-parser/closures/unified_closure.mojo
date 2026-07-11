@@ -532,7 +532,7 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 # COM: "U" cannot be called "T" until MOCO-4028 is fixed
 
 # COM: The captured parameter becomes an alias on the trait
-# CHECK: lit.trait.decl @"def{{.*}} -> U"
+# CHECK: lit.trait.decl @"def{{.*}} -> U{1}"
 # CHECK-NEXT: lit.alias.decl U: !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable
 
 # COM: The captured parameter becomes a parameter of the struct generator
@@ -541,8 +541,8 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 
 
 # COM: The alias is set to the alias of the impl in the struct wrapper
-# CHECK: lit.struct.decl @"def{{.*}} -> U_{{.*}}"
-# CHECK: kgen.witness "U" : !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable = #kgen.get_witness<:!{{.*}} impl, "def{{.*}} -> U", "U">
+# CHECK: lit.struct.decl @"def{{.*}} -> U{1}_{{.*}}"
+# CHECK: kgen.witness "U" : !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable = #kgen.get_witness<:{{.*}} impl, "def{{.*}} -> U{1}", "U">
 def makeIt[U: TrivialRegisterPassable](a: U):
     def parametric() {var a} -> U:
         return a
@@ -639,7 +639,7 @@ struct MiniSpan[dtype_tag: Int]:
 
 
 # CHECK: lit.struct.decl @"def[w: Int](vec: ToySIMD[Int(1), w]) thin -> ToyMask[Int(1), w]_{{.*}}"
-# CHECK: kgen.conformance @"def[{{.*}}w: Int](vec: ToySIMD[dtype_tag, w]) -> ToyMask[dtype_tag, w]" {
+# CHECK: kgen.conformance @"def[{{.*}}w: Int](vec: ToySIMD[dtype_tag, w]) -> ToyMask[dtype_tag, w]{1}" {
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK: kgen.witness "dtype_tag" : !Int = {:scalar<index> 1}
 
@@ -691,7 +691,7 @@ struct MiniSpan[dtype_tag: Int]:
 
 
 # CHECK: lit.struct.decl @"def[u: Int](vec: ToySIMD[Int(1), u]) -> ToyMask[Int(1), u]_{{.*}}"
-# CHECK: kgen.conformance @"def[{{.*}}u: Int](vec: ToySIMD[dtype_tag, u]) -> ToyMask[dtype_tag, u]" {
+# CHECK: kgen.conformance @"def[{{.*}}u: Int](vec: ToySIMD[dtype_tag, u]) -> ToyMask[dtype_tag, u]{1}" {
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK: kgen.witness "dtype_tag" : !Int = {:scalar<index> 1}
 def repro_capturing(mem: String):
@@ -738,7 +738,7 @@ struct Store[E: ElemLike]:
 
 
 # CHECK: lit.struct.decl @"def[n: Int](item: Box[ConcreteElem, n]) -> Box[ConcreteElem, n]_{{.*}}"
-# CHECK: kgen.conformance @"def[{{.*}}n: Int](item: Box[E, n]) -> Box[E, n]" {
+# CHECK: kgen.conformance @"def[{{.*}}n: Int](item: Box[E, n]) -> Box[E, n]{1}" {
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK: kgen.witness "E" : !AnyType_ElemLike = !ConcreteElem
 def repro_nested_type_param(mem: String):
@@ -774,8 +774,8 @@ def callee[
     closure[simd_width, 2]()
 
 
-# CHECK: lit.struct.decl @"def[simd_width: Int, rank: Int, alignment: Int]() -> None_{{.*}}"
-# CHECK: kgen.conformance @"def[width: Int, rank: Int, alignment: Int]() -> None" {
+# CHECK: lit.struct.decl @"def[simd_width: Int, rank: Int, alignment: Int = Int(1)]() -> None_{{.*}}"
+# CHECK: kgen.conformance @"def[width: Int, rank: Int, alignment: Int = Int(1)]() -> None" {
 # CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
 def main() raises:
     var x = 42
@@ -808,7 +808,7 @@ struct V[dtype: Int, width: Int](RegisterPassable):
 # CHECK-NEXT: lit.return
 
 
-# CHECK: kgen.conformance @"def[dtype: Int, #, width: Int]() -> V[dtype, width]" {
+# CHECK: kgen.conformance @"def[dtype: Int, //, width: Int]() -> V[dtype, width]{1}" {
 # CHECK-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK-NEXT: kgen.witness "dtype" :{{.*}} = {:scalar<index> 42}
 def callee[
@@ -850,7 +850,7 @@ def variadic_callee[
 
 
 # CHECK: lit.struct.decl @"def(point: ToyIndex[Int(2)]) -> Tuple[ToyIndex[Int(2)], ToyIndex[Int(2)]]_{{.*}}"
-# CHECK: @"def[rank: Int, #](ToyIndex[rank]) -> Tuple[ToyIndex[rank], ToyIndex[rank]]" {
+# CHECK: @"def[rank: Int, //](ToyIndex[rank]) -> Tuple[ToyIndex[rank], ToyIndex[rank]]{1}" {
 # CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK:   kgen.witness "rank" : !Int = {:scalar<index> 2}
 def repro_variadic_attr():
@@ -892,7 +892,7 @@ def struct_callee[
 
 # CHECK-LABEL: lit.fn @"repro_struct_attr()"
 # CHECK: lit.closure.init[#kgen.type<typevalue<:trait<@"def() -> Container[Pair(Int(2), Int(0))]"
-# CHECK: lit.call @unified_closure::@"struct_callee[::SIMD[::DType(int), ::SIMDSize(1)],def[tag: Int, #]() -> Container[Pair(tag, Int(0))]]($1){(eq $1.tag, $0)}"
+# CHECK: lit.call @unified_closure::@"struct_callee[::SIMD[::DType(int), ::SIMDSize(1)],def[tag: Int, //]() -> Container[Pair(tag, Int(0))]{1}]($1){(eq $1.tag, $0)}"
 # CHECK-SAME: <:!Int {:scalar<index> 2}
 def repro_struct_attr():
     var x = 10
@@ -966,10 +966,10 @@ def repro_rebind_nonref_operand[
     tag: Int,
     F: def[w: Width](v: Vec[tag, w]) -> Bool,
 ](func: F):
-    # CHECK-LABEL: lit.fn @"__call__[::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)]](unified_closure::def[tag: Int, #, w: Int](val: Vec[tag, w]) -> Bool_{{.*}}"
+    # CHECK-LABEL: lit.fn @"__call__[::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)]](unified_closure::def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}_{{.*}}"
     # CHECK: [[REBIND:%.*]] = kgen.rebind %val : !lit.struct<#Vec <:!Int _tag
-    # CHECK-SAME: to !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "def[tag: Int, #, w: Int](val: Vec[tag, w]) -> Bool", "tag">
-    # CHECK: lit.call[{{.*}}"val": !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "def[tag: Int, #, w: Int](val: Vec[tag, w]) -> Bool", "tag">
+    # CHECK-SAME: to !lit.struct<#Vec <:!Int #kgen.get_witness<:{{.*}} impl, "def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}", "tag">
+    # CHECK: lit.call[{{.*}}"val": !lit.struct<#Vec <:!Int #kgen.get_witness<:{{.*}} impl, "def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}", "tag">
     # CHECK-SAME: ]{{.*}}(%{{.*}}, [[REBIND]])
     def body[w: Int](val: Vec[tag, w]) {read func} -> Bool:
         return func[w=w](val)
@@ -1079,7 +1079,7 @@ struct Foo:
 
 # CHECK-DAG: [[INT:!Int.*]] = !lit.struct<#SIMD <{{.*}}>>
 
-# CHECK: kgen.conformance @"def{{.*}}(x: T) -> U" {
+# CHECK: kgen.conformance @"def{{.*}}(x: T) -> U{2}" {
 # CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK:   kgen.witness "T" : {{.*}} = [[INT]]
 # CHECK:   kgen.witness "U" : {{.*}} = [[INT]]
@@ -1116,9 +1116,9 @@ trait DoB:
         ...
 
 
-# CHECK-DAG: !lit.trait<@"def[U: DoB, #](y: U) -> None">
-# CHECK-DAG: !lit.trait<@"def[T: DoA](y: T) -> None">
-# CHECK-DAG: !lit.trait<@"def[T: DoA, #](y: T) -> None">
+# CHECK-DAG: lit.trait.decl @"def[U: DoB, //](y: U) -> None{1}"
+# CHECK-DAG: lit.trait.decl @"def[T: DoA](y: T) -> None"
+# CHECK-DAG: lit.trait.decl @"def[T: DoA, //](y: T) -> None{1}"
 def foo[T: DoA](x: T):
     def closure(y: T) {read x}:
         _ = x
@@ -1262,8 +1262,8 @@ def trigger_dtype():
 
 # COM: Verify async closures use an async trait name and async call op.
 
-# CHECK-DAG: lit.trait.decl @"def() async -> None"
-# CHECK-DAG: sourceName = #debuginfo.source_name<"def() async -> None">
+# CHECK-DAG: lit.trait.decl @"async def() -> None"
+# CHECK-DAG: sourceName = #debuginfo.source_name<"async def() -> None">
 # CHECK-LABEL: lit.fn @"async_unified_closure()"
 # CHECK: lit.async.call[!lit.generator<
 
@@ -1605,7 +1605,7 @@ def bind[
     pass
 
 
-# CHECK-LABEL: lit.struct.decl @"def[A: Copyable, B: Copyable, #, C: Copyable](a: A, b: B, c: C) -> None_{{.*}}"
+# CHECK-LABEL: lit.struct.decl @"def[A: Copyable, B: Copyable, C: Copyable, //](a: A, b: B, c: C) -> None{2}_{{.*}}"
 # CHECK: lit.fn @"__call__{{.*}}"<_A: !AnyType_Copyable_Movable, _B: !AnyType_Copyable_Movable, C: !AnyType_Copyable_Movable, +>
 
 
@@ -1628,7 +1628,7 @@ def bind[
     pass
 
 
-# CHECK-LABEL: lit.struct.decl @"def[{{.*}}C: Copyable](a: {{.*}}, b: {{.*}}, c: C) -> None_{{.*}}"
+# CHECK-LABEL: lit.struct.decl @"def[{{.*}}C: Copyable, //](a: {{.*}}, b: {{.*}}, c: C) -> None_{{.*}}"
 # CHECK: lit.fn @"__call__$def
 # CHECK-NEXT: kgen.rebind %a : !lit.ref<:!AnyType_Copyable_Movable _D, imm *"1_unnamed`"> to !lit.ref<!String, imm *"1_unnamed`">
 # CHECK-NEXT: kgen.rebind %b : !lit.ref<:!AnyType_Copyable_Movable _E, imm *"2_unnamed`"> to !lit.ref<!String, imm *"2_unnamed`">

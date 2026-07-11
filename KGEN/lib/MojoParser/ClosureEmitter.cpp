@@ -25,6 +25,7 @@
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/KGENPogUtils.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -808,74 +809,19 @@ void ClosureEmitter::collectClosureExternalRefs(
 static std::string formatClosureSignature(FnTypeGeneratorType sig,
                                           SharedState &shared,
                                           unsigned numPrependedCaptures = 0) {
-  std::string result;
-  llvm::raw_string_ostream os(result);
-
-  // FIXME: This is incorrectly replicating function printing logic!
-  // Switch to:
-  //   ASTType(sig).print(os, &shared);
-  //   return result;
-  os << "def";
   SmallVector<ParamDeclAttr> parameters =
       populateParametersFromFnGeneratorType(sig);
   ParamRefRemapper replacer(parameters);
+  auto remapped = replacer.replace(sig);
 
-  if (!sig.getInputParamTypes().empty()) {
-    os << '[';
-    PogListAttr paramInfo = sig.getParamListAttrs();
-    for (auto [idx, paramType] : llvm::enumerate(sig.getInputParamTypes())) {
-      if (idx)
-        os << ", ";
-      if (paramInfo) {
-        StringRef name = paramInfo.getName(idx).strref();
-        if (!name.empty())
-          os << name << ": ";
-      }
-      Type reboundType = cast<Type>(replacer.replace(paramType));
-      os << ASTType(reboundType).getAsString({&shared});
-      if (numPrependedCaptures && idx + 1 == numPrependedCaptures)
-        os << ", #";
-    }
-    os << ']';
-  }
-
-  FuncType body = sig.getBody();
-  os << '(';
-  auto args = llvm::enumerate(body.getArguments(), body.getArgConventions());
-  llvm::interleaveComma(
-      llvm::make_filter_range(args,
-                              [](auto entry) {
-                                auto [idx, argType, convention] = entry;
-                                return !isResultSlot(convention);
-                              }),
-      os, [&](auto entry) {
-        auto [idx, argType, convention] = entry;
-        if (convention != ArgConvention::ReadReg &&
-            convention != ArgConvention::ReadMem)
-          os << getUserSyntax(convention) << ' ';
-
-        StringAttr name = body.getArgName(idx);
-        if (name && !name.empty())
-          os << name.getValue() << ": ";
-        Type stripped = RefType::stripRefConvention(argType, convention);
-        Type reboundType = cast<Type>(replacer.replace(stripped));
-        os << ASTType(reboundType).getAsString({&shared});
-      });
-  os << ')';
-
-  if (sig.isThrows())
-    os << " raises";
-  if (sig.isAsync())
-    os << " async";
-
-  os << " -> ";
-  Type resultType = body.getUserResultType();
-  if (isa<KGEN::NoneType>(resultType))
-    os << "None";
-  else
-    os << ASTType(cast<Type>(replacer.replace(resultType)))
-              .getAsString({&shared});
-
+  // A closure trait/wrapper is named from its signature, but it is a closure
+  // interface, not a thin function pointer, so its name must not carry the
+  // `thin` keyword (unlike a genuine thin function type or its `_PtrWrapper`).
+  ASTTypePrinterContext ctx{&shared};
+  ctx.suppressThin = true;
+  std::string result = ASTType(remapped).getAsString(ctx);
+  if (numPrependedCaptures)
+    result += (Twine("{") + Twine(numPrependedCaptures) + "}").str();
   return result;
 }
 
@@ -1601,11 +1547,40 @@ ClosureEmitter::getClosureTraitKey(FnTypeGeneratorType rawSignature) {
       DeclResolver::createSelfContainedSignature(rawSignature);
   auto canonicalSig =
       cast<FnTypeGeneratorType>(getCanonicalType(selfContainedSig));
+
+  // Normalize auto parameters.
+  PogListAttr meta = canonicalSig.getMetadata();
+  ArrayRef<PogMetadataAttr> pogs = meta.getPogs();
+  SmallVector<PogMetadataAttr> normalizedPogs(pogs.begin(), pogs.end());
+  bool changed = false;
+  for (size_t i = 0; i < normalizedPogs.size(); ++i) {
+    PogMetadataAttr pog = normalizedPogs[i];
+    PassingKind pk = pog.getPassingKind();
+    StringRef name = pog.getName().getValue();
+    if (!isHiddenGeneratorParam(pk, name))
+      continue;
+    StringRef newName;
+    SmallString<32> positional;
+    if (name.contains("._mlir_origin")) {
+      newName = demangleParameterName(name);
+    } else {
+      positional = ("." + Twine(i)).str();
+      newName = positional;
+    }
+    if (newName == name)
+      continue;
+    normalizedPogs[i] = PogMetadataAttr::get(
+        StringAttr::get(canonicalSig.getContext(), newName), pk,
+        pog.getVariadic(), pog.getDefaultValue());
+    changed = true;
+  }
+  PogListAttr normalizedMeta = changed ? meta.cloneWith(normalizedPogs) : meta;
+
   FnTypeGeneratorType key = FnTypeGeneratorType::get(
       canonicalSig.getInputParamTypes(), canonicalSig.getValues(),
       canonicalSig.getArgConventions(),
       canonicalSig.getFnEffects().setCapturing(false),
-      canonicalSig.getFnMetadata(), canonicalSig.getMetadata(),
+      canonicalSig.getFnMetadata(), normalizedMeta,
       canonicalSig.getArgListAttrs());
   return {key, capturedRefs.size()};
 }
@@ -2416,10 +2391,16 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
 
     // add the alias entries
     if (closureParent.getClosureMethod() == ClosureMethod::CALL) {
-      for (auto [name, type] : aliases)
-        WitnessOp::create(
-            builder, name,
-            ParamDeclRefAttr::get(StringAttr::get(ctx, name), type));
+      SmallVector<AliasDeclOp> traitAliases;
+      for (AliasDeclOp alias : traitParent.getFields().getOps<AliasDeclOp>())
+        if (!alias.getInheritedFrom())
+          traitAliases.push_back(alias);
+      assert(traitAliases.size() == aliases.size() &&
+             "trait capture aliases must mirror closure captures");
+      for (auto [alias, param] : llvm::zip_equal(traitAliases, aliases))
+        WitnessOp::create(builder, alias.getParamDecl().getName(),
+                          ParamDeclRefAttr::get(
+                              StringAttr::get(ctx, param.first), param.second));
     }
   };
 

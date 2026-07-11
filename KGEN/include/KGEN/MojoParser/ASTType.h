@@ -353,6 +353,9 @@ struct ASTTypePrinterContext {
   /// prints `Self` in place of the fully-expanded form.
   ASTType selfType = {};
 
+  /// Set to true to print closure trait signature.
+  bool suppressThin = false;
+
   ASTTypePrinterContext() {}
   ASTTypePrinterContext(SharedState *shared) : shared(shared) {}
   ASTTypePrinterContext(SharedState *shared, ASTType selfType)
