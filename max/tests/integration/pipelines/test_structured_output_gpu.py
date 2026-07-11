@@ -72,7 +72,7 @@ def test_smollm_with_structured_output_gpu(
     request_id = RequestID("request_0")
     sampling_params = SamplingParams(max_new_tokens=50, top_k=1)
     request = TextGenerationRequest(
-        model_name=pipeline_config.model.model_path,
+        model_name=pipeline_config.model_path,
         request_id=request_id,
         messages=[
             TextGenerationRequestMessage(
@@ -186,7 +186,7 @@ def test_multistep_structured_output_gpu(
     request_id = RequestID("multistep_request")
     sampling_params = SamplingParams(max_new_tokens=50, top_k=1)
     request = TextGenerationRequest(
-        model_name=pipeline_config.model.model_path,
+        model_name=pipeline_config.model_path,
         request_id=request_id,
         messages=[
             TextGenerationRequestMessage(
@@ -278,7 +278,7 @@ def test_multi_step_guided_decoding_gpu(
 
     request_id = RequestID("multi_step_guided_test")
     request = TextGenerationRequest(
-        model_name=pipeline_config.model.model_path,
+        model_name=pipeline_config.model_path,
         request_id=request_id,
         messages=[TextGenerationRequestMessage(role="user", content=prompt)],
         sampling_params=SamplingParams(max_new_tokens=30, top_k=1),
@@ -355,7 +355,7 @@ def test_overlap_pipeline_structured_output_gpu(
 
     request_id = RequestID("overlap_structured")
     request = TextGenerationRequest(
-        model_name=pipeline_config.model.model_path,
+        model_name=pipeline_config.model_path,
         request_id=request_id,
         messages=[TextGenerationRequestMessage(role="user", content=prompt)],
         sampling_params=SamplingParams(max_new_tokens=50, top_k=1),
@@ -463,7 +463,7 @@ def test_heterogeneous_batch_structured_output_gpu(
     # Request 1: Structured output with JSON schema
     structured_request_id = RequestID("structured_request")
     structured_request = TextGenerationRequest(
-        model_name=pipeline_config.model.model_path,
+        model_name=pipeline_config.model_path,
         request_id=structured_request_id,
         messages=[
             TextGenerationRequestMessage(
@@ -494,7 +494,7 @@ def test_heterogeneous_batch_structured_output_gpu(
     # Request 2: Non-structured output (no json_schema)
     freeform_request_id = RequestID("freeform_request")
     freeform_request = TextGenerationRequest(
-        model_name=pipeline_config.model.model_path,
+        model_name=pipeline_config.model_path,
         request_id=freeform_request_id,
         messages=[
             TextGenerationRequestMessage(

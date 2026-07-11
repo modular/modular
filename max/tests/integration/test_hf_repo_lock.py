@@ -16,6 +16,7 @@ import re
 
 import hf_repo_lock
 import pytest
+from max import pipelines
 from pytest_mock import MockerFixture
 from test_common.mocks import DummyPipelineConfig
 from test_common.pipeline_model_dummy import DUMMY_LLAMA_ARCH
@@ -137,6 +138,25 @@ def test_apply_to_config() -> None:
     assert config.model.huggingface_model_revision == "main"
     hf_repo_lock.apply_to_config(config)
     assert config.model.huggingface_model_revision == EXAMPLE_VALUE
+
+
+def test_apply_to_config_pipeline_args() -> None:
+    """Regression test (QUA-729/QUA-730): MAXModelConfig.from_pipeline_args()
+    rebuilds a fresh MAXModelConfig on every call, so writing through it
+    (e.g. MAXModelConfig.from_pipeline_args(config).foo = ...) is silently
+    discarded. apply_to_config() must write PipelineArgs's own flat fields
+    directly, or the locked revision never actually applies -- every
+    PipelineArgs-based harness pipeline (the common case, e.g. GenericOracle)
+    silently falls back to the unpinned default revision instead of raising
+    or pinning correctly.
+    """
+    config = pipelines.PipelineArgs(
+        model_path=EXAMPLE_KEY,
+        quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
+    )
+    assert config.huggingface_model_revision == "main"
+    hf_repo_lock.apply_to_config(config)
+    assert config.huggingface_model_revision == EXAMPLE_VALUE
 
 
 def test_apply_to_config_raises_on_missing_revision() -> None:

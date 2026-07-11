@@ -591,3 +591,100 @@ class TestEdgeCases:
             repo = HuggingFaceRepo(repo_id=tmpdir)
             result = repo.encoding_for_file("model.safetensors")
             assert result == "float4_e2m1fnx2"
+
+
+# ---------------------------------------------------------------------------
+# Category G: PipelineArgs write-through regressions
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineArgsWriteThroughRegressions:
+    """`MAXModelConfig.from_pipeline_args()` rebuilds a fresh `MAXModelConfig`
+    on every call, unlike `PipelineConfig.model`, which returns the live
+    stored object. Code migrated from the old `PipelineConfig` API kept the
+    `config.model.foo = x` write-through pattern, which is silently discarded
+    against `PipelineArgs`. These regression tests guard the fixed call
+    sites: writes must go through `PipelineArgs`'s own fields/private attrs.
+    """
+
+    def test_weights_repo_id_must_be_set_on_args_not_model_property(
+        self,
+    ) -> None:
+        """Regression test (QUA-729/QUA-730): MAXModelConfig.from_pipeline_args()
+        rebuilds a fresh MAXModelConfig on every call, so
+        `MAXModelConfig.from_pipeline_args(config)._weights_repo_id = x` (the
+        pattern GenericOracle used, mirroring the old PipelineConfig API
+        where `.model` returned the live stored object) is silently
+        discarded. Setting `config._weights_repo_id` directly on the
+        PipelineArgs instance is the only way it survives to
+        `MAXModelConfig.from_pipeline_args()`, which is what a cross-repo
+        weights setup (e.g. a bartowski GGUF repo supplying weights for a
+        meta-llama config repo) depends on to find weight files in the right
+        repo instead of the (potentially gated, GGUF-less) model repo.
+        """
+        from max.pipelines.lib import MAXModelConfig, PipelineArgs
+
+        args = PipelineArgs(model_path="meta-llama/Meta-Llama-3-8B-Instruct")
+
+        # The buggy pattern: mutating the returned object's copy is a no-op.
+        MAXModelConfig.from_pipeline_args(
+            args
+        )._weights_repo_id = "bartowski/Meta-Llama-3-8B-Instruct-GGUF"
+        assert (
+            MAXModelConfig.from_pipeline_args(args).huggingface_weight_repo_id
+            == "meta-llama/Meta-Llama-3-8B-Instruct"
+        )
+
+        # The fix: set the private attr on PipelineArgs itself.
+        args._weights_repo_id = "bartowski/Meta-Llama-3-8B-Instruct-GGUF"
+        assert (
+            MAXModelConfig.from_pipeline_args(args).huggingface_weight_repo_id
+            == "bartowski/Meta-Llama-3-8B-Instruct-GGUF"
+        )
+
+    def test_multi_component_manifest_rejects_nested_runtime_kwarg(
+        self,
+    ) -> None:
+        """Regression guard for the FLUX/QUA-727 crash.
+
+        Unlike PipelineConfig, PipelineArgs has no `runtime` field -- its
+        runtime knobs (`prefer_module_v3`, `denoising_cache`, etc.) are flat
+        top-level fields. `create_pipelines.py`'s FLUX oracle used to pass
+        `runtime=PipelineRuntimeConfig(...)` (a leftover from the pre-
+        PipelineArgs `PipelineConfig(models=..., runtime=...)` pattern),
+        which raises "Extra inputs are not permitted" since ConfigFileModel
+        forbids extra fields -- a hard crash for every multi-component
+        (diffusion) pipeline that set prefer_module_v3 or denoising_cache.
+        """
+        from max.pipelines.diffusion.cache import DenoisingCacheConfig
+        from max.pipelines.lib import (
+            ModelManifest,
+            PipelineArgs,
+            PipelineRuntimeConfig,
+        )
+        from pydantic import ValidationError
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(tmpdir, {"model.safetensors": {"w": "BF16"}})
+            models = ModelManifest(
+                {
+                    "transformer": _make_config(
+                        tmpdir, device_specs=[GPU_DEVICE_SPEC]
+                    )
+                }
+            )
+
+            with pytest.raises(ValidationError, match="runtime"):
+                PipelineArgs(
+                    models=models,
+                    runtime=PipelineRuntimeConfig(prefer_module_v3=True),
+                )
+
+            # The correct pattern: pass runtime knobs as flat fields.
+            args = PipelineArgs(
+                models=models,
+                prefer_module_v3=True,
+                denoising_cache=DenoisingCacheConfig(taylorseer=True),
+            )
+            assert args.prefer_module_v3 is True
+            assert args.denoising_cache.taylorseer is True

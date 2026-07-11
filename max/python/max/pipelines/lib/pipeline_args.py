@@ -59,10 +59,10 @@ class PipelineArgs(ConfigFileModel):
     Multi-component pipelines (e.g. diffusion) that require a pre-built
     :class:`~max.pipelines.lib.model_manifest.ModelManifest` may pass
     ``models=<manifest>`` to the constructor. That manifest is stored as a
-    private override and used verbatim by :meth:`to_pipeline_config` instead
-    of constructing one from the flat scalar fields.
+    private override and used verbatim by :meth:`PipelineConfig.from_args`
+    instead of constructing one from the flat scalar fields.
 
-    Call :meth:`to_pipeline_config` to obtain a fully-constructed
+    Call :meth:`PipelineConfig.from_args` to obtain a fully-constructed
     :class:`PipelineConfig` ready for architecture-driven resolution.
     """
 
@@ -611,9 +611,18 @@ class PipelineArgs(ConfigFileModel):
     )
 
     # Escape hatch for multi-component pipelines (e.g. diffusion) where
-    # a pre-built ModelManifest is required. When set, to_pipeline_config()
-    # uses this manifest directly instead of constructing one from flat fields.
+    # a pre-built ModelManifest is required. When set,
+    # PipelineConfig.from_args() uses this manifest directly instead of
+    # constructing one from flat fields.
     _manifest_override: ModelManifest | None = PrivateAttr(default=None)
+
+    # Cross-repo weight source (e.g. a bartowski GGUF repo supplying weights
+    # for a meta-llama config repo). Not a user-settable input field -- set
+    # directly on the instance (``args._weights_repo_id = ...``) by callers
+    # that need it, then re-seeded onto the built MAXModelConfig by
+    # MAXModelConfig.from_pipeline_args(), since that returns a fresh object
+    # each call.
+    _weights_repo_id: str | None = PrivateAttr(default=None)
 
     def __init__(
         self, *, models: ModelManifest | None = None, **data: Any
@@ -627,32 +636,6 @@ class PipelineArgs(ConfigFileModel):
     # ------------------------------------------------------------------ #
 
     @property
-    def model(self) -> MAXModelConfig:
-        """Returns a :class:`MAXModelConfig` built from the flat fields."""
-        return MAXModelConfig(
-            model_path=self.model_path,
-            served_model_name=self.served_model_name,
-            weight_path=list(self.weight_path),
-            quantization_encoding=self.quantization_encoding,
-            huggingface_model_revision=self.huggingface_model_revision,
-            huggingface_weight_revision=self.huggingface_weight_revision,
-            trust_remote_code=self.trust_remote_code,
-            subfolder=self.subfolder,
-            device_specs=list(self.device_specs),
-            force_download=self.force_download,
-            vision_config_overrides=dict(self.vision_config_overrides),
-            rope_type=self.rope_type,
-            sliding_window=self.sliding_window,
-            enable_echo=self.enable_echo,
-            chat_template=self.chat_template,
-            use_subgraphs=self.use_subgraphs,
-            data_parallel_degree=self.data_parallel_degree,
-            pool_embeddings=self.pool_embeddings,
-            max_length=self.max_length,
-            kv_cache=self.kv_cache.model_copy(deep=True),
-        )
-
-    @property
     def main_architecture_name(self) -> str:
         """Returns the HuggingFace architecture class name for the main model.
 
@@ -664,7 +647,7 @@ class PipelineArgs(ConfigFileModel):
         """
         if self._manifest_override is not None:
             return self._manifest_override.main_architecture_name
-        arch = self.model.architecture_name
+        arch = MAXModelConfig.from_pipeline_args(self).architecture_name
         if arch is None:
             raise ValueError(
                 f"Cannot determine architecture name for {self.model_path!r}: "
@@ -699,12 +682,24 @@ class PipelineArgs(ConfigFileModel):
     def from_pipeline_config(cls, pipeline_config: PipelineConfig) -> Self:
         """Construct a :class:`PipelineArgs` from an existing :class:`PipelineConfig`.
 
-        Extracts the user-facing flat fields from a fully-constructed
-        :class:`PipelineConfig` and returns a :class:`PipelineArgs` that
-        round-trips back to an equivalent config via :meth:`to_pipeline_config`.
+        Extracts the user-facing flat fields from a :class:`PipelineConfig`
+        and returns a :class:`PipelineArgs` populated from them.
+
+        This exists to let :meth:`from_flat_kwargs` reuse
+        :meth:`PipelineConfig.from_flat_kwargs`'s flat-kwarg routing logic
+        (parsing ``--model-override``, building the draft model config,
+        etc.) instead of duplicating it. It is not a general round-trip:
+        ``pipeline_config`` is expected to be freshly constructed and not
+        yet resolved. Resolution-derived state (e.g. an applied dtype cast
+        recorded by ``MAXModelConfig.resolve()``) is *not* preserved --
+        :class:`PipelineArgs` is deliberately isolated from resolution
+        mutations (see #90128), so passing an already-resolved
+        ``pipeline_config`` here will silently drop that state.
 
         Args:
-            pipeline_config: The source :class:`PipelineConfig` to extract from.
+            pipeline_config: The source :class:`PipelineConfig` to extract
+                from. Should not have had :meth:`PipelineConfig.resolve`
+                called on it.
 
         Returns:
             A :class:`PipelineArgs` populated from the given config.

@@ -213,7 +213,7 @@ def main(
     model: EmbeddingModel | mteb.encoder_interface.Encoder
     logging.info(f"Loading model with {model_library} library.")
     if model_library == "mteb":
-        model = mteb.get_model(pipeline_config.model.model_path)
+        model = mteb.get_model(pipeline_config.model_path)
     else:
         pipeline_cfg = PipelineConfig.from_args(pipeline_config)
         tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(

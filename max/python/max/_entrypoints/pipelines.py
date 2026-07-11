@@ -279,6 +279,7 @@ def cli_serve(
     from max._entrypoints.workers import start_workers
     from max.pipelines import PipelineArgs
     from max.pipelines.context import SamplingParams, SamplingParamsInput
+    from max.pipelines.lib import MAXModelConfig
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging
 
@@ -307,9 +308,10 @@ def cli_serve(
     if pretty_print_config:
         # Log Default Sampling Configuration (only for single-model pipelines)
         if pipeline_args.model_path:
+            model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
             sampling_params = SamplingParams.from_input_and_generation_config(
                 SamplingParamsInput(),
-                sampling_params_defaults=pipeline_args.model.sampling_params_defaults,
+                sampling_params_defaults=model_config.sampling_params_defaults,
             )
             sampling_params.log_sampling_info()
 
@@ -443,13 +445,15 @@ def cli_pipeline(
 
     # Load tokenizer & pipeline.
     from max.pipelines import PipelineArgs
+    from max.pipelines.lib import MAXModelConfig
 
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
     generate_text_for_pipeline(
         pipeline_args,
         sampling_params=SamplingParams.from_input_and_generation_config(
             params,
-            sampling_params_defaults=pipeline_args.model.sampling_params_defaults,
+            sampling_params_defaults=model_config.sampling_params_defaults,
         ),
         prompt=prompt,
         image_urls=image_url,

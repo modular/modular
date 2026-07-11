@@ -69,6 +69,10 @@ from pydantic import (
 )
 from transformers import PretrainedConfig
 from transformers.generation import GenerationConfig
+from typing_extensions import Self
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.pipeline_args import PipelineArgs
 
 logger = logging.getLogger("max.pipelines")
 
@@ -390,6 +394,41 @@ class MAXModelConfig(MAXModelConfigBase):
         private_state.setdefault("_cached_model_repo", None)
         private_state.setdefault("_config_file_section_name", "model_config")
         object.__setattr__(self, "__pydantic_private__", private_state)
+
+    @classmethod
+    def from_pipeline_args(cls, args: PipelineArgs) -> Self:
+        """Builds a :class:`MAXModelConfig` from a :class:`PipelineArgs`'s flat fields.
+
+        Returns a new object on every call -- ``args`` holds no live handle
+        back to it, so mutating the returned object (e.g.
+        ``MAXModelConfig.from_pipeline_args(args).foo = x``) has no effect on
+        a subsequent call with the same ``args``. Set the corresponding field
+        on ``args`` itself instead.
+        """
+        model = cls(
+            model_path=args.model_path,
+            served_model_name=args.served_model_name,
+            weight_path=list(args.weight_path),
+            quantization_encoding=args.quantization_encoding,
+            huggingface_model_revision=args.huggingface_model_revision,
+            huggingface_weight_revision=args.huggingface_weight_revision,
+            trust_remote_code=args.trust_remote_code,
+            subfolder=args.subfolder,
+            device_specs=list(args.device_specs),
+            force_download=args.force_download,
+            vision_config_overrides=dict(args.vision_config_overrides),
+            rope_type=args.rope_type,
+            sliding_window=args.sliding_window,
+            enable_echo=args.enable_echo,
+            chat_template=args.chat_template,
+            use_subgraphs=args.use_subgraphs,
+            data_parallel_degree=args.data_parallel_degree,
+            pool_embeddings=args.pool_embeddings,
+            max_length=args.max_length,
+            kv_cache=args.kv_cache.model_copy(deep=True),
+        )
+        model._weights_repo_id = args._weights_repo_id
+        return model
 
     def retrieve_chat_template(self) -> str | None:
         """Returns the chat template string, or None if not set."""

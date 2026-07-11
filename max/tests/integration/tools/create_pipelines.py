@@ -48,7 +48,7 @@ from max.pipelines.architectures.qwen3.text_encoder import (
     Qwen3TextEncoderKleinModel,
 )
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
-from max.pipelines.lib import PipelineConfig, PipelineRuntimeConfig
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
 from peft.peft_model import PeftModel
@@ -1125,7 +1125,11 @@ class GenericOracle(PipelineOracle):
             config_kwargs["huggingface_weight_revision"] = model_revision
         config = pipelines.PipelineArgs.from_flat_kwargs(**config_kwargs)
         if weight_repo_id and weight_repo_id != model_path:
-            config.model._weights_repo_id = weight_repo_id
+            # MAXModelConfig.from_pipeline_args(config) rebuilds a fresh
+            # MAXModelConfig on every call, so writing through it is
+            # silently discarded -- set the PipelineArgs private attr
+            # directly instead.
+            config._weights_repo_id = weight_repo_id
         if not is_local_model:
             hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
@@ -1495,20 +1499,25 @@ class ImageGenerationOracle(PipelineOracle):
                 quantization_encoding=encoding,
             )
 
-        runtime_kwargs: dict[str, Any] = {
+        pipeline_args_kwargs: dict[str, Any] = {
             "prefer_module_v3": prefer_module_v3,
         }
 
         # Optional denoising-cache overrides (e.g. TaylorSeer / FBCache).
         denoising_cache = self.config_params.get("denoising_cache")
         if denoising_cache is not None:
-            runtime_kwargs["denoising_cache"] = DenoisingCacheConfig(
+            pipeline_args_kwargs["denoising_cache"] = DenoisingCacheConfig(
                 **denoising_cache
             )
 
+        # NOTE: PipelineArgs has no `runtime` field -- unlike PipelineConfig,
+        # its runtime knobs (prefer_module_v3, denoising_cache, etc.) are flat
+        # top-level fields, so they must be passed directly rather than
+        # wrapped in a PipelineRuntimeConfig (which raises "Extra inputs are
+        # not permitted", since ConfigFileModel forbids extra fields).
         config = pipelines.PipelineArgs(
             models=models,
-            runtime=PipelineRuntimeConfig(**runtime_kwargs),
+            **pipeline_args_kwargs,
         )
 
         # retrieve resolves the manifest and picks the tokenizer/executor

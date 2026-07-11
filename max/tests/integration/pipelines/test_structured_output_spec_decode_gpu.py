@@ -105,7 +105,7 @@ def test_eagle_structured_output_json_schema_gpu(
 
     request_id = RequestID("eagle_structured")
     request = TextGenerationRequest(
-        model_name=pipeline_config.model.model_path,
+        model_name=pipeline_config.model_path,
         request_id=request_id,
         messages=[TextGenerationRequestMessage(role="user", content=prompt)],
         sampling_params=SamplingParams(max_new_tokens=50, top_k=1),
@@ -228,7 +228,7 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
     # Request 1: Structured output with JSON schema
     structured_request_id = RequestID("eagle_structured_batch")
     structured_request = TextGenerationRequest(
-        model_name=pipeline_config.model.model_path,
+        model_name=pipeline_config.model_path,
         request_id=structured_request_id,
         messages=[
             TextGenerationRequestMessage(
@@ -257,7 +257,7 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
     # Request 2: Non-structured output (no json_schema)
     freeform_request_id = RequestID("eagle_freeform_batch")
     freeform_request = TextGenerationRequest(
-        model_name=pipeline_config.model.model_path,
+        model_name=pipeline_config.model_path,
         request_id=freeform_request_id,
         messages=[
             TextGenerationRequestMessage(
@@ -410,7 +410,7 @@ def test_eagle_structured_output_no_first_decode_stall_gpu(
 
     request_id = RequestID("eagle_stall_regression")
     request = TextGenerationRequest(
-        model_name=pipeline_config.model.model_path,
+        model_name=pipeline_config.model_path,
         request_id=request_id,
         messages=[TextGenerationRequestMessage(role="user", content=prompt)],
         sampling_params=SamplingParams(max_new_tokens=60, top_k=1),

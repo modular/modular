@@ -27,8 +27,10 @@ modular_py_test(
     srcs = ["test_model_config_encoding_resolution.py"],
     deps = [
         "//max/python/max/driver",
+        "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/weights",
+        requirement("pydantic"),
     ],
 )
 
