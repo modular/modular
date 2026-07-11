@@ -143,9 +143,9 @@ struct _CustomNicheStorage[Storage: UnsafeCustomNicheStorage](
         )
 
 
-comptime _NicheStorageFor[T: AnyType] = _CustomNicheStorage[
-    downcast[T, UnsafeCustomNicheStorage]
-] if conforms_to(T, UnsafeCustomNicheStorage) else _DefaultNicheStorage[T]
+comptime _NicheStorageFor[T: AnyType] = _CustomNicheStorage[T] if conforms_to(
+    T, UnsafeCustomNicheStorage
+) else _DefaultNicheStorage[T]
 
 
 struct _NichedOptionalStorage[
@@ -266,7 +266,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     def __init__[T: Movable](out self, var value: T):
         self = Self(unsafe_uninitialized=())
         self.get_discriminant() = UInt8(_get_type_index[T, *Self.Ts]())
-        self.unsafe_ptr[T]().init_pointee_move(value^)
+        self.unsafe_ptr[T]().unsafe_write(value^)
 
     @always_inline
     def __init__(out self, *, copy: Self):
@@ -278,7 +278,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
             comptime assert conforms_to(T, Copyable)
 
             if self.get_discriminant() == UInt8(i):
-                self.unsafe_ptr[T]().init_pointee_copy(copy.unsafe_ptr[T]()[])
+                self.unsafe_ptr[T]().unsafe_write(copy=copy.unsafe_ptr[T]()[])
                 return
 
     @always_inline
@@ -352,7 +352,7 @@ comptime _IsNicheEligible[*Ts: AnyType]: Bool = (Ts.size == 2) and (
 where one is `UnsafeNicheable` and the other is an empty type."""
 
 comptime _NichedStorageFor[*Ts: AnyType] = _NichedOptionalStorage[
-    downcast[Ts[0], UnsafeNicheable],
+    Ts[0],
     downcast[Ts[1], TrivialRegisterPassable],
 ] if conforms_to(Ts[0], UnsafeNicheable) else _NichedOptionalStorage[
     downcast[Ts[1], UnsafeNicheable],
@@ -376,16 +376,7 @@ struct Variant[*Ts: Movable](
     Copyable where Ts.all_conforms_to[Copyable](),
     Equatable where Ts.all_conforms_to[Equatable](),
     Hashable where Ts.all_conforms_to[Hashable](),
-    # TODO(MOCO-3421): all_conforms_to[ImplicitlyCopyable] implies
-    # all_conforms_to[Copyable] since ImplicitlyCopyable refines Copyable, but
-    # the compiler can't infer parent trait constraints from derived ones yet.
-    # Remove the Copyable and Movable checks from this where clause once that's
-    # fixed.
-    ImplicitlyCopyable where (
-        Ts.all_conforms_to[ImplicitlyCopyable]()
-        and Ts.all_conforms_to[Copyable]()
-        and Ts.all_conforms_to[Movable]()
-    ),
+    ImplicitlyCopyable where Ts.all_conforms_to[ImplicitlyCopyable](),
     ImplicitlyDeletable,
     Movable,
     RegisterPassable where Ts.all_conforms_to[RegisterPassable](),

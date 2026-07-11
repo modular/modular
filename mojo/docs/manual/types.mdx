@@ -45,21 +45,19 @@ All numeric types support the usual numeric and bitwise operators. The
 
 ### Integers and unsigned integers
 
-Mojo supports both signed (`Int`) and unsigned (`UInt`) integer types. These
-include both fixed-size and general types:
+Mojo's general-purpose integer type is the signed `Int`. For a specific bit
+width, or for an unsigned integer, use the fixed-size integer types:
 
 - If you need a fixed-size integer, Mojo provides explicit-width integer types
   such as `Int8`, `Int16`, `UInt32`, and `UInt64`.
 
-- Use the general `Int` or `UInt` types when you don't require a specific bit
-  width.
+- Use the general `Int` type when you don't require a specific bit width.
 
 These general and fixed-precision integer types are aliases to the
 [`SIMD`](/docs/std/builtin/simd/SIMD/) type.
 
 `Int` represents a signed integer that uses the system's native word size,
-typically 64 bits on 64-bit CPUs and 32 bits on 32-bit CPUs. Similarly, `UInt`
-represents an unsigned integer that uses the system's default word size.
+typically 64 bits on 64-bit CPUs and 32 bits on 32-bit CPUs.
 
 You may wonder when to use `Int` and when to use the other integer
 types. In general, `Int` is a good safe default when you need an integer type
@@ -477,11 +475,6 @@ Additionally, you can pass an instance of any struct that implements the
 [`Intable`](/docs/std/builtin/int/Intable/) trait or
 [`IntableRaising`](/docs/std/builtin/int/IntableRaising/) trait to the `Int()`
 constructor to convert that instance to an `Int`.
-
-You can convert an `Int` or `IntLiteral` value to the `UInt` type by passing the
-value to the [`UInt()`](/docs/std/builtin/simd/#uint) constructor.
-You can't convert other numeric types to `UInt` directly, though you can first
-convert them to `Int` and then to `UInt`.
 
 ## Strings
 

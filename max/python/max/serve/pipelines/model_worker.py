@@ -54,7 +54,7 @@ from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
 from max.serve.telemetry.common import configure_logging, configure_metrics
-from max.serve.telemetry.gc_debug import install_gc_debugger
+from max.serve.telemetry.gc_utils import freeze_gc_heap, install_gc_debugger
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 from max.serve.worker_interface import (
@@ -236,15 +236,6 @@ class ModelWorker:
         configure_logging(settings)
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
-
-        # Optionally instrument CPython garbage-collection pauses. Stop-the-
-        # world GC collections hold the GIL and can stall the scheduler thread,
-        # surfacing as large batch_execution_time_ms spikes (MXSERV-152).
-        install_gc_debugger(
-            enabled=settings.gc_debug,
-            min_duration_ms=settings.gc_debug_min_duration_ms,
-            top_objects=settings.gc_debug_top_objects,
-        )
 
         run_start_s = time.monotonic()
         spawn_duration_s = (
@@ -440,6 +431,32 @@ class ModelWorker:
                     lora_manager,
                     zmq_endpoint_base,
                 )
+
+            # Freeze the GC heap now that all long-lived startup objects are
+            # allocated to reduce the work in subsequent GC collections.
+            # See: https://github.com/vllm-project/vllm/blob/95ed0feaa5cd7fb16d72c53ce04950aaf07c4698/vllm/utils/gc_utils.py
+            gc_freeze_start_s = time.monotonic()
+            with Tracer("gc_freeze_after_warmup"):
+                frozen_objects = freeze_gc_heap()
+            gc_freeze_ms = (time.monotonic() - gc_freeze_start_s) * 1000.0
+            logger.info(
+                "Froze %d GC-tracked objects after warmup in %.1fms.",
+                frozen_objects,
+                gc_freeze_ms,
+                extra={
+                    "event": "gc_freeze",
+                    "gc_frozen_objects": frozen_objects,
+                    "gc_freeze_ms": gc_freeze_ms,
+                },
+            )
+
+            # Optionally instrument CPython garbage-collection pauses. This is
+            # done after warmup as graph capture can trigger a large number
+            # of GC collections that are noisy.
+            install_gc_debugger(
+                enabled=settings.gc_debug,
+                top_objects=settings.gc_debug_top_objects,
+            )
 
             # Mark the start of the process, and run the scheduler.
             logger.debug("Started model worker!")

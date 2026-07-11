@@ -430,7 +430,7 @@ struct List[T: Movable](
 
         # Transfer all of the elements into the List.
         def init_elt(idx: Int, var elt: Self.T) {ref}:
-            (self._data + idx).init_pointee_move(elt^)
+            (self._data + idx).unsafe_write(elt^)
 
         values^.consume_elements(init_elt)
 
@@ -828,9 +828,10 @@ struct List[T: Movable](
         if self._len >= self.capacity:
             self._realloc(self.capacity * 2 | Int(self.capacity == 0))
         self._annotate_increase()
-        self._unsafe_next_uninit_ptr().init_pointee_move(value^)
+        self._unsafe_next_uninit_ptr().unsafe_write(value^)
         self._len += 1
 
+    @always_inline
     def insert(mut self, i: Int, var value: Self.T):
         """Inserts a value to the list at the given index.
         `a.insert(len(a), value)` is equivalent to `a.append(value)`.
@@ -847,11 +848,12 @@ struct List[T: Movable](
         print(list) # ['one', 'two', 'three']
         ```
         """
-        assert i <= len(self), "insert index out of range"
-
         var normalized_idx = i
         if i < 0:
             normalized_idx = max(len(self) + i, 0)
+        # Bounds-check after normalizing, since `check_bounds` rejects
+        # negatives; the valid range is `[0, len(self)]` (`len(self)` appends).
+        check_bounds(normalized_idx, len(self) + 1)
 
         var earlier_idx = len(self)
         var later_idx = len(self) - 1
@@ -863,7 +865,7 @@ struct List[T: Movable](
 
             var tmp = earlier_ptr.take_pointee()
             earlier_ptr.init_pointee_move_from(later_ptr)
-            later_ptr.init_pointee_move(tmp^)
+            later_ptr.unsafe_write(tmp^)
 
             earlier_idx -= 1
             later_idx -= 1
@@ -1101,7 +1103,7 @@ struct List[T: Movable](
         self.reserve(new_length)
         self._annotate_increase(new_length - self._len)
         for i in range(self._len, new_length):
-            (self._data + i).init_pointee_copy(fill)
+            (self._data + i).unsafe_write(copy=fill)
         self._len = new_length
 
     def resize(
@@ -1192,7 +1194,7 @@ struct List[T: Movable](
 
             var tmp = earlier_ptr.take_pointee()
             earlier_ptr.init_pointee_move_from(later_ptr)
-            later_ptr.init_pointee_move(tmp^)
+            later_ptr.unsafe_write(tmp^)
 
             earlier_idx += 1
             later_idx -= 1
@@ -1409,7 +1411,7 @@ struct List[T: Movable](
         """
         check_bounds[cpu_default=False](idx, len(self))
         (self._data + idx).destroy_pointee()
-        (self._data + idx).init_pointee_move(value^)
+        (self._data + idx).unsafe_write(value^)
 
     def count(self, value: Self.T) -> Int where conforms_to(Self.T, Equatable):
         """Counts the number of occurrences of a value in the list.

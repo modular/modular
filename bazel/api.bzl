@@ -44,7 +44,7 @@ strip_prefix = _strip_prefix
 def modular_py_test(tags = [], **kwargs):
     if "external-exclusive" in tags:
         tags.append("exclusive")
-    _modular_py_test(tags = tags, use_resource_tags = True, **kwargs)
+    _modular_py_test(tags = tags, **kwargs)
 
 def _process_cc_deps(data, deps):
     # TODO: This will break in the presence of select()s

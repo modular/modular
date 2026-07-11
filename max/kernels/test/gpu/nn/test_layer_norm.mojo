@@ -100,6 +100,7 @@ def run_layer_norm_block[
         comptime kernel = layer_norm_gpu_block[
             LayoutType=beta.LayoutType,
             origin=beta.origin,
+            Storage=beta.Storage,
             simd_width,
             input_fn,
             gamma_fn,
@@ -305,6 +306,7 @@ def run_layer_norm_warp_tiling[
         comptime kernel = layer_norm_gpu_warp_tiling[
             LayoutType=beta.LayoutType,
             origin=beta.origin,
+            Storage=beta.Storage,
             simd_width,
             max_warps_per_block,
             input_fn,

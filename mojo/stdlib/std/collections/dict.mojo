@@ -1644,7 +1644,7 @@ struct Dict[
         if not found:
             var entry = DictEntry[Self.K, Self.V, Self.H](key^, default^)
             self._table.set_ctrl(slot_idx, h2(h))
-            (self._table._slots + slot_idx).init_pointee_move(entry^)
+            (self._table._slots + slot_idx).unsafe_write(entry^)
             self._order.append(Int32(slot_idx))
             self._table._len += 1
             self._table._growth_left -= 1
@@ -1703,11 +1703,11 @@ struct Dict[
         if found:
             # Update existing entry: destroy old, move new in
             (self._table._slots + slot_idx).destroy_pointee()
-            (self._table._slots + slot_idx).init_pointee_move(entry^)
+            (self._table._slots + slot_idx).unsafe_write(entry^)
         else:
             # New entry
             self._table.set_ctrl(slot_idx, h2(entry.hash))
-            (self._table._slots + slot_idx).init_pointee_move(entry^)
+            (self._table._slots + slot_idx).unsafe_write(entry^)
             self._order.append(Int32(slot_idx))
             self._table._len += 1
             self._table._growth_left -= 1

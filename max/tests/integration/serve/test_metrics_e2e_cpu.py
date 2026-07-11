@@ -104,6 +104,7 @@ def _metric_total(metrics_text: str, name: str) -> float:
                     "main": MAXModelConfig(
                         model_path=MODEL_NAME,
                         huggingface_model_revision=MODEL_REVISION,
+                        huggingface_weight_revision=MODEL_REVISION,
                         device_specs=[DeviceSpec.cpu()],
                         quantization_encoding="float32",
                         kv_cache=KVCacheConfig(),
@@ -245,6 +246,7 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
                     "main": MAXModelConfig(
                         model_path=MODEL_NAME,
                         huggingface_model_revision=MODEL_REVISION,
+                        huggingface_weight_revision=MODEL_REVISION,
                         device_specs=[DeviceSpec.cpu()],
                         quantization_encoding="float32",
                         kv_cache=KVCacheConfig(),
@@ -318,6 +320,7 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
                     "main": MAXModelConfig(
                         model_path=MODEL_NAME,
                         huggingface_model_revision=MODEL_REVISION,
+                        huggingface_weight_revision=MODEL_REVISION,
                         device_specs=[DeviceSpec.cpu()],
                         quantization_encoding="float32",
                         kv_cache=KVCacheConfig(),

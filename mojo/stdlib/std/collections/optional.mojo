@@ -38,7 +38,6 @@ from std.utils import Variant
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
-from std.builtin.variadics import TypeList
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
 from std.memory import UnsafeMaybeUninit
@@ -93,13 +92,7 @@ struct EmptyOptionalError[T: AnyType](
 
 struct Optional[T: Movable](
     Boolable,
-    # TODO(MOCO-3640): Remove the _NoneType check once the compiler can
-    # synthesize copy constructors through variadic conditional conformances
-    # (TypeList.of[_NoneType, T]().all_conforms_to[Copyable]() when T: Copyable).
-    Copyable where (
-        conforms_to(T, Copyable)
-        and TypeList.of[T, _NoneType]().all_conforms_to[Copyable]()
-    ),
+    Copyable where conforms_to(T, Copyable),
     Defaultable,
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
@@ -784,8 +777,6 @@ struct Optional[T: Movable](
     ):
         result = UnsafePointer(to=self).bitcast[type_of(result)]()[]
 
-    # TODO(MOCO-3744): `To` cannot be inferred by the compiler
-    # and must be manually specified.
     def map[
         To: Movable,
         //,
@@ -815,7 +806,7 @@ struct Optional[T: Movable](
 
         ```mojo
         var opt = Optional("hello")
-        var length = opt.map[To=Int](String.byte_length)
+        var length = opt.map(String.byte_length)
         print(length.value())  # Output: 5
         ```
 
@@ -823,7 +814,7 @@ struct Optional[T: Movable](
 
         ```mojo
         var opt = Optional[String](None)
-        var length = opt.map[To=Int](String.byte_length)
+        var length = opt.map(String.byte_length)
         print(length.or_else(-1))  # Output: -1
         ```
         """
@@ -832,8 +823,6 @@ struct Optional[T: Movable](
         else:
             return None
 
-    # TODO(MOCO-3744): `To` cannot be inferred by the compiler
-    # and must be manually specified.
     def and_then[
         To: Movable,
         //,
@@ -870,7 +859,7 @@ struct Optional[T: Movable](
 
         def main():
             var opt = Optional("42")
-            var parsed = opt.and_then[To=Int](try_parse_int)
+            var parsed = opt.and_then(try_parse_int)
             print(parsed.value())  # Output: 42
         ```
 
@@ -879,7 +868,7 @@ struct Optional[T: Movable](
         ```mojo
         def main():
             var opt = Optional[String](None)
-            var parsed = opt.and_then[To=Int](try_parse_int)
+            var parsed = opt.and_then(try_parse_int)
             print(parsed.or_else(-1))  # Output: -1
         ```
         """
@@ -945,9 +934,7 @@ struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
 struct _NicheableOptionalRegStorage[
     T: TrivialRegisterPassable & UnsafeNicheable
 ](TrivialRegisterPassable, _OptionalRegStorageTraits):
-    comptime StorageType: TrivialRegisterPassable = downcast[
-        Self.T, UnsafeCustomNicheStorage
-    ].NicheStorage if conforms_to(
+    comptime StorageType: TrivialRegisterPassable = Self.T.NicheStorage if conforms_to(
         Self.T, UnsafeCustomNicheStorage
     ) else StaticTuple[
         Self.T, 1
@@ -967,7 +954,7 @@ struct _NicheableOptionalRegStorage[
         comptime assert U == Self.T
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         var ptr = UnsafePointer(to=self.storage).bitcast[Self.T]()
-        ptr.init_pointee_move(rebind[Self.T](value))
+        ptr.unsafe_write(rebind[Self.T](value))
 
     @always_inline
     def value[U: TrivialRegisterPassable](self) -> U:
@@ -984,9 +971,7 @@ struct _NicheableOptionalRegStorage[
 
 comptime _OptionalRegStorageFor[
     T: TrivialRegisterPassable
-]: _OptionalRegStorageTraits = _NicheableOptionalRegStorage[
-    downcast[T, TrivialRegisterPassable & UnsafeNicheable]
-] if conforms_to(
+]: _OptionalRegStorageTraits = _NicheableOptionalRegStorage[T] if conforms_to(
     T, UnsafeNicheable
 ) else _DefaultOptionalRegStorage[
     T

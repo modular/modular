@@ -36,6 +36,7 @@ assert MPNET_REVISION is not None
                     "main": MAXModelConfig(
                         model_path=MPNET_REPO_ID,
                         huggingface_model_revision=MPNET_REVISION,
+                        huggingface_weight_revision=MPNET_REVISION,
                         device_specs=[DeviceSpec.cpu()],
                         max_length=256,
                     )

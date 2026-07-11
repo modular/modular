@@ -96,6 +96,20 @@ This version is still a work in progress.
   or a named function can no longer force a tool call. This is independent of
   `--enable-structured-output`, which continues to gate user-supplied
   `response_format` JSON schemas.
+- Fixed the `code` label on the `maxserve_request_count` metric so it reports
+  the HTTP status code actually returned to the client. The count is now
+  recorded from the HTTP layer, so failures rejected before generation (for
+  example a request with an unreachable image URL) are counted with their real
+  status code instead of being labeled `200` or dropped entirely. Liveness and
+  observability endpoints (`/health`, `/version`, `/ping`, `/metrics`) are not
+  counted.
+- Failed request submissions in the OpenAI-compatible serving endpoints now
+  surface as HTTP error responses instead of a `200 OK` streaming response that
+  carries an error payload. Request tokenization and the handoff to the model
+  worker now complete before the streaming response headers are sent, so a
+  failure at submission time (for example, a dead model worker) maps to an HTTP
+  5xx (or 4xx for input errors). Errors that occur mid-stream, after the first
+  chunk has been sent, are still serialized as an error event within the stream.
 - Added `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` to control how long the server
   waits for in-flight requests to finish after receiving `SIGTERM` before
   exiting (default 5 seconds). Raise it so long-running requests are drained
@@ -109,6 +123,12 @@ This version is still a work in progress.
   `host_kvcache_swap_space_gb` now sizes one shared host pool of that size for
   the whole deployment, rather than allocating a separate pool of that size per
   replica.
+- The dKV external KV-cache connector (`--kv-connector dkv`) now supports
+  data-parallel (DP) serving and shares its prefix cache across DP replicas on
+  the default single-tenant path, matching the `local` and `tiered` connectors.
+  Every replica resolves to the same replica-agnostic store, and the stored
+  block key carries no replica component, so a block offloaded through one
+  replica is served to any other.
 - The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
   into a single `rms_norm_rope` GPU kernel even when the RMSNorm is written "in
   float32" — that is, when a `bfloat16`/`float16` activation is upcast to
@@ -133,6 +153,8 @@ This version is still a work in progress.
   with `out-of-bounds` redzone checks. Because the NaN can also surface on
   legitimately-uninitialized allocation padding, it is a manual debugging aid
   rather than a default.
+- Added a `max-benchmark` conda package for parity with the `max[benchmark]`
+  wheel extra.
 
 ### Inference server
 
@@ -262,6 +284,12 @@ This version is still a work in progress.
   but the code within it is not.
 
 ### Python API
+
+- Added `max.graph.ops.floor_div` (and `F.floor_div`), element-wise floor
+  division matching Python `//`. Unlike `ops.div`, integer operands stay in
+  the integer domain instead of being promoted to `float64`, so integer floor
+  division compiles on backends without 64-bit float support (for example,
+  Metal GPUs).
 
 - Added `max.driver.set_virtual_cpu_target()` and `get_virtual_cpu_target()`.
   Set a fixed CPU codegen target (for example `"x86-64-v3"`, `"neoverse-n1"`,

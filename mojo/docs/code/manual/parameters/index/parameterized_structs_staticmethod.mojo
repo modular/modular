@@ -20,13 +20,13 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
         self.size = len(elements)
         self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
-            (self.data + i).init_pointee_move(elements[i].copy())
+            (self.data + i).unsafe_write(elements[i].copy())
 
     def __init__(out self, *, count: Int, value: Self.ElementType):
         self.size = count
         self.data = alloc[Self.ElementType](self.size)
         for i in range(self.size):
-            (self.data + i).init_pointee_copy(value)
+            (self.data + i).unsafe_write(copy=value)
 
     def __del__(deinit self):
         for i in range(self.size):

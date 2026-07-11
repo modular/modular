@@ -1957,7 +1957,7 @@ struct SubTileLoaderLDS_st_8x32[
         """
         var v_smem_base = v_smem_slot.ptr
         comptime _bytes_per_thread = 16
-        comptime _bytes_per_warp_iter = _bytes_per_thread * Int(WARP_SIZE)
+        comptime _bytes_per_warp_iter = _bytes_per_thread * WARP_SIZE
         comptime _bytes_per_iter = _bytes_per_thread * Self.num_threads
         comptime _subtile_rows = 8
         comptime _subtile_cols = Self.BK
@@ -1983,7 +1983,7 @@ struct SubTileLoaderLDS_st_8x32[
         ), "BN*depth*sizeof(dtype) must be a multiple of bytes_per_iter"
 
         var tile_byte_offset = scalar_offset
-        var thread_id = warp_id_uniform * Int(WARP_SIZE) + lane_id_local
+        var thread_id = warp_id_uniform * WARP_SIZE + lane_id_local
 
         # Row stride (in elements) taken from the gmem tile's layout so
         # per-(batch, kv_head) slices of a (B, N, NUM_KV_HEADS, D) tensor

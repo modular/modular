@@ -1379,5 +1379,50 @@ def main() raises:
     test_persistent[4, 3072, 6144, BM=128, BN=128, BK_ELEMS=512, WN=64](
         "M3 up/gate else BM128/BN128", [256, 128, 256, 128], [0, 1, 2, 3], ctx
     )
+    # M3 etm<=2 low-batch-decode band
+    test_persistent[
+        4,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        b_cache_policy=SX,
+    ]("M3 up etm<=2 decode BN64/wg1 (1 expert)", [1], [0], ctx)
+    test_persistent[
+        4,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        b_cache_policy=SX,
+    ]("M3 up etm<=2 decode BN64/wg1 (2 experts)", [1, 1], [0, 1], ctx)
+    test_persistent[
+        4,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        b_cache_policy=SX,
+    ]("M3 down etm<=2 decode BN64/wg1 (1 expert)", [1], [0], ctx)
+    test_persistent[
+        4,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        b_cache_policy=SX,
+    ]("M3 down etm<=2 decode BN64/wg1 (2 experts)", [1, 1], [0, 1], ctx)
 
     print("==== all preb grouped MXFP4 kernel tests passed ====")

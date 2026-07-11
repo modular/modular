@@ -15,15 +15,17 @@
 Verifies that tool calls match the requested tool call schema, and that the
 complete JSON schema specification is supported.
 
-Each test sends a tool-calling request with tool_choice=required and a
-carefully designed schema, then validates the tool calls against
-the requested schema.
+Each test sends a tool-calling request with a carefully designed schema and
+validates the returned tool call against it. Every test runs under both
+tool_choice="required" and tool_choice="auto"; in auto mode the model may
+legitimately decline to call a tool, which counts as a pass.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -31,6 +33,14 @@ from helpers import budget_exhausted, make_tool
 from pydantic import BaseModel
 
 from scenarios import BaseScenario, ScenarioResult, Verdict, register_scenario
+
+# Run every test under BOTH tool_choice modes: "required" (enforced from token
+# 0) and "auto" (conditional enforcement that only arms once the model opens a
+# tool call).
+_env_choice = os.environ.get("TC_SCHEMA_TOOL_CHOICE")
+_TOOL_CHOICE_MODES: tuple[str, ...] = (
+    (_env_choice,) if _env_choice else ("required", "auto")
+)
 
 if TYPE_CHECKING:
     from client import FuzzClient, RunConfig
@@ -128,23 +138,42 @@ class TCSchemaEnforcement(BaseScenario):
     requires_validator = True
     scenario_type = "validation"
 
+    # Set per-mode pass in run().
+    _tool_choice: str = "required"
+
+    def _nocall_ok(self, err: str) -> bool:
+        """In auto mode the model may legitimately decline to call a tool, which
+        is a PASS not an enforcement failure. Any other extraction error
+        (malformed JSON, non-dict args) is still a real failure."""
+        return self._tool_choice == "auto" and err == "no tool_calls returned"
+
     async def run(
         self, client: FuzzClient, config: RunConfig
     ) -> list[ScenarioResult]:
-        results: list[ScenarioResult] = []
         v = config.validator
         if not v:
-            results.append(
+            return [
                 self.make_result(
                     self.name,
                     "setup",
                     Verdict.ERROR,
                     detail="No validator client available",
                 )
-            )
-            return results
+            ]
         loop = asyncio.get_running_loop()
+        all_results: list[ScenarioResult] = []
+        # Run every test under each tool_choice mode. Tag each result so the
+        # auto and required variants stay distinct in the report.
+        for mode in _TOOL_CHOICE_MODES:
+            self._tool_choice = mode
+            mode_results = await self._run_all_tests(v, loop)
+            for r in mode_results:
+                r.test_name = f"{r.test_name}[tool_choice={mode}]"
+            all_results.extend(mode_results)
+        return all_results
 
+    async def _run_all_tests(self, v: Any, loop: Any) -> list[ScenarioResult]:
+        results: list[ScenarioResult] = []
         results.extend(await self._required_fields(v, loop))
         results.extend(await self._enum_enforcement(v, loop))
         results.extend(await self._integer_vs_number(v, loop))
@@ -228,7 +257,7 @@ class TCSchemaEnforcement(BaseScenario):
             lambda: v.tc_chat(
                 messages,
                 tools,
-                tool_choice="required",
+                tool_choice=self._tool_choice,
                 max_tokens=1024,
                 **kwargs,
             ),
@@ -244,7 +273,7 @@ class TCSchemaEnforcement(BaseScenario):
         tool_desc: str,
         user_message: str,
         validate: Callable[[dict[str, Any]], tuple[Verdict, str]] | None = None,
-        tool_choice: str | dict[str, Any] = "required",
+        tool_choice: str | dict[str, Any] | None = None,
         max_tokens: int = 1024,
         temperature: float | None = None,
         tools: list[dict[str, Any]] | None = None,
@@ -256,6 +285,8 @@ class TCSchemaEnforcement(BaseScenario):
         must return ``(verdict, detail)``.  Otherwise falls back to
         ``_validate_args`` against the schema.
         """
+        if tool_choice is None:
+            tool_choice = self._tool_choice
         if tools is None:
             tools = [make_tool(tool_name, schema, tool_desc)]
         chat_kwargs: dict[str, Any] = {
@@ -286,6 +317,15 @@ class TCSchemaEnforcement(BaseScenario):
                 ]
             args, err = _extract_tc_args(resp)
             if err:
+                if self._nocall_ok(err):
+                    return [
+                        self.make_result(
+                            self.name,
+                            test_name,
+                            Verdict.PASS,
+                            detail="auto: model declined to call a tool",
+                        )
+                    ]
                 return [
                     self.make_result(
                         self.name, test_name, Verdict.FAIL, detail=err
@@ -377,7 +417,8 @@ class TCSchemaEnforcement(BaseScenario):
                     continue
                 args, err = _extract_tc_args(resp)
                 if err:
-                    enum_fail_details.append(f"run {i}: {err}")
+                    if not self._nocall_ok(err):
+                        enum_fail_details.append(f"run {i}: {err}")
                     continue
                 assert args is not None
                 unit = args.get("unit")
@@ -448,7 +489,10 @@ class TCSchemaEnforcement(BaseScenario):
                 )
             else:
                 args, err = _extract_tc_args(resp)
-                if err:
+                if err and self._nocall_ok(err):
+                    verdict = Verdict.PASS
+                    detail = "auto: model declined to call a tool"
+                elif err:
                     verdict = Verdict.FAIL
                     detail = err
                 else:
@@ -687,7 +731,8 @@ class TCSchemaEnforcement(BaseScenario):
                     continue
                 args, err = _extract_tc_args(resp)
                 if err:
-                    fail_details.append(f"run {i}: {err}")
+                    if not self._nocall_ok(err):
+                        fail_details.append(f"run {i}: {err}")
                     continue
                 assert args is not None
                 errors = _validate_args(args, schema)

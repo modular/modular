@@ -1027,7 +1027,7 @@ struct String(
             self.capacity() > self.byte_length()
         ), "String: capacity is not sufficient"
         var length = self.byte_length()
-        (self.unsafe_ptr_mut() + length).init_pointee_move(byte)
+        (self.unsafe_ptr_mut() + length).unsafe_write(byte)
         self.set_byte_length(length + 1)
 
     def append(mut self, codepoint: Codepoint):
@@ -2167,7 +2167,7 @@ struct String(
             )
         else:
             debug_assert[assert_mode="safe"](
-                StringSlice(self).is_codepoint_boundary(UInt(length)),
+                StringSlice(self).is_codepoint_boundary(length),
                 "String shrunk to length ",
                 length,
                 " which does not lie on a codepoint boundary.",
@@ -2189,9 +2189,7 @@ struct String(
         self._clear_nul_terminator()
         debug_assert(
             unsafe_uninit_length >= self.byte_length()
-            or StringSlice(self).is_codepoint_boundary(
-                UInt(unsafe_uninit_length)
-            ),
+            or StringSlice(self).is_codepoint_boundary(unsafe_uninit_length),
             "String shrunk to length ",
             unsafe_uninit_length,
             " which does not lie on a codepoint boundary.",

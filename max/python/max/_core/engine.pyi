@@ -527,6 +527,7 @@ class InferenceSession:
         model: types.CapsuleType,
         custom_extensions: Sequence[str | os.PathLike],
         pipeline_name: str,
+        tile_based_fusion: bool = False,
     ) -> max._core.mlrt.AsyncValue[CompiledModels]:
         """
         Compiles a model from an in-memory capsule object.
@@ -535,6 +536,8 @@ class InferenceSession:
             model: A capsule containing the compiled model object.
             custom_extensions: Paths to custom Mojo extension libraries.
             pipeline_name: Name identifier for the compiled pipeline.
+            tile_based_fusion: When ``True``, compile the graph under the
+                tile-based programming model. Defaults to ``False``.
 
         Returns:
             CompiledModels: The compiled artifact, ready to be initialized

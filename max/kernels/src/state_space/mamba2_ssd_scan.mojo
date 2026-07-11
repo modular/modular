@@ -55,7 +55,7 @@ from std.gpu.host import DeviceContext
 from std.algorithm import sync_parallelize
 from std.math import exp2
 from std.utils.index import IndexList
-from layout import TensorLayout, TileTensor
+from layout import PointerStorage, TensorLayout, TensorStorage, TileTensor
 from state_space.selective_scan import softplus
 
 # LOG2E: convert exp(x) -> exp2(x * LOG2E) (faster on GPU), matching the
@@ -84,6 +84,10 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
     final_states_LT: TensorLayout,
     query_start_loc_LT: TensorLayout,
     has_initial_state_LT: TensorLayout,
+    # All operands are built from the same source (graph input tensors in
+    # production, device buffers in the coverage test) so they share one
+    # storage policy; a single param binds it for every tile argument.
+    Storage: TensorStorage = PointerStorage[element_width=1],
 ](
     nheads: Int,
     head_dim: Int,
@@ -93,36 +97,40 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
     dt_softplus: Int8,
     # Tensors (varlen / ragged: time dim is the packed total_len)
     x: TileTensor[
-        kernel_dtype, x_LT, MutUntrackedOrigin
+        kernel_dtype, x_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (total_len, nheads, head_dim)
     dt: TileTensor[
-        kernel_dtype, dt_LT, MutUntrackedOrigin
+        kernel_dtype, dt_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (total_len, nheads)
-    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin],  # (nheads,)
+    A: TileTensor[
+        kernel_dtype, A_LT, MutUntrackedOrigin, Storage=Storage
+    ],  # (nheads,)
     B: TileTensor[
-        kernel_dtype, B_LT, MutUntrackedOrigin
+        kernel_dtype, B_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (total_len, ngroups, dstate)
     C: TileTensor[
-        kernel_dtype, C_LT, MutUntrackedOrigin
+        kernel_dtype, C_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (total_len, ngroups, dstate)
-    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin],  # (nheads,) optional
+    D: TileTensor[
+        kernel_dtype, D_LT, MutUntrackedOrigin, Storage=Storage
+    ],  # (nheads,) optional
     dt_bias: TileTensor[
-        kernel_dtype, dt_bias_LT, MutUntrackedOrigin
+        kernel_dtype, dt_bias_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (nheads,) optional
     initial_states: TileTensor[
-        DType.float32, initial_states_LT, MutUntrackedOrigin
+        DType.float32, initial_states_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (batch, nheads, head_dim, dstate) optional
     y: TileTensor[
-        kernel_dtype, y_LT, MutUntrackedOrigin
+        kernel_dtype, y_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (total_len, nheads, head_dim)
     final_states: TileTensor[
-        DType.float32, final_states_LT, MutUntrackedOrigin
+        DType.float32, final_states_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (batch, nheads, head_dim, dstate)
     query_start_loc: TileTensor[
-        DType.int32, query_start_loc_LT, MutUntrackedOrigin
+        DType.int32, query_start_loc_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (batch + 1,)
     has_initial_state: TileTensor[
-        DType.bool, has_initial_state_LT, MutUntrackedOrigin
+        DType.bool, has_initial_state_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (batch,) optional
     x_strides: Strides3D,  # (total_len, nheads, head_dim)
     dt_strides: Strides2D,  # (total_len, nheads)
@@ -284,6 +292,9 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
     query_start_loc_LT: TensorLayout,
     has_initial_state_LT: TensorLayout,
     cache_indices_LT: TensorLayout,
+    # All operands share one storage policy (see the non-inplace variant); a
+    # single param binds it for every tile argument.
+    Storage: TensorStorage = PointerStorage[element_width=1],
 ](
     nheads: Int,
     head_dim: Int,
@@ -291,26 +302,30 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
     nheads_ngroups_ratio: Int,
     batch: Int,
     dt_softplus: Int8,
-    x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin],
-    dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin],
-    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin],
-    B: TileTensor[kernel_dtype, B_LT, MutUntrackedOrigin],
-    C: TileTensor[kernel_dtype, C_LT, MutUntrackedOrigin],
-    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin],
-    dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutUntrackedOrigin],
-    y: TileTensor[kernel_dtype, y_LT, MutUntrackedOrigin],
+    x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin, Storage=Storage],
+    dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin, Storage=Storage],
+    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin, Storage=Storage],
+    B: TileTensor[kernel_dtype, B_LT, MutUntrackedOrigin, Storage=Storage],
+    C: TileTensor[kernel_dtype, C_LT, MutUntrackedOrigin, Storage=Storage],
+    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin, Storage=Storage],
+    dt_bias: TileTensor[
+        kernel_dtype, dt_bias_LT, MutUntrackedOrigin, Storage=Storage
+    ],
+    y: TileTensor[kernel_dtype, y_LT, MutUntrackedOrigin, Storage=Storage],
     # ssm_pool: [max_slots, nheads, head_dim, dstate] fp32 — read for initial
     # state (when has_initial_state[b]) and written in-place at slot
     # cache_indices[b] (instead of a separate final_states output).
-    ssm_pool: TileTensor[DType.float32, ssm_pool_LT, MutUntrackedOrigin],
+    ssm_pool: TileTensor[
+        DType.float32, ssm_pool_LT, MutUntrackedOrigin, Storage=Storage
+    ],
     query_start_loc: TileTensor[
-        DType.int32, query_start_loc_LT, MutUntrackedOrigin
+        DType.int32, query_start_loc_LT, MutUntrackedOrigin, Storage=Storage
     ],
     has_initial_state: TileTensor[
-        DType.bool, has_initial_state_LT, MutUntrackedOrigin
+        DType.bool, has_initial_state_LT, MutUntrackedOrigin, Storage=Storage
     ],
     cache_indices: TileTensor[
-        DType.uint32, cache_indices_LT, MutUntrackedOrigin
+        DType.uint32, cache_indices_LT, MutUntrackedOrigin, Storage=Storage
     ],
     x_strides: Strides3D,
     dt_strides: Strides2D,

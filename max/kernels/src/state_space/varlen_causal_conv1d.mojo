@@ -39,7 +39,7 @@ from std.gpu import block_idx, thread_idx
 
 from layout import TensorLayout, TileTensor
 
-from state_space.causal_conv1d import silu
+from nn.activations import silu
 
 
 # ============================================================================

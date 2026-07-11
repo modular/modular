@@ -17,14 +17,16 @@ from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
-from max.experimental.cascade import (
-    CascadePipeline,
-    ChatMessages,
-    GenerateRequest,
-    TextGenInterface,
+from max.experimental.cascade.core import (
     Worker,
     pipeline_method,
     worker_method,
+)
+from max.experimental.cascade.pipelines import CascadePipeline
+from max.experimental.cascade.pipelines.textgen import (
+    ChatMessages,
+    GenerateRequest,
+    TextGenInterface,
 )
 
 Int32Array = npt.NDArray[np.int32]
