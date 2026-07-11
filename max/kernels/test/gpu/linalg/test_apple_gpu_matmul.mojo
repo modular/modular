@@ -1219,6 +1219,109 @@ def test_kernel_M20_N80_K16_nn_fp16(ctx: DeviceContext) raises:
     print("PASS")
 
 
+def _run_partial_m_nt_case[
+    in_type: DType
+](ctx: DeviceContext, M: Int, N: Int, K: Int, name: String) raises:
+    """Concurrent-decode partial-M co-batched GEMM (NT) vs an fp32 CPU reference.
+
+    For `1 < M < 64` (the batch widths the `m > 1` dispatch guard now routes to
+    `enqueue_apple_matmul`), `grid_m = ceildiv(M, 64) = 1`: one 64-row M tile of
+    which only `M` rows are valid. Verifies both halves of the partial-M
+    contract:
+
+    - (a) valid rows `[0, M)` match `A @ B.T` (fp32 accum). Inputs are small
+      ints `{-2..2}`, so the bf16->fp32 result is exact -- the `> 0.5` gap check
+      catches any deviation.
+    - (b) rows `[M, 64)` are NEVER written. C is backed by a GUARD-row-padded
+      device buffer sentinel-filled with `-1e30`; the kernel is handed only an
+      `(M, N)` view, so any store to a row `>= M` corrupts the sentinel guard
+      region and is caught. This is the OOB-write risk the guard relaxation
+      hinges on (`_bounded_store` row-gating + the `row_base >= M` early return).
+    """
+    print("==", name, M, "x", N, "x", K, "NT")
+    comptime GUARD = 64  # >= the full [M, 64) partial-tile extent for any M<64.
+    var rows = M + GUARD
+
+    var a_host = ctx.enqueue_create_host_buffer[in_type](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[in_type](N * K)  # NT: (N, K)
+    for i in range(M * K):
+        a_host[i] = Scalar[in_type](
+            random_si64(Int64(-2), Int64(2)).cast[in_type]()
+        )
+    for i in range(N * K):
+        b_host[i] = Scalar[in_type](
+            random_si64(Int64(-2), Int64(2)).cast[in_type]()
+        )
+
+    var a_dev = ctx.enqueue_create_buffer[in_type](M * K)
+    var b_dev = ctx.enqueue_create_buffer[in_type](N * K)
+    var d_dev = ctx.enqueue_create_buffer[DType.float32](rows * N)
+    # Sentinel-fill the WHOLE (valid + guard) buffer so a spurious write into
+    # rows [M, rows) is visible on readback.
+    var d_init = ctx.enqueue_create_host_buffer[DType.float32](rows * N)
+    for i in range(rows * N):
+        d_init[i] = Float32(-1.0e30)
+    ctx.enqueue_copy(d_dev, d_init)
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(b_dev, b_host)
+
+    # C view is (M, N): the kernel only knows M rows, so a write to row >= M
+    # lands in the sentinel guard region rather than a legal C slot.
+    _launch[in_type, True](ctx, d_dev, a_dev, b_dev, M, N, K)
+
+    var d_host = ctx.enqueue_create_host_buffer[DType.float32](rows * N)
+    ctx.enqueue_copy(d_host, d_dev)
+    ctx.synchronize()
+
+    # DRIV-199 workaround: keep device buffers alive past `synchronize`.
+    _ = a_dev^
+    _ = b_dev^
+    _ = d_dev^
+
+    var pass_ = True
+    # (a) valid rows [0, M) match the reference (exact for small-int inputs).
+    for i in range(M):
+        for j in range(N):
+            var exp = _host_matmul_nt[in_type, in_type](
+                a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
+            )
+            var got = d_host[i * N + j]
+            if abs(got - exp) > Float32(0.5):
+                print("FAIL valid:", i, j, "got", got, "expected", exp)
+                pass_ = False
+    # (b) guard rows [M, rows) untouched (still the -1e30 sentinel).
+    for i in range(M, rows):
+        for j in range(N):
+            var got = d_host[i * N + j]
+            if got != Float32(-1.0e30):
+                print("FAIL guard-write: row", i, "col", j, "got", got)
+                pass_ = False
+    if not pass_:
+        raise Error("FAILED (see FAIL lines above)")
+    print("PASS")
+
+
+def test_partial_m_decode_nt_bf16(ctx: DeviceContext) raises:
+    """Partial-M sweep at real Llama-3.1-8B decode weight shapes (NT bf16).
+
+    Covers the concurrent-decode batch widths that the relaxed `m > 1` guard now
+    routes to the co-batched GEMM instead of the naive per-row fallback. Each
+    case asserts the valid rows are numerically correct AND that no row in
+    [M, 64) is written (see `_run_partial_m_nt_case`).
+    """
+    print("== test_partial_m_decode_nt_bf16")
+    # k/v_proj (GQA KV projection): the smallest real decode weight; all widths.
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 2, 1024, 4096, "kproj m2")
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 4, 1024, 4096, "kproj m4")
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 16, 1024, 4096, "kproj m16")
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 31, 1024, 4096, "kproj m31")
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 32, 1024, 4096, "kproj m32")
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 63, 1024, 4096, "kproj m63")
+    # o_proj / q_proj (larger real weight): boundary widths, second shape.
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 16, 4096, 4096, "oproj m16")
+    _run_partial_m_nt_case[DType.bfloat16](ctx, 63, 4096, 4096, "oproj m63")
+
+
 def test_kernel_128x128x32_nn_bf16(ctx: DeviceContext) raises:
     """D[128,128] = A[128,32] @ B[32,128], NN, bf16->fp32."""
     print("== test_kernel_128x128x32_nn_bf16")
@@ -2240,6 +2343,7 @@ def main() raises:
     test_kernel_ragged_100x200x32_nn_fp16(ctx)
     test_kernel_ragged_100x200x32_nt_fp16(ctx)
     test_kernel_M20_N80_K16_nn_fp16(ctx)
+    test_partial_m_decode_nt_bf16(ctx)
     test_kernel_128x128x32_nt_fp16(ctx)
     test_kernel_128x128x32_nn_bf16(ctx)
     test_kernel_128x128x32_nn_fp32(ctx)

@@ -13,11 +13,15 @@
 
 from __future__ import annotations
 
+import importlib.machinery
+import importlib.util
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import types
 
 # Standard library
 from abc import ABC, abstractmethod
@@ -1651,6 +1655,88 @@ class WanGenerationOracle(ImageGenerationOracle):
         )
 
 
+class NemotronHOracle(GenericOracle):
+    """Oracle for Nemotron-H (hybrid Mamba-2) ``trust_remote_code`` references.
+
+    NVIDIA's bundled ``modeling_nemotron_h.py`` imports ``rmsnorm_fn`` from
+    ``mamba_ssm.ops.triton.layernorm_gated`` unconditionally, and its
+    ``MambaRMSNormGated.forward`` calls it even on the pure-torch
+    ``torch_forward`` path. ``mamba_ssm`` is a CUDA/Triton package that does not
+    build on non-CUDA hosts; since ``is_mamba_2_ssm_available()`` already gates
+    on CUDA torch (so the SSD/conv fast path stays off), only this gated-norm op
+    needs a torch stand-in. Install a pure-torch grouped gated-RMSNorm shim
+    before loading the torch reference (no-op if ``mamba_ssm`` is really
+    installed, so CUDA hosts are unaffected).
+    """
+
+    @staticmethod
+    def _install_mamba_ssm_shim() -> None:
+        if importlib.util.find_spec("mamba_ssm") is not None:
+            return
+
+        def rmsnorm_fn(
+            x: torch.Tensor,
+            weight: torch.Tensor,
+            bias: torch.Tensor | None = None,
+            z: torch.Tensor | None = None,
+            eps: float = 1e-6,
+            group_size: int | None = None,
+            norm_before_gate: bool = False,
+            **_kwargs: object,
+        ) -> torch.Tensor:
+            if norm_before_gate:
+                raise NotImplementedError(
+                    "rmsnorm_fn shim only supports norm_before_gate=False"
+                )
+            in_dtype = x.dtype
+            xf = x.to(torch.float32)
+            if z is not None:
+                xf = xf * torch.nn.functional.silu(z.to(torch.float32))
+            d = xf.shape[-1]
+            gs = int(group_size) if group_size is not None else d
+            lead = xf.shape[:-1]
+            xg = xf.reshape(*lead, d // gs, gs)
+            xg = xg * torch.rsqrt(xg.pow(2).mean(-1, keepdim=True) + eps)
+            out = weight * xg.reshape(*lead, d).to(in_dtype)
+            return out if bias is None else out + bias
+
+        def _mk(name: str) -> types.ModuleType:
+            module = types.ModuleType(name)
+            # transformers' is_mamba_2_ssm_available() -> _is_package_available
+            # -> importlib.util.find_spec(name) raises if __spec__ is None, so
+            # give each shim module a benign spec.
+            module.__spec__ = importlib.machinery.ModuleSpec(name, loader=None)
+            return module
+
+        # Populate each shim module's namespace via its (writable) __dict__:
+        # a plain `module.attr = x` trips mypy ("Module has no attribute"),
+        # while setattr(module, "attr", x) trips ruff B010 — __dict__ avoids both.
+        lng = _mk("mamba_ssm.ops.triton.layernorm_gated")
+        lng.__dict__["rmsnorm_fn"] = rmsnorm_fn
+        triton = _mk("mamba_ssm.ops.triton")
+        triton.__dict__["layernorm_gated"] = lng
+        ops = _mk("mamba_ssm.ops")
+        ops.__dict__["triton"] = triton
+        root = _mk("mamba_ssm")
+        root.__dict__["ops"] = ops
+        for name, module in (
+            ("mamba_ssm", root),
+            ("mamba_ssm.ops", ops),
+            ("mamba_ssm.ops.triton", triton),
+            ("mamba_ssm.ops.triton.layernorm_gated", lng),
+        ):
+            sys.modules[name] = module
+
+    def create_torch_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
+    ) -> TorchModelAndDataProcessor:
+        self._install_mamba_ssm_shim()
+        return super().create_torch_pipeline(encoding=encoding, device=device)
+
+
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "stepfun-ai/Step-3.5-Flash": GenericOracle(
         model_path="stepfun-ai/Step-3.5-Flash",
@@ -2339,5 +2425,25 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
         apply_chat_template=True,
+    ),
+    "nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8": NemotronHOracle(
+        # A pre-dequantized local bf16 checkpoint can be substituted via
+        # NEMOTRON_H_MODEL_PATH (there is no Apple FP8 matmul kernel, so on
+        # Metal the FP8 path yields all-zero logits; bring up on bf16-at-load).
+        model_path=os.environ.get(
+            "NEMOTRON_H_MODEL_PATH", "nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8"
+        ),
+        # Cap the context and batch so the paged KV cache AND the per-slot SSM
+        # state pool fit: the config default max_position_embeddings=262144
+        # sizes an ~80 GB KV buffer, and the SSM pool is
+        # max_batch_size x n_mamba x nheads x head_dim x dstate x fp32
+        # (~40 GB at 512 slots), so keep both small on a single Apple GPU.
+        config_params={
+            "max_length": 8192,
+            "max_batch_size": 8,
+            "trust_remote_code": True,
+            "device_memory_utilization": 0.9,
+        },
+        device_encoding_map={"gpu": ["bfloat16"]},
     ),
 }
