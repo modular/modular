@@ -46,6 +46,7 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
+    SupportsSSMStateWarmup,
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.modeling.types import RequestID
@@ -99,7 +100,7 @@ class NemotronHInputs(Llama3Inputs):
         )
 
 
-class NemotronHModel(LlamaModelBase):
+class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
     """Nemotron-H pipeline model (hybrid Mamba-2 + attention)."""
 
     model_config_cls: ClassVar[type[Any]] = NemotronHConfig
@@ -363,3 +364,21 @@ class NemotronHModel(LlamaModelBase):
     def release(self, request_id: RequestID) -> None:
         if self._state_cache is not None:
             self._state_cache.release(request_id)
+
+    def release_warmup_state(self, request_ids: list[RequestID]) -> None:
+        """Release SSM/conv pool slots claimed during graph-capture warmup.
+
+        Called by the overlap pipeline's ``_warmup_model_inputs`` context
+        manager after each ``(batch_size, cache_length)`` probe completes.
+        Releases the warmup request IDs from the state cache so the pool is
+        not exhausted before serving begins.  Each probe claims up to
+        ``batch_size`` fresh slots; without this release the pool would be
+        drained by the warmup sweep.
+
+        The pool buffers themselves are NOT cleared here — the state written
+        during warmup will be zeroed by the next ``claim()`` for that slot,
+        which happens when a real request is assigned to it.
+        """
+        if self._state_cache is not None:
+            for rid in request_ids:
+                self._state_cache.release(rid)

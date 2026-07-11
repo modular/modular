@@ -84,6 +84,7 @@ from .pipeline_runtime_config import PipelineRuntimeConfig
 from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
+    SupportsSSMStateWarmup,
 )
 from .pixel_tokenizer import PixelGenerationTokenizer
 from .registry import (
@@ -140,6 +141,7 @@ __all__ = [
     "SpeculativeConfig",
     "SupportedArchitecture",
     "SupportedEncoding",
+    "SupportsSSMStateWarmup",
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
     "TextTokenizer",

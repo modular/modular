@@ -141,33 +141,29 @@ class NemotronHAttention(Module):
         self.head_dim = config.attention_head_dim
         self.scale = math.sqrt(1.0 / self.head_dim)
 
-        q_dim = self.n_heads * self.head_dim
-        kv_dim = self.n_kv_heads * self.head_dim
+        self.q_dim = self.n_heads * self.head_dim
+        self.kv_dim = self.n_kv_heads * self.head_dim
         # Attention projections always stay bf16 (in the FP8 checkpoint's
         # exclude list), so no quantization config is wired here.
-        self.q_proj = Linear(
+        #
+        # Fused QKV: one matmul over the concatenated [q | k | v] out-dim, then
+        # ``ops.split``. The HF checkpoint ships q/k/v as separate weights; the
+        # adapter concatenates them (q, then k, then v) into ``qkv_proj.weight``.
+        # Unlike the mamba ``in_proj`` (whose merged split feeds a group-RMSNorm
+        # reduce that misaligns on a strided source — see
+        # known-limitations/strided-split-misaligns-gpu-group-reduce), the q/k/v
+        # split chunks feed reshape -> flash_attention_ragged, a different kernel
+        # path that tolerates the split-view stride. Validated on a minimized
+        # smoke before the full serve.
+        self.qkv_proj = Linear(
             in_dim=config.hidden_size,
-            out_dim=q_dim,
-            dtype=config.dtype,
-            device=dev,
-            has_bias=config.attention_bias,
-        )
-        self.k_proj = Linear(
-            in_dim=config.hidden_size,
-            out_dim=kv_dim,
-            dtype=config.dtype,
-            device=dev,
-            has_bias=config.attention_bias,
-        )
-        self.v_proj = Linear(
-            in_dim=config.hidden_size,
-            out_dim=kv_dim,
+            out_dim=self.q_dim + 2 * self.kv_dim,
             dtype=config.dtype,
             device=dev,
             has_bias=config.attention_bias,
         )
         self.o_proj = Linear(
-            in_dim=q_dim,
+            in_dim=self.q_dim,
             out_dim=config.hidden_size,
             dtype=config.dtype,
             device=dev,
@@ -182,11 +178,13 @@ class NemotronHAttention(Module):
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         total_seq_len = x.shape[0]
-        query = ops.reshape(self.q_proj(x), [-1, self.n_heads, self.head_dim])
-        key = ops.reshape(self.k_proj(x), [-1, self.n_kv_heads, self.head_dim])
-        value = ops.reshape(
-            self.v_proj(x), [-1, self.n_kv_heads, self.head_dim]
-        )
+        # One fused QKV matmul, then split into q | k | v (sizes q_dim, kv_dim,
+        # kv_dim along the feature axis).
+        qkv = self.qkv_proj(x)
+        q, k, v = ops.split(qkv, [self.q_dim, self.kv_dim, self.kv_dim], axis=1)
+        query = ops.reshape(q, [-1, self.n_heads, self.head_dim])
+        key = ops.reshape(k, [-1, self.n_kv_heads, self.head_dim])
+        value = ops.reshape(v, [-1, self.n_kv_heads, self.head_dim])
 
         # NoPE: write K/V to cache as-is (no rotary), then ragged flash attn.
         store_k_cache_ragged(kv_collection, key, input_row_offsets, layer_idx)
@@ -239,32 +237,28 @@ class NemotronHMamba2Mixer(Module):
         self.eps = config.layer_norm_epsilon
 
         # in_proj: hidden -> [gate(intermediate), hidden_states_B_C(conv_dim),
-        # dt(nheads)]. The fused HF ``in_proj.weight`` is split into three
-        # separate Linears (the adapter row-slices the fused weight + replicates
-        # the per-tensor FP8 scale). Three matmuls give contiguous gate /
-        # hidden_BC / dt outputs — a single fused matmul + ``ops.split`` yields
-        # strided views whose row stride breaks the downstream group-RMSNorm
-        # reduce on GPU (CUDA misaligned-address).
+        # dt(nheads)]. ONE fused matmul matching the HF reference and vLLM (the
+        # checkpoint ships a single ``in_proj.weight`` with ONE per-tensor FP8
+        # weight_scale / input_scale, so the fused FP8 matmul is numerically
+        # identical to three matmuls that each replicate that shared scale —
+        # accuracy-neutral). Output is split into gate / hidden_BC / dt.
+        #
+        # The earlier 3-separate-Linears workaround existed because a naive
+        # fused matmul + ``ops.split`` made a strided ``gate`` view whose row
+        # stride (the full fused width 17504) broke the downstream gated
+        # group-RMSNorm regroup+reduce on GPU
+        # (known-limitations/strided-split-misaligns-gpu-group-reduce). That
+        # limitation has since decayed: a minimized GPU repro at the exact real
+        # geometry (fused 17504, group_size 960) feeds the strided bf16 ``gate``
+        # straight into the group-RMSNorm reduce and runs clean (no
+        # CUDA_ERROR_MISALIGNED_ADDRESS). ``_gated_group_rmsnorm`` also casts
+        # ``gate`` -> fp32 as its first op, materializing a contiguous buffer.
+        # Validated on the FP8 quantized path (mini-smoke + serve), not just the
+        # bf16 repro, before claiming servable.
         wdtype = _weight_dtype(config.dtype, quant_config)
-        self.in_proj_gate = Linear(
+        self.in_proj = Linear(
             in_dim=config.hidden_size,
-            out_dim=self.intermediate,
-            dtype=wdtype,
-            device=dev,
-            has_bias=config.mamba_proj_bias,
-            quant_config=quant_config,
-        )
-        self.in_proj_hidden_BC = Linear(
-            in_dim=config.hidden_size,
-            out_dim=self.conv_dim,
-            dtype=wdtype,
-            device=dev,
-            has_bias=config.mamba_proj_bias,
-            quant_config=quant_config,
-        )
-        self.in_proj_dt = Linear(
-            in_dim=config.hidden_size,
-            out_dim=self.nheads,
+            out_dim=self.intermediate + self.conv_dim + self.nheads,
             dtype=wdtype,
             device=dev,
             has_bias=config.mamba_proj_bias,
@@ -375,10 +369,26 @@ class NemotronHMamba2Mixer(Module):
         """
         device = x.device
         query_start_loc = ops.cast(query_start_loc, DType.int32)
-        # Three separate projections (contiguous outputs); see __init__ note.
-        gate = self.in_proj_gate(x)  # [N, intermediate]
-        hidden_BC = self.in_proj_hidden_BC(x)  # [N, conv_dim]
-        dt = self.in_proj_dt(x)  # [N, nheads]
+        # ONE fused in_proj matmul, then split into gate / hidden_BC / dt along
+        # the feature axis.
+        proj = self.in_proj(x)  # [N, intermediate + conv_dim + nheads]
+        # The ``gate`` chunk feeds the gated group-RMSNorm regroup+reduce, which
+        # misaligns on a strided source (the fused matmul's row stride 17504 —
+        # known-limitations/strided-split-misaligns-gpu-group-reduce; confirmed
+        # still live on the FP8 path). Make ``gate`` a CONTIGUOUS fp32 buffer by
+        # casting the whole fused output to fp32 BEFORE the split: the fp32
+        # split chunk's 4-byte stride keeps the reduce aligned (validated by the
+        # FP8 mini-smoke). ``_gated_group_rmsnorm`` then consumes an fp32 gate
+        # directly (it casts gate->fp32 internally anyway). hidden_BC / dt are
+        # split from the original bf16 ``proj`` (they feed conv / SSD kernels
+        # that tolerate the split-view stride).
+        proj_f32 = ops.cast(proj, DType.float32)
+        gate = ops.slice_tensor(
+            proj_f32, [slice(None), slice(0, self.intermediate)]
+        )
+        _, hidden_BC, dt = ops.split(
+            proj, [self.intermediate, self.conv_dim, self.nheads], axis=1
+        )
 
         # Depthwise SiLU conv over hidden_BC. Op expects [dim, total_seqlen].
         conv_w = ops.reshape(

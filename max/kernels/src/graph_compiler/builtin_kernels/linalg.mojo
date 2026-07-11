@@ -17,6 +17,8 @@
 # ===-----------------------------------------------------------------------===#
 
 from std.collections import OptionalReg
+from std.sys import align_of
+from std.sys.info import simd_width_of, _accelerator_arch
 from std.sys.info import (
     simd_width_of,
     _accelerator_arch,
@@ -29,7 +31,8 @@ import extensibility as compiler
 # ===-----------------------------------------------------------------------===#
 
 from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_gpu
+from layout.tile_tensor import row_major
+from std.gpu.host.info import is_gpu, _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
@@ -1361,43 +1364,86 @@ struct MatmulStaticScaledFloat8:
         var input_tt = input_tensor.to_tile_tensor[DType.int64]()
         var weight_tt = weight_tensor.to_tile_tensor[DType.int64]()
 
-        @parameter
-        @__copy_capture(output_tt, input_scale, weight_scale)
-        @always_inline
-        def scaled_output_fn[
-            dtype: DType, width: SIMDSize, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[dtype, width]):
-            var scale = input_scale.cast[dtype]() * weight_scale.cast[dtype]()
-            var scaled_val = val * scale
+        comptime if _is_sm10x_gpu(ctx.default_device_info):
+            # Fold the per-tensor scales into the SM100 compute epilogue and
+            # write `output_type` (bf16) directly into the real output. This
+            # presents c_type==bf16 + a_type==float8_e4m3fn to
+            # `matmul_dispatch_sm100`, which routes the static-scaled FP8 GEMM
+            # through the tuned tcgen05 Mojo SM100 FP8 pipeline
+            # (`matmul_dispatch_sm100_fp8`) instead of DISPATCH_MISSing on the
+            # fp32 accumulator dtype and falling back to vendor cuBLASLt for
+            # all m>1. The compute lambda returns the value already cast to the
+            # output dtype, as required by `_matmul_gpu`'s compute-lambda
+            # wrapper (output.dtype must equal c_type).
+            @parameter
+            @__copy_capture(input_scale, weight_scale)
+            @always_inline
+            def scaled_compute_fn[
+                dtype: DType,
+                width: SIMDSize,
+                *,
+                alignment: Int = align_of[SIMD[dtype, width]](),
+            ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> SIMD[
+                dtype, width
+            ]:
+                var scale = (
+                    input_scale.cast[DType.float32]()
+                    * weight_scale.cast[DType.float32]()
+                )
+                var scaled_val = val.cast[DType.float32]() * scale
+                return scaled_val.cast[dtype]()
 
-            output_tt.store_linear[width=width, alignment=alignment](
-                idx, scaled_val.cast[output_type]()
+            matmul[
+                target=target,
+                transpose_b=True,
+                elementwise_compute_lambda_fn=scaled_compute_fn,
+            ](
+                output_tt,
+                input_tt,
+                weight_tt,
+                Optional(ctx),
+            )
+        else:
+
+            @parameter
+            @__copy_capture(output_tt, input_scale, weight_scale)
+            @always_inline
+            def scaled_output_fn[
+                dtype: DType, width: SIMDSize, *, alignment: Int = 1
+            ](idx: IndexList[2], val: SIMD[dtype, width]):
+                var scale = (
+                    input_scale.cast[dtype]() * weight_scale.cast[dtype]()
+                )
+                var scaled_val = val * scale
+
+                output_tt.store_linear[width=width, alignment=alignment](
+                    idx, scaled_val.cast[output_type]()
+                )
+
+            # Allocate an fp32 scratch buffer for the matmul accumulator;
+            # the epilogue lambda reads from it, applies scaling, and writes
+            # the quantized result into the real output.
+            comptime N = type_of(weight_tt).static_shape[0]
+            var M = Int(input_tt.dim[0]())
+            var device_ctx = ctx
+            var scratch_buffer = device_ctx.enqueue_create_buffer[
+                DType.float32
+            ](M * N)
+            var output_scratch = TileTensor(
+                scratch_buffer.unsafe_ptr(),
+                row_major(Coord(Int64(M), Idx[N])),
             )
 
-        # Allocate an fp32 scratch buffer for the matmul accumulator;
-        # the epilogue lambda reads from it, applies scaling, and writes
-        # the quantized result into the real output.
-        comptime N = type_of(weight_tt).static_shape[0]
-        var M = Int(input_tt.dim[0]())
-        var device_ctx = ctx
-        var scratch_buffer = device_ctx.enqueue_create_buffer[DType.float32](
-            M * N
-        )
-        var output_scratch = TileTensor(
-            scratch_buffer.unsafe_ptr(),
-            row_major(Coord(Int64(M), Idx[N])),
-        )
-
-        matmul[
-            target=target,
-            transpose_b=True,
-            elementwise_lambda_fn=scaled_output_fn,
-        ](
-            output_scratch,
-            input_tt,
-            weight_tt,
-            Optional(device_ctx),
-        )
+            matmul[
+                target=target,
+                transpose_b=True,
+                elementwise_lambda_fn=scaled_output_fn,
+            ](
+                output_scratch,
+                input_tt,
+                weight_tt,
+                Optional(device_ctx),
+            )
 
 
 @compiler.register("mo.merge_ragged_tensors")
