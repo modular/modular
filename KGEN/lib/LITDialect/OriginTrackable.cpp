@@ -754,7 +754,11 @@ static bool handleOriginAttr(TypedAttr attr,
     // FIXME(origins): This shouldn't happen; UncheckedCallEmission isn't
     // forming captures correctly for async functions with implicit origin
     // refs.
-    if (isa<ImplicitOriginRefAttr>(OriginMutCastAttr::strip(attr)))
+    //
+    // ParamIndexRefAttr is only meaningful relative to an un-parameterized
+    // generator scope.
+    if (isa<ImplicitOriginRefAttr, ParamIndexRefAttr>(
+            OriginMutCastAttr::strip(raw)))
       return;
 
     results.push_back(raw);
