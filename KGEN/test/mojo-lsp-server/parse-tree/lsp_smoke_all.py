@@ -25,7 +25,10 @@ Library resolution matches the server's branch: there is NO -mojo-search-paths
 (the server never sets it), so the parser reads `.import_path` from
 MODULAR_MOJO_MAX_IMPORT_PATH. Under `modular_py_test` that env var is set
 automatically from `mojo_deps`; for manual runs pass --import-path. The file's
-own directory walk is automatic in the parser either way.
+own directory walk is automatic in the parser either way. --extra-import-root
+appends further roots on top of that (see its --help): needed by targets whose
+`data` stages a package's raw sources at the same runfiles path as that
+package's mojo_deps-precompiled output.
 
 A file FAILS on a crash (signal, LLVM/assertion crash, sanitizer error, hang) or
 any real error-severity diagnostic (parse OR module check). `kgen -lsp` exits
@@ -252,6 +255,20 @@ def main() -> int:
         "automatically from mojo_deps; only needed for manual runs.",
     )
     ap.add_argument(
+        "--extra-import-root",
+        action="append",
+        dest="extra_import_roots",
+        default=[],
+        help="an extra MODULAR_MOJO_MAX_IMPORT_PATH entry, given as a "
+        "rootpath to a file inside the desired root dir (its resolved parent "
+        "is used, same symlink-following as --scan-root-file). Repeatable. "
+        "Appended after whatever mojo_deps already computed. Needed when a "
+        "target's `data` stages a package's raw sources at the same runfiles "
+        "path as that package's mojo_deps-precompiled `.mojoc`, which makes "
+        "the parser treat that path as being inside a package and skip it "
+        "for module resolution.",
+    )
+    ap.add_argument(
         "--log-dir",
         default="",
         help="if set, the full tool output for each failing file is written "
@@ -272,6 +289,14 @@ def main() -> int:
     env = dict(os.environ)
     if args.import_path:
         env["MODULAR_MOJO_MAX_IMPORT_PATH"] = args.import_path
+    if args.extra_import_roots:
+        extra = [str(Path(p).resolve().parent) for p in args.extra_import_roots]
+        existing = (
+            [env["MODULAR_MOJO_MAX_IMPORT_PATH"]]
+            if env.get("MODULAR_MOJO_MAX_IMPORT_PATH")
+            else []
+        )
+        env["MODULAR_MOJO_MAX_IMPORT_PATH"] = ",".join(existing + extra)
     if args.log_dir:
         os.makedirs(args.log_dir, exist_ok=True)
 
