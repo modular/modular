@@ -386,8 +386,7 @@ printGeneratorInterface(raw_ostream &os, ArrayRef<Type> inputParamTypes,
 
     // Don't print this if it is an autoparam.
     StringRef name = paramInfo.getName(i).strref();
-    if ((curPassingKind == PassingKind::Inferred && name.contains('.')) ||
-        curPassingKind == PassingKind::Implicit) {
+    if (isHiddenGeneratorParam(curPassingKind, name)) {
       // If this is an origin parameter Foo._mlir_origin, print it as "Foo".
       // These come up in ref [x] specifications all the time.
       if (sugarIsa<OriginType>(reboundType) && name.contains("._mlir_origin")) {
@@ -1510,6 +1509,8 @@ static void printRef(RefType refType, raw_ostream &os,
 
 static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
                                  raw_ostream &os, ASTTypePrinterContext ctx) {
+  bool suppressThin = ctx.suppressThin;
+  ctx.suppressThin = false;
   if (type.isAsync())
     os << "async ";
   os << "def";
@@ -1575,14 +1576,11 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
         os << "*, ";
     }
 
-    if (convention == ArgConvention::OwnedMem)
-      os << "var ";
-    else if (convention == ArgConvention::Mut)
-      os << "mut ";
-    else if (convention == ArgConvention::ByRefResult)
-      os << "out ";
-    else if (convention == ArgConvention::DeinitMem)
-      os << "deinit ";
+    if (convention == ArgConvention::OwnedMem ||
+        convention == ArgConvention::Mut ||
+        convention == ArgConvention::ByRefResult ||
+        convention == ArgConvention::DeinitMem)
+      os << getUserSyntax(convention) << ' ';
     else if (convention == ArgConvention::Ref ||
              convention == ArgConvention::MutRef)
       printRef(cast<RefType>(type), os, ctx);
@@ -1634,7 +1632,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
     }
   }
 
-  os << " thin -> ";
+  os << (suppressThin ? " -> " : " thin -> ");
   Type resultType = fnType.getUserResultType();
 
   if (fnType.isRefResult()) {
@@ -1831,18 +1829,6 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     printGeneratorBodyConstraints(os, paramList, evaluator, ctx);
   } else if (isa<TypeType>(type)) {
     os << "__TypeOfAllTypes";
-#if 0
-  } else if (auto fnType = dyn_cast<FunctionType>(type)) {
-    os << "def (";
-    llvm::interleaveComma(fnType.getInputs(), os, [&](Type type) {
-      ASTType(type).print(os, ctx);
-    });
-    os << ") -> (";
-    llvm::interleaveComma(fnType.getResults(), os, [&](Type type) {
-      ASTType(type).print(os, ctx);
-    });
-    os << ')';
-#endif
   } else if (auto originType = dyn_cast<OriginType>(type)) {
     if (originType.isMutableKnown(true))
       os << "LITMutOrigin";
