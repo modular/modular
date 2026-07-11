@@ -17,6 +17,7 @@ on GPU by comparing against PyTorch reference implementations.
 """
 
 import operator
+import os
 from collections.abc import Generator, Sequence
 from typing import Any
 
@@ -24,6 +25,7 @@ import numpy as np
 import pytest
 import torch
 from max import _interpreter
+from max._interpreter_ops import adopted_from_manifest
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
@@ -66,6 +68,35 @@ def _interpreter_only() -> Generator[None]:
     under test.  Graphs it cannot execute raise UnsupportedGraphError."""
     with set_default_executor(InterpreterExecutor()):
         yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _require_warm_adoption() -> None:
+    """Fail loudly unless the build-warmed eager-GC cache actually took effect.
+
+    The numeric tests below pass whether the warm adopts or silently cold-
+    compiles, so this asserts adoption directly. ``XARCH_WARM_RLOCATION`` is set
+    only on a warmed lane; its absence with an accelerator present means a new
+    NVIDIA lane wasn't wired (checked at runtime, not in the BUILD select, since
+    the pydeps lint aspect evaluates that select on non-NVIDIA lanes too). When
+    wired, ``adopted_from_manifest`` must hold for each family, else adoption
+    fell through to a cold recompile.
+    """
+    if not os.environ.get("XARCH_WARM_RLOCATION"):
+        if accelerator_count() > 0:
+            raise RuntimeError(
+                "test_interpreter_ops_gpu ran on a GPU with no eager-GC warm"
+                " wired, add its SKU to _GPU_TARGET/_GPU_LANE_ONLY in"
+                " max/tests/integration/xarch_warm/BUILD.bazel and the selects"
+                " in max/tests/tests/BUILD.bazel."
+            )
+        return
+    unadopted = [f for f in ("matmul", "unary") if not adopted_from_manifest(f)]
+    if unadopted:
+        raise RuntimeError(
+            f"eager-GC warm is wired but {unadopted} did not adopt from the"
+            " manifest, a silent cold-compile fallback (arch/key drift)."
+        )
 
 
 # Mapping from MAX DType to torch dtype

@@ -827,22 +827,6 @@ def mla_decode_sm100_dispatch[
     if num_partitions_in:
         num_partitions = num_partitions_in.value()
 
-    # When sparse mode or sliding-window changes num_partitions, the GPU
-    # scalar_args_buf (which was pre-computed from cache_len by the caller)
-    # must be updated so the kernel reads the same value the host uses for
-    # grid/buffers.
-    comptime if sparse or (mask_t.get_type_name() == "SlidingWindowCausalMask"):
-        var corrected_args = InlineArray[Int64, 3](uninitialized=True)
-        corrected_args[0] = Int64(batch_size)
-        corrected_args[1] = Int64(q_max_seq_len)
-        corrected_args[2] = Int64(num_partitions)
-        var scalar_buf = DeviceBuffer[DType.int64](
-            ctx, scalar_args_buf.ptr, 3, owning=False
-        )
-        scalar_buf.enqueue_copy_from(
-            UnsafePointer(to=corrected_args).bitcast[Scalar[DType.int64]]()
-        )
-
     # =========================================================================
     # split_page_size routing: use finer split granularity for short cache
     # with moderate-to-large batch to improve split balance.
@@ -2402,7 +2386,7 @@ def launch_mla_sm100_decode_enqueue_kernel[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
 
     var block_x = ceildiv(config.num_q_heads, config.BM)
     var grid_dim = (block_x, q_max_seq_len, block_z)
@@ -2586,7 +2570,7 @@ def launch_mla_sm100_decode_native_fp8[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
     var block_x = ceildiv(config.num_q_heads, config.BM)
     # fold collapses grid.y to 1 since BM packs all q_tokens.
     var grid_y = 1 if fold_q else q_max_seq_len
@@ -2700,7 +2684,7 @@ def launch_mla_sm100_decode_native_fp8_layout_g[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
     var block_x = ceildiv(config_g.num_q_heads, config_g.BM)
     # fold collapses grid.y to 1 since BM packs all q_tokens.
     var grid_y = 1 if fold_q else q_max_seq_len
@@ -2816,7 +2800,7 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
     var block_x = ceildiv(config.num_q_heads, config.BM)
     var grid_dim = (block_x, q_max_seq_len, block_z)
     var block_dim = (config.num_threads, 1, 1)
@@ -3018,7 +3002,7 @@ def launch_mla_sm100_decode_sparse[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
     var block_x = ceildiv(config.num_q_heads, config.BM)
     var grid_dim = (block_x, q_max_seq_len, block_z)
     var block_dim = (config.num_threads, 1, 1)
@@ -3185,7 +3169,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
     var block_x = ceildiv(config.num_q_heads, config.BM)
     var grid_dim = (block_x, q_max_seq_len, block_z)
     var block_dim = (config.num_threads, 1, 1)
@@ -3350,7 +3334,7 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
         SplitAccumType=SplitAccumType,
-    ](mask, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr, num_partitions)
     var block_x = ceildiv(config.num_q_heads, config.BM)
     var grid_dim = (block_x, q_max_seq_len, block_z)
     var block_dim = (config.num_threads, 1, 1)

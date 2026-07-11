@@ -95,9 +95,11 @@ comptime allgather_tuning_table = Table(
         DefaultCommTuningConfig(
             ngpus=-1, num_bytes=-1, sm_version="sm_103a", num_blocks=512
         ),
-        # default for CDNA4 (MI355X, encoded with ngpus=-1, num_bytes=-1)
+        # default for CDNA4 (MI355X, encoded with ngpus=-1, num_bytes=-1).
+        # Interleaved peer copy saturates the PCIe fabric at ~128 blocks
+        # (measured peak, TP4); more only adds barrier/scheduling overhead.
         DefaultCommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="CDNA4", num_blocks=216
+            ngpus=-1, num_bytes=-1, sm_version="CDNA4", num_blocks=128
         ),
         # global default for unknown architectures
         DefaultCommTuningConfig(
@@ -209,32 +211,46 @@ def _allgather_p2p_kernel[
             rank_sigs, my_sig, my_rank
         )
 
-        # Copy data from each source GPU to corresponding output buffer.
-        # outputs[i] should contain data from GPU i.
+        # Copy each source GPU's data to its output buffer (outputs[i] holds
+        # GPU i). Peer copies are interleaved (all `ngpus` loads issued before
+        # any store) for `ngpus`-way memory-level parallelism.
+        var num_simd_vectors = InlineArray[Int, ngpus](uninitialized=True)
+        var max_num_simd_vectors = 0
         comptime for gpu_idx in range(ngpus):
-            var length = lengths_rr[gpu_idx]
-            var num_simd_vectors, remainder = divmod(length, simd_width)
+            var nsv = lengths_rr[gpu_idx] // simd_width
+            num_simd_vectors[gpu_idx] = nsv
+            max_num_simd_vectors = max(max_num_simd_vectors, nsv)
 
-            # Grid-strided loop for this source (vectorized).
-            for idx in range(global_tid, num_simd_vectors, stride):
-                var elem_idx = idx * simd_width
-                # Read directly from source GPU.
-                var data = (
-                    src_ptrs_rr[gpu_idx]
-                    .address_space_cast[_target_address_space]()
-                    .load[
-                        width=simd_width,
-                        alignment=alignment,
-                    ](elem_idx)
-                )
-                # Write to output buffer for this source GPU.
-                out_ptrs_rr[gpu_idx].address_space_cast[
-                    _target_address_space
-                ]().store[width=simd_width, alignment=alignment](elem_idx, data)
+        # Grid-strided loop over the longest source; per-peer guards skip
+        # shorter sources.
+        for idx in range(global_tid, max_num_simd_vectors, stride):
+            var elem_idx = idx * simd_width
+            var data = InlineArray[SIMD[dtype, simd_width], ngpus](
+                uninitialized=True
+            )
+            # Issue all peer reads first (memory-level parallelism).
+            comptime for gpu_idx in range(ngpus):
+                if idx < num_simd_vectors[gpu_idx]:
+                    data[gpu_idx] = (
+                        src_ptrs_rr[gpu_idx]
+                        .address_space_cast[_target_address_space]()
+                        .load[width=simd_width, alignment=alignment](elem_idx)
+                    )
+            # Then store each peer's data.
+            comptime for gpu_idx in range(ngpus):
+                if idx < num_simd_vectors[gpu_idx]:
+                    out_ptrs_rr[gpu_idx].address_space_cast[
+                        _target_address_space
+                    ]().store[width=simd_width, alignment=alignment](
+                        elem_idx, data[gpu_idx]
+                    )
 
-            # Handle remainder elements with scalar operations.
+        # Scalar remainder per source.
+        comptime for gpu_idx in range(ngpus):
+            var nsv = num_simd_vectors[gpu_idx]
+            var remainder = lengths_rr[gpu_idx] - nsv * simd_width
             if remainder > 0:
-                var tail_start = num_simd_vectors * simd_width
+                var tail_start = nsv * simd_width
                 # Use first warp to handle tail to minimize divergence.
                 if global_tid < WARP_SIZE:
                     for i in range(global_tid, remainder, WARP_SIZE):

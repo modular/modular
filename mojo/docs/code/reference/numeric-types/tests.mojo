@@ -14,7 +14,7 @@
 # Tests for numeric-types.mdx code examples.
 #
 # Not tested (no runnable behavior to assert from this file):
-#   - `reflect[type_of(a)].name()` prints (Int / UInt naming demos)
+#   - `reflect[type_of(a)].name()` prints (Int naming demos)
 #   - `Float8` arithmetic (requires GPU; covered in the support-matrix
 #     table; CPU execution is unsupported)
 #   - `Float4_e2m1fn` operations (requires NVIDIA Blackwell)
@@ -145,12 +145,10 @@ def test_int_constants() raises:
     assert_equal(Int.MIN, -9223372036854775808)
 
 
-# --- UInt and sized integer bounds ---
+# --- Sized integer bounds ---
 
 
 def test_sized_int_bounds() raises:
-    assert_equal(UInt.MIN, 0)
-    assert_equal(UInt.MAX, 18446744073709551615)
     assert_equal(UInt8.MAX, 255)
     assert_equal(Int8.MIN, -128)
     assert_equal(UInt32.MAX, 4294967295)

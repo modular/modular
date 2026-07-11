@@ -49,23 +49,23 @@ def main():
     var offset = 0
 
     # Chunk 1 header
-    (buf + offset).init_pointee_copy(UInt8(2))
+    (buf + offset).unsafe_write(UInt8(2))
     offset += 1
     # Chunk 1 values (little-endian UInt32)
-    (buf + offset).bitcast[UInt32]().init_pointee_copy(UInt32(10))
+    (buf + offset).bitcast[UInt32]().unsafe_write(UInt32(10))
     offset += 4
-    (buf + offset).bitcast[UInt32]().init_pointee_copy(UInt32(20))
+    (buf + offset).bitcast[UInt32]().unsafe_write(UInt32(20))
     offset += 4
 
     # Chunk 2 header
-    (buf + offset).init_pointee_copy(UInt8(1))
+    (buf + offset).unsafe_write(UInt8(1))
     offset += 1
     # Chunk 2 value
-    (buf + offset).bitcast[UInt32]().init_pointee_copy(UInt32(30))
+    (buf + offset).bitcast[UInt32]().unsafe_write(UInt32(30))
     offset += 4
 
     # Terminator
-    (buf + offset).init_pointee_copy(UInt8(0))
+    (buf + offset).unsafe_write(UInt8(0))
 
     var result = read_chunks(buf)
     print(len(result))  # 2

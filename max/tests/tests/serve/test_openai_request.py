@@ -12,8 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import json
+
+from max.pipelines.context.exceptions import InputError
 from max.serve.config import Settings
-from max.serve.router.openai_routes import openai_parse_chat_completion_request
+from max.serve.router.openai_routes import (
+    _create_response_format,
+    openai_parse_chat_completion_request,
+)
 
 """
 It is unclear why the type ignore for CreateChatCompletionRequest is necessary.
@@ -579,6 +585,57 @@ def test_openai_response_format_accepts_boolean_schema(schema: bool) -> None:
     request = CreateChatCompletionRequest.model_validate(body)
     response_format = cast(dict[str, Any], request.response_format)
     assert response_format["json_schema"]["schema"] is schema
+
+
+def test_create_response_format_probes_normalized_schema() -> None:
+    """``_create_response_format`` validates the *normalized* schema against
+    the active backend (via the injected validator), so an uncompilable schema
+    is a 400 here rather than a worker crash later."""
+    probed: list[str] = []
+
+    class _RecordingValidator:
+        """GrammarValidator that records the schema it is asked to check."""
+
+        def check_tool_grammar(self, grammar: str) -> None:
+            return None
+
+        def check_json_schema(self, json_schema: str) -> None:
+            probed.append(json_schema)
+
+    class _RaisingValidator:
+        """GrammarValidator that rejects everything, as an uncompilable
+        schema would."""
+
+        def check_tool_grammar(self, grammar: str) -> None:
+            raise InputError("cannot compile")
+
+        def check_json_schema(self, json_schema: str) -> None:
+            raise InputError("cannot compile")
+
+    # A schema with no root ``type`` — normalization defaults it to "object",
+    # and that normalized form is what the validator (and worker) must compile.
+    response_format = cast(
+        Any,
+        {
+            "type": "json_schema",
+            "json_schema": {"name": "t", "schema": {"properties": {}}},
+        },
+    )
+
+    _create_response_format(
+        response_format,
+        enable_response_format_schema=True,
+        grammar_validator=_RecordingValidator(),
+    )
+    assert len(probed) == 1
+    assert json.loads(probed[0])["type"] == "object"
+
+    with pytest.raises(InputError):
+        _create_response_format(
+            response_format,
+            enable_response_format_schema=True,
+            grammar_validator=_RaisingValidator(),
+        )
 
 
 def test_openai_chat_message_validates_structure() -> None:

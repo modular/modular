@@ -62,7 +62,12 @@ mojo_test(
         "full",
     ],
     tags = ["gpu"],
-    target_compatible_with = ["//:has_gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        # TODO(KERN-3171): Metal enqueue of the fusion-tile adapter fails
+        # with 'Null argument at index 0'.
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max:builtin_kernels",
         "//max:builtin_primitives",

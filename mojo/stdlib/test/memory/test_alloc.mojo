@@ -81,7 +81,7 @@ def test_alloc_and_free_round_trip_reads_and_writes_values() raises:
     var a = alloc(layout)
     var ptr = a.unsafe_ptr()
     for i in range(5):
-        (ptr + i).init_pointee_move(i)
+        (ptr + i).unsafe_write(i)
     # `assert_equal` can raise, and an `Allocation` must be consumed on
     # every path (including the raising one). So accumulate into a plain `Bool`,
     # `dealloc` the handle, and only then assert.
@@ -104,7 +104,7 @@ def test_alloc_with_layout_single_supports_one_element() raises:
     var layout = Layout[Int64].single()
     var a = alloc(layout)
     var ptr = a.unsafe_ptr()
-    ptr.init_pointee_move(42)
+    ptr.unsafe_write(42)
     var value = ptr[]
     dealloc(a^)
     assert_equal(value, 42)
@@ -114,7 +114,7 @@ def test_allocation_unsafe_span_covers_layout_count() raises:
     var a = alloc(Layout[Int](count=3))
     var ptr = a.unsafe_ptr()
     for i in range(3):
-        (ptr + i).init_pointee_move(i * 10)
+        (ptr + i).unsafe_write(i * 10)
     var span = a.unsafe_span()
     var span_len = len(span)
     var first = span[0]
@@ -135,7 +135,7 @@ def test_allocation_count_matches_layout() raises:
 def test_allocation_unsized_then_unsafe_with_layout_round_trip() raises:
     var layout = Layout[Int](count=4)
     var a = alloc(layout)
-    a.unsafe_ptr().init_pointee_move(99)
+    a.unsafe_ptr().unsafe_write(99)
     var thin = a^.into_thin()
     var value = thin.unsafe_ptr()[]
     dealloc(thin^.unsafe_with_layout(layout))
@@ -145,8 +145,8 @@ def test_allocation_unsized_then_unsafe_with_layout_round_trip() raises:
 def test_allocation_unsafe_leak_then_reconstruct() raises:
     var layout = Layout[Int](count=2)
     var ptr = alloc(layout).unsafe_leak()
-    ptr.init_pointee_move(5)
-    (ptr + 1).init_pointee_move(6)
+    ptr.unsafe_write(5)
+    (ptr + 1).unsafe_write(6)
     var total = ptr[0] + ptr[1]
     dealloc(
         ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
@@ -159,7 +159,7 @@ def test_thin_allocation_unsafe_with_layout_and_unsafe_ptr() raises:
     var thin = ThinAllocation(
         unsafe_assume_ownership=alloc(layout).unsafe_leak()
     )
-    thin.unsafe_ptr().init_pointee_move(7)
+    thin.unsafe_ptr().unsafe_write(7)
     var value = thin.unsafe_ptr()[]
     dealloc(thin^.unsafe_with_layout(layout))
     assert_equal(value, 7)
@@ -195,7 +195,7 @@ def test_deletable_allocation_auto_deallocs_at_last_use() raises:
     var total = 0
     for i in range(3):
         var deletable = alloc(Layout[Int](count=1)).into_deletable()
-        deletable.unsafe_ptr().init_pointee_move(i)
+        deletable.unsafe_ptr().unsafe_write(i)
         total += deletable.unsafe_ptr()[]
     assert_equal(total, 0 + 1 + 2)
 
@@ -204,7 +204,7 @@ def test_deletable_allocation_del_does_not_run_pointee_destructors() raises:
     var deleted = False
     var obs = ObservableDel(UnsafePointer(to=deleted).as_unsafe_any_origin())
     var deletable = alloc(Layout[type_of(obs)](count=1)).into_deletable()
-    deletable.unsafe_ptr().init_pointee_move(obs^)
+    deletable.unsafe_ptr().unsafe_write(obs^)
     _ = deletable^
     assert_false(deleted)
 
@@ -213,7 +213,7 @@ def test_dealloc_does_not_run_pointee_destructors() raises:
     var deleted = False
     var obs = ObservableDel(UnsafePointer(to=deleted).as_unsafe_any_origin())
     var a = alloc(Layout[type_of(obs)](count=1))
-    a.unsafe_ptr().init_pointee_move(obs^)
+    a.unsafe_ptr().unsafe_write(obs^)
     dealloc(a^)
     assert_false(deleted)
 
@@ -222,7 +222,7 @@ def test_destroy_n_runs_pointee_destructors_before_dealloc() raises:
     var deleted = False
     var obs = ObservableDel(UnsafePointer(to=deleted).as_unsafe_any_origin())
     var a = alloc(Layout[type_of(obs)](count=1))
-    a.unsafe_ptr().init_pointee_move(obs^)
+    a.unsafe_ptr().unsafe_write(obs^)
     destroy_n(a.unsafe_ptr(), 1)
     var ran = deleted
     dealloc(a^)
@@ -258,7 +258,7 @@ def test_single_zst_lifecycle() raises:
     var alloc = alloc(layout)
     var ptr = alloc^.unsafe_leak()
 
-    ptr.init_pointee_move(ZST(fill=0))
+    ptr.unsafe_write(ZST(fill=0))
     assert_equal(0, len(ptr[]))
     ptr.destroy_pointee()
     dealloc(
@@ -293,9 +293,7 @@ def test_many_zst_lifecycle() raises:
     var layout = Layout[ZST](count=Int.MAX)
     var ptr = alloc(layout).unsafe_leak()
 
-    ptr.bitcast[InlineArray[ZST, Int.MAX]]().init_pointee_move(
-        {fill = ZST(fill=0)}
-    )
+    ptr.bitcast[InlineArray[ZST, Int.MAX]]().unsafe_write({fill = ZST(fill=0)})
 
     assert_equal(0, len(ptr[]))
     assert_equal(0, len(ptr[Int.MAX]))

@@ -198,6 +198,7 @@ struct MLA_Decode_Pack[
     var mask: Self.MaskType
     var valid_length: Self.ValidLengthType
     var lse_accum_split_ptr: Self.SplitAccumType
+    var num_partitions: Int
     comptime device_type: AnyType = Self
 
     def _to_device_type(
@@ -219,10 +220,12 @@ struct MLA_Decode_Pack[
         mask: Self.MaskType,
         valid_length: Self.ValidLengthType,
         lse_accum_split_ptr: Self.SplitAccumType,
+        num_partitions: Int,
     ):
         self.mask = mask
         self.valid_length = valid_length
         self.lse_accum_split_ptr = lse_accum_split_ptr
+        self.num_partitions = num_partitions
 
 
 # ------------------------------------------------------------------------------

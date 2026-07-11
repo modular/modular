@@ -16,12 +16,13 @@ import pickle
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 
 import pytest
 from max._entrypoints.cli.config import parse_task_flags
 from max.driver import DeviceSpec, accelerator_count
 from max.dtype import DType
+from max.graph.weights import WeightsFormat
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.context import SamplingParamsGenerationConfigDefaults
 from max.pipelines.lib import (
@@ -791,6 +792,122 @@ class TestDraftModelQuantizationEncoding:
             config._validate_speculative_model_configs(
                 target_arch=mock_arch, draft_arch=mock_arch
             )
+
+
+# float32 safetensors for a repo that ships no bfloat16 files, mirroring a
+# checkpoint like ``nvidia/Kimi-K2.6-Eagle3``.
+_F32_SAFETENSORS = [
+    Path("model-00001-of-00002.safetensors"),
+    Path("model-00002-of-00002.safetensors"),
+]
+
+
+def _make_f32_only_repo() -> Mock:
+    """Build a fake ``HuggingFaceRepo`` whose only weights are float32."""
+
+    def files_for_encoding(
+        encoding: SupportedEncoding,
+        weights_format: WeightsFormat | None = None,
+    ) -> dict[WeightsFormat, list[Path]]:
+        if encoding == "float32":
+            return {WeightsFormat.safetensors: list(_F32_SAFETENSORS)}
+        return {}
+
+    repo = Mock()
+    repo.repo_id = "test/f32-only"
+    repo.repo_type = "online"
+    repo.supported_encodings = ["float32"]
+    repo.files_for_encoding = Mock(side_effect=files_for_encoding)
+    # A float32-only repo reports float32 regardless of the preferred encoding.
+    repo.encoding_for_file = Mock(return_value="float32")
+    return repo
+
+
+class TestFloat32WeightFallbackScoping:
+    """Regression tests for the float32 -> 16-bit weight-path fallback.
+
+    ``_try_resolve_weight_path`` falls back to a repo's float32 safetensors
+    when a float16/bfloat16 graph has no matching files. That fallback is
+    scoped to diffuser sub-components (``subfolder`` set); it must NOT fire
+    for architecture-validated models (LLMs, speculative-decoding draft
+    models), where eagerly binding ``weight_path`` to the float32 checkpoint
+    makes the given-encoding validation flip ``quantization_encoding`` to
+    float32 and drop the requested bfloat16.
+
+    Regression guard for KERN-3167: the NVFP4 Kimi-K2.6 Eagle recipes
+    configure a bfloat16 draft model whose HF repo ships only float32
+    safetensors; the unscoped fallback flipped it to float32, which the Eagle3
+    architecture does not support (``quantization_encoding of 'float32' not
+    supported by MAX engine``).
+    """
+
+    def test_draft_model_bf16_encoding_preserved_over_f32_only_repo(
+        self,
+    ) -> None:
+        """An LLM/draft model keeps bfloat16 (cast from float32), not float32.
+
+        Requested bfloat16, repo has only float32 safetensors, no
+        ``subfolder``. The best-effort pass must not bind ``weight_path``, so
+        the given-encoding resolution casts float32 -> bfloat16 (preserving
+        the requested encoding) instead of flipping to float32.
+        """
+        config = MAXModelConfig(
+            model_path="nvidia/Kimi-K2.6-Eagle3",
+            quantization_encoding="bfloat16",
+        )
+        assert config.subfolder is None
+
+        with (
+            patch.object(
+                MAXModelConfig,
+                "huggingface_weight_repo",
+                new_callable=PropertyMock,
+                return_value=_make_f32_only_repo(),
+            ),
+            patch(
+                "max.pipelines.lib.config.model_config.supported_encoding_supported_on",
+                return_value=True,
+            ),
+        ):
+            # Best-effort (pre-architecture) pass must not bind weight_path.
+            config._try_resolve_weight_path()
+            assert config.weight_path == []
+
+            # Architecture-level given-encoding resolution.
+            config.validate_and_resolve_quantization_encoding_weight_path(
+                default_encoding="bfloat16"
+            )
+
+        # The requested bfloat16 is preserved; the float32 weights are cast at
+        # load time, recorded in the dtype-cast bookkeeping.
+        assert config.quantization_encoding == "bfloat16"
+        assert config._applied_dtype_cast_from == "float32"
+        assert config._applied_dtype_cast_to == "bfloat16"
+
+    def test_diffuser_subcomponent_f32_fallback_still_resolves(self) -> None:
+        """A diffuser sub-component (``subfolder`` set) still gets the fallback.
+
+        This is the mixed-precision FLUX.2 case the fallback was added for: a
+        bfloat16 component whose checkpoint ships float32 safetensors. The
+        fallback must still resolve ``weight_path`` to the float32 files while
+        leaving the requested bfloat16 encoding in place.
+        """
+        config = MAXModelConfig(
+            model_path="black-forest-labs/FLUX.2-dev",
+            subfolder="text_encoder",
+            quantization_encoding="bfloat16",
+        )
+
+        with patch.object(
+            MAXModelConfig,
+            "huggingface_weight_repo",
+            new_callable=PropertyMock,
+            return_value=_make_f32_only_repo(),
+        ):
+            config._try_resolve_weight_path()
+
+        assert config.weight_path == _F32_SAFETENSORS
+        assert config.quantization_encoding == "bfloat16"
 
 
 @prepare_registry

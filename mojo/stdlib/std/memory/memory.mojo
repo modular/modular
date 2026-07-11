@@ -603,7 +603,7 @@ def uninit_copy_n[
 
     For types with trivial copy constructors, this is optimized to a single
     `memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise, it
-    calls `init_pointee_copy()` on each element.
+    calls `unsafe_write()` on each element.
 
     The destination memory is treated as a raw span of bits to write to. Any
     existing values at `dest` are silently overwritten without being destroyed.
@@ -642,7 +642,7 @@ def uninit_copy_n[
             memcpy(dest=dest, src=src, count=count)
     else:
         for i in range(count):
-            (dest + i).init_pointee_copy((src + i)[])
+            (dest + i).unsafe_write(copy=(src + i)[])
 
 
 @always_inline

@@ -14,7 +14,7 @@
 
 There are a few main tools in this module:
 
-- `Hashable` trait for types implementing `__hash__(self) -> UInt`
+- `Hashable` trait for types implementing `__hash__(self, mut hasher)`
 - `hash[T: Hashable](hashable: T) -> Int` built-in function.
 - A `hash()` implementation for arbitrary byte strings,
   `hash(data: UnsafePointer[mut=False, UInt8], n: Int) -> Int`,

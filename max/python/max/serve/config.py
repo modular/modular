@@ -223,21 +223,9 @@ class Settings(BaseSettings):
         default=False,
         description=(
             "When True, attaches a CPython garbage-collection callback in the "
-            "model worker that times every GC pass and logs slow pauses. Used "
-            "to diagnose whether stop-the-world GC collections are the source "
-            "of per-scheduler-iteration latency spikes. Purely diagnostic; "
-            "does not change GC behavior."
+            "model worker that times every GC pass and logs metrics."
         ),
         alias="MAX_SERVE_GC_DEBUG",
-    )
-    gc_debug_min_duration_ms: float = Field(
-        default=50.0,
-        description=(
-            "When gc_debug is enabled, GC pauses at or above this duration (in "
-            "milliseconds) are logged at WARNING; shorter pauses are logged at "
-            "DEBUG."
-        ),
-        alias="MAX_SERVE_GC_DEBUG_MIN_DURATION_MS",
     )
     gc_debug_top_objects: int = Field(
         default=0,
@@ -281,6 +269,20 @@ class Settings(BaseSettings):
         default=20,
         description="How many detailed metrics to buffer before sending them to the telemetry worker",
         alias="MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR",
+    )
+
+    stream_min_chunk_tokens: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Minimum number of generated tokens to coalesce into a single "
+            "streaming (SSE) chunk. 1 (default) emits each scheduler response "
+            "as its own chunk with no buffering. Higher values buffer decode "
+            "tokens into larger chunks and suppress empty deltas; the first "
+            "chunk is always flushed early so time-to-first-token is "
+            "unaffected."
+        ),
+        alias="MAX_SERVE_STREAM_MIN_CHUNK_TOKENS",
     )
 
     @field_validator("metric_level", mode="before")

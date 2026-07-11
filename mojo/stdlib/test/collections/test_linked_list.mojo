@@ -819,5 +819,126 @@ def test_empty_linked_list_destroy_with() raises:
     assert_equal(calls, 0)
 
 
+def test_linked_list_extend_explicit_destroy() raises:
+    var a = LinkedList[ExplicitDestroy]()
+    a.append(ExplicitDestroy(1))
+    a.append(ExplicitDestroy(2))
+    a.append(ExplicitDestroy(3))
+
+    var b = LinkedList[ExplicitDestroy]()
+    b.append(ExplicitDestroy(4))
+    b.append(ExplicitDestroy(5))
+
+    a.extend(
+        b^
+    )  # consumes `b`; its emptied husk must not leak (checked by LSAN)
+
+    var order = List[Int]()
+
+    def dispose(var data: ExplicitDestroy) {mut}:
+        order.append(data.value)
+        data^.destroy()
+
+    a^.destroy_with(dispose)
+    assert_equal(len(order), 5)
+    for i in range(len(order)):
+        assert_true(order[i] == i + 1)
+
+
+def test_linked_list_extend_into_empty_explicit_destroy() raises:
+    # Covers the empty-`self` branch of `extend` for a linear element type.
+    var a = LinkedList[ExplicitDestroy]()
+    var b = LinkedList[ExplicitDestroy]()
+    b.append(ExplicitDestroy(1))
+    b.append(ExplicitDestroy(2))
+
+    a.extend(b^)
+
+    var order = List[Int]()
+
+    def dispose(var data: ExplicitDestroy) {mut}:
+        order.append(data.value)
+        data^.destroy()
+
+    a^.destroy_with(dispose)
+    assert_equal(len(order), 2)
+    assert_true(order[0] == 1)
+    assert_true(order[1] == 2)
+
+
+def test_linked_list_insert_explicit_destroy() raises:
+    # This only compiles because `insert` dropped its
+    # `ImplicitlyDeletable` requirement; re-adding it breaks this. Covers the
+    # head, tail, and middle branches.
+    var l = LinkedList[ExplicitDestroy]()
+    l.insert(0, ExplicitDestroy(2))  # [2]        (head into empty)
+    l.insert(0, ExplicitDestroy(1))  # [1, 2]     (head)
+    l.insert(len(l), ExplicitDestroy(4))  # [1, 2, 4]  (tail)
+    l.insert(2, ExplicitDestroy(3))  # [1, 2, 3, 4]  (middle)
+
+    var order = List[Int]()
+
+    def dispose(var data: ExplicitDestroy) {mut}:
+        order.append(data.value)
+        data^.destroy()
+
+    l^.destroy_with(dispose)
+    assert_equal(len(order), 4)
+    for i in range(len(order)):
+        assert_true(order[i] == i + 1)
+
+
+def test_linked_list_maybe_pop_explicit_destroy() raises:
+    # `maybe_pop` returns `Optional[ExplicitDestroy]`, which is itself a linear
+    # type: it can't be implicitly dropped and must be drained through
+    # `Optional.destroy_with`.
+    var ll = LinkedList[ExplicitDestroy]()
+    ll.append(ExplicitDestroy(1))
+    ll.append(ExplicitDestroy(2))
+
+    var popped = ll.maybe_pop()
+    var popped_val = popped.value().value  # tail == 2
+    var len_after_pop = len(ll)  # 2 -> 1
+    var survivor = ll.get_nth(0).value  # head == 1 remains
+    popped^.destroy_with(ExplicitDestroy.destroy)
+
+    # `maybe_pop` on an empty list yields an empty Optional.
+    var empty = LinkedList[ExplicitDestroy]()
+    var none = empty.maybe_pop()
+    var was_empty = not Bool(none)
+    none^.destroy_with(ExplicitDestroy.destroy)
+
+    empty^.destroy_with(ExplicitDestroy.destroy)
+    ll^.destroy_with(ExplicitDestroy.destroy)
+
+    assert_equal(popped_val, 2)
+    assert_equal(len_after_pop, 1)
+    assert_equal(survivor, 1)
+    assert_true(was_empty)
+
+
+def test_linked_list_prepend_explicit_destroy() raises:
+    var ll = LinkedList[ExplicitDestroy]()
+    var empty_before = Bool(ll)
+
+    ll.prepend(ExplicitDestroy(2))  # prepend into an empty list
+    var nonempty_after = Bool(ll)
+    ll.prepend(ExplicitDestroy(1))  # prepend onto a non-empty head
+
+    var order = List[Int]()
+
+    def dispose(var data: ExplicitDestroy) {mut}:
+        order.append(data.value)
+        data^.destroy()
+
+    ll^.destroy_with(dispose)
+
+    assert_false(empty_before)
+    assert_true(nonempty_after)
+    assert_equal(len(order), 2)
+    assert_equal(order[0], 1)
+    assert_equal(order[1], 2)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

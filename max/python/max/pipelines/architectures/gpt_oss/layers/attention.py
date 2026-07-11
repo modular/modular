@@ -167,11 +167,16 @@ class GptOssAttention(Module, Shardable):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Calculate Flash Attention with sinks.
+        # local_window_size is only honored by the sliding-window mask; pass it
+        # only in that case so a full-causal layer never carries a window value
+        # (the causal kernel would silently ignore it).
+        is_sliding = self.layer_type == "sliding_attention"
         mask_variant = (
             MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
-            if self.layer_type == "sliding_attention"
+            if is_sliding
             else MHAMaskVariant.CAUSAL_MASK
         )
+        local_window_size = self.local_window_size if is_sliding else -1
         # The sinks parameter modifies the attention computation by adding an extra
         # logit column that acts as an attention sink.
         attn_out = flash_attention_ragged(
@@ -182,7 +187,7 @@ class GptOssAttention(Module, Shardable):
             input_row_offsets=kwargs["input_row_offsets"],
             mask_variant=mask_variant,
             scale=self.scale,
-            local_window_size=self.local_window_size,
+            local_window_size=local_window_size,
             sink_weights=self.sinks,
         )
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])

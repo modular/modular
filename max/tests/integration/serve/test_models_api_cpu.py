@@ -41,6 +41,7 @@ assert SMOLLM_135M_REVISION is not None
                     "main": MAXModelConfig(
                         model_path=SMOLLM_135M_REPO_ID,
                         huggingface_model_revision=SMOLLM_135M_REVISION,
+                        huggingface_weight_revision=SMOLLM_135M_REVISION,
                         device_specs=[DeviceSpec.cpu()],
                         quantization_encoding="float32",
                         kv_cache=KVCacheConfig(),
@@ -73,6 +74,8 @@ async def test_serve_models(app: FastAPI) -> None:
 
 MODEL_ALIAS = "foobar"
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
+MODEL_REVISION = hf_repo_lock.revision_for_hf_repo(MODEL_NAME)
+assert MODEL_REVISION is not None
 
 
 @pytest.mark.asyncio()
@@ -84,6 +87,8 @@ MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
                 {
                     "main": MAXModelConfig(
                         model_path=MODEL_NAME,
+                        huggingface_model_revision=MODEL_REVISION,
+                        huggingface_weight_revision=MODEL_REVISION,
                         served_model_name=MODEL_ALIAS,
                         device_specs=[DeviceSpec.cpu()],
                         quantization_encoding="float32",

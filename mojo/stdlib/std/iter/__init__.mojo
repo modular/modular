@@ -543,7 +543,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
         try:
             comptime for i in range(Self._InjectedValues.__len__()):
-                UnsafePointer(to=res[i]).init_pointee_move(
+                UnsafePointer(to=res[i]).unsafe_write(
                     rebind_var[type_of(res[i])](next(self._values[i]))
                 )
                 initialized += 1
@@ -603,7 +603,7 @@ def zip[
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
 
     comptime for i in range(res._InjectedValues.__len__()):
-        UnsafePointer(to=res._values[i]).init_pointee_move(
+        UnsafePointer(to=res._values[i]).unsafe_write(
             rebind_var[type_of(res._values[i])](iter(iterables[i]))
         )
 
@@ -639,7 +639,7 @@ def zip[
 
     @parameter
     def init_elt[idx: Int](var elt: iterables.element_types[idx]):
-        UnsafePointer(to=res._values[idx]).init_pointee_move(
+        UnsafePointer(to=res._values[idx]).unsafe_write(
             rebind_var[type_of(res._values[idx])](iter(elt^))
         )
 
@@ -976,7 +976,7 @@ def chain[
     res._idx = 0
 
     comptime for i in range(res._Iterators.__len__()):
-        UnsafePointer(to=res._iterators[i]).init_pointee_move(
+        UnsafePointer(to=res._iterators[i]).unsafe_write(
             rebind_var[type_of(res._iterators[i])](iter(iterables[i]))
         )
 
@@ -1003,7 +1003,7 @@ def chain[
 
     @parameter
     def init_elt[idx: Int](var elt: iterables.element_types[idx]):
-        UnsafePointer(to=res._iterators[idx]).init_pointee_move(
+        UnsafePointer(to=res._iterators[idx]).unsafe_write(
             rebind_var[type_of(res._iterators[idx])](iter(elt^))
         )
 

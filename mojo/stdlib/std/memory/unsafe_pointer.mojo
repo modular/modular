@@ -380,9 +380,10 @@ struct UnsafePointer[
     - `destroy_pointee()` / `take_pointee()`:
       Explicitly end the lifetime of the current pointee, or move it out, taking
       ownership.
-    - `init_pointee_move()` / `init_pointee_move_from()` / `init_pointee_copy()`
-      Initialize a pointee that is currently uninitialized, by moving an existing
-      value, moving from another pointee, or by copying an existing value.
+    - `unsafe_write()` / `init_pointee_move_from()`:
+      Initialize a pointee that is currently uninitialized, by moving an
+      existing value into it (pass the argument as `copy=` to copy instead),
+      or by moving from another pointee.
       Use these to manage lifecycles when working with uninitialized memory.
 
     For more information see [Unsafe
@@ -456,7 +457,7 @@ struct UnsafePointer[
     # Check for absence, then unwrap to use the pointer.
     if maybe_ptr:
         var ptr = maybe_ptr.value()
-        ptr.init_pointee_move(42)
+        ptr.unsafe_write(42)
         print(ptr[])  # => 42
         ptr.free()
     ```
@@ -676,9 +677,7 @@ struct UnsafePointer[
     def write_niche(
         memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
     ):
-        memory.bitcast[
-            _Null[Self.type, Self.address_space]
-        ]().init_pointee_move({})
+        memory.bitcast[_Null[Self.type, Self.address_space]]().unsafe_write({})
 
     @staticmethod
     @always_inline
@@ -1200,7 +1199,7 @@ struct UnsafePointer[
                 return
             var tmp = self.take_pointee()
             self.init_pointee_move_from(other)
-            other.init_pointee_move(tmp^)
+            other.unsafe_write(tmp^)
 
     @always_inline("nodebug")
     def as_noalias_ptr(self) -> Self._UnsafePointerType:
@@ -1998,7 +1997,7 @@ struct UnsafePointer[
 
         This performs a _consuming_ move, ending the origin of the value stored
         in this pointer memory location. Subsequent reads of this pointer are
-        not valid. If a new valid value is stored using `init_pointee_move()`, then
+        not valid. If a new valid value is stored using `unsafe_write()`, then
         reading from this pointer becomes valid again.
 
         Parameters:
@@ -2010,6 +2009,7 @@ struct UnsafePointer[
         return __get_address_as_owned_value(self._mlir_value)
 
     @always_inline
+    @deprecated(use=unsafe_write)
     def init_pointee_move[
         T: Movable,
         //,
@@ -2033,6 +2033,58 @@ struct UnsafePointer[
         __get_address_as_uninit_lvalue(self._mlir_value) = value^
 
     @always_inline
+    def unsafe_write[
+        T: Movable, //
+    ](self: UnsafePointer[T, _], var value: T, /) where type_of(self).mut:
+        """Write `value` into the pointer location, moving from `value`.
+
+        The pointer memory location is assumed to contain uninitialized data,
+        and consequently the current contents of this pointer are not
+        deinitialized before writing `value`.
+
+        Example:
+
+        ```mojo
+        var ptr = alloc[String](1)
+        ptr.unsafe_write("foo")
+        print(ptr[])  # => foo
+        ptr.destroy_pointee()
+        ptr.free()
+        ```
+
+        Parameters:
+            T: The type the pointer points to, which must be `Movable`.
+
+        Args:
+            value: The value to emplace.
+        """
+        __get_address_as_uninit_lvalue(self._mlir_value) = value^
+
+    @always_inline
+    def unsafe_write[
+        T: Copyable,
+        //,
+    ](self: UnsafePointer[T, _], *, copy: T) where type_of(self).mut:
+        """Write a copy of `copy` into the pointer location.
+
+        The pointer memory location is assumed to contain uninitialized data,
+        and consequently the current contents of this pointer are not deinitialized
+        before writing the copy.
+
+        When compared to calling the positional `unsafe_write()` overload with
+        a value you copied yourself, this avoids an extra move on the callee
+        side.
+
+        Parameters:
+            T: The type the pointer points to, which must be `Copyable`.
+
+        Args:
+            copy: The value to copy.
+        """
+        __get_address_as_uninit_lvalue(self._mlir_value) = copy.copy()
+
+    @always_inline
+    @deprecated(use=unsafe_write)
     def init_pointee_copy[
         T: Copyable,
         //,
@@ -2089,7 +2141,7 @@ struct UnsafePointer[
         var b_ptr = alloc[String](2)
 
         # Initialize A pointee
-        a_ptr.init_pointee_move("foo")
+        a_ptr.unsafe_write("foo")
 
         # Perform the move
         b_ptr.init_pointee_move_from(a_ptr)

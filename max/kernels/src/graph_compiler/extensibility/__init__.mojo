@@ -25,6 +25,7 @@ from .decorators import *
 from .managed_tensor_slice import *
 from .operation_traits import *
 from .tensor_arg_traits import *
+from .tile_tensor_adapters import *
 
 # Underscore-prefixed names are skipped by `import *`, but the kernels and
 # kv_cache packages reference them by name. Re-export them explicitly.

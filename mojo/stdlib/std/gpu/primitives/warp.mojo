@@ -1387,13 +1387,29 @@ def _vote_amd_helper[ret_type: DType](vote: Bool) -> Scalar[ret_type]:
 
 
 @always_inline
+def _vote_apple_helper[ret_type: DType](vote: Bool) -> Scalar[ret_type]:
+    comptime assert ret_type in (
+        DType.uint32,
+        DType.uint64,
+    ), "Unsupported return type"
+
+    # AIR has a dedicated 32-bit ballot intrinsic; narrowing the 64-bit
+    # `simd_ballot`/`simd_vote` form instead crashes the Metal shader
+    # compiler at pipeline-state creation.
+    var mask32 = llvm_intrinsic["llvm.air.simd_ballot.i32", UInt32](vote)
+    return mask32.cast[ret_type]()
+
+
+@always_inline
 def vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
     """Creates a 32 or 64 bit mask among all threads in the warp, where each bit is set to 1 if the
     corresponding thread voted True, and 0 otherwise.
 
     This function takes a boolean value which represents the corresponding threads vote.
 
-    Nvidia only supports 32 bit masks, while AMD supports 32 and 64 bit masks.
+    NVIDIA supports 32-bit masks; AMD supports 32- and 64-bit masks; Apple
+    Silicon (a 32-lane SIMD-group) supports 32-bit masks, and also accepts a
+    `DType.uint64` return whose upper 32 bits are always zero.
 
     Parameters:
         ret_type: Return type for the mask (must be `DType.uint32` or `DType.uint64`).
@@ -1410,6 +1426,8 @@ def vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
         return rebind[Scalar[ret_type]](_vote_nvidia_helper(val))
     elif is_amd_gpu():
         return _vote_amd_helper[ret_type](val)
+    elif is_apple_gpu():
+        return _vote_apple_helper[ret_type](val)
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()

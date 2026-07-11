@@ -76,7 +76,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     ]
 
     comptime _DeviceElementType: _StaticTupleTraits = downcast[
-        downcast[Self.element_type, DevicePassable].device_type,
+        Self.element_type.device_type,
         _StaticTupleTraits,
     ] if conforms_to(Self.element_type, DevicePassable) else Self.element_type
     """The device-side element type: the element's `device_type` when it is

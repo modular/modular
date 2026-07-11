@@ -1561,7 +1561,7 @@ def test_sso() raises:
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    comptime expected_capacity = UInt((String.INLINE_CAPACITY * 2 + 7) & ~7)
+    comptime expected_capacity = (String.INLINE_CAPACITY * 2 + 7) & ~7
     assert_equal(s.capacity(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
 
