@@ -48,7 +48,7 @@ struct ImplT(SubTraitT, SubTraitT2, TrivialRegisterPassable):
 struct MainImplT(MainTraitT, MainTraitT2, TrivialRegisterPassable):
     # CHECK: lit.alias.decl *"ret_type{{.*}}": !mt_ImplT = <!ImplT>
     comptime ret_type = ImplT
-    # CHECK: lit.alias.decl *"anything{{.*}}": !mt_Int = <!Int>
+    # CHECK: lit.alias.decl *"anything{{.*}}": meta<!Int> = <#alias_Int>
     comptime anything = Int
 
     def get(self) -> Self.ret_type:
@@ -71,7 +71,7 @@ def repro_issue[
 ](t: main_t, t2: main_t2) -> Int:
     var a = t.get().subget()
     var b = t2.get2().subget2()
-    var c = __mlir_op.`index.add`(a._mlir_value, b._mlir_value)
+    var c = __mlir_op.`index.add`(a.__mlir_index__(), b.__mlir_index__())
     return Int(mlir_value=c)
 
 

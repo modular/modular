@@ -18,14 +18,14 @@ struct MemType(Movable):
         self.value = 0
 
     # This has a parametric origin like 'ref', but not a parametric addr space.
-    # CHECK-LABEL: lit.fn @"__init__[LITMutOrigin](::Int)
+    # CHECK-LABEL: lit.fn @"__init__[LITMutOrigin](::SIMD[::DType(int), ::SIMDSize(1)])
     # CHECK-SAME: <?, *"self_is_origin`2x": origin<true>
     # CHECK-SAME: %self: !lit.ref<!MemType, mut *"self_is_origin`2x"> byref_result
     def __init__(a: Int, out[_] self):
         self.value = 0
 
     # This has a fixed address space, parametric origin.
-    # CHECK-LABEL: lit.fn @"__init__[LITMutOrigin](::Int,::Int)
+    # CHECK-LABEL: lit.fn @"__init__[LITMutOrigin](::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)])
     # CHECK-SAME: %self: !lit.ref<!MemType, mut *"self_is_origin`2x1", sugar_preserved({{.*}}, 1)> byref_result)
     def __init__(a: Int, b: Int, out[AddressSpace.GLOBAL] self):
         self.value = 0
@@ -52,14 +52,14 @@ def use_out_address_space[addr_space: AddressSpace, o1: Origin[mut=True], o2: Or
     ref[o2, addr_space] rp: RPType):
 
    # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__
-   # CHECK-SAME: <:!AddressSpace {_value: !Int = {0}}, :origin<true> *"o1._mlir_origin`">(%mem1)
+   # CHECK-SAME: <:!AddressSpace {_value: !SIMDSize = {0}}, :origin<true> *"o1._mlir_origin`">(%mem1)
    mem1 = MemType()
 
    # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__
    # CHECK-SAME: <:!AddressSpace addr_space, :origin<true> *"o2._mlir_origin`1">(%mem2)
    mem2 = MemType()
    # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__
-   # CHECK-SAME: <:!AddressSpace {_value: !Int = {_mlir_value = sugar_preserved(#lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace #kgen.type<!AddressSpace>, "_value">, "_mlir_value">, 1)}}, :origin<true> *"o2._mlir_origin`1">(%mem3)
+   # CHECK-SAME: <:!AddressSpace {_value: !SIMDSize = {_mlir_value = sugar_preserved(#lit.struct.extract<:!SIMDSize #lit.struct.extract<:!AddressSpace #kgen.type<!AddressSpace>, "_value">, "_mlir_value">, 1)}}, :origin<true> *"o2._mlir_origin`1">(%mem3)
    mem3 = MemType()
 
    # CHECK: lit.call {{.*}}MemType::@"__init__
@@ -73,7 +73,7 @@ def use_out_address_space[addr_space: AddressSpace, o1: Origin[mut=True], o2: Or
    # Infer type from RHS, infer address space from LHS.
    # CHECK-NEXT: %loc = lit.var.decl "loc" var : !lit.ref<!MemType
    # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__
-   # CHECK-SAME: <:!AddressSpace {_value: !Int = {0}}, :origin<true> *"loc{{.*}}">(%loc)
+   # CHECK-SAME: <:!AddressSpace {_value: !SIMDSize = {0}}, :origin<true> *"loc{{.*}}">(%loc)
    var loc = MemType()
 
    # CHECK-NEXT: lit.call {{.*}}RPType::@"__init__
@@ -81,5 +81,5 @@ def use_out_address_space[addr_space: AddressSpace, o1: Origin[mut=True], o2: Or
    rp = RPType()
 
    # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__{{.*}}(copy:out_address_space::MemType%)
-   # CHECK-SAME: <:!AddressSpace addr_space, :!AddressSpace {_value: !Int = {0}}, :scalar<bool> true, :origin<true> *"o2._mlir_origin`1", :origin<true> *"o1._mlir_origin`">(%mem2, %mem1)
+   # CHECK-SAME: <:!AddressSpace addr_space, :!AddressSpace {_value: !SIMDSize = {0}}, :scalar<bool> true, :origin<true> *"o2._mlir_origin`1", :origin<true> *"o1._mlir_origin`">(%mem2, %mem1)
    mem1 = MemType(copy=mem2)

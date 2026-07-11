@@ -48,11 +48,10 @@ def callsWith():
 
 struct ThingWithStaticMethod:
    @staticmethod
-   def splat(x: Int): # expected-note {{function declared here}}
+   def splat(x: Int):
      pass
 
 def testThingWithStaticMethod():
-  # expected-error @+1 {{invalid call to 'splat': value passed to 'x' cannot be converted from 'FloatLiteral[4]' to 'Int'}}
   ThingWithStaticMethod.splat(4.0)
 
 
@@ -148,13 +147,10 @@ def defaultArgumentUnknownDeclaration(a: Int = unknown): pass
 # expected-error @+1 {{cannot use a dynamic value in default argument}}
 def defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
 
-# expected-error @+1 {{cannot implicitly convert 'FloatLiteral[1]' value to 'Int'}}
 def defaultArgumentBadType(a: Int = 1.0): pass
 
-# expected-note @+1 {{function declared here}}
 def defaultArgumentBadType2[T: AnyType](a: T = 1.0): pass
 def callDefaultArgumentBadType2():
-  # expected-error @+1 {{invalid call to 'defaultArgumentBadType2': value passed to 'a' cannot be converted from 'FloatLiteral[1]' to 'Int'}}
   defaultArgumentBadType2[Int]()
   defaultArgumentBadType2[Float64]()
 
@@ -181,9 +177,7 @@ def starSpaceStar(* *a: Int): pass
 # expected-error @+1 {{variadic arguments must not have defaults}}
 def noDefaultVariadics(*a: Int = 42): pass
 
-# expected-note @+1 {{function declared here}}
 def exampleVariadic(a: FloatLiteral, *b: Int): pass
-# expected-note @+1 {{function declared here}}
 def exampleVariadicAndKeyword(*a: Int, b: Int): pass
 # expected-note @+1 {{function declared here}}
 def exampleByRefVariadic(a: FloatLiteral, mut *b: Int): pass
@@ -203,11 +197,11 @@ struct ParameterizedStruct[T: TrivialRegisterPassable]:
 
 struct BadResultParams[a: Int]:
   def __init__(out self: Self): pass # Ok.
-  # expected-error @+1 {{cannot use Self parameter 'a' in constructor whose result defines it to '(a + 1)'}}
+  # expected-error @+1 {{cannot use Self parameter 'a' in constructor whose result defines it to '(a + Int(1))'}}
   def __init__(x: Int, out self: BadResultParams[Self.a + 1]): pass
-  # expected-error @+1 {{cannot use Self parameter 'a' in constructor whose result defines it to '4'}}
+  # expected-error @+1 {{cannot use Self parameter 'a' in constructor whose result defines it to 'Int(4)'}}
   def __init__(x: BadResultParams[Self.a], out self: BadResultParams[4]): pass
-  # expected-error @+1 {{cannot use Self parameter 'a' in constructor whose result defines it to '7'}}
+  # expected-error @+1 {{cannot use Self parameter 'a' in constructor whose result defines it to 'Int(7)'}}
   def __init__[p: BadResultParams[Self.a]](*, y: Int, out self: BadResultParams[7]):
       pass
 
@@ -224,11 +218,8 @@ struct TestTuple[*Ts: __mlir_type.`!kgen.type`]:
         pass
 
 def badCalls(arg: Int):
-  # expected-error @+1 {{value passed to 'b' cannot be converted from 'FloatLiteral[1]' to 'Int'}}
   exampleVariadic(1.0, 1.0)
-  # expected-error @+1 {{value passed to 'b' cannot be converted from 'FloatLiteral[1]' to 'Int'}}
   exampleVariadic(1.0, 1, 2, 1.0)
-  # expected-error @+1 {{value passed to 'b' cannot be converted from 'FloatLiteral[4]' to 'Int'}}
   exampleVariadicAndKeyword(1, 2, 3, b=4.0)
 
   var x: Int
@@ -247,7 +238,6 @@ def badCalls(arg: Int):
   var z = ParameterizedStruct()
 
   # We can't infer `T` with two arguments of different types.
-  # expected-error @below {{value passed to 'args' cannot be converted from 'FloatLiteral[2]' to 'Int'}}
   parameterizedVariadic(1, 2.0)
 
   # expected-error @below {{invalid call to 'test': failed to infer parameter 'j'}}
@@ -311,7 +301,7 @@ def badPackCalls(value: Int):
   examplePack[Int](1, 2)
   # expected-error @+1 {{expected 2 elements in variadic pack, got 1 argument value}}
   examplePack[Int, FloatDyn](1)
-  # expected-error-re @below {{invalid call to 'examplePack': value passed to 'args' cannot be converted from '__mlir_type.index' to 'FloatDyn'}}
+  # expected-error-re @below {{invalid call to 'examplePack': value passed to 'args' cannot be converted from '__mlir_type.`!kgen.scalar<index>`' to 'FloatDyn'}}
   examplePack[Int, FloatDyn](1, Int(2)._mlir_value)
   # expected-error @below {{invalid call to 'examplePack': could not infer type of parameter pack 'args' given value with unresolved type}}
   examplePack(packArgOverload)
@@ -377,9 +367,9 @@ def call_need_foldable_predicate[x: Int]():
 # expected-note @below {{function declared here}}
 # expected-note @below {{cannot prove constraint}}
 def unprovable_constraints[x: Int, y: Int]()
-  # expected-note @+1 {{constraint declared here evaluated to False, expected '(x > 1)'}}
+  # expected-note @+1 {{constraint declared here evaluated to False, expected '(x > Int(1))'}}
   where x > 1
-  # expected-note @+1 {{constraint declared here needs evidence for 'unfoldable_predicate(0)'}}
+  # expected-note @+1 {{constraint declared here needs evidence for 'unfoldable_predicate(Int(0))'}}
   where unfoldable_predicate(y):
     pass
 
@@ -420,7 +410,7 @@ def test_constraints():
 
 # expected-note @below {{function declared here}}
 def unprovable_param_constraints[x: Int]()
-  # expected-note @below {{constraint declared here evaluated to False, expected '(x > 1)'}}
+  # expected-note @below {{constraint declared here evaluated to False, expected '(x > Int(1))'}}
   where x > 1:
   pass
 
@@ -443,12 +433,12 @@ def fn_type_inline_where[
     pass
 
 # expected-note @below {{'ConstraintStruct' declared here}}
-# expected-note @below {{constraint declared here needs evidence for '(x > 0)'}}
-# expected-note @below {{constraint declared here evaluated to False, expected '(a > 0)'}}
+# expected-note @below {{constraint declared here needs evidence for '(x > Int(0))'}}
+# expected-note @below {{constraint declared here evaluated to False, expected '(a > Int(0))'}}
 struct ConstraintStruct[a: Int] where a > 0:
     pass
 
-# expected-note @below {{add a trailing 'where' clause that requires '(x > 0)'}}
+# expected-note @below {{add a trailing 'where' clause that requires '(x > Int(0))'}}
 def use_constraint_struct[x: Int, cs: ConstraintStruct[x]]():
     # expected-error @-1 {{invalid bindings in signature: lacking evidence to prove correctness}}
     pass
@@ -458,9 +448,9 @@ def violate_constraint_struct[cs: ConstraintStruct[0]]():
     pass
 
 # expected-note @below {{function declared here}}
-# expected-note @below {{constraint declared here evaluated to False, expected '(a > 0)'}}
+# expected-note @below {{constraint declared here evaluated to False, expected '(a > Int(0))'}}
 # expected-note @below {{cannot prove constraint}}
-# expected-note @below {{constraint declared here needs evidence for '(x > 0)'}}
+# expected-note @below {{constraint declared here needs evidence for '(x > Int(0))'}}
 def constraint_fn[a: Int, b: Int]() where a > 0:
     pass
 
@@ -474,7 +464,7 @@ def use_constraint_fn[x: Int]():
 # instantiated using them. A default that can never satisfy the constraint is
 # reported at the call that relies on it.
 # expected-note @below {{function declared here}}
-# expected-note @below {{constraint declared here evaluated to False, expected '(x > 3)'}}
+# expected-note @below {{constraint declared here evaluated to False, expected '(x > Int(3))'}}
 def violated_default_constraint[x: Int = 1]() where x > 3:
     pass
 
@@ -649,10 +639,10 @@ def test_param_deduction_failure[
 
 struct InitOverloaded:
   # expected-note @below {{value passed to 'a' cannot be converted from 'StringLiteral["foo"]' to 'Int'}}
-  # expected-note @below {{value passed to 'a' cannot be converted from 'Parametric[1]' to 'Int'}}
+  # expected-note @below {{value passed to 'a' cannot be converted from 'Parametric[Int(1)]' to 'Int'}}
   def __init__(out self, a: Int): pass
   # expected-note @below {{value passed to 'a' cannot be converted from 'StringLiteral["foo"]' to '__mlir_type.index'}}
-  # expected-note @below {{value passed to 'a' cannot be converted from 'Parametric[1]' to '__mlir_type.index'}}
+  # expected-note @below {{value passed to 'a' cannot be converted from 'Parametric[Int(1)]' to '__mlir_type.index'}}
   def __init__(out self, a: __mlir_type.index): pass
 
 def testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
@@ -798,7 +788,7 @@ struct WrongSelfType[a: Int]:
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
   @implicit
-  def __init__(out self, elem: BadInit[Int(1)._mlir_value]) raises:
+  def __init__(out self, elem: BadInit[Int(1).__mlir_index__()]) raises:
     var x : __mlir_type[`!kgen.simd<`, Self.size, `, FloatDyn>`]
     # expected-error @+1 {{cannot implicitly convert '__mlir_type.`!kgen.simd<size, FloatDyn>`' value to 'BadInit[size]'}}
     self = x
@@ -981,7 +971,7 @@ struct StructWithSpecificInit[X: Int]:
     def __init__(out self: StructWithSpecificInit[4]): # expected-note {{function declared here}}
         pass
 def testStructWithSpecificInit() raises:
-    # expected-error @+1 {{invalid initialization: return type 'StructWithSpecificInit[4]' parameter 'X' value '4' doesn't match expected value '1'}}
+    # expected-error @+1 {{invalid initialization: return type 'StructWithSpecificInit[Int(4)]' parameter 'X' value 'Int(4)' doesn't match expected value 'Int(1)'}}
     var a = StructWithSpecificInit[1]()  # Infers to A[4]
 
     # This is ok.
@@ -1297,7 +1287,6 @@ def __del__(): # expected-error {{'__del__' must be a method, not a global funct
 def raises_int() raises Int:
   raise 1
 
-  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[4]' value to 'Int'}}
   raise 4.0
 
   # expected-error @+1 {{cannot implicitly convert 'Error' value to 'Int'}}

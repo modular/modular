@@ -52,4 +52,4 @@ def test_trait_assoc_type_suppressed():
 
 
 # The single CHECK-NOT below covers all test functions above.
-# CHECK-NOT: warning: use of unstable API
+# CHECK-NOT: warn_import.mojo:{{.*}}warning: use of unstable API

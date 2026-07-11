@@ -50,7 +50,8 @@ def makeClosure[p: Int](x: Int) -> Int:
     @__copy_capture(z, p)
     @parameter
     def writer() -> Int:
-        # CHECK: lit.return [[COPY_VAL]] : !Int
+        # CHECK: [[REBOUND:%.*]] = kgen.rebind [[COPY_VAL]] : !Int to !alias_Int1
+        # CHECK: lit.return [[REBOUND]] : !alias_Int1
         return z
 
     return writer()

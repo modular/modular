@@ -79,7 +79,7 @@ def param_literal_attr[N: Int](x: __mlir_type.index) -> __mlir_type.index:
 # kgen-elaborate time (covered by integration tests); the parser-only
 # snapshot just records the call.
 # CHECK-LABEL: lit.fn @"use_literal_seven
-# CHECK: lit.call {{.*}}<:!Int {7}>
+# CHECK: lit.call {{.*}}<:!Int {:scalar<index> 7}>
 def use_literal_seven(x: __mlir_type.index) -> __mlir_type.index:
     return param_literal_attr[7](x)
 

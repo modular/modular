@@ -79,7 +79,8 @@ def testWithNonRaising(a: ExampleCM):
     # CHECK-NEXT: %__with_error__
     # CHECK-NEXT: lit.try %__with_error__
     with a as val:
-        # CHECK-NEXT: [[VAL:%.*]] = lit.ref.load %val
+        # CHECK-NEXT: [[VALR:%.*]] = kgen.rebind %val
+        # CHECK-NEXT: [[VAL:%.*]] = lit.ref.load [[VALR]]
         # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[VAL]])
         noop(val)
     # CHECK: finally
@@ -135,7 +136,8 @@ def testWithRaising(a: ExampleCM) raises:
     # CHECK: lit.try %__with_error__
     # CHECK: lit.try %__inner_error__
     with a as val:
-        # CHECK-NEXT: [[VAL:%.*]] = lit.ref.load %val
+        # CHECK-NEXT: [[VALR:%.*]] = kgen.rebind %val
+        # CHECK-NEXT: [[VAL:%.*]] = lit.ref.load [[VALR]]
         # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[VAL]])
         noop(val)
 
@@ -211,20 +213,24 @@ def testWithInDef(a: ExampleCM) raises:
     # https://github.com/modularml/modular/issues/20141
     # IE that when used inside a `def`, the `with` statement uses
     # mutable function scope variables.
-    # CHECK: [[VAL1:%.*]] = lit.ref.load %val1
+    # CHECK: [[VAL1R:%.*]] = kgen.rebind %val1
+    # CHECK: [[VAL1:%.*]] = lit.ref.load [[VAL1R]]
     val1 = 77
     # CHECK: lit.call {{.*}}noop{{.*}}([[VAL1]])
     noop(val1)
     with a as val1:
-        # CHECK: [[VAL1:%.*]] = lit.ref.load %val1
+        # CHECK: [[VAL1R:%.*]] = kgen.rebind %val1
+        # CHECK-NEXT: [[VAL1:%.*]] = lit.ref.load [[VAL1R]]
         # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[VAL1]])
         noop(val1)
     noop(val1)
     with a as val2:
-        # CHECK: [[VAL2:%.*]] = lit.ref.load %val2
+        # CHECK: [[VAL2R:%.*]] = kgen.rebind %val2
+        # CHECK-NEXT: [[VAL2:%.*]] = lit.ref.load [[VAL2R]]
         # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[VAL2]])
         noop(val2)
-    # CHECK: [[VAL2:%.*]] = lit.ref.load %val2
+    # CHECK: [[VAL2R:%.*]] = kgen.rebind %val2
+    # CHECK: [[VAL2:%.*]] = lit.ref.load [[VAL2R]]
     val2 = 78
     # CHECK: lit.call {{.*}}noop{{.*}}([[VAL2]])
     noop(val2)
@@ -419,7 +425,7 @@ def testExampleCMTuple(cm: ExampleCMTuple):
         # Captures the refs from the tuple.
         # CHECK: [[A:%.*]] = lit.ref.load %a
         # CHECK: [[B:%.*]] = lit.ref.load %b
-        # CHECK: lit.call {{.*}}@Int::@"__add__{{.*}}([[A]], [[B]])
+        # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}([[A]], [[B]])
         _ = a + b
 
 

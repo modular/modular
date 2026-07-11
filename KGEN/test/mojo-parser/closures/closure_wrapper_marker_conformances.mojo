@@ -15,13 +15,13 @@
 
 
 def needs_strong[
-    FuncType: ImplicitlyCopyable & RegisterPassable & def () -> Int,
+    FuncType: ImplicitlyCopyable & RegisterPassable & def() -> Int,
 ](func: FuncType) -> Int:
     return func()
 
 
 def where_refines[
-    FuncType: def () -> Int,
+    FuncType: def() -> Int,
 ](func: FuncType) -> Int where conforms_to(
     FuncType, ImplicitlyCopyable & RegisterPassable
 ):
@@ -44,4 +44,3 @@ def use() -> Int:
 # CHECK: kgen.conformance @"std::builtin::stubs::ImplicitlyCopyable"
 # CHECK: kgen.conformance @"std::builtin::stubs::TrivialRegisterPassable"
 # CHECK: kgen.conformance @"std::builtin::stubs::RegisterPassable"
-# CHECK: lit.struct.decl @Int

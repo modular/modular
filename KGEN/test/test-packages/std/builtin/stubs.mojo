@@ -385,192 +385,11 @@ struct FloatDyn(TrivialRegisterPassable):
         self = FloatLiteral(value)
 
 
-@stable
-struct Int(Intable, Stringable, TrivialRegisterPassable):
-    var _mlir_value: __mlir_type.index
-
-    @stable
-    @always_inline("builtin")
-    def __init__(out self):
-        self._mlir_value = __mlir_op.`index.constant`[
-            value=__mlir_attr.`0:index`
-        ]()
-
-    @stable
-    @always_inline("builtin")
-    def __init__(out self, *, mlir_value: __mlir_type.index):
-        self._mlir_value = mlir_value
-
-    @stable
-    @always_inline("builtin")
-    @implicit
-    def __init__(out self, value: IntLiteral[_]):
-        self._mlir_value = __mlir_attr[
-            `#kgen.cast_to_builtin<#pop.int_literal_convert<`,
-            +value.value,
-            `> : !kgen.scalar<index>> : index`,
-        ]
-
-    @always_inline("builtin")
-    def __add__(lhs, rhs: Int) -> Int:
-        return Int(
-            mlir_value=__mlir_op.`index.add`(lhs._mlir_value, rhs._mlir_value)
-        )
-
-    @always_inline("builtin")
-    def __sub__(lhs, rhs: Int) -> Int:
-        return Int(
-            mlir_value=__mlir_op.`index.sub`(lhs._mlir_value, rhs._mlir_value)
-        )
-
-    @always_inline("builtin")
-    def __mul__(lhs, rhs: Int) -> Int:
-        return Int(
-            mlir_value=__mlir_op.`index.mul`(lhs._mlir_value, rhs._mlir_value)
-        )
-
-    @always_inline("nodebug")
-    def __iadd__(mut self, rhs: Int):
-        self = self + rhs
-
-    @always_inline("nodebug")
-    def __isub__(mut self, rhs: Int):
-        self = self - rhs
-
-    @always_inline("nodebug")
-    def __ifloordiv__(mut self, rhs: Int):
-        self = self // rhs
-
-    @always_inline("nodebug")
-    def __imod__(mut self, rhs: Int):
-        self = self % rhs
-
-    @always_inline("nodebug")
-    def __ipow__(mut self, rhs: Int):
-        self = self**rhs
-
-    @always_inline("nodebug")
-    def __ilshift__(mut self, rhs: Int):
-        self = self << rhs
-
-    @always_inline("nodebug")
-    def __iand__(mut self, rhs: Int):
-        self = self & rhs
-
-    @always_inline("nodebug")
-    def __ixor__(mut self, rhs: Int):
-        self = self ^ rhs
-
-    @always_inline("nodebug")
-    def __ior__(mut self, rhs: Int):
-        self = self | rhs
-
-    @always_inline("nodebug")
-    def __mod__(self, rhs: Int) -> Int:
-        pass
-
-    @always_inline("builtin")
-    def __eq__(lhs, rhs: Int) -> Bool:
-        return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate eq>`
-        ](lhs._mlir_value, rhs._mlir_value)
-
-    @always_inline("builtin")
-    def __ne__(self, rhs: Int) -> Bool:
-        return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate ne>`
-        ](self._mlir_value, rhs._mlir_value)
-
-    @always_inline("builtin")
-    def __lt__(lhs, rhs: Int) -> Bool:
-        return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate sgt>`
-        ](rhs._mlir_value, lhs._mlir_value)
-
-    @always_inline("builtin")
-    def __le__(lhs, rhs: Int) -> Bool:
-        return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate sle>`
-        ](lhs._mlir_value, rhs._mlir_value)
-
-    @always_inline("builtin")
-    def __gt__(lhs, rhs: Int) -> Bool:
-        return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate sgt>`
-        ](lhs._mlir_value, rhs._mlir_value)
-
-    @always_inline("builtin")
-    def __ge__(lhs, rhs: Int) -> Bool:
-        return __mlir_op.`index.cmp`[
-            pred=__mlir_attr.`#index<cmp_predicate sge>`
-        ](lhs._mlir_value, rhs._mlir_value)
-
-    @always_inline("builtin")
-    def __bool__(self) -> Bool:
-        return not (self == 0)
-
-    @always_inline("builtin")
-    def __mlir_index__(self) -> __mlir_type.index:
-        return self._mlir_value
-
-    @always_inline("builtin")
-    def __truediv__(self, rhs: Int) -> Int:
-        return Int(
-            mlir_value=__mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value)
-        )
-
-    @always_inline("nodebug")
-    def __floordiv__(self, rhs: Int) -> Int:
-        pass
-
-    @always_inline("builtin")
-    def __int__(self) -> Int:
-        return self
-
-    @always_inline("nodebug")
-    def __pow__(self, exp: Self) -> Self:
-        pass
-
-    @always_inline("builtin")
-    def __neg__(self) -> Int:
-        return self * -1
-
-    @always_inline("builtin")
-    def __and__(self, rhs: Int) -> Int:
-        return Int(
-            mlir_value=__mlir_op.`index.and`(self._mlir_value, rhs._mlir_value)
-        )
-
-    @always_inline("nodebug")
-    def __imul__(mut self, rhs: Int):
-        self = self * rhs
-
-    @always_inline("nodebug")
-    def __irshift__(mut self, rhs: Int):
-        self = self >> rhs
-
-    @always_inline("nodebug")
-    def __rshift__(self, rhs: Int) -> Int:
-        pass
-
-    @always_inline("nodebug")
-    def __lshift__(self, rhs: Int) -> Int:
-        pass
-
-    @always_inline("builtin")
-    def __or__(self, rhs: Int) -> Int:
-        return Int(
-            mlir_value=__mlir_op.`index.or`(self._mlir_value, rhs._mlir_value)
-        )
-
-    @always_inline("builtin")
-    def __xor__(self, rhs: Int) -> Int:
-        return Int(
-            mlir_value=__mlir_op.`index.xor`(self._mlir_value, rhs._mlir_value)
-        )
-
-    def __str__(self) -> String:
-        return "[unimplemented]"
+# NOTE: `Int` is now defined as an alias for `Scalar[DType.int]` (see the
+# `Scalar`/`Int` aliases near the `SIMD` definition below), mirroring the
+# unification of `Int` with `SIMD` in the real standard library. The operators
+# and constructors that used to live on the standalone `struct Int` now live on
+# `SIMD` so that `Int` (i.e. `SIMD[DType.int, 1]`) keeps behaving the same.
 
 
 struct UInt8(TrivialRegisterPassable):
@@ -911,12 +730,17 @@ struct Dict[
 
 # A linear type, see
 # https://www.notion.so/modularai/Linear-Types-14a1044d37bb809ab074c990fe1a84e3.
+
+
+@stable
 trait AnyType:
     pass
 
 
+@stable
 @explicit_destroy
 trait Copyable(Movable):
+    @stable
     def __init__(out self, *, copy: Self):
         ...
 
@@ -959,6 +783,7 @@ trait ExplicitlyDestroyedMovable:
         ...
 
 
+@stable
 @explicit_destroy
 trait Movable:
     def __init__(out self, *, deinit move: Self):
@@ -1005,7 +830,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         ` `,
         +Self.values,
         `, `,
-        idx._mlir_value,
+        idx.__mlir_index__(),
         `> : `,
         +Self.type,
     ]
@@ -1034,7 +859,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         type=type,
         __mlir_attr[
             `#kgen.param_list.tabulate<`,
-            count._mlir_value,
+            count.__mlir_index__(),
             `,`,
             Self._IndexToIntTabulateWrap[Mapper, ...],
             `> : `,
@@ -1046,7 +871,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         T,
         __mlir_attr[
             `#kgen.param_list.tabulate<`,
-            count._mlir_value,
+            count.__mlir_index__(),
             `,`,
             Self._IndexToIntTabulateWrap[_SplatValueTabulator[value, _], ...],
             `> : `,
@@ -1079,7 +904,7 @@ struct TypeList[
         ` `,
         +Self.values,
         `, `,
-        idx._mlir_value,
+        idx.__mlir_index__(),
         `> : `,
         +Self.Trait,
     ]
@@ -1120,7 +945,7 @@ struct TypeList[
         Trait=Trait,
         __mlir_attr[
             `#kgen.param_list.tabulate<`,
-            count._mlir_value,
+            count.__mlir_index__(),
             `,`,
             _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
             `> : `,
@@ -1229,7 +1054,7 @@ struct VariadicList[
         var elt_ptr = UnsafePointer[_, UntrackedOrigin[mut=False]](
             __mlir_op.`pop.array.gep`(
                 array_up._get_kgen_pointer(),
-                Int(0)._mlir_value,
+                Int(0).__mlir_index__(),
             )
         ).bitcast[Self._EltPointerType]()
         var size_tmp = size  # FIXME: Weird MLIR syntax error?
@@ -1297,11 +1122,13 @@ struct VariadicPack[
 struct AddressSpace(TrivialRegisterPassable):
     """Address space of the pointer."""
 
-    var _value: Int
+    # Stored as `SIMDSize` (a raw `index` wrapper) so it folds to a constant
+    # `index` when spliced into pointer/ref MLIR types.
+    var _value: SIMDSize
 
     @always_inline("builtin")
     @implicit
-    def __init__(out self, value: Int):
+    def __init__(out self, value: SIMDSize):
         self._value = value
 
     # CPU address space
@@ -1316,7 +1143,7 @@ struct AddressSpace(TrivialRegisterPassable):
 
     @always_inline("builtin")
     def __mlir_index__(self) -> __mlir_type.index:
-        return self._value._mlir_value
+        return self._value.__mlir_index__()
 
 
 struct Pointer[
@@ -1332,7 +1159,7 @@ struct Pointer[
         `, `,
         Self.origin._mlir_origin,
         `, `,
-        Self.address_space._value._mlir_value,
+        Self.address_space._value.__mlir_index__(),
         `>`,
     ]
 
@@ -1347,7 +1174,9 @@ struct Pointer[
     def __init__(
         out self,
         *,
-        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.type,
+        ref[
+            Self.origin, Self.address_space._value.__mlir_index__()
+        ] to: Self.type,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -1431,7 +1260,7 @@ struct UnsafePointer[
         `!kgen.pointer<`,
         Self.type,
         `,`,
-        Self.address_space._value._mlir_value,
+        Self.address_space._value.__mlir_index__(),
         `>`,
     ]
     var _mlir_value: Self._mlir_type
@@ -1451,7 +1280,9 @@ struct UnsafePointer[
     def __init__(
         out self,
         *,
-        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.type,
+        ref[
+            Self.origin, Self.address_space._value.__mlir_index__()
+        ] to: Self.type,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -1763,6 +1594,69 @@ struct DType(TrivialRegisterPassable):
     def __init__(out self, mlir_value: Self._mlir_type):
         self._mlir_value = mlir_value
 
+    @always_inline("builtin")
+    def is_floating_point(self) -> Bool:
+        return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#kgen<cmp_pred ne>`](
+            __mlir_op.`pop.simd.and`(
+                __mlir_op.`pop.cast_from_builtin`[
+                    _type=__mlir_type.`!kgen.scalar<ui8>`
+                ](__mlir_op.`pop.dtype.to_ui8`(self._mlir_value)),
+                __mlir_attr.`#kgen.simd<64> : !kgen.scalar<ui8>`,
+            ),
+            __mlir_attr.`#kgen.simd<0> : !kgen.scalar<ui8>`,
+        )
+
+
+# ===----------------------------------------------------------------------=== #
+#  SIMDSize
+# ===----------------------------------------------------------------------=== #
+
+
+# `SIMDSize` wraps the MLIR `index` type and is used as the `size` parameter of
+# `SIMD`. It exists to break the circular dependency between `SIMD` and `Int`
+# (which is now an alias for `SIMD[DType.int, 1]`).
+@stable
+struct SIMDSize(TrivialRegisterPassable):
+    var _mlir_value: __mlir_type.index
+
+    @always_inline("builtin")
+    def __init__(out self, *, mlir_value: __mlir_type.index):
+        self._mlir_value = mlir_value
+
+    @always_inline("builtin")
+    @implicit
+    def __init__(out self, value: IntLiteral[_]):
+        self._mlir_value = __mlir_attr[
+            `#kgen.cast_to_builtin<#pop.int_literal_convert<`,
+            +value.value,
+            `> : !kgen.scalar<index>> : index`,
+        ]
+
+    # Implicit construction from `Int` (i.e. `Scalar[DType.int]`). This is what
+    # lets `SIMD[dtype, some_int]` bind an `Int` width to the `size` parameter.
+    @always_inline("builtin")
+    @implicit
+    def __init__(out self, value: Scalar[DType.int], /):
+        self._mlir_value = __mlir_op.`pop.cast_to_builtin`[
+            _type=__mlir_type.index
+        ](value._mlir_value)
+
+    @always_inline("builtin")
+    def __mlir_index__(self) -> __mlir_type.index:
+        return self._mlir_value
+
+    @always_inline("builtin")
+    def __mul__(self, rhs: Self) -> Self:
+        return Self(
+            mlir_value=__mlir_op.`index.mul`(self._mlir_value, rhs._mlir_value)
+        )
+
+    @always_inline("builtin")
+    def __add__(self, rhs: Self) -> Self:
+        return Self(
+            mlir_value=__mlir_op.`index.add`(self._mlir_value, rhs._mlir_value)
+        )
+
 
 comptime Float32 = SIMD[DType.float32, 1]
 comptime Float64 = SIMD[DType.float64, 1]
@@ -1774,7 +1668,10 @@ comptime UInt32 = SIMD[DType.uint32, 1]
 # ===----------------------------------------------------------------------=== #
 
 
-struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
+@stable
+struct SIMD[dtype: DType, size: SIMDSize](
+    Intable, Stringable, TrivialRegisterPassable
+):
     comptime _mlir_type = __mlir_type[
         `!kgen.simd<`, Self.size._mlir_value, `, `, Self.dtype._mlir_value, `>`
     ]
@@ -1786,17 +1683,32 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
     def __init__(out self, *, mlir_value: Self._mlir_type):
         self._mlir_value = mlir_value
 
+    # `Int`-specific constructor from a raw MLIR `index` value.
+    @always_inline("builtin")
+    def __init__(out self: Int, *, mlir_value: __mlir_type.index):
+        self._mlir_value = __mlir_op.`pop.cast_from_builtin`[
+            _type=SIMD[DType.int, 1]._mlir_type
+        ](mlir_value)
+
+    @stable
     @always_inline("nodebug")
     def __init__(out self):
-        comptime res = SIMD[Self.dtype, Self.size](Int())
-        self = res
+        self = Self(0)
+
+    @stable
+    @always_inline("builtin")
+    @implicit
+    def __init__(out self, value: IntLiteral[_], /):
+        self._mlir_value = __mlir_attr[
+            `#pop.int_literal_convert<`, +value.value, `> : `, Self._mlir_type
+        ]
 
     @always_inline("builtin")
     @implicit
     def __init__(out self, value: Int, /):
         var index = __mlir_op.`pop.cast_from_builtin`[
             _type=__mlir_type.`!kgen.scalar<index>`
-        ](value._mlir_value)
+        ](value.__mlir_index__())
         var s = __mlir_op.`pop.cast`[_type=SIMD[Self.dtype, 1]._mlir_type](
             index
         )
@@ -1805,10 +1717,36 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
 
     @implicit
     def __init__(out self, value: FloatLiteral, /):
+        comptime assert (
+            Self.dtype.is_floating_point()
+        ), "the SIMD type must be floating point"
         var res = __mlir_attr[
             `#pop<float_literal_convert<`, value.value, `>> : `, Self._mlir_type
         ]
         self = Self(mlir_value=res)
+
+    @always_inline("builtin")
+    def __mlir_index__(self) -> __mlir_type.index:
+        return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.index](
+            __mlir_op.`pop.cast`[
+                _type=SIMD[DType.int, 1]._mlir_type, fast=__mlir_attr.unit
+            ](rebind[SIMD[Self.dtype, SIMDSize(1)]](self)._mlir_value)
+        )
+
+    @always_inline("builtin")
+    def __int__(self) -> Int:
+        return Int(mlir_value=self.__mlir_index__())
+
+    def __str__(self) -> String:
+        return "[unimplemented]"
+
+    @staticmethod
+    def splat():
+        pass
+
+    # ===------------------------------------------------------------------=== #
+    # Arithmetic operators.
+    # ===------------------------------------------------------------------=== #
 
     @always_inline("builtin")
     def __add__(self, rhs: Self) -> Self:
@@ -1816,9 +1754,17 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
             mlir_value=__mlir_op.`pop.add`(self._mlir_value, rhs._mlir_value)
         )
 
-    @staticmethod
-    def splat():
-        pass
+    @always_inline("builtin")
+    def __sub__(self, rhs: Self) -> Self:
+        return Self(
+            mlir_value=__mlir_op.`pop.sub`(self._mlir_value, rhs._mlir_value)
+        )
+
+    @always_inline("builtin")
+    def __mul__(self, rhs: Self) -> Self:
+        return Self(
+            mlir_value=__mlir_op.`pop.mul`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("nodebug")
     def __truediv__(self, rhs: Self) -> Self:
@@ -1831,12 +1777,173 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
         return value / self
 
     @always_inline("nodebug")
+    def __floordiv__(self, rhs: Self) -> Self:
+        pass
+
+    @always_inline("nodebug")
+    def __mod__(self, rhs: Self) -> Self:
+        pass
+
+    @always_inline("nodebug")
+    def __pow__(self, exp: Self) -> Self:
+        pass
+
+    @always_inline("builtin")
+    def __neg__(self) -> Self:
+        return Self(mlir_value=__mlir_op.`pop.neg`(self._mlir_value))
+
+    # ===------------------------------------------------------------------=== #
+    # Bitwise and shift operators.
+    # ===------------------------------------------------------------------=== #
+
+    @always_inline("builtin")
+    def __and__(self, rhs: Self) -> Self:
+        return Self(
+            mlir_value=__mlir_op.`pop.simd.and`(
+                self._mlir_value, rhs._mlir_value
+            )
+        )
+
+    @always_inline("builtin")
+    def __or__(self, rhs: Self) -> Self:
+        return Self(
+            mlir_value=__mlir_op.`pop.simd.or`(
+                self._mlir_value, rhs._mlir_value
+            )
+        )
+
+    @always_inline("builtin")
+    def __xor__(self, rhs: Self) -> Self:
+        return Self(
+            mlir_value=__mlir_op.`pop.simd.xor`(
+                self._mlir_value, rhs._mlir_value
+            )
+        )
+
+    @always_inline("builtin")
+    def __lshift__(self, rhs: Self) -> Self:
+        return Self(
+            mlir_value=__mlir_op.`pop.shl`(self._mlir_value, rhs._mlir_value)
+        )
+
+    @always_inline("builtin")
+    def __rshift__(self, rhs: Self) -> Self:
+        return Self(
+            mlir_value=__mlir_op.`pop.shr`(self._mlir_value, rhs._mlir_value)
+        )
+
+    # ===------------------------------------------------------------------=== #
+    # Comparison operators (scalar semantics; used by `Int`).
+    # ===------------------------------------------------------------------=== #
+
+    @always_inline("builtin")
+    def __eq__(self, rhs: Self) -> Bool:
+        return __mlir_op.`index.cmp`[
+            pred=__mlir_attr.`#index<cmp_predicate eq>`
+        ](self.__mlir_index__(), rhs.__mlir_index__())
+
+    @always_inline("builtin")
+    def __ne__(self, rhs: Self) -> Bool:
+        return __mlir_op.`index.cmp`[
+            pred=__mlir_attr.`#index<cmp_predicate ne>`
+        ](self.__mlir_index__(), rhs.__mlir_index__())
+
+    @always_inline("builtin")
+    def __lt__(self, rhs: Self) -> Bool:
+        return __mlir_op.`index.cmp`[
+            pred=__mlir_attr.`#index<cmp_predicate slt>`
+        ](self.__mlir_index__(), rhs.__mlir_index__())
+
+    @always_inline("builtin")
+    def __le__(self, rhs: Self) -> Bool:
+        return __mlir_op.`index.cmp`[
+            pred=__mlir_attr.`#index<cmp_predicate sle>`
+        ](self.__mlir_index__(), rhs.__mlir_index__())
+
+    @always_inline("builtin")
+    def __gt__(self, rhs: Self) -> Bool:
+        return __mlir_op.`index.cmp`[
+            pred=__mlir_attr.`#index<cmp_predicate sgt>`
+        ](self.__mlir_index__(), rhs.__mlir_index__())
+
+    @always_inline("builtin")
+    def __ge__(self, rhs: Self) -> Bool:
+        return __mlir_op.`index.cmp`[
+            pred=__mlir_attr.`#index<cmp_predicate sge>`
+        ](self.__mlir_index__(), rhs.__mlir_index__())
+
+    @always_inline("builtin")
+    def __bool__(self) -> Bool:
+        return self != Self(0)
+
+    # ===------------------------------------------------------------------=== #
+    # In-place operators.
+    # ===------------------------------------------------------------------=== #
+
+    @always_inline("nodebug")
     def __iadd__(mut self, rhs: Self):
         self = self + rhs
 
     @always_inline("nodebug")
-    def join(self, other: Self) -> SIMD[Self.dtype, 2 * Self.size]:
-        return SIMD[Self.dtype, 2 * Self.size]()
+    def __isub__(mut self, rhs: Self):
+        self = self - rhs
+
+    @always_inline("nodebug")
+    def __imul__(mut self, rhs: Self):
+        self = self * rhs
+
+    @always_inline("nodebug")
+    def __ifloordiv__(mut self, rhs: Self):
+        self = self // rhs
+
+    @always_inline("nodebug")
+    def __imod__(mut self, rhs: Self):
+        self = self % rhs
+
+    @always_inline("nodebug")
+    def __ipow__(mut self, rhs: Self):
+        self = self**rhs
+
+    @always_inline("nodebug")
+    def __ilshift__(mut self, rhs: Self):
+        self = self << rhs
+
+    @always_inline("nodebug")
+    def __irshift__(mut self, rhs: Self):
+        self = self >> rhs
+
+    @always_inline("nodebug")
+    def __iand__(mut self, rhs: Self):
+        self = self & rhs
+
+    @always_inline("nodebug")
+    def __ixor__(mut self, rhs: Self):
+        self = self ^ rhs
+
+    @always_inline("nodebug")
+    def __ior__(mut self, rhs: Self):
+        self = self | rhs
+
+    @always_inline("nodebug")
+    def join(self, other: Self) -> SIMD[Self.dtype, Self.size * 2]:
+        return SIMD[Self.dtype, Self.size * 2]()
+
+
+# ===----------------------------------------------------------------------=== #
+#  Scalar / Int aliases
+# ===----------------------------------------------------------------------=== #
+
+
+@stable
+comptime Scalar = SIMD[
+    _, size=__mlir_attr[`#lit.struct<{_mlir_value = 1}> : `, SIMDSize]
+]
+"""Represents a scalar dtype."""
+
+
+@stable
+comptime Int = Scalar[DType.int]
+"""Represents a signed integer suitable for indexing."""
 
 
 @no_inline

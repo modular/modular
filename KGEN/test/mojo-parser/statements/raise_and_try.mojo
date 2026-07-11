@@ -98,7 +98,7 @@ def propagateErrorInDef() raises:
 
 # CHECK-LABEL: lit.fn @"propagateErrorInRaisingFn
 def propagateErrorInRaisingFn() raises:
-    # CHECK:  %a = lit.var.decl {{.*}} : !lit.ref<!Int,
+    # CHECK:  %a = lit.var.decl {{.*}} : !lit.ref<:meta<!Int> #alias_Int,
     var a: Int
     # CHECK:  lit.call {{.*}}maybeRaises{{.*}}(%__error__, %a)
     a = maybeRaises()

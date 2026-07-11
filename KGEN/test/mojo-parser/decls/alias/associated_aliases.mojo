@@ -37,25 +37,25 @@ struct S[n: Int]:
 
 # CHECK-LABEL: lit.trait.decl @TraitWithDependentAlias
 trait TraitWithDependentAlias:
-    # CHECK-NEXT: lit.alias.decl *"N`1": !Int
+    # CHECK-NEXT: lit.alias.decl *"N`1": !alias_Int1
     comptime N: Int
-    # CHECK-NEXT: lit.alias.decl *"depend_on_N`2": {{.*}}#S <:!Int {{.*}}#kgen.get_witness<:!{{.*}} *"_Self`", "{{.*}}::{{.*}}", "N">)>
+    # CHECK-NEXT: lit.alias.decl *"depend_on_N`2": {{.*}}#S <:!Int {{.*}}#kgen.get_witness<:!{{.*}} *"_Self`", "{{.*}}::{{.*}}", "N">{{.*}}
     comptime depend_on_N: S[Self.N]
 
 
 # CHECK-LABEL: lit.struct.decl @StructWithMatchingDependentAlias1
 struct StructWithMatchingDependentAlias1(TraitWithDependentAlias):
-    # CHECK-NEXT: lit.alias.decl *"N`": !Int = <{1}>
+    # CHECK-NEXT: lit.alias.decl *"N`": !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
     comptime N: Int = 1
-    # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": {{.*}}#S <:!Int {1}>> =
+    # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": {{.*}}#S <:!Int {:scalar<index> 1}>> =
     comptime depend_on_N = S[1]()
 
 
 # CHECK-LABEL: lit.struct.decl @StructWithMatchingDependentAlias2
 struct StructWithMatchingDependentAlias2(TraitWithDependentAlias):
-    # CHECK-NEXT: lit.alias.decl *"N`": !Int = <{1}>
+    # CHECK-NEXT: lit.alias.decl *"N`": !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
     comptime N: Int = 1
-    # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": {{.*}}#S <:!Int sugar_member_alias(!StructWithMatchingDependentAlias2, "N", {1})>> =
+    # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": {{.*}}#S <:!Int {:scalar<index> 1}>> =
     comptime depend_on_N = S[Self.N]()
 
 

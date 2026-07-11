@@ -109,7 +109,7 @@ comptime MyDepGetAlias0 = MyDep.hello
 # expected-error @below {{'Dep[Int, _]' value has no attribute 'hello'}}
 comptime MyDepGetAlias1 = MyDep[Int].hello
 
-# expected-error @below {{'Dep[Int, 2]' value has no attribute 'hello'}}
+# expected-error @below {{'Dep[Int, Int(2)]' value has no attribute 'hello'}}
 comptime MyDepGetAlias2 = MyDep[Int, 2].hello
 
 
@@ -148,7 +148,7 @@ struct Tag[n: Int](Copyable, Movable):
 # diagnostic verifier).
 
 # Alias used as a function argument type.
-# expected-note @+1 {{constraint declared here evaluated to False, expected '(n > 0)'}}
+# expected-note @+1 {{constraint declared here evaluated to False, expected '(n > Int(0))'}}
 comptime PositiveArg[n: Int, //] where n > 0 = Tag[n]
 
 
@@ -158,7 +158,7 @@ def take_arg(p: PositiveArg):
 
 
 # Alias used as a value-parameter type.
-# expected-note @+1 {{constraint declared here evaluated to False, expected '(n > 0)'}}
+# expected-note @+1 {{constraint declared here evaluated to False, expected '(n > Int(0))'}}
 comptime PositiveParam[n: Int, //] where n > 0 = Tag[n]
 
 
@@ -168,7 +168,7 @@ def take_param[p: PositiveParam]():
 
 
 # Alias used as a variadic argument element type.
-# expected-note @+1 {{constraint declared here evaluated to False, expected '(n > 0)'}}
+# expected-note @+1 {{constraint declared here evaluated to False, expected '(n > Int(0))'}}
 comptime PositiveVar[n: Int, //] where n > 0 = Tag[n]
 
 

@@ -26,10 +26,10 @@ trait IntStorage:
     # The default method `load` emits a body that forwards `s` to `load_at`,
     # inferring `x` from `s`'s type.  Both the function and its forwarding call
     # must be emitted.
-    # CHECK: lit.fn @"load[::Int]
+    # CHECK: lit.fn @"load[::SIMD[::DType(int), ::SIMDSize(1)]]
     @staticmethod
     def load(s: Self.StorageType[...]):
-        # CHECK: lit.call{{.*}}load_at[::Int]
+        # CHECK: lit.call{{.*}}load_at[::SIMD[::DType(int), ::SIMDSize(1)]]
         Self.load_at(s, 0)
 
     @staticmethod

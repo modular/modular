@@ -121,12 +121,12 @@ struct AllDischargedStruct[A: Int, B: Int,
 
 
 struct PosForParam[N: Int]
-    # expected-note @below {{constraint declared here needs evidence for '(K > 0)'}}
+    # expected-note @below {{constraint declared here needs evidence for '(K > Int(0))'}}
     where N > 0:
     pass
 
 
-# expected-note @below {{add a trailing 'where' clause that requires '(K > 0)'}}
+# expected-note @below {{add a trailing 'where' clause that requires '(K > Int(0))'}}
 def undischarged_param[K: Int,
                        # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
                        X: PosForParam[K]]():
@@ -139,12 +139,12 @@ def undischarged_param[K: Int,
 
 
 struct PosForArg[N: Int]
-    # expected-note @below {{constraint declared here needs evidence for '(K > 0)'}}
+    # expected-note @below {{constraint declared here needs evidence for '(K > Int(0))'}}
     where N > 0:
     pass
 
 
-# expected-note @below {{add a trailing 'where' clause that requires '(K > 0)'}}
+# expected-note @below {{add a trailing 'where' clause that requires '(K > Int(0))'}}
 def undischarged_arg[K: Int](
         # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
         x: PosForArg[K]):
@@ -157,13 +157,13 @@ def undischarged_arg[K: Int](
 
 
 struct PosForRet[N: Int]
-    # expected-note @below {{constraint declared here needs evidence for '(K > 0)'}}
+    # expected-note @below {{constraint declared here needs evidence for '(K > Int(0))'}}
     where N > 0:
     pass
 
 
 # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
-# expected-note @below {{add a trailing 'where' clause that requires '(K > 0)'}}
+# expected-note @below {{add a trailing 'where' clause that requires '(K > Int(0))'}}
 def undischarged_ret[K: Int]() -> PosForRet[K]:
     pass
 
@@ -174,13 +174,13 @@ def undischarged_ret[K: Int]() -> PosForRet[K]:
 
 
 struct PosForThrows[N: Int]
-    # expected-note @below {{constraint declared here needs evidence for '(K > 0)'}}
+    # expected-note @below {{constraint declared here needs evidence for '(K > Int(0))'}}
     where N > 0:
     pass
 
 
 # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
-# expected-note @below {{add a trailing 'where' clause that requires '(K > 0)'}}
+# expected-note @below {{add a trailing 'where' clause that requires '(K > Int(0))'}}
 def undischarged_throws[K: Int]() raises PosForThrows[K]:
     pass
 
@@ -191,12 +191,12 @@ def undischarged_throws[K: Int]() raises PosForThrows[K]:
 
 
 struct PosForStruct[N: Int]
-    # expected-note @below {{constraint declared here needs evidence for '(K > 0)'}}
+    # expected-note @below {{constraint declared here needs evidence for '(K > Int(0))'}}
     where N > 0:
     pass
 
 
-# expected-note @below {{add a trailing 'where' clause that requires '(K > 0)'}}
+# expected-note @below {{add a trailing 'where' clause that requires '(K > Int(0))'}}
 struct UndischargedStruct[K: Int,
                           # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
                           X: PosForStruct[K]]:
@@ -213,12 +213,12 @@ struct UndischargedStruct[K: Int,
 
 
 struct PosForPartial[N: Int]
-    # expected-note @below {{constraint declared here needs evidence for '(B > 0)'}}
+    # expected-note @below {{constraint declared here needs evidence for '(B > Int(0))'}}
     where N > 0:
     pass
 
 
-# expected-note @below {{add a trailing 'where' clause that requires '(B > 0)'}}
+# expected-note @below {{add a trailing 'where' clause that requires '(B > Int(0))'}}
 def partial_discharge[A: Int, B: Int, X: PosForPartial[A],
                       # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
                       Y: PosForPartial[B]]() where A > 0:
@@ -269,19 +269,19 @@ def undischarged_trait_arg[T: AnyType](
 
 
 struct PosForNoneA[N: Int]
-    # expected-note @below {{constraint declared here needs evidence for '(A > 0)'}}
+    # expected-note @below {{constraint declared here needs evidence for '(A > Int(0))'}}
     where N > 0:
     pass
 
 
 struct PosForNoneB[N: Int]
-    # expected-note @below {{constraint declared here needs evidence for '(B > 0)'}}
+    # expected-note @below {{constraint declared here needs evidence for '(B > Int(0))'}}
     where N > 0:
     pass
 
 
-# expected-note @below {{add a trailing 'where' clause that requires '(A > 0)'}}
-# expected-note @below {{add a trailing 'where' clause that requires '(B > 0)'}}
+# expected-note @below {{add a trailing 'where' clause that requires '(A > Int(0))'}}
+# expected-note @below {{add a trailing 'where' clause that requires '(B > Int(0))'}}
 def all_undischarged[A: Int,
                      # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
                      X: PosForNoneA[A],

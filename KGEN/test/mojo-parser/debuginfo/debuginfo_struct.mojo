@@ -6,10 +6,10 @@
 
 # RUN: %parse-mojo-isolated -debug-level full -O0 -mlir-print-debuginfo %s | FileCheck %s
 
-# CHECK: #[[SOURCENAME_INT:.*]] = #debuginfo.source_name<(struct)"Int" from {{.*}}>
+# CHECK: #[[SOURCENAME_INT:.*]] = #debuginfo.source_name<(struct)"SIMD"[#DType_name, #SIMDSize_name]<":{{.*}} {:dtype index}", ":{{.*}} {1}"> from {{.*}}>
 # CHECK-DAG: #[[SOURCENAME_RP:.*]] = #debuginfo.source_name<(struct)"MyRP"[#[[SOURCENAME_INT]]] from <(module)"debuginfo_struct">>
 
-# CHECK-DAG: #[[SOURCENAME_RP3:.*]] = #debuginfo.source_name<(struct)"MyRP"[#[[SOURCENAME_INT]]]<":{{.*}} {3}"> from <(module)"debuginfo_struct">>
+# CHECK-DAG: #[[SOURCENAME_RP3:.*]] = #debuginfo.source_name<(struct)"MyRP"[#[[SOURCENAME_INT]]]<":{{.*}} 3}"> from <(module)"debuginfo_struct">>
 # CHECK-DAG: #[[SOURCENAME_DATA:.*]] = #debuginfo.source_name<(struct)"MyData"[#[[SOURCENAME_INT]], #[[SOURCENAME_RP3]], <"{{.*}}@TrivialRegisterPassable>">] from <(module)"debuginfo_struct">>
 
 

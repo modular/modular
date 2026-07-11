@@ -14,14 +14,14 @@ def has_default_args(a: Int, b: Int = 1, c: Int = 2):
 
 # CHECK-LABEL: lit.fn @"test_kw_arg_passing
 def test_kw_arg_passing(x: Int, y: Int, z: Int):
-    # CHECK: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK: %[[C2:.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
     # CHECK: call {{.*}}@"has_default_args{{.*}}"(%x, %y, %[[C2]])
     has_default_args(x, b=y)
 
     # CHECK: call {{.*}}@"has_default_args{{.*}}"(%x, %y, %z)
     has_default_args(x, b=y, c=z)
 
-    # CHECK: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
+    # CHECK: %[[C1:.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>
     # CHECK: call {{.*}}@"has_default_args{{.*}}"(%x, %[[C1]], %z)
     has_default_args(x, c=z)
 
@@ -37,7 +37,7 @@ def test_kw_arg_passing(x: Int, y: Int, z: Int):
 
 # CHECK-LABEL: lit.fn @"test_kw_arg_passing_indirect
 def test_kw_arg_passing_indirect[callee: def(a: Int, b: Int=1, c: Int=2) thin -> None](x: Int, y: Int, z: Int):
-    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
+    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>
     # CHECK-NEXT: lit.call tail[{{.*}}](%x, %[[C1]], %z)
     callee(x, c=z)
 
@@ -50,13 +50,13 @@ def has_default_params[a: Int, b: Int = 1, c: Int = 2]():
 
 # CHECK-LABEL: lit.fn @"test_kw_param_passing
 def test_kw_param_passing[x: Int, y: Int, z: Int]():
-    # CHECK: lit.call {{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int {2}>
+    # CHECK: lit.call {{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int {:scalar<index> 2}>
     has_default_params[x, b=y]()
 
     # CHECK: lit.call {{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int z>
     has_default_params[x, b=y, c=z]()
 
-    # CHECK: lit.call {{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int {1}, :!Int z>
+    # CHECK: lit.call {{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int {:scalar<index> 1}, :!Int z>
     has_default_params[x, c=z]()
 
     # CHECK: lit.call {{.*}}@"has_default_params{{.*}}"<:!Int x, :!Int y, :!Int z>
@@ -73,7 +73,7 @@ def test_kw_param_passing[x: Int, y: Int, z: Int]():
 def test_kw_param_passing_indirect[x: Int, y: Int, z: Int,
                                   callee: def[a: Int, b: Int=1, c: Int=2]() thin -> None]():
 
-    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int {1}, :!Int z)]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int {:scalar<index> 1}, :!Int z)]()
     callee[x, c=z]()
 
     # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int y, :!Int z)]()
@@ -92,7 +92,7 @@ def test_callable_object(x: Int, y: Int):
     var callable = MyCallable()
 
     # CHECK-DAG: %[[IMMREF:.*]] = lit.ref.immut %[[CALLABLE]]
-    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
     # CHECK-NEXT: call {{.*}}@MyCallable::@"__call__{{.*}}(%[[IMMREF]], %x, %[[C2]])
     callable(x)
 
@@ -107,21 +107,21 @@ def takes_kw_only_args(a: Int, b: Int = 1, *, c: Int, d: Int = 2):
 
 # CHECK-LABEL: lit.fn @"test_kw_only_args
 def test_kw_only_args(x: Int):
-    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
-    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>
+    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
     # CHECK-NEXT: lit.call {{.*}}@"takes_kw_only_args{{.*}}"(%x, %[[C1]], %x, %[[C2]])
     takes_kw_only_args(x, c=x)
 
-    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
-    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>
+    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
     # CHECK-NEXT: lit.call {{.*}}@"takes_kw_only_args{{.*}}"(%x, %[[C1]], %x, %[[C2]])
     takes_kw_only_args(c=x, a=x)
 
-    # CHECK: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK: %[[C2:.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
     # CHECK-NEXT: lit.call {{.*}}@"takes_kw_only_args{{.*}}"(%x, %x, %x, %[[C2]])
     takes_kw_only_args(x, c=x, b=x)
 
-    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
+    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>
     # CHECK-NEXT: lit.call {{.*}}@"takes_kw_only_args{{.*}}"(%x, %[[C1]], %x, %x)
     takes_kw_only_args(x, d=x, c=x)
 
@@ -132,12 +132,12 @@ def test_kw_only_args(x: Int):
 # CHECK-LABEL: lit.fn @"test_kw_only_indirect
 def test_kw_only_indirect[callee: def(a: Int, b: Int = 1, *, c: Int, d: Int = 2) thin -> None](x: Int):
 
-    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
-    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>
+    # CHECK-DAG: %[[C2:.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
     # CHECK-NEXT: lit.call tail[{{.*}}](%x, %[[C1]], %x, %[[C2]])
     callee(x, c=x)
 
-    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{1}>
+    # CHECK-DAG: %[[C1:.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>
     # CHECK-NEXT: lit.call tail[{{.*}}](%x, %[[C1]], %x, %x)
     callee(x, d=x, c=x)
 
@@ -148,16 +148,16 @@ def takes_kw_only_params[a: Int, b: Int = 1, *, c: Int, d: Int = 2]():
 
 # CHECK-LABEL: lit.fn @"test_kw_only_params
 def test_kw_only_params[x: Int]():
-    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<:!Int x, :!Int {1}, :!Int x, :!Int {2}>()
+    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<:!Int x, :!Int {:scalar<index> 1}, :!Int x, :!Int {:scalar<index> 2}>()
     takes_kw_only_params[x, c=x]()
 
-    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<:!Int x, :!Int {1}, :!Int x, :!Int {2}>()
+    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<:!Int x, :!Int {:scalar<index> 1}, :!Int x, :!Int {:scalar<index> 2}>()
     takes_kw_only_params[c=x, a=x]()
 
-    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<:!Int x, :!Int x, :!Int x, :!Int {2}>()
+    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<:!Int x, :!Int x, :!Int x, :!Int {:scalar<index> 2}>()
     takes_kw_only_params[x, c=x, b=x]()
 
-    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<:!Int x, :!Int {1}, :!Int x, :!Int x>()
+    # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<:!Int x, :!Int {:scalar<index> 1}, :!Int x, :!Int x>()
     takes_kw_only_params[x, d=x, c=x]()
 
     # CHECK: call {{.*}}takes_kw_only_params{{.*}}"<:!Int x, :!Int x, :!Int x, :!Int x>()
@@ -167,10 +167,10 @@ def test_kw_only_params[x: Int]():
 # CHECK-LABEL: lit.fn @"test_kw_only_params_indirect
 def test_kw_only_params_indirect[x: Int, callee: def[a: Int, b: Int = 1, *, c: Int, d: Int = 2]() thin -> None]():
 
-    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int {1}, :!Int x, :!Int {2})]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int {:scalar<index> 1}, :!Int x, :!Int {:scalar<index> 2})]()
     callee[x, c=x]()
 
-    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int {1}, :!Int x, :!Int x)]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :!Int x, :!Int {:scalar<index> 1}, :!Int x, :!Int x)]()
     callee[x, d=x, c=x]()
 
 
@@ -187,7 +187,7 @@ def test_variadic_and_kw_only_args(x: Int):
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>
+    # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
     # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"{{.*}}(%x, %x, [[T2]], %x, [[ZERO]])
     takes_variadic_and_kw_only_args(x, x, c=x)
 
@@ -205,7 +205,7 @@ def test_variadic_and_kw_only_args(x: Int):
     # CHECK-NEXT: [[TMPVD:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[T1]], [[TMPVD]]
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.immut [[TMPVD]]
-    # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>
+    # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
     # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"{{.*}}(%x, %x, [[T2]], %x, [[ZERO]])
     takes_variadic_and_kw_only_args(x, x, x, x, c=x)
 
@@ -218,13 +218,13 @@ def takes_variadic_and_kw_only_params[
 
 # CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_params
 def test_variadic_and_kw_only_params[x: Int]():
-    # CHECK: lit.call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<:param_list<!Int> [], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int {0}>()
+    # CHECK: lit.call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<:param_list<!Int> [], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int {:scalar<index> 0}>()
     takes_variadic_and_kw_only_params[x, x, c=x]()
 
     # CHECK: lit.call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<:param_list<!Int> [], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int x>()
     takes_variadic_and_kw_only_params[x, x, d=x, c=x]()
 
-    # CHECK: lit.call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<:param_list<!Int> [x, x], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int {0}>()
+    # CHECK: lit.call {{.*}}takes_variadic_and_kw_only_param{{.*}}"<:param_list<!Int> [x, x], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int {:scalar<index> 0}>()
     takes_variadic_and_kw_only_params[x, x, x, x, c=x]()
 
 
@@ -232,10 +232,10 @@ def test_variadic_and_kw_only_params[x: Int]():
 def test_variadic_and_kw_only_params_indirect[x: Int,
     callee: def [a: Int, b: Int, *args: Int, c: Int, d: Int = 0]() thin -> None]():
 
-    # CHECK: lit.call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :param_list<!Int> [], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int {0})]()
+    # CHECK: lit.call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :param_list<!Int> [], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int {:scalar<index> 0})]()
     callee[x, x, c=x]()
 
-    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :param_list<!Int> [x, x], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int {0})]()
+    # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, :param_list<!Int> [x, x], :!Int x, :!Int x, {{.*}}, :!Int x, :!Int {:scalar<index> 0})]()
     callee[x, x, x, x, c=x]()
 
 
@@ -266,7 +266,7 @@ struct SomeRefItemStruct:
 
 # CHECK-LABEL: lit.fn @"test_param_refitem
 def test_param_refitem[a: SomeRefItemStruct]():
-    # CHECK-NEXT: !Int = <load_from_mem(:!lit.ref<!Int, imm #lit.comptime.origin> apply(:{{.*}}SomeRefItemStruct::@"__getitem__
+    # CHECK-NEXT: !alias_Int1 = <load_from_mem(:!lit.ref<:meta<!Int> #alias_Int, imm #lit.comptime.origin> apply(:{{.*}}SomeRefItemStruct::@"__getitem__
     comptime x = a[]
 
 
@@ -324,7 +324,7 @@ def partialBind(mut C: Matrix[1, 2]) raises:
     # CHECK-NEXT: lit.call {{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
     # CHECK-SAME: <:!lit.generator<<?, ".rows`2x": !Int, ".cols`2x1": !Int>[1](!lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut, |) -> !kgen.none>
     # CHECK-SAME: rebind(:!lit.generator<<?, "C.rows`": !Int, "C.cols`1": !Int>[1]("C": !lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut) -> !kgen.none>
-    # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<:!Int {0}, :!Int ?, :!Int ?>), :!Int {1}, :!Int {2}>(%C, %__error__, %exp)
+    # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<:!Int {:scalar<index> 0}, :!Int ?, :!Int ?>), :!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}>(%C, %__error__, %exp)
     var exp = test_matrix_equal[matmul_unrolled[0]](C)
 
 
@@ -419,15 +419,15 @@ def complex_ref_box_emission[p: Int](a: Int):
     # Needs a conversion from IntegerLiteral to Int
     _ = test_int_ref(4)
     # CHECK: [[VAR:%.*]] = lit.var.decl {{.*}}!lit.ref<!Int,
-    # CHECK-NEXT: kgen.param.constant: !Int = <{4}>
+    # CHECK-NEXT: kgen.param.constant: !Int = <{:scalar<index> 4}>
     # CHECK-NEXT: lit.ref.store {{.*}}, [[VAR]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut [[VAR]]
     # CHECK-NEXT: lit.call {{.*}}test_int_ref{{.*}}([[TMP]])
 
     # RValues infer as immutable, just like you can't pass them to mut.
     _ = test_int_ref(Int())
-    # CHECK: [[VAR:%.*]] = lit.var.decl {{.*}}!lit.ref<!Int,
-    # CHECK-NEXT: [[REGVAL:%.*]] = kgen.param.constant: !Int = <{0}>
+    # CHECK: [[REGVAL:%.*]] = lit.call {{.*}}SIMD::@"__init__{{.*}}()
+    # CHECK-NEXT: [[VAR:%.*]] = lit.var.decl {{.*}}!lit.ref<!Int,
     # CHECK-NEXT: lit.ref.store [[REGVAL]], [[VAR]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut [[VAR]]
     # CHECK-NEXT: lit.call {{.*}}test_int_ref{{.*}}([[TMP]])
@@ -529,7 +529,7 @@ def entry(mut value: MyDict[String, Value], name: String) raises:
     # CHECK: lit.call {{.*}}::@MyDict::@"__getitem__
     # CHECK-NEXT: [[V1:%.*]] = lit.load.consume
     # CHECK-NEXT: [[V2:%.*]] = lit.ref.struct.ger [[V1]]
-    # CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: !Int = <{12}>
+    # CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 12})>
     # CHECK-NEXT: lit.ref.store [[V3]], [[V2]]
     value[name].max_width = 12
 
@@ -612,9 +612,9 @@ def test_mem_temp_2(*args: Int, ref x: Int) -> ref[x] Int:
 
 # CHECK-LABEL: lit.fn @"test_mem_temp_caller
 def test_mem_temp_caller():
-    # CHECK: lit.call {{.*}}test_mem_temp_1{{.*}}: !lit.generator<("x": !lit.ref<!Int, [[TMPORIGIN:.*]]> ref, *, "y": !Int) refresult -> !lit.ref<!Int, [[TMPORIGIN]]>>
+    # CHECK: lit.call {{.*}}test_mem_temp_1{{.*}}: !lit.generator<("x": !lit.ref<!Int, [[TMPORIGIN:.*]]> ref, *, "y": !Int) refresult -> !lit.ref<:meta<!Int> #alias_Int, [[TMPORIGIN]]>>
     _ = test_mem_temp_1(y=4, x=12)
-    # CHECK: lit.call {{.*}}test_mem_temp_2{{.*}}"x": !lit.ref<!Int, [[TMPORIGIN:.*]]> ref) refresult -> !lit.ref<!Int, [[TMPORIGIN]]>>
+    # CHECK: lit.call {{.*}}test_mem_temp_2{{.*}}"x": !lit.ref<!Int, [[TMPORIGIN:.*]]> ref) refresult -> !lit.ref<:meta<!Int> #alias_Int, [[TMPORIGIN]]>>
     _ = test_mem_temp_2(x=5)
 
 
@@ -630,7 +630,7 @@ def nonmat_callee[T: AnyType](x: T): pass
 # CHECK-LABEL: lit.fn @"test_nonmat_callee
 def test_nonmat_callee():
     # This should call the concrete nonmat_callee, not the generic one.
-    # CHECK: lit.call {{.*}}@"nonmat_callee(::Int)"
+    # CHECK: lit.call {{.*}}@"nonmat_callee(::SIMD[::DType(int), ::SIMDSize(1)])"
     nonmat_callee(1)
 
 # CHECK-LABEL: lit.fn @"test_singleton_fnptr_params
@@ -641,7 +641,8 @@ def test_singleton_fnptr_params():
   var fp1: def[a: MutOrigin](ref [a] x: Int) thin -> None
   # CHECK-NEXT: [[FP1BOUND:%.*]] = lit.bind_params [[FP1]] :
   # CHECK-SAME: :!lit.struct<#Origin <:!Bool {{{.*}} true}, :origin<true> *"someInt`">>
-  # CHECK-NEXT: lit.call_indirect [[FP1BOUND]](%someInt)
+  # CHECK-NEXT: [[SOMEINT:%.*]] = kgen.rebind %someInt {{.*}} to !lit.ref<!Int, mut *"someInt`">
+  # CHECK-NEXT: lit.call_indirect [[FP1BOUND]]([[SOMEINT]])
   fp1(someInt)
 
   # Need to bind the origin of the variadic list.

@@ -18,7 +18,7 @@
 # CHECK-NEXT:      %inside_a = lit.var.decl "inside_a"
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } {
-# CHECK-NEXT:      [[B_EQ:%.*]] = lit.call {{.*}}::@"__eq__{{.*}}"(%b, %d) : !lit.generator<("lhs": !Int, "rhs": !Int) -> !Bool>
+# CHECK-NEXT:      [[B_EQ:%.*]] = lit.call {{.*}}::@"__eq__{{.*}}"{{.*}}(%b, %d) : !lit.generator<("self": !Int, "rhs": !Int) -> !Bool>
 # CHECK-NEXT:      [[TEST_B_SB:%.*]] = lit.call {{.*}}::@"__mlir_bool__{{.*}}"([[B_EQ]]) : !lit.generator<("self": !Bool) -> !kgen.scalar<bool>>
 # CHECK-NEXT:      hlcf.elif.yield [[TEST_B_SB]]
 # CHECK-NEXT:    } then {
@@ -56,7 +56,8 @@ def test_constant(a: Bool) -> Bool:
     # CHECK-NEXT: hlcf.elif {
     # CHECK-NEXT: [[FIVE:%.*]] = kgen.param.constant{{.*}}5
     # CHECK-NEXT: store [[FIVE]], %z
-    # CHECK-NEXT: [[BOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}([[FIVE]])
+    # CHECK-NEXT: [[FIVE_R:%.*]] = kgen.rebind [[FIVE]]
+    # CHECK-NEXT: [[BOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}([[FIVE_R]])
     # CHECK-NEXT: [[SB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[BOOL]])
     # CHECK-NEXT: hlcf.elif.yield [[SB]]
     if z := 5:
@@ -78,7 +79,7 @@ def test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT:     [[TEST_B_SB:%.*]] = lit.call {{.*}}@"__mlir_bool__{{.*}}"(%b)
     # CHECK-NEXT:     hlcf.elif.yield [[TEST_B_SB]]
     # CHECK-NEXT:   } then {
-    # CHECK-NEXT:     %inside_b = lit.var.decl "inside_b"  var : !lit.ref<!Int, mut *"inside_b`1">
+    # CHECK-NEXT:     %inside_b = lit.var.decl "inside_b"  var : !lit.ref<:meta<!Int> #alias_Int, mut *"inside_b`1">
     # CHECK-NEXT:     hlcf.yield
     # CHECK-NEXT:   } else {
     # CHECK-NEXT:     hlcf.elif {
@@ -119,12 +120,12 @@ def if_try(p: Bool):
     # CHECK-NEXT:   %e = lit.var.decl {{.*}} !lit.ref<!Error,
     # CHECK-NEXT:   lit.try %e : {{.*}} {
     # CHECK-NEXT:     %b = lit.var.decl "b"  var
-    # CHECK-NEXT:     kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT:     kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
     # CHECK-NEXT:     lit.ref.store
     # CHECK-NEXT:     lit.try.yield
     # CHECK-NEXT:   } except {
     # CHECK-NEXT:     %c = lit.var.decl "c"
-    # CHECK-NEXT:     kgen.param.constant: !Int = <{2}>
+    # CHECK-NEXT:     kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 2})>
     # CHECK-NEXT:     lit.ref.store
     # CHECK-NEXT:     lit.try.yield
     # CHECK-NEXT:   } else {
@@ -135,7 +136,7 @@ def if_try(p: Bool):
     # CHECK:        hlcf.yield
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   %d = lit.var.decl "d"
-    # CHECK-NEXT:   kgen.param.constant: !Int = <{3}>
+    # CHECK-NEXT:   kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 3})>
     # CHECK-NEXT:   lit.ref.store
     # CHECK-NEXT:   hlcf.yield
     if p:
@@ -160,7 +161,8 @@ def constantTrue(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT:  [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
     # CHECK-NEXT:  hlcf.elif.yield [[TRUE]]
     # CHECK-NEXT: } then {
-    # CHECK-NEXT:   lit.return %x : !Int
+    # CHECK-NEXT:   [[XT:%.*]] = kgen.rebind %x : !Int to !alias_Int1
+    # CHECK-NEXT:   lit.return [[XT]] : !alias_Int1
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   kgen.unreachable
@@ -175,7 +177,8 @@ def constantFalse(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT:   %0 = lit.call {{.*}}@"__mlir_bool__{{.*}}"(%cond)
     # CHECK-NEXT:   hlcf.elif.yield %0
     # CHECK-NEXT: } then {
-    # CHECK-NEXT:   lit.return %x : !Int
+    # CHECK-NEXT:   [[XT0:%.*]] = kgen.rebind %x : !Int to !alias_Int1
+    # CHECK-NEXT:   lit.return [[XT0]] : !alias_Int1
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: } {
     # CHECK-NEXT:   [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
@@ -183,7 +186,8 @@ def constantFalse(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   kgen.unreachable
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   lit.return %x : !Int
+    # CHECK-NEXT:   [[XT1:%.*]] = kgen.rebind %x : !Int to !alias_Int1
+    # CHECK-NEXT:   lit.return [[XT1]] : !alias_Int1
     # CHECK-NEXT:   hlcf.yield
     if cond:
         return x
@@ -209,13 +213,13 @@ def constantFalse(cond: Bool, x: Int, y: Int) -> Int:
 # CHECK-NEXT:    } else {
 # CHECK-NEXT:        lit.loop.break.else
 # CHECK-NEXT:    }
-# CHECK-NEXT:    kgen.param.constant: {{.*}} = <{0}>
+# CHECK-NEXT:    kgen.param.constant: {{.*}} = <rebind(:!Int {:scalar<index> 0})>
 # CHECK-NEXT:    lit.ref.store {{.+}}, %inside_a
 # CHECK-NEXT:    hlcf.elif {
 # CHECK-NEXT:      [[TEST_B_SB:%.*]] = lit.call {{.*}}@"__mlir_bool__{{.*}}"(%b)
 # CHECK-NEXT:      hlcf.elif.yield [[TEST_B_SB]]
 # CHECK-NEXT:    } then {
-# CHECK-NEXT:      kgen.param.constant: !Int = <{1}>
+# CHECK-NEXT:      kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
 # CHECK-NEXT:      lit.ref.store
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } else {
@@ -223,7 +227,7 @@ def constantFalse(cond: Bool, x: Int, y: Int) -> Int:
 # CHECK-NEXT:    }
 # CHECK-NEXT:    lit.loop.continue
 # CHECK-NEXT:  } else {
-# CHECK-NEXT:    kgen.param.constant: !Int = <{2}>
+# CHECK-NEXT:    kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 2})>
 # CHECK-NEXT:    lit.ref.store
 # CHECK-NEXT:    lit.loop.yield
 def test_while(a: Bool, b: Bool) -> Bool:
@@ -326,21 +330,21 @@ def `pass`() raises:
 
 # CHECK-LABEL: lit.fn @"return_impl_convert
 def return_impl_convert() -> Int:
-    # CHECK: %0 = kgen{{.*}}{4}
+    # CHECK: %0 = kgen{{.*}}{:scalar<index> 4}
     # CHECK: lit.return %0
     return 4  # Implicit conversion from literal to Int
 
 
 # CHECK-LABEL: lit.fn @"return_new_line
 def return_new_line() -> Int:
-    # CHECK: %0 = kgen{{.*}}{17}
+    # CHECK: %0 = kgen{{.*}}{:scalar<index> 17}
     return
         17  # Weird indentation should be fine
 
 
 # CHECK-LABEL: lit.fn @"return_impl_convert_raises
 def return_impl_convert_raises() raises -> Int:
-    # CHECK: %0 = kgen{{.*}}{4}
+    # CHECK: %0 = kgen{{.*}}{:scalar<index> 4}
     # CHECK-NEXT: lit.ref.store %0, %__result__
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: return [[FALSE]]
@@ -402,7 +406,8 @@ def for_range_loop():
         # CHECK: } {suppressWarnings = true}
         # CHECK-NEXT:  %item = lit.var.decl
         # CHECK: [[TMP:%.*]] = lit.ref.load %item
-        # CHECK-NEXT: [[TMPREF:%.*]] = lit.ref.load [[TMP]]
+        # CHECK-NEXT: [[TMPR:%.*]] = kgen.rebind [[TMP]]
+        # CHECK-NEXT: [[TMPREF:%.*]] = lit.ref.load [[TMPR]]
         # CHECK-NEXT: lit.call{{.*}}use{{.*}}([[TMPREF]])
         # CHECK-NEXT: lit.loop.continue
         use(item)
@@ -441,7 +446,8 @@ def for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
 
         # The Index value from this element is captured into item, not the reference.
         # CHECK: [[ELTREF:%.*]] = lit.ref.load %item
-        # CHECK: [[ELTVAL:%.*]] = lit.ref.load [[ELTREF]]
+        # CHECK: [[ELTR:%.*]] = kgen.rebind [[ELTREF]]
+        # CHECK: [[ELTVAL:%.*]] = lit.ref.load [[ELTR]]
         # CHECK: lit.call {{.*}}use{{.*}}([[ELTVAL]])
         use(item)
 

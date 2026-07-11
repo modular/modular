@@ -21,4 +21,4 @@ def test_extension_method_suppressed():
     _ = x.extension_method()
 
 
-# CHECK-NOT: warning: use of unstable API
+# CHECK-NOT: warn_import_extension.mojo:{{.*}}warning: use of unstable API

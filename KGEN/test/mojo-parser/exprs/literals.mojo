@@ -23,7 +23,7 @@ struct SimpleIntRange(TrivialRegisterPassable):
 
 def var_let_decls():
     # CHECK: %xx = lit.var.decl "xx" var
-    # CHECK: %[[V1:.*]] = kgen.param.constant: !Int = <{42}>
+    # CHECK: %[[V1:.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 42})>
     # CHECK: lit.ref.store %[[V1]], %xx
     var xx = 42
 
@@ -91,9 +91,9 @@ def test_list_literal():
     # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[NONE_MARKER]], %a)
     var a = [1, 2, 3]
 
-    # CHECK-DAG: [[TMP1:%.*]] = kgen.param.constant: !Int = <{1}>
-    # CHECK-DAG: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
-    # CHECK-DAG: [[TMP3:%.*]] = kgen.param.constant: !Int = <{3}>
+    # CHECK-DAG: [[TMP1:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>
+    # CHECK-DAG: [[TMP2:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
+    # CHECK-DAG: [[TMP3:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 3}>
     # CHECK-DAG: {{%.*}} = pop.array.create [{{.*}}]
     # CHECK: [[NONE_MARKER:%.*]] = kgen.param.constant: !NoneType
     # CHECK: lit.call {{.*}}@IntList::@"__init__{{.*}}({{.*}}, [[NONE_MARKER]])
@@ -119,9 +119,10 @@ def test_list_comprehension():
     # CHECK:      lit.call {{.*}}SimpleIntRange::@"__next__{{.*}}(%$ITER, %__call_error_tmp__, [[ANON]])
     # CHECK: %i1 = lit.var.decl "i1" ref
     # CHECK: [[TMPREF:%.*]] = lit.ref.load %i1
-    # CHECK: [[TMP:%.*]] = lit.ref.load [[TMPREF]]
-    # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
-    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMP]], [[TMP2]]
+    # CHECK-NEXT: [[REB:%.*]] = kgen.rebind [[TMPREF]]
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load [[REB]]
+    # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
+    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@SIMD::@"__mul__{{.*}}([[TMP]], [[TMP2]]
     # CHECK:      lit.call {{.*}}@List::@"append
     # CHECK-NEXT: lit.loop.continue
     # CHECK: }
@@ -136,9 +137,11 @@ def test_list_comprehension():
     # CHECK:  [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK: [[TMP2REF:%.*]] = lit.ref.load %i2
     # CHECK-NEXT: [[TMP3REF:%.*]] = lit.ref.load %i3
-    # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load [[TMP2REF]]
-    # CHECK-NEXT: [[TMP3:%.*]] = lit.ref.load [[TMP3REF]]
-    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMP2]], [[TMP3]]
+    # CHECK-NEXT: [[REB2:%.*]] = kgen.rebind [[TMP2REF]]
+    # CHECK-NEXT: [[REB3:%.*]] = kgen.rebind [[TMP3REF]]
+    # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load [[REB2]]
+    # CHECK-NEXT: [[TMP3:%.*]] = lit.ref.load [[REB3]]
+    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@SIMD::@"__mul__{{.*}}([[TMP2]], [[TMP3]]
     # CHECK:      lit.call {{.*}}@List::@"append
     var b_collection = [
         i2 * i3 for i2 in SimpleIntRange() for i3 in SimpleIntRange()
@@ -151,8 +154,9 @@ def test_list_comprehension():
     # CHECK:     lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK: hlcf.elif {
     # CHECK-NEXT:    [[TMP:%.*]] = lit.ref.load %i4
-    # CHECK-NEXT:    [[TMPREF:%.*]] = lit.ref.load [[TMP]]
-    # CHECK-NEXT:    @Int::@"__bool__
+    # CHECK-NEXT:    [[REB:%.*]] = kgen.rebind [[TMP]]
+    # CHECK-NEXT:    [[TMPREF:%.*]] = lit.ref.load [[REB]]
+    # CHECK-NEXT:    @SIMD::@"__bool__
     # CHECK-NEXT:    @Bool::@"__mlir_bool__
     # CHECK-NEXT:    hlcf.elif.yield
     # CHECK-NEXT: } then {
@@ -264,9 +268,10 @@ def test_set_comprehension():
     # CHECK:   lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK: %i1 = lit.var.decl "i1"
     # CHECK: [[TMP:%.*]] = lit.ref.load %i1
-    # CHECK: [[TMPREF:%.*]] = lit.ref.load [[TMP]]
-    # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
-    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMPREF]], [[TMP2]]
+    # CHECK-NEXT: [[REB:%.*]] = kgen.rebind [[TMP]]
+    # CHECK-NEXT: [[TMPREF:%.*]] = lit.ref.load [[REB]]
+    # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
+    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@SIMD::@"__mul__{{.*}}([[TMPREF]], [[TMP2]]
     # CHECK:      lit.call {{.*}}@Set::@"add
     # CHECK-NEXT: lit.loop.continue
     # CHECK: }
@@ -292,11 +297,11 @@ def test_initializer_list():
     # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], %a)
     var a: InitType[Int] = {1}
     # CHECK: [[TMP:%.*]] = lit.ref.immut
-    # CHECK: [[TWO:%.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK: [[TWO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
     # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], [[TWO]], %b)
     var b: InitType[Int] = {1, 2}
     # CHECK: [[TMP:%.*]] = lit.ref.immut
-    # CHECK: [[INT:%.*]] = kgen.param.constant: !Int = <{42}>
+    # CHECK: [[INT:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 42}>
     # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], [[INT]], %c)
     var c: InitType[String] = {"foo", 42}
 

@@ -59,9 +59,9 @@ def raises_fn() raises:
 # CHECK-LABEL: lit.fn @"main()"
 def main():
     # parameter_count folds against a concrete `lit.fn` at parse time.
-    # CHECK: lit.alias.decl *"countNoParams`{{[0-9]*}}": !Int = <{0}>
+    # CHECK: lit.alias.decl *"countNoParams`{{[0-9]*}}": !alias_Int1 = <{{.*}}rebind(:!Int {:scalar<index> 0}))>
     comptime countNoParams = parameter_count_of[no_params]
-    # CHECK: lit.alias.decl *"countTwoParams`{{[0-9]*}}": !Int = <{2}>
+    # CHECK: lit.alias.decl *"countTwoParams`{{[0-9]*}}": !alias_Int1 = <{{.*}}rebind(:!Int {:scalar<index> 2}))>
     comptime countTwoParams = parameter_count_of[two_params[Int, 4]]
 
     # parameter_names folds to a concrete `param_list<string>` at parse time.

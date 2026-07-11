@@ -34,8 +34,8 @@ def f0[*elt_type: Copyable](t: SomeVA[*elt_type]):
 
 
 # CHECK-LABEL: lit.fn @"f1
-# CHECK-SAME: "elt_type.values`1": param_list<!mt_Int>
-# CHECK-SAME:(%t: !lit.ref<!lit.struct<#SomeVA <:param_list<!AnyType> upcast(:param_list<!mt_Int> *"elt_type.values`1")
+# CHECK-SAME: "elt_type.values`1": param_list<meta<!Int>>
+# CHECK-SAME:(%t: !lit.ref<!lit.struct<#SomeVA <:param_list<!AnyType> upcast(:param_list<meta<!Int>> *"elt_type.values`1")
 def f1[*elt_type: type_of(Int)](t: SomeVA[*elt_type]):
     pass
 
@@ -45,5 +45,5 @@ def foo():
     # CHECK: lit.call {{.*}}@"f0{{.*}}:param_list<!AnyType_Copyable_Movable> [!SomeCopyable, !SomeCopyable]>
     f0(SomeVA[SomeCopyable, SomeCopyable]())
 
-    # CHECK: lit.call {{.*}}@"f1{{.*}}:param_list<!mt_Int> [!Int, !Int]>
+    # CHECK: lit.call {{.*}}@"f1{{.*}}:param_list<meta<!Int>> [!Int, !Int]>
     f1(SomeVA[Int, Int]())

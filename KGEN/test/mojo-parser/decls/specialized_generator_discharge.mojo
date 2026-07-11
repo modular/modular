@@ -85,7 +85,7 @@ def use_caller_evidence_discharge[T: AnyType]() where conforms_to(T, Intable):
 # instantiation collapses the alias to its body value.
 def use_multivar_full_dischargeable():
     # CHECK-LABEL: lit.fn @"use_multivar_full_dischargeable
-    # CHECK: lit.alias.decl *"sum8{{.*}}": !Int = <{8}>
+    # CHECK: lit.alias.decl *"sum8{{.*}}": !Int = <{:scalar<index> 8}>
     comptime sum8 = ordered_pair[3, 5]
 
 
@@ -114,9 +114,9 @@ def use_alias_partial_binding():
 def use_multivar_partial_x_bound():
     # CHECK-LABEL: lit.fn @"use_multivar_partial_x_bound()"
     # CHECK: lit.alias.decl *"curried_x3{{.*}}": !lit.generator<<"y": !Int,
-    # CHECK-SAME: <sugar_preserved({{.*}}@std::@builtin::@stubs::@Int::@"__lt__(::Int,::Int)", {3}, *(0,0)){{.*}}ge(:scalar<index>{{.*}}*(0,0){{.*}}, 4))
+    # CHECK-SAME: <sugar_preserved({{.*}}@std::@builtin::@stubs::@SIMD::@"__lt__(::SIMD[$0, $1],::SIMD[$0, $1])"{{.*}}{:scalar<index> 3}, *(0,0)){{.*}}ge(:scalar<index>{{.*}}*(0,0){{.*}}, 4))
     comptime curried_x3 = ordered_pair[3, _]
-    # CHECK: lit.alias.decl *"fully_bound{{.*}}": !Int = <{8}>
+    # CHECK: lit.alias.decl *"fully_bound{{.*}}": !Int = <{:scalar<index> 8}>
     comptime fully_bound = curried_x3[5]
 
 
@@ -126,7 +126,7 @@ def use_multivar_partial_x_bound():
 def use_multivar_partial_y_bound():
     # CHECK-LABEL: lit.fn @"use_multivar_partial_y_bound()"
     # CHECK: lit.alias.decl *"curried_y5{{.*}}": !lit.generator<<"x": !Int,
-    # CHECK-SAME: <sugar_preserved({{.*}}@std::@builtin::@stubs::@Int::@"__lt__(::Int,::Int)", *(0,0), {5}){{.*}}lt(:scalar<index>{{.*}}*(0,0){{.*}}, 5))
+    # CHECK-SAME: <sugar_preserved({{.*}}@std::@builtin::@stubs::@SIMD::@"__lt__(::SIMD[$0, $1],::SIMD[$0, $1])"{{.*}}*(0,0), {:scalar<index> 5}){{.*}}lt(:scalar<index>{{.*}}*(0,0){{.*}}, 5))
     comptime curried_y5 = ordered_pair[_, 5]
 
 
@@ -163,7 +163,7 @@ comptime or_pair[x: Int, y: Int] where x > 0 or y > 0 = x + y
 def use_and_partial_retain_other():
     # CHECK-LABEL: lit.fn @"use_and_partial_retain_other()"
     # CHECK: lit.alias.decl *"and_partial{{.*}}": !lit.generator<<"y": !Int,
-    # CHECK-SAME: <sugar_preserved({{.*}}__gt__(::Int,::Int)", *(0,0), {0}){{.*}}ge(:scalar<index>{{.*}}*(0,0){{.*}}, 1))
+    # CHECK-SAME: <sugar_preserved({{.*}}__gt__(::SIMD[$0, $1],::SIMD[$0, $1])"{{.*}}*(0,0), {:scalar<index> 0}){{.*}}ge(:scalar<index>{{.*}}*(0,0){{.*}}, 1))
     comptime and_partial = and_pair[5, _]
 
 
@@ -172,7 +172,7 @@ def use_and_partial_retain_other():
 # folded body value (5 + 3 = 8).
 def use_and_full_dischargeable():
     # CHECK-LABEL: lit.fn @"use_and_full_dischargeable()"
-    # CHECK: lit.alias.decl *"and_full{{.*}}": !Int = <{8}>
+    # CHECK: lit.alias.decl *"and_full{{.*}}": !Int = <{:scalar<index> 8}>
     comptime and_full = and_pair[5, 3]
 
 
@@ -181,7 +181,7 @@ def use_and_full_dischargeable():
 # (-1 + 5 = 4).
 def use_or_full_dischargeable():
     # CHECK-LABEL: lit.fn @"use_or_full_dischargeable()"
-    # CHECK: lit.alias.decl *"or_full{{.*}}": !Int = <{4}>
+    # CHECK: lit.alias.decl *"or_full{{.*}}": !Int = <{:scalar<index> 4}>
     comptime or_full = or_pair[-1, 5]
 
 
@@ -191,5 +191,5 @@ def use_or_full_dischargeable():
 def use_or_partial_one_false_keep_other():
     # CHECK-LABEL: lit.fn @"use_or_partial_one_false_keep_other()"
     # CHECK: lit.alias.decl *"or_partial_neg{{.*}}": !lit.generator<<"y": !Int,
-    # CHECK-SAME: <sugar_preserved({{.*}}__gt__(::Int,::Int)", *(0,0), {0}){{.*}}ge(:scalar<index>{{.*}}*(0,0){{.*}}, 1))
+    # CHECK-SAME: <sugar_preserved({{.*}}__gt__(::SIMD[$0, $1],::SIMD[$0, $1])"{{.*}}*(0,0), {:scalar<index> 0}){{.*}}ge(:scalar<index>{{.*}}*(0,0){{.*}}, 1))
     comptime or_partial_neg = or_pair[-1, _]

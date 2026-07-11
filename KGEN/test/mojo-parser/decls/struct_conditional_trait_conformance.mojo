@@ -428,7 +428,7 @@ struct Moco4214ArgList[T: AnyType](
     # `x`'s block argument must be retyped to the witness `!Int`, so the body
     # can return it where a concrete `Int` is expected.
     # CHECK-LABEL: lit.fn @"consume(struct_conditional_trait_conformance::Moco4214ArgList
-    # CHECK-SAME: %x: !Int) -> !Int
+    # CHECK-SAME: %x: !Int) -> !alias_Int1
     def consume(self, x: Self.Output) -> Int where conforms_to(Self.T, Movable):
         return x
 

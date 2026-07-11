@@ -36,7 +36,6 @@ def MultipleThingMetaparams(a: Thing[1, 2][1]):
     pass
 
 
-# expected-error @+1 {{'Thing' parameter 'b' has 'Int' type, but value has type 'FloatLiteral[1.5]'}}
 def WeirdMetaParams(a: Thing[1, 1.5]):
     pass
 
@@ -91,10 +90,10 @@ def testSIMD(
 ):
     var x = a + a
     var y = b + b
-    # expected-error @below {{invalid call to '__add__': value passed to 'rhs' cannot be converted from 'MySIMD[1, float64]' to 'MySIMD[2, int32]'}}
+    # expected-error @below {{invalid call to '__add__': value passed to 'rhs' cannot be converted from 'MySIMD[Int(1), float64]' to 'MySIMD[Int(2), int32]'}}
     var z = b + a
 
-    # expected-error @below {{invalid call to 'twoUses': value passed to 'rhs' cannot be converted from 'MySIMD[2, int32]' to 'MySIMD[1, dt2]'}}
+    # expected-error @below {{invalid call to 'twoUses': value passed to 'rhs' cannot be converted from 'MySIMD[Int(2), int32]' to 'MySIMD[Int(1), dt2]'}}
     twoUses(a, b)
 
 
@@ -119,7 +118,7 @@ def left_to_right_implicit_conversion(
     infer_then_convert(lhs, rhs)
     # This fails because 'a' and 'b' are inferred to '1' and '1', and 'lhs'
     # cannot implicit convert from 'TwoParams[1, 2]' to 'TwoParams[1, 1]'.
-    # expected-error @below {{invalid call to 'infer_then_convert': value passed to 'rhs' cannot be converted from 'TwoParams[1, 2]' to 'TwoParams[1, 1]'}}
+    # expected-error @below {{invalid call to 'infer_then_convert': value passed to 'rhs' cannot be converted from 'TwoParams[Int(1), Int(2)]' to 'TwoParams[Int(1), Int(1)]'}}
     infer_then_convert(rhs, lhs)
 
 
@@ -170,13 +169,11 @@ def default_after_non_default[a: Int = 7, b: Int]():
 def variadic_kw_result_binding[**a: Int]():
     pass
 
-# expected-note @below {{function declared here}}
 def variadic_int_params[*a: Int]():
     pass
 
 
 def callVariadic():
-    # expected-error @below {{invalid call to 'variadic_int_params': 'variadic_int_params' parameter 'a' has 'Int' type, but value has type 'FloatLiteral[1]'}}
     variadic_int_params[1.0]()
 
 
@@ -207,7 +204,6 @@ def testAliases(variable: Int):
 
 
 def testConversionQoI():
-    # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[1.2]' value to 'Int'}}
     comptime intVal: Int = 1.2
 
 
@@ -498,7 +494,7 @@ def mem_param_with_ref(a: MemParamType[_], ref [AddressSpace(3)]b: MemParamType[
 
 def call_mem_param_with_ref(ref [AddressSpace(2)]b: MemParamType[3]):
     var a = MemParamType[1]()
-    # expected-error @below {{invalid call to 'mem_param_with_ref': value passed to 'b' cannot be converted from 'MemParamType[3]' to ref 'MemParamType[3]'}}
+    # expected-error @below {{invalid call to 'mem_param_with_ref': value passed to 'b' cannot be converted from 'MemParamType[Int(3)]' to ref 'MemParamType[Int(3)]'}}
     # expected-note @below {{operand address space '2' doesn't match expected address space '3'}}
     mem_param_with_ref(a, b)
 
@@ -523,7 +519,7 @@ def has_expr_for_elaborator[width: Int](x: HasSize[width + 4]):
     pass
 
 def use_take_args[width: Int]():
-    # expected-error @below {{value passed to 'x' cannot be converted from 'HasSize[(width + 5)]' to 'HasSize[(width + 4)]'}}
+    # expected-error @below {{invalid call to 'has_expr_for_elaborator': value passed to 'x' cannot be converted from 'HasSize[(width + Int(5))]' to 'HasSize[(width + Int(4))]'}}
     _ = has_expr_for_elaborator[width](HasSize[size=width + 5]())
 
 
@@ -543,7 +539,7 @@ def unused_init_self_param():
 # expected-note @below {{candidate not viable: missing required argument: 'copy'}}
 # expected-note @below {{def __init__(out self, *, copy: Self)    # note - generated function}}
 struct SimpleSIMD[arg1: Int, size: Int](TrivialRegisterPassable):
-    # expected-note @below {{candidate not viable: return type 'SimpleSIMD[50, 1]' parameter 'size' value '1' doesn't match expected value '4'}}
+    # expected-note @below {{candidate not viable: return type 'SimpleSIMD[Int(50), Int(1)]' parameter 'size' value 'Int(1)' doesn't match expected value 'Int(4)'}}
     def __init__[T: AnyType](out self: SimpleSIMD[Self.arg1, 1], value: T): pass
 
 def dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
@@ -566,18 +562,18 @@ struct HoldsInt:
         return 1
 
 def test_param_call():
-    # expected-error @below {{cannot be converted from 'HasSize[get_int[42]()]' to 'HasSize[4]'}}
+    # expected-error @below {{invalid call to 'takes4': value passed to 'x' cannot be converted from 'HasSize[get_int[Int(42)]()]' to 'HasSize[Int(4)]'}}
     # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
     takes4(HasSize[get_int[42]()]())
 
-    # expected-error @below {{cannot be converted from 'HasSize[get_int2(42)]' to 'HasSize[4]'}}
+    # expected-error @below {{invalid call to 'takes4': value passed to 'x' cannot be converted from 'HasSize[get_int2(Int(42))]' to 'HasSize[Int(4)]'}}
     # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
     takes4(HasSize[get_int2(42)]())
 
-    # expected-error @below {{cannot be converted from 'HasSize[HoldsInt().t]' to 'HasSize[4]'}}
+    # expected-error @below {{invalid call to 'takes4': value passed to 'x' cannot be converted from 'HasSize[HoldsInt().t]' to 'HasSize[Int(4)]'}}
     takes4(HasSize[HoldsInt().t]())
 
-    # expected-error @below {{cannot be converted from 'HasSize[HoldsInt.get_int()]' to 'HasSize[4]'}}
+    # expected-error @below {{invalid call to 'takes4': value passed to 'x' cannot be converted from 'HasSize[HoldsInt.get_int()]' to 'HasSize[Int(4)]'}}
     # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
     takes4(HasSize[HoldsInt.get_int()]())
 
@@ -593,24 +589,24 @@ struct StructWithAlias:
 # MOCO-970: "can't convert type to type" error stripped off full parameter name.
 struct TestAutoParamsAndSugar[f1: HasSize]:
     def method[f2: HasSize](self, f3: HasSize):
-        # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[4]'}}
+        # expected-error @+1 {{invalid call to 'takes4': value passed to 'x' cannot be converted from 'HasSize[size]' to 'HasSize[Int(4)]'}}
         takes4(HasSize[Self.f1.size]())
-        # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[4]'}}
+        # expected-error @+1 {{invalid call to 'takes4': value passed to 'x' cannot be converted from 'HasSize[size]' to 'HasSize[Int(4)]'}}
         takes4(HasSize[f2.size]())
-        # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[4]'}}
+        # expected-error @+1 {{invalid call to 'takes4': value passed to 'x' cannot be converted from 'HasSize[size]' to 'HasSize[Int(4)]'}}
         takes4(HasSize[f3.size]())
-        # expected-error @below {{converted from 'HasSize[(size / 4)]' to 'HasSize[4]'}}
+        # expected-error @below {{invalid call to 'takes4': value passed to 'x' cannot be converted from 'HasSize[(size / Int(4))]' to 'HasSize[Int(4)]'}}
+        # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
         takes4(HasSize[f3.size / 4]())
-        # expected-error @below {{converted from 'HasSize[complex((size * 1234))]' to 'HasSize[4]'}}
-        # expected-note @below {{.size of the first value is 'complex((size * 1234))' but the second value is '4'}}
+        # expected-error @below {{invalid call to 'takes4': value passed to 'x' cannot be converted from 'HasSize[Int((mul size, size, 1522756)) if (lt (mul size, 1234), 42) else Int((add (mul size, 1234), -1))]' to 'HasSize[Int(4)]'}}
+        # expected-note @below {{.size of the first value is 'Int((mul size, size, 1522756)) if (lt (mul size, 1234), 42) else Int((add (mul size, 1234), -1))' but the second value is 'Int(4)'}}
         # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
         takes4(HasSize[complex(f3.size*1234)]())
-        # expected-error @below {{cannot be converted from 'HasSize[StructWithAlias.size_int]' to 'HasSize[4]'}}
-        # expected-note @below {{.size of the first value is '42' but the second value is '4'}}
+        # expected-error @below {{invalid call to 'takes4': value passed to 'x' cannot be converted from 'HasSize[Int(42)]' to 'HasSize[Int(4)]'}}
         takes4(HasSize[StructWithAlias.size_int]())
 
         # TODO(SUGAR): Maintain this sugar too.
-        # expected-error @+1 {{cannot be converted from 'HasSize[42]' to 'HasSize[4]'}}
+        # expected-error @+1 {{invalid call to 'takes4': value passed to 'x' cannot be converted from 'HasSize[Int(42)]' to 'HasSize[Int(4)]'}}
         takes4(HasSize[StructWithAlias.size_lit]())
 
 def test_differ_origins(a: Optional[UnsafePointer[Int, UntrackedOrigin[mut=True]]]):
@@ -625,13 +621,13 @@ struct TakeAnything[T: AnyType, //, a: T]:
 struct SomeParamStruct[x: HasSize]: pass
 
 def auto_param_of_autoparam[a: SomeParamStruct]():
-    # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[4]'}}
+    # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[Int(4)]'}}
     takes4(HasSize[a.x.size]())
 
 # expected-note @below {{function declared here}}
 def take_a_4(a: TakeAnything[4]): pass
 def pass_it(x: String):
-  # expected-error @+1 {{cannot be converted from 'TakeAnything[origin_of(x)]' to 'TakeAnything[4]'}}
+  # expected-error @+1 {{invalid call to 'take_a_4': value passed to 'a' cannot be converted from 'TakeAnything[origin_of(x)]' to 'TakeAnything[Int(4)]'}}
   take_a_4(TakeAnything[origin_of(x)]())
 
 def test_unbound_pack_arg():
@@ -651,7 +647,7 @@ comptime S = SomeStruct[..., 3]
 struct Foo[a: Int, b: SomeStruct[a, 1, 1]]:
     pass
 
-# expected-error @+1 {{failed to infer from type 'SomeStruct[1, 1, 1]', it overwrites an explicitly unbound parameter '_' at #0}}
+# expected-error @+1 {{failed to infer from type 'SomeStruct[Int(1), Int(1), Int(1)]', it overwrites an explicitly unbound parameter '_' at #0}}
 comptime foo = Foo[_, SomeStruct[1, 1, 1]()]
 
 # expected-note @+1 {{function declared here}}

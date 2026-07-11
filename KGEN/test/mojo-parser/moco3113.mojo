@@ -20,5 +20,5 @@ def take_x_and_plus_one[x: Int](s: SomeStruct[x, x + 1]):
 
 def test_some_struct(s: SomeStruct[1, 1]):
     # This should compile to a call
-    # CHECK: lit.call @moco3113::@"take_x_and_plus_one{{.*}}#SomeStruct <:!Int {3}, :!Int {4}>>
+    # CHECK: lit.call @moco3113::@"take_x_and_plus_one{{.*}}#SomeStruct <:!Int {:scalar<index> 3}, :!Int {:scalar<index> 4}>>
     take_x_and_plus_one(s)
