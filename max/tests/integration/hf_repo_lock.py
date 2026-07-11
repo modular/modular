@@ -101,6 +101,34 @@ def revision_for_hf_repo(hf_repo_id: str) -> str | None:
     return None
 
 
+def try_revision_for_hf_repo(hf_repo_id: str | None) -> str | None:
+    """Best-effort locked revision for a Hugging Face repository, or None.
+
+    Unlike :func:`revision_for_hf_repo`, this accepts None and returns None for
+    the expected non-fatal cases — an empty id, a local path, an unlocked repo,
+    or a malformed id — so a caller assembling a command line can fall back to
+    the model's default revision. Genuinely unexpected errors still propagate.
+
+    Args:
+        hf_repo_id: A Hugging Face repository ID (e.g. "org/model"), or None.
+
+    Returns:
+        The locked revision hash, or None if it cannot be resolved.
+    """
+    if not hf_repo_id:
+        return None
+    try:
+        return revision_for_hf_repo(hf_repo_id)
+    except ValueError as exc:
+        # A malformed repo id (not `org/model`) is expected for some benchmark
+        # model paths; fall back. Any other error is a real bug and must
+        # surface rather than silently serving the default (wrong) revision.
+        logger.warning(
+            "Could not resolve a locked revision for %s: %s", hf_repo_id, exc
+        )
+        return None
+
+
 def apply_to_config(
     config: pipelines.PipelineArgs | pipelines.PipelineConfig,
 ) -> None:
