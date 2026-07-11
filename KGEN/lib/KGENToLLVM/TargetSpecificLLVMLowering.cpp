@@ -15,7 +15,7 @@
 // on triples that no target lowering claims (or that contribute no late
 // passes).
 
-#include "KGENToLLVM/Target/TargetLowering.h"
+#include "Target/TargetLowering.h"
 
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/MDialect/MAttrs.h"

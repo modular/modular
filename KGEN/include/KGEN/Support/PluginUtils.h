@@ -146,6 +146,16 @@ public:
                               onlyLinkExternFunctionsInBitcodeLibs,
                               M::ErrorOr<bool>, CompilationOptions)
 
+  /// Plugin API for the target's output-file extensions, used to build the
+  /// plugin's `TargetTraits`. Each returns a string (e.g. ".s") that stays
+  /// valid for the life of the loaded plugin.
+  REGISTER_GET_KGEN_PLUGIN_FN(GetAsmExtension, getAsmExtension,
+                              M::ErrorOr<llvm::StringRef>)
+  REGISTER_GET_KGEN_PLUGIN_FN(GetLLVMExtension, getLLVMExtension,
+                              M::ErrorOr<llvm::StringRef>)
+  REGISTER_GET_KGEN_PLUGIN_FN(GetObjectExtension, getObjectExtension,
+                              M::ErrorOr<llvm::StringRef>)
+
   const std::string &getSoPath() const { return soPath; }
 
 private:

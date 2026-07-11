@@ -913,6 +913,7 @@ modular_cc_library(
         ":KGENInterfacesIncGen",
         ":ObjectCompiler.headers",
         ":Pipeline",
+        ":TargetTraits",
         ":ToolCommon.headers",
         ":TransformUtils",
         "//AsyncRT:CompilerSupport",
@@ -1029,6 +1030,50 @@ modular_cc_library(
     ],
 )
 
+# Per-target lowering interface and registry. Shared by KGENToLLVM, which
+# registers the target lowerings, and Transforms, which queries them.
+modular_cc_library(
+    name = "TargetLowering",
+    srcs = ["lib/Target/TargetLowering.cpp"],
+    hdrs = ["lib/Target/TargetLowering.h"],
+    strip_include_prefix = "lib",
+    visibility = [
+        "//KGEN:consumers",
+        "//KGEN:plugin_consumers",
+    ],
+    deps = [
+        ":KGENDialect",
+        ":TargetTraits",
+        "//Support:DebugInfoDialect",
+        "//Support:MDialect",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+# Dependency-light per-target metadata (`TargetTraits`), dispatched by triple.
+# Lives below the codegen layer so any KGEN component can query a target's
+# metadata without linking `TargetBackend`. Each target self-registers from its
+# own source file; dropping a target's file drops it from the build.
+modular_cc_library(
+    name = "TargetTraits",
+    srcs = ["lib/Target/TargetTraits.cpp"] + glob(["lib/Target/*/*.cpp"]),
+    hdrs = ["lib/Target/TargetTraits.h"] + glob(["lib/Target/*/*.h"]),
+    strip_include_prefix = "lib",
+    visibility = [
+        "//KGEN:consumers",
+        "//KGEN:plugin_consumers",
+    ],
+    deps = [
+        ":Support",
+        "@llvm-project//llvm:Support",
+    ],
+    # TargetTraits implementations self-register via a static initializer and
+    # aren't referenced directly, so the linker would drop them. Force them to
+    # be linked.
+    alwayslink = True,
+)
+
 modular_cc_library(
     name = "KGENToLLVM",
     srcs = glob([
@@ -1047,6 +1092,7 @@ modular_cc_library(
     deps = [
         ":HLCFDialectAnalysis",
         ":KGENDialect",
+        ":TargetLowering",
         ":ToolCommon",
         "//Support:DebugInfoTransforms",
         "@llvm-project//llvm:Support",  # For llvm/ADT/Triple.h
@@ -1069,6 +1115,7 @@ modular_cc_library(
         ":KGENDialect",
         ":LITDialect",
         ":POPDialect",
+        ":TargetLowering",
         ":ToolCommon.headers",
         ":TransformUtils",
         "//AsyncRT:CompilerSupport",
@@ -1179,6 +1226,7 @@ modular_cc_library(
         ":KGENToLLVM",
         ":ObjectCompiler.BitcodeWriter",
         ":Pipeline",
+        ":TargetTraits",
         "//AsyncRT:CompilerSupport",
         "//Support:CacheLog",
         "//Support:Context",

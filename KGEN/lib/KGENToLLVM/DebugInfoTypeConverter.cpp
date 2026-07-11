@@ -10,8 +10,8 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "KGENToLLVM/Target/TargetLowering.h"
 #include "LLVMLoweringUtils.h"
+#include "Target/TargetLowering.h"
 #include "mlir/Support/DebugStringHelper.h"
 
 using namespace M;

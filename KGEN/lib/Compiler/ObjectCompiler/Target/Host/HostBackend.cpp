@@ -8,6 +8,8 @@
 
 #include "KGEN/Compiler/SaveAsmOutput.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "Target/Host/HostTraits.h"
+#include "Target/TargetTraits.h"
 
 #include "mlir/IR/Location.h"
 #include "llvm/IR/Module.h"
@@ -16,9 +18,7 @@
 
 namespace M::KGEN {
 
-bool HostBackend::matches(const llvm::Triple &triple) const {
-  return triple.isX86() || triple.isAArch64();
-}
+const TargetTraits *HostBackend::traits() const { return &HostTraits::get(); }
 
 ErrorOr<BufferRef> HostBackend::emitAssembly(llvm::Module &module,
                                              EmitContext &ctx) const {
@@ -29,12 +29,18 @@ ErrorOr<BufferRef> HostBackend::emitAssembly(llvm::Module &module,
                  ", llc failed to codegen LLVM IR to object code");
   }
 
-  std::string postfix =
-      offloadAsmExt(llvm::Triple(ctx.options.targetTriple)).str();
-  StringRef toEmit(buf->getBufferStart(), buf->getBufferSize());
-  if (mlir::failed(writeBytesToTempWithHash(ctx.options.saveTempsPrefix,
-                                            postfix, toEmit)))
-    return Error("failed to save asm to saveTempsPrefix");
+  if (!ctx.options.saveTempsPrefix.empty()) {
+    const TargetTraits *traits = TargetTraitsRegistry::get().lookup(
+        llvm::Triple(ctx.options.targetTriple));
+    if (!traits)
+      return Error(Twine("no target traits registered for target '") +
+                   ctx.options.targetTriple + "'");
+    StringRef toEmit(buf->getBufferStart(), buf->getBufferSize());
+    if (mlir::failed(writeBytesToTempWithHash(ctx.options.saveTempsPrefix,
+                                              traits->getAsmExtension().str(),
+                                              toEmit)))
+      return Error("failed to save asm to saveTempsPrefix");
+  }
   return buf;
 }
 

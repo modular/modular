@@ -22,13 +22,13 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "LLVMPassesPipeline.h"
-
 #include "KGENToLLVMPipeline.h"
 #include "LLVMAccessorHelper.h"
+#include "LLVMPassesPipeline.h"
 #include "MCLinker.h"
 #include "Support/Context.h"
 #include "Support/FileSystemExtras.h"
+#include "Target/TargetTraits.h"
 
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
@@ -1095,8 +1095,12 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
 
             WriteableBufferRef linkedObj = *mcLinkResult;
             if (emitAssembly) {
-              std::string postfix =
-                  offloadAsmExt(llvm::Triple(options.targetTriple)).str();
+              const TargetTraits *traits = TargetTraitsRegistry::get().lookup(
+                  llvm::Triple(options.targetTriple));
+              if (!traits)
+                return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+                    "no target traits registered for target", moduleLoc));
+              std::string postfix = traits->getAsmExtension().str();
               StringRef toEmit(linkedObj->getBufferStart(),
                                linkedObj->getBufferSize());
               if (failed(writeBytesToTempWithHash(options.saveTempsPrefix,

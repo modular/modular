@@ -7,15 +7,12 @@
 #ifndef KGEN_COMPILER_SAVEASMOUTPUT_H
 #define KGEN_COMPILER_SAVEASMOUTPUT_H
 
-/// Helpers for writing GPU and host output files.
+/// Helpers for writing save-temps and kernel-offload output files.
 ///
-/// Includes two families:
-///   1. Save-temps helpers (writeBytesToTempWithHash, writeTempModule) —
-///      originally in ObjectCompiler.cpp, shared here so both ObjectCompiler
-///      and KGENCompiler can use them.
-///   2. Helpers for writing files from the kernel offload compilation
-///      (offloadAsmExt, reserveOffloadOutputBaseName, offloadOutputPath,
-///      kOffloadWritesAttrName, flushOffloadWrites).
+/// Two families:
+///   1. Save-temps helpers: writeBytesToTempWithHash, writeTempModule.
+///   2. Kernel-offload output naming: reserveOffloadOutputBaseName,
+///      offloadOutputPath, kOffloadWritesAttrName, flushOffloadWrites.
 
 #include "Support/ErrorOr.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -23,7 +20,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/TargetParser/Triple.h"
 #include <string>
 
 namespace M::KGEN {
@@ -60,16 +56,6 @@ mlir::LogicalResult writeTempModule(const std::string &saveTempsPrefix,
 //===----------------------------------------------------------------------===//
 // Offload output naming helpers
 //===----------------------------------------------------------------------===//
-
-/// Return the file extension for offload ASM output for \p triple.
-/// Metal (air64) uses LLVM IR text as its human-readable "assembly".
-llvm::StringRef offloadAsmExt(const llvm::Triple &triple);
-
-/// Return the file extension for offload LLVM IR output for \p triple.
-/// Each target gets a distinct extension (.nvptx.ll, .amdgcn.ll, .metal.ll)
-/// so that kernels from different targets do not collide in the output
-/// directory when multiple accelerators are compiled in one pass.
-llvm::StringRef offloadLLVMExt(const llvm::Triple &triple);
 
 /// Reserve a disambiguated base name for an offload output file.
 /// \p ext is the file extension (e.g. ".ptx", ".amdgcn", ".ll").
