@@ -1455,15 +1455,13 @@ void ExclusivityChecker::checkOriginAccess(
   TypedAttr origin = OriginMutCastAttr::strip(rawOrigin);
 
   // Accesses to the global origin never conflict.
-  if (sugarIsa<AnyOriginAttr>(origin) ||
-      // FIXME(MOCO-3238): We're getting incorrectly substituted
-      // ParamIndexRefAttr in the result of function call emission. This is a
-      // serious bug, but we ignore them so they don't create incorrect
-      // exclusivity error messages.
-      sugarIsa<ParamIndexRefAttr>(origin)) {
+  if (sugarIsa<AnyOriginAttr>(origin)) {
     hasAnyOriginAccess = true;
     return;
   }
+
+  assert(!sugarIsa<ParamIndexRefAttr>(origin) &&
+         "unexpected ParamIndexRefAttr reached checkOriginAccess");
 
   // Determine whether we've seen this leaf origin before.
   auto [it, isNew] =
