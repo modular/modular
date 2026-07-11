@@ -192,14 +192,7 @@ _KERNEL_PACKAGES = [
 #    (KGEN/lib/MojoParser/ParamInf.cpp) -- a real KGEN assertion failure
 #    (DeclResolver.cpp:1491, "Unknown decl symbol!"), confirmed via a direct
 #    `kgen -lsp` run; not a bad edit (that default-param line is unchanged
-#    since March 2024). The other files below all transitively import
-#    `layout` and show the same generic "unable to locate module 'layout'"
-#    resolution failure -- almost certainly the same underlying crash,
-#    reached via the precompiled `layout.mojoc` path instead of source and
-#    reported instead of aborting. `nn/rand_uniform.mojo` additionally shows
-#    a false-positive "use of uninitialized value 'values'" (values IS
-#    initialized the line above) -- likely a standalone-check limitation,
-#    same category as (2) above. See MOCO-2845 for the tracking issue.
+#    since March 2024). See MOCO-2845 for the tracking issue.
 _KERNELS_NO_RUN_LIST = [
     # 1. //Kernels/lib/... visibility gap (see comment above).
     "graph_compiler/builtin_kernels/distributed.mojo",
@@ -231,16 +224,7 @@ _KERNELS_NO_RUN_LIST = [
     # hidden behind the fixed crash.
     "nn/conv/conv.mojo",
     # 3. LayoutTensor default-parameter resolution crash (see comment above).
-    "kv_cache/paged_sparse_kv_index_remap.mojo",
     "layout/__init__.mojo",
-    "nn/arange.mojo",
-    "nn/rand_normal.mojo",
-    "nn/rand_uniform.mojo",
-    "nn/shard_and_stack.mojo",
-    "state_space/rms_norm_fused_residual_ops.mojo",
-    "state_space/selective_scan_ops.mojo",
-    "state_space/varlen_causal_conv1d_ops.mojo",
-    "state_space/varlen_selective_scan_ops.mojo",
 ]
 
 # ALL_MOJOPKGS minus the internal //Kernels/lib/... packages (msa,
@@ -289,6 +273,14 @@ modular_py_test(
     srcs = ["lsp_smoke_kernels_main.py"],
     args = [
         "--scan-root-file",
+        "$(rootpath //max/kernels/src:index.md)",
+        # `data` below stages each package's raw `:srcs` at the same runfiles
+        # path as its mojo_deps-precompiled `.mojoc`, which makes
+        # `resolveModulePath` treat that path as "inside a package" and skip
+        # it -- masking the `.mojoc` from every *other* package's imports.
+        # Passing the shared parent directory here too gives it a non-package
+        # root to find each package under instead.
+        "--extra-import-root",
         "$(rootpath //max/kernels/src:index.md)",
     ] + [
         arg
