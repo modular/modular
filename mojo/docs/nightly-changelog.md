@@ -299,6 +299,11 @@ This version is still a work in progress.
   `ImplicitlyDeletable`. The dictionary's capacity is retained, so it stays
   reusable.
 
+- `Coord` now conforms to `DevicePassable`, so a `Coord` embedded in a
+  `DevicePassable` type (such as a `TileTensor`'s `Layout`) is encoded to the
+  device through `Coord._to_device_type` instead of a raw field bit-copy, the
+  same way `IndexList` already was.
+
 - `reversed()` now works on typed ranges such as
   `reversed(range(Int16(1), 10, 2))`. The `ReversibleRange` trait gained an
   associated `ReversedType` iterator instead of hard-coding its `__reversed__()`
@@ -313,7 +318,7 @@ This version is still a work in progress.
   from std.python.numpy import from_numpy_array, to_numpy_array
 
   var values: List[Float64] = [1.0, 2.0, 3.0]
-  var array = to_numpy_array(values)                 # NumPy array (copies) 
+  var array = to_numpy_array(values)                 # NumPy array (copies)
   var span = from_numpy_array[DType.float64](array)  # borrow array as a Span
   ```
 

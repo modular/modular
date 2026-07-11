@@ -32,3 +32,18 @@ mojo_test(
         "@mojo//:std",
     ],
 )
+
+# Real by-value GPU launch test for `Coord`'s `DevicePassable` conformance.
+# Vendor-agnostic: `//:has_gpu` excludes CPU-only build configs (where
+# `DeviceContext` fails the compile-time GPU-arch constraint) without pinning
+# to a single toolchain.
+mojo_test(
+    name = "test_coord_device_launch.mojo.test",
+    srcs = ["test_coord_device_launch.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
