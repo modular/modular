@@ -697,6 +697,13 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     OverloadSet ov(name, provableDecls, std::move(bindings),
                    CallSyntax::kMethodCallSynthetic);
     auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
+      // `attachNote(decl)` also appends the requirement's synthesized
+      // signature, redundant with the "no candidates have type" note below;
+      // `attachNote(Location)` does not. The location lives on the decl's
+      // operation, so use it when present; otherwise fall back to the decl
+      // overload to locate the note.
+      if (Operation *op = traitFnDecl->getIfOperation())
+        return diag->attachNote(op->getLoc());
       return diag->attachNote(*traitFnDecl);
     };
     auto [result, selectedStructMethod] =
