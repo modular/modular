@@ -95,30 +95,22 @@ ASTType LIT::getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
   return bindings.specializeStructType(structOp);
 }
 
-TypedAttr LIT::computeArgumentsOrigin(AsyncCallOp call,
-                                      CachedOriginFinder &originFinder) {
-  SmallVector<std::pair<Value, OperandEffect>> operands;
-  SmallVector<ResultEffect> results;
-  SmallVector<std::pair<TypedAttr, Value>> originEffects;
-  LIT::getOperationEffects(*call, operands, results, originEffects,
-                           originFinder);
-  SmallVector<TypedAttr> origins;
-  for (auto [origin, value] : originEffects)
-    origins.push_back(origin);
-  for (Value value : call.getOperands())
-    if (auto ref = dyn_cast<RefType>(value.getType()))
-      origins.push_back(ref.getOrigin());
-  return OriginSetAttr::get(call.getContext(), origins);
-}
-
 CValue LIT::materializeAsyncCallAsCoroutine(IREmitter &emitter,
                                             AsyncCallOp call,
                                             const ExprNode *expr,
                                             FnTypeGeneratorType sig,
                                             ExprDest &dest) {
-  ASTType coroutineType = getBoundCoroutineType(
-      emitter.getDeclScope(), expr, sig,
-      computeArgumentsOrigin(call, emitter.shared.cachedOriginFinder));
+  // Collect any origins uttered in any operands or the capture set.
+  SmallVector<Type> operandTypes;
+  for (Value value : call.getOperands())
+    operandTypes.push_back(value.getType());
+  SmallVector<TypedAttr> origins =
+      emitter.shared.cachedOriginFinder.findOriginsIn(
+          operandTypes, call.getCalleeType().getBody().getCaptureOrigins());
+  auto argumentsOrigin = OriginSetAttr::get(call.getContext(), origins);
+
+  ASTType coroutineType =
+      getBoundCoroutineType(emitter.getDeclScope(), expr, sig, argumentsOrigin);
   if (!coroutineType) {
     dest.resetForError(emitter);
     return {};
