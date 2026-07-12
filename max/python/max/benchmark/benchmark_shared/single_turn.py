@@ -53,6 +53,7 @@ from max.benchmark.benchmark_shared.request import (
     progressbar_request_driver,
 )
 from max.benchmark.benchmark_shared.utils import (
+    deadline_passed,
     deadline_remaining_s,
     exceeds_deadline,
 )
@@ -309,6 +310,15 @@ async def run_single_turn_benchmark(
         request_idx += 1
 
     outputs = await asyncio.gather(*tasks)
+
+    if deadline_passed(benchmark_should_end_time):
+        cancelled = sum(1 for o in outputs if o.cancelled)
+        logger.info(
+            "Benchmark stopped by the duration limit"
+            " (--max-benchmark-duration-s):"
+            f" dispatched {len(outputs)} of {len(input_requests)} requests,"
+            f" {cancelled} cancelled in flight."
+        )
 
     return outputs
 

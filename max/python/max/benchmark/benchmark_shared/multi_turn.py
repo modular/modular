@@ -441,13 +441,24 @@ async def run_multiturn_benchmark(
         await asyncio.gather(*tasks)
     )
 
-    if benchmark_should_end_time is not None and not deadline_passed(
-        benchmark_should_end_time
-    ):
-        logger.warning(
-            "All chat sessions completed before the time limit. "
-            "Consider increasing --num-chat-sessions for more stable load."
-        )
+    if benchmark_should_end_time is not None:
+        if deadline_passed(benchmark_should_end_time):
+            total_turns = sum(len(v) for v in outputs_by_session.values())
+            cancelled = sum(
+                1 for v in outputs_by_session.values() for o in v if o.cancelled
+            )
+            logger.info(
+                "Benchmark stopped by the duration limit"
+                " (--max-benchmark-duration-s):"
+                f" {total_turns} turns dispatched across"
+                f" {len(outputs_by_session)} sessions,"
+                f" {cancelled} cancelled in flight."
+            )
+        else:
+            logger.warning(
+                "All chat sessions completed before the time limit. "
+                "Consider increasing --num-chat-sessions for more stable load."
+            )
 
     return outputs_by_session
 
@@ -660,6 +671,20 @@ async def run_kv_cache_stress_benchmark(
     for worker_dict in worker_outputs:
         for sid, outs in worker_dict.items():
             outputs_by_session.setdefault(sid, []).extend(outs)
+
+    if deadline_passed(benchmark_should_end_time):
+        total_turns = sum(len(v) for v in outputs_by_session.values())
+        cancelled = sum(
+            1 for v in outputs_by_session.values() for o in v if o.cancelled
+        )
+        logger.info(
+            "Benchmark stopped by the duration limit"
+            " (--max-benchmark-duration-s):"
+            f" {total_turns} turns dispatched across"
+            f" {len(outputs_by_session)} sessions,"
+            f" {cancelled} cancelled in flight."
+        )
+
     return outputs_by_session
 
 

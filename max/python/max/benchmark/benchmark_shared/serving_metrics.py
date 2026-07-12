@@ -679,7 +679,8 @@ def build_text_generation_result(
             else ""
         )
         logger.info(
-            f"Steady-state detected: {steady.steady_state_count} valid"
+            "Post-run steady-state analysis (informational, reported as"
+            f" ss_* metrics): window of {steady.steady_state_count} valid"
             f" requests (dispatch range [{steady.start_index},"
             f" {steady.end_index}){span_note};"
             f" {steady.total_requests} total valid in the run)"
