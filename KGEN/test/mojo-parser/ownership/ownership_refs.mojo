@@ -546,17 +546,16 @@ struct MyListInterior[T: Movable]:
         pass
 
     def __getitem__(
-        ref self, idx: Int
-    ) -> ref[self.data.unsafe_origin_owned_rebase[origin_of(self), "element"](idx)[]] Self.T:
-        return self.data.unsafe_origin_owned_rebase[origin_of(self), "element"](idx)[]
-
+        ref self
+    ) -> ref[self.data.get_ref_with_unsafe_interior_origin["element"](self)] Self.T:
+      return (self.data).get_ref_with_unsafe_interior_origin["element"](self)
 
 # CHECK-LABEL: lit.fn @"test_interior0
 def test_interior0():
     # CHECK: lit.call {{.*}}MyListInterior::@"__init__
     var list = MyListInterior[Int]()
     # CHECK: lit.call {{.*}}MyListInterior::@"__getitem__
-    ref elt = list[4]
+    ref elt = list[]
     # CHECK: lit.call {{.*}}SIMD::@"__iadd__
     elt += 4
     # CHECK: lit.call {{.*}}MyListInterior::@"__del__
