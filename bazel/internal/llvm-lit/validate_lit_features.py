@@ -33,6 +33,7 @@ _KNOWN_FEATURES = {
     "ubsan",
     "x86_64-linux",
     "ASSERTIONS",
+    "air-objdump",
 }
 
 _GPU_FEATURES = {
