@@ -32,7 +32,7 @@ from max.pipelines.context import (
     TextContext,
     TextGenerationOutput,
 )
-from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationRequest,
@@ -79,7 +79,7 @@ class LLM:
         offline inference in a future release.
 
     Use this class for offline batch inference against a model loaded from a
-    :class:`PipelineConfig`. Call :meth:`generate` with one or more prompts
+    :class:`PipelineArgs`. Call :meth:`generate` with one or more prompts
     to receive completions.
 
     The following example loads ``LiquidAI/LFM2.5-350M`` and generates
@@ -88,10 +88,10 @@ class LLM:
     .. code-block:: python
 
         from max._entrypoints.llm import LLM
-        from max.pipelines import PipelineConfig
+        from max.pipelines.lib import PipelineArgs
 
-        pipeline_config = PipelineConfig.from_flat_kwargs(model_path="LiquidAI/LFM2.5-350M")
-        llm = LLM(pipeline_config)
+        pipeline_args = PipelineArgs.from_flat_kwargs(model_path="LiquidAI/LFM2.5-350M")
+        llm = LLM(pipeline_args)
 
         prompts = [
             "In the beginning, there was",
@@ -102,7 +102,7 @@ class LLM:
             print(prompt + response)
 
     Args:
-        pipeline_config: The :class:`PipelineConfig` describing the model and
+        pipeline_args: The :class:`PipelineArgs` describing the model and
             runtime to load.
     """
 
@@ -111,7 +111,7 @@ class LLM:
     _request_queue: queue.Queue[_Request]
     _pending_requests: dict[RequestID, queue.Queue[_Response]]
 
-    def __init__(self, pipeline_config: PipelineConfig) -> None:
+    def __init__(self, pipeline_args: PipelineArgs) -> None:
         settings = Settings(offline_inference=True)
         self._pc = ThreadControl()
         self._request_queue = queue.Queue()
@@ -120,7 +120,7 @@ class LLM:
             target=_run_async_worker,
             args=(
                 self._pc,
-                pipeline_config,
+                pipeline_args,
                 self._request_queue,
                 self._pending_requests,
                 settings,
@@ -186,7 +186,7 @@ class LLM:
 
 def _run_async_worker(
     pc: ThreadControl,
-    pipeline_config: PipelineConfig,
+    pipeline_args: PipelineArgs,
     request_queue: queue.Queue[_Request],
     pending_requests: Mapping[RequestID, queue.Queue[_Response]],
     settings: Settings,
@@ -194,7 +194,7 @@ def _run_async_worker(
     asyncio.run(
         _async_worker(
             pc,
-            pipeline_config,
+            pipeline_args,
             request_queue,
             pending_requests,
             settings,
@@ -226,11 +226,12 @@ async def _async_map(
 
 async def _async_worker(
     pc: ThreadControl,
-    pipeline_config: PipelineConfig,
+    pipeline_args: PipelineArgs,
     request_queue: queue.Queue[_Request],
     pending_requests: Mapping[RequestID, queue.Queue[_Response]],
     settings: Settings,
 ) -> None:
+    pipeline_config = PipelineConfig.from_args(pipeline_args)
     tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config
     )

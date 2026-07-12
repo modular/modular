@@ -260,7 +260,7 @@ def test_single_zst_lifecycle() raises:
 
     ptr.unsafe_write(ZST(fill=0))
     assert_equal(0, len(ptr[]))
-    ptr.destroy_pointee()
+    ptr.unsafe_deinit_pointee()
     dealloc(
         ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
     )
@@ -298,7 +298,7 @@ def test_many_zst_lifecycle() raises:
     assert_equal(0, len(ptr[]))
     assert_equal(0, len(ptr[Int.MAX]))
 
-    ptr.bitcast[InlineArray[ZST, Int.MAX]]().destroy_pointee()
+    ptr.bitcast[InlineArray[ZST, Int.MAX]]().unsafe_deinit_pointee()
 
     dealloc(
         ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)

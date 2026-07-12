@@ -609,10 +609,6 @@ struct _CycleIterator[InnerIteratorType: Iterator & Copyable](
         self._orig = iterator.copy()
         self._iter = iterator^
 
-    def __init__(out self, *, copy: Self):
-        self._orig = copy._orig.copy()
-        self._iter = copy._iter.copy()
-
     @always_inline
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()

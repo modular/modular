@@ -620,7 +620,7 @@ struct LinkedList[ElementType: Movable](
         while current:
             var nn = current.value()
             current = nn[].next()
-            nn.destroy_pointee()
+            nn.unsafe_deinit_pointee()
             dealloc(
                 ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
                     {count = 1}

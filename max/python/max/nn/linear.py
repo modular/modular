@@ -1099,14 +1099,18 @@ class MLP(Module, Shardable):
         else:
             raise ValueError(f"Unsupported sharding strategy: {strategy}")
 
-    def shard(self, devices: Iterable[DeviceRef]) -> list[MLP]:
+    def shard(self, devices: Iterable[DeviceRef]) -> Sequence[MLP]:
         """Creates sharded views of this MLP across multiple devices.
+
+        The return type is the covariant ``Sequence`` so subclasses (for
+        example non-gated experts) can override with their own shard type
+        while still satisfying ``Shardable``'s ``Sequence[Self]`` contract.
 
         Args:
             devices: Iterable of devices to place the shards on.
 
         Returns:
-            List of sharded MLP instances, one for each device.
+            Sharded MLP instances, one for each device.
         """
         if self.sharding_strategy is None:
             raise ValueError("Sharding strategy is not set")

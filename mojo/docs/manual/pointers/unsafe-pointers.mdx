@@ -226,11 +226,11 @@ consuming move. It invokes `__init__(take=)` on the destination value. It leaves
 the memory location uninitialized.
 
 The
-[`destroy_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#destroy_pointee)
+[`unsafe_deinit_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_deinit)
 method calls the destructor on the pointee, and leaves the memory location
 pointed to by `ptr` uninitialized.
 
-Both `take_pointee()` and `destroy_pointee()` require that the pointer is
+Both `take_pointee()` and `unsafe_deinit_pointee()` require that the pointer is
 non-null, and the memory location contains a valid, initialized value of the
 pointee's type; otherwise the function results in undefined behavior.
 
@@ -253,7 +253,7 @@ Calling [`free()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#free) on a
 pointer frees the memory allocated by the pointer. It doesn't call the
 destructors on any values stored in the memory—you need to do that explicitly
 (for example, using
-[`destroy_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#destroy_pointee)
+[`unsafe_deinit_pointee()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#unsafe_deinit)
 or one of the other functions described in
 [Destroying or removing values](#destroying-or-removing-values)).
 

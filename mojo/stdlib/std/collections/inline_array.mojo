@@ -576,7 +576,7 @@ struct InlineArray[ElementType: Movable, size: Int](
         """
         for idx in range(Self.size):
             # TODO(MOCO-4111): `destroy_func` cannot convert to
-            # `UnsafePointer.destroy_pointee_with` since `UnsafePointer` is
+            # `UnsafePointer.unsafe_deinit` since `UnsafePointer` is
             # bound on `T: AnyType` but `InlineArray` has `ElementType: Movable`.
             destroy_func(
                 __get_address_as_owned_value(

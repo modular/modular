@@ -510,6 +510,34 @@ class _SupportsModelCapture(Protocol):
     model: Model
 
 
+@runtime_checkable
+class SupportsSSMStateWarmup(Protocol):
+    """Protocol for pipeline models with SSM/conv state pools.
+
+    Models (e.g. Nemotron-H, Qwen3.5, LFM2) that allocate per-request state
+    pool slots outside the KV cache must implement
+    :meth:`release_warmup_state` so that graph-capture warmup can release
+    those slots after each ``(batch_size, cache_length)`` probe.  Without it,
+    warmup would exhaust the state pool before reaching steady serving.
+
+    The overlap pipeline's ``_warmup_model_inputs`` context manager calls
+    ``release_warmup_state`` after each probe's capture completes, with the
+    same request IDs that were passed to ``prepare_initial_token_inputs``
+    during that probe.
+    """
+
+    def release_warmup_state(self, request_ids: list[RequestID]) -> None:
+        """Release state pool slots claimed for the given warmup request IDs.
+
+        Called once per ``_warmup_model_inputs`` probe, after graph capture
+        for that probe completes.  ``request_ids`` matches the list of request
+        IDs from the warmup batch constructed inside ``_warmup_model_inputs``.
+        Implementations should release slots without zeroing the underlying
+        pool memory (zeroing happens at claim time, not release time).
+        """
+        ...
+
+
 @dataclass
 class _AsyncBatchOutput:
     output_dict: PipelineOutputsDict[TextGenerationOutput]
@@ -1271,6 +1299,9 @@ class RealizeFutureTokenProcessor:
             synchronous-fill bitmask, or ``None`` (see ``realized_draft_tokens_host``).
         """
         assert isinstance(model_inputs, _HasRaggedTokens)
+        assert not prev_batch._is_processed, (
+            "Cannot realize device inputs from an already host-processed batch"
+        )
         realized_draft_tokens_host: npt.NDArray[np.int64] | None = None
         mappings = self._compute_mappings(prev_batch, inputs)
 
@@ -1958,7 +1989,23 @@ class OverlapTextGenerationPipeline(
                     model_inputs.wait_payload = overlap_state.wait_payload
                     model_inputs.device_bitmask_scratch = scratch_view
 
-            yield model_inputs
+            # Collect the warmup request IDs before yielding so they are
+            # available for state-pool release after the probe completes.
+            warmup_request_ids: list[RequestID] = [
+                ctx.request_id for replica in replica_batches for ctx in replica
+            ]
+
+            try:
+                yield model_inputs
+            finally:
+                # Models that maintain per-request SSM / conv state pools
+                # outside the KV cache (e.g. Nemotron-H, Qwen3.5, LFM2) must
+                # release their warmup slots here; otherwise the pool is
+                # exhausted before serving begins.
+                if isinstance(self._pipeline_model, SupportsSSMStateWarmup):
+                    self._pipeline_model.release_warmup_state(
+                        warmup_request_ids
+                    )
 
     def warmup_graph_capture(self) -> None:
         """Initializes and runs overlap device graph capture warmup."""
@@ -2307,6 +2354,7 @@ class OverlapTextGenerationPipeline(
         if (
             self._prev_batch is not None
             and self._realize_future_token_processor is not None
+            and not self._prev_batch._is_processed
         ):
             realized_draft_tokens_host = (
                 self._realize_future_token_processor.realize_future_tokens(
@@ -2799,7 +2847,10 @@ class OverlapTextGenerationPipeline(
         prev_context_batch = prev_batch.inputs.flat_batch
         prev_rids = {ctx.request_id for ctx in prev_context_batch}
         all_continuing = all(
-            ctx.request_id in prev_rids and not ctx.is_initial_prompt
+            (
+                (ctx.request_id in prev_rids and not ctx.is_initial_prompt)
+                or ctx._is_padding_ctx  # Padding contexts shouldn't affect continuation
+            )
             for ctx in curr_context_batch
         )
         if not all_continuing:

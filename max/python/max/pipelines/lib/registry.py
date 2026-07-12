@@ -1060,7 +1060,10 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
-    ) -> tuple[PipelineTokenizer[Any, Any, Any], Callable[[], PipelineTypes]]:
+    ) -> tuple[
+        PipelineTokenizer[Any, Any, Any],
+        Callable[[], PipelineTypes],
+    ]:
         """Retrieves the tokenizer and a factory that creates the pipeline instance."""
         tokenizer: PipelineTokenizer[Any, Any, Any]
         pipeline_factory: Callable[[], PipelineTypes]
@@ -1421,7 +1424,7 @@ class PipelineRegistry:
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
     ) -> tuple[PipelineTokenizer[Any, Any, Any], PipelineTypes]:
-        """Retrieves the tokenizer and an instantiated pipeline for the config."""
+        """Retrieves the tokenizer and an instantiated pipeline for the args."""
         tokenizer, pipeline_factory = self.retrieve_factory(
             pipeline_config, task, override_architecture
         )

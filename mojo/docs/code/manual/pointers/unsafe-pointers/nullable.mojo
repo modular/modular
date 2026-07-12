@@ -39,7 +39,7 @@ def main():
         # ptr is not None — safe to unwrap
         var p = ptr.value()
         print(p[])
-    x_ptr.destroy_pointee()
+    x_ptr.unsafe_deinit_pointee()
     x_ptr.free()
 
     test_unsafe_dangling()

@@ -177,7 +177,7 @@ struct HeapArray(Writable):
     def __del__(deinit self):
         print("Destroying", self.size, "elements")
         for i in range(self.size):
-            (self.data + i).destroy_pointee()
+            (self.data + i).unsafe_deinit_pointee()
         self.data.free()
 
 
@@ -202,7 +202,7 @@ when a pointer is destroyed, Mojo doesn't call the destructors on those values.
 
 So in the `HeapArray` example above, calling `free()` on the pointer releases
 the memory, but doesn't call the destructors on the stored values. To invoke
-the destructors, use the `destroy_pointee()` method provided by the
+the destructors, use the `unsafe_deinit_pointee()` method provided by the
 `UnsafePointer` type.
 
 :::note
@@ -261,6 +261,8 @@ requires you to consume the value. Failing to do so results in a compiler error.
 
 ### Using `@explicit_destroy`
 
+<!-- TODO(DOCS-2253): Reflect changes to `@explicit_destroy` -->
+
 Most types use implicit destruction. When a value's lifetime ends, Mojo
 automatically calls `__del__()` to clean up. This works for most cases: memory
 is freed and simple resources are released automatically.
@@ -289,7 +291,7 @@ cleanup path, such as invoking a secondary destructor.
 
 ```mojo
 @explicit_destroy("Must call save_and_close() or discard()")
-struct FileBuffer:
+struct FileBuffer(ImplicitlyDeletable where False):
     var path: String
     var data: String
 

@@ -108,10 +108,18 @@ class NemotronHStateCache:
         self._free_slots: set[int] = set(range(max_slots))
         self._request_to_slot: dict[RequestID, int] = {}
 
-        # Reusable host-pinned staging buffer for the per-step slot_idx H2D.
-        self._pinned_slot_idx = DevicePinnedBuffer(
-            shape=(max_slots,), dtype=DType.uint32, device=device
-        )
+        # Reusable staging buffer for the per-step slot_idx H2D.
+        # Use a host-pinned buffer for GPU devices (enables async DMA);
+        # fall back to a plain Buffer on CPU (host) devices where pinned
+        # memory is unavailable but also unnecessary.
+        if device.is_host:
+            self._pinned_slot_idx: Buffer | DevicePinnedBuffer = Buffer.zeros(
+                [max_slots], DType.uint32, device
+            )
+        else:
+            self._pinned_slot_idx = DevicePinnedBuffer(
+                shape=(max_slots,), dtype=DType.uint32, device=device
+            )
 
         conv_bytes = (
             num_mamba_layers

@@ -37,7 +37,11 @@ from std.math import ceildiv
 from std.gpu import block_idx, thread_idx
 
 
+from std.gpu.memory import AddressSpace
+
 from layout import TensorLayout, TileTensor
+from layout.coord import Coord
+from layout.tensor_storage import TensorStorage
 
 from nn.activations import silu
 
@@ -47,6 +51,210 @@ from nn.activations import silu
 # ============================================================================
 
 comptime PAD_SLOT_ID: Int32 = -1
+
+
+# ============================================================================
+# Shared helpers
+# ============================================================================
+
+
+@always_inline
+def _apply_silu[
+    output_dtype: DType
+](out_val: Scalar[output_dtype], silu_activation: Bool) -> Scalar[output_dtype]:
+    """Optionally apply the SiLU activation, preserving the accumulator dtype.
+
+    Floating-point outputs run SiLU in place; integral outputs promote to f32
+    for the activation then cast back. Factored out of the fwd / update / states
+    paths (CPU and GPU) which each open-coded this block identically.
+
+    Parameters:
+        output_dtype: The output element type.
+
+    Args:
+        out_val: The pre-activation convolution output.
+        silu_activation: Whether to apply SiLU.
+
+    Returns:
+        `out_val`, with SiLU applied when `silu_activation` is True.
+    """
+    if silu_activation:
+        comptime if output_dtype.is_floating_point():
+            return silu(out_val)
+        else:
+            return silu(out_val.cast[DType.float32]()).cast[output_dtype]()
+    return out_val
+
+
+@always_inline
+def _channel_weights[
+    weight_dtype: DType,
+    WIDTH: Int,
+    weight_LT: TensorLayout,
+](
+    weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
+    d: Int,
+) -> SIMD[weight_dtype, WIDTH]:
+    """Load channel `d`'s `WIDTH` conv weights into a register SIMD vector.
+
+    Factored out of the fwd / update GPU kernels, which each preloaded the
+    per-channel weights into a fixed 8-wide SIMD. The width is now the exact
+    comptime `WIDTH` (no magic 8), so the vector holds exactly the taps used.
+
+    Parameters:
+        weight_dtype: The weight element type.
+        WIDTH: The convolution width (number of taps).
+        weight_LT: Layout type of the weight tensor.
+
+    Args:
+        weight: The `(dim, width)` weight tensor.
+        d: The channel index.
+
+    Returns:
+        A `WIDTH`-wide SIMD of channel `d`'s weights, tap `w_idx` at lane
+        `w_idx`.
+    """
+    # Tap axis is unit-stride, so the WIDTH taps load in one shot; `alignment=1`
+    # tolerates non-power-of-2 widths (the op dispatches WIDTH in {1, 2, 3, 4}).
+    return weight.load[width=WIDTH, alignment=1](Coord(d, 0))
+
+
+# ============================================================================
+# Forward-path DRAM I/O owner
+# ============================================================================
+
+
+@fieldwise_init
+struct VarlenConvIO[
+    x_origin: Origin,
+    weight_origin: Origin,
+    bias_origin: Origin,
+    out_origin: MutOrigin,
+    x_dtype: DType,
+    weight_dtype: DType,
+    bias_dtype: DType,
+    out_dtype: DType,
+    x_layout: TensorLayout,
+    weight_layout: TensorLayout,
+    bias_layout: TensorLayout,
+    out_layout: TensorLayout,
+    x_store: TensorStorage,
+    weight_store: TensorStorage,
+    bias_store: TensorStorage,
+    out_store: TensorStorage,
+    x_addr: AddressSpace,
+    weight_addr: AddressSpace,
+    bias_addr: AddressSpace,
+    out_addr: AddressSpace,
+    x_idx: DType,
+    weight_idx: DType,
+    bias_idx: DType,
+    out_idx: DType,
+    //,
+](ImplicitlyCopyable, Movable):
+    """Owner of the forward-path DRAM reads/writes for varlen causal conv1d.
+
+    Holds the `(dim, seqlen)` input `x`, `(dim, width)` `weight`, `(dim,)`
+    `bias`, and `(dim, seqlen)` `output` TileTensor views and exposes one
+    method per access verb, so the forward path indexes with logical
+    coordinates (`t.load(Coord(...))`, `t.store[width=1](Coord(...), v)`)
+    instead of hand-rolled `raw_load`/`raw_store` offset arithmetic. Each
+    view's own `RuntimeLayout` computes the identical offset the explicit
+    `d*stride + s*stride` form did, so this is behavior-preserving.
+
+    Every view parameter (dtype, layout, origin, storage, address space, index
+    type) is inferred from the constructor arguments, so the owner adapts to
+    whatever tensor storage the caller's views carry -- the CPU reference and
+    GPU kernel pass differently-parameterized views. The read views (`x`,
+    `weight`, `bias`) carry origins with a free `mut` (the CPU reference passes
+    them immutable, the GPU kernel mutable; reads need no mutability proof); the
+    store target `output` pins `MutOrigin` so `store` type-checks. Modeled on
+    the owner-per-transition pattern (see `Fp4WeightLoader` in
+    `matmul2d_fp4.mojo`), constructed by direct field init so no origin rebase
+    is needed. Stateless: the circular conv-state position is not owned here, so
+    the same owner serves any path.
+
+    Parameters:
+        x_origin: Inferred origin of the input view.
+        weight_origin: Inferred origin of the weight view.
+        bias_origin: Inferred origin of the bias view.
+        out_origin: Inferred mutable origin of the output view.
+        x_dtype: Input element type.
+        weight_dtype: Weight element type.
+        bias_dtype: Bias element type.
+        out_dtype: Output element type.
+        x_layout: Layout type of the `(dim, seqlen)` input view.
+        weight_layout: Layout type of the `(dim, width)` weight view.
+        bias_layout: Layout type of the `(dim,)` bias view.
+        out_layout: Layout type of the `(dim, seqlen)` output view.
+        x_store: Inferred storage of the input view.
+        weight_store: Inferred storage of the weight view.
+        bias_store: Inferred storage of the bias view.
+        out_store: Inferred storage of the output view.
+        x_addr: Inferred address space of the input view.
+        weight_addr: Inferred address space of the weight view.
+        bias_addr: Inferred address space of the bias view.
+        out_addr: Inferred address space of the output view.
+        x_idx: Inferred linear-index type of the input view.
+        weight_idx: Inferred linear-index type of the weight view.
+        bias_idx: Inferred linear-index type of the bias view.
+        out_idx: Inferred linear-index type of the output view.
+    """
+
+    var x: TileTensor[
+        Self.x_dtype,
+        Self.x_layout,
+        Self.x_origin,
+        Storage=Self.x_store,
+        address_space=Self.x_addr,
+        linear_idx_type=Self.x_idx,
+    ]
+    var weight: TileTensor[
+        Self.weight_dtype,
+        Self.weight_layout,
+        Self.weight_origin,
+        Storage=Self.weight_store,
+        address_space=Self.weight_addr,
+        linear_idx_type=Self.weight_idx,
+    ]
+    var bias: TileTensor[
+        Self.bias_dtype,
+        Self.bias_layout,
+        Self.bias_origin,
+        Storage=Self.bias_store,
+        address_space=Self.bias_addr,
+        linear_idx_type=Self.bias_idx,
+    ]
+    var output: TileTensor[
+        Self.out_dtype,
+        Self.out_layout,
+        Self.out_origin,
+        Storage=Self.out_store,
+        address_space=Self.out_addr,
+        linear_idx_type=Self.out_idx,
+    ]
+
+    @always_inline
+    def load_x(self, d: Int, s: Int) -> Scalar[Self.x_dtype]:
+        """Load `x[d, s]`: windowed history read of the input."""
+        return self.x.load(Coord(d, s))[0]
+
+    @always_inline
+    def load_weight(self, d: Int, w: Int) -> Scalar[Self.weight_dtype]:
+        """Load `weight[d, w]`: per-channel conv tap."""
+        # `[0]` extracts lane 0: generic `Storage` makes `load()` non-scalar.
+        return self.weight.load(Coord(d, w))[0]
+
+    @always_inline
+    def load_bias(self, d: Int) -> Scalar[Self.bias_dtype]:
+        """Load `bias[d]`: per-channel bias."""
+        # `[0]` extracts lane 0 (generic `Storage`, as in `load_weight`).
+        return self.bias.load(Coord(d))[0]
+
+    @always_inline
+    def store_out(self, d: Int, s: Int, val: Scalar[Self.out_dtype]):
+        """Store `output[d, s] = val`: convolution output."""
+        self.output.store(Coord(d, s), val)
 
 
 # ============================================================================
@@ -199,6 +407,12 @@ def causal_conv1d_varlen_fwd_cpu[
     """
     var width_minus_1 = width - 1
 
+    # Forward-path DRAM I/O owner. The conv-state ring-buffer reads/writes below
+    # deliberately keep raw_load/raw_store with the caller's runtime conv-state
+    # strides (like the states-extraction kernels): the write index is a
+    # data-dependent circular position, off the layout-`Coord` owner path.
+    var io = VarlenConvIO(x, weight, bias, output)
+
     # Process each sequence in the batch
     for b in range(batch):
         # Check if this is a padded entry
@@ -226,16 +440,12 @@ def causal_conv1d_varlen_fwd_cpu[
             # Load bias
             var bias_val: Scalar[output_dtype] = 0
             if has_bias:
-                bias_val = Scalar[output_dtype](bias.raw_load(d))
+                bias_val = Scalar[output_dtype](io.load_bias(d))
 
             # Load weights for this channel
             var weights = List[Scalar[weight_dtype]]()
             for w_idx in range(width):
-                var weight_offset = (
-                    UInt32(d) * weight_dim_stride
-                    + UInt32(w_idx) * weight_width_stride
-                )
-                weights.append(weight.raw_load(weight_offset))
+                weights.append(io.load_weight(d, w_idx))
 
             # Process each position in the sequence
             for l in range(seqlen):
@@ -248,11 +458,7 @@ def causal_conv1d_varlen_fwd_cpu[
 
                     if input_l >= 0:
                         # Within current sequence
-                        var x_offset = (
-                            UInt32(d) * x_dim_stride
-                            + UInt32((seq_start + input_l)) * x_seqlen_stride
-                        )
-                        input_val = x.raw_load(x_offset)
+                        input_val = io.load_x(d, seq_start + input_l)
                     elif use_initial_state and has_conv_states:
                         # Use initial state from conv_states
                         var state_idx = (
@@ -273,21 +479,12 @@ def causal_conv1d_varlen_fwd_cpu[
                     )
 
                 # Apply activation
-                var out_val = conv_sum
-                if silu_activation:
-                    comptime if output_dtype.is_floating_point():
-                        out_val = silu(out_val)
-                    else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
-                            output_dtype
-                        ]()
+                var out_val = _apply_silu[output_dtype](
+                    conv_sum, silu_activation
+                )
 
                 # Store output
-                var out_offset = (
-                    UInt32(d) * out_dim_stride
-                    + UInt32((seq_start + l)) * out_seqlen_stride
-                )
-                output.raw_store(out_offset, out_val)
+                io.store_out(d, seq_start + l, out_val)
 
             # Update conv_states with final state if provided
             if has_conv_states:
@@ -456,14 +653,9 @@ def causal_conv1d_varlen_update_cpu[
                     )
 
                 # Apply activation
-                var out_val = conv_sum
-                if silu_activation:
-                    comptime if output_dtype.is_floating_point():
-                        out_val = silu(out_val)
-                    else:
-                        out_val = silu(out_val.cast[DType.float32]()).cast[
-                            output_dtype
-                        ]()
+                var out_val = _apply_silu[output_dtype](
+                    conv_sum, silu_activation
+                )
 
                 # Store output
                 var out_offset = (
@@ -714,18 +906,19 @@ def causal_conv1d_varlen_fwd_gpu[
     if has_cache_indices != 0:
         cache_idx = Int(cache_indices.raw_load(batch_idx))
 
+    # Forward-path DRAM I/O owner. The conv-state ring-buffer reads/writes below
+    # deliberately keep raw_load/raw_store with the caller's runtime conv-state
+    # strides (like the states-extraction kernels): the write index is a
+    # data-dependent circular position, off the layout-`Coord` owner path.
+    var io = VarlenConvIO(x, weight, bias, output)
+
     # Load bias
     var bias_val: Scalar[output_dtype] = 0
     if has_bias != 0:
-        bias_val = Scalar[output_dtype](bias.raw_load(d))
+        bias_val = Scalar[output_dtype](io.load_bias(d))
 
     # Load weights into registers
-    var weights = SIMD[weight_dtype, 8](0)  # Initialize with zeros
-    for w_idx in range(WIDTH):
-        var weight_offset = (
-            UInt32(d) * weight_dim_stride + UInt32(w_idx) * weight_width_stride
-        )
-        weights[w_idx] = weight.raw_load(weight_offset)
+    var weights = _channel_weights[weight_dtype, WIDTH](weight, d)
 
     comptime WIDTH_MINUS_1 = WIDTH - 1
 
@@ -739,11 +932,7 @@ def causal_conv1d_varlen_fwd_gpu[
             var input_val: Scalar[x_dtype] = 0
 
             if input_l >= 0:
-                var x_offset = (
-                    UInt32(d) * x_dim_stride
-                    + UInt32((seq_start + input_l)) * x_seqlen_stride
-                )
-                input_val = x.raw_load(x_offset)
+                input_val = io.load_x(d, seq_start + input_l)
             elif use_initial_state and has_conv_states != 0:
                 var state_idx = WIDTH_MINUS_1 + input_l
                 if state_idx >= 0:
@@ -761,21 +950,10 @@ def causal_conv1d_varlen_fwd_gpu[
             )
 
         # Apply activation
-        var out_val = conv_sum
-        if silu_activation != 0:
-            comptime if output_dtype.is_floating_point():
-                out_val = silu(out_val)
-            else:
-                out_val = silu(out_val.cast[DType.float32]()).cast[
-                    output_dtype
-                ]()
+        var out_val = _apply_silu[output_dtype](conv_sum, silu_activation != 0)
 
         # Store output
-        var out_offset = (
-            UInt32(d) * out_dim_stride
-            + UInt32((seq_start + l)) * out_seqlen_stride
-        )
-        output.raw_store(out_offset, out_val)
+        io.store_out(d, seq_start + l, out_val)
 
     # Update conv_states
     if has_conv_states != 0:
@@ -882,12 +1060,7 @@ def causal_conv1d_varlen_update_gpu[
         bias_val = Scalar[output_dtype](bias.raw_load(d))
 
     # Load weights
-    var weights = SIMD[weight_dtype, 8](0)  # Initialize with zeros
-    for w_idx in range(WIDTH):
-        var weight_offset = (
-            UInt32(d) * weight_dim_stride + UInt32(w_idx) * weight_width_stride
-        )
-        weights[w_idx] = weight.raw_load(weight_offset)
+    var weights = _channel_weights[weight_dtype, WIDTH](weight, d)
 
     comptime WIDTH_MINUS_1 = WIDTH - 1
 
@@ -939,14 +1112,7 @@ def causal_conv1d_varlen_update_gpu[
                 input_val * Scalar[x_dtype](weights[w_idx])
             )
         # Apply activation
-        var out_val = conv_sum
-        if silu_activation != 0:
-            comptime if output_dtype.is_floating_point():
-                out_val = silu(out_val)
-            else:
-                out_val = silu(out_val.cast[DType.float32]()).cast[
-                    output_dtype
-                ]()
+        var out_val = _apply_silu[output_dtype](conv_sum, silu_activation != 0)
 
         # Store output
         var out_offset = (

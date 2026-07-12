@@ -45,6 +45,15 @@ This version is still a work in progress.
   strict-match ~0.70. Decode is optimized with an in-place SSM state-pool
   read-modify-write that writes only the active slots (+52% output tok/s at
   concurrency 32).
+- Extended Nemotron-H with the Nemotron-3-Nano-30B-A3B hybrid MoE variant (a
+  sigmoid-plus-bias top-6 router over 128 routed experts plus a shared expert)
+  and enabled the Nemotron-H architecture on Apple silicon GPUs in bfloat16.
+  The MoE path on Metal uses an integer-domain expert-gather index
+  (`ops.floor_div`, avoiding a 64-bit-float divide) and a 32-bit
+  `moe_create_indices` atomic (Apple GPUs lack 64-bit atomics), and adds an
+  Apple FP4 (W4A16) decode GEMV with an f16-domain E2M1 decode plus a
+  redesigned varlen causal-conv1d kernel. Verified on M5: the 30B-A3B MoE
+  serves in bfloat16 at GSM8K 8-shot ~0.85.
 - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
 - Added tool-calling, reasoning, and structured-output (`response_format`)
   support to GLM-5.1 / GLM-5.2, enabled with
@@ -129,6 +138,23 @@ This version is still a work in progress.
   Every replica resolves to the same replica-agnostic store, and the stored
   block key carries no replica component, so a block offloaded through one
   replica is served to any other.
+- The dKV external KV-cache connector now supports tensor parallelism
+  (TP greater than 1) on the multi-tenant path for head-sharded (MHA/GQA), MLA
+  (replicated-KV), and GQA head-replicated (`allow_kv_head_replication`) models.
+  Each GPU handshakes its own per-shard store, and every KV load/offload fans
+  out across the processing replica's shard clients with identical block ids and
+  hashes; a block counts as loaded only once every shard has it. The store key
+  reflects the KV-head slice each GPU holds: the TP rank when head-sharded, a
+  single shared shard for MLA, and the head-group index under head replication.
+- On the dKV multi-tenant tensor-parallel path, a KV load that returns
+  differing block counts across a replica's per-GPU shard clients now drains
+  the over-loading shards' in-flight device reads before returning the minimum
+  count. This keeps a stray in-flight host-to-device copy (into a block the
+  block manager frees because it did not land on every shard) from later
+  clobbering a reallocated block. The drain host-completes the reads on the
+  remote (NIXL) transport and enqueues a cross-stream ordering on the
+  co-located same-host (CUDA) transport, so it closes the window on both. The
+  common equal-count path is unchanged and pays no extra synchronization.
 - The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
   into a single `rms_norm_rope` GPU kernel even when the RMSNorm is written "in
   float32" — that is, when a `bfloat16`/`float16` activation is upcast to
@@ -300,20 +326,34 @@ This version is still a work in progress.
   GPUs. Leaving it unset compiles for the build host's CPU, as before.
 
 - **Preview (no-op today)**: `InferenceSession.profiling` is a new namespace
-  that will control the libkineto-backed MAX profiler. The lifecycle methods
-  are callable but do not yet produce trace files; the libkineto-backed
-  Chrome-trace JSON output (compatible with
-  [HTA](https://github.com/facebookresearch/HolisticTraceAnalysis)) and the
-  `session.debug.profiling_*` setter mirrors land in subsequent nightlies.
-  The control surface is final: `session.profiling.start()` / `.stop()` /
-  `.wait_for_trace()` and the read-only `.state` and `.is_enabled` properties.
-  This API is orthogonal to the existing `session.gpu_profiling()` (NVTX/Nsight)
-  path.
-
-- `ProfilingConfig` gains six new fields for the libkineto profiler:
+  that will control the libkineto-backed MAX profiler. The control surface is
+  final and callable — `session.profiling.start()` / `.stop()` /
+  `.wait_for_trace()` and the read-only `.state` / `.is_enabled` — but it does
+  not record yet: libkineto-backed Chrome-trace JSON capture (compatible with
+  Meta's [HTA](https://github.com/facebookresearch/HolisticTraceAnalysis))
+  lands in a later nightly. This API is orthogonal to the existing
+  `session.gpu_profiling()` (NVTX/Nsight) path; see `max/docs/profiling.md`
+  in the repository for the user guide.
+- `ProfilingConfig` gains six new fields for the libkineto profiler, each
+  configurable from Python through the matching `session.debug.profiling_*`
+  setter or its `MODULAR_MAX_DEBUG_PROFILING_*` environment variable:
   `profiling_enabled`, `profiling_output_path`, `profiling_dynolog_enabled`,
   `profiling_warmup_steps`, `profiling_active_steps`, and
   `profiling_periodic_flush_seconds`.
+- `profiling_output_path` accepts template variables (`{pid}`, `{rank}`) and a
+  directory form (`/tmp/traces/`); the path is expanded per process (keyed on
+  rank, PID, timestamp, and a sequence counter) so that, once trace capture is
+  enabled, multi-process and multi-rank runs won't collide on a single fixed
+  filename. `{rank}` resolves to `MODULAR_RANK` / `OMPI_COMM_WORLD_RANK` /
+  `"0"`.
+- `max.engine.ProfilingError` is a new exception type the profiler will raise
+  to surface trace-write failures.
+- Forking while the profiler is enabled is safe for host applications that
+  embed `InferenceSession` and fork (Python `multiprocessing` with the `fork`
+  start method, pre-fork servers, or a bare `os.fork()`) — child processes
+  start with the profiler disabled and can call `start()` again; the parent
+  retains its enabled state across the fork. (MAX Serve itself launches
+  workers with the `spawn` start method and is unaffected.)
 
 - Eager execution in `max.experimental` now routes every realization through
   the `max.experimental.executor.Executor` abstraction. The out-of-the-box

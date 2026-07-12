@@ -73,7 +73,7 @@ class GCDebugger:
             elapsed_ms = (time.monotonic_ns() - self._start_time_ns) / 1e6
             logger.info(
                 "GC generation %d took %.3fms to complete. "
-                "Collected %s objects (out of %d).%s",
+                "Collected %s objects (out of %s).%s",
                 generation,
                 elapsed_ms,
                 str(info.get("collected", "?")),

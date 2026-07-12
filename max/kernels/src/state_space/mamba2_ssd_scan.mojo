@@ -52,8 +52,10 @@ dstate)` is written at each sequence end.
 
 from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
+from std.gpu.primitives.warp import lane_group_sum
 from std.algorithm import sync_parallelize
 from std.math import exp2
+from std.sys.info import align_of
 from std.utils.index import IndexList
 from layout import PointerStorage, TensorLayout, TensorStorage, TileTensor
 from state_space.selective_scan import softplus
@@ -466,6 +468,307 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
             + n * ssm_pool_strides[3]
         )
         ssm_pool.raw_store(off, state[n])
+
+
+def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
+    kernel_dtype: DType,
+    DSTATE: Int,
+    x_LT: TensorLayout,
+    dt_LT: TensorLayout,
+    A_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
+    D_LT: TensorLayout,
+    dt_bias_LT: TensorLayout,
+    y_LT: TensorLayout,
+    ssm_pool_LT: TensorLayout,
+    query_start_loc_LT: TensorLayout,
+    has_initial_state_LT: TensorLayout,
+    cache_indices_LT: TensorLayout,
+    DSTATE_SPLIT: Int = 1,
+](
+    nheads: Int,
+    head_dim: Int,
+    ngroups: Int,
+    nheads_ngroups_ratio: Int,
+    batch: Int,
+    dt_softplus: Int8,
+    x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin],
+    dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin],
+    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin],
+    B: TileTensor[kernel_dtype, B_LT, MutUntrackedOrigin],
+    C: TileTensor[kernel_dtype, C_LT, MutUntrackedOrigin],
+    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin],
+    dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutUntrackedOrigin],
+    y: TileTensor[kernel_dtype, y_LT, MutUntrackedOrigin],
+    ssm_pool: TileTensor[DType.float32, ssm_pool_LT, MutUntrackedOrigin],
+    query_start_loc: TileTensor[
+        DType.int32, query_start_loc_LT, MutUntrackedOrigin
+    ],
+    has_initial_state: TileTensor[
+        DType.bool, has_initial_state_LT, MutUntrackedOrigin
+    ],
+    cache_indices: TileTensor[
+        DType.uint32, cache_indices_LT, MutUntrackedOrigin
+    ],
+    x_strides: Strides3D,
+    dt_strides: Strides2D,
+    A_strides: Strides1D,
+    B_strides: Strides3D,
+    C_strides: Strides3D,
+    D_strides: Strides1D,
+    dt_bias_strides: Strides1D,
+    y_strides: Strides3D,
+    ssm_pool_strides: Strides4D,
+):
+    """GPU kernel: Mamba-2 SSD varlen in-place scan, cooperative DSTATE-split.
+
+    NVIDIA B200 (sm_100) decode-occupancy variant. Numerically equivalent to
+    ``mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu`` (the portable v1 kernel);
+    it is gated on B200 in the wrapper because its output reduction uses a
+    ``lane_group_sum`` full-warp shuffle butterfly and a 2D
+    ``(DSTATE_SPLIT, CH_PER_BLOCK)`` block that assume a warp width of 32. On
+    AMD (wavefront width 64) the lane-group layout is invalid, so AMD/non-B200
+    runs the v1 kernel instead (this is why the round-2 split was reverted in
+    07c5e0b7533; the gate is the portable restore).
+
+    Grid: (ceildiv(head_dim, CH_PER_BLOCK), nheads, batch), where one block
+    holds ``block_dim.y`` head_dim channels and ``block_dim.x == DSTATE_SPLIT``
+    threads cooperate on each channel's DSTATE recurrence.
+
+    Cooperative DSTATE-split (decode bs=1 occupancy lever, r7):
+
+      The v1 kernel mapped one thread to one ``(h, p)`` head_dim channel and ran
+      a fully serial ``DSTATE``-iteration fp32 recurrence in that thread. At
+      decode bs=1 that exposed only ``nheads*head_dim`` work items, leaving the
+      GPU ~96% idle (achieved occupancy ~4% on B200) -- the binding bottleneck.
+
+      Here ``DSTATE_SPLIT`` threads cooperate on each channel: thread ``tx`` owns
+      the contiguous DSTATE sub-tile ``[tx*L, (tx+1)*L)`` with ``L = DSTATE //
+      DSTATE_SPLIT``. The recurrence ``state[n] = state[n]*dA + B[n]*dt_x`` is
+      data-parallel across ``n`` so each thread runs it independently over its
+      L lanes; the output ``y = sum_n state[n]*C[n]`` is a reduction, done as a
+      per-thread partial ``reduce_add`` over its L lanes followed by a
+      ``lane_group_sum[num_lanes=DSTATE_SPLIT, stride=1]`` butterfly within each
+      contiguous DSTATE_SPLIT-lane group (warp-aligned because ``DSTATE_SPLIT``
+      divides the warp and ``tx`` is the fastest-varying thread index). The
+      group leader (``tx == 0``) adds the ``D*x`` skip term and stores ``y``.
+      The final ssm_pool RMW is partitioned: each thread writes only its own L
+      lanes (disjoint), so the in-place write stays correct.
+
+      ``DSTATE_SPLIT == 1`` reproduces the v1 one-thread-per-channel mapping.
+      The per-thread state / B / C SIMD vectors are sized to the tile width
+      ``L`` (the v1 ``MAX_DSTATE``-wide vectors had always-zero upper lanes that
+      only inflated register pressure and the recurrence/reduce width).
+
+      Full-warp participation: ``lane_group_sum`` uses a full-warp shuffle, so
+      out-of-range channel threads (``p >= head_dim``) must NOT early-return --
+      they stay alive to keep every lane participating in the butterfly, and
+      only their per-channel global loads/stores are guarded by ``active``. The
+      ``h``/``b``/``seq_len`` guards are uniform across the whole warp (they do
+      not depend on ``tx`` or ``ty``), so the warp agrees and the shuffle is not
+      reached divergently.
+    """
+    comptime L = DSTATE // DSTATE_SPLIT
+    var tx = thread_idx.x  # DSTATE sub-tile index in [0, DSTATE_SPLIT)
+    var p = block_idx.x * block_dim.y + thread_idx.y
+    var h = block_idx.y
+    var b = block_idx.z
+
+    # NOTE: do NOT early-return out-of-range channel threads (p >= head_dim) --
+    # they must stay alive to participate in the full-warp lane_group_sum below.
+    # The remaining guards (h, b, seq_len) are warp-uniform.
+    if h >= nheads or b >= batch:
+        return
+
+    var active = p < head_dim
+    var n_base = Int(tx) * L  # first DSTATE lane owned by this thread
+
+    # Vectorized contiguous I/O lever (B200 decode). Each thread's L-lane
+    # sub-tile of the ssm_pool state and of B/C is a contiguous run whenever the
+    # innermost (dstate) stride is 1 -- the standard row-major layout every
+    # caller uses. Move that run in ONE SIMD load/store instead of L scalar
+    # raw_loads: this is the fix for the split=8 decode kernel being
+    # L1TEX/mem-pipe-bound on many small scalar loads (ncu at the served decode
+    # shape: SM SoL ~18%, DRAM SoL ~10% so NOT bandwidth-bound, mem-pipe SoL
+    # ~75%, top stall Long Scoreboard ~9 cyc). The `*_contig` guards fall back
+    # to the exact scalar path when a caller passes a non-contiguous stride, so
+    # the result is bit-identical. `n_base` is a multiple of L and dstate is a
+    # multiple of L, so the row-major base offset is L-aligned -- the SIMD
+    # alignment below is satisfied for every dispatched DSTATE (16/64/128/256).
+    comptime pool_align = align_of[SIMD[DType.float32, L]]()
+    comptime bc_align = align_of[SIMD[kernel_dtype, L]]()
+    var pool_contig = ssm_pool_strides[3] == 1
+    var bc_contig = (B_strides[2] == 1) and (C_strides[2] == 1)
+
+    var has_D = Int(D.dim[0]()) > 0
+    var has_dt_bias = Int(dt_bias.dim[0]()) > 0
+    var has_init_tensor = Int(has_initial_state.dim[0]()) > 0
+    var dt_softplus_bool = Bool(Int(dt_softplus) != 0)
+
+    var group_id = h // nheads_ngroups_ratio
+
+    var seq_start = Int(query_start_loc.raw_load(b))
+    var seq_end = Int(query_start_loc.raw_load(b + 1))
+    var seq_len = seq_end - seq_start
+    if seq_len <= 0:
+        return
+
+    var A_val = (
+        Scalar[kernel_dtype](A.raw_load(UInt32(h * A_strides[0]))).cast[
+            DType.float32
+        ]()
+        * LOG2E
+    )
+
+    var dt_bias_val = Float32(0.0)
+    if has_dt_bias:
+        dt_bias_val = Scalar[kernel_dtype](
+            dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
+        ).cast[DType.float32]()
+
+    var D_val = Float32(0.0)
+    if has_D:
+        D_val = Scalar[kernel_dtype](D.raw_load(UInt32(h * D_strides[0]))).cast[
+            DType.float32
+        ]()
+
+    # Load this thread's DSTATE sub-tile of the initial state from ssm_pool.
+    var slot = Int(cache_indices.raw_load(b))
+    var state = SIMD[DType.float32, L](0.0)
+    var use_initial = False
+    if has_init_tensor:
+        use_initial = Bool(has_initial_state.raw_load(b))
+    if active and use_initial:
+        # Read this thread's contiguous L-lane sub-tile of the initial state
+        # from ssm_pool[slot, h, p, n_base ..].
+        if pool_contig:
+            state = ssm_pool.raw_load[width=L, alignment=pool_align](
+                UInt32(
+                    slot * ssm_pool_strides[0]
+                    + h * ssm_pool_strides[1]
+                    + p * ssm_pool_strides[2]
+                    + n_base * ssm_pool_strides[3]
+                )
+            )
+        else:
+            comptime for i in range(L):
+                var off = UInt32(
+                    slot * ssm_pool_strides[0]
+                    + h * ssm_pool_strides[1]
+                    + p * ssm_pool_strides[2]
+                    + (n_base + i) * ssm_pool_strides[3]
+                )
+                state[i] = ssm_pool.raw_load(off)
+
+    for t in range(seq_len):
+        var gt = seq_start + t
+
+        var x_val = Float32(0.0)
+        var dt_x = Float32(0.0)
+        var dA = Float32(0.0)
+        var B_vals = SIMD[DType.float32, L](0.0)
+        var C_vals = SIMD[DType.float32, L](0.0)
+        if active:
+            x_val = Scalar[kernel_dtype](
+                x.raw_load(
+                    UInt32(
+                        gt * x_strides[0] + h * x_strides[1] + p * x_strides[2]
+                    )
+                )
+            ).cast[DType.float32]()
+
+            var dt_val = Scalar[kernel_dtype](
+                dt.raw_load(UInt32(gt * dt_strides[0] + h * dt_strides[1]))
+            ).cast[DType.float32]()
+            if has_dt_bias:
+                dt_val += dt_bias_val
+            if dt_softplus_bool:
+                dt_val = softplus(dt_val)
+
+            dA = exp2(A_val * dt_val)
+            dt_x = dt_val * x_val
+
+            # This thread only loads B/C lanes for its own DSTATE sub-tile.
+            if bc_contig:
+                B_vals = B.raw_load[width=L, alignment=bc_align](
+                    UInt32(
+                        gt * B_strides[0]
+                        + group_id * B_strides[1]
+                        + n_base * B_strides[2]
+                    )
+                ).cast[DType.float32]()
+                C_vals = C.raw_load[width=L, alignment=bc_align](
+                    UInt32(
+                        gt * C_strides[0]
+                        + group_id * C_strides[1]
+                        + n_base * C_strides[2]
+                    )
+                ).cast[DType.float32]()
+            else:
+                comptime for i in range(L):
+                    var n = n_base + i
+                    B_vals[i] = Scalar[kernel_dtype](
+                        B.raw_load(
+                            UInt32(
+                                gt * B_strides[0]
+                                + group_id * B_strides[1]
+                                + n * B_strides[2]
+                            )
+                        )
+                    ).cast[DType.float32]()
+                    C_vals[i] = Scalar[kernel_dtype](
+                        C.raw_load(
+                            UInt32(
+                                gt * C_strides[0]
+                                + group_id * C_strides[1]
+                                + n * C_strides[2]
+                            )
+                        )
+                    ).cast[DType.float32]()
+
+        state = state * dA + B_vals * dt_x
+
+        var y_partial = (state * C_vals).reduce_add()
+        # Combine the DSTATE_SPLIT partials within the contiguous lane group.
+        # Every lane (including inactive channels) participates -- the full-warp
+        # shuffle requires all lanes present; inactive results are discarded.
+        comptime if DSTATE_SPLIT > 1:
+            y_partial = lane_group_sum[num_lanes=DSTATE_SPLIT, stride=1](
+                y_partial
+            )
+
+        if active and tx == 0:
+            var y_val = y_partial
+            if has_D:
+                y_val += D_val * x_val
+            y.raw_store(
+                UInt32(gt * y_strides[0] + h * y_strides[1] + p * y_strides[2]),
+                Scalar[kernel_dtype](y_val.cast[kernel_dtype]()),
+            )
+
+    # Write this thread's DSTATE sub-tile of the final state into ssm_pool at
+    # slot cache_indices[b] (the DSTATE_SPLIT threads cover disjoint lanes).
+    if active:
+        if pool_contig:
+            ssm_pool.raw_store[width=L, alignment=pool_align](
+                UInt32(
+                    slot * ssm_pool_strides[0]
+                    + h * ssm_pool_strides[1]
+                    + p * ssm_pool_strides[2]
+                    + n_base * ssm_pool_strides[3]
+                ),
+                state,
+            )
+        else:
+            comptime for i in range(L):
+                var off = UInt32(
+                    slot * ssm_pool_strides[0]
+                    + h * ssm_pool_strides[1]
+                    + p * ssm_pool_strides[2]
+                    + (n_base + i) * ssm_pool_strides[3]
+                )
+                ssm_pool.raw_store(off, state[i])
 
 
 def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[

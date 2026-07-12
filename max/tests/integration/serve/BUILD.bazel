@@ -314,7 +314,6 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/llama3",
-        "//max/python/max/pipelines/lib",
         "//max/python/max/serve:config",
         "//max/tests/integration:hf_repo_lock",
         requirement("httpx"),

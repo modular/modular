@@ -3244,13 +3244,21 @@ struct EPCombineKernel[
         var sm_id = block_idx.x
 
         if thread_idx.x == 0:
-            while (
-                _counter_atomic.load[ordering=Ordering.ACQUIRE](
-                    atomic_counter + sm_id
-                )
-                != DATA_READY_FLAG
-            ):
-                pass
+            comptime if is_amd_gpu():
+                # TODO(KERN-3184): Investigate why AMD GPUs are slow if the below
+                # ACQUIRE atomic load is used instead of this volatile load.
+                while (
+                    atomic_counter.load[volatile=True](sm_id) != DATA_READY_FLAG
+                ):
+                    pass
+            else:
+                while (
+                    _counter_atomic.load[ordering=Ordering.ACQUIRE](
+                        atomic_counter + sm_id
+                    )
+                    != DATA_READY_FLAG
+                ):
+                    pass
 
             # Reset the atomic counter for the next round.
             atomic_counter.store(sm_id, 0)
