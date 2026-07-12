@@ -1152,7 +1152,7 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
 
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
         op, elementType, adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/cast<IntegerAttr>(adaptor.getIsVolatile()).getInt(),
+        /*isVolatile=*/op.isVolatile().value_or(false),
         /*isNonTemporal=*/
         cast<IntegerAttr>(adaptor.getIsNonTemporal()).getInt(),
         /*isInvariant=*/cast<IntegerAttr>(adaptor.getIsInvariant()).getInt(),
@@ -1182,7 +1182,7 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
 
     rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
         op, adaptor.getArg(), adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/cast<IntegerAttr>(adaptor.getIsVolatile()).getInt(),
+        /*isVolatile=*/op.isVolatile().value_or(false),
         /*isNonTemporal=*/
         cast<IntegerAttr>(adaptor.getIsNonTemporal()).getInt(),
         /*isInvariantGroup=*/false,
@@ -1206,7 +1206,7 @@ struct ConvertPOPMemcpy : ConvertPOPToLLVMPattern<MemcpyOp> {
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::MemcpyOp>(
         op, adaptor.getDst(), adaptor.getSrc(), adaptor.getLen(),
-        cast<IntegerAttr>(adaptor.getIsVolatile()).getInt());
+        op.isVolatile().value_or(false));
     return success();
   }
 };
