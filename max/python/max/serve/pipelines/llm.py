@@ -448,9 +448,22 @@ class TokenGeneratorPipeline(
                             # delimiters. In this case, hold off on yielding a
                             # chunk.
                             if response.final_status.is_done:
+                                # This terminal chunk may be the only one the
+                                # route ever sees (e.g. max_tokens=1 stopping
+                                # on a think-start delimiter), so it must carry
+                                # the prompt token count or the final usage
+                                # chunk reports prompt_tokens=0 (CLIN-1523).
+                                # cached_token_count is likewise a one-time
+                                # per-request report, so mirror the first-chunk
+                                # gating below and only emit it if no earlier
+                                # chunk already carried it.
                                 yield TokenGeneratorOutput(
                                     status=response.final_status,
                                     token_count=0,
+                                    prompt_token_count=context.tokens.prompt_length,
+                                    cached_token_count=response.num_cached_tokens
+                                    if not first_chunk_yielded
+                                    else None,
                                 )
                             continue
 

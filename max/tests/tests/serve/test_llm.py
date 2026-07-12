@@ -539,6 +539,30 @@ async def test_next_token_chunk_reasoning(
 
 
 @pytest.mark.asyncio
+async def test_delimiter_only_generation_reports_prompt_and_cached_tokens() -> (
+    None
+):
+    """A generation whose only token is a stripped reasoning delimiter must
+    still carry the prompt and cached token counts on its terminal chunk.
+
+    With max_tokens=1 a reasoning model's single generated token is often the
+    think-start delimiter; the parser strips it, so the terminal chunk is the
+    only one the streaming route ever sees. Without prompt_token_count on it,
+    the final usage chunk reports prompt_tokens=0 (CLIN-1523); without
+    cached_token_count the prefix-cache hits never surface either. Because
+    this terminal chunk is the first chunk, it carries num_cached_tokens the
+    same way the regular first-chunk path does.
+    """
+    chunks = await _run_reasoning_pipeline(
+        _make_responses([[THINK_START_TOKEN_ID]], num_cached_tokens=7)
+    )
+    assert len(chunks) == 1
+    assert chunks[0].token_count == 0
+    assert chunks[0].prompt_token_count == 10
+    assert chunks[0].cached_token_count == 7
+
+
+@pytest.mark.asyncio
 async def test_next_token_chunk_reasoning_partitions_logprobs() -> None:
     """Test that logprobs are correctly partitioned between reasoning and content."""
     logprob_content = Mock()
