@@ -266,6 +266,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         var result = __mlir_op.`pop.load`[
             ordering=ordering.__mlir_attr(),
             syncscope=_get_kgen_string[Self.scope](),
+            isVolatile=False.__mlir_i1__(),
+            isInvariant=False.__mlir_i1__(),
+            isNonTemporal=False.__mlir_i1__(),
         ](ptr._get_kgen_pointer())
         comptime if Self.dtype.is_floating_point():
             _check_not_poison[Self.dtype, 1](result)
@@ -393,6 +396,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         __mlir_op.`pop.store`[
             ordering=ordering.__mlir_attr(),
             syncscope=_get_kgen_string[Self.scope](),
+            isVolatile=False.__mlir_i1__(),
+            isNonTemporal=False.__mlir_i1__(),
         ](value._mlir_value, ptr._get_kgen_pointer())
 
     @always_inline

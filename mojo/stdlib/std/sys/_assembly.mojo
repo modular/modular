@@ -97,6 +97,7 @@ def inlined_assembly[
             assembly=asm_kgen_string,
             constraints=constraints_kgen_string,
             hasSideEffects=has_side_effect.__mlir_i1__(),
+            isStackAligned=False.__mlir_i1__(),
         ](loaded_pack)
         return rebind[result_type](None)
     else:
@@ -105,4 +106,5 @@ def inlined_assembly[
             assembly=asm_kgen_string,
             constraints=constraints_kgen_string,
             hasSideEffects=has_side_effect.__mlir_i1__(),
+            isStackAligned=False.__mlir_i1__(),
         ](loaded_pack)
