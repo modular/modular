@@ -2064,12 +2064,6 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic",[
     custom<ParamValue>($intrin, "StringType::get($_ctxt)") `,` `(` $args `)`
     attr-dict `:` functional-type($args, $results)
   }];
-
-  let builders = [
-    OpBuilder<(ins "TypedAttr":$intrin, "ValueRange":$args,
-                   CArg<"FastmathFlags", "FastmathFlags::none">:$fastmathFlags,
-                   CArg<"bool", "true">:$hasSideEffects)>,
-  ];
 }
 
 //===----------------------------------------------------------------------===//
