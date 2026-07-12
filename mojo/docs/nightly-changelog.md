@@ -720,6 +720,9 @@ This version is still a work in progress.
 
 ## Fixed
 
+- [#6755](https://github.com/modular/modular/issues/6755) - Volatile loads are
+  no longer removed when their results are unused.
+
 - Type refinement from a `conforms_to()` guard now applies inside the branches
   of a ternary `exp1 if cond else exp2` used in a `comptime` context, matching
   the existing `comptime if` statement behavior. For example, this now compiles:

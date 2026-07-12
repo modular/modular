@@ -109,7 +109,7 @@ def count_trailing_zeros[
     """
     comptime assert dtype.is_integral(), "must be integral"
     return llvm_intrinsic["llvm.cttz", type_of(val), has_side_effect=False](
-        val, False
+        val, False.__mlir_i1__()
     )
 
 
