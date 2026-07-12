@@ -86,11 +86,11 @@ def lane_id() -> Int:
     Returns:
         The lane ID (0 to WARP_SIZE-1) of the current thread.
     """
-    return _lane_id[Int]()
+    return _lane_id()
 
 
 @always_inline("nodebug")
-def _lane_id[ResultType: _FromInt]() -> ResultType:
+def _lane_id() -> Int:
     comptime assert is_gpu(), "This function only applies to GPUs."
 
     comptime if is_nvidia_gpu():
@@ -98,8 +98,8 @@ def _lane_id[ResultType: _FromInt]() -> ResultType:
             "llvm.nvvm.read.ptx.sreg.laneid",
             Int32,
             has_side_effect=False,
-        ]().cast[DType.uint32]()
-        return ResultType(from_int=Int(i))
+        ]()
+        return Int(i)
 
     elif is_amd_gpu():
         comptime none = Int32(-1)
@@ -109,16 +109,16 @@ def _lane_id[ResultType: _FromInt]() -> ResultType:
         ](none, zero)
         var i = llvm_intrinsic[
             "llvm.amdgcn.mbcnt.hi", Int32, has_side_effect=False
-        ](none, t).cast[DType.uint32]()
-        return ResultType(from_int=Int(i))
+        ](none, t)
+        return Int(i)
 
     elif is_apple_gpu():
         var i = llvm_intrinsic[
             "llvm.air.thread_index_in_simdgroup",
             Int32,
             has_side_effect=False,
-        ]().cast[DType.uint32]()
-        return ResultType(from_int=Int(i))
+        ]()
+        return Int(i)
 
     else:
         CompilationTarget.unsupported_target_error[
@@ -191,7 +191,7 @@ def sm_id() -> Int:
                     "llvm.nvvm.read.ptx.sreg.smid",
                     Int32,
                     has_side_effect=False,
-                ]().cast[DType.uint32]()
+                ]()
             )
         )
     else:

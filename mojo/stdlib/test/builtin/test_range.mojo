@@ -73,6 +73,15 @@ def test_range_int_bounds() raises:
     _test_range_iter_bounds(range(38, -13, -23), 3)
 
 
+def test_range_uint_bounds() raises:
+    _test_range_iter_bounds(range(UInt(0)), 0)
+    _test_range_iter_bounds(range(UInt(10)), 10)
+    _test_range_iter_bounds(range(UInt(0), UInt(10)), 10)
+    _test_range_iter_bounds(range(UInt(5), UInt(10)), 5)
+    _test_range_iter_bounds(range(UInt(0), UInt(10), UInt(2)), 5)
+    _test_range_iter_bounds(range(UInt(0), UInt(11), UInt(2)), 6)
+
+
 def _test_range_scalar_bounds[dtype: DType]() raises:
     comptime scalar = Scalar[dtype]
 
@@ -98,6 +107,11 @@ def test_larger_than_int_max_bounds() raises:
         var lower, upper = iter.bounds()
         assert_equal(lower, Int.MAX)
         assert_false(upper)
+
+    # UInt
+    test(range(UInt.MAX))
+    test(range(UInt(1), UInt.MAX))
+    test(range(UInt(1), UInt.MAX, UInt(1)))
 
     # UInt64
     test(range(UInt64.MAX))
@@ -127,6 +141,41 @@ def test_range_len() raises:
     assert_equal(range(10, 5, 10).__len__(), 0, "len(range(10, 5, 10))")
     assert_equal(range(5, 10, 20).__len__(), 1, "len(range(5, 10, 20))")
     assert_equal(range(10, 5, -20).__len__(), 1, "len(range(10, 5, -20))")
+
+
+def test_range_len_uint_maxuint() raises:
+    assert_equal(
+        range(UInt(0), UInt.MAX).__len__(), UInt.MAX, "len(range(0, UInt.MAX))"
+    )
+    assert_equal(
+        range(UInt.MAX, UInt(0), UInt(1)).__len__(),
+        0,
+        "len(range(UInt.MAX, 0, 1))",
+    )
+
+
+def test_range_len_uint_empty() raises:
+    assert_equal(
+        range(UInt(0), UInt(0), UInt(1)).__len__(), 0, "len(range(0, 0, 1))"
+    )
+    assert_equal(
+        range(UInt(10), UInt(10), UInt(1)).__len__(), 0, "len(range(10, 10, 1))"
+    )
+
+
+def test_range_len_uint() raises:
+    assert_equal(range(UInt(10)).__len__(), 10, "len(range(10))")
+
+    # start < end
+    assert_equal(range(UInt(0), UInt(10)).__len__(), 10, "len(range(0, 10))")
+    assert_equal(range(UInt(5), UInt(10)).__len__(), 5, "len(range(5, 10))")
+    assert_equal(
+        range(UInt(0), UInt(10), UInt(2)).__len__(), 5, "len(range(0, 10, 2))"
+    )
+    # start > end
+    assert_equal(
+        range(UInt(10), UInt(0), UInt(1)).__len__(), 0, "len(range(10, 0, 1))"
+    )
 
 
 def _test_range_len_scalar[dtype: DType]() raises:
@@ -162,6 +211,22 @@ def test_range_getitem() raises:
     assert_equal(range(10, 0, -1)[2], 8, "range(10, 0, -1)[2]")
     assert_equal(range(0, 10, 2)[4], 8, "range(0, 10, 2)[4]")
     assert_equal(range(38, -13, -23)[1], 15, "range(38, -13, -23)[1]")
+
+
+def test_range_getitem_uint() raises:
+    assert_equal(range(UInt(10))[3], 3, "range(10)[3]")
+
+    assert_equal(range(UInt(0), UInt(10))[3], 3, "range(0, 10)[3]")
+    assert_equal(range(UInt(5), UInt(10))[3], 8, "range(5, 10)[3]")
+    assert_equal(range(UInt(5), UInt(10))[4], 9, "range(5, 10)[4]")
+
+    # Specify the step size > 1
+    assert_equal(range(UInt(0), UInt(10), UInt(2))[4], 8, "range(0, 10, 2)[4]")
+
+    # start > end
+    var bad_strided_uint_range = range(UInt(10), UInt(5), UInt(1))
+    var bad_strided_uint_range_iter = bad_strided_uint_range.__iter__()
+    assert_equal(UInt(0), UInt(bad_strided_uint_range_iter.__len__()))
 
 
 def test_range_reversed() raises:

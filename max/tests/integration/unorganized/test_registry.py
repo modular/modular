@@ -17,16 +17,12 @@ from typing import Any
 
 import pytest
 from max.graph.weights import WeightsFormat
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 from max.pipelines.context import TextContext
-from max.pipelines.lib.config.model_config import MAXModelConfig
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 from test_common.mocks import (
-    DummyPipelineConfig,
     mock_pipeline_config_hf_dependencies,
     mock_pipeline_config_resolve,
 )
@@ -57,23 +53,15 @@ def test_registry__test_register() -> None:
 def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
-    # PipelineConfig construction is now pure (no resolve() auto-call).
-    # The unknown-architecture error surfaces when retrieve() is called.
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="GSAI-ML/LLaDA-8B-Instruct",
-                    # This forces it to fail if we don't have it.
-                    trust_remote_code=True,
-                    max_length=1,
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(max_batch_size=1),
+    config = PipelineArgs(
+        model_path="GSAI-ML/LLaDA-8B-Instruct",
+        # This forces it to fail if we don't have it.
+        trust_remote_code=True,
+        max_length=1,
+        max_batch_size=1,
     )
     with pytest.raises(ValueError):
-        PIPELINE_REGISTRY.retrieve(config)
+        PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(config))
 
 
 @prepare_registry
@@ -83,25 +71,17 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
 ):
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
-    # PipelineConfig construction is now pure (no resolve() auto-call).
-    # The unknown-architecture error surfaces when retrieve_factory() is called.
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="GSAI-ML/LLaDA-8B-Instruct",
-                    trust_remote_code=True,
-                    max_length=1,
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(max_batch_size=1),
+    config = PipelineArgs(
+        model_path="GSAI-ML/LLaDA-8B-Instruct",
+        trust_remote_code=True,
+        max_length=1,
+        max_batch_size=1,
     )
     with pytest.raises(
         ValueError,
         match=r"Cannot determine architecture|no 'architectures' field",
     ):
-        PIPELINE_REGISTRY.retrieve(config)
+        PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(config))
 
 
 @prepare_registry
@@ -150,14 +130,14 @@ def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
     )
     PIPELINE_REGISTRY.register(pixel_arch)
 
-    pipeline_config = DummyPipelineConfig(
+    pipeline_args = PipelineArgs(
         model_path="dummy/pixel-model",
         quantization_encoding="bfloat16",
-        max_batch_size=1,
         max_length=1,
+        max_batch_size=1,
     )
     PIPELINE_REGISTRY.retrieve_factory(
-        pipeline_config,
+        PipelineConfig.from_args(pipeline_args),
         task=PipelineTask.PIXEL_GENERATION,
         override_architecture="DummyPixelPipeline",
     )

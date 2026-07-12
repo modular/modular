@@ -52,7 +52,7 @@ def test_alloc_string():
     str_ptr[] += " pointers"  # Works now
     # end-alloc-string
 
-    str_ptr.destroy_pointee()
+    str_ptr.unsafe_deinit_pointee()
     str_ptr.free()
 
 
@@ -62,7 +62,7 @@ def test_unsafe_write_owned():
     str_ptr.unsafe_write("Owned string")
     # end-unsafe-write-owned
 
-    str_ptr.destroy_pointee()
+    str_ptr.unsafe_deinit_pointee()
     str_ptr.free()
 
 

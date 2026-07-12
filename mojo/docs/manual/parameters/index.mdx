@@ -212,7 +212,7 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
 
     def __del__(deinit self):
         for i in range(self.size):
-            (self.data + i).destroy_pointee()
+            (self.data + i).unsafe_deinit_pointee()
         self.data.free()
 
     def __getitem__(self, i: Int) raises -> ref[self] Self.ElementType:

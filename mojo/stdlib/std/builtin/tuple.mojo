@@ -129,7 +129,7 @@ struct Tuple[*element_types: Movable](
                 ParentConformsTo="ImplicitlyDeletable",
             ]()
             comptime assert conforms_to(TUnknown, ImplicitlyDeletable)
-            UnsafePointer(to=self[i]).destroy_pointee()
+            UnsafePointer(to=self[i]).unsafe_deinit_pointee()
 
     @always_inline("nodebug")
     def __init__(out self, *, copy: Self):

@@ -128,6 +128,25 @@ This version is still a work in progress.
 
 ## Language changes
 
+- User-written structs must now explicitly declare closure-trait conformance
+  in their inheritance list to satisfy a `def(...) -> ...` closure trait.
+  Previously a struct with a compatible `__call__` was accepted implicitly
+  (duck-typing). Declare the trait in the struct's inheritance list:
+
+  ```mojo
+  def apply[F: def(Int) -> Int](f: F, x: Int) -> Int:
+      return f(x)
+
+  struct Double(def(Int) -> Int):  # previously: `struct Double:`
+      def __call__(self, x: Int) capturing -> Int:
+          return x * 2
+
+  _ = apply(Double(), 5)
+  ```
+
+  Conformance is checked at struct definition rather than deferred to the use
+  site.
+
 - Relative imports must now use `from` (`from . import foo`); the `import .foo`
   form is no longer accepted.
 
@@ -210,25 +229,17 @@ This version is still a work in progress.
   module1.bar()
   ```
 
-- The `@explicit_destroy` decorator is no longer required on structs that
-  conditionally conform to `ImplicitlyDeletable`.
+- The `@explicit_destroy` decorator is no longer sufficient for a `struct` type
+  to opt-out of `ImplicitlyDeletable` conformance.
 
-  By default, all Mojo structs implicitly conform to `ImplicitlyDeletable`.
-  As before, a type author can opt-out of that implicit conformance using the
-  `@explicit_destroy` decorator:
+  As before, by default all Mojo structs implicitly conform to
+  `ImplicitlyDeletable`. Mojo now requires writing a constrained
+  `ImplicitlyDeletable where ...` conformance to narrow or opt-out of that
+  trait.
 
-  ```mojo
-  @explicit_destroy
-  struct FileHandle:
-      pass
-
-  comptime assert not conforms_to(FileHandle, ImplicitlyDeletable)
-  ```
-
-  Now, if the type *conditionally* conforms to `ImplicitlyDeletable`, you may
-  omit redundantly writing `@explicit_destroy`. This works both for types
+  This works both for types
   that are never `ImplicitlyDeletable` (`where False`) and for types that are
-  non-ImplicitlyDeletable based on a non trivial condition (`where <cond>`):
+  non-ImplicitlyDeletable based on a non-trivial condition (`where <cond>`):
 
   ```mojo
   # no @explicit_destroy necessary
@@ -237,6 +248,8 @@ This version is still a work in progress.
   ):
       def destroy(deinit self):
           pass
+
+  comptime assert not conforms_to(NeverDeletable, ImplicitlyDeletable)
 
   # no @explicit_destroy necessary
   struct Container[T: AnyType](
@@ -247,6 +260,9 @@ This version is still a work in progress.
   comptime assert conforms_to(Container[Int], ImplicitlyDeletable)
   comptime assert not conforms_to(Container[NonDeletable], ImplicitlyDeletable)
   ```
+
+  Using `@explicit_destroy` without an argument error string is now an error, as
+  it would have no effect or purpose.
 
   `@explicit_destroy("custom error")` can still be used to provide additional
   instruction to users when an instance cannot be deleted implicitly.
@@ -273,6 +289,17 @@ This version is still a work in progress.
   `ImplicitlyCopyable` are now stable.
 
 ## Library changes
+
+- Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
+  Instead of destroying each entry in place, it hands the key and value to
+  `destroy_func`, so it can clear a `Dict` whose key or value type is not
+  `ImplicitlyDeletable`. The dictionary's capacity is retained, so it stays
+  reusable.
+
+- `Coord` now conforms to `DevicePassable`, so a `Coord` embedded in a
+  `DevicePassable` type (such as a `TileTensor`'s `Layout`) is encoded to the
+  device through `Coord._to_device_type` instead of a raw field bit-copy, the
+  same way `IndexList` already was.
 
 - `reversed()` now works on typed ranges such as
   `reversed(range(Int16(1), 10, 2))`. The `ReversibleRange` trait gained an
@@ -561,6 +588,12 @@ This version is still a work in progress.
   ```mojo
   ptr.unsafe_write(copy=value)
   ```
+
+- `UnsafePointer.destroy_pointee()` and `UnsafePointer.destroy_pointee_with()`
+  are now deprecated in favor of the new `unsafe_deinit_pointee()` method, which
+  covers both cases: call it with no arguments to destroy an
+  `ImplicitlyDeletable` pointee, or pass a deinitializing closure to destroy a
+  non-`ImplicitlyDeletable` pointee in place.
 
 ## Tooling changes
 

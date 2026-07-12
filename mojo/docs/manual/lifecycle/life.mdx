@@ -402,7 +402,7 @@ struct HeapArray(Copyable):
         # We must free the heap-allocated data, but
         # Mojo knows how to destroy the other fields
         for i in range(self.size):
-            (self.data + i).destroy_pointee()
+            (self.data + i).unsafe_deinit_pointee()
         self.data.free()
 
     def append(mut self, val: Int):

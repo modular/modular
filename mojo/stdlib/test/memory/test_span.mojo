@@ -600,8 +600,8 @@ def test_span_hashable_non_copyable() raises:
     (ptr + 1).unsafe_write(HashableOnly(2))
     var span = Span(ptr=ptr, length=2)
     _ = hash(span)
-    (ptr + 1).destroy_pointee()
-    ptr.destroy_pointee()
+    (ptr + 1).unsafe_deinit_pointee()
+    ptr.unsafe_deinit_pointee()
     ptr.free()
 
 
@@ -610,7 +610,7 @@ def test_span_with_move_only_type() raises:
     ptr.unsafe_write(MoveOnly(42))
     var span = Span(ptr=ptr, length=1)
     assert_equal(span[0].data, 42)
-    ptr.destroy_pointee()
+    ptr.unsafe_deinit_pointee()
     ptr.free()
 
 

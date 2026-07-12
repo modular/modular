@@ -22,9 +22,9 @@ from typing import cast
 from max.pipelines import (
     PIPELINE_REGISTRY,
     EmbeddingsPipelineType,
-    PipelineConfig,
 )
 from max.pipelines.context import TextContext
+from max.pipelines.lib import PipelineArgs, PipelineConfig
 from max.pipelines.modeling.types import (
     EmbeddingsGenerationInputs,
     EmbeddingsGenerationOutput,
@@ -68,14 +68,15 @@ async def _run_pipeline_encode(
 
 
 def pipeline_encode(
-    pipeline_config: PipelineConfig,
+    pipeline_args: PipelineArgs,
     prompt: str,
     num_warmups: int = 0,
 ) -> None:
     # Run timed run & print results.
     with EmbeddingsMetrics(print_report=True) as metrics:
         tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(
-            pipeline_config, task=PipelineTask.EMBEDDINGS_GENERATION
+            PipelineConfig.from_args(pipeline_args),
+            task=PipelineTask.EMBEDDINGS_GENERATION,
         )
 
         # Cast pipeline to the expected type for embeddings generation

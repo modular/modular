@@ -530,12 +530,37 @@ def matmul_dispatch_sm100_fp8[
     var m = Int(c.dim[0]())
 
     if m <= 128:
-        return heuristic_and_outliers_dispatch[
+        var status = heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
+        if status:
+            return status
+
+        # Untuned small-M (N, K): unlike the fp8-OUTPUT case,
+        # `select_and_launch_sm100_config` has no never-miss for bf16 output, so
+        # it DISPATCH_MISSes when `choose_config` yields a config absent from the
+        # sampled config set. That happens for the small-M decode band
+        # (Nemotron c=32, m in {25..31}: `choose_config` picks mma_n=16/cta=1,
+        # which no build_sm100_matmul_configs grid sample -- stepped by 8, with m
+        # passed exact -- ever produces), which would fall back to vendor
+        # cuBLASLt. Mirror the fp8-output never-miss above: launch the guaranteed
+        # -valid default SM100 config on MAX's own tcgen05 Mojo FP8 kernel. The
+        # static-scale compute epilogue rides through as
+        # `elementwise_compute_lambda_fn`.
+        comptime default_config = default_matmul_config_bf16_fp8[
+            a_type, b_type, c_type, transpose_b
+        ]()
+        _matmul_dispatch_sm100[
+            transpose_b=transpose_b,
+            config=default_config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+        return DISPATCH_HIT
 
     @parameter
     @always_inline("nodebug")
@@ -624,7 +649,22 @@ def matmul_dispatch_sm100_fp8[
     # block_swizzle_size = 0,
     # ](c, a, b, ctx)
     # return DISPATCH_HIT
-    return DISPATCH_MISS
+
+    # Untuned (N, K): fall through to the existing heuristic config-set
+    # dispatch (the same tail the bf16 dispatcher uses at
+    # `matmul_dispatch_sm100_bf16`) instead of DISPATCH_MISSing to vendor
+    # cuBLASLt. `choose_config` + `build_sm100_matmul_configs` cover every
+    # prefill m on MAX's own tcgen05 Mojo FP8 kernel (verified host-side:
+    # 0 miss over m in [129, 8192] for the served FP8 (N, K) shapes), so this
+    # keeps FP8 prefill on the Mojo kernel rather than the closed vendor BLAS.
+    # The static-scale compute epilogue rides through as
+    # `elementwise_compute_lambda_fn`.
+    return sm100_heuristic_and_outliers_dispatch[
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        pdl_level=pdl_level,
+    ](c, a, b, ctx)
 
 
 def _sm100_outlier_configs[
@@ -924,12 +964,35 @@ def matmul_dispatch_sm100_bf16[
                 ](c, a, b, ctx)
                 return DISPATCH_HIT
 
-    return sm100_heuristic_and_outliers_dispatch[
+    var status = sm100_heuristic_and_outliers_dispatch[
         transpose_b=transpose_b,
         elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         pdl_level=pdl_level,
     ](c, a, b, ctx)
+    if status:
+        return status
+
+    # Untuned small-M (N, K): `select_and_launch_sm100_config`'s never-miss is
+    # fp8-OUTPUT-only (config.mojo, `c_type == float8_e4m3fn` guard), so for
+    # bf16 output it DISPATCH_MISSes when `choose_config` yields a config absent
+    # from the sampled set. That happens for the small-M decode band (m in
+    # {25..31}: `choose_config` picks mma_n=16/cta=1, which no
+    # build_sm100_matmul_configs grid sample -- stepped by 8, with m passed
+    # exact -- ever produces), which would fall back to vendor cuBLASLt. Mirror
+    # the fp8-band fix in `matmul_dispatch_sm100_fp8`: launch the guaranteed
+    # -valid default SM100 config on MAX's own tcgen05 Mojo kernel.
+    comptime default_config = default_matmul_config_bf16_fp8[
+        a_type, b_type, c_type, transpose_b
+    ]()
+    _matmul_dispatch_sm100[
+        transpose_b=transpose_b,
+        config=default_config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        pdl_level=pdl_level,
+    ](c, a, b, ctx)
+    return DISPATCH_HIT
 
 
 def matmul_dispatch_sm100_fp32[

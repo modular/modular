@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Unified layout system for mixed compile-time and runtime indices."""
 
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.os import abort
+from std.reflection import reflect
 from std.utils import IndexList
 from std.math.uutils import umod, ufloordiv
 
@@ -258,12 +260,21 @@ comptime All = _All()
 
 
 @fieldwise_init("implicit")
-struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
+struct Coord[*element_types: CoordLike](
+    CoordLike, DevicePassable, Sized, Writable
+):
     """A struct representing tuple-like data with compile-time and runtime elements.
 
     Parameters:
         element_types: The list of element types that implement `CoordLike`.
     """
+
+    comptime device_type = Self
+    """Indicate the type being used on accelerator devices.
+
+    A `Coord` holds only plain integer data (zero-sized `ComptimeInt` dims and
+    POD `Scalar` leaves), so its host and device layouts match and it transfers
+    by a straight bit-copy, just like `IndexList`."""
 
     comptime ParamListType = Self.element_types
     """The element types of this `Coord`."""
@@ -755,6 +766,41 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
                     rebind[ResultType](Scalar[dtype](self[i].value()))
                 )
 
+        return result
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        NOTE: This should only be called by `DeviceContext` during invocation
+        of accelerator kernels.
+
+        Args:
+            encoder: The encoder to convert the host type to a device type.
+            target: The target address to store the converted device type.
+        """
+        encoder.encode(self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Get the human-readable type name for this `Coord`.
+
+        This is used for error messages when passing types to the device.
+
+        Returns:
+            A string representation of the type, e.g. "Coord[ComptimeInt[2],
+            Int64]".
+        """
+        var result = String("Coord[")
+
+        comptime for i in range(Self.rank):
+            comptime if i > 0:
+                result += ", "
+            result += reflect[Self.element_types[i]].name()
+
+        result += "]"
         return result
 
 

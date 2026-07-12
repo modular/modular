@@ -21,10 +21,8 @@ import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines import PipelineArgs
+from max.pipelines.lib import KVCacheConfig
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     CreateCompletionResponse,
@@ -37,21 +35,15 @@ MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
 MODEL_REVISION = hf_repo_lock.revision_for_hf_repo(MODEL_NAME)
 assert MODEL_REVISION is not None
 
-pipeline_config = PipelineConfig(
-    models=ModelManifest(
-        {
-            "main": MAXModelConfig(
-                model_path=MODEL_NAME,
-                huggingface_model_revision=MODEL_REVISION,
-                huggingface_weight_revision=MODEL_REVISION,
-                device_specs=[DeviceSpec.cpu()],
-                quantization_encoding="float32",
-                kv_cache=KVCacheConfig(),
-                max_length=512,
-            )
-        }
-    ),
-    runtime=PipelineRuntimeConfig(max_batch_size=16),
+pipeline_config = PipelineArgs(
+    model_path=MODEL_NAME,
+    huggingface_model_revision=MODEL_REVISION,
+    huggingface_weight_revision=MODEL_REVISION,
+    device_specs=[DeviceSpec.cpu()],
+    quantization_encoding="float32",
+    kv_cache=KVCacheConfig(),
+    max_length=512,
+    max_batch_size=16,
 )
 
 

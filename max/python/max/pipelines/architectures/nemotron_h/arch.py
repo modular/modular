@@ -45,7 +45,13 @@ nemotron_h_arch = SupportedArchitecture(
     required_arguments={"enable_prefix_caching": False},
     config=NemotronHConfig,
     multi_gpu_supported=False,
-    # SSM functional state scatter / slot-indexed conv pools are not
-    # device-graph-capture safe.
-    supports_device_graph_capture=False,
+    # SSM conv and state pools are pre-allocated, fixed-address, full-pool
+    # buffers.  The in-place slot-indexed kernels (causal_conv1d_varlen_fwd,
+    # mamba2_ssd_chunk_scan_varlen_fwd_inplace) mutate them directly on the
+    # GPU via slot_idx — no host-device sync required.  ``inplace_copy_from``
+    # short-circuits when src-is-self (same Buffer object) so pool contents
+    # survive graph-capture replay unchanged.  NemotronHModel implements
+    # SupportsSSMStateWarmup so the overlap pipeline releases warmup slots
+    # after each (batch_size, cache_length) probe, preventing pool exhaustion.
+    supports_device_graph_capture=True,
 )

@@ -207,7 +207,7 @@ struct UnsafeMaybeUninit[T: AnyType](
             D: An element type that is implicitly deletable.
 
         """
-        self.unsafe_ptr().destroy_pointee()
+        self.unsafe_ptr().unsafe_deinit_pointee()
 
 
 @always_inline

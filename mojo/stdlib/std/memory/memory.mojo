@@ -655,7 +655,7 @@ def destroy_n[
     the memory uninitialized.
 
     For types with trivial destructors, this is a no-op and generates no code.
-    Otherwise, it calls `destroy_pointee()` on each element.
+    Otherwise, it calls `unsafe_deinit_pointee()` on each element.
 
     Parameters:
         T: The type of values to destroy, which must be `ImplicitlyDeletable`.
@@ -677,7 +677,7 @@ def destroy_n[
         pass
     else:
         for i in range(count):
-            (pointer + i).destroy_pointee()
+            (pointer + i).unsafe_deinit_pointee()
 
 
 # ===-----------------------------------------------------------------------===#

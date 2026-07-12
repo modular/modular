@@ -77,7 +77,8 @@
           "collapsed": true,
           "items": [
             "max/develop/graph",
-            "max/develop/modules"
+            "max/develop/modules",
+            "max/develop/layers"
           ]
         },
         {

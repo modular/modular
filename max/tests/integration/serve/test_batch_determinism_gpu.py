@@ -17,7 +17,7 @@ seed produces bit-identical output on every run when nothing else changes.
 This is the gating half of the determinism/batch-invariance test plan
 (``.agentwork/max-serve/designs/determinism-batch-invariance-tests.md``,
 Slice 3, item 4); the characterization halves (needle-in-batch and
-cached-vs-uncached prefix consistency) live in the ``s32_batch_determinism``
+cached-vs-uncached prefix consistency) live in the ``s33_batch_determinism``
 ``llm_fuzz`` scenario.
 
 Prefix caching is disabled here so every request recomputes from a cold cache:

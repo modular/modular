@@ -11,7 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides a limited Mojo handle to the AsyncRT `AsyncValue` type.
+
+`AnyAsyncValueRef` is an owning, reference-counted handle to a C++ `AsyncValue`.
+It is used as the storage handle that keeps a device buffer's or tensor's
+backing memory alive (for example, inside the `OwnedByteBuffer` and
+`OwnedTensor` composites), mirroring the C++ `AnyAsyncValueRef` /
+`RCRef[AsyncValue]`.
+"""
+
 from std.ffi import _CPointer, external_call
+
 from std.gpu.host import DeviceBuffer
 
 
@@ -67,6 +77,38 @@ struct AnyAsyncValueRef(ImplicitlyCopyable, Movable):
         external_call["AsyncRT_AsyncValue_retain", NoneType](copy._handle)
         self._handle = copy._handle
 
+    def __init__(out self, *, retained_storage_of: OpaquePointer[MutAnyOrigin]):
+        """Retains the backing storage of a packed async slot into a new ref.
+
+        Reads the `AsyncValue*` behind the slot's `TensorBufferRef` storage
+        handle and adds one reference, so the returned handle independently keeps
+        the backing memory alive (e.g. when an unpacked value is re-packed).
+
+        Args:
+            retained_storage_of: A pointer to the packed async value (slot) whose
+                backing storage should be retained.
+        """
+        # AsyncValue *AsyncRT_AsyncValue_retainBufferStorage(
+        #     AnyAsyncValueRef *async)
+        self._handle = external_call[
+            "AsyncRT_AsyncValue_retainBufferStorage", _AsyncValuePtr[mut=True]
+        ](retained_storage_of)
+
+    def __init__(out self, *, retain_handle: OpaquePointer[MutAnyOrigin]):
+        """Retains an existing `AnyAsyncValueRef` storage handle into a new ref.
+
+        Reads the `AsyncValue*` behind the given C++ `AnyAsyncValueRef` handle
+        (e.g. a cached buffer's memory handle) and adds one reference. A null
+        handle yields the empty (non-tracked) reference.
+
+        Args:
+            retain_handle: A pointer to a C++ `AnyAsyncValueRef` storage handle.
+        """
+        # AsyncValue *AsyncRT_AsyncValue_retainHandle(AnyAsyncValueRef *handle)
+        self._handle = external_call[
+            "AsyncRT_AsyncValue_retainHandle", _AsyncValuePtr[mut=True]
+        ](retain_handle)
+
     def __init__(out self, *, var storage_buf: DeviceBuffer):
         """Wraps a live owning `DeviceBuffer` in an `AsyncValue[DeviceBufferRef]`.
 
@@ -76,8 +118,11 @@ struct AnyAsyncValueRef(ImplicitlyCopyable, Movable):
         Args:
             storage_buf: The owning device buffer to wrap.
         """
+        # AsyncValue *AsyncRT_AsyncValue_createFromDeviceBuffer(
+        #     DeviceBuffer *handle)
         var handle = external_call[
-            "MGP_RT_CreateDeviceBufferRefAsyncValue", _AsyncValuePtr[mut=True]
+            "AsyncRT_AsyncValue_createFromDeviceBuffer",
+            _AsyncValuePtr[mut=True],
         ](storage_buf^.take_handle())
         self._handle = handle
 
