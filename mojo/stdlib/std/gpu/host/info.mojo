@@ -1031,6 +1031,22 @@ def _is_sm10x_gpu(info: GPUInfo) -> Bool:
     )
 
 
+def _is_sm12x_gpu(info: GPUInfo) -> Bool:
+    """Returns True for any Blackwell consumer GPU (sm_120 / sm_121).
+
+    Covers the RTX 50-series / RTX PRO (sm_120) and GB10 / DGX Spark (sm_121),
+    which have no SM100 warp-specialized path and route block-scaled / NVFP4
+    work to the cuBLASLt vendor kernels. Mirrors `_is_sm10x_gpu`.
+
+    Args:
+        info: GPU info to check.
+
+    Returns:
+        True if the GPU is a Blackwell consumer (sm_12x) GPU.
+    """
+    return info.compute >= 12.0 and info.compute < 13.0
+
+
 # ===-----------------------------------------------------------------------===#
 # RTX5090
 # ===-----------------------------------------------------------------------===#

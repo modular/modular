@@ -57,7 +57,7 @@ from .fp4_utils import (
     get_scale_factor,
     get_scaling_kind,
 )
-from std.gpu.host.info import B200, MI355X, _is_sm10x_gpu
+from std.gpu.host.info import B200, MI355X, _is_sm10x_gpu, _is_sm12x_gpu
 from std.utils import StaticTuple
 from std.collections import Optional
 from linalg.utils import (
@@ -137,9 +137,9 @@ def quantize_dynamic_scaled_fp4fp8[
     comptime scales_layout = scales.layout
     comptime input_layout = input.layout
 
-    comptime assert _is_sm10x_gpu(
+    comptime assert _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
         ctx.default_device_info
-    ), "This kernel is only supported on SM100"
+    ), "This kernel is only supported on SM100 or SM120"
     comptime assert in_dtype in (
         DType.bfloat16,
     ), "input dtype should be bfloat16"
@@ -392,9 +392,9 @@ def block_scales_interleave_fp4[
     var output_scales = output_scales_tile.to_layout_tensor()
     comptime input_scales_layout = input_scales.layout
     comptime output_scales_layout = output_scales.layout
-    comptime assert _is_sm10x_gpu(
+    comptime assert _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
         ctx.default_device_info
-    ), "This kernel is only supported on SM100"
+    ), "This kernel is only supported on SM100 or SM120"
     comptime assert scales_dtype in (
         NVFP4_SF_DTYPE,
         MXFP4_SF_DTYPE,
@@ -1549,9 +1549,9 @@ def block_scaled_matmul_with_epilogue[
     by the lambda.
     """
 
-    comptime assert _is_sm10x_gpu(
+    comptime assert _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
         ctx.default_device_info
-    ), "This kernel is only supported on SM100"
+    ), "This kernel is only supported on SM100 or SM120"
 
     comptime assert transpose_b, "Only support transposed B"
 
@@ -1708,9 +1708,9 @@ def block_scaled_matmul[
     comptime assert a_scales_device.rank == 5 and a_scales_device.flat_rank == 5
     comptime assert b_scales_device.rank == 5 and b_scales_device.flat_rank == 5
 
-    comptime assert (
-        ctx.default_device_info.compute == B200.compute
-    ), "This kernel is only supported on SM100"
+    comptime assert _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
+        ctx.default_device_info
+    ), "This kernel is only supported on SM100 or SM120"
 
     comptime assert transpose_b, "Only support transposed B"
 
@@ -1911,24 +1911,28 @@ def block_scaled_matmul[
         # config table is tuned for the shapes we serve). On a dispatch miss it
         # falls through to the vendor (cuBLASLt) block-scaled matmul below, the
         # same fallback NVFP4 uses for large M.
-        if m <= mojo_m_cap or is_mxfp8_scaling:
-            var status = heuristic_and_outliers_dispatch[
-                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](
-                c_device,
-                a_device,
-                b_device,
-                a_scales,
-                b_scales,
-                tensor_sf,
-                ctx,
-            )
-            if status == DISPATCH_HIT:
-                return
+        # SM100 (B200) tries the Mojo block-scaled kernel first; consumer
+        # Blackwell (sm_120 / sm_121) has no SM100 kernel, so it is skipped at
+        # compile time and control falls straight to the vendor fallback below.
+        comptime if _is_sm10x_gpu(ctx.default_device_info):
+            if m <= mojo_m_cap or is_mxfp8_scaling:
+                var status = heuristic_and_outliers_dispatch[
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    pdl_level=pdl_level,
+                ](
+                    c_device,
+                    a_device,
+                    b_device,
+                    a_scales,
+                    b_scales,
+                    tensor_sf,
+                    ctx,
+                )
+                if status == DISPATCH_HIT:
+                    return
 
         # Vendor (cuBLASLt) block-scaled fallback, used whenever the Mojo
         # heuristic dispatch above has no config for this shape. This covers
@@ -2026,8 +2030,10 @@ def quantize_dynamic_block_scaled[
             " element (uint8) is 2 fp4-e2m1fn values)"
         )
 
-    comptime if _is_sm10x_gpu(ctx.default_device_info):
-        # NVIDIA SM100 path: rank-5 interleaved scales.
+    comptime if _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
+        ctx.default_device_info
+    ):
+        # SM100 / SM120 path: rank-5 interleaved scales.
         comptime assert (
             scales_device.rank == 5 and scales_device.flat_rank == 5
         ), "SM100 requires rank-5 interleaved scales"
@@ -2096,9 +2102,9 @@ def block_scales_interleave[
         input_scales_device.rank == 2 and input_scales_device.flat_rank == 2
     )
 
-    comptime assert (
-        ctx.default_device_info.compute == B200.compute
-    ), "This kernel is only supported on SM100"
+    comptime assert _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
+        ctx.default_device_info
+    ), "This kernel is only supported on SM100 or SM120"
     comptime assert scales_dtype in (
         NVFP4_SF_DTYPE,
         MXFP4_SF_DTYPE,

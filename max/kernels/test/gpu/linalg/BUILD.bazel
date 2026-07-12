@@ -135,7 +135,12 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_cublaslt_scaled_mxfp8_matmul.mojo": ["//:b200_gpu"],
-    "test_cublaslt_scaled_nvfp4_matmul.mojo": ["//:b200_gpu"],
+    "test_cublaslt_scaled_nvfp4_matmul.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//:gb10_gpu": ["//:gb10_gpu"],
+        "//:rtx5090_gpu": ["//:rtx5090_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_hipblaslt_scaled_mxfp4_matmul.mojo": ["//:mi355_gpu"],
     # 4-wave matmul kernels are MI355X-specific (CDNA4 16x16x128 FP8 /
     # 16x16x32 bf16+fp16 MFMA + HK chiplet/L2 swizzle); other AMD parts
