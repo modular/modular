@@ -1095,6 +1095,10 @@ struct TileTensor[
         coord: Coord,
         value: Scalar[Self.dtype],
     ) raises -> Scalar[Self.dtype] where Self.mut and Self.element_size == 1:
+        """Atomically adds a scalar value at the given coordinate.
+
+        Returns the previous value stored at the location.
+        """
         return Atomic.fetch_add[ordering=ordering](
             self._atomic_ptr(coord),
             value,
@@ -1108,6 +1112,7 @@ struct TileTensor[
         coord: Coord,
         value: Scalar[Self.dtype],
     ) raises where Self.mut and Self.element_size == 1:
+        """Atomically adds a scalar value at the given coordinate."""
         _ = self.atomic_fetch_add[ordering=ordering](coord, value)
 
     @always_inline("nodebug")
@@ -1118,6 +1123,7 @@ struct TileTensor[
         coord: Coord,
         value: Scalar[Self.dtype],
     ) raises where Self.mut and Self.element_size == 1:
+        """Atomically updates the value at the given coordinate to the maximum."""
         Atomic.max[ordering=ordering](self._atomic_ptr(coord), value)
 
     @always_inline("nodebug")
@@ -1128,6 +1134,7 @@ struct TileTensor[
         coord: Coord,
         value: Scalar[Self.dtype],
     ) raises where Self.mut and Self.element_size == 1:
+        """Atomically updates the value at the given coordinate to the minimum."""
         Atomic.min[ordering=ordering](self._atomic_ptr(coord), value)
 
     @always_inline("nodebug")
@@ -1141,6 +1148,10 @@ struct TileTensor[
         mut expected: Scalar[Self.dtype],
         desired: Scalar[Self.dtype],
     ) raises -> Bool where Self.mut and Self.element_size == 1:
+        """Atomically compares and exchanges the value at the given coordinate.
+
+        Returns true if the exchange succeeded.
+        """
         return Atomic.compare_exchange[
             success_ordering=success_ordering,
             failure_ordering=failure_ordering,
