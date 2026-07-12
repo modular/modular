@@ -25,6 +25,43 @@ trait ExplicitDestroyEmptyMsgOnImplicitlyDeletable(ImplicitlyDeletable):
         ...
 
 
+# ===----------------------------------------------------------------------=== #
+# Old `@explicit_destroy` usage
+# ===----------------------------------------------------------------------=== #
+
+
+# expected-error @+2 {{@explicit_destroy requires an argument: `@explicit_destroy("...")`}}
+# expected-note @+2 {{Use `ImplicitlyDeletable where False` conformance to opt out of implicit deletion. `@explicit_destroy` is no longer required.}}
+@explicit_destroy
+struct UnconditionalDefault:
+    pass
+
+
+# expected-error @below {{expected exactly one argument: `@explicit_destroy("...")`}}
+@explicit_destroy()
+struct UnconditionalDefaultEmptyArgs:
+    pass
+
+
+# expected-error @+2 {{@explicit_destroy requires an argument: `@explicit_destroy("...")`}}
+# expected-note @+2 {{Use `ImplicitlyDeletable where False` conformance to opt out of implicit deletion. `@explicit_destroy` is no longer required.}}
+@explicit_destroy
+struct ConditionalDefault[cond: Bool](ImplicitlyDeletable where cond):
+    pass
+
+
+# expected-error @+2 {{@explicit_destroy is not valid on `struct` with unconditional conformance to `ImplicitlyDeletable`}}
+# expected-note @+2 {{Add `ImplicitlyDeletable where False` conformance or remove `@explicit_destroy`}}
+@explicit_destroy("some error")
+struct UnconditionalCustom:
+    pass
+
+
+# ===----------------------------------------------------------------------=== #
+# Synthesized __del__ field checks
+# ===----------------------------------------------------------------------=== #
+
+
 @fieldwise_init
 struct Linear(ImplicitlyDeletable where False):
     pass
