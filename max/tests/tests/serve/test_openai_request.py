@@ -1384,3 +1384,114 @@ def test_reasoning_split(payload: dict[str, Any], expected: bool) -> None:
     }
     request = CreateChatCompletionRequest.model_validate(body)
     assert request.reasoning_split is expected
+
+
+def test_merge_tool_call_deltas_coalesces_same_index_in_one_chunk() -> None:
+    """A name/id delta and its first args delta in one chunk merge to one entry.
+
+    Regression for CENG-768: with ``STREAM_MIN_CHUNK_TOKENS`` batching a single
+    ``parse_delta`` return carries both the call-start and the opening args for
+    the same call. Emitting them as two ``tool_calls`` entries that share an
+    index breaks strict OpenAI clients; the router must coalesce them into one
+    first-frame entry ``{index, id, type, function: {name, arguments}}``.
+    """
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    merged = _merge_tool_call_deltas(
+        [
+            ParsedToolCallDelta(index=0, id="call_abc", name="save_config"),
+            ParsedToolCallDelta(index=0, arguments="{"),
+        ]
+    )
+    assert len(merged) == 1
+    entry = merged[0]
+    assert entry.index == 0
+    assert entry.id == "call_abc"
+    assert entry.type == "function"
+    assert entry.function is not None
+    assert entry.function.name == "save_config"
+    assert entry.function.arguments == "{"
+
+
+def test_merge_tool_call_deltas_two_calls_one_chunk_one_entry_each() -> None:
+    """Two calls firing in one chunk yield one entry each, ordered by index."""
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    merged = _merge_tool_call_deltas(
+        [
+            ParsedToolCallDelta(index=0, arguments=', "days": 2}'),
+            ParsedToolCallDelta(index=1, id="call_xyz", name="get_time"),
+            ParsedToolCallDelta(index=1, arguments='{"tz": "UTC"}'),
+        ]
+    )
+    assert [e.index for e in merged] == [0, 1]
+    # index 0 is a continuation: args only, no id/name/type.
+    assert merged[0].id is None
+    assert merged[0].type is None
+    assert merged[0].function is not None
+    assert merged[0].function.name is None
+    assert merged[0].function.arguments == ', "days": 2}'
+    # index 1 is a first frame: id + type + name + concatenated args.
+    assert merged[1].id == "call_xyz"
+    assert merged[1].type == "function"
+    assert merged[1].function is not None
+    assert merged[1].function.name == "get_time"
+    assert merged[1].function.arguments == '{"tz": "UTC"}'
+
+
+def test_merge_tool_call_deltas_first_frame_has_empty_args_string() -> None:
+    """A first frame with no args in its chunk still carries ``arguments == ""``.
+
+    Matches OpenAI's first-frame shape so a client that reads
+    ``function.arguments`` unconditionally does not see ``null``.
+    """
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    merged = _merge_tool_call_deltas(
+        [ParsedToolCallDelta(index=0, id="call_1", name="ping")]
+    )
+    assert len(merged) == 1
+    assert merged[0].function is not None
+    assert merged[0].function.arguments == ""
+
+
+def test_merge_tool_call_deltas_ignores_content_only_deltas() -> None:
+    """Content-only deltas carry no tool call and produce no entry."""
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    assert (
+        _merge_tool_call_deltas(
+            [ParsedToolCallDelta(index=0, content="hello ")]
+        )
+        == []
+    )
+
+
+def test_merge_tool_call_deltas_empty_string_arg_is_present_not_absent() -> (
+    None
+):
+    """An empty-string ``arguments`` is present-but-empty, not absent.
+
+    Pins the ``is not None`` presence semantics: a lone ``arguments=""`` delta
+    still yields one continuation entry (args-only, no id/type/name) rather
+    than being dropped or promoted to a first frame. ``parse_delta`` never
+    emits empty-string fields today, so this only fixes the edge's intent; it
+    must stay behavior-identical on real input.
+    """
+    from max.pipelines.modeling.types import ParsedToolCallDelta
+    from max.serve.router.openai_routes import _merge_tool_call_deltas
+
+    merged = _merge_tool_call_deltas(
+        [ParsedToolCallDelta(index=0, arguments="")]
+    )
+    assert len(merged) == 1
+    assert merged[0].index == 0
+    assert merged[0].id is None
+    assert merged[0].type is None
+    assert merged[0].function is not None
+    assert merged[0].function.name is None
+    assert merged[0].function.arguments == ""

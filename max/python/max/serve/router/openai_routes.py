@@ -21,7 +21,7 @@ import re
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from random import randint
@@ -61,6 +61,7 @@ from max.pipelines.lora import LoRAOperation, LoRARequest, LoRAStatus
 from max.pipelines.modeling.types import (
     ImageContentPart,
     MessageContent,
+    ParsedToolCallDelta,
     ParsedToolResponse,
     PipelineTokenizer,
     RequestID,
@@ -165,6 +166,73 @@ _MAX_TOOL_NAME_LEN = 1024
 _STANDARD_CHAT_ROLES = frozenset(
     {"developer", "system", "user", "assistant", "tool", "function"}
 )
+
+
+@dataclass
+class _MergedToolCall:
+    """Accumulates one streamed chunk's tool-call deltas for a single index."""
+
+    index: int
+    id: str | None = None
+    name: str | None = None
+    arguments: list[str] = field(default_factory=list)
+
+    def to_chunk(self) -> ChoiceDeltaToolCall:
+        args = "".join(self.arguments)
+        if self.id is not None:
+            # A call's first frame: match OpenAI's shape with the name and an
+            # ``arguments`` string (``""`` when no args landed in this chunk).
+            function: ChoiceDeltaToolCallFunction | None = (
+                ChoiceDeltaToolCallFunction(name=self.name, arguments=args)
+            )
+        elif self.name is not None or self.arguments:
+            function = ChoiceDeltaToolCallFunction(
+                name=self.name, arguments=args if self.arguments else None
+            )
+        else:
+            function = None
+        return ChoiceDeltaToolCall(
+            index=self.index,
+            id=self.id,
+            type="function" if self.id is not None else None,
+            function=function,
+        )
+
+
+def _merge_tool_call_deltas(
+    tool_deltas: Sequence[ParsedToolCallDelta],
+) -> list[ChoiceDeltaToolCall]:
+    """Coalesces streamed tool-call deltas that share an index into one entry.
+
+    A single ``parse_delta`` return commonly holds a name/id delta *and* the
+    first arguments delta for the same call, because ``STREAM_MIN_CHUNK_TOKENS``
+    batching lands both in one decoded-token chunk. OpenAI's streaming contract
+    emits exactly one ``tool_calls`` entry per index per chunk (the first frame
+    is ``{index, id, type, function: {name, arguments}}``), so emitting two
+    entries that share an index makes strict clients mis-merge them into a
+    duplicated tool call (CENG-768). Merge per index — preserving first-
+    appearance order — taking ``id``/``type`` and ``name`` from their bearing
+    deltas and concatenating ``arguments`` in delta order.
+    """
+    merged: dict[int, _MergedToolCall] = {}
+    for delta in tool_deltas:
+        # A field is "present" when it is not None, so an empty string counts
+        # as present-but-empty. A delta whose id, name, and arguments are all
+        # None carries no tool-call fragment (e.g. a content-only delta) and
+        # contributes nothing.
+        if delta.id is None and delta.name is None and delta.arguments is None:
+            continue
+        acc = merged.get(delta.index)
+        if acc is None:
+            acc = _MergedToolCall(index=delta.index)
+            merged[delta.index] = acc
+        if delta.id is not None:
+            acc.id = delta.id
+        if delta.name is not None:
+            acc.name = delta.name
+        if delta.arguments is not None:
+            acc.arguments.append(delta.arguments)
+    return [acc.to_chunk() for acc in merged.values()]
 
 
 class _ClientDisconnectedError(RuntimeError):
@@ -496,19 +564,13 @@ class OpenAIChatResponseGenerator(
                                 ).append(delta.arguments)
                             if delta.id or delta.name or delta.arguments:
                                 has_emitted_tool_calls = True
-                                tool_call_chunks.append(
-                                    ChoiceDeltaToolCall(
-                                        index=delta.index,
-                                        id=delta.id,
-                                        type="function" if delta.id else None,
-                                        function=ChoiceDeltaToolCallFunction(
-                                            name=delta.name,
-                                            arguments=delta.arguments,
-                                        )
-                                        if delta.name or delta.arguments
-                                        else None,
-                                    )
-                                )
+
+                        # Emit one tool_calls entry per index for this chunk.
+                        # A single parse_delta return often carries the name/id
+                        # delta and the first args delta for the same call, so
+                        # coalesce them; two same-index entries in one chunk
+                        # break strict OpenAI clients (CENG-768).
+                        tool_call_chunks = _merge_tool_call_deltas(tool_deltas)
 
                         # Always assign a string (possibly "") so that
                         # merged_stream_content is non-None and prevents
