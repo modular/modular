@@ -200,7 +200,7 @@ def print_list(list: List[Int]):
     print(list.__str__())
 
 def mutate_copy(l: List[Int]) -> List[Int]:
-    # def creates an implicit copy of the list because it's mutated
+    # this will give error, since l borrwed as real only, so it can't be changed
     l.append(5)
     return l
 
