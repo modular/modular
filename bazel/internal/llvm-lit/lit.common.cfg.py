@@ -87,6 +87,16 @@ if sys.platform == "darwin":
     if _mac_ver and int(_mac_ver.split(".")[0]) >= 26:
         config.available_features.add("macos-26+")
 
+    # Metal AIR disassembly tests require Xcode's air-objdump utility.
+    if shutil.which("air-objdump") or (
+        shutil.which("xcrun")
+        and os.system(
+            "xcrun -sdk macosx air-objdump --version >/dev/null 2>&1"
+        )
+        == 0
+    ):
+        config.available_features.add("air-objdump")
+
 #---------------------------------------
 # Mojo tools
 #---------------------------------------

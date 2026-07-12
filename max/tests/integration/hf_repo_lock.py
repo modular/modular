@@ -101,21 +101,63 @@ def revision_for_hf_repo(hf_repo_id: str) -> str | None:
     return None
 
 
+def try_revision_for_hf_repo(hf_repo_id: str | None) -> str | None:
+    """Best-effort locked revision for a Hugging Face repository, or None.
+
+    Unlike :func:`revision_for_hf_repo`, this accepts None and returns None for
+    the expected non-fatal cases — an empty id, a local path, an unlocked repo,
+    or a malformed id — so a caller assembling a command line can fall back to
+    the model's default revision. Genuinely unexpected errors still propagate.
+
+    Args:
+        hf_repo_id: A Hugging Face repository ID (e.g. "org/model"), or None.
+
+    Returns:
+        The locked revision hash, or None if it cannot be resolved.
+    """
+    if not hf_repo_id:
+        return None
+    try:
+        return revision_for_hf_repo(hf_repo_id)
+    except ValueError as exc:
+        # A malformed repo id (not `org/model`) is expected for some benchmark
+        # model paths; fall back. Any other error is a real bug and must
+        # surface rather than silently serving the default (wrong) revision.
+        logger.warning(
+            "Could not resolve a locked revision for %s: %s", hf_repo_id, exc
+        )
+        return None
+
+
 def apply_to_config(
     config: pipelines.PipelineArgs | pipelines.PipelineConfig,
 ) -> None:
-    model_revision = revision_for_hf_repo(config.model.model_path)
+    model_config = (
+        pipelines.MAXModelConfig.from_pipeline_args(config)
+        if isinstance(config, pipelines.PipelineArgs)
+        else config.model
+    )
+    model_revision = revision_for_hf_repo(model_config.model_path)
     if model_revision is None:
         raise ValueError(
-            f"No locked revision found for model repository: {config.model.model_path!r}. "
+            f"No locked revision found for model repository: {model_config.model_path!r}. "
         )
-    config.model.huggingface_model_revision = model_revision
 
     weight_revision = revision_for_hf_repo(
-        config.model.huggingface_weight_repo_id
+        model_config.huggingface_weight_repo_id
     )
     if weight_revision is None:
         raise ValueError(
-            f"No locked revision found for weight repository: {config.model.huggingface_weight_repo_id!r}. "
+            f"No locked revision found for weight repository: {model_config.huggingface_weight_repo_id!r}. "
         )
-    config.model.huggingface_weight_revision = weight_revision
+
+    if isinstance(config, pipelines.PipelineArgs):
+        # MAXModelConfig.from_pipeline_args(config) builds a fresh
+        # MAXModelConfig on every call, so writing through it (e.g.
+        # MAXModelConfig.from_pipeline_args(config).foo = ...) is silently
+        # discarded. Set the flat fields directly instead.
+        config.huggingface_model_revision = model_revision
+        config.huggingface_weight_revision = weight_revision
+    else:
+        config.model.huggingface_model_revision = model_revision
+        config.model.huggingface_weight_revision = weight_revision

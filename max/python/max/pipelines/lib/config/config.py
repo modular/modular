@@ -1519,7 +1519,9 @@ class PipelineConfig(ConfigFileModel):
         if args._manifest_override is not None:
             manifest = args._manifest_override
         else:
-            models_dict: dict[str, MAXModelConfig] = {"main": args.model}
+            models_dict: dict[str, MAXModelConfig] = {
+                "main": MAXModelConfig.from_pipeline_args(args)
+            }
             if args.draft_model is not None:
                 models_dict["draft"] = args.draft_model.model_copy(deep=True)
             manifest = ModelManifest(models_dict)

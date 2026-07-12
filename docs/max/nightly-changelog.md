@@ -45,6 +45,15 @@ This version is still a work in progress.
   strict-match ~0.70. Decode is optimized with an in-place SSM state-pool
   read-modify-write that writes only the active slots (+52% output tok/s at
   concurrency 32).
+- Extended Nemotron-H with the Nemotron-3-Nano-30B-A3B hybrid MoE variant (a
+  sigmoid-plus-bias top-6 router over 128 routed experts plus a shared expert)
+  and enabled the Nemotron-H architecture on Apple silicon GPUs in bfloat16.
+  The MoE path on Metal uses an integer-domain expert-gather index
+  (`ops.floor_div`, avoiding a 64-bit-float divide) and a 32-bit
+  `moe_create_indices` atomic (Apple GPUs lack 64-bit atomics), and adds an
+  Apple FP4 (W4A16) decode GEMV with an f16-domain E2M1 decode plus a
+  redesigned varlen causal-conv1d kernel. Verified on M5: the 30B-A3B MoE
+  serves in bfloat16 at GSM8K 8-shot ~0.85.
 - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
 - Added tool-calling, reasoning, and structured-output (`response_format`)
   support to GLM-5.1 / GLM-5.2, enabled with
