@@ -910,7 +910,9 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
 // LoadOp
 //===----------------------------------------------------------------------===//
 
-def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
+def POP_LoadOp : POPOp<"load", [
+    PointerElementType<"ptr", "result">,
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pointer load operation";
   let description = [{
@@ -940,7 +942,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     ```
   }];
 
-  let arguments = (ins Arg<PointerType, "", [MemRead]>:$ptr,
+  let arguments = (ins PointerType:$ptr,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
                        AttrOfType<I1>:$isVolatile,
                        AttrOfType<I1>:$isInvariant,
@@ -974,11 +976,18 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{
+    /// Return true/false if the volatile attribute is concrete, or nullopt if
+    /// still parametric.
     std::optional<bool> isVolatile() {
-      auto attr = getIsVolatileAttr();
-      if (auto boolAttr = llvm::dyn_cast<mlir::BoolAttr>(attr))
+      if (auto boolAttr = llvm::dyn_cast<BoolAttr>(getIsVolatileAttr()))
         return boolAttr.getValue();
       return std::nullopt;
+    }
+    /// Return true if this is known volatile or is still parametric.
+    bool mightBeVolatile() {
+      if (auto boolAttr = llvm::dyn_cast<BoolAttr>(getIsVolatileAttr()))
+        return boolAttr.getValue();
+      return true;
     }
   }];
 }
@@ -988,6 +997,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
 //===----------------------------------------------------------------------===//
 
 def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pointer store operation";
   let description = [{
@@ -1015,7 +1025,7 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
   }];
 
   let arguments = (ins AnyType:$arg,
-                       Arg<PointerType, "", [MemWrite]>:$ptr,
+                       PointerType:$ptr,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
                        AttrOfType<I1>:$isVolatile,
                        AttrOfType<I1>:$isNonTemporal,
@@ -1044,11 +1054,18 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{
+    /// Return true/false if the volatile attribute is concrete, or nullopt if
+    /// still parametric.
     std::optional<bool> isVolatile() {
-      auto attr = getIsVolatileAttr();
-      if (auto boolAttr = llvm::dyn_cast<mlir::BoolAttr>(attr))
+      if (auto boolAttr = llvm::dyn_cast<BoolAttr>(getIsVolatileAttr()))
         return boolAttr.getValue();
       return std::nullopt;
+    }
+    /// Return true if this is known volatile or is still parametric.
+    bool mightBeVolatile() {
+      if (auto boolAttr = llvm::dyn_cast<BoolAttr>(getIsVolatileAttr()))
+        return boolAttr.getValue();
+      return true;
     }
   }];
 }
@@ -1090,11 +1107,18 @@ def POP_MemcpyOp : POPOp<"memcpy", [
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{
+    /// Return true/false if the volatile attribute is concrete, or nullopt if
+    /// still parametric.
     std::optional<bool> isVolatile() {
-      auto attr = getIsVolatileAttr();
-      if (auto boolAttr = llvm::dyn_cast<mlir::BoolAttr>(attr))
+      if (auto boolAttr = llvm::dyn_cast<BoolAttr>(getIsVolatileAttr()))
         return boolAttr.getValue();
       return std::nullopt;
+    }
+    /// Return true if this is known volatile or is still parametric.
+    bool mightBeVolatile() {
+      if (auto boolAttr = llvm::dyn_cast<BoolAttr>(getIsVolatileAttr()))
+        return boolAttr.getValue();
+      return true;
     }
   }];
 }
@@ -2040,6 +2064,12 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic",[
     custom<ParamValue>($intrin, "StringType::get($_ctxt)") `,` `(` $args `)`
     attr-dict `:` functional-type($args, $results)
   }];
+
+  let builders = [
+    OpBuilder<(ins "TypedAttr":$intrin, "ValueRange":$args,
+                   CArg<"FastmathFlags", "FastmathFlags::none">:$fastmathFlags,
+                   CArg<"bool", "true">:$hasSideEffects)>,
+  ];
 }
 
 //===----------------------------------------------------------------------===//

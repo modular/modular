@@ -46,13 +46,19 @@ static bool canPromote(StackAllocationOp alloc) {
   for (Operation *user : alloc->getUsers()) {
     if (isa<StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user))
       continue;
-    if (isa<LoadOp, DebugInfo::ValueOp>(user)) {
+    if (auto load = dyn_cast<LoadOp>(user)) {
+      if (userCrossesFunctionCFG(alloc, user) || load.mightBeVolatile())
+        return false;
+      continue;
+    }
+
+    if (isa<DebugInfo::ValueOp>(user)) {
       if (userCrossesFunctionCFG(alloc, user))
         return false;
       continue;
     }
     auto store = dyn_cast<StoreOp>(user);
-    if (!store || store.getArg() == alloc ||
+    if (!store || store.getArg() == alloc || store.mightBeVolatile() ||
         userCrossesFunctionCFG(alloc, store))
       return false;
   }
@@ -229,6 +235,8 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       continue;
     }
     if (auto load = dyn_cast<LoadOp>(op)) {
+      if (load.mightBeVolatile())
+        continue;
       // If we can elide this load, replace the result of the load with the last
       // value of the stack allocation.
       if (auto alloc = load.getPtr().getDefiningOp<StackAllocationOp>()) {

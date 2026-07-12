@@ -9,6 +9,7 @@
 
 #include "CABILowering.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -892,14 +893,17 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
       continue;
     // If this is the first store to the stack allocation, remember it.
     if (auto storeOp = dyn_cast<StoreOp>(user))
-      if (storeOp.getOperand(1) == op.getResult() && !theStore) {
+      if (storeOp.getOperand(1) == op.getResult() && !theStore &&
+          !storeOp.mightBeVolatile()) {
         theStore = storeOp;
         continue;
       }
     // Remember all the loads.
     if (auto loadOp = dyn_cast<LoadOp>(user)) {
-      loads.push_back(loadOp);
-      continue;
+      if (!loadOp.mightBeVolatile()) {
+        loads.push_back(loadOp);
+        continue;
+      }
     }
     allSimple = false;
     break;
@@ -1152,10 +1156,9 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
 
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
         op, elementType, adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/op.isVolatile().value_or(false),
-        /*isNonTemporal=*/
-        cast<IntegerAttr>(adaptor.getIsNonTemporal()).getInt(),
-        /*isInvariant=*/cast<IntegerAttr>(adaptor.getIsInvariant()).getInt(),
+        /*isVolatile=*/cast<BoolAttr>(adaptor.getIsVolatile()).getValue(),
+        /*isNonTemporal=*/cast<BoolAttr>(adaptor.getIsNonTemporal()).getValue(),
+        /*isInvariant=*/cast<BoolAttr>(adaptor.getIsInvariant()).getValue(),
         /*isInvariantGroup=*/false,
         /*ordering=*/getAtomicOrdering(adaptor.getOrdering()),
         /*syncscope=*/adaptor.getSyncscope()
@@ -1182,9 +1185,8 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
 
     rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
         op, adaptor.getArg(), adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/op.isVolatile().value_or(false),
-        /*isNonTemporal=*/
-        cast<IntegerAttr>(adaptor.getIsNonTemporal()).getInt(),
+        /*isVolatile=*/cast<BoolAttr>(adaptor.getIsVolatile()).getValue(),
+        /*isNonTemporal=*/cast<BoolAttr>(adaptor.getIsNonTemporal()).getValue(),
         /*isInvariantGroup=*/false,
         /*ordering=*/getAtomicOrdering(adaptor.getOrdering()),
         /*syncscope=*/adaptor.getSyncscope()
@@ -1206,7 +1208,7 @@ struct ConvertPOPMemcpy : ConvertPOPToLLVMPattern<MemcpyOp> {
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::MemcpyOp>(
         op, adaptor.getDst(), adaptor.getSrc(), adaptor.getLen(),
-        op.isVolatile().value_or(false));
+        cast<BoolAttr>(adaptor.getIsVolatile()).getValue());
     return success();
   }
 };
@@ -1304,8 +1306,8 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
                        op.getOperands().getTypes(), *getTypeConverter()),
         cast<StringAttr>(adaptor.getAssembly()),
         cast<StringAttr>(adaptor.getConstraints()),
-        cast<IntegerAttr>(adaptor.getHasSideEffects()).getInt(),
-        cast<IntegerAttr>(adaptor.getIsStackAligned()).getInt(),
+        cast<BoolAttr>(adaptor.getHasSideEffects()).getValue(),
+        cast<BoolAttr>(adaptor.getIsStackAligned()).getValue(),
         LLVM::TailCallKind::None,
         LLVM::AsmDialectAttr::get(op->getContext(), LLVM::AsmDialect::AD_ATT),
         adaptor.getOperandAttrsAttr());

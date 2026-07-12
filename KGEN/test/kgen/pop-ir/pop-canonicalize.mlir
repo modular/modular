@@ -1695,9 +1695,9 @@ kgen.func @load_bitcast_func_ptr(%arg0: !kgen.generator<() -> ()>) ->
   // CHECK-NEXT: pop.load %0
   %1 = pop.load %0 : !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.load volatile %0
-  %2 = pop.load volatile %0 : !kgen.pointer<pointer<index>>
+  %2 = pop.load volatile<1> %0 : !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.load volatile invariant %0
-  %3 = pop.load volatile invariant %0 : !kgen.pointer<pointer<index>>
+  %3 = pop.load volatile<1> invariant<1> %0 : !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.load atomic acquire %0
   %4 = pop.load atomic acquire %0 : !kgen.pointer<pointer<index>>
   kgen.return %1, %2, %3, %4 : !kgen.pointer<index>, !kgen.pointer<index>, !kgen.pointer<index>, !kgen.pointer<index>
@@ -1751,7 +1751,8 @@ kgen.func @store_bitcast(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<point
   pop.store %arg0, %0 : !kgen.pointer<pointer<index>>
   // CHECK-NEXT: %1 = pop.pointer.bitcast %arg0 : !kgen.pointer<index> to !kgen.pointer<none>
   // CHECK-NEXT: pop.store volatile %1, %arg1 : !kgen.pointer<pointer<none>>
-  pop.store volatile %arg0, %0 : !kgen.pointer<pointer<index>>
+  %1 = pop.pointer.bitcast %arg0 : !kgen.pointer<index> to !kgen.pointer<none>
+  pop.store volatile<1> %1, %arg1 : !kgen.pointer<pointer<none>>
   kgen.return
 }
 
