@@ -220,10 +220,10 @@ void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
 LogicalResult LoadOp::verify() {
   AtomicOrdering ordering = getOrdering();
   if (ordering != AtomicOrdering::NOT_ATOMIC) {
-    auto isVolatile = dyn_cast<IntegerAttr>(getIsVolatileAttr());
-    auto isInvariant = dyn_cast<IntegerAttr>(getIsInvariantAttr());
-    if (isVolatile && isInvariant &&
-        (isVolatile.getInt() || isInvariant.getInt()))
+    bool isKnownInvariat = false;
+    if (auto boolAttr = ::dyn_cast<BoolAttr>(getIsInvariantAttr()))
+      isKnownInvariat = boolAttr.getValue();
+    if ((isVolatile().has_value() && *isVolatile()) || isKnownInvariat)
       return emitOpError(
           "invalid combination of volatile or invariant with atomic load");
   }
@@ -241,6 +241,15 @@ LogicalResult LoadOp::verify() {
   }
 
   return success();
+}
+
+void LoadOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  effects.emplace_back(mlir::MemoryEffects::Read::get(), &getPtrMutable());
+  if (mightBeVolatile()) {
+    effects.emplace_back(mlir::MemoryEffects::Write::get());
+    effects.emplace_back(mlir::MemoryEffects::Read::get());
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -277,6 +286,15 @@ LogicalResult StoreOp::verify() {
   }
 
   return success();
+}
+
+void StoreOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  effects.emplace_back(mlir::MemoryEffects::Write::get(), &getPtrMutable());
+  if (mightBeVolatile()) {
+    effects.emplace_back(mlir::MemoryEffects::Write::get());
+    effects.emplace_back(mlir::MemoryEffects::Read::get());
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -697,19 +715,15 @@ GlobalConstantOp::inferReturnTypes(MLIRContext *ctx,
 
 void CallLLVMIntrinsicOp::getEffects(
     SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
-  // CallLLVMIntrinsicOp has side effect by default. If the attribute is not
-  // set, assume it has side effect.
-  auto hasSideEffects = dyn_cast<IntegerAttr>(getHasSideEffectsAttr());
+  auto hasSideEffects = dyn_cast<IntegerAttr>(getHasSideEffects());
   if (!hasSideEffects || hasSideEffects.getInt())
     effects.emplace_back(mlir::MemoryEffects::Write::get());
 }
 
 mlir::Speculation::Speculatability CallLLVMIntrinsicOp::getSpeculatability() {
-  // If we know there are no side effects we can speculate.
-  if (auto hasSideEffects = dyn_cast<IntegerAttr>(getHasSideEffectsAttr())) {
-    if (!hasSideEffects.getInt())
-      return mlir::Speculation::Speculatable;
-  }
+  auto hasSideEffects = dyn_cast<IntegerAttr>(getHasSideEffects());
+  if (hasSideEffects && !hasSideEffects.getInt())
+    return mlir::Speculation::Speculatable;
   return mlir::Speculation::NotSpeculatable;
 }
 

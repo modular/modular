@@ -192,7 +192,8 @@ runAnalysis(Region &top, PassInfo &pass,
         if (auto store = dyn_cast<StoreOp>(user)) {
           // If the pointer is the argument of a store or the store leaves the
           // CFG, then it escapes.
-          if (store.getArg() == ptr || userCrossesFunctionCFG(op, user)) {
+          if (store.getArg() == ptr || userCrossesFunctionCFG(op, user) ||
+              store.mightBeVolatile()) {
             KGEN_DEBUG(0, {
               llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
               alloc.print(llvm::dbgs());
@@ -208,9 +209,9 @@ runAnalysis(Region &top, PassInfo &pass,
           // Stores are terminals.
           continue;
         }
-        if (isa<LoadOp>(user)) {
+        if (auto loadOp = dyn_cast<LoadOp>(user)) {
           // If the load leaves the CFG, then it escapes.
-          if (userCrossesFunctionCFG(op, user)) {
+          if (userCrossesFunctionCFG(op, user) || loadOp.mightBeVolatile()) {
             KGEN_DEBUG(0, {
               llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
               alloc.print(llvm::dbgs());

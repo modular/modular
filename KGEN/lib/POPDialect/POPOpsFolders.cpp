@@ -442,8 +442,9 @@ OpFoldResult FMAOp::fold(FoldAdaptor adaptor) {
 
 /// We can fold loads of `pop.global_constant` ops.
 OpFoldResult LoadOp::fold(FoldAdaptor adaptor) {
-  if (adaptor.getOrdering() != AtomicOrdering::NOT_ATOMIC) {
-    // Don't fold atomic loads.
+  if (adaptor.getOrdering() != AtomicOrdering::NOT_ATOMIC ||
+      mightBeVolatile()) {
+    // Don't fold volatile or atomic loads.
     return {};
   }
 
@@ -500,8 +501,8 @@ OpFoldResult LoadOp::fold(FoldAdaptor adaptor) {
 }
 
 LogicalResult LoadOp::canonicalize(LoadOp op, PatternRewriter &b) {
-  if (op.getOrdering() != AtomicOrdering::NOT_ATOMIC) {
-    // Don't canonicalize atomic loads.
+  if (op.getOrdering() != AtomicOrdering::NOT_ATOMIC || op.mightBeVolatile()) {
+    // Don't canonicalize atomic or volatile loads.
     return failure();
   }
 
@@ -1447,8 +1448,8 @@ SIMDSplatOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 LogicalResult StoreOp::canonicalize(StoreOp op, PatternRewriter &b) {
-  if (op.getOrdering() != AtomicOrdering::NOT_ATOMIC) {
-    // Don't canonicalize atomic stores.
+  if (op.getOrdering() != AtomicOrdering::NOT_ATOMIC || op.mightBeVolatile()) {
+    // Don't canonicalize atomic or volatile stores.
     return failure();
   }
 
