@@ -1083,6 +1083,30 @@ def test_openai_tool_function_name_charset_is_per_model() -> None:
             _validate_tool_function_name(bad, minimax_re)
 
 
+def test_openai_tool_function_name_length_limit() -> None:
+    """Tool-name length cap is 1024 chars; empty and invalid charsets rejected."""
+    from max.pipelines.context.exceptions import InputError
+    from max.serve.router.openai_routes import (
+        _MAX_TOOL_NAME_LEN,
+        _validate_tool_function_name,
+    )
+
+    assert _MAX_TOOL_NAME_LEN == 1024
+
+    # A name exactly at the cap is accepted.
+    _validate_tool_function_name("a" * _MAX_TOOL_NAME_LEN)
+
+    # One character past the cap is rejected.
+    with pytest.raises(InputError):
+        _validate_tool_function_name("a" * (_MAX_TOOL_NAME_LEN + 1))
+
+    # Empty and invalid-character names are still rejected regardless of length.
+    with pytest.raises(InputError):
+        _validate_tool_function_name("")
+    with pytest.raises(InputError):
+        _validate_tool_function_name("has space")
+
+
 async def test_openai_rejects_invalid_json_tool_call_arguments() -> None:
     """Assistant ``tool_calls.arguments`` that isn't valid JSON -> 400 (verifier 16_12)."""
     from max.pipelines.context.exceptions import InputError

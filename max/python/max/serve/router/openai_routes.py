@@ -158,8 +158,8 @@ _CLIENT_DISCONNECTED_STATUS_CODE = 499
 # Default tool-name charset (OpenAI's); a parser may widen it via VALID_TOOL_NAME_RE.
 _DEFAULT_VALID_TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
-# OpenAI's 64-char cap; checked by length so it holds even when a parser widens the charset.
-_MAX_TOOL_NAME_LEN = 64
+# Tool-name length cap; checked by length so it holds even when a parser widens the charset.
+_MAX_TOOL_NAME_LEN = 1024
 
 # Standard OpenAI message roles; a tokenizer may allow more via ``extra_chat_roles``.
 _STANDARD_CHAT_ROLES = frozenset(

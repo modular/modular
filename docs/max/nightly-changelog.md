@@ -184,6 +184,9 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Raised the maximum tool function name length from 64 to 1024 characters.
+  Client-supplied tool names that legitimately exceed 64 characters are now
+  accepted instead of rejected with a 400 error.
 - Added an opt-in `emit_reasoning_content` server config. When enabled, chat
   completion responses emit a reasoning model's chain-of-thought under
   `reasoning_content` instead of `reasoning` (the two are never emitted
