@@ -3256,6 +3256,11 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   if (anyTypeDecl)
     parentTraits.push_back(anyTypeDecl->getSymbolRef());
 
+  // Make every nominal struct type inherit from `ImplicitlyDeletable`.
+  // May be overridden / narrowed by explicit conditional `where` conformance.
+  if (implicitDelDecl)
+    parentTraits.push_back(implicitDelDecl->getSymbolRef());
+
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
   decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(structOp));
@@ -3273,50 +3278,34 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Propagate signature errors and decls.
   decl.takeDecls(sigDecl);
 
-  std::string linearTypeErrorMsg;
+  // Capture the location of the `@explicit_destroy` decorator for more
+  // accurate diagnostics later.
+  std::optional<std::tuple<std::string, SMLoc>> linearTypeErrorMsg;
   for (auto decoratorExpr : decoratorExprs) {
-    if (auto *declRefNode = dyn_cast<DeclRefNode>(decoratorExpr.first)) {
-      // TODO(MOCO-1468): Remove this, always require argument to
-      // @explicit_destroy.
-      if (declRefNode->spelling == "explicit_destroy") {
-        linearTypeErrorMsg =
-            "Unhandled explicit_destroy type " + structOp.getDeclName().str();
-      }
-    } else if (auto *callNode = dyn_cast<CallNode>(decoratorExpr.first)) {
+    if (auto *callNode = dyn_cast<CallNode>(decoratorExpr.first)) {
       if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
         if (declRef->spelling == "explicit_destroy") {
-          // TODO(MOCO-1468): Remove this, always require argument to
-          // @explicit_destroy.
-          if (callNode->operands.size() == 0) {
-            linearTypeErrorMsg = "Unhandled explicit_destroy type " +
-                                 structOp.getDeclName().str();
+          if (callNode->operands.size() != 1) {
+            shared.emitError(callNode->getLoc())
+                << "expected exactly one argument: "
+                   "`@explicit_destroy(\"...\")`";
+            return failure();
           } else {
             auto strExpr =
                 dyn_cast<StringLiteralNode>(callNode->operands.front().expr);
             // TODO(MOCO-1468): Error message here.
             if (!strExpr)
               return failure();
-            linearTypeErrorMsg = strExpr->getValue();
+            linearTypeErrorMsg =
+                std::make_tuple(strExpr->getValue(), callNode->getLoc());
           }
         }
       }
     }
   }
-  // TODO(MOCO-1468): Remove else; always require argument to @explicit_destroy.
-  if (!linearTypeErrorMsg.empty()) {
+  if (linearTypeErrorMsg && !std::get<0>(*linearTypeErrorMsg).empty()) {
     structOp.setLinearTypeErrorMsg(
-        std::make_optional(llvm::StringRef(linearTypeErrorMsg)));
-  } else {
-    // The type is not marked with `@explicit_destroy`
-    //
-    // So proceed to injecting the implicit unconditional ImplicitlyDeletable
-    // conformance that every struct otherwise gets by default.
-    //
-    // If the user added an explicit conformance with a narrower constraint,
-    // that will override this.
-    if (implicitDelDecl) {
-      parentTraits.push_back(implicitDelDecl->getSymbolRef());
-    }
+        std::make_optional(llvm::StringRef(std::get<0>(*linearTypeErrorMsg))));
   }
 
   // Build canonical trait with constraints for conditional conformance.
@@ -3351,11 +3340,13 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       if (isTriviallyTrueConstraint(constraint)) {
         // Unconditional ImplicitlyDeletable cannot be combined with
         // @explicit_destroy.
-        if (!linearTypeErrorMsg.empty()) {
-          shared.emitError(decl.getLoc())
-              << "@explicit_destroy cannot be combined with unconditional "
-                 "conformance to 'ImplicitlyDeletable'; use a where-clause "
-                 "for conditional conformance or remove @explicit_destroy";
+        if (linearTypeErrorMsg) {
+          auto diag = shared.emitError(std::get<1>(*linearTypeErrorMsg))
+                      << "@explicit_destroy is not valid on `struct` with "
+                         "unconditional conformance to `ImplicitlyDeletable`";
+          diag.attachNote(decl.getLoc())
+              << "Add `ImplicitlyDeletable where False` conformance or "
+                 "remove `@explicit_destroy`";
           decl.setErroneous();
           return failure();
         }
@@ -3575,8 +3566,21 @@ LogicalResult StructDecorators::processBodyDecorator(ExprNode *decorator) {
                                     /*implicit*/ false);
       return success();
     }
-    if (declRef->spelling == "explicit_destroy")
-      return success();
+    if (declRef->spelling == "explicit_destroy") {
+      auto diag = emitError(declRef->getLoc())
+                  << "@explicit_destroy requires an argument: "
+                     "`@explicit_destroy(\"...\")`";
+      // To help educate users on migrating to `ImplicitlyDeletable where ...`
+      // constraints, provide an informational nudge.
+      // TODO: This note can be removed after docs/LLMs/ecosystem have learned
+      //       the new way.
+      diag.attachNote(structDecl)
+          << "Use `ImplicitlyDeletable where False` "
+             "conformance to opt out of implicit deletion. `@explicit_destroy` "
+             "is no longer required.";
+      structDecl.setErroneous();
+      return failure();
+    }
   }
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
