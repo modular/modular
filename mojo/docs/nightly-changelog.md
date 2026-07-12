@@ -229,25 +229,17 @@ This version is still a work in progress.
   module1.bar()
   ```
 
-- The `@explicit_destroy` decorator is no longer required on structs that
-  conditionally conform to `ImplicitlyDeletable`.
+- The `@explicit_destroy` decorator is no longer sufficient for a `struct` type
+  to opt-out of `ImplicitlyDeletable` conformance.
 
-  By default, all Mojo structs implicitly conform to `ImplicitlyDeletable`.
-  As before, a type author can opt-out of that implicit conformance using the
-  `@explicit_destroy` decorator:
+  As before, by default all Mojo structs implicitly conform to
+  `ImplicitlyDeletable`. Mojo now requires writing a constrained
+  `ImplicitlyDeletable where ...` conformance to narrow or opt-out of that
+  trait.
 
-  ```mojo
-  @explicit_destroy
-  struct FileHandle:
-      pass
-
-  comptime assert not conforms_to(FileHandle, ImplicitlyDeletable)
-  ```
-
-  Now, if the type *conditionally* conforms to `ImplicitlyDeletable`, you may
-  omit redundantly writing `@explicit_destroy`. This works both for types
+  This works both for types
   that are never `ImplicitlyDeletable` (`where False`) and for types that are
-  non-ImplicitlyDeletable based on a non trivial condition (`where <cond>`):
+  non-ImplicitlyDeletable based on a non-trivial condition (`where <cond>`):
 
   ```mojo
   # no @explicit_destroy necessary
@@ -256,6 +248,8 @@ This version is still a work in progress.
   ):
       def destroy(deinit self):
           pass
+
+  comptime assert not conforms_to(NeverDeletable, ImplicitlyDeletable)
 
   # no @explicit_destroy necessary
   struct Container[T: AnyType](
@@ -266,6 +260,9 @@ This version is still a work in progress.
   comptime assert conforms_to(Container[Int], ImplicitlyDeletable)
   comptime assert not conforms_to(Container[NonDeletable], ImplicitlyDeletable)
   ```
+
+  Using `@explicit_destroy` without an argument error string is now an error, as
+  it would have no effect or purpose.
 
   `@explicit_destroy("custom error")` can still be used to provide additional
   instruction to users when an instance cannot be deleted implicitly.

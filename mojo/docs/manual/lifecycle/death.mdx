@@ -261,6 +261,8 @@ requires you to consume the value. Failing to do so results in a compiler error.
 
 ### Using `@explicit_destroy`
 
+<!-- TODO(DOCS-2253): Reflect changes to `@explicit_destroy` -->
+
 Most types use implicit destruction. When a value's lifetime ends, Mojo
 automatically calls `__del__()` to clean up. This works for most cases: memory
 is freed and simple resources are released automatically.
@@ -289,7 +291,7 @@ cleanup path, such as invoking a secondary destructor.
 
 ```mojo
 @explicit_destroy("Must call save_and_close() or discard()")
-struct FileBuffer:
+struct FileBuffer(ImplicitlyDeletable where False):
     var path: String
     var data: String
 

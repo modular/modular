@@ -1171,10 +1171,7 @@ struct NonEquatable(Copyable):
     pass
 
 
-@explicit_destroy(
-    "You must use .destroy() to consume `CopyableExplicitDestroy`"
-)
-struct CopyableExplicitDestroy(Copyable):
+struct CopyableExplicitDestroy(Copyable, ImplicitlyDeletable where False):
     """Test type that is `Copyable` but must be explicitly destroyed."""
 
     var value: Int
