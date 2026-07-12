@@ -167,7 +167,8 @@ def atomic_compare_exchange_kernel(
         address_space=AddressSpace.GLOBAL,
     ],
 ) raises:
-    """Perform an atomic compare-exchange through TileTensor to test lowering."""
+    """Perform an atomic compare-exchange through TileTensor to test lowering.
+    """
     var expected = Scalar[DType.int32](0)
     _ = tensor.atomic_compare_exchange(
         coord[0, 0],
@@ -249,11 +250,15 @@ def test_tile_tensor_atomic_max() raises:
 
 
 def test_tile_tensor_atomic_compare_exchange() raises:
-    """TileTensor atomic compare_exchange emits a compare-and-swap instruction."""
+    """TileTensor atomic compare_exchange emits a compare-and-swap instruction.
+    """
     var asm = _compile_code[atomic_compare_exchange_kernel, target=_SM80]()
     assert_true(
         "atom.acquire.sys.global" in asm and ("cas" in asm or "cmpxchg" in asm),
-        "expected an atomic compare-exchange instruction for TileTensor atomic_compare_exchange",
+        (
+            "expected an atomic compare-exchange instruction for TileTensor"
+            " atomic_compare_exchange"
+        ),
     )
 
 

@@ -1085,7 +1085,9 @@ struct TileTensor[
         var scalar_ptr = Self.Storage.unsafe_ptr(
             self._unsafe_storage_cast[to_mut=True](),
         ).unsafe_origin_cast[MutAnyOrigin]()
-        return scalar_ptr + self.layout[linear_idx_type=Self.linear_idx_type](coord)
+        return scalar_ptr + self.layout[linear_idx_type=Self.linear_idx_type](
+            coord
+        )
 
     @always_inline("nodebug")
     def atomic_fetch_add[
@@ -1094,7 +1096,9 @@ struct TileTensor[
         self,
         coord: Coord,
         value: Scalar[Self.dtype],
-    ) raises -> Scalar[Self.dtype] where Self.mut and Self.element_size == 1:
+    ) raises -> Scalar[
+        Self.dtype
+    ] where (Self.mut and Self.element_size == 1):
         """Atomically adds a scalar value at the given coordinate.
 
         Parameters:
@@ -1122,7 +1126,9 @@ struct TileTensor[
         self,
         coord: Coord,
         value: Scalar[Self.dtype],
-    ) raises where Self.mut and Self.element_size == 1:
+    ) raises where (
+        Self.mut and Self.element_size == 1
+    ):
         """Atomically adds a scalar value at the given coordinate.
 
         Parameters:
@@ -1144,7 +1150,9 @@ struct TileTensor[
         self,
         coord: Coord,
         value: Scalar[Self.dtype],
-    ) raises where Self.mut and Self.element_size == 1:
+    ) raises where (
+        Self.mut and Self.element_size == 1
+    ):
         """Atomically updates the value at the given coordinate to the maximum.
 
         Parameters:
@@ -1166,7 +1174,9 @@ struct TileTensor[
         self,
         coord: Coord,
         value: Scalar[Self.dtype],
-    ) raises where Self.mut and Self.element_size == 1:
+    ) raises where (
+        Self.mut and Self.element_size == 1
+    ):
         """Atomically updates the value at the given coordinate to the minimum.
 
         Parameters:
@@ -1191,7 +1201,7 @@ struct TileTensor[
         coord: Coord,
         mut expected: Scalar[Self.dtype],
         desired: Scalar[Self.dtype],
-    ) raises -> Bool where Self.mut and Self.element_size == 1:
+    ) raises -> Bool where (Self.mut and Self.element_size == 1):
         """Atomically compares and exchanges the value at the given coordinate.
 
         Parameters:
