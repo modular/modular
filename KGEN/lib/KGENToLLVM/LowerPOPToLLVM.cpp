@@ -1135,12 +1135,6 @@ static LLVM::AtomicOrdering getAtomicOrdering(AtomicOrdering ordering) {
   llvm_unreachable("unknown atomic ordering");
 }
 
-static bool getBoolAttrValue(TypedAttr attr, bool defaultValue) {
-  if (attr)
-    return cast<BoolAttr>(attr).getValue();
-  return defaultValue;
-}
-
 //===----------------------------------------------------------------------===//
 // ConvertPOPLoad
 //===----------------------------------------------------------------------===//
@@ -1158,10 +1152,10 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
 
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
         op, elementType, adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/getBoolAttrValue(adaptor.getIsVolatileAttr(), false),
+        /*isVolatile=*/cast<IntegerAttr>(adaptor.getIsVolatile()).getInt(),
         /*isNonTemporal=*/
-        getBoolAttrValue(adaptor.getIsNonTemporalAttr(), false),
-        /*isInvariant=*/getBoolAttrValue(adaptor.getIsInvariantAttr(), false),
+        cast<IntegerAttr>(adaptor.getIsNonTemporal()).getInt(),
+        /*isInvariant=*/cast<IntegerAttr>(adaptor.getIsInvariant()).getInt(),
         /*isInvariantGroup=*/false,
         /*ordering=*/getAtomicOrdering(adaptor.getOrdering()),
         /*syncscope=*/adaptor.getSyncscope()
@@ -1188,9 +1182,9 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
 
     rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
         op, adaptor.getArg(), adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/getBoolAttrValue(adaptor.getIsVolatileAttr(), false),
+        /*isVolatile=*/cast<IntegerAttr>(adaptor.getIsVolatile()).getInt(),
         /*isNonTemporal=*/
-        getBoolAttrValue(adaptor.getIsNonTemporalAttr(), false),
+        cast<IntegerAttr>(adaptor.getIsNonTemporal()).getInt(),
         /*isInvariantGroup=*/false,
         /*ordering=*/getAtomicOrdering(adaptor.getOrdering()),
         /*syncscope=*/adaptor.getSyncscope()
@@ -1210,9 +1204,9 @@ struct ConvertPOPMemcpy : ConvertPOPToLLVMPattern<MemcpyOp> {
   LogicalResult
   matchAndRewrite(MemcpyOp op, MemcpyOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    bool isVolatile = getBoolAttrValue(adaptor.getIsVolatileAttr(), false);
     rewriter.replaceOpWithNewOp<LLVM::MemcpyOp>(
-        op, adaptor.getDst(), adaptor.getSrc(), adaptor.getLen(), isVolatile);
+        op, adaptor.getDst(), adaptor.getSrc(), adaptor.getLen(),
+        cast<IntegerAttr>(adaptor.getIsVolatile()).getInt());
     return success();
   }
 };
@@ -1310,8 +1304,8 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
                        op.getOperands().getTypes(), *getTypeConverter()),
         cast<StringAttr>(adaptor.getAssembly()),
         cast<StringAttr>(adaptor.getConstraints()),
-        getBoolAttrValue(adaptor.getHasSideEffectsAttr(), false),
-        getBoolAttrValue(adaptor.getIsStackAlignedAttr(), false),
+        cast<IntegerAttr>(adaptor.getHasSideEffects()).getInt(),
+        cast<IntegerAttr>(adaptor.getIsStackAligned()).getInt(),
         LLVM::TailCallKind::None,
         LLVM::AsmDialectAttr::get(op->getContext(), LLVM::AsmDialect::AD_ATT),
         adaptor.getOperandAttrsAttr());

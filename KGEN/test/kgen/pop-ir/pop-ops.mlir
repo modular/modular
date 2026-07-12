@@ -566,12 +566,12 @@ kgen.generator @pop_load_store<DT: dtype>(%p0: !kgen.pointer<scalar<f32>>, %p1: 
   %0 = pop.load %p0 : !kgen.pointer<scalar<f32>>
   // CHECK: %[[V1:.*]] = pop.load %{{.*}} : !kgen.pointer<scalar<DT>>
   %1 = pop.load %p1 : !kgen.pointer<scalar<DT>>
-  // CHECK: %[[V2:.*]] = pop.load volatile<1> %{{.*}} : !kgen.pointer<scalar<f32>>
-  %2 = pop.load volatile<1> %p0 : !kgen.pointer<scalar<f32>>
-  // CHECK: %[[V3:.*]] = pop.load volatile<1> %{{.*}} : !kgen.pointer<scalar<DT>>
-  %3 = pop.load volatile<1> %p1 : !kgen.pointer<scalar<DT>>
-  // CHECK: %[[V4:.*]] = pop.load invariant<1> %{{.*}} : !kgen.pointer<scalar<DT>>
-  %4 = pop.load invariant<1> %p1 : !kgen.pointer<scalar<DT>>
+  // CHECK: %[[V2:.*]] = pop.load volatile %{{.*}} : !kgen.pointer<scalar<f32>>
+  %2 = pop.load volatile %p0 : !kgen.pointer<scalar<f32>>
+  // CHECK: %[[V3:.*]] = pop.load volatile %{{.*}} : !kgen.pointer<scalar<DT>>
+  %3 = pop.load volatile %p1 : !kgen.pointer<scalar<DT>>
+  // CHECK: %[[V4:.*]] = pop.load invariant %{{.*}} : !kgen.pointer<scalar<DT>>
+  %4 = pop.load invariant %p1 : !kgen.pointer<scalar<DT>>
   // CHECK: [[V5:%.*]] = pop.load atomic acquire %{{.*}} : !kgen.pointer<scalar<DT>>
   %5 = pop.load atomic acquire %p1 : !kgen.pointer<scalar<DT>>
   // CHECK: [[V6:%.*]] = pop.load atomic syncscope("singlethread") acquire %{{.*}} : !kgen.pointer<scalar<DT>>
@@ -580,10 +580,10 @@ kgen.generator @pop_load_store<DT: dtype>(%p0: !kgen.pointer<scalar<f32>>, %p1: 
   pop.store %0, %p0 : !kgen.pointer<scalar<f32>>
   // CHECK: pop.store %[[V1]], %{{.*}} : !kgen.pointer<scalar<DT>>
   pop.store %1, %p1 : !kgen.pointer<scalar<DT>>
-  // CHECK: pop.store volatile<1> %[[V0]], %{{.*}} : !kgen.pointer<scalar<f32>>
-  pop.store volatile<1> %0, %p0 : !kgen.pointer<scalar<f32>>
-  // CHECK: pop.store volatile<1> %[[V1]], %{{.*}} : !kgen.pointer<scalar<DT>>
-  pop.store volatile<1> %1, %p1 : !kgen.pointer<scalar<DT>>
+  // CHECK: pop.store volatile %[[V0]], %{{.*}} : !kgen.pointer<scalar<f32>>
+  pop.store volatile %0, %p0 : !kgen.pointer<scalar<f32>>
+  // CHECK: pop.store volatile %[[V1]], %{{.*}} : !kgen.pointer<scalar<DT>>
+  pop.store volatile %1, %p1 : !kgen.pointer<scalar<DT>>
   // CHECK: pop.store atomic release [[V5]], %{{.*}} : !kgen.pointer<scalar<DT>>
   pop.store atomic release %5, %p1 : !kgen.pointer<scalar<DT>>
   // CHECK: pop.store atomic seq_cst [[V5]], %{{.*}} : !kgen.pointer<scalar<DT>>
@@ -885,13 +885,13 @@ kgen.generator @inline_asm<ty: type, dt: dtype>(
   // CHECK: (!kgen.scalar<si32>, !kgen.scalar<index>) -> i8
   %1 = pop.inline_asm "something", "anotherthing", (%arg0, %arg1) :
     (!kgen.scalar<si32>, !kgen.scalar<index>) -> i8
-  // CHECK: pop.inline_asm side_effecting<1> "something", "anotherthing", (%arg0, %arg1) :
+  // CHECK: pop.inline_asm side_effecting "something", "anotherthing", (%arg0, %arg1) :
   // CHECK: (!kgen.scalar<si32>, !kgen.scalar<index>) -> i8
-  %2 = pop.inline_asm side_effecting<1> "something", "anotherthing", (%arg0, %arg1) :
+  %2 = pop.inline_asm side_effecting "something", "anotherthing", (%arg0, %arg1) :
     (!kgen.scalar<si32>, !kgen.scalar<index>) -> i8
-  // CHECK: pop.inline_asm stack_aligned<1> "something", "anotherthing", (%arg0, %arg1) :
+  // CHECK: pop.inline_asm stack_aligned "something", "anotherthing", (%arg0, %arg1) :
   // CHECK: (!kgen.scalar<si32>, !kgen.scalar<index>) -> i8
-  %3 = pop.inline_asm stack_aligned<1> "something", "anotherthing", (%arg0, %arg1) :
+  %3 = pop.inline_asm stack_aligned "something", "anotherthing", (%arg0, %arg1) :
     (!kgen.scalar<si32>, !kgen.scalar<index>) -> i8
   // CHECK: pop.inline_asm "foo", "=r,=r,r", (%arg0) : (!kgen.scalar<si32>) ->
   // CHECK: !kgen.struct<(ty, scalar<dt>)>

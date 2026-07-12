@@ -528,15 +528,32 @@ ParseResult KGEN::parseIndexParamValue(AsmParser &p, TypedAttr &value) {
   return parseParamValue(p, value, p.getBuilder().getIndexType());
 }
 
-/// Print/Parse an attribute value that is known to have i1 type.
-void KGEN::printI1ParamValue(AsmPrinter &p, Operation *op, Attribute value) {
-  printParamValue(p, cast<TypedAttr>(value));
+ParseResult KGEN::parseI1Flag(AsmParser &p, TypedAttr &value,
+                              llvm::StringRef keyword) {
+  if (failed(p.parseOptionalKeyword(keyword))) {
+    value = p.getBuilder().getBoolAttr(false);
+    return success();
+  }
+  if (failed(p.parseLess())) {
+    value = p.getBuilder().getBoolAttr(true);
+    return success();
+  }
+  if (failed(parseParamValue(p, value, p.getBuilder().getI1Type())) ||
+      failed(p.parseGreater()))
+    return failure();
+  return success();
 }
-void KGEN::printI1ParamValue(AsmPrinter &p, Attribute value) {
+
+void KGEN::printI1Flag(AsmPrinter &p, TypedAttr value,
+                       llvm::StringRef keyword) {
+  if (auto boolAttr = dyn_cast<BoolAttr>(value)) {
+    if (boolAttr.getValue())
+      p << keyword;
+    return;
+  }
+  p << keyword << '<';
   printParamValue(p, cast<TypedAttr>(value));
-}
-ParseResult KGEN::parseI1ParamValue(AsmParser &p, TypedAttr &value) {
-  return parseParamValue(p, value, p.getBuilder().getI1Type());
+  p << '>';
 }
 
 /// Print/Parse an attribute value that is known to have scalar<bool> type.

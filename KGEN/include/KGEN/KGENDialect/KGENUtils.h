@@ -233,11 +233,14 @@ void printIndexParamValue(AsmPrinter &p, Attribute value);
 /// Parse a parameter value that is known to have `index` type.
 ParseResult parseIndexParamValue(AsmParser &p, TypedAttr &value);
 
-/// Print a parameter value that is known to have `i1` type.
-void printI1ParamValue(AsmPrinter &p, Operation *op, Attribute value);
-void printI1ParamValue(AsmPrinter &p, Attribute value);
-/// Parse a parameter value that is known to have `i1` type.
-ParseResult parseI1ParamValue(AsmParser &p, TypedAttr &value);
+/// Parse/print an optional i1 flag in assembly format, e.g. `volatile<1>`.
+ParseResult parseI1Flag(AsmParser &p, TypedAttr &value,
+                        llvm::StringRef keyword);
+void printI1Flag(AsmPrinter &p, TypedAttr value, llvm::StringRef keyword);
+inline void printI1Flag(AsmPrinter &p, Operation *, TypedAttr value,
+                        llvm::StringRef keyword) {
+  printI1Flag(p, value, keyword);
+}
 
 /// Print a parameter value that is known to have `scalar<bool>` type.
 void printScalarBoolParamValue(AsmPrinter &p, Operation *op, Attribute value);

@@ -212,18 +212,21 @@ void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
                    AtomicOrdering ordering,
                    std::optional<StringAttr> syncscope) {
   build(b, state, ptr, alignment ? b.getIndexAttr(*alignment) : TypedAttr(),
-        isVolatile ? b.getBoolAttr(isVolatile) : TypedAttr(),
-        isInvariant ? b.getBoolAttr(isInvariant) : TypedAttr(),
-        isNonTemporal ? b.getBoolAttr(isNonTemporal) : TypedAttr(), ordering,
+        b.getBoolAttr(isVolatile), b.getBoolAttr(isInvariant),
+        b.getBoolAttr(isNonTemporal), ordering,
         syncscope ? *syncscope : TypedAttr());
 }
 
 LogicalResult LoadOp::verify() {
   AtomicOrdering ordering = getOrdering();
-  if ((ordering != AtomicOrdering::NOT_ATOMIC) &&
-      (getIsVolatile() || getIsInvariant()))
-    return emitOpError(
-        "invalid combination of volatile or invariant with atomic load");
+  if (ordering != AtomicOrdering::NOT_ATOMIC) {
+    auto isVolatile = dyn_cast<IntegerAttr>(getIsVolatileAttr());
+    auto isInvariant = dyn_cast<IntegerAttr>(getIsInvariantAttr());
+    if (isVolatile && isInvariant &&
+        (isVolatile.getInt() || isInvariant.getInt()))
+      return emitOpError(
+          "invalid combination of volatile or invariant with atomic load");
+  }
 
   if (ordering == AtomicOrdering::NOT_ATOMIC && getSyncscope())
     return emitOpError("cannot specify syncscope without an atomic load");
@@ -250,15 +253,17 @@ void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
                     std::optional<StringAttr> syncscope) {
   build(b, state, arg, ptr,
         alignment ? b.getIndexAttr(*alignment) : TypedAttr(),
-        isVolatile ? b.getBoolAttr(isVolatile) : TypedAttr(),
-        isNonTemporal ? b.getBoolAttr(isNonTemporal) : TypedAttr(), ordering,
+        b.getBoolAttr(isVolatile), b.getBoolAttr(isNonTemporal), ordering,
         syncscope ? *syncscope : TypedAttr());
 }
 
 LogicalResult StoreOp::verify() {
   AtomicOrdering ordering = getOrdering();
-  if ((ordering != AtomicOrdering::NOT_ATOMIC) && getIsVolatile())
-    return emitOpError("volatile stores cannot be atomic");
+  if (ordering != AtomicOrdering::NOT_ATOMIC) {
+    if (auto isVolatile = dyn_cast<IntegerAttr>(getIsVolatileAttr());
+        isVolatile && isVolatile.getInt())
+      return emitOpError("volatile stores cannot be atomic");
+  }
 
   if (ordering == AtomicOrdering::NOT_ATOMIC && getSyncscope())
     return emitOpError("cannot specify syncscope without an atomic store");
@@ -281,8 +286,7 @@ LogicalResult StoreOp::verify() {
 
 void MemcpyOp::build(OpBuilder &b, OperationState &state, Value dst, Value src,
                      Value len, bool isVolatile) {
-  build(b, state, dst, src, len,
-        isVolatile ? b.getBoolAttr(isVolatile) : TypedAttr());
+  build(b, state, dst, src, len, b.getBoolAttr(isVolatile));
 }
 
 LogicalResult MemcpyOp::verify() {
@@ -691,28 +695,23 @@ GlobalConstantOp::inferReturnTypes(MLIRContext *ctx,
 //===----------------------------------------------------------------------===//
 // CallLLVMIntrinsicOp
 //===----------------------------------------------------------------------===//
-static bool getBoolAttrValue(TypedAttr attr, bool defaultValue) {
-  if (auto boolAttr = dyn_cast_if_present<BoolAttr>(attr))
-    return boolAttr.getValue();
-
-  return defaultValue;
-}
 
 void CallLLVMIntrinsicOp::getEffects(
     SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
   // CallLLVMIntrinsicOp has side effect by default. If the attribute is not
   // set, assume it has side effect.
-  if (getBoolAttrValue(getHasSideEffectsAttr(), true))
+  auto hasSideEffects = dyn_cast<IntegerAttr>(getHasSideEffectsAttr());
+  if (!hasSideEffects || hasSideEffects.getInt())
     effects.emplace_back(mlir::MemoryEffects::Write::get());
 }
 
 mlir::Speculation::Speculatability CallLLVMIntrinsicOp::getSpeculatability() {
-  // CallLLVMIntrinsicOp has side effect by default. If the attribute is not
-  // set, assume it has side effect.
-  if (getBoolAttrValue(getHasSideEffectsAttr(), true))
-    return mlir::Speculation::NotSpeculatable;
-
-  return mlir::Speculation::Speculatable;
+  // If we know there are no side effects we can speculate.
+  if (auto hasSideEffects = dyn_cast<IntegerAttr>(getHasSideEffectsAttr())) {
+    if (!hasSideEffects.getInt())
+      return mlir::Speculation::Speculatable;
+  }
+  return mlir::Speculation::NotSpeculatable;
 }
 
 //===----------------------------------------------------------------------===//
