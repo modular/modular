@@ -15,6 +15,7 @@
 from std.math import align_up, ceildiv
 from std.sys import align_of, simd_width_of, is_gpu, size_of
 from std.os import abort
+from std.atomic import Atomic, Ordering
 
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -1061,6 +1062,93 @@ struct TileTensor[
         return rebind[type_of(result)](self._storage) + self.layout[
             linear_idx_type=Self.linear_idx_type
         ](coords)
+
+    @always_inline("nodebug")
+    def _atomic_ptr(
+        self,
+        coord: Coord,
+    ) raises -> UnsafePointer[
+        mut=True,
+        Scalar[Self.dtype],
+        MutAnyOrigin,
+        address_space=Self.address_space,
+    ] where Self.mut:
+        comptime assert (
+            Self.is_compatible_with[coord.element_types]
+            or coord.rank == Self.flat_rank
+            or coord.rank == 1
+        )
+        comptime assert (
+            Self.element_size == 1
+        ), "TileTensor atomic operations only support scalar elements"
+
+        var scalar_ptr = Self.Storage.unsafe_ptr(
+            self._unsafe_storage_cast[to_mut=True](),
+        ).unsafe_origin_cast[MutAnyOrigin]()
+        return scalar_ptr + self.layout[linear_idx_type=Self.linear_idx_type](coord)
+
+    @always_inline("nodebug")
+    def atomic_fetch_add[
+        *, ordering: Ordering = Ordering.SEQUENTIAL
+    ](
+        self,
+        coord: Coord,
+        value: Scalar[Self.dtype],
+    ) raises -> Scalar[Self.dtype] where Self.mut and Self.element_size == 1:
+        return Atomic.fetch_add[ordering=ordering](
+            self._atomic_ptr(coord),
+            value,
+        )
+
+    @always_inline("nodebug")
+    def atomic_add[
+        *, ordering: Ordering = Ordering.SEQUENTIAL
+    ](
+        self,
+        coord: Coord,
+        value: Scalar[Self.dtype],
+    ) raises where Self.mut and Self.element_size == 1:
+        _ = self.atomic_fetch_add[ordering=ordering](coord, value)
+
+    @always_inline("nodebug")
+    def atomic_max[
+        *, ordering: Ordering = Ordering.SEQUENTIAL
+    ](
+        self,
+        coord: Coord,
+        value: Scalar[Self.dtype],
+    ) raises where Self.mut and Self.element_size == 1:
+        Atomic.max[ordering=ordering](self._atomic_ptr(coord), value)
+
+    @always_inline("nodebug")
+    def atomic_min[
+        *, ordering: Ordering = Ordering.SEQUENTIAL
+    ](
+        self,
+        coord: Coord,
+        value: Scalar[Self.dtype],
+    ) raises where Self.mut and Self.element_size == 1:
+        Atomic.min[ordering=ordering](self._atomic_ptr(coord), value)
+
+    @always_inline("nodebug")
+    def atomic_compare_exchange[
+        *,
+        success_ordering: Ordering = Ordering.SEQUENTIAL,
+        failure_ordering: Ordering = Ordering.SEQUENTIAL,
+    ](
+        self,
+        coord: Coord,
+        mut expected: Scalar[Self.dtype],
+        desired: Scalar[Self.dtype],
+    ) raises -> Bool where Self.mut and Self.element_size == 1:
+        return Atomic.compare_exchange[
+            success_ordering=success_ordering,
+            failure_ordering=failure_ordering,
+        ](
+            self._atomic_ptr(coord),
+            expected,
+            desired,
+        )
 
     @always_inline
     def prefetch(
