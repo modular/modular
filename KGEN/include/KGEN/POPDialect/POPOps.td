@@ -972,6 +972,15 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
   let hasFolder = 1;
   let hasCanonicalizeMethod = 1;
   let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+    std::optional<bool> isVolatile() {
+      auto attr = getIsVolatileAttr();
+      if (auto boolAttr = llvm::dyn_cast<mlir::BoolAttr>(attr))
+        return boolAttr.getValue();
+      return std::nullopt;
+    }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -1033,6 +1042,15 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
 
   let hasCanonicalizeMethod = 1;
   let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+    std::optional<bool> isVolatile() {
+      auto attr = getIsVolatileAttr();
+      if (auto boolAttr = llvm::dyn_cast<mlir::BoolAttr>(attr))
+        return boolAttr.getValue();
+      return std::nullopt;
+    }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -1070,6 +1088,15 @@ def POP_MemcpyOp : POPOp<"memcpy", [
   ];
 
   let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+    std::optional<bool> isVolatile() {
+      auto attr = getIsVolatileAttr();
+      if (auto boolAttr = llvm::dyn_cast<mlir::BoolAttr>(attr))
+        return boolAttr.getValue();
+      return std::nullopt;
+    }
+  }];
 }
 
 //===----------------------------------------------------------------------===//

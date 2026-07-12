@@ -260,8 +260,7 @@ void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
 LogicalResult StoreOp::verify() {
   AtomicOrdering ordering = getOrdering();
   if (ordering != AtomicOrdering::NOT_ATOMIC) {
-    if (auto isVolatile = dyn_cast<IntegerAttr>(getIsVolatileAttr());
-        isVolatile && isVolatile.getInt())
+    if (auto volatileVal = isVolatile(); volatileVal && *volatileVal)
       return emitOpError("volatile stores cannot be atomic");
   }
 
