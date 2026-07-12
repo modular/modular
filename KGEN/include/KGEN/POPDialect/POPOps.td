@@ -942,17 +942,17 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
 
   let arguments = (ins Arg<PointerType, "", [MemRead]>:$ptr,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
-                       OptionalAttr<AttrOfType<I1>>:$isVolatile,
-                       OptionalAttr<AttrOfType<I1>>:$isInvariant,
-                       OptionalAttr<AttrOfType<I1>>:$isNonTemporal,
+                       AttrOfType<I1>:$isVolatile,
+                       AttrOfType<I1>:$isInvariant,
+                       AttrOfType<I1>:$isNonTemporal,
                        DefaultValuedAttr<
                         POP_AtomicOrderingAttr, "AtomicOrdering::NOT_ATOMIC">:$ordering,
                        OptionalAttr<AttrOfType<KGEN_StringType>>:$syncscope);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
-    (`volatile` `<` custom<I1ParamValue>($isVolatile)^ `>`)?
-    (`invariant` `<` custom<I1ParamValue>($isInvariant)^ `>`)?
-    (`nontemporal` `<` custom<I1ParamValue>($isNonTemporal)^ `>`)?
+    custom<I1Flag>($isVolatile, "\"volatile\"")
+    custom<I1Flag>($isInvariant, "\"invariant\"")
+    custom<I1Flag>($isNonTemporal, "\"nontemporal\"")
     (`atomic` (`syncscope` `(` custom<StringParam>($syncscope)^ `)`)? $ordering^)?
     $ptr
     (`align` `<` custom<IndexParamValue>($alignment)^ `>`)? attr-dict `:`
@@ -1008,14 +1008,14 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
   let arguments = (ins AnyType:$arg,
                        Arg<PointerType, "", [MemWrite]>:$ptr,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
-                       OptionalAttr<AttrOfType<I1>>:$isVolatile,
-                       OptionalAttr<AttrOfType<I1>>:$isNonTemporal,
+                       AttrOfType<I1>:$isVolatile,
+                       AttrOfType<I1>:$isNonTemporal,
                        DefaultValuedAttr<
                         POP_AtomicOrderingAttr, "AtomicOrdering::NOT_ATOMIC">:$ordering,
                        OptionalAttr<AttrOfType<KGEN_StringType>>:$syncscope);
   let assemblyFormat = [{
-    (`volatile` `<` custom<I1ParamValue>($isVolatile)^ `>`)?
-    (`nontemporal` `<` custom<I1ParamValue>($isNonTemporal)^ `>`)?
+    custom<I1Flag>($isVolatile, "\"volatile\"")
+    custom<I1Flag>($isNonTemporal, "\"nontemporal\"")
     (`atomic` (`syncscope` `(` custom<StringParam>($syncscope)^ `)`)? $ordering^)?
     $arg `,` $ptr
     (`align` `<` custom<IndexParamValue>($alignment)^ `>`)?
@@ -1056,16 +1056,17 @@ def POP_MemcpyOp : POPOp<"memcpy", [
 
   let arguments = (ins Arg<PointerType, "", [MemWrite]>:$dst,
                        Arg<PointerType, "", [MemRead]>:$src,
-                       Index:$len, OptionalAttr<AttrOfType<I1>>:$isVolatile);
+                       Index:$len,
+                       AttrOfType<I1>:$isVolatile);
   let assemblyFormat = [{
-    (`volatile` `<` custom<I1ParamValue>($isVolatile)^ `>`)?
+    custom<I1Flag>($isVolatile, "\"volatile\"")
     $dst `,` $src `,` $len
     attr-dict `:` qualified(type($src)) `->` qualified(type($dst))
   }];
 
   let builders = [
     OpBuilder<(ins "Value":$dst, "Value":$src, "Value":$len,
-                   CArg<"bool", "false">:$isVolatile)>
+                   CArg<"bool", "false">:$isVolatile)>,
   ];
 
   let hasVerifier = 1;
@@ -2004,11 +2005,11 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic",[
     AttrOfType<KGEN_StringType>:$intrin, Variadic<AnyType>:$args,
     DefaultValuedAttr<POP_FastmathFlagsAttr,
                       "FastmathFlags::none">:$fastmathFlags,
-    OptionalAttr<AttrOfType<I1>>:$hasSideEffects);
+    AttrOfType<I1>:$hasSideEffects);
 
   let results = (outs Optional<AnyType>:$results);
   let assemblyFormat = [{
-    (`side_effecting` `<` custom<I1ParamValue>($hasSideEffects)^ `>`)?
+    custom<I1Flag>($hasSideEffects, "\"side_effecting\"")
     custom<ParamValue>($intrin, "StringType::get($_ctxt)") `,` `(` $args `)`
     attr-dict `:` functional-type($args, $results)
   }];
@@ -2031,16 +2032,16 @@ def POP_InlineAsmOp : POPOp<"inline_asm"> {
     Variadic<AnyType>:$operands,
     AttrOfType<KGEN_StringType>:$assembly,
     AttrOfType<KGEN_StringType>:$constraints,
-    OptionalAttr<AttrOfType<I1>>:$hasSideEffects,
-    OptionalAttr<AttrOfType<I1>>:$isStackAligned,
+    AttrOfType<I1>:$hasSideEffects,
+    AttrOfType<I1>:$isStackAligned,
     OptionalAttr<ArrayAttr>:$operandAttrs
   );
 
   let results = (outs Variadic<AnyType>:$res);
 
   let assemblyFormat = [{
-    (`side_effecting` `<` custom<I1ParamValue>($hasSideEffects)^ `>`)?
-    (`stack_aligned` `<` custom<I1ParamValue>($isStackAligned)^ `>`)?
+    custom<I1Flag>($hasSideEffects, "\"side_effecting\"")
+    custom<I1Flag>($isStackAligned, "\"stack_aligned\"")
     (`operand_attrs` `=` $operandAttrs^)?
     attr-dict
     custom<ParamValue>($assembly, "StringType::get($_ctxt)") `,`

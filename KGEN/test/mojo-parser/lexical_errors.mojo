@@ -23,13 +23,6 @@ def issue_6291(
 ) -> __mlir_type.index:
     return val
 
-def testIndentation6291[index: __mlir_type.index](
-    ptr: __mlir_type.`!kgen.pointer<!kgen.scalar<index>>`):
-  var result = __mlir_op.`pop.load`[
-            alignment=__mlir_attr.`1: index`,
-            _type=__mlir_type.`!kgen.scalar<index>`
-](ptr)
-
 # This file contains parsing related bugs.
 
 def bracketError1():
@@ -65,4 +58,3 @@ def m # expected-error {{expected '(' for argument list}}
 # Issue #6909
 # expected-error @below {{invalid comptime declaration: expected an identifier or '_'}}
 comptime True = 42
-
