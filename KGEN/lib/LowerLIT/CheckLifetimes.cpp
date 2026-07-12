@@ -1613,43 +1613,28 @@ public:
   /// This returns the number of distinct interior origins in the function.
   size_t getNumInteriorOrigins() const { return nextInteriorOriginID; }
 
+  /// Given an InteriorOrigin, return its ID.
+  size_t getInteriorOriginID(InteriorOriginAttr o) const {
+    auto it = interiorOriginID.find(o);
+    assert(it != interiorOriginID.end() && it->second < nextInteriorOriginID &&
+           "Unknown interior origin");
+    return it->second;
+  }
+
   /// Mark the given interior origin as live in the given bitvector.
   void markInteriorOriginLive(InteriorOriginAttr o,
                               TrackedAndInteriorLiveness &liveness,
                               Operation &op) const {
-    auto it = interiorOriginID.find(o);
-    assert(it != interiorOriginID.end() &&
-           it->second < liveness.interior.size() && "Unknown interior origin");
     // If the entry was previously invalid, mark it as now live.
-    auto &entry = liveness.interior[it->second];
+    auto &entry = liveness.interior[getInteriorOriginID(o)];
     if (!entry.getInt()) {
       entry.setInt(true);
       entry.setPointer(&op);
     }
   }
 
-  bool isInteriorOriginLive(InteriorOriginAttr o,
-                            TrackedAndInteriorLiveness &liveness) const {
-    auto it = interiorOriginID.find(o);
-    assert(it != interiorOriginID.end() &&
-           it->second < liveness.interior.size() && "Unknown interior origin");
-    return liveness.interior[it->second].getInt();
-  }
-
   bool originHasInteriorOrigins(TypedAttr origin) const {
     return originWithInteriorOrigins.count(origin);
-  }
-
-  /// Given an InteriorOrigin and a set of operations that invalidate numbered
-  /// InteriorOrigins, return the operation that invalidated this origin if
-  /// known.
-  Operation *
-  getOperationThatInvalidated(InteriorOriginAttr interior,
-                              TrackedAndInteriorLiveness &liveness) const {
-    auto it = interiorOriginID.find(interior);
-    assert(it != interiorOriginID.end() &&
-           it->second < liveness.interior.size() && "Unknown interior origin");
-    return liveness.interior[it->second].getPointer();
   }
 
   // Given a mutation of an origin "o", invalidate any interior origins derived
@@ -1668,9 +1653,10 @@ public:
       for (ssize_t id = it->second.find_first(); id >= 0;
            id = it->second.find_next(id)) {
         // When we clear it, remember what operation invalidated it.
-        if (liveness.interior[id].getInt()) {
-          liveness.interior[id].setInt(false);
-          liveness.interior[id].setPointer(&thisInvalidatingOp);
+        auto &entry = liveness.interior[id];
+        if (entry.getInt()) {
+          entry.setInt(false);
+          entry.setPointer(&thisInvalidatingOp);
         }
       }
     });
@@ -1902,13 +1888,13 @@ private:
   void checkTryOp(LIT::TryOp tryOp);
 
   void diagnoseUsageError(ValueRef valueRef, Operation &op);
-  void diagnoseInteriorOriginUsageError(InteriorOriginAttr interior,
-                                        Operation &op);
+  void checkInteriorOriginUsage(InteriorOriginAttr interior, Value operand,
+                                Operation &op);
   void checkUse(Value value, Operation &op, bool isDeref);
   void checkDef(Value value, Operation &op, bool isDeref);
   void checkConsume(Value value, Operation &op, bool isDeref);
   void checkMarkDestroyed(Value value, Operation &op);
-  void checkOriginAccesses(TypedAttr origin, Operation &op);
+  void checkOriginAccesses(TypedAttr origin, Value operand, Operation &op);
   void handleAnyOriginUse(Operation &op, ArrayRef<TypedAttr> definedOrigins);
 
   SmallVector<InteriorOriginAttr> findInteriorOriginsInType(Type type);
@@ -2125,11 +2111,8 @@ void UninitializedValueScan::checkUse(Value value, Operation &op,
   }
 
   // Verify that any accessed interior origins are also live.
-  for (auto origin : interiorOrigins) {
-    // The referenced value fields must be live.
-    if (!interiorOriginTracker.isInteriorOriginLive(origin, liveness))
-      diagnoseInteriorOriginUsageError(origin, op);
-  }
+  for (auto origin : interiorOrigins)
+    checkInteriorOriginUsage(origin, value, op);
 }
 
 /// One of the specified fields is missing, so emit an error about it.  This is
@@ -2192,40 +2175,6 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
   }
   diag.attachNote(valueInfo.value.getLoc())
       << "'" << valueName << "' declared here";
-}
-
-/// Complain about a use of an invalidated interior origin.
-void UninitializedValueScan::diagnoseInteriorOriginUsageError(
-    InteriorOriginAttr interior, Operation &op) {
-  // If the interior origin is based on something else uninitialized, then
-  // complain about the base of the access, not the indirect aspect.
-  SmallVector<InteriorOriginAttr> dummy;
-  for (ValueRef access :
-       valueSet.getValueRefsForOrigin(interior.getBase(), dummy)) {
-    if (!access.isAllPresent(liveness.tracked)) {
-      diagnoseUsageError(access, op);
-      return;
-    }
-  }
-
-  // TODO: If we get a lot of redundant diagnostics for invalidated origins, we
-  // can add a bitvector to UVS to squelch them.
-  SmallString<128> originStr;
-  llvm::raw_svector_ostream originOs(originStr);
-  OriginPrinter().print(originOs, interior, /*elideOriginOf=*/true);
-
-  auto diag = emitError(op.getLoc(), "use of invalidated interior reference '");
-  diag << originStr << "'";
-
-  if (Operation *invalidatingOp =
-          interiorOriginTracker.getOperationThatInvalidated(interior,
-                                                            liveness)) {
-    diag.attachNote(invalidatingOp->getLoc()) << "origin was invalidated here";
-  }
-
-  // We mark the liveness sentinel as having an error diagnosed to make sure the
-  // pass fails.
-  valueSet.getValueInfo(0).hasErrorDiagnosed = true;
 }
 
 void UninitializedValueScan::checkDef(Value value, Operation &op,
@@ -2331,9 +2280,54 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
   invalidateInteriorOriginsForOperand(value, /*isDeref=*/true, op);
 }
 
+void UninitializedValueScan::checkInteriorOriginUsage(
+    InteriorOriginAttr interior, Value operand, Operation &op) {
+
+  // If we know it isn't live because it has never been invalidated, or got
+  // invalidated, then it is obviously not live.
+  auto &entry =
+      liveness.interior[interiorOriginTracker.getInteriorOriginID(interior)];
+  if (entry.getInt()) {
+    // If it is live, then we're done.
+    // TODO: Handle dominance.
+    // if (!valueSet.domInfo.properlyDominates(valueInfo.value, &op))
+    //  continue;
+    return;
+  }
+
+  // Okay, it isn't live, complain about it.
+
+  // If the interior origin is based on something else uninitialized, then
+  // complain about the base of the access, not the indirect aspect.
+  SmallVector<InteriorOriginAttr> dummy;
+  for (ValueRef access :
+       valueSet.getValueRefsForOrigin(interior.getBase(), dummy)) {
+    if (!access.isAllPresent(liveness.tracked)) {
+      diagnoseUsageError(access, op);
+      return;
+    }
+  }
+
+  // TODO: If we get a lot of redundant diagnostics for invalidated origins, we
+  // can add a bitvector to UVS to squelch them.
+  SmallString<128> originStr;
+  llvm::raw_svector_ostream originOs(originStr);
+  OriginPrinter().print(originOs, interior, /*elideOriginOf=*/true);
+
+  auto diag = emitError(op.getLoc(), "use of invalidated interior reference '");
+  diag << originStr << "'";
+
+  if (Operation *invalidatingOp = entry.getPointer())
+    diag.attachNote(invalidatingOp->getLoc()) << "origin was invalidated here";
+
+  // We mark the liveness sentinel as having an error diagnosed to make sure the
+  // pass fails.
+  valueSet.getValueInfo(0).hasErrorDiagnosed = true;
+}
+
 /// Check any unstructured origins that are accessed by the operation.
 void UninitializedValueScan::checkOriginAccesses(TypedAttr origin,
-                                                 Operation &op) {
+                                                 Value operand, Operation &op) {
   SmallVector<InteriorOriginAttr> interiorOrigins;
   SmallVector<ValueRef> accesses =
       valueSet.getValueRefsForOrigin(origin, interiorOrigins);
@@ -2344,11 +2338,8 @@ void UninitializedValueScan::checkOriginAccesses(TypedAttr origin,
   }
 
   // Verify that any accessed interior origins are also live.
-  for (auto origin : interiorOrigins) {
-    // The referenced value fields must be live.
-    if (!interiorOriginTracker.isInteriorOriginLive(origin, liveness))
-      diagnoseInteriorOriginUsageError(origin, op);
-  }
+  for (auto origin : interiorOrigins)
+    checkInteriorOriginUsage(origin, operand, op);
 }
 
 /// This function is called when an operation uses a #lit.any.origin origin.
@@ -2571,8 +2562,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
 
     // Process any origins accessed indirectly.
     for (auto [origin, value] : originEffects) {
-      (void)value;
-      checkOriginAccesses(origin, op);
+      checkOriginAccesses(origin, value, op);
       hasAnyOrigin |= sugarIsa<AnyOriginAttr>(origin);
     }
 
