@@ -1312,18 +1312,19 @@ struct UnsafePointer[
     def store(self, offset: Int, value: Self.type):
         pass
 
-    # Returns this pointer value but with the origin rebased to be a unique
-    # reference off the specified base origin. This is used by collections that
-    # need to vend owned interior references.
-    def unsafe_origin_owned_rebase[
-        base_origin: Origin,
+    # Returns a reference to the pointee but with the origin rebased to be a
+    # interior origin derived from the specified base origin. This is used by
+    # collections that need to vend owned interior references.
+    @always_inline
+    def get_ref_with_unsafe_interior_origin[
         name: StringLiteral,
-    ](self, offset: Int = 0) -> UnsafePointer[
-        Self.type,
-        base_origin.get_owned_interior[name],
-        address_space=Self.address_space,
-    ]:
-        return {self._mlir_value}
+    ](self, ref base: Some[AnyType]) -> ref[
+        origin_of(base).get_owned_interior[name], Self.address_space
+    ] Self.type:
+        comptime res_origin = origin_of(base).get_owned_interior[name]
+        return self.unsafe_mut_cast[res_origin.mut]().unsafe_origin_cast[
+            res_origin
+        ]()[]
 
     @always_inline
     def take_pointee[

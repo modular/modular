@@ -28,15 +28,15 @@ struct MyListInterior[T: AnyType]:
         pass
 
     def __getitem__(
-        ref self, idx: Int
-    ) -> ref[self.data.unsafe_origin_owned_rebase[origin_of(self), "element"](idx)[]] Self.T:
-        return self.data.unsafe_origin_owned_rebase[origin_of(self), "element"](idx)[]
+        ref self
+    ) -> ref[self.data.get_ref_with_unsafe_interior_origin["element"](self)] Self.T:
+        return self.data.get_ref_with_unsafe_interior_origin["element"](self)
 
 def test_invalidate_base():
     # expected-note @+1 {{'list' declared here}}
     var list = MyListInterior[Int]()
 
-    ref elt_ref1 = list[4]
+    ref elt_ref1 = list[]
     elt_ref1 += 4
     list^.__del__()
 
@@ -46,7 +46,7 @@ def test_invalidate_base():
 
 def test_invalidate_interior():
     var list = MyListInterior[Int]()
-    ref elt_ref2 = list[4]
+    ref elt_ref2 = list[]
     elt_ref2 += 4
     list.mutate()   # expected-note {{origin was invalidated here}}
     # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
@@ -55,7 +55,7 @@ def test_invalidate_interior():
 # simple control flow test.
 def test_if(cond: Bool):
     var list = MyListInterior[Int]()
-    ref elt_ref2 = list[4]
+    ref elt_ref2 = list[]
     elt_ref2 += 4
     if cond:
         list.mutate()   # expected-note {{origin was invalidated here}}
@@ -73,11 +73,11 @@ struct TwoIntLists:
 # Test that we can handle nested field sensitivity correctly.
 def test_field_sensitive_nested_invalidation():
     var list_of_two_intlists = MyListInterior[TwoIntLists]()
-    ref first_list = list_of_two_intlists[0].first
-    ref second_list = list_of_two_intlists[0].second
+    ref first_list = list_of_two_intlists[].first
+    ref second_list = list_of_two_intlists[].second
 
-    ref first_list_elt = first_list[0]
-    ref second_list_elt = second_list[0]
+    ref first_list_elt = first_list[]
+    ref second_list_elt = second_list[]
 
     # Mutating the elements of either list is fine, and shouldn't cause a
     # problem for anything.
