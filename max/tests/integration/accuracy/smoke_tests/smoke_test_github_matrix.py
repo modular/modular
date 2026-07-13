@@ -69,7 +69,10 @@ HF_MODELS: dict[str, set[str]] = {
     "allenai/Olmo-3-7B-Instruct": MULTI | {"max"},
     "allenai/olmOCR-2-7B-1025-FP8": MULTI | {"sglang"},
     "amd/Kimi-K2.5-MXFP4": NON_XL | {"8xB200"},
+    "amd/Kimi-K2.7-Code-MXFP4": NON_XL | {"8xB200"},
     "amd/MiniMax-M2.7-MXFP4": NON_XL | {"8xB200"},
+    # MODELS-1611: M3 is a private arch, so max-ci only.
+    "amd/MiniMax-M3-MXFP4": NON_XL | {"8xB200", "max"},
     "ByteDance-Seed/academic-ds-9B": MULTI | {"max", "max-ci", "sglang@B200", "vllm@B200"},  # SERVOPT-1120
     "deepseek-ai/DeepSeek-R1-0528": NON_XL | {"max", "sglang", "4xMI355"},  # 4xMI355: needs nvshmem
     "deepseek-ai/DeepSeek-V2-Lite-Chat": MULTI | {"max", "max-ci", "vllm@B200"},  # SERVOPT-1120
@@ -141,6 +144,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "google/gemma-4-31B-it__tieredkv": MULTI,
     "google/gemma-4-31B-it__tp2": set(RUNNERS) - {"2xB200", "2xMI355"},
     "nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc": MULTI | {"MI355"},
+    "nvidia/Gemma-4-26B-A4B-NVFP4__fp8kv": MULTI | {"MI355"},
     "nvidia/Gemma-4-26B-A4B-NVFP4__localkv": MULTI | {"MI355"},
     "nvidia/Gemma-4-26B-A4B-NVFP4__tieredkv": MULTI | {"MI355"},
     "nvidia/Gemma-4-31B-IT-NVFP4__localkv": MULTI | {"MI355"},

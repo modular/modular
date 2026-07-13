@@ -345,11 +345,7 @@ class UnifiedEagleLlama3(Module):
         # Assume that all tokens are accepted in this calculation.
         # Confusingly max_cache_length != max(cache_lengths). Instead max_cache_length
         # is more like max_total_seq_len including cached and input tokens.
-        orig_max_cache_length = (
-            draft_kv_collection.max_lengths[0, 1]
-            .cast(DType.uint32)
-            .broadcast_to([1])
-        )
+        orig_max_cache_length = draft_kv_collection.max_cache_length
         max_cache_length = orig_max_cache_length + 1
 
         # draft_return_n_logits: [1] (CPU)
@@ -357,14 +353,10 @@ class UnifiedEagleLlama3(Module):
             1, DType.int64, DeviceRef.CPU()
         ).broadcast_to([1])
 
-        max_lengths = ops.concat(
-            [one, draft_kv_collection.max_lengths[0, 1].broadcast_to([1])],
-            axis=-1,
-        ).reshape([1, 2])
-
         draft_kv_collection = replace(
             draft_kv_collection,
-            max_lengths=max_lengths,
+            max_prompt_length=one,
+            max_cache_length=orig_max_cache_length,
             attention_dispatch_metadata=draft_kv_collection.draft_attention_dispatch_metadata,
         )
 

@@ -100,9 +100,20 @@ def split[
 
         var value = input.raw_load[width=width](idx)
 
-        var output_ptr_idx = outputs[output_idx].layout(Coord(output_coords))
-
-        outputs[output_idx].raw_store(output_ptr_idx, value)
+        # Write through a COMPILE-TIME index into the `outputs` StaticTuple.
+        # On Metal (Apple M5), a StaticTuple[TileTensor, N] aggregate indexed
+        # at runtime inside a device closure fails to marshal its embedded
+        # device pointers -- the kernel reads/writes a host-side pointer and
+        # the store lands nowhere, so every output comes back all-zeros (even
+        # for N == 2). A compile-time index into the aggregate marshals
+        # correctly. Dispatch the runtime `output_idx` to a comptime `i` and
+        # store via `outputs[i]` (compile-time). See KB pattern
+        # `gpu-kernel-closures-must-copy-capture-tensors` and the runtime-vs-
+        # comptime StaticTuple probes (.derived/repro_*statictuple*).
+        comptime for i in range(num_outputs):
+            if output_idx == i:
+                var output_ptr_idx = outputs[i].layout(Coord(output_coords))
+                outputs[i].raw_store(output_ptr_idx, value)
 
     # Can vectorize only if not splitting over last dim.
     if axis != input.rank - 1:

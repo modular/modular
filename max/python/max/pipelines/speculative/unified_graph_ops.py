@@ -72,9 +72,11 @@ def gather_accepted_hidden_states(
 
     draft_hs: list[TensorValue] = []
     if data_parallel_degree > 1:
+        tp_degree = n_devs // data_parallel_degree
         for i in range(n_devs):
-            start = data_parallel_splits[i]
-            end = data_parallel_splits[i + 1]
+            replica = i // tp_degree
+            start = data_parallel_splits[replica]
+            end = data_parallel_splits[replica + 1]
             global_idx_dev_i = ops.slice_tensor(
                 last_accepted_idx_per_dev[i],
                 [(slice(start, end), f"{split_prefix}_batch_split_{i}")],

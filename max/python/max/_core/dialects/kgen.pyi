@@ -283,6 +283,23 @@ class VariadicKind(enum.Enum):
 
     kw_vararg = 3
 
+class CallableSymbolAttrInterface(Protocol):
+    """
+    This interface describes typed attributes that refer to a concrete callable
+    symbol. The underlying symbol constant keeps the declaration identity and
+    true signature, while `getType()` returns the callable type presented by the
+    attribute at the use site.
+    """
+
+    @property
+    def symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
+    @property
+    def param_values(
+        self,
+    ) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class FnMetadataAttrInterface(Protocol):
     """
     This interface describes attributes that are attached to a `!kgen.func`
@@ -813,6 +830,34 @@ class FnTypeIsCABIAttr(max._core.Attribute):
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def type(self) -> max._core.dialects.builtin.IntegerType: ...
+
+class FuncPtrBitcastAttr(max._core.Attribute):
+    """
+    The `#kgen.func_ptr_bitcast` attribute is the compile-time analogue of a
+    `pop.pointer.bitcast` applied to a function pointer. It wraps a
+    `SymbolConstantAttr` -- which keeps the callee's true, declared signature --
+    and re-presents it under a different `FuncTypeGeneratorType`.
+
+    Example:
+
+    ```mlir
+    #kgen.func_ptr_bitcast<#kgen.symbol.constant<@bar> : !kgen.generator<(i64) -> none>>
+      : !kgen.generator<(...) -> none>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self, callee: SymbolConstantAttr, type: FuncTypeGeneratorType
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, callee: SymbolConstantAttr, type: FuncTypeGeneratorType
+    ) -> None: ...
+    @property
+    def callee(self) -> SymbolConstantAttr: ...
+    @property
+    def type(self) -> FuncTypeGeneratorType: ...
 
 class FuncSymbolAttr(max._core.Attribute):
     """
@@ -1712,7 +1757,6 @@ class PogListAttr(max._core.Attribute):
         variadics: Sequence[VariadicKind],
         defaults: Sequence[max._core.dialects.builtin.TypedAttr],
         orig_variadic_convention: ArgConvention | None,
-        param_constraints: Sequence[Sequence[ConstraintAttr]],
         body_constraints: Sequence[ConstraintAttr],
     ) -> None: ...
     @property
@@ -1725,15 +1769,13 @@ class PogListAttr(max._core.Attribute):
 class PogMetadataAttr(max._core.Attribute):
     """
     The `#kgen.pog_metadata` attribute contains metadata about an argument or
-    parameter of a function, including the name, passing kind, variadicness, the
-    default value (if present) and any constraints on it.
+    parameter of a function, including the name, passing kind, variadicness, and
+    the default value (if present).
 
     Example:
 
     ```mlir
-    #kgen.pog_metadata<"some_keyword_param", pos_or_kw, false, 42, {
-      <1, loc("file.mojo":10:5), "Constraint must hold">
-    }>
+    #kgen.pog_metadata<"some_keyword_param", pos_or_kw, false, 42>
     #kgen.pog_metadata<"some_variadic_param", pos_or_kw, true>
     ```
     """
@@ -1747,7 +1789,6 @@ class PogMetadataAttr(max._core.Attribute):
         passing_kind: PassingKind,
         variadic: VariadicKind = VariadicKind.not_vararg,
         default_value: max._core.dialects.builtin.TypedAttr = ...,
-        constraints: Sequence[ConstraintAttr] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -1756,7 +1797,6 @@ class PogMetadataAttr(max._core.Attribute):
         passing_kind: PassingKind,
         variadic: VariadicKind,
         default_value: max._core.dialects.builtin.TypedAttr,
-        constraints: Sequence[ConstraintAttr],
     ) -> None: ...
     @property
     def name(self) -> max._core.dialects.builtin.StringAttr: ...
@@ -1766,8 +1806,6 @@ class PogMetadataAttr(max._core.Attribute):
     def variadic(self) -> VariadicKind: ...
     @property
     def default_value(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def constraints(self) -> Sequence[ConstraintAttr]: ...
 
 class PreservedAttr(max._core.Attribute):
     """
@@ -2298,35 +2336,39 @@ class TraitInstanceRefAttr(max._core.Attribute):
 
 class TypeConformsToTraitAttr(max._core.Attribute):
     """
-    This represents a flag to indicate the type, specified by `typeValue`,
-    conforms to specific traits, specified by a list of trait symbol references.
+    This represents a flag to indicate that every type in `typeValue` conforms
+    to the specified traits. The stored checked operand is normalized to a
+    `param_list<!kgen.type>` value.
 
     Example:
 
     ```mlir
-    #kgen.type_conforms_to_trait<#kgen.param.decl.ref<"T"> : !kgen.type,
-                                 [@Movable, @Copyable]>
+    #kgen.type_conforms_to_trait<
+        #kgen.param_list<#kgen.param.decl.ref<"T"> : !kgen.type>,
+        #kgen.type<typevalue<#kgen.trait_ref<@Movable, @Copyable>>, type> : !kgen.type>
     ```
+
+    For the common case of a single checked type value, the operand is printed
+    in sugared form: the 1-element `param_list` literal (and any outer upcast
+    that simply retypes its element to `!kgen.type`) is stripped.
     """
 
     @overload
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        trait_symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
+        trait_type: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        trait_symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
+        trait_type: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def trait_symbols(
-        self,
-    ) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
+    def trait_type(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class TypeGeneratorRefAttr(max._core.Attribute):
     """
@@ -3372,6 +3414,7 @@ class GeneratorOp(max._core.Operation):
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
         source_param_list: PogListAttr,
+        source_func_type_generator: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -3469,6 +3512,14 @@ class GeneratorOp(max._core.Operation):
     def source_param_list(self) -> PogListAttr | None: ...
     @source_param_list.setter
     def source_param_list(self, arg: PogListAttr, /) -> None: ...
+    @property
+    def source_func_type_generator(
+        self,
+    ) -> max._core.dialects.builtin.TypedAttr | None: ...
+    @source_func_type_generator.setter
+    def source_func_type_generator(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
 
 class IsRunInComptimeInterpreterOp(max._core.Operation):
     """
@@ -4595,6 +4646,20 @@ class SugaredTypeInterface(Protocol):
     def get_cached_canonical_type(
         self, arg: max._core.Type, /
     ) -> max._core.Type | None: ...
+
+class TraitSymbolInterface(Protocol):
+    """
+    Interface for types that carry a list of trait symbol references, such as
+    the `!lit.trait` type, or a `!kgen.typevalue<trait_ref<...>>`.
+
+    The practical reason why we need the interface is to avoid cyclic build
+    dependencies.
+    """
+
+    @property
+    def trait_symbols(
+        self,
+    ) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
 
 class BuildInfoType(max._core.Type):
     """

@@ -32,6 +32,7 @@ The kernel implements a warp-specialized architecture:
 from std.math import ceildiv
 from std.sys import align_of, size_of
 
+from std.memory import UnsafePointer
 from std.gpu import WARP_SIZE, barrier, warp_id as get_warp_id
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -62,6 +63,7 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
+    Layout,
     RowMajorLayout,
     TensorLayout,
     TileTensor,
@@ -75,6 +77,7 @@ from structured_kernels.tile_types import (
     TmaOpType,
     static_row_major,
     tma_desc_layout_3d,
+    tma_desc_layout_3d_explicit_inner,
 )
 from layout.tile_layout import _IntToComptimeInt
 from layout.tensor_core_async import (
@@ -125,6 +128,8 @@ from ..structured_kernels.tile_scheduler_splitk import (
 )
 from linalg.structuring import SMemPtr
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
+from comm import MAX_GPUS, Signal
+from comm.sync import _multi_gpu_barrier
 
 # Import shared kernel components from kernel_common
 from structured_kernels.kernel_common import (
@@ -138,7 +143,8 @@ from structured_kernels.kernel_common import (
 )
 
 # Import output pipeline from output_writer module
-from ..structured_kernels.output_writer import TileWriter
+from ..structured_kernels.output_writer import TileWriter, StandardOutputWriter
+from ..structured_kernels.output_writer_trait import OutputWriter
 
 
 # =============================================================================
@@ -347,6 +353,13 @@ struct BlackwellMatmulSM100Kernel[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
+    # Injected output-writer policy (see structured_kernels/output_writer_trait).
+    # Defaults to a local TMA store
+    output_writer_type: OutputWriter = StandardOutputWriter,
+    # Override C TMA descriptor box middle-dim (row count per TMA).
+    # 0 means "use c_tile_dim0" (default, whole SMEM tile per TMA — prefill).
+    # Decode wants this set to 1 (one row per TMA).
+    c_desc_dim0_override: Int = 0,
 ]:
     """Blackwell SM100 GEMM kernel with warp specialization.
 
@@ -586,8 +599,19 @@ struct BlackwellMatmulSM100Kernel[
     comptime CTileLayout = RowMajorLayout[
         *_IntToComptimeInt[1, Self.c_tile_dim0, Self.c_tile_dim1]
     ]
-    comptime CDescLayout = tma_desc_layout_3d[
-        Self.c_type, 1, Self.c_tile_dim0, Self.config.c_swizzle
+    # For swizzled modes the innermost descriptor dim is capped at the swizzle
+    # atom size. For SWIZZLE_NONE there is no such cap (driver only requires
+    # boxDim[0] * elem_size % 16 == 0), so use the actual SMEM tile inner
+    # dim -- this lets callers (e.g. matmul_rs decode) transfer full SMEM
+    # rows per TMA instead of being limited to 16 bytes per call.
+    comptime c_desc_inner_elems = (
+        Self.c_tile_dim1
+    ) if Self.config.c_swizzle == TensorMapSwizzle.SWIZZLE_NONE else (
+        Self.config.c_swizzle.bytes() // size_of[Self.c_type]()
+    )
+    comptime c_desc_dim0 = Self.c_desc_dim0_override if Self.c_desc_dim0_override > 0 else Self.c_tile_dim0
+    comptime CDescLayout = tma_desc_layout_3d_explicit_inner[
+        1, Self.c_desc_dim0, Self.c_desc_inner_elems
     ]
 
     # 2D TMA layouts (only for run_splitk)
@@ -724,6 +748,50 @@ struct BlackwellMatmulSM100Kernel[
         register_based_epilogue=Self.register_based_epilogue,
         batched=False,
     ]
+
+    # Number of C TMA descriptors the kernel must receive (1 for the local
+    # store; one per peer for reduce-scatter). Comes from the injected policy.
+    comptime num_c_tma_descriptors = Self.output_writer_type.num_peers
+
+    @staticmethod
+    @always_inline
+    def write_output_tile[
+        tma_origin: ImmutOrigin
+    ](
+        c_tma_ops: Pointer[
+            InlineArray[Self.CTmaOp, Self.num_c_tma_descriptors], tma_origin
+        ],
+        c_tiles: Self.SmemType.CTileArray,
+        stage: Self.OutputPipeline.Stage,
+        tile_coord: Tuple[UInt32, UInt32, UInt32],
+        shape: Tuple[UInt32, UInt32],
+    ):
+        """Write one batched output tile through the injected writer policy.
+
+        Construction of the concrete tile writer happens inside
+        `Self.output_writer_type.write_batched`
+        """
+        Self.output_writer_type.write_batched[
+            tma_origin,
+            Self.CTmaOp.dtype,
+            Self.CTmaOp.rank,
+            Self.CTmaOp.tile_shape,
+            Self.CTmaOp.desc_shape,
+            Self.a_type,
+            Self.accum_type,
+            Self.config.block_tile_shape,
+            Self.config.mma_shape,
+            Self.opc,
+            Self.config.c_swizzle,
+            Self.config.AB_swapped,
+            Self.SmemType.OutputM,
+            Self.SmemType.OutputN,
+            Self.SmemType.num_output_stages,
+            Self.num_output_warps,
+            Self.elementwise_lambda_fn,
+            Self.elementwise_compute_lambda_fn,
+            Self.register_based_epilogue,
+        ](c_tma_ops, c_tiles, stage, tile_coord, shape)
 
     # ========== Kernel Context Type ==========
     # Type comptime for KernelContext with this kernel's parameters
@@ -864,16 +932,28 @@ struct BlackwellMatmulSM100Kernel[
         var accum = tmem_stage.tensor[Self.accum_type, Self.accum_layout]()
 
         if elect_one_sync():
+            # Build the A/B MMA SMEM descriptors once from the j=0 tile, then
+            # advance the descriptor base by the comptime per-k-group byte
+            # stride for j>0 — instead of rebuilding the full descriptor
+            # (runtime base-pointer mask + bitfield inserts) for every k-group
+            # tile. Consecutive k-group tiles are contiguous in the SMEM tile
+            # array (stride = tile elems * dtype size), and the SM100
+            # descriptor base address adds linearly, so the advanced descriptor
+            # is bit-identical to one freshly built from the j-th tile pointer.
+            comptime a_stride_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
+            comptime b_stride_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
+
+            var a_tile0, b_tile0 = tiles.payload().get_tile[
+                Self.config.k_group_size
+            ](tiles.stage(), 0)
+            var a_desc_base = mma_op.make_a_desc(a_tile0)
+            var b_desc_base = mma_op.make_b_desc(b_tile0)
+
             comptime for j in range(Self.config.k_group_size):
-                # Get tiles using payload accessor - tiles have swizzled layout
-                var a_tile, b_tile = tiles.payload().get_tile[
-                    Self.config.k_group_size
-                ](tiles.stage(), j)
                 var is_first_k = (iter_idx + UInt32(j)) == k_start
-                # Pass TileTensor directly to MMA - layout is encoded in type
-                mma_op.mma(
-                    a_tile,
-                    b_tile,
+                mma_op.mma_from_desc(
+                    a_desc_base + (a_stride_bytes * j),
+                    b_desc_base + (b_stride_bytes * j),
                     UInt32(accum.offset()),
                     init_c=is_first_k,
                 )
@@ -1092,6 +1172,129 @@ struct BlackwellMatmulSM100Kernel[
                     barrier[0],
                     (k_coord, b_gmem_n_coord, batch_coord),
                     b_multicast_mask,
+                )
+
+    @staticmethod
+    @always_inline
+    def prefetch_b_tiles[
+        tiles_origin: MutOrigin,
+        //,
+    ](
+        b_tma_op: Self.BTmaOp,
+        tiles: ProducerTiles[
+            tiles_origin,
+            Self.TilePayload,
+            Self.SmemType.num_group_pipeline_stages,
+            Self.config.k_group_size,
+        ],
+        peer_cta_coord: Tuple[Int, Int, Int],
+        work_tile_coord: Tuple[Int, Int, Int],
+        b_multicast_mask: UInt16,
+        iter_idx: UInt32,
+        elect_one_cta: Bool,
+    ):
+        """Load B tiles only; set full expected bytes (A+B) on the barrier.
+
+        Called before wait_on_dependent_grids() to prefetch the static weight
+        matrix (kernel-B in non-swapAB mode).  The barrier will not fire until
+        the matching complete_a_tiles() call delivers the remaining A bytes.
+
+        Args:
+            b_tma_op: 3D TMA descriptor for B matrix.
+            tiles: ProducerStage context with encapsulated tile access.
+            peer_cta_coord: (rank_n, rank_m, peer_m_rank) for peer CTA slicing.
+            work_tile_coord: (m, n, batch) coordinates.
+            b_multicast_mask: Multicast mask for B tiles.
+            iter_idx: K iteration index (base index for k_group).
+            elect_one_cta: True if this CTA should call expect_bytes.
+        """
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+
+        var b_gmem_n_coord = (
+            peer_rank_m * Self.b_tma_rows
+            + peer_rank_n * Self.BN
+            + work_tile_coord[1] * Self.MMA_N
+        )
+        var batch_coord = work_tile_coord[2]
+
+        if elect_one_sync():
+            if elect_one_cta:
+                tiles.expect_bytes(Self.input_expected_bytes)
+
+            var barrier = tiles.barrier()
+
+            comptime for j in range(Self.config.k_group_size):
+                var _, b_tile = tiles.payload().get_tile[
+                    Self.config.k_group_size
+                ](tiles.stage(), j)
+
+                var b_peer_tile = type_of(b_tile)(
+                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
+                    b_tile.layout,
+                )
+
+                var k_coord = Int(iter_idx + UInt32(j)) * Self.BK
+
+                b_tma_op.async_multicast_load_3d[Self.cta_group](
+                    b_peer_tile,
+                    barrier[0],
+                    (k_coord, b_gmem_n_coord, batch_coord),
+                    b_multicast_mask,
+                )
+
+    @staticmethod
+    @always_inline
+    def complete_a_tiles(
+        a_tma_op: Self.ATmaOp,
+        stage: UInt32,
+        barrier: MbarPtr,
+        payload: Self.TilePayload,
+        peer_cta_coord: Tuple[Int, Int, Int],
+        work_tile_coord: Tuple[Int, Int, Int],
+        a_multicast_mask: UInt16,
+        iter_idx: UInt32,
+    ):
+        """Load A tiles into a previously prefetched stage.
+
+        Delivers the remaining A bytes so that the stage barrier fires and
+        the consumer can proceed.  Pair with prefetch_b_tiles().
+
+        Args:
+            a_tma_op: 3D TMA descriptor for A matrix.
+            stage: Stage index saved from the prefetch phase.
+            barrier: Barrier pointer saved from the prefetch phase.
+            payload: Tile payload from the pipeline (gives smem pointers).
+            peer_cta_coord: (rank_n, rank_m, peer_m_rank) for peer CTA slicing.
+            work_tile_coord: (m, n, batch) coordinates.
+            a_multicast_mask: Multicast mask for A tiles.
+            iter_idx: K iteration index (base index for k_group).
+        """
+        var peer_m_rank = peer_cta_coord[2]
+
+        var a_gmem_m_coord = (
+            peer_m_rank * Self.a_tma_rows + work_tile_coord[0] * Self.BM
+        )
+        var batch_coord = work_tile_coord[2]
+
+        if elect_one_sync():
+            comptime for j in range(Self.config.k_group_size):
+                var a_tile, _ = payload.get_tile[Self.config.k_group_size](
+                    stage, j
+                )
+
+                var a_peer_tile = type_of(a_tile)(
+                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
+                    a_tile.layout,
+                )
+
+                var k_coord = Int(iter_idx + UInt32(j)) * Self.BK
+
+                a_tma_op.async_multicast_load_3d[Self.cta_group](
+                    a_peer_tile,
+                    barrier[0],
+                    (k_coord, a_gmem_m_coord, batch_coord),
+                    a_multicast_mask,
                 )
 
     @staticmethod
@@ -1366,7 +1569,7 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-    @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(c_tma_ops, `nvvm.grid_constant`)
     @__llvm_arg_metadata(epilogue_load_tma_op, `nvvm.grid_constant`)
     @__name(
         StaticString(Self.config.get_kernel_name())
@@ -1381,12 +1584,16 @@ struct BlackwellMatmulSM100Kernel[
     def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
-        c_tma_op: Self.CTmaOp,
+        c_tma_ops: InlineArray[Self.CTmaOp, Self.num_c_tma_descriptors],
         epilogue_load_tma_op: Self.EpilogueLoadTmaOp,
         bias_1d_tile: Self.Bias1DTile,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
+        rank_sigs: Optional[
+            InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
+        ] = None,
+        my_rank: Int = 0,
     ):
         """Main kernel entry point for SM100 matrix multiplication.
 
@@ -1416,7 +1623,8 @@ struct BlackwellMatmulSM100Kernel[
         if ctx.elect_one_warp and ctx.elect_one_thread:
             a_tma_op.prefetch_descriptor()
             b_tma_op.prefetch_descriptor()
-            c_tma_op.prefetch_descriptor()
+            comptime for i in range(Self.num_c_tma_descriptors):
+                c_tma_ops[i].prefetch_descriptor()
             comptime if Self.config.use_tma_epilogue_load and not Self.config.epilogue_is_1d:
                 epilogue_load_tma_op.prefetch_descriptor()
 
@@ -1461,9 +1669,19 @@ struct BlackwellMatmulSM100Kernel[
             with MatmulProfilerType[0](workspace, 0):
                 comptime if (
                     Self.pdl_level > PDLLevel.OFF
-                    and Self.config.AB_swapped
                     and Self.config.prefetch_tiles_n > 0
                 ):
+                    comptime assert (
+                        Self.config.prefetch_tiles_n
+                        <= Self.num_group_pipeline_stages
+                    ), (
+                        "prefetch_tiles_n ("
+                        + String(Self.config.prefetch_tiles_n)
+                        + ") must not exceed num_group_pipeline_stages ("
+                        + String(Self.num_group_pipeline_stages)
+                        + "); Phase 1 would fill the ring before barriers can"
+                        " fire."
+                    )
                     with input_pipeline.producer() as producer:
                         for current in load_iter:
                             scheduler.throttle_signal(
@@ -1491,39 +1709,77 @@ struct BlackwellMatmulSM100Kernel[
                             comptime for pf in range(
                                 Self.config.prefetch_tiles_n
                             ):
-                                with producer.acquire() as tiles:
-                                    prefetch_stages[pf] = tiles.stage()
-                                    prefetch_barriers[pf] = tiles.barrier()
-                                    prefetch_payloads[pf] = tiles.payload()
-                                    Self.prefetch_a_tiles(
-                                        a_tma_op,
-                                        tiles,
-                                        ctx.peer_cta_coord,
-                                        work_coord,
-                                        ctx.a_multicast_mask,
-                                        UInt32(pf * Self.config.k_group_size),
-                                        ctx.elect_one_cta,
-                                    )
-                                # __exit__: advances producer ring index;
-                                # consumer still blocked (A bytes only)
+                                if (
+                                    UInt32(pf * Self.config.k_group_size)
+                                    < num_iters
+                                ):
+                                    with producer.acquire() as tiles:
+                                        prefetch_stages[pf] = tiles.stage()
+                                        prefetch_barriers[pf] = tiles.barrier()
+                                        prefetch_payloads[pf] = tiles.payload()
+                                        comptime if Self.config.AB_swapped:
+                                            Self.prefetch_a_tiles(
+                                                a_tma_op,
+                                                tiles,
+                                                ctx.peer_cta_coord,
+                                                work_coord,
+                                                ctx.a_multicast_mask,
+                                                UInt32(
+                                                    pf
+                                                    * Self.config.k_group_size
+                                                ),
+                                                ctx.elect_one_cta,
+                                            )
+                                        else:
+                                            Self.prefetch_b_tiles(
+                                                b_tma_op,
+                                                tiles,
+                                                ctx.peer_cta_coord,
+                                                work_coord,
+                                                ctx.b_multicast_mask,
+                                                UInt32(
+                                                    pf
+                                                    * Self.config.k_group_size
+                                                ),
+                                                ctx.elect_one_cta,
+                                            )
 
                             wait_on_dependent_grids()
 
-                            # Phase 2: deliver B tiles to complete prefetched stages
+                            # Phase 2: complete activation tiles
                             comptime for pf in range(
                                 Self.config.prefetch_tiles_n
                             ):
-                                Self.complete_b_tiles(
-                                    b_tma_op,
-                                    prefetch_stages[pf],
-                                    prefetch_barriers[pf],
-                                    prefetch_payloads[pf],
-                                    ctx.peer_cta_coord,
-                                    work_coord,
-                                    ctx.b_multicast_mask,
-                                    UInt32(pf * Self.config.k_group_size),
-                                )
-                                # A+B bytes now == expected → barrier fires
+                                if (
+                                    UInt32(pf * Self.config.k_group_size)
+                                    < num_iters
+                                ):
+                                    comptime if Self.config.AB_swapped:
+                                        Self.complete_b_tiles(
+                                            b_tma_op,
+                                            prefetch_stages[pf],
+                                            prefetch_barriers[pf],
+                                            prefetch_payloads[pf],
+                                            ctx.peer_cta_coord,
+                                            work_coord,
+                                            ctx.b_multicast_mask,
+                                            UInt32(
+                                                pf * Self.config.k_group_size
+                                            ),
+                                        )
+                                    else:
+                                        Self.complete_a_tiles(
+                                            a_tma_op,
+                                            prefetch_stages[pf],
+                                            prefetch_barriers[pf],
+                                            prefetch_payloads[pf],
+                                            ctx.peer_cta_coord,
+                                            work_coord,
+                                            ctx.a_multicast_mask,
+                                            UInt32(
+                                                pf * Self.config.k_group_size
+                                            ),
+                                        )
 
                             # Phase 3: remaining K iterations (normal paired loads)
                             for i in range(
@@ -1667,8 +1923,15 @@ struct BlackwellMatmulSM100Kernel[
                     Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
                 )
 
-                var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
                 var epi_iter = scheduler.work_iterator()
+
+                # Pre-barrier: ensure all peers' output buffers are ready
+                comptime if Self.output_writer_type.needs_sync:
+                    _multi_gpu_barrier[
+                        Self.num_c_tma_descriptors,
+                        is_start=True,
+                        named_barrier_threads=Self.EPILOGUE_THREADS,
+                    ](rank_sigs.value(), rank_sigs.value()[my_rank], my_rank)
 
                 with epi_ctx:  # signals TMEM dealloc on exit
                     var tile_idx = 0
@@ -1676,8 +1939,9 @@ struct BlackwellMatmulSM100Kernel[
                     for current in epi_iter:
                         with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
                             with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
-                                # Use synchronous GMEM load (if any epilogue lambda is provided) + write back to GMEM
-                                tile_writer.write_batched(
+                                # Uniform write through the injected writer policy
+                                Self.write_output_tile(
+                                    Pointer(to=c_tma_ops),
                                     smem.c_tiles(),
                                     output_stage,
                                     (
@@ -1687,8 +1951,19 @@ struct BlackwellMatmulSM100Kernel[
                                     ),
                                     (mnk[0], mnk[1]),
                                 )
-
                         tile_idx += 1
+
+                # Post-barrier: ensure all peers have finished reduce-add writes.
+                # Use a named barrier scoped to the 4 epilogue warps (128 threads).
+                # Note this is only safe because epilogue warps are 0-3...
+                comptime if Self.output_writer_type.needs_sync:
+                    _multi_gpu_barrier[
+                        Self.num_c_tma_descriptors,
+                        is_start=False,
+                        need_fence=True,
+                        named_barrier_threads=Self.EPILOGUE_THREADS,
+                    ](rank_sigs.value(), rank_sigs.value()[my_rank], my_rank)
+
         else:
             if WarpRole.is_epilogue():
                 Self.EpilogueCtx.Sync.wait()  # wait for MMA to publish TMEM addr
@@ -1704,7 +1979,7 @@ struct BlackwellMatmulSM100Kernel[
                     Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
                 )
 
-                var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
+                var tile_writer = Self.TileWriterType(Pointer(to=c_tma_ops[0]))
                 var epi_iter = scheduler.work_iterator()
 
                 with epi_ctx:  # signals TMEM dealloc on exit
@@ -2303,7 +2578,7 @@ struct BlackwellMatmulSM100FallbackKernel[
                 comptime for n_vec in range(num_vecs_n):
                     comptime for m_vec in range(num_vecs_m):
                         comptime i_vec = n_vec * num_vecs_m + m_vec
-                        var dst_idx = Int(frag.layout(coord[m_vec, n_vec]()))
+                        var dst_idx = Int(frag.layout(coord[m_vec, n_vec]))
                         var dst_m_offset, dst_n_offset = divmod(dst_idx, N)
                         var m = UInt32(frag_m + dst_m_offset)
                         var n = UInt32(frag_n + dst_n_offset)

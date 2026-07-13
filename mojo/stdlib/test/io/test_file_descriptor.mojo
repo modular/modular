@@ -14,14 +14,13 @@
 from std.io import FileDescriptor
 from std.sys._io import stdin, stdout, stderr
 
-from std.sys.intrinsics import _type_is_eq
 from std.testing import TestSuite, assert_false, assert_true
 
 
 def test_isatty_with_standard_descriptors() raises:
-    assert_true(_type_is_eq[type_of(stdin.isatty()), Bool]())
-    assert_true(_type_is_eq[type_of(stdout.isatty()), Bool]())
-    assert_true(_type_is_eq[type_of(stderr.isatty()), Bool]())
+    assert_true(type_of(stdin.isatty()) == Bool)
+    assert_true(type_of(stdout.isatty()) == Bool)
+    assert_true(type_of(stderr.isatty()) == Bool)
 
 
 def test_isatty_with_invalid_fd() raises:

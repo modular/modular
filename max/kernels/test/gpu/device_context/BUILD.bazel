@@ -7,6 +7,11 @@ _APPLE_GPU_INCOMPATIBLE = select({
     "//conditions:default": [],
 })
 
+_GPU_MEMORY = {
+    "test_device_context.mojo": "2",
+    "test_device_context_cpu.mojo": "1",
+}
+
 _EXTRA_MOJO_TEST_CONSTRAINTS = {
     "test_dump_sass.mojo": ["//:nvidia_gpu"],
     "test_function_attributes.mojo": _APPLE_GPU_INCOMPATIBLE,
@@ -23,6 +28,9 @@ _EXTRA_MOJO_TEST_CONSTRAINTS = {
         name = src + ".test",
         size = "large",
         srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "1.5"),
+        },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_MOJO_TEST_CONSTRAINTS.get(src, []),
         deps = [
@@ -69,6 +77,7 @@ mojo_test(
         },
         "//conditions:default": {},
     }),
+    exec_properties = {"test.resources:gpu-memory": "1"},
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"] + select({
         "//:nvidia_gpu": [],
@@ -82,6 +91,7 @@ mojo_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max:_device_context_hal",
         "//max:internal_utils",
         "//max:kv_cache",
         "//max:linalg",

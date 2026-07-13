@@ -85,6 +85,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     sub_ftz,
     bulk_mma_ws,
     bulk_mma_ws_ts,
+    st_shared_v4_b32,
 )
 from nn.attention.gpu.nvidia.common import KVTMATile
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -197,6 +198,7 @@ struct MLA_Decode_Pack[
     var mask: Self.MaskType
     var valid_length: Self.ValidLengthType
     var lse_accum_split_ptr: Self.SplitAccumType
+    var num_partitions: Int
     comptime device_type: AnyType = Self
 
     def _to_device_type(
@@ -218,10 +220,12 @@ struct MLA_Decode_Pack[
         mask: Self.MaskType,
         valid_length: Self.ValidLengthType,
         lse_accum_split_ptr: Self.SplitAccumType,
+        num_partitions: Int,
     ):
         self.mask = mask
         self.valid_length = valid_length
         self.lse_accum_split_ptr = lse_accum_split_ptr
+        self.num_partitions = num_partitions
 
 
 # ------------------------------------------------------------------------------
@@ -2549,13 +2553,9 @@ def st_shared_v4_b32_at_fp8_elem_off[
     elem_off: Int,  # FP8 element offset
     packed: SIMD[DType.uint32, 4],
 ):
-    var dst_ptr = dst_fp8 + elem_off
-    _ = inlined_assembly[
-        "st.shared.v4.b32 [$0], {$1, $2, $3, $4};",
-        NoneType,
-        constraints="l,r,r,r,r",
-        has_side_effect=True,
-    ](dst_ptr, packed[0], packed[1], packed[2], packed[3])
+    # Delegates to the shared `st_shared_v4_b32` (moved to attention_utils);
+    # `elem_off` is in fp8 elements (the pointer is fp8-typed).
+    st_shared_v4_b32(dst_fp8, elem_off, packed)
 
 
 @always_inline
@@ -2598,13 +2598,9 @@ def st_shared_v4_b32_at_bf16_elem_off[
     elem_off: Int,  # bf16 element offset
     packed: SIMD[DType.uint32, 4],
 ):
-    var dst_ptr = dst_bf16 + elem_off
-    _ = inlined_assembly[
-        "st.shared.v4.b32 [$0], {$1, $2, $3, $4};",
-        NoneType,
-        constraints="l,r,r,r,r",
-        has_side_effect=True,
-    ](dst_ptr, packed[0], packed[1], packed[2], packed[3])
+    # Delegates to the shared `st_shared_v4_b32` (moved to attention_utils);
+    # `elem_off` is in bf16 elements (the pointer is bf16-typed).
+    st_shared_v4_b32(dst_bf16, elem_off, packed)
 
 
 @always_inline

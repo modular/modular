@@ -265,7 +265,7 @@ def vectorize[
     /,
     *,
     size: Int,
-    unroll_factor: Int = size if std.sys.is_gpu() else 1,
+    unroll_factor: Int = 1,
 ](closure: func):
     """Simplifies SIMD optimized loops by mapping a function across a range from
     0 to `size`, incrementing by `simd_width` at each step. The remainder of

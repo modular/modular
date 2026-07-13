@@ -22,7 +22,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import (
@@ -64,7 +64,7 @@ def _make_padder(
     if pipeline is None:
         pipeline = MagicMock()
         pipeline.release = MagicMock()
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         num_layers=1,
         n_kv_heads=1,

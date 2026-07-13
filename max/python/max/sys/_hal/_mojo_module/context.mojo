@@ -15,10 +15,11 @@
 from std.memory import ArcPointer, UnsafePointer
 from std.os import abort
 from std.python import PythonObject
-from std.sys._hal.context import Buffer as HALBuffer, Context as HALContext
-from std.sys._hal.device import get_device_spec
-from std.sys._hal.queue import Queue as HALQueue
-from std.sys._hal.stream import Stream as HALStream
+from _hal.buffer import Buffer as HALBuffer
+from _hal.context import Context as HALContext
+from _hal.device import get_device_spec
+from _hal.queue import Queue as HALQueue
+from _hal.stream import Stream as HALStream
 
 from .buffer import Buffer
 from .bundle import Bundle
@@ -88,6 +89,45 @@ struct Context(Movable, Writable):
                 _ctx=ctx_arc^,
                 _is_pinned=True,
             )
+        )
+
+    @staticmethod
+    def wrap_memory(
+        py_self: PythonObject,
+        address_obj: PythonObject,
+        size_obj: PythonObject,
+        owning_obj: PythonObject,
+    ) raises -> PythonObject:
+        var self_ptr = Self._self_ptr(py_self)
+        var address = UInt64(Int(py=address_obj))
+        var byte_size = UInt64(Int(py=size_obj))
+        var owning = Int(py=owning_obj) != 0
+        var hal_buf = self_ptr[]._arc[].wrap_memory(address, byte_size, owning)
+        var ctx_arc = self_ptr[]._arc
+        return PythonObject(
+            alloc=Buffer(
+                _hal=hal_buf^,
+                _ctx=ctx_arc^,
+                _is_pinned=False,
+            )
+        )
+
+    @staticmethod
+    def unwrap_memory(
+        py_self: PythonObject, buf_obj: PythonObject
+    ) raises -> PythonObject:
+        var self_ptr = Self._self_ptr(py_self)
+        var buf_ptr = buf_obj.downcast_value_ptr[Buffer]()
+        if buf_ptr[]._is_pinned:
+            # A wrapped handle always frees through the device path, so a
+            # pinned (host) allocation cannot round-trip: re-wrapping it
+            # owning=True would free it with the wrong driver call.
+            raise Error(
+                "cannot unwrap a host-pinned buffer; unwrap/wrap"
+                " round-trips are only supported for device memory"
+            )
+        return PythonObject(
+            Int(self_ptr[]._arc[].unwrap_memory(buf_ptr[]._hal))
         )
 
     @staticmethod

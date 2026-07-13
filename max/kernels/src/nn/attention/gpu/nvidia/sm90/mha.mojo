@@ -45,7 +45,6 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
-    RaggedTMA3DTile,
 )
 from nn.attention.mha_operand import kv_sub_tile_rows as _kv_sub_tile_rows
 from nn.attention.gpu.nvidia.sm90.attention import (
@@ -1295,8 +1294,8 @@ def _mha_sm90[
                 kv_smem.as_unsafe_any_origin(),
                 produced_mbar_kv.as_unsafe_any_origin(),
                 consumed_mbar_kv.as_unsafe_any_origin(),
-                produced_mbar_q,
-                consumed_mbar_q,
+                produced_mbar_q.as_unsafe_any_origin(),
+                consumed_mbar_q.as_unsafe_any_origin(),
                 kv_lut,
                 position,
                 partition,

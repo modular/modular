@@ -47,7 +47,7 @@ In fused mode, K_nope and V alternate in the same buffer (padded_ov_depth
 wide), and rope data is stored separately at half the staging rate.
 k_smem_base() and v_smem_base() return the same pointer.
 
-In `num_qo == 1` mode the cross-WG LSE exchange runs through the (now-dead)
+In `num_q == 1` mode the cross-WG LSE exchange runs through the (now-dead)
 s TMEM slot rather than smem, so no additional smem region is needed. Both
 warpgroups still write the combined LSE-reduced output to the single
 q-aliased o_smem region, then TMA-store it to gmem. Output partials remain
@@ -102,8 +102,10 @@ struct SM100AttentionSMem[
         size_of[Self.rope_dtype]() if Self.rope_dtype != DType.invalid else 0
     )
     comptime q_byte_offset: Int = 0
+    # Q_nope SMEM region: width is the non-rope Q/K depth (`padded_nope_depth`),
+    # which differs from the V/output depth when v_head_dim != qk_nope.
     comptime q_nope_bytes: Int = (
-        Self.config.BM * Self.config.padded_ov_depth * Self._qkv_dt_size
+        Self.config.BM * Self.config.padded_nope_depth * Self._qkv_dt_size
     )
     comptime q_rope_byte_offset: Int = Self.q_nope_bytes
     comptime q_rope_bytes: Int = (
@@ -116,16 +118,17 @@ struct SM100AttentionSMem[
     # Fused mode: [KV_fused_stage0]...[KV_fused_stageN][Rope0]...[RopeM]
     comptime kv_byte_offset: Int = Self.q_bytes
 
-    # Per-stage sizes in bytes.
-    # In pair-CTA mode each CTA stores half of K/V, so per-stage sizes
-    # use k_rows_per_cta (BN/2) and v_cols_per_cta (padded_ov_depth/2).
-    # In fused mode K and V share the same buffer (same per-stage size).
-    # In split mode K_nope and K_rope may have different dtypes.
+    # Per-stage sizes in bytes (pair-CTA halves each per-CTA col count).
+    # Fused mode: K_nope and V share one buffer, so the stage fits the wider of
+    # the two (equal for DeepSeek). Split mode: the K stage holds K_nope +
+    # K_rope; V has its own `v_stage_bytes`.
+    # NB: use the pair-halved `*_cols_per_cta()` here, NOT `fused_kv_cols()`
+    # (the un-halved width) — pair-CTA mode stores only half the cols per CTA.
     comptime k_stage_bytes: Int = (
-        Self.config.v_cols_per_cta()
+        max(Self.config.nope_cols_per_cta(), Self.config.v_cols_per_cta())
         * Self.config.BN
         * Self._qkv_dt_size if Self.config.use_fused_kv else (
-            Self.config.v_cols_per_cta() * Self.config.BN * Self._qkv_dt_size
+            Self.config.nope_cols_per_cta() * Self.config.BN * Self._qkv_dt_size
             + Self.rope_depth * Self.config.k_rows_per_cta() * Self.rope_dt_size
         )
     )
@@ -176,7 +179,7 @@ struct SM100AttentionSMem[
     # stays visible.
     comptime correction_byte_offset: Int = Self.kv_byte_offset + Self.kv_bytes
     comptime correction_bytes: Int = (
-        (2 if Self.config.num_qo == 1 else 1)
+        (2 if Self.config.num_q == 1 else 1)
         * Self.config.BM
         * size_of[DType.float32]()
     )
@@ -211,7 +214,9 @@ struct SM100AttentionSMem[
         use_order_barriers=Self.use_order_barriers,
         use_fused_kv=Self.config.use_fused_kv,
         pair_cta=Self.config.pair_cta,
-        num_qo=Self.config.num_qo,
+        num_q=Self.config.num_q,
+        splitk_partitions=Self.config.splitk_partitions,
+        BM=Self.config.BM,
     ]
 
     comptime mbar_bytes: Int = Int(Self.MiscMBarsType.num_mbars()) * size_of[

@@ -21,7 +21,12 @@ from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVConnectorType,
+    MHAKVCacheParams,
+    MLAKVCacheParams,
+)
 from max.pipelines.context import (
     GenerationStatus,
     TextContext,
@@ -100,24 +105,39 @@ def create_kv_cache(
         device_refs = [DeviceRef.from_device(device) for _ in range(dp)]
         session_devices = [device]
 
-    kv_params = KVCacheParams(
-        dtype=dtype,
-        num_layers=1,
-        n_kv_heads=1,
-        head_dim=1,
-        page_size=page_size,
-        enable_prefix_caching=enable_prefix_caching,
-        kv_connector=kv_connector,
-        host_kvcache_swap_space_gb=999,
-        data_parallel_degree=dp,
-        devices=device_refs,
-        speculative_method="eagle" if num_speculative_tokens > 0 else None,
-        num_draft_tokens=num_speculative_tokens,
-        is_mla=is_mla,
-        # num_q_heads must be divisible by the per-replica device count
-        # (TP shards) when MLA is enabled.
-        num_q_heads=tp_per_replica if is_mla else None,
-    )
+    kv_params: KVCacheParams
+    if is_mla:
+        kv_params = MLAKVCacheParams(
+            dtype=dtype,
+            num_layers=1,
+            head_dim=1,
+            page_size=page_size,
+            enable_prefix_caching=enable_prefix_caching,
+            kv_connector=kv_connector,
+            host_kvcache_swap_space_gb=999,
+            data_parallel_degree=dp,
+            devices=device_refs,
+            speculative_method="eagle" if num_speculative_tokens > 0 else None,
+            num_draft_tokens=num_speculative_tokens,
+            # num_q_heads must be divisible by the per-replica device count
+            # (TP shards) when MLA is enabled.
+            num_q_heads=tp_per_replica,
+        )
+    else:
+        kv_params = MHAKVCacheParams(
+            dtype=dtype,
+            num_layers=1,
+            n_kv_heads=1,
+            head_dim=1,
+            page_size=page_size,
+            enable_prefix_caching=enable_prefix_caching,
+            kv_connector=kv_connector,
+            host_kvcache_swap_space_gb=999,
+            data_parallel_degree=dp,
+            devices=device_refs,
+            speculative_method="eagle" if num_speculative_tokens > 0 else None,
+            num_draft_tokens=num_speculative_tokens,
+        )
 
     session = InferenceSession(devices=session_devices)
 
@@ -276,6 +296,10 @@ class FakeTokenGeneratorPipeline(
                 ] * self.num_speculative_tokens
 
         return responses
+
+    @property
+    def max_batch_size(self) -> int:
+        return 1
 
     def release(self, request_id: RequestID) -> None:
         # No-op. Previously the pipeline was responsible for calling kv.release().

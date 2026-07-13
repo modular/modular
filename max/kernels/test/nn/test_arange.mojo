@@ -31,11 +31,13 @@ def print_elements(tensor: TileTensor) raises:
     print("New strides:", tensor.layout.stride_coord())
 
     @always_inline
-    @parameter
-    def print_elements_lambda[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def print_elements_lambda[
+        simd_width: Int, alignment: Int = 1
+    ](idx: Coord) {var}:
         print(tensor[idx])
 
-    elementwise[print_elements_lambda, 1](
+    elementwise[1](
+        print_elements_lambda,
         tensor.layout.shape_coord(),
         DeviceContext(api="cpu"),
     )
@@ -66,16 +68,15 @@ def test_arange[
     var out_tensor = TileTensor(memory4, row_major(Coord(outshape)))
 
     @always_inline
-    @__copy_capture(out_tensor, step, start, stop)
-    @parameter
-    def arange_lambda[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def arange_lambda[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         var index = IndexList[1](Int(idx[0].value()))
         var range_val = arange[dtype, simd_width](start, stop, step, index)
         # Extract first element only: idx may have rank > 1 from elementwise,
         # but out_tensor is 1D so we need a single-element coordinate.
         out_tensor.store[width=simd_width](Coord(idx[0]), range_val)
 
-    elementwise[arange_lambda, 1](
+    elementwise[1](
+        arange_lambda,
         out_tensor.layout.shape_coord(),
         DeviceContext(api="cpu"),
     )

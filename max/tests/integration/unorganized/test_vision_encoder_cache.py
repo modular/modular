@@ -620,6 +620,50 @@ def test__cache_and_split_none_hash_not_cached() -> None:
     assert len(cache._cache) == 0
 
 
+def test__cache_and_split_zero_hash_not_cached() -> None:
+    """0 is the no-content-hash sentinel; lookup() treats it as a miss, so a
+    0-hash entry is never retrievable and must not be cached."""
+    cache = _make_cache()
+    total = _make_buffer(5, 4)
+    cache._cache_and_split(
+        vision_outputs=[total],
+        per_image_token_counts=[5],
+        image_hashes=[0],
+        request_ids=[RequestID("r1")],
+    )
+    assert len(cache._cache) == 0
+    assert cache.lookup(0) is None
+
+
+def test__cache_and_split_skips_zero_hash_keeps_offset() -> None:
+    """A 0 (no-content) hash is skipped, but its tokens still advance the split
+    offset so later real images get the correct slice."""
+    cache = _make_cache()
+    hidden = 4
+    total = _make_buffer(9, hidden)  # 2 (A) + 3 (zero) + 4 (B)
+    cache._cache_and_split(
+        vision_outputs=[total],
+        per_image_token_counts=[2, 3, 4],
+        image_hashes=[0xA, 0, 0xB],
+        request_ids=[RequestID("r1"), RequestID("r1"), RequestID("r1")],
+    )
+    # Only the two real hashes are cached; the 0-hash range is skipped.
+    assert cache.lookup(0) is None
+    assert len(cache._cache) == 2
+    entry_a = cache.lookup(0xA)
+    entry_b = cache.lookup(0xB)
+    assert entry_a is not None and entry_a.num_tokens == 2
+    assert entry_b is not None and entry_b.num_tokens == 4
+    # A takes rows [0:2]; B takes rows [5:9] -- the offset advanced past the
+    # 3 skipped zero-hash rows, so B is NOT [2:6].
+    np.testing.assert_array_equal(
+        entry_a.embeddings[0].to_numpy(), total.to_numpy()[0:2]
+    )
+    np.testing.assert_array_equal(
+        entry_b.embeddings[0].to_numpy(), total.to_numpy()[5:9]
+    )
+
+
 def test_assemble_concatenates_in_order() -> None:
     cache = _make_cache()
     hidden = 4
