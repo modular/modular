@@ -20,7 +20,7 @@ lit_tests(
         ],
     ),
     data = [
-        "//utils/mblack",
+        "@mblack",
     ] + glob([
         "**/inputs/**",
         # test_package/ is also copied to KGEN/test/kgen-doc/test_package/.
@@ -34,7 +34,7 @@ lit_tests(
         "build/inputs/**/*.mojo",
     ]),
     env = {
-        "MODULAR_MOJO_MAX_MBLACK_PATH": "$(rootpath //utils/mblack)",
+        "MODULAR_MOJO_MAX_MBLACK_PATH": "$(rootpath @mblack)",
     },
     force_strip = True,  # TODO(MOTO-1190): Debug and fix this duplicate symbol issue
     mojo_deps = [
@@ -49,6 +49,6 @@ lit_tests(
         "@llvm-project//llvm:llvm-objdump",
     ],
     deps = [
-        "//utils/mblack",
+        "@mblack",
     ],
 )
