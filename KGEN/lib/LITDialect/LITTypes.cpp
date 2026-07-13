@@ -753,7 +753,7 @@ LogicalResult TraitType::printValue(AsmPrinter &p, TypedAttr value) const {
 }
 
 /// Return the metatype for this this trait as a value.
-AnyTraitType TraitType::getMetaType() { return AnyTraitType::get(*this); }
+MetaType TraitType::getMetaType() { return MetaType::get(*this); }
 
 /// Return symbols carried by this trait type.
 ArrayRef<SymbolRefAttr> TraitType::getTraitSymbols() const {
@@ -791,19 +791,6 @@ mlir::OpAsmAliasResult LIT::TraitType::getAlias(raw_ostream &os) const {
     os << "constrained_";
   llvm::interleave(names, os, "_");
   return mlir::OpAsmAliasResult::OverridableAlias;
-}
-
-//===----------------------------------------------------------------------===//
-// AnyTraitType
-//===----------------------------------------------------------------------===//
-
-OptionalParseResult AnyTraitType::parseValue(AsmParser &p,
-                                             TypedAttr &value) const {
-  return parseTypeValue(p, value, *this);
-}
-
-LogicalResult AnyTraitType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printTypeValue(p, value);
 }
 
 //===----------------------------------------------------------------------===//

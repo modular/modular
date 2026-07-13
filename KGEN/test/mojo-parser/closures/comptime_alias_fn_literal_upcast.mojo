@@ -17,7 +17,7 @@ comptime CallbackType = def(Int) -> Int
 # closure trait at the declaration site.
 
 # CHECK: lit.alias.decl *"CallbackType`0x":
-# CHECK-SAME: !lit.anytrait<!{{[A-Za-z0-9_]+}}> = <!{{[A-Za-z0-9_]+}}>
+# CHECK-SAME: meta<!{{[A-Za-z0-9_]+}}> = <!{{[A-Za-z0-9_]+}}>
 
 # CHECK: lit.fn @"repro[def(Int) -> Int]($0)"<F: !alias_CallbackType{{[0-9]+}}>
 def repro[F: CallbackType](callback: F) -> Int:

@@ -844,23 +844,23 @@ def test_infer_sub_trait[T: OtherEmptyTrait](var foo: Foo[T], bar: Bar[T]):
 
 # CHECK-LABEL: lit.fn @"anytrait_assignment
 def anytrait_assignment():
-    # CHECK-NEXT: !lit.anytrait<!AnyType_Movable> = <!AnyType_Movable>
+    # CHECK-NEXT: meta<!AnyType_Movable> = <!AnyType_Movable>
     comptime t: type_of(AnyType & Movable) = AnyType&Movable
 
 
 # CHECK-LABEL: lit.fn @"test_anytrait_subtyping
-# CHECK-SAME: <ty: !lit.anytrait<!AnyType>>
+# CHECK-SAME: <ty: meta<!AnyType>>
 def test_anytrait_subtyping[ty: type_of(AnyType)]():
-    # Call !lit.anytrait subtyping.
-    # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:!lit.anytrait<!AnyType> !AnyType>()
+    # Call trait metatype subtyping.
+    # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:meta<!AnyType> !AnyType>()
     test_anytrait_subtyping[AnyType]()
-    # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:!lit.anytrait<!AnyType> !AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait>()
+    # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:meta<!AnyType> !AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait>()
     test_anytrait_subtyping[SimpleTrait]()
 
 
 # CHECK-LABEL: lit.fn @"take_many_things_of_specified_trait
-# CHECK-SAME: <element_type: !lit.anytrait<!AnyType>,
-# CHECK-SAME: element_types: !lit.struct<#TypeList {{.*}}:param_list<:!lit.anytrait<!AnyType> element_type>{{.*}} pos_vararg>()
+# CHECK-SAME: <element_type: meta<!AnyType>,
+# CHECK-SAME: element_types: !lit.struct<#TypeList {{.*}}:param_list<:meta<!AnyType> element_type>{{.*}} pos_vararg>()
 def take_many_things_of_specified_trait[element_type: type_of(AnyType), //,
                                        *element_types: element_type]():
     pass
@@ -869,17 +869,17 @@ def take_many_things_of_specified_trait[element_type: type_of(AnyType), //,
 # CHECK-LABEL: lit.fn @"call_many_things_of_specified_trait
 def call_many_things_of_specified_trait(a: TraitStruct):
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-    # CHECK-SAME: <:!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> [!TraitStruct]
+    # CHECK-SAME: <:meta<!AnyType> !AnyType, :param_list<!AnyType> [!TraitStruct]
     take_many_things_of_specified_trait[element_type=AnyType, TraitStruct]()
 
     # Int is movable.
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-    # CHECK-SAME: <:!lit.anytrait<!AnyType> !AnyType_Movable, :param_list<!AnyType_Movable> [!Int]
+    # CHECK-SAME: <:meta<!AnyType> !AnyType_Movable, :param_list<!AnyType_Movable> [!Int]
     take_many_things_of_specified_trait[element_type=Movable, Int]()
 
     # TraitStruct conforms to SimpleTrait.
     # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-    # CHECK-SAME: <:!lit.anytrait<!AnyType> !AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait, :param_list<!AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait> [!TraitStruct, !TraitStruct]
+    # CHECK-SAME: <:meta<!AnyType> !AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait, :param_list<!AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait> [!TraitStruct, !TraitStruct]
     take_many_things_of_specified_trait[element_type=SimpleTrait, TraitStruct, TraitStruct]()
 
 
@@ -894,7 +894,7 @@ struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
         pass
 
     # CHECK: lit.fn @"test
-    # CHECK-SAME: <a_type: !kgen.param<:!lit.anytrait<!AnyType> element_trait>>
+    # CHECK-SAME: <a_type: !kgen.param<:meta<!AnyType> element_trait>>
     # CHECK-SAME: (%self: {{.*}}%a_value: !lit.ref<:{{.*}} element_trait> a_type, imm {{.*}}> read_mem
     def test[a_type: Self.element_trait](self, a_value: a_type):
         self.take_any_type(a_value)
@@ -942,7 +942,7 @@ def take_anytype_ref[type: AnyType](ref value: type): pass
 # CHECK-LABEL: lit.fn @"pass_movable_mt_ref
 def pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: PassT):
     # CHECK-NEXT: lit.call {{.*}}@"take_anytype_ref
-    # CHECK-SAME: <:!AnyType upcast(:!kgen.param<:!lit.anytrait<!AnyType_Movable> elt_trait> PassT),
+    # CHECK-SAME: <:!AnyType upcast(:!kgen.param<:meta<!AnyType_Movable> elt_trait> PassT),
     # CHECK-SAME: : !lit.generator<("value":{{.*}} elt_trait> PassT, mut *"a`"> ref) -> !kgen.none>
     take_anytype_ref(a)
 
@@ -963,7 +963,7 @@ struct FormVariadicPackWithCastedElementVariadic[
 # to Movable correctly.
 def take_movable_pointer[T: Movable&AnyType](ptr: UnsafePointer[T, AnyOrigin[mut=True]]): pass
 # CHECK-LABEL: test_parametric_anytype_movable
-# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <{{.*}}!lit.anytrait<!AnyType_Copyable_ImplicitlyCopyable_Movable> element_trait>
+# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <{{.*}}meta<!AnyType_Copyable_ImplicitlyCopyable_Movable> element_trait>
 def test_parametric_anytype_movable[element_trait: _CollectionElementMetaType, //,
                                   *element_types: element_trait]
                                   (ptr: UnsafePointer[element_types[0], AnyOrigin[mut=True]]):

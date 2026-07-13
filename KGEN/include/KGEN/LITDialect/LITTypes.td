@@ -339,7 +339,7 @@ def LIT_TraitType: LITType<"Trait", "trait",
     bool isMetaType() { return true; }
 
     /// Return the metatype for this this trait as a value.
-    AnyTraitType getMetaType();
+    MetaType getMetaType();
 
     /// Return a TypeParamAttr for a reference to this trait as a value, e.g.
     /// uttering 'Stringable' in code.
@@ -354,54 +354,6 @@ def LIT_TraitType: LITType<"Trait", "trait",
   }];
 }
 
-
-//===----------------------------------------------------------------------===//
-// AnyTraitType
-//===----------------------------------------------------------------------===//
-
-def LIT_AnyTraitType : LITType<"AnyTrait", "anytrait",
-    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
-  let summary = "Type of a trait value.";
-  let description = [{
-    The `!lit.anytrait` type represents the type of a trait value, e.g. the
-    result of `typeof(Stringable)`. The meta-type stores the prototype of a type
-    value in its type so that member inspection can be performed through the type system during
-    member lookup or implicit conversions to other meta-types.
-
-    Example:
-
-    ```mlir
-    !lit.anytrait<@Stringable>
-    ```
-
-    The meta-type is propagated through values by attaching itself to type
-    values.
-
-    Example:
-
-    ```mlir
-    // Concrete type value for 'Int' converted for use as Stringable value.
-    #kgen.type<!lit.struct<@Int>> : !lit.anytrait<@Stringable>
-
-    // Parametric type value.
-    #kgen.param.decl.ref<"some_type"> : !lit.anytrait<@Stringable>
-    ```
-  }];
-
-  let parameters = (ins "TraitType":$traitType);
-  let assemblyFormat = "`<` $traitType `>`";
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "TraitType":$traitType), [{
-      return get(traitType.getContext(), traitType);
-    }]>
-  ];
-
-  let extraClassDeclaration = [{
-    /// Return whether the type is a metatype.
-    bool isMetaType() { return true; }
-  }];
-}
 
 //===----------------------------------------------------------------------===//
 // MetaType

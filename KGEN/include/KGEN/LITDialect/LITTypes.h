@@ -375,6 +375,21 @@ public:
   StructMetaMetaType bindUnbound(ArrayRef<TypedAttr> values) const;
 };
 
+class AnyTraitType : public MetaTypeOf<TraitType> {
+private:
+  using Base = MetaTypeOf<TraitType>;
+
+public:
+  using Base::classof;
+  using Base::get;
+  using Base::MetaTypeOf;
+
+  AnyTraitType(Base base) : Base(base) {}
+
+  /// Return the trait type wrapped by this metatype.
+  TraitType getTraitType() const { return getType(); }
+};
+
 class FnLiteralTypeGeneratorMetaType
     : public MetaTypeOf<FnLiteralTypeGeneratorType> {
 private:

@@ -1788,7 +1788,7 @@ def takeGenerator[
 # CHECK-LABEL: lit.fn @"myDriver()"()
 def myDriver():
     # We should be able to infer From -> Copyable, To -> mt_Int
-    # CHECK: %0 = lit.call {{.*}}@"takeGenerator{{.*}}"<:!lit.anytrait<!AnyType> !AnyType_Copyable_Movable, :!lit.anytrait<!AnyType> meta<!Int>, :!lit.generator<<"From": !AnyType_Copyable_Movable>meta<!Int>>
+    # CHECK: %0 = lit.call {{.*}}@"takeGenerator{{.*}}"<:meta<!AnyType> !AnyType_Copyable_Movable, :meta<!AnyType> meta<!Int>, :!lit.generator<<"From": !AnyType_Copyable_Movable>meta<!Int>>
     takeGenerator[Generator]()
 
 # This should not crash, even though TakesXOrigin has an inferred parameter

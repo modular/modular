@@ -113,5 +113,5 @@ def meta_type_to_trait[T: type_of(Copyable), //, W: T](t: W):
 
 
 def meta_type_to_trait_driver():
-    # CHECK: lit.call @metatypes::@"meta_type_to_trait[{{.*}}]<:!lit.anytrait<!AnyType_Copyable_Movable> meta<!Int>, :meta<!Int> #alias_Int>(%1)
+    # CHECK: lit.call @metatypes::@"meta_type_to_trait[{{.*}}]<:meta<!AnyType_Copyable_Movable> meta<!Int>, :meta<!Int> #alias_Int>(%1)
     meta_type_to_trait[Int](1)
