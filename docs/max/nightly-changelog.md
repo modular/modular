@@ -490,6 +490,14 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed the structured-output grammar backend silently defaulting to
+  `llguidance` instead of the intended global default `xgrammar` for models
+  launched via `max serve`. The `--structured-output-backend` flag hardcoded
+  `llguidance` as its default value, which shadowed the `None` "unset" sentinel
+  the resolver relies on to apply the global default (`xgrammar`) or an
+  architecture's pinned backend. The flag now defaults to unset, so any model
+  without an explicit `--structured-output-backend` (and no architecture pin)
+  correctly resolves to `xgrammar`.
 - Fixed MiniMax-M3 tool-call grammar enforcement silently disabling itself
   when the model emits more than one tool-call section in a single response.
   Enforcement used to switch off once the first section closed, so a second
