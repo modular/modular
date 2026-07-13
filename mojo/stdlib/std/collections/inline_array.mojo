@@ -205,7 +205,7 @@ struct _InlineArrayIterOwned[T: Movable & ImplicitlyDeletable, size: Int](
 
 
 @explicit_destroy(
-    "Use `destroy_with()` to explicitly destroy an `InlineArray` of"
+    "Use `deinit_with()` to explicitly destroy an `InlineArray` of"
     " non-`ImplicitlyDeletable` elements"
 )
 struct InlineArray[ElementType: Movable, size: Int](
@@ -561,24 +561,24 @@ struct InlineArray[ElementType: Movable, size: Int](
         """Destroys the array's elements."""
         destroy_n(self.unsafe_ptr(), Self.size)
 
-    def destroy_with(
-        deinit self, destroy_func: Some[def(var Self.ElementType)], /
+    def deinit_with(
+        deinit self, deinit_func: Some[def(var Self.ElementType)], /
     ):
-        """Consumes this array and destroys its elements using the provided
+        """Consumes this array and deinitializes its elements using the provided
         closure.
 
-        This can be used to destroy an `InlineArray` of
+        This can be used to deinitialize an `InlineArray` of
         non-`ImplicitlyDeletable` values.
 
         Args:
-            destroy_func: The deinitializing closure called on each array
+            deinit_func: The deinitializing closure called on each array
                 element.
         """
         for idx in range(Self.size):
-            # TODO(MOCO-4111): `destroy_func` cannot convert to
+            # TODO(MOCO-4111): `deinit_func` cannot convert to
             # `UnsafePointer.unsafe_deinit` since `UnsafePointer` is
             # bound on `T: AnyType` but `InlineArray` has `ElementType: Movable`.
-            destroy_func(
+            deinit_func(
                 __get_address_as_owned_value(
                     (self.unsafe_ptr() + idx)._get_kgen_pointer()
                 )

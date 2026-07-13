@@ -463,7 +463,7 @@ struct _DictValueIter[
 
 
 @explicit_destroy(
-    "Use `destroy_with()` to explicitly destroy a `Dict` with"
+    "Use `deinit_with()` to explicitly destroy a `Dict` with"
     " non-`ImplicitlyDeletable` keys or values"
 )
 struct Dict[
@@ -823,25 +823,25 @@ struct Dict[
         Constraints:
             Both `K` and `V` must be `ImplicitlyDeletable`. When either is not,
             the dictionary has no implicit destructor and must be torn down with
-            `destroy_with()`.
+            `deinit_with()`.
         """
         # _table.__del__ handles destroying occupied slots and freeing memory.
         # _order is cleaned up by List destructor.
         pass
 
-    def destroy_with(
-        deinit self, destroy_func: Some[def(var Self.K, var Self.V)], /
+    def deinit_with(
+        deinit self, deinit_func: Some[def(var Self.K, var Self.V)], /
     ):
-        """Consume the dictionary, destroying each key/value pair with a closure.
+        """Consume the dictionary, deinitializing each key/value pair with a closure.
 
         Use this to tear down a `Dict` whose keys or values are not
         `ImplicitlyDeletable`.
 
         Args:
-            destroy_func: A closure called once per entry to destroy its key and
+            deinit_func: A closure called once per entry to destroy its key and
                 value.
         """
-        self._table^.destroy_with(destroy_func)
+        self._table^.deinit_with(deinit_func)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

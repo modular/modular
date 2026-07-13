@@ -950,7 +950,7 @@ struct _FlashAttention[
             ):
                 dealloc(packed^.into_allocation())
 
-            packed_alloc^.destroy_with(_dealloc_packed)
+            packed_alloc^.deinit_with(_dealloc_packed)
 
         sync_parallelize[task_func](num_threads, ctx)
 

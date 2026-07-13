@@ -424,7 +424,7 @@ This version is still a work in progress.
   closure on each element:
 
   ```mojo
-  collection^.destroy_with(my_destroy_closure)
+  collection^.deinit_with(my_destroy_closure)
   ```
 
   Generic code that takes one of these collections by value may now need

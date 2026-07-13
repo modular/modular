@@ -1250,7 +1250,7 @@ def test_list_with_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    list^.destroy_with(destroy_closure)
+    list^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, [0, 1])
 
@@ -1264,7 +1264,7 @@ def test_empty_list_with_explicit_destroy_type() raises:
         destroyed += 1
         e^.destroy()
 
-    list^.destroy_with(destroy_closure)
+    list^.deinit_with(destroy_closure)
 
     assert_equal(destroyed, 0)
 
@@ -1280,7 +1280,7 @@ def test_extend_list_with_explicit_destroy_type() raises:
         destroyed.append(e.value)
         e^.destroy()
 
-    list1^.destroy_with(destroy_closure)
+    list1^.deinit_with(destroy_closure)
     assert_equal(destroyed, [0, 1, 2])
 
 

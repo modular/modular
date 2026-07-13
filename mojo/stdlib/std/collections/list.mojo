@@ -137,7 +137,7 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
 
 
 @explicit_destroy(
-    "Use `destroy_with()` to explicitly destroy a `List` of"
+    "Use `deinit_with()` to explicitly destroy a `List` of"
     " non-`ImplicitlyDeletable` elements"
 )
 struct List[T: Movable](
@@ -503,18 +503,18 @@ struct List[T: Movable](
         )
         self^._unsafe_assume_destroyed_and_deallocate()
 
-    def destroy_with(deinit self, destroy_func: Some[def(var Self.T)], /):
-        """Consumes this list and destroy its values using the provided closure.
+    def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
+        """Consumes this list and deinitializes its values using the provided closure.
 
         This can be used to destroy a `List` of non-`ImplicitlyDeletable` values.
 
         Args:
-            destroy_func: The deinitializing closure called on each `List` element.
+            deinit_func: The deinitializing closure called on each `List` element.
         """
         for i in range(len(self)):
-            # TODO(MOCO-4111): `destroy_func` cannot convert to UnsafePointer.destroy_pointee_with
-            # `destroy_func` type since UP is bound on `T: AnyType` but List has `T: Movable`.
-            destroy_func(
+            # TODO(MOCO-4111): `deinit_func` cannot convert to UnsafePointer.destroy_pointee_with
+            # `deinit_func` type since UP is bound on `T: AnyType` but List has `T: Movable`.
+            deinit_func(
                 __get_address_as_owned_value(
                     (self.unsafe_ptr() + i)._get_kgen_pointer()
                 )

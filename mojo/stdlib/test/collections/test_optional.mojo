@@ -452,38 +452,38 @@ def test_and_then_with_none() raises:
     assert_false(result)
 
 
-def test_optional_linear_type_destroy_with() raises:
-    # `Optional` holding a linear value is retired via `destroy_with`.
+def test_optional_linear_type_deinit_with() raises:
+    # `Optional` holding a linear value is retired via `deinit_with`.
     var v1 = Optional(ExplicitDelOnly(5))
-    v1^.destroy_with(ExplicitDelOnly.destroy)
+    v1^.deinit_with(ExplicitDelOnly.destroy)
 
     # `Optional[T]` holding `None` is retired without invoking
-    # `destroy_func`.
+    # `deinit_func`.
     var v2 = Optional[ExplicitDelOnly](None)
-    v2^.destroy_with(ExplicitDelOnly.destroy)
+    v2^.deinit_with(ExplicitDelOnly.destroy)
 
 
-def test_optional_destroy_with_runs_exactly_once() raises:
-    # Verify `destroy_func` runs exactly once on the contained value.
+def test_optional_deinit_with_runs_exactly_once() raises:
+    # Verify `deinit_func` runs exactly once on the contained value.
     var counter = 0
 
     def increment_counter(var _value: Int) {mut counter}:
         counter += 1
 
     var opt = Optional[Int](42)
-    opt^.destroy_with(increment_counter)
+    opt^.deinit_with(increment_counter)
     assert_equal(counter, 1)
 
 
-def test_optional_destroy_with_none_does_not_call_destroy() raises:
-    # Verify `destroy_func` is not called when the `Optional` is empty.
+def test_optional_deinit_with_none_does_not_call_destroy() raises:
+    # Verify `deinit_func` is not called when the `Optional` is empty.
     var counter = 0
 
     def increment_counter(var _value: Int) {mut counter}:
         counter += 1
 
     var opt = Optional[Int](None)
-    opt^.destroy_with(increment_counter)
+    opt^.deinit_with(increment_counter)
     assert_equal(counter, 0)
 
 

@@ -557,7 +557,7 @@ def _matmul_cpu_impl[
         def _dealloc_packed(var packed: Allocation[Scalar[a.dtype]]):
             dealloc(packed^)
 
-        a_packed_alloc^.destroy_with(_dealloc_packed)
+        a_packed_alloc^.deinit_with(_dealloc_packed)
 
 
 @always_inline
