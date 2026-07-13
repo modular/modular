@@ -796,24 +796,28 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
     if (!toTrait || !fromTrait)
       return failure();
 
-    // FIXME: TraitType should be canonicalized by default. (Otherwise, you can
-    // not test trait type equality by `traitType1 ==  traitType2` in MLIR).
+#ifndef MODULAR_PRODUCTION
     SmallVector<mlir::SymbolRefAttr> fromTraitSymbols(fromTrait.getSymbols());
     canonicalizeTraitCompositionSymbols(
         fromTraitSymbols, [&](SymbolRefAttr symbol) -> TraitDeclOp {
           return symtab.lookupSymbolIn<TraitDeclOp>(module, symbol);
         });
+    assert(fromTraitSymbols.size() == fromTrait.getSymbols().size() &&
+           "trait type should have been canonicalized");
 
     SmallVector<mlir::SymbolRefAttr> toTraitsSymbols(toTrait.getSymbols());
     canonicalizeTraitCompositionSymbols(
         toTraitsSymbols, [&](SymbolRefAttr symbol) -> TraitDeclOp {
           return symtab.lookupSymbolIn<TraitDeclOp>(module, symbol);
         });
+    assert(fromTraitSymbols.size() == fromTrait.getSymbols().size() &&
+           "trait type should have been canonicalized");
+#endif
 
-    llvm::SmallPtrSet<SymbolRefAttr, 16> fromSymbols(fromTraitSymbols.begin(),
-                                                     fromTraitSymbols.end());
+    llvm::SmallPtrSet<SymbolRefAttr, 16> fromSymbols(
+        fromTrait.getSymbols().begin(), fromTrait.getSymbols().end());
     bool fromImpliesTo =
-        llvm::all_of(toTraitsSymbols, [&](SymbolRefAttr symbol) {
+        llvm::all_of(toTrait.getSymbols(), [&](SymbolRefAttr symbol) {
           return fromSymbols.contains(symbol);
         });
     if (fromImpliesTo) {
@@ -821,8 +825,6 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
       // this is actually an upcast.
       return UpcastAttr::get(downcast.getType(), downcast.getInputTypeValue());
     } else {
-      // We can not reuse fromTraitSymbols above as those are canonicalized :(
-      // FIXME: ensure all trait type contains a canonicalized list of symbols.
       SmallVector<SymbolRefAttr> allTraitSymbols(fromTrait.getSymbols());
       llvm::append_range(allTraitSymbols, toTrait.getSymbols());
       sortAndDeduplicateSymbols(allTraitSymbols);
