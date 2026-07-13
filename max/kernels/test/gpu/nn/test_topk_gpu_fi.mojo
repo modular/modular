@@ -403,6 +403,107 @@ def test_topk_topp_sampling[
     print("  All", num_passed, "trials passed!")
 
 
+def test_topk_topp_rng_offset_batch_invariant[
+    dtype: DType,
+    out_idx_type: DType = DType.int32,
+    block_size: Int = 1024,
+](ctx: DeviceContext, N: Int, K: Int, p: Float32) raises:
+    """Regression test: the same request samples the same token regardless of
+    its physical batch slot.
+
+    The kernel keys the RNG offset on the request's logical row (``row_idx``),
+    not the physical batch slot (``block_idx.x``). To exercise that, we point
+    every output slot at the SAME logical row via ``indices=[0, 0, ...]`` and
+    give that row a single seed. All slots therefore read identical probs and
+    use the identical per-row seed; the only thing that differs between slots is
+    ``block_idx.x``. A batch-invariant sampler must return the same token in
+    every slot. (Before the fix the offset was ``block_idx.x``, so the slots
+    diverged.) Uses a nucleus with several tokens so the draw actually selects
+    among candidates rather than collapsing to the argmax.
+    """
+    comptime batch_size = 8
+    print(
+        "==== Running RNG-offset batch-invariance, N=",
+        N,
+        ", K=",
+        K,
+        ", p=",
+        p,
+        ", batch_size=",
+        batch_size,
+    )
+
+    var input_shape = IndexList[2](batch_size, N)
+    var input_runtime_layout = row_major(Coord(input_shape))
+    var output_runtime_layout = row_major(batch_size)
+
+    var device_input = ctx.enqueue_create_buffer[dtype](
+        input_shape.flattened_length()
+    )
+    var device_output = ctx.enqueue_create_buffer[out_idx_type](batch_size)
+
+    var input_tensor = TileTensor(device_input, input_runtime_layout)
+    var output_tensor = TileTensor(device_output, output_runtime_layout)
+
+    # Fill every row with normalized probabilities. Only logical row 0 is read
+    # (indices point all slots at it), but filling all rows keeps the layout
+    # well-defined.
+    with device_input.map_to_host() as input_host:
+        var input_host_tensor = TileTensor(input_host, input_runtime_layout)
+        fill_random_for_test[dtype, normalized=True](input_host_tensor)
+
+    # Single seed for logical row 0.
+    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
+    var seed_layout = row_major(Idx[1])
+    with seed_buf.map_to_host() as seed_host:
+        seed_host[0] = UInt64(12345)
+    var seed_tt = (
+        TileTensor(seed_buf, seed_layout).as_unsafe_any_origin().as_immut()
+    )
+
+    # indices = [0, 0, ..., 0]: every physical slot reads logical row 0.
+    var indices_buf = ctx.enqueue_create_buffer[out_idx_type](batch_size)
+    var indices_layout = row_major(batch_size)
+    with indices_buf.map_to_host() as indices_host:
+        for b in range(batch_size):
+            indices_host[b] = Scalar[out_idx_type](0)
+    var indices_tt = (
+        TileTensor(indices_buf, indices_layout)
+        .as_unsafe_any_origin()
+        .as_immut()
+    )
+
+    topk_topp_sampling_from_prob[dtype, out_idx_type, block_size](
+        ctx,
+        input_tensor,
+        output_tensor,
+        K,
+        top_p_val=p,
+        deterministic=False,
+        rng_seed=seed_tt,
+        rng_offset=0,
+        indices=indices_tt,
+    )
+
+    with device_output.map_to_host() as output_host:
+        var output_host_tensor = TileTensor(output_host, output_runtime_layout)
+        var expected = Int(output_host_tensor.load[width=1]((0,)))
+        for b in range(1, batch_size):
+            var got = Int(output_host_tensor.load[width=1]((b,)))
+            if got != expected:
+                raise Error(
+                    "RNG offset is not batch-invariant: slot 0 sampled token "
+                    + String(expected)
+                    + " but slot "
+                    + String(b)
+                    + " sampled token "
+                    + String(got)
+                    + " for the same request (same probs + same seed)."
+                )
+
+    print("  All", batch_size, "slots sampled the same token!")
+
+
 def test_topk_sampling[
     dtype: DType,
     out_idx_type: DType = DType.int32,
@@ -1477,6 +1578,13 @@ def main() raises:
         test_topk_topp_sampling[bf16_type, DType.int32, default_block_size](
             ctx, batch_size=4, N=1024, K=20, p=0.9
         )
+
+        # Regression: the RNG offset must follow the request's logical row, not
+        # the physical batch slot, so a request samples the same token wherever
+        # it lands in the batch.
+        test_topk_topp_rng_offset_batch_invariant[
+            float32_dtype, DType.int32, default_block_size
+        ](ctx, N=1024, K=50, p=0.9)
 
         print("\n" + "=" * 80)
         print("All topk_topp_sampling_from_prob tests passed! ✓")

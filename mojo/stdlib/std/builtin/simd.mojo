@@ -71,9 +71,9 @@ from std.sys.info import (
     _is_amd_mi300x,
     _is_sm_9x_or_newer,
     _is_sm_100x_or_newer,
+    _is_sm_120x_or_newer,
     is_32bit,
 )
-from std.sys.intrinsics import _type_is_eq
 
 from std.bit import bit_width, byte_swap, pop_count
 from std.builtin._format_float import _write_float
@@ -118,7 +118,7 @@ comptime Scalar = SIMD[
 """Represents a scalar dtype."""
 
 comptime Int = Scalar[DType.int]
-"""Represents a signed integer sutable for indexing."""
+"""Represents a signed integer suitable for indexing."""
 comptime Int8 = Scalar[DType.int8]
 """Represents an 8-bit signed scalar integer."""
 comptime UInt8 = Scalar[DType.uint8]
@@ -3676,7 +3676,7 @@ def _convert_float8_to_f32[
     dtype: DType,
     size: SIMDSize,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float32, size]:
-    comptime if _is_sm_9x_or_newer() and dtype in (
+    comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and dtype in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ):
@@ -3719,7 +3719,7 @@ def _convert_float8_to_f16[
     dtype: DType,
     size: SIMDSize,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float16, size]:
-    comptime if _is_sm_9x_or_newer() and dtype in (
+    comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and dtype in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ):
@@ -3739,7 +3739,9 @@ def _convert_f32_to_float8[
     //,
     target: DType,
 ](val: SIMD[dtype, size]) -> SIMD[target, size]:
-    comptime if (_is_sm_9x_or_newer() or _cdna_4_or_newer()) and target in (
+    comptime if (
+        _is_sm_9x_or_newer() or _cdna_4_or_newer()
+    ) and not _is_sm_120x_or_newer() and target in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ):

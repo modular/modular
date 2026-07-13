@@ -60,7 +60,7 @@ def conv2d_transpose(
     python like syntax, padding a 2x4 spatial `output` with [0, 1, 2, 1] would
     yield:
 
-    .. code-block:: python
+    .. code-block:: text
 
         output = [
           [1, 2, 3, 4],
@@ -72,6 +72,26 @@ def conv2d_transpose(
           [3],
         ]
         # Shape is 1x1
+
+    Building a deconvolution graph (filter is RSCF, with ``out_channels`` and
+    ``in_channels`` w.r.t. the original convolution):
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("conv2d_transpose_example") as graph:
+            # NHWC input: batch 1, 1x1 spatial, 1 channel.
+            x = ops.constant([[[[3.0]]]], DType.float32, device=device)
+            # RSCF filter: 2x2 kernel, 1 out-channel, 1 in-channel, all ones.
+            filter = ops.constant(
+                [[[[1.0]], [[1.0]]], [[[1.0]], [[1.0]]]],
+                DType.float32,
+                device=device,
+            )
+            graph.output(ops.conv2d_transpose(x, filter))
 
     Args:
         x: An NHWC input tensor to perform the deconvolution upon.
@@ -100,13 +120,14 @@ def conv2d_transpose(
 
         if bias.rank != 1:
             raise ValueError(
-                "bias for a 2-D deconvolution must be rank 1 with shape (out_channels,)"
+                "bias for a 2-D deconvolution must be rank 1 with shape"
+                " (out_channels,)"
             )
 
     if x.rank != 4:
         raise ValueError(
-            "input to a 2-D deconvolution must be rank 4 with shape (batch_size,"
-            " height, width, in_channels)"
+            "input to a 2-D deconvolution must be rank 4 with shape"
+            " (batch_size, height, width, in_channels)"
         )
 
     if filter.rank != 4:
@@ -116,7 +137,8 @@ def conv2d_transpose(
         )
     if output_paddings[0] >= stride[0] or output_paddings[1] >= stride[1]:
         raise ValueError(
-            f"output padding must be smaller than either stride or dilation, but got output_padding = {output_paddings}"
+            "output padding must be smaller than either stride or dilation,"
+            f" but got output_padding = {output_paddings}"
         )
 
     # TODO(GEX-2043): Add support for GPU kernel for conv_transpose and remove manual transfers

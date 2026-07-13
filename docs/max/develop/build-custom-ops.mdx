@@ -9,7 +9,6 @@ is_tutorial: true
 
 import Requirements from '@site/src/components/Requirements';
 import { requirementsWithGPU } from '../../requirements';
-import MDXListing from '@site/src/components/Listing/MDXListing';
 
 When the built-in ops in a MAX graph don't cover your computation (a
 specialized activation, a fused operation, or a domain-specific kernel),
@@ -400,9 +399,9 @@ memory access patterns.
 
 ## Next steps
 
-export const docs = [
-  '../../develop/modules.mdx',
-  '../../develop/custom-ops-matmul.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Build a model graph with Module](/max/develop/modules): Learn how to
+  compose modules, write custom modules with explicit weights, load checkpoint
+  data, and construct a model graph.
+- [Optimize custom ops for GPUs with Mojo](/max/develop/custom-ops-matmul):
+  Learn to use Mojo's GPU programming abstractions to progressively optimize a
+  matrix multiplication.

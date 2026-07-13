@@ -68,8 +68,8 @@ anything. Most structs don't require a custom destructor, and Mojo automatically
 adds a no-op destructor if you don't define one.
 
 The `__del__()` method takes its argument using the `deinit`
-[argument passing
-convention](/docs/manual/values/ownership/#argument-passing-conventions),
+[argument
+convention](/docs/manual/values/ownership/#argument-conventions),
 which indicates that the value is being deinitialized.
 
 ## Default destruction behavior
@@ -124,20 +124,19 @@ shadow variables to keep track of the state of your values to provide safety.
 These are often optimized away, but the Mojo approach eliminates this overhead
 entirely, making the generated code faster and avoiding ambiguity.
 
-## Destructors {#destructor}
+## Implicit destructors {#destructor}
 
-Mojo calls a value's destructor (`__del__()` method) when the value's lifetime
-ends (typically the point at which the value is last used). As we mentioned
-earlier, Mojo provides a default, no-op destructor for all types, so in most
-cases you don't need to define the `__del__()` method.
+Mojo calls a value's destructor after the value's last use unless a type
+opts out of `ImplicitlyDeletable` destruction. The deletable trait provides
+a default no-op destructor (`__del__()`), which you can override.
 
-You should define the `__del__()` method to perform any kind of cleanup the
-type requires. Usually, that includes freeing memory for any fields where you
-dynamically allocated memory (for example, via `UnsafePointer`) and
-closing any long-lived resources such as file handles.
+Create a custom `__del__()` implementation to perform any required cleanup.
+This might include freeing dynamically allocated memory (for example,
+through `UnsafePointer`) or releasing long-lived resources such as file
+handles.
 
-However, any struct that is just a simple collection of other types does not
-need to implement the destructor.
+Types that are simple collections of other types usually don't need to
+override `__del__()`.
 
 For example, consider this simple struct:
 
@@ -165,7 +164,7 @@ struct HeapArray(Writable):
         self.size = len(values)
         self.data = alloc[Int](self.size)
         for i in range(self.size):
-            (self.data + i).init_pointee_copy(values[i])
+            (self.data + i).unsafe_write(values[i])
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("[")
@@ -178,7 +177,7 @@ struct HeapArray(Writable):
     def __del__(deinit self):
         print("Destroying", self.size, "elements")
         for i in range(self.size):
-            (self.data + i).destroy_pointee()
+            (self.data + i).unsafe_deinit_pointee()
         self.data.free()
 
 
@@ -203,7 +202,7 @@ when a pointer is destroyed, Mojo doesn't call the destructors on those values.
 
 So in the `HeapArray` example above, calling `free()` on the pointer releases
 the memory, but doesn't call the destructors on the stored values. To invoke
-the destructors, use the `destroy_pointee()` method provided by the
+the destructors, use the `unsafe_deinit_pointee()` method provided by the
 `UnsafePointer` type.
 
 :::note
@@ -262,6 +261,8 @@ requires you to consume the value. Failing to do so results in a compiler error.
 
 ### Using `@explicit_destroy`
 
+<!-- TODO(DOCS-2253): Reflect changes to `@explicit_destroy` -->
+
 Most types use implicit destruction. When a value's lifetime ends, Mojo
 automatically calls `__del__()` to clean up. This works for most cases: memory
 is freed and simple resources are released automatically.
@@ -290,7 +291,7 @@ cleanup path, such as invoking a secondary destructor.
 
 ```mojo
 @explicit_destroy("Must call save_and_close() or discard()")
-struct FileBuffer:
+struct FileBuffer(ImplicitlyDeletable where False):
     var path: String
     var data: String
 

@@ -153,7 +153,7 @@ running inference with [`max
 generate`](https://docs.modular.com/max/cli/generate):
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- generate \
+./bazelw run //max/python/max/_entrypoints:pipelines -- generate \
   --model OpenGVLab/InternVL3-8B-Instruct \
   --prompt "Hello, world!"
 ```
@@ -162,7 +162,7 @@ And this is equivalent to creating an endpoint with [`max
 serve`](https://docs.modular.com/max/cli/serve):
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
   --model OpenGVLab/InternVL3-8B-Instruct \
   --trust-remote-code
 ```

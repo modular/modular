@@ -33,7 +33,6 @@
         "max/inference/embeddings",
         "max/serve/function-calling",
         "max/serve/structured-output",
-        "max/serve/offline-inference",
         "max/develop/max-pipeline-bring-your-own-model",
         "max/models"
       ]
@@ -44,7 +43,6 @@
       "type": "category",
       "collapsed": false,
       "items": [
-        "max/deploy/cloud",
         {
           "type": "doc",
           "id": "max/deploy/local-to-cloud",
@@ -79,7 +77,8 @@
           "collapsed": true,
           "items": [
             "max/develop/graph",
-            "max/develop/modules"
+            "max/develop/modules",
+            "max/develop/layers"
           ]
         },
         {
@@ -89,6 +88,7 @@
           "items": [
             "max/develop/model-bringup-workflow",
             "max/develop/read-model-config",
+            "max/develop/weight-adapters",
             "max/develop/pipelines",
             "max/develop/logit-comparison",
             "max/graph/quantize"
@@ -229,17 +229,6 @@
         },
         {
           "type": "category",
-          "label": "max.entrypoints",
-          "link": {
-            "type": "doc",
-            "id": "max/api/python/entrypoints"
-          },
-          "items": [
-            "__AUTOGEN:max.entrypoints__"
-          ]
-        },
-        {
-          "type": "category",
           "label": "max.experimental",
           "collapsed": true,
           "link": {
@@ -279,17 +268,6 @@
               },
               "items": [
                 "__AUTOGEN:max.experimental.nn.rope__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "random",
-              "link": {
-                "type": "doc",
-                "id": "max/api/python/experimental.random"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.random__"
               ]
             },
             {
@@ -434,13 +412,16 @@
                 "max/api/python/pipelines.architectures.ideogram4",
                 "max/api/python/pipelines.architectures.internvl",
                 "max/api/python/pipelines.architectures.kimik2_5",
+                "max/api/python/pipelines.architectures.laguna",
                 "max/api/python/pipelines.architectures.lfm2",
                 "max/api/python/pipelines.architectures.llama3",
+                "max/api/python/pipelines.architectures.llama4",
                 "max/api/python/pipelines.architectures.mamba",
                 "max/api/python/pipelines.architectures.minimax_m2",
                 "max/api/python/pipelines.architectures.mistral",
                 "max/api/python/pipelines.architectures.mistral3",
                 "max/api/python/pipelines.architectures.mpnet",
+                "max/api/python/pipelines.architectures.nemotron_h",
                 "max/api/python/pipelines.architectures.olmo",
                 "max/api/python/pipelines.architectures.olmo2",
                 "max/api/python/pipelines.architectures.olmo3",
@@ -460,6 +441,7 @@
                 "max/api/python/pipelines.architectures.unified_eagle_llama3",
                 "max/api/python/pipelines.architectures.unified_mtp_deepseekV3",
                 "max/api/python/pipelines.architectures.unified_mtp_gemma4",
+                "max/api/python/pipelines.architectures.unified_mtp_glm5_2",
                 "max/api/python/pipelines.architectures.wan"
               ]
             },
@@ -749,11 +731,6 @@
       "label": "Create embeddings",
       "type": "link",
       "href": "/max/rest-api/#POST/v1/embeddings"
-    },
-    {
-      "label": "Create batch",
-      "type": "link",
-      "href": "/max/rest-api/#POST/v1/batches"
     },
     {
       "label": "List models",

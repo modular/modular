@@ -101,8 +101,8 @@ def _assert_fp8_close[
 
 
 def _assert_scales_close(
-    ref_host: UnsafePointer[Scalar[DType.float32], _],
-    fused_host: UnsafePointer[Scalar[DType.float32], _],
+    ref_host: UnsafePointer[Float32, _],
+    fused_host: UnsafePointer[Float32, _],
     rows: Int,
     *,
     max_rel_diff: Float32 = 0.005,
@@ -264,7 +264,7 @@ def test_fused_allreduce_rmsnorm_fp8[
 
     comptime shape = IndexList[2](rows, cols)
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
-    var epsilon = Scalar[in_dtype](1e-5)
+    var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
     var scale_ub = max_finite[out_dtype]().cast[DType.float32]()
 
@@ -274,7 +274,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     # that a separate allreduce would introduce.
     var ref_sum_host = ctx.enqueue_create_host_buffer[in_dtype](length)
     for i in range(length):
-        var sum_f32 = Scalar[DType.float32](0)
+        var sum_f32 = Float32(0)
         for g in range(ngpus):
             sum_f32 += host_bufs[g][i].cast[DType.float32]()
         ref_sum_host[i] = sum_f32.cast[in_dtype]()
@@ -469,22 +469,22 @@ def test_fused_allreduce_rmsnorm_noquant[
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
-    var epsilon = Scalar[dtype](1e-5)
+    var epsilon = Float32(1e-5)
     var weight_offset = Scalar[dtype](0.0)
 
     # --- Host reference: allreduce in f32, then RMSNorm in f32 ---
     var ref_sum_f32 = ctx.enqueue_create_host_buffer[DType.float32](length)
     for i in range(length):
-        var s = Scalar[DType.float32](0)
+        var s = Float32(0)
         for g in range(ngpus):
             s += host_bufs[g][i].cast[DType.float32]()
         ref_sum_f32[i] = s
 
     var ref_out_host = ctx.enqueue_create_host_buffer[dtype](length)
-    var eps_f32 = epsilon.cast[DType.float32]()
+    var eps_f32 = epsilon
     var woff_f32 = weight_offset.cast[DType.float32]()
     for r in range(rows):
-        var m2 = Scalar[DType.float32](0)
+        var m2 = Float32(0)
         for c in range(cols):
             var s = ref_sum_f32[r * cols + c]
             m2 += s * s
@@ -627,7 +627,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
-    var epsilon = Scalar[in_dtype](1e-5)
+    var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
     var scale_ub = max_finite[out_dtype]().cast[DType.float32]()
 
@@ -646,7 +646,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     # to avoid the bf16 rounding that a separate allreduce would introduce.
     var ref_sum_host = ctx.enqueue_create_host_buffer[in_dtype](length)
     for i in range(length):
-        var sum_f32 = Scalar[DType.float32](0)
+        var sum_f32 = Float32(0)
         for g in range(ngpus):
             sum_f32 += host_bufs[g][i].cast[DType.float32]()
         sum_f32 += residual_host[i].cast[DType.float32]()
@@ -896,7 +896,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
-    var epsilon = Scalar[dtype](1e-5)
+    var epsilon = Float32(1e-5)
     var weight_offset = Scalar[dtype](0.0)
 
     # --- Residual buffer: deterministic values ---
@@ -911,7 +911,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     var ref_sum_f32 = ctx.enqueue_create_host_buffer[DType.float32](length)
     var ref_sum_host = ctx.enqueue_create_host_buffer[dtype](length)
     for i in range(length):
-        var s = Scalar[DType.float32](0)
+        var s = Float32(0)
         for g in range(ngpus):
             s += host_bufs[g][i].cast[DType.float32]()
         s += residual_host[i].cast[DType.float32]()
@@ -920,10 +920,10 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
         ref_sum_host[i] = s.cast[dtype]()
 
     var ref_out_host = ctx.enqueue_create_host_buffer[dtype](length)
-    var eps_f32 = epsilon.cast[DType.float32]()
+    var eps_f32 = epsilon
     var woff_f32 = weight_offset.cast[DType.float32]()
     for r in range(rows):
-        var m2 = Scalar[DType.float32](0)
+        var m2 = Float32(0)
         for c in range(cols):
             var s = ref_sum_f32[r * cols + c]
             m2 += s * s

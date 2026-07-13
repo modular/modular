@@ -43,14 +43,12 @@ from std.hashlib import Hasher
 from std.memory import UnsafeMaybeUninit
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location, reflect
-from std.reflection.traits import AllCopyable
-from std.sys.intrinsics import _type_is_eq
+from std.utils import StaticTuple
 from std.utils._nicheable import (
     UnsafeNicheable,
     UnsafeCustomNicheStorage,
     NicheIndex,
 )
-from std.utils.type_functions import ConditionalType
 
 
 @fieldwise_init
@@ -94,10 +92,7 @@ struct EmptyOptionalError[T: AnyType](
 
 struct Optional[T: Movable](
     Boolable,
-    # TODO(MOCO-3640): Remove AllCopyable once the compiler can synthesize copy
-    # constructors through variadic conditional conformances
-    # (AllCopyable[_NoneType, T] when T: Copyable).
-    Copyable where conforms_to(T, Copyable) and AllCopyable[_NoneType, T],
+    Copyable where conforms_to(T, Copyable),
     Defaultable,
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
@@ -249,57 +244,6 @@ struct Optional[T: Movable](
         """Implicitly cast an `OptionalReg[T]` to an `Optional[T]`."""
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         UnsafePointer(to=self).bitcast[OptionalReg[U]]()[] = optional_reg
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__(
-        nullable: UnsafePointer[...],
-        out self: Optional[
-            UnsafePointer[
-                nullable.type,
-                nullable.origin,
-                address_space=nullable.address_space,
-            ]
-        ],
-    ):
-        self = {value = nullable}
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__(
-        nullable: UnsafePointer[mut=True, ...],
-        out self: Optional[
-            UnsafePointer[
-                nullable.type,
-                AnyOrigin[mut=True],
-                address_space=nullable.address_space,
-            ]
-        ],
-    ):
-        self = {value = nullable.unsafe_origin_cast[AnyOrigin[mut=True]]()}
-
-    @always_inline
-    @implicit
-    @doc_hidden
-    def __init__[
-        __disambiguate: NoneType = None
-    ](
-        nullable: UnsafePointer[...],
-        out self: Optional[
-            UnsafePointer[
-                nullable.type,
-                AnyOrigin[mut=False],
-                address_space=nullable.address_space,
-            ]
-        ],
-    ):
-        self = {
-            value = nullable.as_immutable().unsafe_origin_cast[
-                AnyOrigin[mut=False]
-            ]()
-        }
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -716,8 +660,7 @@ struct Optional[T: Movable](
         caller-provided destructor function.
 
         This method can be used to destroy `Optional` values whose element
-        type is not `ImplicitlyDeletable` (for example, types
-        marked `@explicit_destroy`). The `__del__` on `Optional`
+        type is not `ImplicitlyDeletable`. The `__del__` on `Optional`
         requires `T: ImplicitlyDeletable`, so explicit-destroy users must
         destroy an `Optional[T]` through this API instead.
 
@@ -734,9 +677,8 @@ struct Optional[T: Movable](
         Examples:
 
         ```mojo
-        @explicit_destroy
         @fieldwise_init
-        struct ExplicitDestroy(Movable):
+        struct ExplicitDestroy(Movable, ImplicitlyDeletable where False):
             var data: Int
 
             def destroy(deinit self):
@@ -835,8 +777,6 @@ struct Optional[T: Movable](
     ):
         result = UnsafePointer(to=self).bitcast[type_of(result)]()[]
 
-    # TODO(MOCO-3744): `To` cannot be inferred by the compiler
-    # and must be manually specified.
     def map[
         To: Movable,
         //,
@@ -866,7 +806,7 @@ struct Optional[T: Movable](
 
         ```mojo
         var opt = Optional("hello")
-        var length = opt.map[To=Int](String.byte_length)
+        var length = opt.map(String.byte_length)
         print(length.value())  # Output: 5
         ```
 
@@ -874,7 +814,7 @@ struct Optional[T: Movable](
 
         ```mojo
         var opt = Optional[String](None)
-        var length = opt.map[To=Int](String.byte_length)
+        var length = opt.map(String.byte_length)
         print(length.or_else(-1))  # Output: -1
         ```
         """
@@ -883,8 +823,6 @@ struct Optional[T: Movable](
         else:
             return None
 
-    # TODO(MOCO-3744): `To` cannot be inferred by the compiler
-    # and must be manually specified.
     def and_then[
         To: Movable,
         //,
@@ -921,7 +859,7 @@ struct Optional[T: Movable](
 
         def main():
             var opt = Optional("42")
-            var parsed = opt.and_then[To=Int](try_parse_int)
+            var parsed = opt.and_then(try_parse_int)
             print(parsed.value())  # Output: 42
         ```
 
@@ -930,7 +868,7 @@ struct Optional[T: Movable](
         ```mojo
         def main():
             var opt = Optional[String](None)
-            var parsed = opt.and_then[To=Int](try_parse_int)
+            var parsed = opt.and_then(try_parse_int)
             print(parsed.or_else(-1))  # Output: -1
         ```
         """
@@ -973,14 +911,14 @@ struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
 
     @always_inline
     def __init__[U: TrivialRegisterPassable](out self, value: U):
-        comptime assert _type_is_eq[U, Self.T]()
+        comptime assert U == Self.T
         self._value = __mlir_op.`kgen.variant.create`[
             _type=Self._mlir_type, index=SIMDSize(0)._mlir_value
         ](rebind[Self.T](value))
 
     @always_inline
     def value[U: TrivialRegisterPassable](self) -> U:
-        comptime assert _type_is_eq[U, Self.T]()
+        comptime assert U == Self.T
         var value = __mlir_op.`kgen.variant.get`[index=SIMDSize(0)._mlir_value](
             self._value
         )
@@ -996,11 +934,10 @@ struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
 struct _NicheableOptionalRegStorage[
     T: TrivialRegisterPassable & UnsafeNicheable
 ](TrivialRegisterPassable, _OptionalRegStorageTraits):
-    comptime StorageType = ConditionalType[
-        Trait=TrivialRegisterPassable,
-        If=conforms_to(Self.T, UnsafeCustomNicheStorage),
-        Then=downcast[Self.T, UnsafeCustomNicheStorage].NicheStorage,
-        Else=__mlir_type[`!pop.array<1, `, Self.T, `>`],
+    comptime StorageType: TrivialRegisterPassable = Self.T.NicheStorage if conforms_to(
+        Self.T, UnsafeCustomNicheStorage
+    ) else StaticTuple[
+        Self.T, 1
     ]
     var storage: Self.StorageType
 
@@ -1014,14 +951,14 @@ struct _NicheableOptionalRegStorage[
 
     @always_inline
     def __init__[U: TrivialRegisterPassable](out self, value: U):
-        comptime assert _type_is_eq[U, Self.T]()
+        comptime assert U == Self.T
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         var ptr = UnsafePointer(to=self.storage).bitcast[Self.T]()
-        ptr.init_pointee_move(rebind[Self.T](value))
+        ptr.unsafe_write(rebind[Self.T](value))
 
     @always_inline
     def value[U: TrivialRegisterPassable](self) -> U:
-        comptime assert _type_is_eq[U, Self.T]()
+        comptime assert U == Self.T
         return UnsafePointer(to=self.storage).bitcast[U]()[]
 
     @always_inline
@@ -1032,13 +969,12 @@ struct _NicheableOptionalRegStorage[
         return Self.T.classify_niche(ptr) == NicheIndex.NotANiche
 
 
-comptime _OptionalRegStorageFor[T: TrivialRegisterPassable] = ConditionalType[
-    Trait=_OptionalRegStorageTraits,
-    If=conforms_to(T, UnsafeNicheable),
-    Then=_NicheableOptionalRegStorage[
-        downcast[T, TrivialRegisterPassable & UnsafeNicheable]
-    ],
-    Else=_DefaultOptionalRegStorage[T],
+comptime _OptionalRegStorageFor[
+    T: TrivialRegisterPassable
+]: _OptionalRegStorageTraits = _NicheableOptionalRegStorage[T] if conforms_to(
+    T, UnsafeNicheable
+) else _DefaultOptionalRegStorage[
+    T
 ]
 
 

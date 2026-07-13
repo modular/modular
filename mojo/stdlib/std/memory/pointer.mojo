@@ -19,6 +19,7 @@ from std.memory import Pointer
 ```
 """
 
+from std._plugin import CurrentPlugin
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.builtin.simd_size import SIMDSize
 from std.memory import UnsafeMaybeUninit
@@ -69,6 +70,33 @@ struct AddressSpace(
     """Shared cluster GPU memory address space (NVIDIA-specific)."""
     comptime BUFFER_RESOURCE = AddressSpace(8)
     """Buffer resource GPU memory address space (AMD-specific)."""
+
+    @always_inline("nodebug")
+    @staticmethod
+    def __getattr_param__[name: StaticString]() -> AddressSpace:
+        """Resolves a target-specific named address space.
+
+        The address spaces above (`GENERIC`, `GLOBAL`, `SHARED`, ...) are the
+        built-in GPU set. Accessing any *other* name as `AddressSpace.<NAME>`
+        routes here, which consults the active `PluginHooks` backend. This
+        keeps the set of valid names open and target-extensible — for example
+        an accelerator backend can provide scratchpad-style spaces that do not
+        exist on GPUs — instead of a fixed portable enum.
+
+        Parameters:
+            name: The address-space name being accessed.
+
+        Returns:
+            The `AddressSpace` the active backend defines for `name`.
+
+        Constraints:
+            `name` must be defined by the active `PluginHooks` backend;
+            otherwise this is a compile-time error.
+        """
+        comptime if CurrentPlugin.address_space_fn[name]:
+            return CurrentPlugin.address_space_fn[name].value()
+        else:
+            comptime assert False, "unknown address space: '" + name + "'"
 
     @always_inline("builtin")
     def __init__(out self, value: SIMDSize):
@@ -138,19 +166,6 @@ struct AddressSpace(
             writer: The object to write to.
         """
         self.write_to(writer)
-
-
-# ===-----------------------------------------------------------------------===#
-# Deprecated aliases for backward compatibility
-# ===-----------------------------------------------------------------------===#
-
-comptime _GPUAddressSpace = AddressSpace
-"""Deprecated: Use `AddressSpace` instead. This alias is provided for backward
-compatibility and will be removed in a future release."""
-
-comptime GPUAddressSpace = AddressSpace
-"""Deprecated: Use `AddressSpace` instead. This alias is provided for backward
-compatibility and will be removed in a future release."""
 
 
 # ===-----------------------------------------------------------------------===#

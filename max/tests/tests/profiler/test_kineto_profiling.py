@@ -74,6 +74,11 @@ def test_profiling_namespace_is_shared_across_sessions() -> None:
 
 
 def test_start_transitions_to_warmup() -> None:
+    # enable() lands in "warmup", not "active": the Warmup -> Active
+    # step-count transition is not wired yet (see step()'s TODO / MXTOOLS-211).
+    # When the warmup/active step machine lands, start() will report "warmup"
+    # until the configured warmup steps elapse and then advance to "active".
+    #
     # The autouse ``_disable_profiler_after_each_test`` fixture restores the
     # profiler to disabled on teardown, so no in-test ``finally`` is needed.
     session = _new_session()

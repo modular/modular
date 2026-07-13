@@ -54,7 +54,7 @@ def run_layer_norm_block[
     var data_buf = TileTensor(data_d, row_major(Coord(data_shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
-    var epsilon = Scalar[dtype]()
+    var epsilon = Float32(0)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -100,6 +100,7 @@ def run_layer_norm_block[
         comptime kernel = layer_norm_gpu_block[
             LayoutType=beta.LayoutType,
             origin=beta.origin,
+            Storage=beta.Storage,
             simd_width,
             input_fn,
             gamma_fn,
@@ -127,7 +128,7 @@ def run_layer_norm_block[
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = rsqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon.cast[dtype]())
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
@@ -170,7 +171,7 @@ def run_layer_norm_gpu[
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
-    var epsilon = Scalar[dtype]()
+    var epsilon = Float32(0)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -217,7 +218,7 @@ def run_layer_norm_gpu[
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = rsqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon.cast[dtype]())
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
@@ -260,7 +261,7 @@ def run_layer_norm_warp_tiling[
     var data_buf = TileTensor(data_d, row_major(Coord(data_shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
-    var epsilon = Scalar[dtype]()
+    var epsilon = Float32(0)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -305,6 +306,7 @@ def run_layer_norm_warp_tiling[
         comptime kernel = layer_norm_gpu_warp_tiling[
             LayoutType=beta.LayoutType,
             origin=beta.origin,
+            Storage=beta.Storage,
             simd_width,
             max_warps_per_block,
             input_fn,
@@ -333,7 +335,7 @@ def run_layer_norm_warp_tiling[
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = rsqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon.cast[dtype]())
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[

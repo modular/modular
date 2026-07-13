@@ -94,7 +94,12 @@ def bench_concat[
 
     # Create input tuple for kernel
     var inputs = StaticTuple[
-        TileTensor[type, input0_device.LayoutType, ImmutAnyOrigin],
+        TileTensor[
+            type,
+            input0_device.LayoutType,
+            ImmutAnyOrigin,
+            Storage=input0_device.Storage,
+        ],
         num_inputs,
     ](
         input0_device.as_unsafe_any_origin().as_immut(),
@@ -155,8 +160,7 @@ def bench_concat[
         var input = inputs_host[i]
         var input_shape = shapes[i]
 
-        @parameter
-        def check[width: Int, alignment: Int = 1](coords: Coord):
+        def check[width: Int, alignment: Int = 1](coords: Coord) {var}:
             var out_coords = coord_to_index_list(coords)
             out_coords[axis] += offset
             var out_coord = Coord(out_coords)
@@ -165,7 +169,7 @@ def bench_concat[
             ):
                 abort(String("mismatch at coords ", out_coords))
 
-        elementwise[check, 1](Coord(input_shape), ctx)
+        elementwise[1](check, Coord(input_shape), ctx)
         offset += input_shape[axis]
 
     _ = input0_device_buffer

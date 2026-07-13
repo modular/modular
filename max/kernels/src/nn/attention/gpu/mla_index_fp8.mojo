@@ -13,6 +13,7 @@
 """MLA FP8 index kernel for computing attention scores with paged KV cache."""
 
 from std.sys import size_of
+from std.sys.info import _has_blackwell_tcgen05
 from std.math import ceildiv
 
 from layout import (
@@ -22,15 +23,23 @@ from layout import (
     row_major,
 )
 
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 
 from kv_cache.types import KVCollectionT
 
 from nn.index_fp8 import fp8_index_kernel, IndexSmemStorage
+from nn.attention.gpu.sparse_index_fp8_sm100 import (
+    _BM_KEY,
+    fp8_index_score_sm100,
+)
 from nn.attention.mha_mask import MHAMask, MaskName
 from nn.attention.mha_operand import KVCacheMHAOperand, KVCacheScalesMHAOperand
 from nn.attention.mha_utils import dispatch_mask
+from nn.topk_bitonic import (
+    PERSISTENT_TOPK_MAX_N,
+    persistent_topk_block,
+)
 from nn.topk import topk_gpu
 
 from std.utils.index import Index
@@ -48,9 +57,11 @@ def apply_mask_kernel[
     scores_origin: MutOrigin,
     VLLayoutType: TensorLayout,
     vl_origin: ImmutOrigin,
+    CLLayoutType: TensorLayout,
 ](
     output: TileTensor[DType.float32, ScoresLayoutType, scores_origin],
     valid_length: TileTensor[DType.uint32, VLLayoutType, vl_origin],
+    cache_lengths: TileTensor[DType.uint32, CLLayoutType, ImmutAnyOrigin],
     mask: mask_t,
     max_num_keys: Int,
 ):
@@ -71,9 +82,11 @@ def apply_mask_kernel[
         Int(global_seq_idx) * max_num_keys + key_idx
     )
 
-    # Apply mask: coord = [batch, head, q_idx, k_idx]
-    # For causal mask: q_idx >= k_idx means visible
-    var coord = Index(batch_idx, 0, seq_idx, key_idx)
+    # Apply mask: coord = [batch, head, query_idx, key_idx]
+    # key_idx indexes the full KV cache, so the query index must be its
+    # absolute position cache_len + seq_idx.
+    var cache_len = Int(cache_lengths[batch_idx])
+    var coord = Index(batch_idx, 0, cache_len + seq_idx, key_idx)
     var masked_val = mask.mask(coord, current_val)
 
     output.raw_store(Int(global_seq_idx) * max_num_keys + key_idx, masked_val)
@@ -87,6 +100,7 @@ def fill_invalid_topk_kernel[
     use_causal_mask: Bool,
 ](
     output_indices: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    topk_indices: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
     input_row_offsets: TileTensor[DType.uint32, IROLayoutType, iro_origin],
     cache_lengths: TileTensor[
         DType.uint32, cache_lengths_layout, ImmutAnyOrigin
@@ -95,14 +109,16 @@ def fill_invalid_topk_kernel[
     top_k: Int,
     effective_k: Int,
 ):
-    """Fill invalid positions with -1 in topk output.
+    """Scatter the compact top-k indices into the top_k-strided output, with
+    invalid positions set to -1.
 
-    topk_gpu has already written valid indices to positions [0, effective_k)
-    in output_indices (which has top_k stride). This kernel fills positions
-    that should be -1:
-    - Positions [effective_k, top_k) when top_k > max_num_keys
-    - Positions where k_idx >= num_keys for that token
-    - Positions where the index VALUE >= num_keys (topk selected an invalid key)
+    topk_gpu wrote valid indices to positions [0, effective_k) of the compact
+    `topk_indices` buffer (row stride effective_k). This kernel copies them
+    into `output_indices` (row stride top_k), setting positions that should be
+    -1:
+    - Positions [effective_k, top_k): no computed value.
+    - Positions where k_idx >= num_keys for that token.
+    - Positions where the index VALUE >= num_keys (topk selected an invalid key).
 
     Output shape: [total_seq_len, top_k].
 
@@ -114,25 +130,17 @@ def fill_invalid_topk_kernel[
     comptime assert cache_lengths.flat_rank == 1
 
     var token_idx = block_idx.x
-    var k_idx = thread_idx.x
 
-    if token_idx >= total_seq_len or k_idx >= top_k:
+    if token_idx >= total_seq_len:
         return
 
-    # Output index: [token_idx, k_idx] with top_k stride
-    var out_idx = token_idx * top_k + k_idx
-
-    # If k_idx >= effective_k, we don't have computed values - fill with -1
-    if k_idx >= effective_k:
-        output_indices[out_idx] = -1
-        return
-
-    # Find which batch this token belongs to by scanning row_offsets
+    # Token-level quantities (independent of k): find which batch this token
+    # belongs to and how many keys it may attend to.
     var batch_idx = 0
     var batch_size = Int(input_row_offsets.dim[0]()) - 1
     for b in range(batch_size):
-        var q_end = Int(input_row_offsets.raw_load(b + 1))
-        if token_idx < q_end:
+        var q_end_b = Int(input_row_offsets.raw_load(b + 1))
+        if token_idx < q_end_b:
             batch_idx = b
             break
 
@@ -153,16 +161,34 @@ def fill_invalid_topk_kernel[
         # No causal mask: all keys in the batch are valid
         num_keys = cache_len + seq_len
 
-    # Get the index value that topk wrote
-    var idx_val = Int(output_indices[out_idx])
+    # Cover ALL top_k output columns. The launch caps block_dim at 1024, which
+    # is smaller than top_k when top_k > 1024 (e.g. the indexer's top_k=2048),
+    # so each thread strides across multiple columns. Without this grid-stride
+    # loop, columns [block_dim, top_k) were never written (garbage, not -1).
+    var k_idx = Int(thread_idx.x)
+    while k_idx < top_k:
+        # Output index: [token_idx, k_idx] with top_k stride
+        var out_idx = Int(token_idx) * top_k + k_idx
 
-    # Fill with -1 if:
-    # 1. This position is beyond the number of valid keys (k_idx >= num_keys)
-    # 2. The index VALUE points beyond valid keys (idx_val >= num_keys)
-    #    This can happen because topk operates on max_num_keys which may be
-    #    larger than num_keys for this specific token/batch
-    if k_idx >= num_keys or idx_val >= num_keys or idx_val < 0:
-        output_indices[out_idx] = -1
+        if k_idx >= effective_k:
+            # No computed value at this position: must be -1.
+            output_indices[out_idx] = -1
+        else:
+            # Read topk's selection from the compact (effective_k-strided)
+            # buffer, then invalidate it if it is out of range:
+            # 1. position beyond the valid keys (k_idx >= num_keys)
+            # 2. the index VALUE points beyond valid keys (idx_val >= num_keys),
+            #    which can happen because topk operates on
+            #    max_num_keys >= num_keys for this token/batch.
+            var idx_val = Int(
+                topk_indices[Int(token_idx) * effective_k + k_idx]
+            )
+            if k_idx >= num_keys or idx_val >= num_keys or idx_val < 0:
+                output_indices[out_idx] = -1
+            else:
+                output_indices[out_idx] = Int32(idx_val)
+
+        k_idx += Int(block_dim.x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -255,45 +281,86 @@ def mla_indexer_ragged_float8_paged[
     var k_operand = KVCacheMHAOperand(k_cache)
     var ks_operand = KVCacheScalesMHAOperand(k_cache)
 
-    comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
-    comptime BM = block_tile_shape[0]
-    comptime BN = block_tile_shape[1]
-    comptime smem_use = size_of[IndexSmemStorage[dtype, num_heads, depth, BN]]()
-    comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
-
-    # fp8_index_kernel computes scores aggregated across heads.
-    # Output is [total_seq_len, max_num_keys] with one score per (token, key) pair.
-    comptime kernel = fp8_index_kernel[
-        dtype,
-        type_of(scores_tile).LayoutType,
-        type_of(q).LayoutType,
-        type_of(q_s).LayoutType,
-        type_of(k_operand),
-        type_of(ks_operand),
-        block_tile_shape,
-        type_of(input_row_offsets.as_immut()).LayoutType,
-        num_heads,
-        depth,
-    ]
-
-    ctx.enqueue_function[kernel](
-        scores_tile,
-        q.as_immut(),
-        q_s,
-        k_operand,
-        ks_operand,
-        input_row_offsets.as_immut(),
-        grid_dim=(
+    # Both paths run with _is_cache_length_accurate=False: the KVCache
+    # cache_length excludes the new tokens.
+    # The scorer uses tcgen05/TMA (Blackwell-only), so gate on
+    # _has_blackwell_tcgen05(): H100/A100/other NVIDIA and AMD take the scalar
+    # fallback below. The SM100 scorer stages a BM_key-row K tile with one TMA
+    # copy, so a paged K cache must have page_size == 0 (contiguous) or a
+    # multiple of BM_key; any other page_size straddles a page boundary and
+    # falls back to the scalar kernel below.
+    comptime if (
+        _has_blackwell_tcgen05()
+        and num_heads == 64
+        and depth == 128
+        and (
+            type_of(k_operand).page_size == 0
+            or type_of(k_operand).page_size % _BM_KEY == 0
+        )
+    ):
+        fp8_index_score_sm100[
+            dtype,
+            type_of(k_operand),
+            type_of(ks_operand),
+            num_heads,
+            depth,
+            _is_cache_length_accurate=False,
+        ](
+            scores_tile,
+            q,
+            q_s.as_immut(),
+            k_operand,
+            ks_operand,
+            input_row_offsets,
             batch_size,
-            max_new_tokens,
-            ceildiv(max_num_keys, BM),
-        ),
-        block_dim=(16, 8, 1),
-        shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_available)
-        ),
-    )
+            max_num_keys,
+            ctx,
+        )
+    else:
+        comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
+        comptime BM = block_tile_shape[0]
+        comptime BN = block_tile_shape[1]
+        comptime smem_use = size_of[
+            IndexSmemStorage[dtype, num_heads, depth, BN]
+        ]()
+        comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
+
+        comptime kernel = fp8_index_kernel[
+            dtype,
+            type_of(scores_tile).LayoutType,
+            type_of(q).LayoutType,
+            type_of(q_s).LayoutType,
+            type_of(k_operand),
+            type_of(ks_operand),
+            block_tile_shape,
+            type_of(input_row_offsets.as_immut()).LayoutType,
+            num_heads,
+            depth,
+        ]
+
+        ctx.enqueue_function[kernel](
+            scores_tile,
+            q.as_immut(),
+            q_s,
+            k_operand,
+            ks_operand,
+            input_row_offsets.as_immut(),
+            grid_dim=(
+                batch_size,
+                max_new_tokens,
+                ceildiv(max_num_keys, BM),
+            ),
+            block_dim=(16, 8, 1),
+            shared_mem_bytes=smem_use,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(smem_available)
+            ),
+        )
+
+    # Per-batch KV cache lengths (cached-prefix length).  Needed both by the
+    # causal mask below (to map local query index → absolute position) and by
+    # fill_invalid_topk below.
+    var cache_lengths = k_cache.cache_lengths_nd()
 
     # Apply mask for prefill (seq_len > 1)
     comptime if mask_str != MaskName.NULL.name:
@@ -308,11 +375,13 @@ def mla_indexer_ragged_float8_paged[
                     scores_tile.origin,
                     input_row_offsets.LayoutType,
                     ImmutOrigin(input_row_offsets.origin),
+                    type_of(cache_lengths).LayoutType,
                 ]
 
                 ctx.enqueue_function[mask_kernel](
                     scores_tile,
                     input_row_offsets.as_immut(),
+                    cache_lengths,
                     mask,
                     max_num_keys,
                     grid_dim=(
@@ -329,7 +398,9 @@ def mla_indexer_ragged_float8_paged[
     # If top_k > max_num_keys, we can only select max_num_keys values.
     var effective_k = min(top_k, max_num_keys)
 
-    # Create temp buffer for topk values (only need effective_k per row for computation)
+    # topk_gpu strides its index output by effective_k, so when effective_k <
+    # top_k we use a compact buffer here and scatter into the top_k-strided
+    # output_indices in fill_invalid (writing directly would misplace rows).
     var topk_vals_buf = ctx.enqueue_create_buffer[DType.float32](
         total_seq_len * effective_k
     )
@@ -338,29 +409,42 @@ def mla_indexer_ragged_float8_paged[
         row_major(total_seq_len, effective_k),
     )
 
-    # Output indices tile - use top_k stride to match output buffer layout.
-    # topk_gpu will write effective_k values at the start of each row.
-    # Use rebind to convert parametric origin from TileTensor `...` to concrete
-    # MutAnyOrigin, matching how topk.mojo handles pointer rebinding.
+    var topk_idxs_buf = ctx.enqueue_create_buffer[DType.int32](
+        total_seq_len * effective_k
+    )
     var topk_idxs_tile = TileTensor(
-        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
-            output_indices.ptr
-        ),
-        row_major(total_seq_len, top_k),
+        topk_idxs_buf,
+        row_major(total_seq_len, effective_k),
     )
 
-    topk_gpu[sampling=False, largest=True](
-        ctx,
-        effective_k,
-        scores_tile,
-        topk_vals_tile,
-        topk_idxs_tile,
-    )
+    # The bitonic path can only select up to the champion width
+    # (PERSISTENT_TOPK_MAX_N); topk_gpu handles the rare k above it.
+    if effective_k <= PERSISTENT_TOPK_MAX_N:
+        persistent_topk_block(
+            ctx,
+            rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
+                scores_tile.ptr
+            ),
+            rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+                topk_idxs_tile.ptr
+            ),
+            max_num_keys,
+            effective_k,
+            total_seq_len,
+        )
+    else:
+        topk_gpu[sampling=False, largest=True](
+            ctx,
+            effective_k,
+            scores_tile,
+            topk_vals_tile,
+            topk_idxs_tile,
+        )
 
     # Fill invalid positions with -1:
     # - Positions [effective_k, top_k) when top_k > max_num_keys
     # - Positions where k_idx >= num_keys for that token (causal masking)
-    var cache_lengths = k_cache.cache_lengths_nd()
+    # (cache_lengths hoisted above for the causal mask launch.)
 
     # Determine if causal masking is used (any mask except NULL)
     comptime use_causal_mask = mask_str != MaskName.NULL.name
@@ -379,6 +463,9 @@ def mla_indexer_ragged_float8_paged[
         rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
             output_indices.ptr
         ),
+        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+            topk_idxs_tile.ptr
+        ),
         input_row_offsets.as_immut(),
         cache_lengths,
         total_seq_len,
@@ -390,3 +477,4 @@ def mla_indexer_ragged_float8_paged[
 
     _ = scores_buf
     _ = topk_vals_buf
+    _ = topk_idxs_buf

@@ -27,7 +27,7 @@ def row_and_column_major():
     # end-nd-layout-example
 
     # start-coord-layout-example
-    var from_coords = row_major(coord[6, 8]())
+    var from_coords = row_major(coord[6, 8])
     # end-coord-layout-example
     _, _, _ = from_coords, row_major2x4, col_major6x6
 
@@ -40,7 +40,7 @@ def coords_to_index():
     # end-print-layout-example
 
     # start-coords-to-index-example
-    var coords = coord[1, 1]()
+    var coords = coord[1, 1]
     var idx = row_major3x4(coords)
     print("index at (1, 1): ", idx)
     print("coordinates at index 7:", row_major3x4.idx2crd(7))
@@ -50,12 +50,12 @@ def coords_to_index():
 
 def nested_modes():
     print("nested modes")
-    var layout_a = Layout(coord[4, 4](), coord[4, 1]())
+    var layout_a = Layout(coord[4, 4], coord[4, 1])
     print_layout(layout_a.to_layout())
     print()
     var layout_b = Layout(
-        Coord(coord[2, 2](), coord[2, 2]()),
-        Coord(coord[1, 4](), coord[2, 8]()),
+        Coord(coord[2, 2], coord[2, 2]),
+        Coord(coord[1, 4], coord[2, 8]),
     )
     print_layout(layout_b.to_layout())
     print()
@@ -64,8 +64,8 @@ def nested_modes():
 def specifying_coords():
     var a, b, c = 4, 6, 8
     # start-comptime-runtime-coords
-    var comptime_coords = coord[4, 4]()
-    var runtime_coords = coord[DType.int32]((a, b, c))
+    var comptime_coords = coord[4, 4]
+    var runtime_coords = Coord(Int32(a), Int32(b), Int32(c))
     # end-comptime-runtime-coords
     _, _, _, _, _ = (a, b, c, comptime_coords, runtime_coords)
 
@@ -81,16 +81,16 @@ def dynamic_dimensions():
     var mixed_layout = row_major((rows, Idx[columns]))
     print_layout(mixed_layout.to_layout())
     var shape = Coord(rows, Idx[columns])
-    var stride = coord[8, 1]()
+    var stride = coord[8, 1]
     var layout2 = Layout(shape, stride)
     print_layout(layout2.to_layout())
     # start-runtime-layout-example
     # Layout with compile-time dimensions
-    comptime row_major_comptime = row_major(coord[16, 8]())
+    comptime row_major_comptime = row_major(coord[16, 8])
 
     # Layout with run-time dimensions
     var a, b = 4, 8
-    var row_major_runtime = row_major(coord[DType.int32]((a, b)))
+    var row_major_runtime = row_major(Coord(Int32(a), Int32(b)))
 
     # Mixed layout with one run-time dimension and one compile-time dimension
     var row_major_mixed = row_major((rows, Idx[columns]))
@@ -107,12 +107,12 @@ def dynamic_dimensions():
 def nested_coords():
     print("more coords")
     var rows, cols = 4, 8
-    var runtime_coord = coord[DType.int64]((rows, cols))
+    var runtime_coord = Coord(Int64(rows), Int64(cols))
     _ = runtime_coord
 
     # start-nested-coord-example
     var shape1 = Coord((Idx[6], Idx[8]))
-    var shape2 = Coord((coord[2, 2](), coord[3, 4]()))
+    var shape2 = Coord((coord[2, 2], coord[3, 4]))
     var shape3 = Coord((shape1, shape2))
     print(shape3)
     # end-nested-coord-example

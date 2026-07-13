@@ -117,6 +117,27 @@ for key, value in pairs:  # For example, [("a", 1), ("b", 2), ...]
     print(key, value)
 ```
 
+### Loop variable bindings
+
+Use `var` and `ref` conventions to control ownership, copying, and
+mutability behavior in loop variables. By default, loop variables are
+immutable references to the iterated items (`read`). To create a mutable
+copy, use `var`. To maintain value mutability, use `ref`:
+
+```mojo
+var list: List[String] = ["a", "b", "c", "d"]
+
+for var item in list:
+    item = item + "x" # works. item is mutable copy of list element
+    print(item) # prints "ax", then "bx", "cx", and "dx"
+print(list) # unchanged
+
+for ref item in list:
+    item = item + "x" # mutability picked up in reference to list element
+    print(item) # prints "ax", then "bx", "cx", and "dx"
+print(list) # changed to ["ax", "bx", "cx", "dx"]
+```
+
 ## Loops and else clauses
 
 An optional `else` clause runs when the loop exits normally.

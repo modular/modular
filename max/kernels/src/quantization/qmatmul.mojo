@@ -34,8 +34,10 @@ from linalg.utils import partition_work
 from std.memory import (
     alloc,
     bitcast,
+    dealloc,
     stack_allocation,
 )
+from std.memory.alloc import Layout as AllocLayout
 
 from std.runtime.asyncrt import parallelism_level
 
@@ -1269,15 +1271,17 @@ def _matmul_qint4[
 
     comptime aq_type = kernel.aq_type()
 
-    var a_quant_base_ptr = alloc[Scalar[aq_type]](M * K, alignment=alignment)
-    var a_scale_base_ptr = alloc[Float32](M * k_groups)
+    var a_quant_base = alloc(
+        AllocLayout[Scalar[aq_type]](count=M * K, alignment=alignment)
+    )
+    var a_scale_base = alloc(AllocLayout[Float32](count=M * k_groups))
 
     var a_quant = LayoutTensor[aq_type, Layout.row_major[2]()](
-        a_quant_base_ptr,
+        a_quant_base.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, K)),
     )
     var a_scale = LayoutTensor[DType.float32, Layout.row_major[2]()](
-        a_scale_base_ptr,
+        a_scale_base.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, k_groups)),
     )
 
@@ -1292,8 +1296,8 @@ def _matmul_qint4[
             kernel, group_size, elementwise_lambda_fn=elementwise_lambda_fn
         ](a_quant, a_scale, b, c, ctx)
 
-    a_quant_base_ptr.free()
-    a_scale_base_ptr.free()
+    dealloc(a_quant_base^)
+    dealloc(a_scale_base^)
 
 
 def matmul_qint4[

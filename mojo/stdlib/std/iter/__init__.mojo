@@ -54,13 +54,10 @@ for squared in map[square](values):
 """
 
 import std.memory
-from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
-from std.sys.intrinsics import _type_is_eq_parse_time
 
 
 from std.builtin.variadics import TypeList
-from std.reflection.traits import AllImplicitlyDestructible, AllCopyable
 
 
 # ===-----------------------------------------------------------------------===#
@@ -208,19 +205,16 @@ trait Iterator(ImplicitlyDeletable, Movable):
         var missing = iter(l).nth(10)   # None
         ```
         """
+        # `Self.Element` is only declared `Movable` on the trait, so a
+        # bare `_ = self.__next__()` won't type-check without this assertion.
+        # Drop this workaround once MOCO-3947 lets us put the bound in a
+        # `where` clause on the method.
         comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+
         debug_assert[assert_mode="safe"](n.ge(0), "nth: n must be non-negative")
         try:
             for _ in range(n):
-                # `Self.Element` is only declared `Movable` on the trait, so a
-                # bare `_ = self.__next__()` won't type-check. Funnel the
-                # discard through the conformance we asserted above. Drop
-                # this workaround once MOCO-3947 lets us put the bound in a
-                # `where` clause on the method.
-                var elem = self.__next__()
-                _ = rebind_var[
-                    downcast[Self.Element, Movable & ImplicitlyDeletable]
-                ](elem^)
+                _ = self.__next__()
             return self.__next__()
         except StopIteration:
             return None
@@ -415,14 +409,6 @@ struct _Enumerate[InnerIteratorType: Iterator](
         self._inner = iterator^
         self._count = start
 
-    def __init__(
-        out self, *, copy: Self
-    ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = rebind_var[Self.InnerIteratorType](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
-        self._count = copy._count
-
     def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)] where conforms_to(
@@ -498,8 +484,8 @@ def enumerate(
 
 
 struct _ZipIterator[origin: Origin, *Ts: Iterator](
-    Copyable where AllCopyable[*Ts],
-    Iterable where AllCopyable[*Ts],
+    Copyable where conforms_to(Tuple[*Ts], Copyable),
+    Iterable where conforms_to(Tuple[*Ts], Copyable),
     IterableOwned,
     Iterator,
 ):
@@ -535,7 +521,9 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
     @always_inline
     def __iter__(
         ref self,
-    ) -> Self.IteratorType[origin_of(self)] where AllCopyable[*Self.Ts]:
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Tuple[*Self.Ts], Copyable
+    ):
         return self.copy()
 
     @always_inline
@@ -548,7 +536,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
         try:
             comptime for i in range(Self._InjectedValues.__len__()):
-                UnsafePointer(to=res[i]).init_pointee_move(
+                UnsafePointer(to=res[i]).unsafe_write(
                     rebind_var[type_of(res[i])](next(self._values[i]))
                 )
                 initialized += 1
@@ -559,7 +547,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
                     type_of(res[i]), ImplicitlyDeletable
                 )
                 if i < initialized:
-                    UnsafePointer(to=res[i]).destroy_pointee()
+                    UnsafePointer(to=res[i]).unsafe_deinit_pointee()
 
             std.memory.forget_deinit(res^)
             raise StopIteration
@@ -583,7 +571,7 @@ def zip[
     out res: _ZipIterator[
         iterables.origin, *_iterable_to_iterator[iterables.origin, *Ts]
     ],
-) where AllImplicitlyDestructible[*res.Ts]:
+) where res.Ts.all_conforms_to[ImplicitlyDeletable]():
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
 
@@ -608,7 +596,7 @@ def zip[
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
 
     comptime for i in range(res._InjectedValues.__len__()):
-        UnsafePointer(to=res._values[i]).init_pointee_move(
+        UnsafePointer(to=res._values[i]).unsafe_write(
             rebind_var[type_of(res._values[i])](iter(iterables[i]))
         )
 
@@ -620,7 +608,7 @@ def zip[
     out res: _ZipIterator[
         MutUntrackedOrigin, *_iterable_owned_to_iterator[*Ts]
     ],
-) where AllImplicitlyDestructible[*res.Ts]:
+) where res.Ts.all_conforms_to[ImplicitlyDeletable]():
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
 
@@ -644,7 +632,7 @@ def zip[
 
     @parameter
     def init_elt[idx: Int](var elt: iterables.element_types[idx]):
-        UnsafePointer(to=res._values[idx]).init_pointee_move(
+        UnsafePointer(to=res._values[idx]).unsafe_write(
             rebind_var[type_of(res._values[idx])](iter(elt^))
         )
 
@@ -675,13 +663,6 @@ struct _MapIterator[
     comptime IteratorOwnedType: Iterator = Self
 
     var _inner: Self.InnerIteratorType
-
-    def __init__(
-        out self, *, copy: Self
-    ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = rebind_var[Self.InnerIteratorType](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
 
     def __iter__(
         ref self,
@@ -810,18 +791,6 @@ struct _PeekableIterator[InnerIterator: Iterator](
         self._inner = inner^
         self._next = None
 
-    def __init__(
-        out self, *, copy: Self
-    ) where conforms_to(Self.InnerIterator, Copyable) and conforms_to(
-        Self.InnerIterator.Element, Copyable
-    ):
-        self._inner = rebind_var[Self.InnerIterator](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
-
-        comptime assert conforms_to(Self.Element, Copyable)
-        self._next = copy._next.copy()
-
     def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)] where conforms_to(
@@ -893,7 +862,7 @@ def peekable(
 
 comptime _all_yield_same_ref_condition[
     T0: Movable, origin: Origin, T: Iterable
-] = _type_is_eq_parse_time[T.IteratorType[origin].Element, T0]()
+] = T.IteratorType[origin].Element == T0
 
 comptime _all_yield_same_ref[
     origin: Origin, *Ts: Iterable
@@ -903,7 +872,7 @@ comptime _all_yield_same_ref[
 
 comptime _all_yield_same_owned_condition[
     T0: Movable, T: IterableOwned
-] = _type_is_eq_parse_time[T.IteratorOwnedType.Element, T0]()
+] = T.IteratorOwnedType.Element == T0
 
 comptime _all_yield_same_owned[*Ts: IterableOwned]: Bool = Ts.all_satisfies[
     _all_yield_same_owned_condition[Ts[0].IteratorOwnedType.Element, _]
@@ -911,8 +880,8 @@ comptime _all_yield_same_owned[*Ts: IterableOwned]: Bool = Ts.all_satisfies[
 
 
 struct _ChainedIterator[*Ts: Iterator](
-    Copyable where AllCopyable[*Ts],
-    Iterable where AllCopyable[*Ts],
+    Copyable where conforms_to(Tuple[*Ts], Copyable),
+    Iterable where conforms_to(Tuple[*Ts], Copyable),
     IterableOwned,
     Iterator,
 ):
@@ -928,7 +897,9 @@ struct _ChainedIterator[*Ts: Iterator](
 
     def __iter__(
         ref self,
-    ) -> Self.IteratorType[origin_of(self)] where AllCopyable[*Self.Ts]:
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Tuple[*Self.Ts], Copyable
+    ):
         return self.copy()
 
     def __iter__(var self) -> Self.IteratorOwnedType:
@@ -983,7 +954,7 @@ def chain[
     res._idx = 0
 
     comptime for i in range(res._Iterators.__len__()):
-        UnsafePointer(to=res._iterators[i]).init_pointee_move(
+        UnsafePointer(to=res._iterators[i]).unsafe_write(
             rebind_var[type_of(res._iterators[i])](iter(iterables[i]))
         )
 
@@ -1010,7 +981,7 @@ def chain[
 
     @parameter
     def init_elt[idx: Int](var elt: iterables.element_types[idx]):
-        UnsafePointer(to=res._iterators[idx]).init_pointee_move(
+        UnsafePointer(to=res._iterators[idx]).unsafe_write(
             rebind_var[type_of(res._iterators[idx])](iter(elt^))
         )
 
