@@ -23,11 +23,9 @@
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
-#include "mlir/Conversion/NVVMToLLVM/NVVMToLLVM.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/LLVMIR/NVVMDialect.h"
 #include "mlir/IR/Dominance.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -40,7 +38,6 @@ using namespace M;
 using namespace KGEN;
 using namespace POP;
 namespace LLVM = mlir::LLVM;
-namespace NVVM = mlir::NVVM;
 
 namespace M::KGEN {
 #define GEN_PASS_DEF_LOWERGLOBALPOPTOLLVM
@@ -2113,7 +2110,6 @@ void LowerPOPToLLVMPass::runOnOperation() {
     patterns.insert<ConvertPOPMax, ConvertPOPMin>(typeConverter);
   }
   mlir::index::populateIndexToLLVMConversionPatterns(typeConverter, patterns);
-  mlir::populateNVVMToLLVMConversionPatterns(patterns);
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
 

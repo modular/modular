@@ -11,9 +11,11 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/CallGraphUtils.h"
 #include "KGEN/TransformUtils/SCCUtils.h"
+#include "Target/TargetLowering.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
-#include "mlir/Dialect/LLVMIR/NVVMDialect.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/LLVMContext.h"
 
 #define DEBUG_TYPE "kgen-infer-function-attrs"
 
@@ -42,7 +44,8 @@ struct CallGraphNode
 };
 
 struct CallGraph : public SCCGraph<CallGraph, CallGraphNode> {
-  CallGraph(const SymbolTable &symtab) : symtab(symtab) {}
+  CallGraph(const SymbolTable &symtab, const TargetLowering *lowering)
+      : symtab(symtab), lowering(lowering) {}
 
   /// Analyze function body to determine which attributes need to be added or
   /// removed.
@@ -53,6 +56,9 @@ struct CallGraph : public SCCGraph<CallGraph, CallGraphNode> {
 
   /// Symbol table for function lookup.
   const SymbolTable &symtab;
+
+  /// Target lowering for the module's target, or null if none is registered.
+  const TargetLowering *lowering;
 };
 
 /// Propagate attributes from function body to a function.
@@ -69,8 +75,8 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
 
   llvm::LLVMContext llvmCtx;
   func.walk([&](Operation *op) -> WalkResult {
-    // TODO: Use trait when it's available in upstream
-    if (auto barrier = dyn_cast<mlir::NVVM::BarrierOp>(op)) {
+    // Target-specific convergent ops (e.g. GPU barriers).
+    if (lowering && lowering->isConvergentOp(op)) {
       node->attrs.isConvergent = true;
       changed = true;
       return WalkResult::interrupt();
@@ -123,7 +129,11 @@ void InferFunctionAttrsPass::runOnOperation() {
       *loadContext(&getContext())->get<AsyncRT::CPUDevice>();
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-  CallGraph cg(symtab);
+  TargetInfoAttr target = lookupTargetInfo(getOperation());
+  const TargetLowering *lowering =
+      target ? TargetLoweringRegistry::get().lookup(target.getTriple())
+             : nullptr;
+  CallGraph cg(symtab, lowering);
   cg.build(getOperation(), symtab);
   cg.run(cpuDevice);
 }
