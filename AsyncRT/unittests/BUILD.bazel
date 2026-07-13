@@ -77,7 +77,6 @@ modular_cc_test(
     deps = [
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
-        "//MLRT:Driver/DeviceContextImpl",
         "//Support:Threading",
     ],
 )
