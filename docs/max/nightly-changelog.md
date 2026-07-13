@@ -155,6 +155,16 @@ This version is still a work in progress.
   remote (NIXL) transport and enqueues a cross-stream ordering on the
   co-located same-host (CUDA) transport, so it closes the window on both. The
   common equal-count path is unchanged and pays no extra synchronization.
+- The dKV external KV-cache connector (`--kv-connector dkv`) now requires a
+  non-empty tenant identity (`MODULAR_DKV_TENANT_ID`, set by the deployment
+  operator); the empty-tenant "default" path is removed. Both the connector and
+  the dKV server now reject an unset/empty tenant rather than keying an unfenced
+  shared store, so every deployment (single-tenant included) routes through the
+  per-tenant region-sharded store — DP replicas of one tenant still share one
+  store. Multi-cache models (speculative draft+target, quantized values+scales)
+  now resolve on this path, folded into the handshake's `kv_config_hash`. A
+  single-tenant node spanning more than one GPU must set the dKV server's
+  `--fair-share-partitions` to its GPU count.
 - The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
   into a single `rms_norm_rope` GPU kernel even when the RMSNorm is written "in
   float32" — that is, when a `bfloat16`/`float16` activation is upcast to

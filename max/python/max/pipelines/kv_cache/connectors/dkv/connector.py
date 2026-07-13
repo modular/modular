@@ -46,6 +46,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
     KVCacheParams,
     KVHashAlgo,
+    MultiKVCacheParams,
     ReplicatedKVCacheMemory,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
@@ -258,7 +259,62 @@ def _dtype_tag(dtype: object) -> str:
     return getattr(dtype, "name", None) or str(dtype)
 
 
-def _kv_config_hash(params: KVCacheParams, unit_strides: Sequence[int]) -> int:
+def _layout_fields(
+    params: KVCacheParams | MultiKVCacheParams,
+) -> list[tuple[str, str]]:
+    """Folds one cache's byte-layout into ordered ``key=value`` fields.
+
+    A leaf :class:`KVCacheParams` contributes its per-shard geometry; a
+    :class:`MultiKVCacheParams` tree contributes a ``multi`` marker, its child
+    count, and each child's fields recursively, prefixed by the child's index
+    and name in the tree's insertion order. That order is deterministic for a
+    fixed model config and matches the ``to_memory()`` unit order the
+    concatenated block (and thus ``unit_strides``) follows, so folding the index
+    and name makes any child add/remove/reorder flip the fingerprint.
+
+    Excludes the contract version and the concatenated ``unit_strides``, which
+    :func:`_kv_config_hash` owns at the top level so a multi-cache tree folds
+    one stride list spanning all its leaves.
+    """
+    if isinstance(params, MultiKVCacheParams):
+        fields: list[tuple[str, str]] = [
+            ("multi", "1"),
+            ("child_count", str(len(params.children))),
+        ]
+        for i, (name, child) in enumerate(params.children.items()):
+            # children are leaf KVCacheParams or nested MultiKVCacheParams
+            assert isinstance(child, (KVCacheParams, MultiKVCacheParams))
+            fields.append((f"c{i}.name", name))
+            fields += [(f"c{i}.{k}", v) for k, v in _layout_fields(child)]
+        return fields
+
+    quant = params.kvcache_quant_config
+    if params.quantized_kv_cache and quant is not None:
+        quant_desc = (
+            f"{_dtype_tag(quant.scale_dtype)}:{quant.quantization_granularity}"
+        )
+    else:
+        quant_desc = "none"
+    block_value_bytes = (
+        math.prod(params.shape_per_block) * params.dtype.size_in_bytes
+    )
+    return [
+        ("dtype", _dtype_tag(params.dtype)),
+        ("dtype_bytes", str(params.dtype.size_in_bytes)),
+        ("kv_dim", str(params.kv_dim)),
+        ("head_dim", str(params.head_dim)),
+        ("num_layers", str(params.num_layers)),
+        ("page_size", str(params.page_size)),
+        ("n_kv_heads_per_device", str(params.n_kv_heads_per_device)),
+        ("tensor_parallel_degree", str(params.tensor_parallel_degree)),
+        ("quant", quant_desc),
+        ("block_value_bytes", str(block_value_bytes)),
+    ]
+
+
+def _kv_config_hash(
+    params: KVCacheParams | MultiKVCacheParams, unit_strides: Sequence[int]
+) -> int:
     """Computes the stable 64-bit KV-cache layout fingerprint.
 
     This is the producer of ``ExchangeMetadataRequest.kv_config_hash``. Two KV
@@ -275,25 +331,20 @@ def _kv_config_hash(params: KVCacheParams, unit_strides: Sequence[int]) -> int:
 
     * ``v`` — contract version (``2``; bumped when the block layout became the
       concatenation of every buffer unit rather than the value buffer alone).
-    * ``dtype`` / ``dtype_bytes`` — KV storage dtype name and byte width.
-    * ``kv_dim`` — 2 for MHA/GQA, 1 for MLA (the attention family).
-    * ``head_dim`` — per-head dimension.
-    * ``num_layers`` — transformer layer count.
-    * ``page_size`` — tokens per block/page.
-    * ``n_kv_heads_per_device`` — per-shard KV-head count (TP-sensitive).
-    * ``tensor_parallel_degree`` — with the per-shard head count pins the total.
-    * ``quant`` — ``"<scale_dtype>:<granularity>"`` when FP8-quantized, else
-      ``"none"``.
-    * ``block_value_bytes`` — per-shard value-block bytes
-      (``prod(shape_per_block) * dtype.size``).
+    * the cache geometry from :func:`_layout_fields`: for a single-group leaf,
+      its dtype/kv_dim/head_dim/num_layers/page_size/head-count/TP/quant/value
+      bytes (unchanged from the ``v=2`` leaf encoding, so single-group
+      fingerprints stay byte-identical); for a :class:`MultiKVCacheParams` tree
+      (speculative draft+target, quantized values+scales), a ``multi`` marker
+      plus each child's fields folded recursively under its index and name.
     * ``unit_strides`` — comma-joined per-page byte stride of one shard's
       buffer units in canonical ``to_memory()`` order (values, quant scales,
       indexer, draft, and so on), derived by :func:`_shard_unit_strides`. A
-      shard's dKV block is these strides concatenated, so any change to the
-      unit set or its ordering makes stored blocks byte-incompatible and must
-      flip the hash. Folding one shard's subsequence rather than the flat
-      physical buffer list keeps the folded shape identical between
-      replicated (MLA) and sharded layouts; the shard count is already
+      shard's dKV block is these strides concatenated across the WHOLE cache
+      tree, so any change to the unit set or its ordering makes stored blocks
+      byte-incompatible and must flip the hash. Folding one shard's subsequence
+      rather than the flat physical buffer list keeps the folded shape identical
+      between replicated (MLA) and sharded layouts; the shard count is already
       pinned by ``tensor_parallel_degree``.
 
     Model/weights identity is deliberately NOT folded here: a different model is
@@ -303,40 +354,23 @@ def _kv_config_hash(params: KVCacheParams, unit_strides: Sequence[int]) -> int:
     threaded from the pipeline config — a documented follow-up, out of scope for
     this handshake.
 
-    The ``v`` bump to ``2`` invalidates every share persisted under the ``v=1``
-    contract once on upgrade; that is the intended behavior for a cache whose
-    on-disk layout changed.
+    Multi-group support was added without a ``v`` bump: the leaf encoding is
+    byte-identical to ``v=2`` (no single-group share is invalidated), and the
+    multi-group path previously raised, so no multi-group share could have been
+    persisted under an earlier contract.
 
     Args:
-        params: The single-group KV-cache parameters for this deployment.
+        params: The KV-cache parameters for this deployment — a single-group
+            leaf or a multi-cache tree.
         unit_strides: Per-page byte stride of one shard's buffer units in
             canonical order, from :func:`_shard_unit_strides`.
 
     Returns:
         The 64-bit layout fingerprint.
     """
-    quant = params.kvcache_quant_config
-    if params.quantized_kv_cache and quant is not None:
-        quant_desc = (
-            f"{_dtype_tag(quant.scale_dtype)}:{quant.quantization_granularity}"
-        )
-    else:
-        quant_desc = "none"
-    block_value_bytes = (
-        math.prod(params.shape_per_block) * params.dtype.size_in_bytes
-    )
     fields = [
         ("v", "2"),
-        ("dtype", _dtype_tag(params.dtype)),
-        ("dtype_bytes", str(params.dtype.size_in_bytes)),
-        ("kv_dim", str(params.kv_dim)),
-        ("head_dim", str(params.head_dim)),
-        ("num_layers", str(params.num_layers)),
-        ("page_size", str(params.page_size)),
-        ("n_kv_heads_per_device", str(params.n_kv_heads_per_device)),
-        ("tensor_parallel_degree", str(params.tensor_parallel_degree)),
-        ("quant", quant_desc),
-        ("block_value_bytes", str(block_value_bytes)),
+        *_layout_fields(params),
         ("unit_strides", ",".join(str(s) for s in unit_strides)),
     ]
     canonical = "\n".join(f"{k}={v}" for k, v in fields).encode("utf-8")
@@ -345,42 +379,7 @@ def _kv_config_hash(params: KVCacheParams, unit_strides: Sequence[int]) -> int:
     )
 
 
-def _validate_tenant_topology(*, is_single_group: bool) -> None:
-    """Guards the model topology a multi-tenant dKV handshake can represent.
-
-    The ``ExchangeMetadata`` identity fields (``kv_shard_id``, ``replica_id``,
-    ``device_id``, ``numa_node``) are scalars that name one GPU's share. TP>1 is
-    carried by splitting the handshake per GPU (one client / connection per GPU,
-    each sending its own ``kv_shard_id``); see :func:`_resolve_replica_identities`
-    and :meth:`DKVConnector.__init__`. Multi-group caches (hybrid / SWA /
-    speculative) are not yet wired through this connector.
-
-    Args:
-        is_single_group: Whether the cache is single-group (full attention).
-
-    Raises:
-        NotImplementedError: If the cache is multi-group.
-    """
-    if not is_single_group:
-        raise NotImplementedError(
-            "Multi-tenant dKV (MODULAR_DKV_TENANT_ID set) requires a single-group "
-            "KV cache; hybrid / sliding-window / speculative multi-cache models "
-            "are not wired through the dKV connector yet."
-        )
-
-
-# The default (non-multi-tenant) DP identity every replica handshakes: one
-# shared, replica-agnostic store. Both fields are 0, so the dKV server keys a
-# SINGLE store for ``(tenant_id="", kv_shard_id=0, replica_id=0)`` and every DP
-# replica resolves to it — intentional cross-replica prefix sharing (the analog
-# of the local/tiered connectors' single shared host pool), exercised by the
-# dkv-e2e ``clin1452_dp.rs`` cross-replica roundtrip. See
-# :func:`_resolve_replica_identities` for the full contract.
-_DEFAULT_SHARED_STORE_REPLICA_IDENTITY = (0, 0)
-
-
 def _resolve_replica_identities(
-    tenant_id: str,
     num_replicas: int,
     params: KVCacheParamInterface,
     unit_strides: Sequence[int],
@@ -388,12 +387,13 @@ def _resolve_replica_identities(
     """Resolves the per-DP-replica dKV handshake identity.
 
     Returns the shared ``kv_config_hash`` and, per DP replica in order, its
-    ``(kv_shard_id, replica_id)``. Under backend dedup every path resolves to
-    ONE store per tenant: each DP replica handshakes the same zeroed store-key
-    identity ``(kv_shard_id, replica_id) == (0, 0)``
-    (:data:`_DEFAULT_SHARED_STORE_REPLICA_IDENTITY`) and registers its full TP
-    GPU set in one client, so the dKV server keys a single (region-sharded)
-    store per ``tenant_id`` (the empty tenant on the default path).
+    ``(kv_shard_id, replica_id)``. Under backend dedup one store is keyed per
+    tenant: every DP replica handshakes the same zeroed store-key identity
+    ``(kv_shard_id, replica_id) == (0, 0)`` and registers its full TP GPU set in
+    one client, so the dKV server keys a single (region-sharded) store per
+    ``tenant_id``. Every topology is admitted — single-group and shallow
+    multi-cache (speculative / quantized) alike; the layout hash folds the whole
+    cache tree (:func:`_kv_config_hash`).
 
     The MHA/GQA-vs-MLA distinction is deliberately NOT in the store key — it
     lives in the per-block ``BlockKey`` ``tp_shard_id`` the Rust client derives
@@ -401,47 +401,28 @@ def _resolve_replica_identities(
     MLA's replicated latent) dedup while distinct head shards co-reside in the
     one store, never deduped against each other.
 
-    * Default path (empty ``tenant_id``): the paired ``kv_config_hash`` is 0
-      (the server ignores it on the empty-tenant path); intentional cross-replica
-      prefix sharing, the analog of the ``local``/``tiered`` connectors' single
-      shared host pool.
-    * Multi-tenant path: guards the topology (:func:`_validate_tenant_topology`)
-      and shares the real layout ``kv_config_hash``; every DP replica resolves to
-      the one tenant-keyed store.
-
     Args:
-        tenant_id: The resolved tenant identity (empty is the default
-            single-tenant path).
         num_replicas: Number of DP replicas (one dKV client each, registering
             that replica's full TP GPU set).
-        params: KV-cache parameters (used only on the multi-tenant path).
+        params: KV-cache parameters, folded into the shared layout hash.
         unit_strides: Per-page byte stride of one shard's buffer units in
-            canonical order, folded into the layout hash (multi-tenant path
-            only).
+            canonical order, folded into the layout hash.
 
     Returns:
         ``(kv_config_hash, [(kv_shard_id, replica_id), ...])`` — one zeroed
         identity per DP replica.
 
     Raises:
-        NotImplementedError: If the multi-tenant cache is multi-group.
         ValueError: If ``num_replicas`` disagrees with ``data_parallel_degree``.
     """
-    if not tenant_id:
-        # Default path: kv_config_hash 0 (ignored server-side on the empty
-        # tenant); every replica resolves to the one shared store.
-        #
-        # This branch stays until CLIN-1468 removes the default path (client and
-        # server together). It is deliberately NOT folded into the multi-tenant
-        # path below: the default path accepts the broad KVCacheParamInterface
-        # and skips _validate_tenant_topology, so routing it through the MT branch
-        # would assert isinstance(params, KVCacheParams) and reject the
-        # multi-group (hybrid / SWA / speculative) caches the default path serves
-        # today, and the empty tenant's whole-budget store sizing is server-
-        # coupled. Converging the two is CLIN-1468's job, not this connector's.
-        return 0, [_DEFAULT_SHARED_STORE_REPLICA_IDENTITY] * num_replicas
-    _validate_tenant_topology(is_single_group=isinstance(params, KVCacheParams))
-    assert isinstance(params, KVCacheParams)  # narrowed by the guard above
+    # Every KV topology resolves here: single-group and shallow multi-cache
+    # (speculative draft+target, quantized values+scales) alike. A multi-cache
+    # block rides as the concatenated-unit block _group_units_by_shard builds,
+    # and the layout hash folds the whole cache tree (_kv_config_hash). True
+    # per-group tagging for independent hybrid/SWA groups is a separate
+    # block-manager effort (the connector keys every op under the full-attention
+    # group today), out of scope here.
+    assert isinstance(params, (KVCacheParams, MultiKVCacheParams))
     if num_replicas != params.data_parallel_degree:
         raise ValueError(
             f"replica count {num_replicas} does not match data_parallel_degree "
@@ -449,11 +430,9 @@ def _resolve_replica_identities(
             "would be wrong"
         )
     # One store per tenant: every DP replica handshakes the same zeroed store-key
-    # identity, differing from the default path only in the real layout hash. The
-    # shard/replica distinctions are carried in the per-block BlockKey, not here.
-    return _kv_config_hash(params, unit_strides), [
-        _DEFAULT_SHARED_STORE_REPLICA_IDENTITY
-    ] * num_replicas
+    # identity ((kv_shard_id, replica_id) == (0, 0)); the shard/replica
+    # distinctions are carried in the per-block BlockKey, not here.
+    return _kv_config_hash(params, unit_strides), [(0, 0)] * num_replicas
 
 
 # Exception types that always signal a permanent config or programming bug in
@@ -574,17 +553,16 @@ class DKVConnector:
     shim owns ONE client per DP replica in ``self._clients`` and routes each call
     to ``self._clients[replica_idx]`` for the request's processing replica.
 
-    Under backend dedup there is one client per DP replica on every path —
-    default and multi-tenant alike. Each client registers its replica's FULL TP
-    GPU set (so MLA keeps ``device_buffers.len() == tp`` and NVLink broadcast
-    stays engaged), and every DP replica of a tenant handshakes the same
-    per-tenant store identity (``kv_shard_id`` / ``replica_id`` zeroed), so the
-    server keys ONE region-sharded store per ``tenant_id`` (the empty tenant on
-    the default path). :meth:`load` / :meth:`offload` therefore issue exactly one
-    call, to the processing replica's client. The MHA/GQA-vs-MLA distinction is
-    carried by the per-block ``BlockKey`` ``tp_shard_id`` the Rust client builds,
-    not by the store key: identical-KV shards dedup, distinct head shards
-    co-reside.
+    Under backend dedup there is one client per DP replica. Each client
+    registers its replica's FULL TP GPU set (so MLA keeps
+    ``device_buffers.len() == tp`` and NVLink broadcast stays engaged), and every
+    DP replica of a tenant handshakes the same per-tenant store identity
+    (``kv_shard_id`` / ``replica_id`` zeroed), so the server keys ONE
+    region-sharded store per ``tenant_id``. :meth:`load` / :meth:`offload`
+    therefore issue exactly one call, to the processing replica's client. The
+    MHA/GQA-vs-MLA distinction is carried by the per-block ``BlockKey``
+    ``tp_shard_id`` the Rust client builds, not by the store key: identical-KV
+    shards dedup, distinct head shards co-reside.
     """
 
     @traced
@@ -601,9 +579,13 @@ class DKVConnector:
             replica_kv_memory: Per-replica offload-ready KV memory.
             local_block_store_endpoint: Co-located dKV control-plane endpoint.
             devices: The pipeline's flat, ordered device list across replicas.
-            params: KV-cache parameters, used to derive the multi-tenant
-                layout ``kv_config_hash`` (and to guard the topology) when
-                ``MODULAR_DKV_TENANT_ID`` is set.
+            params: KV-cache parameters, folded into the tenant store's layout
+                ``kv_config_hash``.
+
+        Raises:
+            ValueError: If ``MODULAR_DKV_TENANT_ID`` is unset or empty — dKV has
+                no default/legacy single-tenant path, so it fails model load
+                rather than silently keying an unfenced shared store.
         """
         # Deferred so importing this module (e.g. for DKVExternalBlockMetadata,
         # or by non-dKV pipelines) does not require the optional, runtime-
@@ -618,16 +600,21 @@ class DKVConnector:
         listen_port = int(os.getenv("MODULAR_DKV_NIXL_LISTEN_PORT", "0"))
         backend = os.getenv("MODULAR_NIXL_TRANSFER_BACKEND") or None
 
-        # Multi-tenant deployment identity (CLIN-1477). MODULAR_DKV_TENANT_ID is
+        # Tenant deployment identity (CLIN-1477). MODULAR_DKV_TENANT_ID is
         # injected by the operator (the trust boundary — not a user-facing
-        # override flag, which would be forgeable). Unset/empty is the default
-        # single-tenant path: every handshake identity field stays default and
-        # every DP replica resolves to one shared, replica-agnostic store
-        # (intentional cross-replica prefix sharing, not an accidental
-        # collapse). When set, every DP replica handshakes the same per-tenant
-        # identity (kv_shard_id/replica_id zeroed), so the server keys ONE
-        # region-sharded store per tenant_id (backend dedup).
+        # override flag, which would be forgeable). It is REQUIRED: dKV has no
+        # default/legacy single-tenant path, so an unset or empty value fails
+        # model load rather than silently keying an unfenced shared store. Every
+        # DP replica handshakes the same per-tenant identity (kv_shard_id/
+        # replica_id zeroed), so the server keys ONE region-sharded store per
+        # tenant_id (backend dedup).
         tenant_id = os.getenv("MODULAR_DKV_TENANT_ID", "")
+        if not tenant_id:
+            raise ValueError(
+                "dKV requires MODULAR_DKV_TENANT_ID to be set to a non-empty "
+                "tenant identity (the operator injects it); the legacy "
+                "empty-tenant default path has been removed."
+            )
         num_replicas = len(replica_kv_memory)
         # one shard's per-unit page strides in canonical order, from replica 0
         # because every DP replica runs the same model and config and so the
@@ -635,15 +622,13 @@ class DKVConnector:
         # is these strides concatenated
         unit_strides = _shard_unit_strides(replica_kv_memory[0])
         kv_config_hash, replica_identities = _resolve_replica_identities(
-            tenant_id, num_replicas, params, unit_strides
+            num_replicas, params, unit_strides
         )
         # Total GPUs this tenant occupies across the node (dp * tp), sent in every
         # replica's handshake so the server sizes the ONE per-tenant store to
         # per_gpu_slice * tenant_gpu_count and region-shards it into that many
-        # per-GPU NUMA-local regions. 0 on the default path (whole-budget layout).
-        tenant_gpu_count = (
-            num_replicas * params.tensor_parallel_degree if tenant_id else 0
-        )
+        # per-GPU NUMA-local regions.
+        tenant_gpu_count = num_replicas * params.tensor_parallel_degree
         # The full per-GPU device ordinals this tenant occupies (all dp * tp
         # GPUs, in region order), threaded to every replica's client so each
         # handshake conveys the tenant's WHOLE per-socket NUMA layout. A DP
@@ -651,11 +636,8 @@ class DKVConnector:
         # this the server would region-shard the store from one replica's
         # single-socket view and bind every region to that socket, breaking
         # NUMA-awareness on the DP path. dKV resolves each ordinal's NUMA node
-        # the same way the connector resolves its own. Empty on the default path
-        # (whole-budget layout, no region-sharding).
-        tenant_gpu_device_ids = (
-            [device.id for device in devices] if tenant_id else []
-        )
+        # the same way the connector resolves its own.
+        tenant_gpu_device_ids = [device.id for device in devices]
 
         # ``devices`` is the pipeline's flat, ordered device list across every
         # replica; split it into each replica's canonical device order so a
@@ -687,10 +669,7 @@ class DKVConnector:
         # (the CLIN-1512 per-GPU split had made them inert). The store key stays
         # per-tenant — replica_identities zeros kv_shard_id/replica_id, so every
         # DP replica of a tenant resolves to ONE store — and the per-block
-        # BlockKey tp_shard_id carries the MHA/GQA-vs-MLA distinction. Default
-        # (empty tenant) and multi-tenant share this one shape; the server keys
-        # the empty tenant to its own store (CLIN-1468 later drops that special
-        # case).
+        # BlockKey tp_shard_id carries the MHA/GQA-vs-MLA distinction.
         for idx, (
             kv_memory,
             replica_devices,
@@ -754,14 +733,13 @@ class DKVConnector:
                     peers,
                 )
 
-        if tenant_id:
-            _logger.info(
-                "dKV admitted all %d handshake(s) across %d replica(s) for "
-                "tenant %r",
-                len(self._clients),
-                num_replicas,
-                tenant_id,
-            )
+        _logger.info(
+            "dKV admitted all %d handshake(s) across %d replica(s) for "
+            "tenant %r",
+            len(self._clients),
+            num_replicas,
+            tenant_id,
+        )
 
     @staticmethod
     def _make_client(
