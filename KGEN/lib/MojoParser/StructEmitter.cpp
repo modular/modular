@@ -738,16 +738,19 @@ FnOp StructEmitter::synthesizeEmptyDtor(ConstraintAttr conformanceConstraint) {
   // We do this after creating the function so we don't emit a redundant error
   // complaining that a missing __del__ means the struct doesn't conform to
   // ImplicitlyDeletable.
+  SmallVector<ConstraintAttr> assumptions;
+  structDecl.getKnownAssumptionsIncludingParents(assumptions);
+  assumptions.append(constraints);
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     ASTType fieldType = fieldOp.getType();
     TriState confResult =
         fieldType
             .conformsToBuiltinTrait("ImplicitlyDeletable", structDecl.getLoc(),
-                                    shared, constraints)
+                                    shared, assumptions)
             .first;
     if (!confResult.isTrue() &&
         !fieldConditionallyConformsToBuiltin(fieldType, "ImplicitlyDeletable",
-                                             shared, structDecl, constraints) &&
+                                             shared, structDecl, assumptions) &&
         !fieldType.isTrivialRegisterType(structDecl.getLoc(), shared)) {
       emitError(fieldOp.getLoc())
           << "field '" << fieldOp.getName()
