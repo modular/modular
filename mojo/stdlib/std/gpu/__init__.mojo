@@ -36,7 +36,7 @@ from std.gpu import block_dim, block_idx, thread_idx, global_idx
 ```
 
 For an example of launching a GPU kernel from a MAX custom operation, see the
-[vector addition example](https://github.com/modular/modular/blob/main/examples/custom_ops/kernels/vector_addition.mojo)
+[vector addition example](https://github.com/modular/modular/blob/main/max/examples/custom_ops/kernels/vector_addition.mojo)
 in the MAX repo.
 """
 
