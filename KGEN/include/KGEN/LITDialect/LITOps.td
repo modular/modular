@@ -64,6 +64,7 @@ def LIT_FnOp : LITOp<"fn", [
       "ImplicitConversionKind::None">:$implicitConversion,
     UnitAttr:$external,
     UnitAttr:$defaultedTraitFn, // Present for trait methods with non-empty bodies.
+    UnitAttr:$definesInteriorOrigins,
     KGEN_ExportKindAttr:$exportKind,
     KGEN_InlineLevelAttr:$inlineLevel,
     DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,
