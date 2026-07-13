@@ -652,10 +652,8 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   // TODO: Why isn't this a general solution?
   if (auto actualParamRef = dyn_cast<ParamType>(actualType)) {
     if (auto actualMetaType = ASTType(actualType).extractMetaType()) {
-      if (auto structMeta = sugarDynCast<StructMetaType>(actualMetaType))
-        return matchTypes(structMeta.getType(), expectedType);
-      if (auto traitMeta = sugarDynCast<AnyTraitType>(actualMetaType))
-        return matchTypes(traitMeta.getTraitType(), expectedType);
+      if (auto meta = sugarDynCast<MetaType>(actualMetaType))
+        return matchTypes(meta.getType(), expectedType);
     }
   }
 
@@ -736,12 +734,6 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       //
       // foo() # we infer elt : !kgen.param_list<!AnyType & !Foo>
       auto metaType = paramTp.getParam().getType();
-      // TODO: AnyTraitType is now literally a MetaType<TraitType>, so this
-      // branch and the generic MetaType fallthrough below could probably be
-      // folded into a single `sugarCast<MetaType>(metaType).getType()`.
-      if (auto anyTrait = sugarDynCast<AnyTraitType>(metaType))
-        return anyTrait.getTraitType();
-
       return sugarCast<MetaType>(metaType).getType();
     };
     return targetMetaTp;

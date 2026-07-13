@@ -1015,9 +1015,9 @@ ASTType::ParameterListInfo ASTType::getParameterListInfo() const {
 
   auto bindings = getParamBindings();
   assert(bindings.size() == 2 &&
-         (sugarIsa<TraitType>(bindings[0].getType()) ||
-          sugarIsa<AnyTraitType>(bindings[0].getType())) && // elementType
-         sugarIsa<ParamListType>(bindings[1].getType()) &&  // values
+         (sugarIsa<TraitType, AnyTraitType>(
+             bindings[0].getType())) &&                    // elementType
+         sugarIsa<ParamListType>(bindings[1].getType()) && // values
          "Not a VariadicList struct?");
 
   return {ASTType(bindings[0]), bindings[1]};
