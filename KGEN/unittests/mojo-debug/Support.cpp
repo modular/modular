@@ -112,8 +112,8 @@ static SBDebugger getOrCreateSBDebugger() {
 
     // Launch the test lldbinit file
     SBFileSpec lldbInitPath(
-        (std::filesystem::path(std::getenv("MODULAR_PATH")) / "utils" /
-         "lit-lldb-init.in")
+        (std::filesystem::path(std::getenv("MODULAR_PATH")) / "KGEN" /
+         "unittests" / "lit-lldb-init.in")
             .string()
             .c_str());
 

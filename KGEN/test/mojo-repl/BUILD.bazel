@@ -6,12 +6,12 @@ lit_tests(
     name = "test",
     srcs = glob(["**/*.lldb"]),
     custom_substitutions = {
-        "%repl": "$(rlocationpath //KGEN/tools/mojo) repl --source-quietly -S $(rlocationpath //utils:lit-lldb-init.in)",
+        "%repl": "$(rlocationpath //KGEN/tools/mojo) repl --source-quietly -S $(rlocationpath //KGEN/unittests:lit-lldb-init.in)",
         "%mojo-lldb": "$(rlocationpath //KGEN:mojo-lldb)",
     },
     data = glob(["Inputs/*.mojo"]) + [
         "//KGEN:mojo-lldb",
-        "//utils:lit-lldb-init.in",
+        "//KGEN/unittests:lit-lldb-init.in",
     ],
     force_strip = True,  # TODO(MOTO-1190): Debug and fix this duplicate symbol issue
     mojo_deps = [

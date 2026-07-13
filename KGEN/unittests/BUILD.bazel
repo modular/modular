@@ -4,6 +4,8 @@ load("//bazel:api.bzl", "kgen_kernel", "modular_cc_test")
 
 package(default_visibility = ["//visibility:private"])
 
+exports_files(["lit-lldb-init.in"])
+
 kgen_kernel(
     name = "test_kernels",
     testonly = True,
