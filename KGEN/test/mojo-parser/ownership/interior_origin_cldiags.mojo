@@ -27,6 +27,7 @@ struct MyListInterior[T: AnyType]:
     def mutate(mut self):
         pass
 
+    @__defines_interior_origins
     def __getitem__(
         ref self
     ) -> ref[self.data.get_ref_with_unsafe_interior_origin["element"](self)] Self.T:

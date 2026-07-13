@@ -1299,6 +1299,7 @@ struct UnsafePointer[
     def unsafe_dangling() -> Self:
         return Self()
 
+    @__unsafe_disable_nested_origin_exclusivity
     def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
         while True:
             pass
@@ -1315,6 +1316,7 @@ struct UnsafePointer[
     # Returns a reference to the pointee but with the origin rebased to be a
     # interior origin derived from the specified base origin. This is used by
     # collections that need to vend owned interior references.
+    @__defines_interior_origins
     @always_inline
     def get_ref_with_unsafe_interior_origin[
         name: StringLiteral,
