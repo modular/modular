@@ -11,10 +11,10 @@ lit_tests(
     ]),
     custom_substitutions = {
         # Mirrored from lit.cfg.py to avoid searching $PATH for 'mojo'
-        "%debug": "$(rlocationpath //KGEN/tools/mojo) debug -X -x -X --source-quietly -X -S -X ../../../utils/lit-lldb-init.in",
+        "%debug": "$(rlocationpath //KGEN/tools/mojo) debug -X -x -X --source-quietly -X -S -X $(rlocationpath //KGEN/unittests:lit-lldb-init.in)",
     },
     data = glob(["Inputs/*.mojo"]) + [
-        "//utils:lit-lldb-init.in",
+        "//KGEN/unittests:lit-lldb-init.in",
     ],
     mojo_deps = [
         "@mojo//:std",

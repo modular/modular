@@ -13,7 +13,7 @@ lit_tests(
         exclude = ["test_completion_incremental.test"],
     ),
     custom_substitutions = {
-        "%mojo_jupyter_executor": "$(rlocationpath //KGEN/tools/mojo-jupyter-executor) --lldb-init-file ../../../utils/lit-lldb-init.in",
+        "%mojo_jupyter_executor": "$(rlocationpath //KGEN/tools/mojo-jupyter-executor) --lldb-init-file $(rlocationpath //KGEN/unittests:lit-lldb-init.in)",
     },
     data = glob([
         "*.ipynb",
@@ -22,7 +22,7 @@ lit_tests(
         # TODO(MOTO-1544): kept here (not srcs) so the file is referenced.
         "test_completion_incremental.test",
         "//oss/modular/mojo/stdlib/std:std_srcs",
-        "//utils:lit-lldb-init.in",
+        "//KGEN/unittests:lit-lldb-init.in",
     ],
     env = {
         "MODULAR_MOJO_IMPORT_SRCS": "$(locations //oss/modular/mojo/stdlib/std:std_srcs)",

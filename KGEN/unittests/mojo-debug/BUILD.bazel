@@ -25,7 +25,7 @@ modular_cc_test(
         "inputs/*.mojo",
     ]) + [
         "//KGEN/tools/mojo",
-        "//utils:lit-lldb-init.in",
+        "//KGEN/unittests:lit-lldb-init.in",
     ],
     env = {
         # HACK: This test invokes "mojo build" in a subprocess, but it can't see modular.cfg, so we need to
