@@ -490,3 +490,157 @@ kgen.func @array_offset(%arg1: !pop.array<4, index>, %arg2: index) -> index {
   %load = pop.load %offset : !kgen.pointer<index>
   kgen.return %load : index
 }
+
+// A struct allocation reached through its leading (offset-zero, nested) element
+// GEP chain decomposes; mem2reg then forwards the stored value.
+// CHECK-LABEL: @bitcast_to_leading_element
+// MEM2REG-LABEL: @bitcast_to_leading_element
+// MEM2REG-SAME: (%[[STRUCT:.*]]: !kgen.struct
+kgen.func @bitcast_to_leading_element(%arg0: !kgen.struct<(struct<(struct<(pointer<none>) memoryOnly>)>)>) -> !kgen.pointer<none> {
+  // CHECK-NOT: pop.pointer.bitcast
+  // CHECK: pop.stack_allocation 1 x pointer<none>
+  // CHECK: kgen.return
+
+  // MEM2REG: %[[E0:.*]] = kgen.struct.extract %[[STRUCT]][0]
+  // MEM2REG: %[[E1:.*]] = kgen.struct.extract %[[E0]][0]
+  // MEM2REG: %[[E2:.*]] = kgen.struct.extract %[[E1]][0]
+  // MEM2REG: kgen.return %[[E2]]
+  %0 = pop.stack_allocation 1 x !kgen.struct<(struct<(struct<(pointer<none>) memoryOnly>)>)>
+  pop.store %arg0, %0 : !kgen.pointer<struct<(struct<(struct<(pointer<none>) memoryOnly>)>)>>
+  %1 = kgen.struct.gep %0[0] : <struct<(struct<(struct<(pointer<none>) memoryOnly>)>)>>
+  %2 = kgen.struct.gep %1[0] : <struct<(struct<(pointer<none>) memoryOnly>)>>
+  %3 = kgen.struct.gep %2[0] : <struct<(pointer<none>) memoryOnly>>
+  %4 = pop.load %3 : !kgen.pointer<pointer<none>>
+  kgen.return %4 : !kgen.pointer<none>
+}
+
+// The canonical round-trip pun: view a scalar slot as a wrapper aggregate and
+// GEP back to it. SROA folds the pun; mem2reg then folds to `return %arg0`.
+// CHECK-LABEL: @bitcast_wrapper_roundtrip
+// MEM2REG-LABEL: @bitcast_wrapper_roundtrip
+// MEM2REG-SAME: (%[[PTR:.*]]: !kgen.pointer<none>)
+kgen.func @bitcast_wrapper_roundtrip(%arg0: !kgen.pointer<none>) -> !kgen.pointer<none> {
+  // CHECK-NOT: pop.pointer.bitcast
+  // CHECK: %[[A:.*]] = pop.stack_allocation 1 x pointer<none>
+  // CHECK: pop.store %{{.*}}, %[[A]] : !kgen.pointer<pointer<none>>
+  // CHECK: %[[L:.*]] = pop.load %[[A]] : !kgen.pointer<pointer<none>>
+  // CHECK: kgen.return %[[L]]
+
+  // MEM2REG: kgen.return %[[PTR]]
+  %index0 = kgen.param.constant = <0>
+  %0 = pop.stack_allocation 1 x pointer<none>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<struct<(array<1, pointer<none>>)>>
+  %2 = kgen.struct.gep %1[0] : <struct<(array<1, pointer<none>>)>>
+  %3 = pop.array.gep %2[%index0] : <array<1, pointer<none>>>
+  pop.store %arg0, %3 : !kgen.pointer<pointer<none>>
+  %4 = pop.load %0 : !kgen.pointer<pointer<none>>
+  kgen.return %4 : !kgen.pointer<none>
+}
+
+// A bitcast to a type that is not a leading element is a real reinterpretation
+// and must block the decomposition.
+// CHECK-LABEL: @bitcast_not_leading
+kgen.func @bitcast_not_leading(%arg0: !kgen.struct<(index, index)>) -> !kgen.scalar<si64> {
+  // CHECK: pop.stack_allocation 1 x struct<(index, index)>
+  // CHECK: pop.pointer.bitcast
+  %0 = pop.stack_allocation 1 x !kgen.struct<(index, index)>
+  pop.store %arg0, %0 : !kgen.pointer<struct<(index, index)>>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<struct<(index, index)>> to !kgen.pointer<scalar<si64>>
+  %2 = pop.load %1 : !kgen.pointer<scalar<si64>>
+  kgen.return %2 : !kgen.scalar<si64>
+}
+
+// An address-space cast of the allocation is not a type pun and must be left
+// alone.
+// CHECK-LABEL: @bitcast_address_space_cast
+kgen.func @bitcast_address_space_cast(%arg0: !kgen.struct<(index, index)>) -> !kgen.struct<(index, index)> {
+  // CHECK: %[[ALLOC:.*]] = pop.stack_allocation 1 x struct<(index, index)>
+  // CHECK: %[[CAST:.*]] = pop.pointer.bitcast %[[ALLOC]] : !kgen.pointer<struct<(index, index)>> to !kgen.pointer<struct<(index, index)>, 3>
+  // CHECK: pop.load %[[CAST]]
+  %0 = pop.stack_allocation 1 x !kgen.struct<(index, index)>
+  pop.store %arg0, %0 : !kgen.pointer<struct<(index, index)>>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<struct<(index, index)>> to !kgen.pointer<struct<(index, index)>, 3>
+  %2 = pop.load %1 : !kgen.pointer<struct<(index, index)>, 3>
+  kgen.return %2 : !kgen.struct<(index, index)>
+}
+
+// A round-trip pun through struct.gep alone (no array) also folds in place.
+// CHECK-LABEL: @bitcast_roundtrip_struct_only
+// MEM2REG-LABEL: @bitcast_roundtrip_struct_only
+// MEM2REG-SAME: (%[[PTR:.*]]: !kgen.pointer<none>)
+kgen.func @bitcast_roundtrip_struct_only(%arg0: !kgen.pointer<none>) -> !kgen.pointer<none> {
+  // CHECK-NOT: pop.pointer.bitcast
+  // CHECK: %[[A:.*]] = pop.stack_allocation 1 x pointer<none>
+  // CHECK: pop.store %{{.*}}, %[[A]] : !kgen.pointer<pointer<none>>
+  // CHECK: %[[L:.*]] = pop.load %[[A]] : !kgen.pointer<pointer<none>>
+  // CHECK: kgen.return %[[L]]
+
+  // MEM2REG: kgen.return %[[PTR]]
+  %0 = pop.stack_allocation 1 x pointer<none>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<struct<(pointer<none>)>>
+  %2 = kgen.struct.gep %1[0] : <struct<(pointer<none>)>>
+  pop.store %arg0, %2 : !kgen.pointer<pointer<none>>
+  %3 = pop.load %0 : !kgen.pointer<pointer<none>>
+  kgen.return %3 : !kgen.pointer<none>
+}
+
+// A scalar slot bitcast to a *different* type is a real reinterpretation, not a
+// round-trip: leave the cast alone (exercises ReplaceStack::canRun rejection).
+// CHECK-LABEL: @bitcast_scalar_not_roundtrip
+kgen.func @bitcast_scalar_not_roundtrip(%arg0: !kgen.scalar<f32>) -> !kgen.scalar<si32> {
+  // CHECK: pop.stack_allocation 1 x scalar<f32>
+  // CHECK: pop.pointer.bitcast
+  %0 = pop.stack_allocation 1 x scalar<f32>
+  pop.store %arg0, %0 : !kgen.pointer<scalar<f32>>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<scalar<f32>> to !kgen.pointer<scalar<si32>>
+  %2 = pop.load %1 : !kgen.pointer<scalar<si32>>
+  kgen.return %2 : !kgen.scalar<si32>
+}
+
+// If the round-trip pointer escapes (is stored as a value), it is not a pure
+// slot access and must not be folded.
+// CHECK-LABEL: @bitcast_roundtrip_escapes
+kgen.func @bitcast_roundtrip_escapes(%out: !kgen.pointer<pointer<pointer<none>>>) {
+  // CHECK: pop.stack_allocation 1 x pointer<none>
+  // CHECK: pop.pointer.bitcast
+  %0 = pop.stack_allocation 1 x pointer<none>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<struct<(pointer<none>)>>
+  %2 = kgen.struct.gep %1[0] : <struct<(pointer<none>)>>
+  pop.store %2, %out : !kgen.pointer<pointer<pointer<none>>>
+  kgen.return
+}
+
+// A round-trip pun through array.gep alone folds in place.
+// CHECK-LABEL: @bitcast_roundtrip_array_only
+// MEM2REG-LABEL: @bitcast_roundtrip_array_only
+// MEM2REG-SAME: (%[[PTR:.*]]: !kgen.pointer<none>)
+kgen.func @bitcast_roundtrip_array_only(%arg0: !kgen.pointer<none>) -> !kgen.pointer<none> {
+  // CHECK-NOT: pop.pointer.bitcast
+  // CHECK: %[[A:.*]] = pop.stack_allocation 1 x pointer<none>
+  // CHECK: pop.store %{{.*}}, %[[A]] : !kgen.pointer<pointer<none>>
+  // CHECK: %[[L:.*]] = pop.load %[[A]] : !kgen.pointer<pointer<none>>
+  // CHECK: kgen.return %[[L]]
+
+  // MEM2REG: kgen.return %[[PTR]]
+  %index0 = kgen.param.constant = <0>
+  %0 = pop.stack_allocation 1 x pointer<none>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<array<1, pointer<none>>>
+  %2 = pop.array.gep %1[%index0] : <array<1, pointer<none>>>
+  pop.store %arg0, %2 : !kgen.pointer<pointer<none>>
+  %3 = pop.load %0 : !kgen.pointer<pointer<none>>
+  kgen.return %3 : !kgen.pointer<none>
+}
+
+// A GEP with a non-zero index reaches a different offset, not the slot: the
+// chain is not a round-trip and must not be folded.
+// CHECK-LABEL: @bitcast_roundtrip_nonzero_index
+kgen.func @bitcast_roundtrip_nonzero_index(%arg0: !kgen.pointer<none>) -> !kgen.pointer<none> {
+  // CHECK: pop.pointer.bitcast
+  %index1 = kgen.param.constant = <1>
+  %0 = pop.stack_allocation 1 x pointer<none>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<array<2, pointer<none>>>
+  %2 = pop.array.gep %1[%index1] : <array<2, pointer<none>>>
+  pop.store %arg0, %2 : !kgen.pointer<pointer<none>>
+  %3 = pop.load %0 : !kgen.pointer<pointer<none>>
+  kgen.return %3 : !kgen.pointer<none>
+}

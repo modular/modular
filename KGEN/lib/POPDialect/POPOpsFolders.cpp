@@ -515,6 +515,41 @@ LogicalResult LoadOp::canonicalize(LoadOp op, PatternRewriter &b) {
     }
   }
 
+  // load(bitcast(ptr<struct> -> ptr<T>)), T the struct's leading (offset-zero,
+  // nested) element -> load(struct.gep chain): the gep addresses the same
+  // element, so the load is unchanged, but the opaque cast is gone so SROA can
+  // decompose. See `bitcast_to_leading_element`.
+  if (auto cast = op.getPtr().getDefiningOp<PointerBitcastOp>()) {
+    auto srcPtr = dyn_cast<PointerType>(cast.getInput().getType());
+    auto dstPtr = dyn_cast<PointerType>(cast.getType());
+    if (srcPtr && dstPtr && isa<StructType>(srcPtr.getElementType()) &&
+        srcPtr.getAddressSpace() == dstPtr.getAddressSpace()) {
+      // Descend index-0 elements from the struct to the loaded type.
+      Type targetElt = dstPtr.getElementType();
+      Type cur = srcPtr.getElementType();
+      unsigned depth = 0;
+      while (cur != targetElt) {
+        auto structTy = dyn_cast<StructType>(cur);
+        if (!structTy)
+          break;
+        std::optional<SmallVector<Type>> elts = structTy.getElementTypes();
+        if (!elts || elts->empty())
+          break;
+        cur = elts->front();
+        ++depth;
+      }
+
+      if (cur == targetElt && depth > 0) {
+        b.setInsertionPoint(op);
+        Value ptr = cast.getInput();
+        for (unsigned i = 0; i < depth; ++i)
+          ptr = StructGEPOp::create(b, op.getLoc(), ptr, /*index=*/0);
+        b.modifyOpInPlace(op, [&] { op.setOperand(ptr); });
+        return success();
+      }
+    }
+  }
+
   // Canonicalize `load(bitcast(ptr)) -> bitcast(load(ptr))` if the element type
   // is also a pointer.
   if (!isa<PointerType>(op.getType()))

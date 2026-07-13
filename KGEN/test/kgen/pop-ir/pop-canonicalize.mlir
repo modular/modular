@@ -2163,3 +2163,110 @@ kgen.func @cmp_uindex_both_const_no_target_info() -> (!kgen.scalar<bool>, !kgen.
   // CHECK-NEXT: kgen.return %[[RES0]], %[[RES1]]
   kgen.return %0, %1 : !kgen.scalar<bool>, !kgen.scalar<bool>
 }
+
+// -----
+
+// A `pop.load` of a bitcast from a struct pointer to a pointer to the struct's
+// leading (offset-zero, nested) element is rewritten into a `kgen.struct.gep`
+// chain feeding the load, dropping the opaque cast so SROA/mem2reg can
+// decompose the allocation.
+// CHECK-LABEL: @load_bitcast_leading_struct_element
+// CHECK-SAME: (%[[P:.*]]: !kgen.pointer<struct<(struct<(struct<(pointer<none>) memoryOnly>)>)>>)
+kgen.func @load_bitcast_leading_struct_element(
+    %p: !kgen.pointer<struct<(struct<(struct<(pointer<none>) memoryOnly>)>)>>)
+    -> !kgen.pointer<none> {
+  // CHECK-NOT: pop.pointer.bitcast
+  // CHECK: %[[G0:.*]] = kgen.struct.gep %[[P]][0]
+  // CHECK: %[[G1:.*]] = kgen.struct.gep %[[G0]][0]
+  // CHECK: %[[G2:.*]] = kgen.struct.gep %[[G1]][0]
+  // CHECK: %[[L:.*]] = pop.load %[[G2]]
+  // CHECK: kgen.return %[[L]]
+  %cast = pop.pointer.bitcast %p : !kgen.pointer<struct<(struct<(struct<(pointer<none>) memoryOnly>)>)>> to !kgen.pointer<pointer<none>>
+  %load = pop.load %cast : !kgen.pointer<pointer<none>>
+  kgen.return %load : !kgen.pointer<none>
+}
+
+// -----
+
+// A bitcast to a type that is not the leading element is a real
+// reinterpretation and must be left alone.
+// CHECK-LABEL: @load_bitcast_not_leading
+kgen.func @load_bitcast_not_leading(%p: !kgen.pointer<struct<(index, index)>>)
+    -> !kgen.scalar<si64> {
+  // CHECK: pop.pointer.bitcast
+  %cast = pop.pointer.bitcast %p : !kgen.pointer<struct<(index, index)>> to !kgen.pointer<scalar<si64>>
+  %load = pop.load %cast : !kgen.pointer<scalar<si64>>
+  kgen.return %load : !kgen.scalar<si64>
+}
+
+// -----
+
+// A bitcast that also changes address space is not a pure type pun and must be
+// left alone.
+// CHECK-LABEL: @load_bitcast_addrspace
+kgen.func @load_bitcast_addrspace(%p: !kgen.pointer<struct<(index, index)>>)
+    -> index {
+  // CHECK: pop.pointer.bitcast
+  %cast = pop.pointer.bitcast %p : !kgen.pointer<struct<(index, index)>> to !kgen.pointer<index, 3>
+  %load = pop.load %cast : !kgen.pointer<index, 3>
+  kgen.return %load : index
+}
+
+// -----
+
+// Volatile (and atomic) loads are left untouched: the leading-element rewrite
+// bails on them, so the bitcast and the volatile load both survive.
+// CHECK-LABEL: @load_bitcast_leading_volatile
+kgen.func @load_bitcast_leading_volatile(
+    %p: !kgen.pointer<struct<(pointer<none>)>>) -> !kgen.pointer<none> {
+  // CHECK-NOT: kgen.struct.gep
+  // CHECK: pop.pointer.bitcast
+  // CHECK: pop.load volatile
+  %cast = pop.pointer.bitcast %p : !kgen.pointer<struct<(pointer<none>)>> to !kgen.pointer<pointer<none>>
+  %load = pop.load volatile<1> %cast : !kgen.pointer<pointer<none>>
+  kgen.return %load : !kgen.pointer<none>
+}
+
+// -----
+
+// Single-level leading struct element: load(bitcast) -> load(struct.gep[0]).
+// CHECK-LABEL: @load_bitcast_leading_single
+kgen.func @load_bitcast_leading_single(
+    %p: !kgen.pointer<struct<(pointer<none>)>>) -> !kgen.pointer<none> {
+  // CHECK-NOT: pop.pointer.bitcast
+  // CHECK: %[[G:.*]] = kgen.struct.gep %{{.*}}[0]
+  // CHECK: pop.load %[[G]]
+  %c = pop.pointer.bitcast %p : !kgen.pointer<struct<(pointer<none>)>> to !kgen.pointer<pointer<none>>
+  %l = pop.load %c : !kgen.pointer<pointer<none>>
+  kgen.return %l : !kgen.pointer<none>
+}
+
+// -----
+
+// Leading element two struct levels down (field 0 at each level).
+// CHECK-LABEL: @load_bitcast_leading_two_level
+kgen.func @load_bitcast_leading_two_level(
+    %p: !kgen.pointer<struct<(struct<(scalar<f32>, scalar<f64>)>)>>)
+    -> !kgen.scalar<f32> {
+  // CHECK-NOT: pop.pointer.bitcast
+  // CHECK: %[[G0:.*]] = kgen.struct.gep %{{.*}}[0]
+  // CHECK: %[[G1:.*]] = kgen.struct.gep %[[G0]][0]
+  // CHECK: pop.load %[[G1]]
+  %c = pop.pointer.bitcast %p : !kgen.pointer<struct<(struct<(scalar<f32>, scalar<f64>)>)>> to !kgen.pointer<scalar<f32>>
+  %l = pop.load %c : !kgen.pointer<scalar<f32>>
+  kgen.return %l : !kgen.scalar<f32>
+}
+
+// -----
+
+// A non-leading nested field (index 1) is a real reinterpretation: keep the
+// cast.
+// CHECK-LABEL: @load_bitcast_deeper_non_leading
+kgen.func @load_bitcast_deeper_non_leading(
+    %p: !kgen.pointer<struct<(struct<(scalar<f32>, scalar<f64>)>)>>)
+    -> !kgen.scalar<f64> {
+  // CHECK: pop.pointer.bitcast
+  %c = pop.pointer.bitcast %p : !kgen.pointer<struct<(struct<(scalar<f32>, scalar<f64>)>)>> to !kgen.pointer<scalar<f64>>
+  %l = pop.load %c : !kgen.pointer<scalar<f64>>
+  kgen.return %l : !kgen.scalar<f64>
+}
