@@ -456,3 +456,30 @@ struct Moco4214RaiseList[T: AnyType](
     # CHECK-SAME: %__result__: !lit.ref<!Moco4214Payload,{{.*}}> byref_result
     def make(self) raises -> Self.Output where conforms_to(Self.T, Movable):
         return Moco4214Payload(456)
+
+
+# ===========================================================================
+# `where` clause type mismatch between return type and returned expr
+# (MOCO-4296).
+# ===========================================================================
+# A method's declared return type can be a compound instantiation (e.g.
+# `Moco4296Iter[Self.T]`) where a NESTED type argument's trait bound is only
+# satisfied via the method's own trailing `where` clause, not via `T`'s own
+# declaration. The declared return type then carries a `downcast` on that
+# argument, while the constructor-inferred type of the returned expression
+# does not carry one; the two must still be recognized as zero-cost
+# convertible.
+struct Moco4296Collection[T: AnyType](Movable):
+    # CHECK-LABEL: lit.fn @"foo(struct_conditional_trait_conformance::Moco4296Collection
+    # Ensure the declared return type keeps its `downcast` on `T`.
+    # CHECK-SAME: %__result__: !lit.ref<!lit.struct<#Moco4296Iter <{{.*}}downcast(:!AnyType T)>>,{{.*}}> byref_result
+    def foo(
+        var self,
+    ) -> Moco4296Iter[Self.T] where conforms_to(Self.T, Movable & ImplicitlyDeletable):
+        # CHECK: lit.call {{.*}}@struct_conditional_trait_conformance::@Moco4296Iter::@"__init__
+        return Moco4296Iter(self^)
+
+
+@fieldwise_init
+struct Moco4296Iter[T: Movable & ImplicitlyDeletable]:
+    var _collection: Moco4296Collection[Self.T]
