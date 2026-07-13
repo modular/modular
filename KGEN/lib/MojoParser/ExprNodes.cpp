@@ -1844,10 +1844,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   auto lookupError = [&] {
     auto diagType = baseType;
     // Complain about "SomeType" in 'SomeType.foo' not 'AnyStruct[SomeType]'.
-    if (auto anyStruct = sugarDynCast<StructMetaType>(diagType)) {
-      diagType = anyStruct.getType();
-    } else if (auto anyTrait = sugarDynCast<AnyTraitType>(diagType)) {
-      diagType = anyTrait.getTraitType();
+    if (auto meta = sugarDynCast<MetaType>(diagType)) {
+      diagType = meta.getType();
     } else if (auto generator = sugarDynCast<GeneratorType>(diagType)) {
       if (auto mt = dyn_cast<MetaType>(generator.getBody())) {
         diagType = ASTType(mt.getType())

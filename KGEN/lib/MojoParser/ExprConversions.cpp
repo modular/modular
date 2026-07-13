@@ -1659,8 +1659,8 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(SharedState &shared,
       // AnyTraitType (the type of all traits) conforms to traits with only a
       // destructor (e.g. AnyType) since all traits have that.
       result = checkMLIRTypeConformance(shared, loc, trait);
-    } else if (sugarIsa<StructMetaMetaType>(fromType.extractMetaType()) ||
-               sugarIsa<AnyTraitType>(fromType.extractMetaType())) {
+    } else if (sugarIsa<StructMetaMetaType, AnyTraitType>(
+                   fromType.extractMetaType())) {
       if (ASTType(fromType).getDecl(shared)) {
         // Check for closure rebindability.
         for (const auto &symbol : trait.getSymbols()) {
@@ -1961,8 +1961,8 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
       return bindNonStructTypeToTrait(valueExpr, trait);
     }
 
-    if (sugarIsa<StructMetaMetaType>(fromType.extractMetaType()) ||
-        sugarIsa<AnyTraitType>(fromType.extractMetaType())) {
+    if (sugarIsa<StructMetaMetaType, AnyTraitType>(
+            fromType.extractMetaType())) {
       // Augment the witness table of closure wrapper with rebind if
       // necessary. We do this for every closure trait in the type.
       for (const auto &symbol : trait.getSymbols()) {
