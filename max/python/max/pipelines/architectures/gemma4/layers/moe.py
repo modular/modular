@@ -115,15 +115,19 @@ class Gemma4MoEGate(MoEGate):
         hidden_state = hidden_state * self.scale * self.scalar_root_size
 
         expert_scores = self.gate_score(hidden_state)
-        router_probs = ops.softmax(expert_scores)
+        # HF gemma4 computes the router softmax and top-k renormalization in
+        # float32 (Gemma4TextRouter.forward: `softmax(..., dtype=torch.float32)`)
+        # for numerical stability across the 128-expert logits.
+        router_probs = ops.softmax(ops.cast(expert_scores, DType.float32))
 
         top_k_weights, top_k_index = ops.top_k(
             router_probs, k=self.num_experts_per_token, axis=-1
         )
 
         top_k_weights = top_k_weights / ops.sum(top_k_weights, axis=-1)
-        top_k_weights = top_k_weights * ops.gather(
-            self.per_expert_scale, top_k_index, axis=0
+        top_k_weights = top_k_weights * ops.cast(
+            ops.gather(self.per_expert_scale, top_k_index, axis=0),
+            DType.float32,
         )
 
-        return top_k_index, top_k_weights
+        return top_k_index, ops.cast(top_k_weights, expert_scores.dtype)
