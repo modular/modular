@@ -13,8 +13,8 @@ tokens, and the larger target model verifies them in one forward pass. MAX
 accepts the prefix the target agrees with and resamples at the first
 disagreement, so quality matches running the target alone.
 
-The speedup comes from batching verification across K candidate positions.
-When the target accepts all K drafts, you get K+1 tokens per step instead
+The speedup comes from batching verification across `K` candidate positions.
+When the target accepts all `K` drafts, you get `K+1` tokens per step instead
 of one, converting a memory-bandwidth-bound workload into one that better
 uses available compute.
 
@@ -35,13 +35,14 @@ requirements](/max/packages#system-requirements).
 
 ## Supported methods
 
-MAX supports common speculative-decoding methods like EAGLE, EAGLE3, and
-MTP.
+MAX supports common speculative-decoding methods like EAGLE, EAGLE3,
+MTP, and DFlash.
 
-| Method             | Draft source                                                           | Supported targets and hardware                                             |
-|--------------------|------------------------------------------------------------------------|----------------------------------------------------------------------------|
-| `eagle` / `eagle3` | A trained EAGLE draft that shares the target's embedding and `lm_head` | Llama 3 (1 GPU), Kimi K2.5 and K2.6 (8× B200).                             |
-| `mtp`              | A native multi-token prediction head inside the target checkpoint      | DeepSeek V3 and derivatives (8× B200), GLM-5.2 (8× B200), Gemma 4 (1 GPU). |
+| Method             | Draft source                                                                    | Supported targets and hardware                                             |
+|--------------------|---------------------------------------------------------------------------------|----------------------------------------------------------------------------|
+| `eagle` / `eagle3` | A trained EAGLE draft that shares the target's embedding and `lm_head`          | Llama 3 (1 GPU), Kimi K2.5 and K2.6 (8× B200).                             |
+| `mtp`              | A native multi-token prediction head inside the target checkpoint               | DeepSeek V3 and derivatives (8× B200), GLM-5.2 (8× B200), Gemma 4 (1 GPU). |
+| `dflash`           | A trained DFlash draft (a multi-layer block transformer) paired with the target | Llama 3 (1 GPU), Kimi K2.5 (8× B200).                                      |
 
 ## Serve with speculative decoding
 
@@ -140,11 +141,10 @@ print(response.choices[0].message.content)
 ## Interpret the startup architecture name
 
 When you serve a model with speculative decoding, MAX shows a combined
-architecture name in the startup banner. This name differs from the
-architecture your model's config declares because MAX pairs the target with
-its draft and reports the combination under a single spec-decode
-architecture name. For example, serving `deepseek-ai/DeepSeek-V3` with MTP
-appears as `UnifiedMTPDeepseekV3ForCausalLM`.
+architecture name in the startup banner. It differs from the target architecture
+name because MAX resolves the target and its speculative mechanism into a
+dedicated speculative decoding architecture. For example, serving
+`deepseek-ai/DeepSeek-V3` with MTP appears as `UnifiedMTPDeepseekV3ForCausalLM`.
 
 ## Monitor acceptance rates
 
