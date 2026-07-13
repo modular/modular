@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -131,6 +132,7 @@ from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
 )
 from max.pipelines.modeling.types import (
     BatchType,
+    CompletedBatchStats,
     PipelineOutputsDict,
     PipelineTokenizer,
     ReasoningPipelineTokenizer,
@@ -622,6 +624,12 @@ class AsyncBatch(Generic[TextGenerationContextType]):
 
     copy_event: DeviceEvent
     """Event that tracks completion of the d2h copy."""
+
+    enqueue_monotonic: float = 0.0
+    """``time.monotonic()`` timestamp taken when this batch's ``execute()``
+    call began, i.e. an upper bound on when its GPU work could have started.
+    Used together with the previous batch's sync timestamp to estimate this
+    batch's execution time when its outputs are synchronized."""
 
     _is_processed: bool = False
     """Whether the outputs have been already been processed."""
@@ -1744,6 +1752,13 @@ class OverlapTextGenerationPipeline(
         )
         # Set previous asynchronously executing batch to None.
         self._prev_batch: AsyncBatch[TextGenerationContextType] | None = None
+        # Timing state for attributing execution time to completed batches.
+        # ``_last_sync_monotonic`` is when the previously synced batch's
+        # outputs were observed on the host; ``_completed_batch_stats`` holds
+        # stats for the most recently synced batch until the scheduler
+        # collects them via ``take_completed_batch_stats()``.
+        self._last_sync_monotonic: float | None = None
+        self._completed_batch_stats: CompletedBatchStats | None = None
         self._graph_capture_runner: ServeGraphCaptureRunner | None = None
         # set a default graph capture size, 128
         self._max_graph_capture_batch_size: int = _MAX_GRAPH_CAPTURE_BATCH_SIZE
@@ -1863,6 +1878,53 @@ class OverlapTextGenerationPipeline(
         inputs to retrieve the outputs for the previous batch.
         """
         return self._prev_batch is not None
+
+    def take_completed_batch_stats(self) -> CompletedBatchStats | None:
+        """Returns and clears stats for the most recently completed batch.
+
+        When overlap is active, a batch's outputs are synchronized one
+        ``execute()`` call after it was enqueued, so the scheduler cannot
+        attribute execution time to the batch it just submitted. After each
+        ``execute()`` call that synchronized a batch, this returns that
+        batch's composition and timing; the scheduler should publish
+        execution-time and throughput telemetry from this record instead of
+        from its own wall-clock measurement. Returns ``None`` when no batch
+        completed since the last call.
+        """
+        stats = self._completed_batch_stats
+        self._completed_batch_stats = None
+        return stats
+
+    def _record_completed_batch_stats(
+        self,
+        batch: AsyncBatch[TextGenerationContextType],
+        spec_decode_metrics: _SpeculativeDecodingMetrics | None,
+        sync_monotonic: float,
+    ) -> None:
+        """Records stats for a batch whose outputs were just synchronized.
+
+        The execution time is estimated host-side as the interval from when
+        the batch could have started executing — the later of its enqueue
+        timestamp and the previous batch's sync timestamp (batches execute
+        back-to-back on the same stream) — until its outputs were observed on
+        the host. On a saturated GPU this converges to the batch's GPU
+        duration; it overestimates by any GPU idle gap before the batch.
+        """
+        start_bound = batch.enqueue_monotonic
+        if self._last_sync_monotonic is not None:
+            start_bound = max(start_bound, self._last_sync_monotonic)
+        inputs = batch.inputs
+        self._completed_batch_stats = CompletedBatchStats(
+            batch_type=inputs.batch_type,
+            batch_size=len(inputs.flat_batch),
+            num_input_tokens=inputs.input_tokens,
+            num_context_tokens=inputs.context_tokens,
+            execution_time_s=max(sync_monotonic - start_bound, 0.0),
+            num_output_tokens=spec_decode_metrics.output_tokens
+            if spec_decode_metrics is not None
+            else None,
+        )
+        self._last_sync_monotonic = sync_monotonic
 
     # Warmup inputs use runtime construction with explicit max-cache-length LUT
     # sizing, so eager warmup and capture both see replay-stable buffer shapes.
@@ -3280,6 +3342,8 @@ class OverlapTextGenerationPipeline(
                 "Log probabilities are not supported with overlap pipeline"
             )
 
+        execute_start_monotonic = time.monotonic()
+
         # Initialize variables that may be set conditionally below.
         curr_batch: AsyncBatch[TextGenerationContextType] | None = None
         sampling_processor: FusedSamplingProcessor | None = None
@@ -3289,6 +3353,7 @@ class OverlapTextGenerationPipeline(
         # Set when the early-sync guard fires; reused in the normal sync path
         # below to prevent double-calling sync_and_process_outputs.
         _early_sync_outputs: _AsyncBatchOutput | None = None
+        _early_sync_monotonic: float | None = None
 
         if self._spec_decode_state is not None:
             self._spec_decode_state.batch_metrics = None
@@ -3314,6 +3379,7 @@ class OverlapTextGenerationPipeline(
                     _early_sync_outputs = (
                         self._prev_batch.sync_and_process_outputs()
                     )
+                    _early_sync_monotonic = time.monotonic()
 
                 # FSM is advanced asynchronously by the host callback enqueued
                 # just above. The captured graph's ``mo.wait_host_value_with_dep``
@@ -3356,6 +3422,13 @@ class OverlapTextGenerationPipeline(
                 self._spec_decode_state.batch_metrics = (
                     wrapped_outputs.spec_decode_metrics
                 )
+            self._record_completed_batch_stats(
+                self._prev_batch,
+                wrapped_outputs.spec_decode_metrics,
+                sync_monotonic=_early_sync_monotonic
+                if _early_sync_monotonic is not None
+                else time.monotonic(),
+            )
             outputs = wrapped_outputs.output_dict
             self._prev_batch = None
 
@@ -3423,6 +3496,7 @@ class OverlapTextGenerationPipeline(
                 # For structured output, the bitmask is updated in
                 # sync_and_process_outputs() after the FSM is advanced,
                 # so overlap scheduling still works correctly.
+                curr_batch.enqueue_monotonic = execute_start_monotonic
                 self._prev_batch = curr_batch
 
         return outputs

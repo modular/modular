@@ -17,6 +17,7 @@ from __future__ import annotations
 
 __all__ = [
     "BatchType",
+    "CompletedBatchStats",
     "ImageContentPart",
     "MessageContent",
     "TextContentPart",
@@ -526,6 +527,30 @@ class BatchType(Enum):
     """Context encoding batch."""
     TG = "TG"
     """Token generation batch."""
+
+
+@dataclass
+class CompletedBatchStats:
+    """Execution stats for a batch whose outputs have been synchronized."""
+
+    batch_type: BatchType
+    """Type of the completed batch."""
+
+    batch_size: int
+    """Number of requests in the completed batch."""
+
+    num_input_tokens: int
+    """Number of input tokens in the completed batch."""
+
+    num_context_tokens: int
+    """Number of context tokens in the completed batch."""
+
+    execution_time_s: float
+    """Execution time of the completed batch, in seconds."""
+
+    num_output_tokens: int | None = None
+    """Output tokens produced by the completed batch, when known (currently
+    only reported by speculative decoding). ``None`` otherwise."""
 
 
 @dataclass(eq=True)

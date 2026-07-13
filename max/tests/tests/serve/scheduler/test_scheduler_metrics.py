@@ -17,9 +17,17 @@ import logging
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from max.pipelines.modeling.types import BatchType
-from max.serve.scheduler.utils import BatchMetrics
+from max.pipelines.modeling.types import BatchType, CompletedBatchStats
+from max.serve.scheduler.utils import (
+    BatchMetrics,
+    publish_completed_batch_metrics,
+)
 from pythonjsonlogger import jsonlogger
+from tests.serve.scheduler.common import (
+    FakeOverlapPipeline,
+    create_paged_scheduler,
+    enqueue_request,
+)
 
 
 def _make_metrics(**overrides: Any) -> BatchMetrics:
@@ -630,3 +638,159 @@ def test_batch_metrics_create_no_spec_decode() -> None:
     assert metrics.avg_acceptance_length == 0.0
     assert metrics.max_acceptance_length == 0
     assert metrics.acceptance_rate_per_position == []
+
+
+# ---------------------------------------------------------------------------
+# Overlap-scheduling execution-metric attribution tests
+# ---------------------------------------------------------------------------
+
+
+def test_publish_metrics_defers_execution_metrics() -> None:
+    """With defer_execution_metrics=True (overlap scheduling), execution-time
+    and throughput metrics are suppressed — they are published separately from
+    CompletedBatchStats — while the current batch's composition metrics are
+    still emitted.
+    """
+    metrics = _make_metrics()
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics(defer_execution_metrics=True)
+    mock_metrics.batch_execution_time.assert_not_called()
+    mock_metrics.batch_prompt_throughput.assert_not_called()
+    mock_metrics.batch_generation_throughput.assert_not_called()
+    # Current-batch composition metrics are unaffected.
+    mock_metrics.batch_size.assert_called_once_with(1, batch_type="CE")
+    mock_metrics.batch_input_tokens.assert_called_once_with(6, batch_type="CE")
+    mock_metrics.batch_creation_time.assert_called_once_with(
+        10000.0, batch_type="CE"
+    )
+
+
+def _make_completed_stats(**overrides: Any) -> CompletedBatchStats:
+    base = dict[str, Any](
+        batch_type=BatchType.CE,
+        batch_size=2,
+        num_input_tokens=4096,
+        num_context_tokens=8192,
+        execution_time_s=0.25,
+    )
+    base.update(overrides)
+    return CompletedBatchStats(**base)
+
+
+def test_publish_completed_batch_metrics_ce() -> None:
+    """Execution metrics carry the completed batch's label and are computed
+    from that batch's own token counts and duration."""
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        publish_completed_batch_metrics(_make_completed_stats())
+    mock_metrics.batch_execution_time.assert_called_once_with(
+        250.0, batch_type="CE"
+    )
+    mock_metrics.batch_prompt_throughput.assert_called_once_with(
+        4096 / 0.25, batch_type="CE"
+    )
+    mock_metrics.batch_generation_throughput.assert_called_once_with(
+        2 / 0.25, batch_type="CE"
+    )
+
+
+def test_publish_completed_batch_metrics_tg_spec_decode() -> None:
+    """TG batches with known output tokens (spec decode) use them for
+    generation throughput, mirroring BatchMetrics.create."""
+    stats = _make_completed_stats(batch_type=BatchType.TG, num_output_tokens=12)
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        publish_completed_batch_metrics(stats)
+    mock_metrics.batch_execution_time.assert_called_once_with(
+        250.0, batch_type="TG"
+    )
+    mock_metrics.batch_generation_throughput.assert_called_once_with(
+        12 / 0.25, batch_type="TG"
+    )
+
+
+def test_publish_completed_batch_metrics_ce_ignores_output_tokens() -> None:
+    """CE batches use the standard batch_size formula even when stale spec
+    metrics report output tokens, mirroring BatchMetrics.create."""
+    stats = _make_completed_stats(num_output_tokens=12)
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        publish_completed_batch_metrics(stats)
+    mock_metrics.batch_generation_throughput.assert_called_once_with(
+        2 / 0.25, batch_type="CE"
+    )
+
+
+def test_publish_completed_batch_metrics_zero_duration_skipped() -> None:
+    """A zero-duration record cannot produce meaningful throughput; nothing
+    is published."""
+    stats = _make_completed_stats(execution_time_s=0.0)
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        publish_completed_batch_metrics(stats)
+    mock_metrics.batch_execution_time.assert_not_called()
+    mock_metrics.batch_prompt_throughput.assert_not_called()
+    mock_metrics.batch_generation_throughput.assert_not_called()
+
+
+class _ExecMetricsRecorder:
+    """Captures labeled execution/creation metric calls; no-ops the rest."""
+
+    def __init__(self) -> None:
+        self.execution_calls: list[tuple[float, str]] = []
+        self.creation_calls: list[tuple[float, str]] = []
+        self.prompt_throughput_calls: list[tuple[float, str]] = []
+
+    def batch_execution_time(self, ms: float, batch_type: str) -> None:
+        self.execution_calls.append((ms, batch_type))
+
+    def batch_creation_time(self, ms: float, batch_type: str) -> None:
+        self.creation_calls.append((ms, batch_type))
+
+    def batch_prompt_throughput(self, tps: float, batch_type: str) -> None:
+        self.prompt_throughput_calls.append((tps, batch_type))
+
+    def __getattr__(self, _name: str) -> Any:
+        return MagicMock()
+
+
+def test_scheduler_overlap_attributes_execution_metrics_to_completed_batch() -> (
+    None
+):
+    """Under overlap scheduling, execution-time and throughput telemetry must
+    be labeled with the batch that actually completed (one iteration lagged),
+    not the batch enqueued in the current iteration.
+
+    Regression test: previously a CE batch's execution time was published
+    under the next iteration's batch type (usually TG), corrupting the CE/TG
+    split of maxserve.batch_execution_time and both throughput histograms.
+    """
+    recorder = _ExecMetricsRecorder()
+    with patch("max.serve.scheduler.utils.METRICS", recorder):
+        scheduler, request_queue = create_paged_scheduler(
+            max_seq_len=128,
+            num_blocks=64,
+            max_batch_size=4,
+            page_size=8,
+        )
+        scheduler.pipeline = FakeOverlapPipeline(
+            kv_manager=scheduler.batch_constructor.kv_cache,
+            max_seq_len=128,
+        )
+        enqueue_request(request_queue, prompt_len=16, max_seq_len=128)
+
+        # Iteration 1: the CE batch is enqueued but has not completed. No
+        # execution metrics may be published; the current batch's composition
+        # metrics still are.
+        scheduler.run_iteration()
+        assert recorder.execution_calls == []
+        assert recorder.prompt_throughput_calls == []
+        assert recorder.creation_calls
+        assert recorder.creation_calls[-1][1] == "CE"
+
+        # Iteration 2: the CE batch completes while a TG batch is enqueued.
+        # Execution metrics must carry the CE label with the completed
+        # batch's duration and token counts.
+        scheduler.run_iteration()
+        expected_ms = FakeOverlapPipeline.FAKE_EXECUTION_TIME_S * 1000
+        assert recorder.execution_calls == [(expected_ms, "CE")]
+        assert recorder.prompt_throughput_calls == [
+            (16 / FakeOverlapPipeline.FAKE_EXECUTION_TIME_S, "CE")
+        ]
+        assert recorder.creation_calls[-1][1] == "TG"

@@ -151,10 +151,10 @@ class TokenGenerationScheduler(Scheduler):
 
         # When the overlap pipeline is actually overlapping, the wall-clock
         # time measured below reflects the previous batch's sync, not the
-        # current batch. Flag it so the logger emits "Previous Execution:".
-        is_overlap_active = (
-            isinstance(self.pipeline, OverlapTextGenerationPipeline)
-            and self.pipeline.overlap_active
+        # current batch. Flag it so the logger emits "Previous Execution:"
+        # and defers execution telemetry to the completed-batch stats below.
+        is_overlap_active = bool(
+            getattr(self.pipeline, "overlap_active", False)
         )
 
         # Schedule the batch
@@ -167,7 +167,15 @@ class TokenGenerationScheduler(Scheduler):
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
-        # Log batch metrics
+        # Log batch metrics. Under overlap scheduling the wall-clock time
+        # measured above describes the previously enqueued batch; the
+        # pipeline reports that batch's composition and timing so telemetry
+        # is attributed to the correct batch type.
+        completed_batch_stats = (
+            self.pipeline.take_completed_batch_stats()
+            if hasattr(self.pipeline, "take_completed_batch_stats")
+            else None
+        )
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             inputs=inputs,
@@ -181,6 +189,7 @@ class TokenGenerationScheduler(Scheduler):
             if hasattr(self.pipeline, "batch_spec_decode_metrics")
             else None,
             batch_execution_time_is_previous=is_overlap_active,
+            completed_batch_stats=completed_batch_stats,
         )
 
         for cancelled_id in get_cancelled_reqs(self.cancel_queue):
