@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections import OptionalReg
 from std.reflection.location import SourceLocation
 from std.sys.info import _TargetType, _current_target
 from std.gpu import PDLLevel
@@ -27,18 +28,18 @@ from std.algorithm.reduction import _ReduceGeneratorPluginHookFnType
 trait PluginHooks:
     """Compile-time hook interface for pluggable stdlib behavior.
 
-    Most hooks are `comptime Optional[Callable]` fields; call sites invoke
+    Most hooks are `comptime OptionalReg[Callable]` fields; call sites invoke
     `comptime if CurrentPlugin.xxx_fn: return comptime(CurrentPlugin.xxx_fn.value())(...)`,
     so implementors that leave a hook at `None` add zero cost.
 
     A few hooks (`abort_fn`, `debug_assert_emit_fn`) are required
-    `@staticmethod` trait methods rather than `Optional` fields, because
-    their dispatch sites lie on `Optional.value()`'s own instantiation
-    path — an `Optional` field would re-enter that template via its own
+    `@staticmethod` trait methods rather than `OptionalReg` fields, because
+    their dispatch sites lie on `OptionalReg.value()`'s own instantiation
+    path — an `OptionalReg` field would re-enter that template via its own
     `debug_assert` and deadlock comptime instantiation.
     """
 
-    comptime exp_fn: Optional[_ExpPluginHookFnType]
+    comptime exp_fn: OptionalReg[_ExpPluginHookFnType]
     """Elementwise exponential override.
 
     Parameters:
@@ -52,7 +53,9 @@ trait PluginHooks:
         Elementwise `exp(x)` computed on the vendor backend.
     """
 
-    comptime tanh_fn[dtype: DType, width: Int]: Optional[_TanhPluginHookFnType]
+    comptime tanh_fn[dtype: DType, width: Int]: OptionalReg[
+        _TanhPluginHookFnType
+    ]
     """Elementwise hyperbolic tangent override.
 
     Parameters:
@@ -66,11 +69,11 @@ trait PluginHooks:
         Elementwise `tanh(x)` computed on the vendor backend.
     """
 
-    comptime stack_allocation_fn[address_space: AddressSpace]: Optional[
+    comptime stack_allocation_fn[address_space: AddressSpace]: OptionalReg[
         _StackAllocationPluginHookFnType[address_space]
     ]
 
-    comptime address_space_fn[name: StaticString]: Optional[AddressSpace]
+    comptime address_space_fn[name: StaticString]: OptionalReg[AddressSpace]
     """Target-specific named address-space lookup.
 
     Resolves an address-space *name* that has no built-in constant on
@@ -89,7 +92,7 @@ trait PluginHooks:
         not define it.
     """
 
-    comptime unsafe_dangling_fn: Optional[_UnsafeDanglingPluginHookFnType]
+    comptime unsafe_dangling_fn: OptionalReg[_UnsafeDanglingPluginHookFnType]
     """`UnsafePointer.unsafe_dangling()` address override.
 
     Parameters:
@@ -100,11 +103,11 @@ trait PluginHooks:
         The raw integer address used to construct the dangling pointer.
     """
 
-    comptime print_emit_fn: Optional[_PrintEmitPluginHookFnType]
+    comptime print_emit_fn: OptionalReg[_PrintEmitPluginHookFnType]
     """Plugin hook for emitting a `print()` UTF-8 byte buffer to a file
     descriptor."""
 
-    comptime reduce_generator_fn[target: StaticString]: Optional[
+    comptime reduce_generator_fn[target: StaticString]: OptionalReg[
         _ReduceGeneratorPluginHookFnType
     ]
 
@@ -135,7 +138,7 @@ trait PluginHooks:
     comptime _handles_debug_assert: Bool
     """If `True`, `_debug_assert_msg` dispatches to `debug_assert_emit_fn`
     and comptime-elides its `_printf` fallback. Required because the
-    fallback's transitive `Optional.value()` → `debug_assert` recurses
+    fallback's transitive `OptionalReg.value()` → `debug_assert` recurses
     back through `_debug_assert_msg` and deadlocks instantiation when
     assertions are enabled."""
 
@@ -183,25 +186,27 @@ trait PluginHooks:
 struct DefaultPlugin(PluginHooks):
     """Default `PluginHooks` implementation used when no plugin is active."""
 
-    comptime exp_fn: Optional[_ExpPluginHookFnType] = None
+    comptime exp_fn: OptionalReg[_ExpPluginHookFnType] = None
 
-    comptime tanh_fn[dtype: DType, width: Int]: Optional[
+    comptime tanh_fn[dtype: DType, width: Int]: OptionalReg[
         _TanhPluginHookFnType
     ] = None
 
-    comptime stack_allocation_fn[address_space: AddressSpace]: Optional[
+    comptime stack_allocation_fn[address_space: AddressSpace]: OptionalReg[
         _StackAllocationPluginHookFnType[address_space]
     ] = None
 
-    comptime address_space_fn[name: StaticString]: Optional[AddressSpace] = None
+    comptime address_space_fn[name: StaticString]: OptionalReg[
+        AddressSpace
+    ] = None
 
-    comptime unsafe_dangling_fn: Optional[
+    comptime unsafe_dangling_fn: OptionalReg[
         _UnsafeDanglingPluginHookFnType
     ] = None
 
-    comptime print_emit_fn: Optional[_PrintEmitPluginHookFnType] = None
+    comptime print_emit_fn: OptionalReg[_PrintEmitPluginHookFnType] = None
 
-    comptime reduce_generator_fn[target: StaticString]: Optional[
+    comptime reduce_generator_fn[target: StaticString]: OptionalReg[
         _ReduceGeneratorPluginHookFnType
     ] = None
 
