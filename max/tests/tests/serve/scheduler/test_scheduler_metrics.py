@@ -618,6 +618,20 @@ def test_batch_metrics_create_ce_with_spec_decode_uses_standard_formula() -> (
     )
     assert metrics.generation_throughput == 2 * 1 / 0.1
 
+    # Acceptance metrics describe the decode/verify step, so a CE batch must
+    # not report them even when stale spec_metrics leak from a previous TG
+    # batch. The zeroed draft fields make every downstream consumer drop the
+    # spec-decode info.
+    assert metrics.draft_tokens_generated == 0
+    assert metrics.draft_tokens_accepted == 0
+    assert metrics.avg_acceptance_length == 0.0
+    assert metrics.max_acceptance_length == 0
+    assert metrics.acceptance_rate_per_position == []
+    formatted = metrics.pretty_format()
+    assert "Draft Tokens" not in formatted
+    assert "Acceptance Len" not in formatted
+    assert "draft_tokens_generated" not in metrics.to_log_extra()
+
 
 def test_batch_metrics_create_no_spec_decode() -> None:
     """Without spec decode metrics, standard throughput formula and zero draft fields."""

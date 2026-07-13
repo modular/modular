@@ -246,7 +246,13 @@ class BatchMetrics:
         avg_acceptance_length = 0.0
         max_acceptance_length = 0
         acceptance_rate_per_position: list[float] = []
-        if batch_spec_decode_metrics is not None:
+        # Acceptance metrics describe the decode/verify step. Under the overlap
+        # pipeline a CE iteration observes the previous TG batch's metrics, so
+        # gate on batch type to avoid mis-attributing them to CE batches.
+        if (
+            batch_spec_decode_metrics is not None
+            and inputs.batch_type == BatchType.TG
+        ):
             draft_tokens_generated = (
                 batch_spec_decode_metrics.draft_tokens_generated
             )
