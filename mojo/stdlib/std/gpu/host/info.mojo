@@ -2107,8 +2107,8 @@ def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
 # Normalization: "nvidia:80" -> "sm_80", "mi300x" -> "gfx942",
 #                "amdgpu:gfx942" -> "gfx942", "metal:4" -> "apple-m4".
 #
-# SYNC: This list must stay in sync with printSupportedAccelerators() in
-#       KGEN/tools/mojo/Build/mojo-build.cpp. Run the following test to verify:
+# SYNC: This list must stay in sync with the TargetTraits accelerator tables
+#       in KGEN/lib/Target/. Run the following test to verify:
 #       bazel test //KGEN/test/mojo-tool:build/verify_supported_accelerators_sync.mojo.test
 comptime _all_targets = (
     StaticString("sm_52"),
