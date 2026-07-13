@@ -1278,7 +1278,18 @@ async def openai_parse_chat_completion_request(
             else None
         )
         tool_call_id = m.get("tool_call_id")
-        reasoning_content = m.get("reasoning_content")
+        # A client replaying a prior assistant turn echoes back the
+        # reasoning under whichever key MAX emitted it: ``reasoning_content``
+        # when ``emit_reasoning_content`` is set, otherwise ``reasoning``
+        # (the default, see ``build_chat_completion_response``). Accept both
+        # so replayed chain-of-thought is not silently dropped before the
+        # chat template runs (prior-turn CoT carry across tool boundaries).
+        reasoning_content_raw = m.get("reasoning_content") or m.get("reasoning")
+        reasoning_content = (
+            reasoning_content_raw
+            if isinstance(reasoning_content_raw, str)
+            else None
+        )
 
         if isinstance(content, list):
             # ``TextGenerationRequestMessage`` accepts plain dicts here and
