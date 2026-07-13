@@ -25,6 +25,7 @@ import base64
 import io
 import logging
 from pathlib import Path
+from typing import Protocol
 from urllib.parse import unquote, urlparse
 
 import aiofiles
@@ -208,8 +209,47 @@ def _settings_int(value: object) -> int | None:
     return value if isinstance(value, int) and value > 0 else None
 
 
+class MediaRef(Protocol):
+    """Structural type for a resolvable media reference."""
+
+    @property
+    def scheme(self) -> str: ...
+
+    def unicode_string(self) -> str: ...
+
+    def __str__(self) -> str: ...
+
+
+class DataUrl:
+    """Cheap ``data:`` URL ref that skips pydantic's expensive URL parse."""
+
+    __slots__ = ("_raw",)
+    scheme = "data"
+
+    def __init__(self, raw: str) -> None:
+        self._raw = raw
+
+    def unicode_string(self) -> str:
+        return self._raw
+
+    def __str__(self) -> str:
+        return self._raw
+
+
+def make_media_ref(url: str) -> MediaRef:
+    """Build a media reference, skipping pydantic validation for ``data:`` URIs.
+
+    ``AnyUrl`` validation of a large base64 ``data:`` payload is pure overhead
+    (there is nothing network-shaped to validate) and blocks the event loop, so
+    those are wrapped in the lightweight :class:`DataUrl` instead.
+    """
+    if url[:5].lower() == "data:":
+        return DataUrl(url)
+    return AnyUrl(url)
+
+
 async def resolve_image_from_url(
-    image_ref: AnyUrl,
+    image_ref: MediaRef,
     settings: Settings,
     max_bytes: int | None = None,
     media_kind: str | None = None,

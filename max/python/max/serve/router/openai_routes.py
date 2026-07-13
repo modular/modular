@@ -90,7 +90,9 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
 )
 from max.serve.router._image_resolution import (
+    MediaRef,
     decode_and_validate_images,
+    make_media_ref,
     resolve_image_from_url,
 )
 from max.serve.schemas.openai import (
@@ -145,7 +147,7 @@ from openai.types.chat.chat_completion_stream_options_param import (
 )
 from openai.types.create_embedding_response import Usage as EmbeddingUsage
 from PIL import Image
-from pydantic import AnyUrl, BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 from starlette.datastructures import State
 
@@ -1264,8 +1266,8 @@ async def openai_parse_chat_completion_request(
                 )
 
     messages: list[TextGenerationRequestMessage] = []
-    image_refs: list[AnyUrl] = []
-    video_refs: list[AnyUrl] = []
+    image_refs: list[MediaRef] = []
+    video_refs: list[MediaRef] = []
     for m in completion_request.messages:
         # ``CreateChatCompletionRequest.messages`` carries OpenAI's
         # ``ChatCompletionMessageParam`` TypedDicts (plus a MAX-specific
@@ -1316,7 +1318,7 @@ async def openai_parse_chat_completion_request(
                 part_type = content_part.get("type")
                 if part_type == "image_url":
                     image_url = content_part["image_url"]
-                    image_refs.append(AnyUrl(image_url["url"]))
+                    image_refs.append(make_media_ref(image_url["url"]))
                     if wrap_content:
                         # Carry the optional sizing hint onto the placeholder.
                         message_content.append(
@@ -1333,7 +1335,7 @@ async def openai_parse_chat_completion_request(
                         message_content.append(dict(content_part))
                 elif part_type == "video_url":
                     video_url = content_part["video_url"]
-                    video_refs.append(AnyUrl(video_url["url"]))
+                    video_refs.append(make_media_ref(video_url["url"]))
                     if wrap_content:
                         # Carry the optional sampling/sizing hints onto the
                         # placeholder.
