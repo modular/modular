@@ -23,6 +23,9 @@ from std.memory.stack_allocation import _StackAllocationPluginHookFnType
 from std.memory.unsafe_pointer import _UnsafeDanglingPluginHookFnType
 from std.io.io import _PrintEmitPluginHookFnType
 from std.algorithm.reduction import _ReduceGeneratorPluginHookFnType
+from std.collections.string.string_slice import (
+    _get_kgen_string,
+)
 
 
 trait PluginHooks:
@@ -39,7 +42,10 @@ trait PluginHooks:
     `debug_assert` and deadlock comptime instantiation.
     """
 
-    comptime exp_fn: OptionalReg[_ExpPluginHookFnType]
+    comptime name: __mlir_type.`!kgen.string`
+    """Stable plugin identifier used by the selector to select this backend."""
+
+    comptime exp_fn: OptionalReg[_ExpPluginHookFnType] = None
     """Elementwise exponential override.
 
     Parameters:
@@ -55,7 +61,7 @@ trait PluginHooks:
 
     comptime tanh_fn[dtype: DType, width: Int]: OptionalReg[
         _TanhPluginHookFnType
-    ]
+    ] = None
     """Elementwise hyperbolic tangent override.
 
     Parameters:
@@ -71,9 +77,11 @@ trait PluginHooks:
 
     comptime stack_allocation_fn[address_space: AddressSpace]: OptionalReg[
         _StackAllocationPluginHookFnType[address_space]
-    ]
+    ] = None
 
-    comptime address_space_fn[name: StaticString]: OptionalReg[AddressSpace]
+    comptime address_space_fn[name: StaticString]: OptionalReg[
+        AddressSpace
+    ] = None
     """Target-specific named address-space lookup.
 
     Resolves an address-space *name* that has no built-in constant on
@@ -92,7 +100,9 @@ trait PluginHooks:
         not define it.
     """
 
-    comptime unsafe_dangling_fn: OptionalReg[_UnsafeDanglingPluginHookFnType]
+    comptime unsafe_dangling_fn: OptionalReg[
+        _UnsafeDanglingPluginHookFnType
+    ] = None
     """`UnsafePointer.unsafe_dangling()` address override.
 
     Parameters:
@@ -103,19 +113,22 @@ trait PluginHooks:
         The raw integer address used to construct the dangling pointer.
     """
 
-    comptime print_emit_fn: OptionalReg[_PrintEmitPluginHookFnType]
+    comptime print_emit_fn: OptionalReg[_PrintEmitPluginHookFnType] = None
     """Plugin hook for emitting a `print()` UTF-8 byte buffer to a file
     descriptor."""
 
     comptime reduce_generator_fn[target: StaticString]: OptionalReg[
         _ReduceGeneratorPluginHookFnType
-    ]
+    ] = None
 
     @staticmethod
     def abort_fn():
         """`abort()` override, called before the default trap. If the hook
-        doesn't return (e.g. via `longjmp`), the trap is dead code."""
-        ...
+        doesn't return (e.g. via `longjmp`), the trap is dead code.
+
+        The default is a no-op (the stdlib trap runs).
+        """
+        pass
 
     @staticmethod
     def debug_assert_emit_fn[
@@ -131,11 +144,12 @@ trait PluginHooks:
             length: Length in bytes (excluding the trailing nul).
             loc: Source location of the failing assertion.
 
-        Only invoked when `_handles_debug_assert` is `True`.
+        Only invoked when `_handles_debug_assert` is `True`; the default is
+        never called and is a no-op.
         """
-        ...
+        pass
 
-    comptime _handles_debug_assert: Bool
+    comptime _handles_debug_assert: Bool = False
     """If `True`, `_debug_assert_msg` dispatches to `debug_assert_emit_fn`
     and comptime-elides its `_printf` fallback. Required because the
     fallback's transitive `OptionalReg.value()` → `debug_assert` recurses
@@ -170,10 +184,13 @@ trait PluginHooks:
             func: The body closure to invoke per index.
             shape: The shape of the work domain.
             ctx: The device context to dispatch on.
-        """
-        ...
 
-    comptime _handles_elementwise[target: StaticString]: Bool
+        Only invoked when `_handles_elementwise[target]` is `True`; the default
+        is never called and is a no-op.
+        """
+        pass
+
+    comptime _handles_elementwise[target: StaticString]: Bool = False
     """If `True` for a given `target`, `_elementwise_impl` dispatches to
     `elementwise_fn[target, ...]`."""
 
@@ -184,60 +201,10 @@ trait PluginHooks:
 
 
 struct DefaultPlugin(PluginHooks):
-    """Default `PluginHooks` implementation used when no plugin is active."""
+    """Default `PluginHooks` implementation used when no plugin is active.
 
-    comptime exp_fn: OptionalReg[_ExpPluginHookFnType] = None
+    Every hook is left at its `PluginHooks` default, so the built-in stdlib
+    code paths are preserved.
+    """
 
-    comptime tanh_fn[dtype: DType, width: Int]: OptionalReg[
-        _TanhPluginHookFnType
-    ] = None
-
-    comptime stack_allocation_fn[address_space: AddressSpace]: OptionalReg[
-        _StackAllocationPluginHookFnType[address_space]
-    ] = None
-
-    comptime address_space_fn[name: StaticString]: OptionalReg[
-        AddressSpace
-    ] = None
-
-    comptime unsafe_dangling_fn: OptionalReg[
-        _UnsafeDanglingPluginHookFnType
-    ] = None
-
-    comptime print_emit_fn: OptionalReg[_PrintEmitPluginHookFnType] = None
-
-    comptime reduce_generator_fn[target: StaticString]: OptionalReg[
-        _ReduceGeneratorPluginHookFnType
-    ] = None
-
-    @staticmethod
-    def abort_fn():
-        pass
-
-    @staticmethod
-    def debug_assert_emit_fn[
-        O: Origin
-    ](message: UnsafePointer[Byte, O], length: Int, loc: SourceLocation):
-        pass
-
-    comptime _handles_debug_assert: Bool = False
-
-    @staticmethod
-    def elementwise_fn[
-        target: StaticString,
-        rank: Int,
-        simd_width: Int,
-        *,
-        pdl_level: PDLLevel = PDLLevel.ON,
-    ](
-        func: Some[
-            def[
-                width: Int, rank: Int, alignment: Int = 1
-            ](IndexList[rank]) -> None
-        ],
-        shape: IndexList[rank, ...],
-        ctx: DeviceContext,
-    ) raises:
-        pass
-
-    comptime _handles_elementwise[target: StaticString]: Bool = False
+    comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["default"]()
