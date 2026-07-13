@@ -104,7 +104,7 @@ def _gpu_per_expert_reference[
     b_dev: DeviceBuffer[DType.uint8],
     a_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
     b_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
-    c_ref_dev: DeviceBuffer[DType.float32],
+    mut c_ref_dev: DeviceBuffer[DType.float32],
 ) raises:
     comptime packed_K = K // 2
     comptime scale_K = K // MXFP4_SF_VECTOR_SIZE
@@ -1309,5 +1309,120 @@ def main() raises:
         b_cache_policy=SX,
         cluster_drain_sched=True,
     ]("down skewed hot expert", [200, 1, 1, 1], [0, 1, 2, 3], ctx)
+
+    # MiniMax-M3 dispatcher band configs (N=6144; up K=6144, down K=3072).
+    # Exactly the tiles mxfp4_grouped_matmul_amd_preb selects for M3 (defaults
+    # for the scheduler knobs, matching run_kernel). Certifies each M3 band
+    # instantiation against the per-expert reference.
+    print("---- MiniMax-M3 dispatcher band configs ----")
+    # up: etm<=128 BN64 STREAM
+    test_persistent[
+        4, 6144, 6144, BM=16, BN=64, BK_ELEMS=512, WN=16, b_cache_policy=SX
+    ]("M3 up etm<=128 BN64 STREAM", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # up: etm 7..14 dip micro-band BM16/BN128 STREAM
+    test_persistent[
+        4, 6144, 6144, BM=16, BN=128, BK_ELEMS=512, WN=32, b_cache_policy=SX
+    ]("M3 up etm7..14 BM16/BN128 STREAM", [4, 2, 3, 4], [0, 1, 2, 3], ctx)
+    # up: etm<=512 BM32/BN128 STREAM
+    test_persistent[
+        4, 6144, 6144, BM=32, BN=128, BK_ELEMS=512, WN=32, b_cache_policy=SX
+    ]("M3 up etm<=512 BM32/BN128 STREAM", [128, 96, 128, 64], [0, 1, 2, 3], ctx)
+    # up: etm<=2047 BM64/BN128
+    test_persistent[4, 6144, 6144, BM=64, BN=128, BK_ELEMS=512, WN=32](
+        "M3 up etm<=1023 BM64/BN128/WN32",
+        [256, 256, 256, 256],
+        [0, 1, 2, 3],
+        ctx,
+    )
+    test_persistent[4, 6144, 6144, BM=64, BN=128, BK_ELEMS=512, WN=64](
+        "M3 up etm<=2047 BM64/BN128/WN64",
+        [256, 256, 256, 256],
+        [0, 1, 2, 3],
+        ctx,
+    )
+    # up: etm<=4095 BM128/BN128
+    test_persistent[4, 6144, 6144, BM=128, BN=128, BK_ELEMS=512, WN=64](
+        "M3 up etm<=4095 BM128/BN128", [256, 128, 256, 128], [0, 1, 2, 3], ctx
+    )
+    # up: else direct BM64/BN128
+    test_direct[1, 6144, 6144, BM=64, BN=128, BK_ELEMS=512, WN=64](
+        "M3 up direct", [512], [0], ctx
+    )
+    # down: etm<=96 BN64 STREAM
+    test_persistent[
+        4, 6144, 3072, BM=16, BN=64, BK_ELEMS=512, WN=16, b_cache_policy=SX
+    ]("M3 down etm<=96 BN64 STREAM", [8, 4, 0, 4], [0, 1, 2, 3], ctx)
+    # down: etm 7..14 dip micro-band BM16/BN128 STREAM
+    test_persistent[
+        4, 6144, 3072, BM=16, BN=128, BK_ELEMS=512, WN=32, b_cache_policy=SX
+    ]("M3 down etm7..14 BM16/BN128 STREAM", [4, 2, 3, 4], [0, 1, 2, 3], ctx)
+    # down: etm<=384 BM32/BN256
+    test_persistent[4, 6144, 3072, BM=32, BN=256, BK_ELEMS=512, WN=64](
+        "M3 down etm<=384 BM32/BN256", [128, 96, 128, 64], [0, 1, 2, 3], ctx
+    )
+    # down: etm<=1536 BM64/BN128
+    test_persistent[4, 6144, 3072, BM=64, BN=128, BK_ELEMS=512, WN=32](
+        "M3 down etm<=1536 BM64/BN128", [256, 256, 256, 256], [0, 1, 2, 3], ctx
+    )
+    # down: else BM128/BN128 persistent
+    test_persistent[4, 6144, 3072, BM=128, BN=128, BK_ELEMS=512, WN=64](
+        "M3 down else BM128/BN128", [256, 128, 256, 128], [0, 1, 2, 3], ctx
+    )
+    # up/gate (unfused, N=3072, K=6144): etm<=4096 BM64/BN128 persistent
+    test_persistent[4, 3072, 6144, BM=64, BN=128, BK_ELEMS=512, WN=64](
+        "M3 up/gate etm<=4096 BM64/BN128",
+        [256, 128, 256, 128],
+        [0, 1, 2, 3],
+        ctx,
+    )
+    # up/gate (unfused): else BM128/BN128 persistent
+    test_persistent[4, 3072, 6144, BM=128, BN=128, BK_ELEMS=512, WN=64](
+        "M3 up/gate else BM128/BN128", [256, 128, 256, 128], [0, 1, 2, 3], ctx
+    )
+    # M3 etm<=2 low-batch-decode band
+    test_persistent[
+        4,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        b_cache_policy=SX,
+    ]("M3 up etm<=2 decode BN64/wg1 (1 expert)", [1], [0], ctx)
+    test_persistent[
+        4,
+        6144,
+        6144,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        b_cache_policy=SX,
+    ]("M3 up etm<=2 decode BN64/wg1 (2 experts)", [1, 1], [0, 1], ctx)
+    test_persistent[
+        4,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        b_cache_policy=SX,
+    ]("M3 down etm<=2 decode BN64/wg1 (1 expert)", [1], [0], ctx)
+    test_persistent[
+        4,
+        6144,
+        3072,
+        BM=16,
+        BN=64,
+        BK_ELEMS=512,
+        WN=16,
+        wg_per_cu=1,
+        b_cache_policy=SX,
+    ]("M3 down etm<=2 decode BN64/wg1 (2 experts)", [1, 1], [0, 1], ctx)
 
     print("==== all preb grouped MXFP4 kernel tests passed ====")

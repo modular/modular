@@ -193,9 +193,9 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
         """
         self._inner = alloc(Layout[Self._inner_type].single()).unsafe_leak()
         # Cannot use init_pointee_move as _ArcPointerInner isn't movable.
-        __get_address_as_uninit_lvalue(self._inner.address) = Self._inner_type(
-            value^
-        )
+        __get_address_as_uninit_lvalue(
+            self._inner._get_kgen_pointer()
+        ) = Self._inner_type(value^)
 
     def __init__(
         out self,

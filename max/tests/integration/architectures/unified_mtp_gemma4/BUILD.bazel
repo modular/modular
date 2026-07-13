@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "modular_py_test")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_vision_wiring",
+    size = "large",
+    srcs = ["test_vision_wiring.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/unified_mtp_gemma4",
+        "//max/python/max/pipelines/modeling",
+    ],
+)

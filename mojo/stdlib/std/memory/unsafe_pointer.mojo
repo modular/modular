@@ -377,12 +377,13 @@ struct UnsafePointer[
       `alignment` when data is not naturally aligned.
     - `store()`: Stores `val: SIMD[dtype, width]` at `offset` into
       `UnsafePointer[Scalar[dtype]]`. Requires a mutable pointer.
-    - `destroy_pointee()` / `take_pointee()`:
+    - `unsafe_deinit_pointee()` / `take_pointee()`:
       Explicitly end the lifetime of the current pointee, or move it out, taking
       ownership.
-    - `init_pointee_move()` / `init_pointee_move_from()` / `init_pointee_copy()`
-      Initialize a pointee that is currently uninitialized, by moving an existing
-      value, moving from another pointee, or by copying an existing value.
+    - `unsafe_write()` / `init_pointee_move_from()`:
+      Initialize a pointee that is currently uninitialized, by moving an
+      existing value into it (pass the argument as `copy=` to copy instead),
+      or by moving from another pointee.
       Use these to manage lifecycles when working with uninitialized memory.
 
     For more information see [Unsafe
@@ -456,7 +457,7 @@ struct UnsafePointer[
     # Check for absence, then unwrap to use the pointer.
     if maybe_ptr:
         var ptr = maybe_ptr.value()
-        ptr.init_pointee_move(42)
+        ptr.unsafe_write(42)
         print(ptr[])  # => 42
         ptr.free()
     ```
@@ -500,8 +501,13 @@ struct UnsafePointer[
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var address: Self._mlir_type
+    var _mlir_value: Self._mlir_type
     """The underlying pointer."""
+
+    @always_inline("builtin")
+    def _get_kgen_pointer(self) -> Self._mlir_type:
+        """Returns the raw `kgen.pointer` MLIR value backing this pointer."""
+        return self._mlir_value
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -509,14 +515,13 @@ struct UnsafePointer[
 
     @doc_hidden
     @always_inline("builtin")
-    @implicit
-    def __init__(out self, value: Self._mlir_type):
+    def __init__(out self, *, _mlir_value: Self._mlir_type):
         """Create a pointer from a low-level pointer primitive.
 
         Args:
-            value: The MLIR value of the pointer to construct with.
+            _mlir_value: The MLIR value of the pointer to construct with.
         """
-        self.address = value
+        self._mlir_value = _mlir_value
 
     @always_inline
     def __init__(out self, *, unsafe_from_address: Int):
@@ -561,7 +566,11 @@ struct UnsafePointer[
         Args:
             to: The value to construct a pointer to.
         """
-        self = Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(to)))
+        self = Self(
+            _mlir_value=__mlir_op.`lit.ref.to_pointer`(
+                __get_mvalue_as_litref(to)
+            )
+        )
 
     @always_inline("builtin")
     @implicit
@@ -578,59 +587,9 @@ struct UnsafePointer[
         Args:
             other: The mutable pointer to cast from.
         """
-        self.address = __mlir_op.`pop.pointer.bitcast`[
+        self._mlir_value = __mlir_op.`pop.pointer.bitcast`[
             _type=type_of(self)._mlir_type
-        ](other.address)
-
-    @deprecated(
-        "Implicitly converting an `UnsafePointer` to `MutUnsafeAnyOrigin` is"
-        " deprecated. `UnsafeAnyOrigin` is an unsafe escape hatch that silently"
-        " extends unrelated lifetimes and disables exclusivity checking, and it"
-        " is slated for removal, so it should never be applied implicitly."
-        " Prefer keeping a concrete origin; if you must discard it, make the"
-        " cast explicit with `as_unsafe_any_origin()`."
-    )
-    @always_inline("builtin")
-    @doc_hidden
-    @implicit
-    def __init__[
-        disambig: Int = 0  # FIXME: Work around name mangling conflict.
-    ](
-        other: UnsafePointer[mut=True, ...],
-        out self: UnsafePointer[
-            other.type,
-            MutAnyOrigin,
-            address_space=other.address_space,
-        ],
-    ):
-        self.address = __mlir_op.`pop.pointer.bitcast`[
-            _type=type_of(self)._mlir_type
-        ](other.address)
-
-    @deprecated(
-        "Implicitly converting an `UnsafePointer` to `ImmutUnsafeAnyOrigin` is"
-        " deprecated. `UnsafeAnyOrigin` is an unsafe escape hatch that silently"
-        " extends unrelated lifetimes and disables exclusivity checking, and it"
-        " is slated for removal, so it should never be applied implicitly."
-        " Prefer keeping a concrete origin; if you must discard it, make the"
-        " cast explicit with `as_unsafe_any_origin()`."
-    )
-    @always_inline("builtin")
-    @doc_hidden
-    @implicit
-    def __init__[
-        disambig2: Int = 0
-    ](
-        other: UnsafePointer[...],
-        out self: UnsafePointer[
-            other.type,
-            ImmutAnyOrigin,
-            address_space=other.address_space,
-        ],
-    ):
-        self.address = __mlir_op.`pop.pointer.bitcast`[
-            _type=type_of(self)._mlir_type
-        ](other.address)
+        ](other._mlir_value)
 
     def __init__[
         T: ImplicitlyDeletable, //
@@ -668,9 +627,7 @@ struct UnsafePointer[
     def write_niche(
         memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
     ):
-        memory.bitcast[
-            _Null[Self.type, Self.address_space]
-        ]().init_pointee_move({})
+        memory.bitcast[_Null[Self.type, Self.address_space]]().unsafe_write({})
 
     @staticmethod
     @always_inline
@@ -698,7 +655,7 @@ struct UnsafePointer[
         comptime _ref_type = Pointer[Self.type, Self.origin, Self.address_space]
         return __get_litref_as_mvalue(
             __mlir_op.`lit.ref.from_pointer`[_type=_ref_type._mlir_type](
-                self.address
+                self._mlir_value
             )
         )
 
@@ -732,9 +689,11 @@ struct UnsafePointer[
         Returns:
             An offset pointer.
         """
-        return __mlir_op.`pop.offset`(
-            self.address, index(offset).__mlir_index__()
-        )
+        return {
+            _mlir_value = __mlir_op.`pop.offset`(
+                self._mlir_value, index(offset).__mlir_index__()
+            )
+        }
 
     @always_inline
     def __sub__[I: Indexer, //](self, offset: I) -> Self:
@@ -979,31 +938,23 @@ struct UnsafePointer[
         Returns:
             A pointer merged with the specified `other_type`.
         """
-        return self.address  # allow kgen.pointer to convert.
+        return {
+            _mlir_value = self._mlir_value
+        }  # allow kgen.pointer to convert.
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
-    @deprecated(
-        "UnsafePointer is non-null by design, so Bool(ptr) is no longer"
+    @doc_hidden
+    @unavailable(
+        "UnsafePointer is non-null by design, so Bool(ptr) is not"
         " meaningful. To model a null pointer, use"
         " `Optional[UnsafePointer[...]]` and check with `Bool(opt_ptr)` / `!="
         " None`."
     )
     def __bool__(self) -> Bool:
-        """Return true if the pointer is non-null.
-
-        Deprecated: `UnsafePointer` is non-null by design, so `Bool(ptr)` is
-        no longer meaningful. To model a nullable pointer, use
-        `Optional[UnsafePointer[...]]` and check with `Bool(opt_ptr)` or
-        `!= None`.
-
-        Returns:
-            True if the pointer address is non-zero, False otherwise.
-        """
-        return Int(self) != 0
+        ...
 
     @always_inline
     def __int__(self) -> Int:
@@ -1012,7 +963,9 @@ struct UnsafePointer[
         Returns:
           The address of the pointer as an Int.
         """
-        return Int(mlir_value=__mlir_op.`pop.pointer_to_index`(self.address))
+        return Int(
+            mlir_value=__mlir_op.`pop.pointer_to_index`(self._mlir_value)
+        )
 
     @no_inline
     def write_to(self, mut writer: Some[Writer]):
@@ -1048,7 +1001,6 @@ struct UnsafePointer[
     def _is_convertible_to_device_type[T: AnyType]() -> Bool:
         comptime if Self.mut:
             return TypeList.of[
-                Trait=AnyType,
                 Self,
                 Self._OriginCastType[MutAnyOrigin],
                 Self._OriginCastType[MutUntrackedOrigin],
@@ -1062,7 +1014,6 @@ struct UnsafePointer[
             ]().contains[T]()
         else:
             return TypeList.of[
-                Trait=AnyType,
                 Self,
                 Self._OriginCastType[ImmutAnyOrigin],
                 Self._OriginCastType[ImmutUntrackedOrigin],
@@ -1188,7 +1139,7 @@ struct UnsafePointer[
                 return
             var tmp = self.take_pointee()
             self.init_pointee_move_from(other)
-            other.init_pointee_move(tmp^)
+            other.unsafe_write(tmp^)
 
     @always_inline("nodebug")
     def as_noalias_ptr(self) -> Self._UnsafePointerType:
@@ -1202,7 +1153,9 @@ struct UnsafePointer[
         Returns:
             A noalias pointer.
         """
-        return __mlir_op.`pop.noalias_pointer_cast`(self.address)
+        return {
+            _mlir_value = __mlir_op.`pop.noalias_pointer_cast`(self._mlir_value)
+        }
 
     @always_inline("nodebug")
     def load[
@@ -1271,7 +1224,7 @@ struct UnsafePointer[
                     isVolatile=volatile.__mlir_i1__(),
                     isInvariant=invariant.__mlir_i1__(),
                     isNonTemporal=non_temporal.__mlir_i1__(),
-                ]((self + i).address)
+                ]((self + i)._mlir_value)
             comptime if dtype.is_floating_point():
                 _check_not_poison[dtype, width](v)
             return v
@@ -1291,7 +1244,7 @@ struct UnsafePointer[
                 .cast[DType.bool]()
             )
 
-        var address = self.bitcast[SIMD[dtype, width]]().address
+        var address = self.bitcast[SIMD[dtype, width]]()._mlir_value
 
         var result = __mlir_op.`pop.load`[
             alignment=alignment.__mlir_index__(),
@@ -1545,7 +1498,7 @@ struct UnsafePointer[
                 alignment=alignment.__mlir_index__(),
                 isVolatile=volatile.__mlir_i1__(),
                 isNonTemporal=non_temporal.__mlir_i1__(),
-            ](val, self.bitcast[SIMD[dtype, width]]().address)
+            ](val, self.bitcast[SIMD[dtype, width]]()._mlir_value)
 
     @always_inline("nodebug")
     def strided_load[
@@ -1746,13 +1699,15 @@ struct UnsafePointer[
             A new UnsafePointer object with the specified type and the same address,
             as the original UnsafePointer.
         """
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type=UnsafePointer[
-                T,
-                Self.origin,
-                address_space=Self.address_space,
-            ]._mlir_type,
-        ](self.address)
+        return {
+            _mlir_value = __mlir_op.`pop.pointer.bitcast`[
+                _type=UnsafePointer[
+                    T,
+                    Self.origin,
+                    address_space=Self.address_space,
+                ]._mlir_type,
+            ](self._mlir_value)
+        }
 
     comptime _UnsafePointerType = UnsafePointer[
         Self.type, Self.origin, address_space=Self.address_space
@@ -1813,11 +1768,13 @@ struct UnsafePointer[
             For example, taking an `UnsafePointer[T, mut=True, ...]` as an
             argument over an unbound `UnsafePointer[T, ...]` is preferred.
         """
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type=Self._OriginCastType[
-                Self.origin.unsafe_mut_cast[target_mut]()
-            ]._mlir_type,
-        ](self.address)
+        return {
+            _mlir_value = __mlir_op.`pop.pointer.bitcast`[
+                _type=Self._OriginCastType[
+                    Self.origin.unsafe_mut_cast[target_mut]()
+                ]._mlir_type,
+            ](self._mlir_value)
+        }
 
     @always_inline("builtin")
     def unsafe_origin_cast[
@@ -1841,9 +1798,11 @@ struct UnsafePointer[
             destruction. Considering parameterizing the origin at the function
             level to avoid unnecessary casts.
         """
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type=Self._OriginCastType[target_origin]._mlir_type,
-        ](self.address)
+        return {
+            _mlir_value = __mlir_op.`pop.pointer.bitcast`[
+                _type=Self._OriginCastType[target_origin]._mlir_type,
+            ](self._mlir_value)
+        }
 
     @always_inline("builtin")
     def as_immutable(
@@ -1879,25 +1838,15 @@ struct UnsafePointer[
         operation that will silently extend unrelated lifetimes and turn off
         exclusivity checking.
         """
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type=UnsafePointer[
-                Self.type,
-                AnyOrigin[mut=Self.mut],
-                address_space=Self.address_space,
-            ]._mlir_type,
-        ](self.address)
-
-    @doc_hidden
-    @always_inline("builtin")
-    @deprecated(use=as_unsafe_any_origin)
-    def as_any_origin(
-        self,
-    ) -> UnsafePointer[
-        Self.type,
-        AnyOrigin[mut=Self.mut],
-        address_space=Self.address_space,
-    ]:
-        return self.as_unsafe_any_origin()
+        return {
+            _mlir_value = __mlir_op.`pop.pointer.bitcast`[
+                _type=UnsafePointer[
+                    Self.type,
+                    AnyOrigin[mut=Self.mut],
+                    address_space=Self.address_space,
+                ]._mlir_type,
+            ](self._mlir_value)
+        }
 
     @always_inline("builtin")
     def address_space_cast[
@@ -1916,15 +1865,18 @@ struct UnsafePointer[
             A new UnsafePointer object with the same type and the same address,
             as the original UnsafePointer and the new address space.
         """
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type=UnsafePointer[
-                Self.type,
-                Self.origin,
-                address_space=target_address_space,
-            ]._mlir_type,
-        ](self.address)
+        return {
+            _mlir_value = __mlir_op.`pop.pointer.bitcast`[
+                _type=UnsafePointer[
+                    Self.type,
+                    Self.origin,
+                    address_space=target_address_space,
+                ]._mlir_type,
+            ](self._mlir_value)
+        }
 
     @always_inline
+    @deprecated(use=unsafe_deinit_pointee)
     def destroy_pointee[
         T: ImplicitlyDeletable, //
     ](self: UnsafePointer[T, _]) where type_of(self).mut:
@@ -1940,10 +1892,11 @@ struct UnsafePointer[
               deinitializer arguments).
 
         """
-        _ = __get_address_as_owned_value(self.address)
+        _ = __get_address_as_owned_value(self._mlir_value)
 
     # TODO(MOCO-2367): Use a `unified` closure parameter here instead.
     @always_inline
+    @deprecated(use=unsafe_deinit_pointee_with)
     def destroy_pointee_with(
         self: UnsafePointer[
             Self.type,
@@ -1961,7 +1914,61 @@ struct UnsafePointer[
             destroy_func: A function that takes ownership of the pointee value
                 for the purpose of deinitializing it.
         """
-        destroy_func(__get_address_as_owned_value(self.address))
+        destroy_func(__get_address_as_owned_value(self._mlir_value))
+
+    @always_inline
+    def unsafe_deinit_pointee(
+        self,
+    ) where (
+        Self.mut
+        and Self.address_space == AddressSpace.GENERIC
+        and conforms_to(Self.type, ImplicitlyDeletable)
+    ):
+        """Destroys the pointed-to value.
+
+        This is equivalent to `_ = self.take_pointee()` but doesn't require
+        `Movable` and is more efficient because it doesn't invoke a move
+        constructor.
+
+        Safety:
+
+        - This runs the pointee's deinitializer and leaves the pointee
+          memory uninitialized. Subsequent reads of this pointer are
+          invalid until a new valid value is written using an
+          `unsafe_write()` method.
+        - `self` must point to a valid, initialized instance of `type`.
+          Calling this on a pointer to uninitialized memory is undefined
+          behavior.
+        """
+        var this = self.address_space_cast[AddressSpace.GENERIC]()
+        _ = __get_address_as_owned_value(this._mlir_value)
+
+    @always_inline
+    def unsafe_deinit_pointee_with(
+        self, deinit_func: Some[def(var Self.type)], /
+    ) where Self.mut and Self.address_space == AddressSpace.GENERIC:
+        """Destroys the pointed-to value using a user-provided deinitializer
+        function.
+
+        This can be used to destroy non-`ImplicitlyDeletable` values in-place
+        without moving.
+
+        Args:
+            deinit_func: A function that takes ownership of the pointee value
+                for the purpose of deinitializing it.
+
+        Safety:
+
+        - This runs `deinit_func` on the pointee and leaves the pointee
+          memory uninitialized. Subsequent reads of this pointer are
+          invalid until a new valid value is written using an
+          `unsafe_write()` method.
+        - `self` must point to a valid, initialized instance of
+          `Self.type`. Calling this on a pointer to uninitialized memory
+          is undefined behavior.
+        """
+        var this = self.address_space_cast[AddressSpace.GENERIC]()
+        deinit_func(__get_address_as_owned_value(this._mlir_value))
 
     @always_inline
     def take_pointee[
@@ -1974,7 +1981,7 @@ struct UnsafePointer[
 
         This performs a _consuming_ move, ending the origin of the value stored
         in this pointer memory location. Subsequent reads of this pointer are
-        not valid. If a new valid value is stored using `init_pointee_move()`, then
+        not valid. If a new valid value is stored using `unsafe_write()`, then
         reading from this pointer becomes valid again.
 
         Parameters:
@@ -1983,9 +1990,10 @@ struct UnsafePointer[
         Returns:
             The value at the pointer.
         """
-        return __get_address_as_owned_value(self.address)
+        return __get_address_as_owned_value(self._mlir_value)
 
     @always_inline
+    @deprecated(use=unsafe_write)
     def init_pointee_move[
         T: Movable,
         //,
@@ -2006,9 +2014,61 @@ struct UnsafePointer[
         Args:
             value: The value to emplace.
         """
-        __get_address_as_uninit_lvalue(self.address) = value^
+        __get_address_as_uninit_lvalue(self._mlir_value) = value^
 
     @always_inline
+    def unsafe_write[
+        T: Movable, //
+    ](self: UnsafePointer[T, _], var value: T, /) where type_of(self).mut:
+        """Write `value` into the pointer location, moving from `value`.
+
+        The pointer memory location is assumed to contain uninitialized data,
+        and consequently the current contents of this pointer are not
+        deinitialized before writing `value`.
+
+        Example:
+
+        ```mojo
+        var ptr = alloc[String](1)
+        ptr.unsafe_write("foo")
+        print(ptr[])  # => foo
+        ptr.destroy_pointee()
+        ptr.free()
+        ```
+
+        Parameters:
+            T: The type the pointer points to, which must be `Movable`.
+
+        Args:
+            value: The value to emplace.
+        """
+        __get_address_as_uninit_lvalue(self._mlir_value) = value^
+
+    @always_inline
+    def unsafe_write[
+        T: Copyable,
+        //,
+    ](self: UnsafePointer[T, _], *, copy: T) where type_of(self).mut:
+        """Write a copy of `copy` into the pointer location.
+
+        The pointer memory location is assumed to contain uninitialized data,
+        and consequently the current contents of this pointer are not deinitialized
+        before writing the copy.
+
+        When compared to calling the positional `unsafe_write()` overload with
+        a value you copied yourself, this avoids an extra move on the callee
+        side.
+
+        Parameters:
+            T: The type the pointer points to, which must be `Copyable`.
+
+        Args:
+            copy: The value to copy.
+        """
+        __get_address_as_uninit_lvalue(self._mlir_value) = copy.copy()
+
+    @always_inline
+    @deprecated(use=unsafe_write)
     def init_pointee_copy[
         T: Copyable,
         //,
@@ -2029,7 +2089,7 @@ struct UnsafePointer[
         Args:
             value: The value to emplace.
         """
-        __get_address_as_uninit_lvalue(self.address) = value.copy()
+        __get_address_as_uninit_lvalue(self._mlir_value) = value.copy()
 
     @always_inline
     def init_pointee_move_from[
@@ -2065,13 +2125,13 @@ struct UnsafePointer[
         var b_ptr = alloc[String](2)
 
         # Initialize A pointee
-        a_ptr.init_pointee_move("foo")
+        a_ptr.unsafe_write("foo")
 
         # Perform the move
         b_ptr.init_pointee_move_from(a_ptr)
 
         # Clean up
-        b_ptr.destroy_pointee()
+        b_ptr.unsafe_deinit_pointee()
         a_ptr.free()
         b_ptr.free()
         ```
@@ -2091,5 +2151,5 @@ struct UnsafePointer[
             src: Source pointer that the value will be moved from.
         """
         __get_address_as_uninit_lvalue(
-            self.address
-        ) = __get_address_as_owned_value(src.address)
+            self._mlir_value
+        ) = __get_address_as_owned_value(src._mlir_value)

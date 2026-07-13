@@ -25,7 +25,7 @@ from std.gpu.host import DeviceContext
 from std.sys import align_of
 import std.math
 from std.math import ceildiv, exp, exp2, rsqrt
-from state_space.causal_conv1d import silu
+from nn.activations import silu
 
 # ===----------------------------------------------------------------------=== #
 # Constants and Type Aliases

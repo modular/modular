@@ -41,6 +41,8 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from collections.abc import Mapping
+from typing import Any
 
 from max.pipelines.lib.tool_parsing import register
 from max.pipelines.modeling.types import (
@@ -349,3 +351,12 @@ class Qwen3_5ToolParser:
         self._tool_index = -1
         self._param_count_in_call = 0
         self._current_param_key = ""
+
+    def set_streaming_tool_schemas(
+        self, schemas: Mapping[str, dict[str, Any]]
+    ) -> None:
+        """No-op: this format does not need schema-driven streaming.
+
+        See ``ToolParser.set_streaming_tool_schemas``.
+        """
+        return None

@@ -14,6 +14,7 @@
 from ...tile_scheduler import RasterOrder
 from linalg.gemv import GEMVAlgorithm
 from internal_utils import TuningConfig
+from std.utils.index import Index, IndexList
 
 
 struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
@@ -152,6 +153,7 @@ struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
     var num_threads: Int
     var unroll_factor: Int
     var tile_k: Int
+    var swapAB: Bool
 
     def __init__(
         out self,
@@ -165,6 +167,7 @@ struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
         kernel_kind: GEMVAlgorithm,
         unroll_factor: Int = 1,
         tile_k: Int = 128,
+        swapAB: Bool = False,
     ):
         self.M = M
         self.M_end = M_end
@@ -176,6 +179,7 @@ struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
         self.num_threads = num_threads
         self.unroll_factor = unroll_factor
         self.tile_k = tile_k
+        self.swapAB = swapAB
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write(
@@ -196,6 +200,8 @@ struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
             self.tile_n,
             "/threads:",
             self.num_threads,
+            "/swapAB:",
+            self.swapAB,
         )
 
 
@@ -340,17 +346,18 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
         ),
         TuningConfigSM100(
             M=32,
-            M_end=128 + 64,
+            M_end=32 + 1,
             N=1536,
             K=1536,
-            mma_shape=Index(256, 32, 16),
-            cta_group=2,
+            mma_shape=Index(64, 8, 16),
+            cta_group=1,
             cluster_shape=Index(4, 2, 1),
             block_swizzle_size=0,
             swapAB=True,
             rasterize_order=RasterOrder(0),
             num_accum_pipeline_stages=1,
             num_clc_pipeline_stages=0,
+            k_group_size=4,
         ),
         TuningConfigSM100(
             M=2048,

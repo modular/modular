@@ -237,6 +237,17 @@ class StructuralTagToolParser(ABC):
     """
 
     # Marker constants — subclasses override.
+    ENFORCE_TOOL_REGION_TO_EOS: ClassVar[bool] = False
+    """Keep grammar enforcement on after ``SECTION_END``.
+
+    For models whose chat template terminates a tool-call turn immediately
+    after its single section (e.g. MiniMax-M3), leaving enforcement on lets
+    the completed grammar mask everything but EOS, so the turn cannot
+    continue past the section. The default ``False`` keeps the
+    section-bounded region: enforcement flips off at ``SECTION_END`` and
+    the model may emit free text afterwards.
+    """
+
     SECTION_BEGIN: ClassVar[str] = ""
     SECTION_END: ClassVar[str] = ""
     CALL_BEGIN: ClassVar[str] = ""
@@ -395,6 +406,16 @@ class StructuralTagToolParser(ABC):
         """Resets internal state for a new streaming session."""
         self._buffer = ""
         self._state = StreamingState()
+
+    def set_streaming_tool_schemas(
+        self, schemas: Mapping[str, dict[str, Any]]
+    ) -> None:
+        """No-op: these parsers do not need schema-driven streaming.
+
+        Schema-driven parsers (e.g. MiniMax-M3) override this; see
+        ``ToolParser.set_streaming_tool_schemas`` for when that is required.
+        """
+        return None
 
     # ----- Hooks (subclasses override) ----------------------------------
 

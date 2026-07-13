@@ -100,7 +100,6 @@ def _test_silu_mxfp8[
     var out_size = M * H
 
     var in_host_ptr = alloc[Scalar[in_dtype]](in_size)
-    var in_host = TileTensor(in_host_ptr, in_shape)
     var out_host_ptr = alloc[Scalar[fp8_dtype]](out_size)
     var out_ref_host_ptr = alloc[Scalar[fp8_dtype]](out_size)
 
@@ -159,7 +158,6 @@ def _test_silu_mxfp8[
     var scales_ref_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
     var scales_device = ctx.enqueue_create_buffer[scales_dtype](scales_size)
     var scales_tensor = TileTensor(scales_device, scales_shape)
-    var scales_ref_host = TileTensor(scales_ref_host_ptr, scales_shape)
 
     # Zero-initialize scale tiles so the trailing zero-pad path is
     # observed (matches the kernel's pad-with-zero contract for the

@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -18,6 +17,11 @@ modular_py_test(
         # lazy import
         "//max/python/max/_interpreter_ops",
     ],
+    per_test_shard_count = {
+        # Each case compiles its own graph; shard so the per-test compiles run
+        # in parallel and the suite stays well under the per-target timeout.
+        "test_subgraph.py": 4,
+    },
     per_test_tags = {
         "rope/test_rope.py": ["skip-external-ci"],
         "rope/test_yarn.py": ["manual"],

@@ -40,7 +40,7 @@ def _host_reference[
     unnormed_ref: UnsafePointer[mut=True, Scalar[c_type], _],
     n: Int,
     n_normed: Int,
-    eps: Scalar[a_type],
+    eps: Float32,
 ):
     """Reference partial RMS norm on a [1, n] row."""
     var n_unnormed = n - n_normed
@@ -132,7 +132,7 @@ def test_gemv_partial_norm[
     ctx.enqueue_copy(b_dev, b_host_ptr)
     ctx.enqueue_copy(gamma_dev, gamma_host_ptr)
 
-    var eps = Scalar[a_type](0.001)
+    var eps = Float32(0.001)
 
     vendor_blas.matmul(
         ctx,

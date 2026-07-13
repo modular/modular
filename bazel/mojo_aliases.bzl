@@ -7,11 +7,15 @@ _PACKAGES = {
 }
 
 _MAX_PACKAGES = {
+    "machine": "driver/src/machine",
+    "_hal": "driver/src/_hal",
+    "_device_context_hal": "driver/src/_device_context_hal",
     "kv_cache": "kernels/src/kv_cache",
     "layout": "kernels/src/layout",
     "linalg": "kernels/src/linalg",
     "nn": "kernels/src/nn",
     "nvml": "kernels/src/nvml",
+    "profiling_range": "kernels/src/profiling_range",
     "shmem": "kernels/src/shmem",
     "quantization": "kernels/src/quantization",
     "extensibility": "kernels/src/graph_compiler/extensibility",
@@ -34,6 +38,7 @@ _MAX_PACKAGES = {
 }
 
 _INTERNAL_PACKAGES = [
+    "//Kernels/lib/matmul_rs",
     "//Kernels/lib/msa",
 ]
 

@@ -24,7 +24,7 @@ from std.algorithm import sync_parallelize
 from std.gpu.host import DeviceContext
 import std.math
 from std.math import exp2
-from state_space.causal_conv1d import silu
+from nn.activations import silu
 from state_space.selective_scan import softplus
 
 # LOG2E constant for converting exp to exp2 (faster on GPU)

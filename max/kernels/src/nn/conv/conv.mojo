@@ -114,7 +114,12 @@ from linalg.utils import partition_work
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.sys import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
+from std.sys import (
+    has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
+    has_apple_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+)
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -3462,7 +3467,7 @@ def _get_cudnn_meta(
         return ptr.as_unsafe_any_origin()
 
     var new_ptr_meta = alloc[CuDNNConvMeta](1)
-    new_ptr_meta.init_pointee_move(CuDNNConvMeta())
+    new_ptr_meta.unsafe_write(CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_key),
@@ -3582,7 +3587,7 @@ def _get_cached_cudnn_meta_nhwc_full(
         return ptr.as_unsafe_any_origin()
 
     var new_ptr_meta = alloc[CachedCuDNNMetaNHWCFull](1)
-    new_ptr_meta.init_pointee_move(CachedCuDNNMetaNHWCFull())
+    new_ptr_meta.unsafe_write(CachedCuDNNMetaNHWCFull())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_key),
@@ -3930,7 +3935,7 @@ def _get_cached_miopen_meta[
         return ptr.as_unsafe_any_origin()
 
     var new_ptr_meta = alloc[CachedMIOpenMeta[conv_rank]](1)
-    new_ptr_meta.init_pointee_move(CachedMIOpenMeta[conv_rank]())
+    new_ptr_meta.unsafe_write(CachedMIOpenMeta[conv_rank]())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_key),
@@ -3985,12 +3990,10 @@ def _conv_miopen[
         var R_dim = Int(filter.dim[2]())
         var S_dim = Int(filter.dim[3]())
 
-        @parameter
-        @__copy_capture(filter_frsc_ptr, F_dim, C_dim, R_dim, S_dim)
         @always_inline
         def transpose_fcrs_to_frsc[
             _width: Int, alignment: Int = 1
-        ](coords: Coord):
+        ](coords: Coord) {var}:
             var f = Int(coords[0].value())
             var r = Int(coords[1].value())
             var s = Int(coords[2].value())
@@ -4001,8 +4004,8 @@ def _conv_miopen[
             )
             filter_frsc_ptr.store(out_idx, val)
 
-        elementwise[transpose_fcrs_to_frsc, 1, target="gpu"](
-            (F_dim, R_dim, S_dim, C_dim), ctx
+        elementwise[1, target="gpu"](
+            transpose_fcrs_to_frsc, (F_dim, R_dim, S_dim, C_dim), ctx
         )
         filter_shape[0] = UInt64(F_dim)
         filter_shape[1] = UInt64(C_dim)
@@ -4016,12 +4019,10 @@ def _conv_miopen[
         var C_dim = Int(filter.dim[2]())
         var F_dim = Int(filter.dim[3]())
 
-        @parameter
-        @__copy_capture(filter_frsc_ptr, R_dim, S_dim, C_dim, F_dim)
         @always_inline
         def transpose_rscf_to_frsc[
             _width: Int, alignment: Int = 1
-        ](coords: Coord):
+        ](coords: Coord) {var}:
             var f = Int(coords[0].value())
             var r = Int(coords[1].value())
             var s = Int(coords[2].value())
@@ -4032,8 +4033,8 @@ def _conv_miopen[
             )
             filter_frsc_ptr.store(out_idx, val)
 
-        elementwise[transpose_rscf_to_frsc, 1, target="gpu"](
-            (F_dim, R_dim, S_dim, C_dim), ctx
+        elementwise[1, target="gpu"](
+            transpose_rscf_to_frsc, (F_dim, R_dim, S_dim, C_dim), ctx
         )
 
         filter_shape[0] = UInt64(F_dim)
@@ -4051,12 +4052,10 @@ def _conv_miopen[
         var C_dim = Int(filter.dim[3]())
         var F_dim = Int(filter.dim[4]())
 
-        @parameter
-        @__copy_capture(filter_frsc_ptr, Q_dim, R_dim, S_dim, C_dim, F_dim)
         @always_inline
         def transpose_qrscf_to_fqrsc[
             _width: Int, alignment: Int = 1
-        ](coords: Coord):
+        ](coords: Coord) {var}:
             var f = Int(coords[0].value())
             var q = Int(coords[1].value())
             var r = Int(coords[2].value())
@@ -4072,8 +4071,8 @@ def _conv_miopen[
             )
             filter_frsc_ptr.store(out_idx, val)
 
-        elementwise[transpose_qrscf_to_fqrsc, 1, target="gpu"](
-            (F_dim, Q_dim, R_dim, S_dim, C_dim), ctx
+        elementwise[1, target="gpu"](
+            transpose_qrscf_to_fqrsc, (F_dim, Q_dim, R_dim, S_dim, C_dim), ctx
         )
 
         filter_shape[0] = UInt64(F_dim)
@@ -4311,7 +4310,7 @@ def _conv_miopen[
             output.num_elements()
         )
         var output_tmp = TileTensor[
-            output_type, output.LayoutType, MutAnyOrigin
+            output_type, output.LayoutType, MutAnyOrigin, ...
         ](output_tmp_data, output.layout)
         _conv_miopen[filter_is_fcrs=filter_is_fcrs](
             input,
@@ -4324,20 +4323,20 @@ def _conv_miopen[
             ctx,
         )
 
-        @parameter
-        @__copy_capture(output_tmp)
         @always_inline
-        def miopen_epilogue[_width: Int, alignment: Int = 1](coords: Coord):
+        def miopen_epilogue[
+            _width: Int, alignment: Int = 1
+        ](coords: Coord) {var}:
             epilogue(
                 coord_to_index_list(coords),
                 output_tmp.load[width=_width](coords),
             )
 
         elementwise[
-            miopen_epilogue,
             simd_width_of[output_type, target=get_gpu_target()](),
             target="gpu",
         ](
+            miopen_epilogue,
             output.layout.shape_coord(),
             ctx,
         )
@@ -4671,6 +4670,55 @@ def conv_gpu[
             ):
                 return
 
+        # Apple M5 (compute_capability == 5): fused online-im2col conv2d.
+        # `dispatch_fused_im2col_conv2d_apple` runs `AppleM5MatMul.run_conv`
+        # (the structured simdgroup-tiled GEMM, 16x16x16 hardware MMA) with the
+        # A operand gathered directly from the NHWC input per MMA-fragment -- the
+        # `[M, K]` im2col matrix is never materialised to global memory. This
+        # eliminates the materialised path's DRAM round-trip, so conv wins across
+        # both compute- and memory-bound regimes (no memory-bound naive guard
+        # needed). The dispatcher self-gates (bf16, groups=1, dilation=1,
+        # kernel > 1x1, K >= 16, N >= 16, compute_capability == 5); on decline
+        # (incl. non-M5) it falls through to the materialised matmul below.
+        # Hardware-agnostic path -- no SM100 TMA / swizzle machinery involved.
+        comptime if has_apple_gpu_accelerator():
+            from nn.conv.gpu.im2col_matmul_2d import (
+                dispatch_fused_im2col_conv2d_apple,
+                dispatch_im2col_matmul_conv2d,
+            )
+
+            if dispatch_fused_im2col_conv2d_apple[
+                filter_is_fcrs,
+                maybe_epilogue_func,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[2]](stride),
+                rebind[IndexList[2]](dilation),
+                rebind[IndexList[2]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
+                return
+
+            # M3/M4 fallback: materialised im2col + `_matmul_gpu` (the Apple
+            # FMA / 8x8 GEMM, no M5-only fragment MMA). Handles FCRS filters.
+            if dispatch_im2col_matmul_conv2d[
+                filter_is_fcrs,
+                maybe_epilogue_func,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[2]](stride),
+                rebind[IndexList[2]](dilation),
+                rebind[IndexList[2]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
+                return
+
         # AMD RDNA 3+ dispatch: im2col + WMMA matmul for supported shapes.
         comptime if has_amd_rdna_gpu_accelerator() and input_type in (
             DType.bfloat16,
@@ -4684,6 +4732,7 @@ def conv_gpu[
                 output_type,
                 filter_is_fcrs,
                 maybe_epilogue_func=maybe_epilogue_func,
+                has_residual=has_residual,
             ](
                 input,
                 filter,
@@ -4693,6 +4742,10 @@ def conv_gpu[
                 rebind[IndexList[2]](symmetric_padding),
                 num_groups,
                 ctx,
+                source_ptr.value() if has_residual else UnsafePointer[
+                    Scalar[output_type], MutAnyOrigin
+                ].unsafe_dangling(),
+                beta,
             ):
                 return
 
@@ -4954,6 +5007,16 @@ def conv_gpu[
 
         # Fallback paths for non-SM100, unsupported dtypes, or constraints
         comptime if filter_is_fcrs:
+            # The FCRS-filter fallback runs only on cuDNN (NVIDIA). On any
+            # other GPU, guard here rather than silently entering cuDNN and
+            # failing later with a confusing driver-level error. See MOCO-4172.
+            comptime if not has_nvidia_gpu_accelerator():
+                raise Error(
+                    "conv2d: no GPU kernel for this convolution on this"
+                    " device; the FCRS-filter fallback path is implemented"
+                    " only via cuDNN (NVIDIA)."
+                )
+
             # Construct row-major TileTensors for cuDNN (shared by both
             # epilogue and non-epilogue paths).
             var _in_s = input_lt.runtime_layout.shape.value.canonicalize()
@@ -5020,20 +5083,20 @@ def conv_gpu[
                     ctx,
                 )
 
-                @parameter
-                @__copy_capture(output_tmp_lt)
                 @always_inline
                 def epilogue_wrapper[
                     _width: Int, alignment: Int = 1
-                ](coords: Coord):
+                ](coords: Coord) {var}:
                     comptime align = align_of[SIMD[output_type, _width]]()
                     var idx = rebind[IndexList[4]](coord_to_index_list(coords))
                     vec = output_tmp_lt.load[width=_width](idx)
                     epilogue(idx, vec)
 
-                elementwise[
-                    epilogue_wrapper, simd_width_of[output_type](), target="gpu"
-                ](Coord(output_lt.runtime_layout.shape.value), ctx)
+                elementwise[simd_width_of[output_type](), target="gpu"](
+                    epilogue_wrapper,
+                    Coord(output_lt.runtime_layout.shape.value),
+                    ctx,
+                )
 
                 _ = output_tmp_data^
 
@@ -5983,7 +6046,7 @@ def _conv3d_cudnn[
 
         # Store result in global cache.
         var ptr_entry = alloc[_Conv3dAlgoCacheEntry](1)
-        ptr_entry.init_pointee_move(
+        ptr_entry.unsafe_write(
             _Conv3dAlgoCacheEntry(
                 algo_value=rebind[Int8](algo),
                 workspace_size=workspace_size_var,
@@ -6068,7 +6131,7 @@ def _conv3d_cudnn[
             # calls skip the OOM-prone pick. InsertGlobal overwrites the
             # existing entry keyed by cache_key.
             var retry_entry = alloc[_Conv3dAlgoCacheEntry](1)
-            retry_entry.init_pointee_move(
+            retry_entry.unsafe_write(
                 _Conv3dAlgoCacheEntry(
                     algo_value=rebind[Int8](algo),
                     workspace_size=0,

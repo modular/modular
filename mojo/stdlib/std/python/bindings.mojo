@@ -20,7 +20,8 @@ conversion. This enables seamless bidirectional interoperability between Mojo
 and Python code.
 """
 
-from std.ffi import _Global, _CPointer, c_int
+from . import ConvertibleFromPython
+from std.ffi import _Global, _CPointer, c_int, c_char
 from std.sys.info import size_of
 from std.collections import OwnedKwargsDict
 
@@ -191,7 +192,7 @@ def _tp_dealloc_wrapper[T: ImplicitlyDeletable](py_self: PyObjectPtr) abi("C"):
     #   Is this always safe? Wrap in GIL, because this could
     #   evaluate arbitrary code?
     if self.is_initialized:
-        UnsafePointer(to=self.mojo_value).destroy_pointee()
+        UnsafePointer(to=self.mojo_value).unsafe_deinit_pointee()
 
     cpython.PyObject_Free(py_self.bitcast[NoneType]())
 
@@ -225,7 +226,7 @@ def _tp_repr_wrapper[
         comptime assert conforms_to(
             T, Writable
         ), "_tp_repr_wrapper requires conformance to Writable."
-        trait_downcast[Writable](self.mojo_value).write_repr_to(repr_str)
+        self.mojo_value.write_repr_to(repr_str)
     else:
         repr_str = String(t"<uninitialized {reflect[T].name()}>")
 
@@ -663,7 +664,7 @@ struct PythonTypeBuilder(Copyable):
 
         var type_spec = PyType_Spec(
             # FIXME(MOCO-1306): This should be `T.__name__`.
-            self.type_name.unsafe_ptr().bitcast[ffi.c_char](),
+            self.type_name.unsafe_ptr().bitcast[c_char](),
             c_int(self.basicsize),
             0,
             Py_TPFLAGS_DEFAULT,
@@ -672,7 +673,9 @@ struct PythonTypeBuilder(Copyable):
         )
 
         # Construct a Python 'type' object from our type spec.
-        var type_obj_ptr = cpython.PyType_FromSpec(UnsafePointer(to=type_spec))
+        var type_obj_ptr = cpython.PyType_FromSpec(
+            UnsafePointer(to=type_spec).as_unsafe_any_origin()
+        )
 
         if not type_obj_ptr:
             raise cpython.get_error()
@@ -1085,7 +1088,8 @@ def _set_python_error(
     var error_message = String(e)
     var error_type = cpython.get_error_global(exc_type.global_name)
     cpython.PyErr_SetString(
-        error_type, error_message.as_c_string_slice().unsafe_ptr()
+        error_type,
+        error_message.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
     )
 
 
@@ -1140,7 +1144,10 @@ def _py_init_function_nonregistered(
     var error_type = cpython.get_error_global("PyExc_TypeError")
     cpython.PyErr_SetString(
         error_type,
-        "No initializer registered for this type. Use def_py_init() or def_init_defaultable() to register an initializer.".as_c_string_slice().unsafe_ptr(),
+        "No initializer registered for this type. Use def_py_init() or"
+        " def_init_defaultable() to register an initializer.".as_c_string_slice()
+        .unsafe_ptr()
+        .as_unsafe_any_origin(),
     )
     return -1
 
@@ -1644,7 +1651,7 @@ def check_and_get_or_convert_arg[
     try:
         return check_and_get_arg[T](func_name, py_args, index)
     except e:
-        converted_arg_ptr.init_pointee_move(
+        converted_arg_ptr.unsafe_write(
             _try_convert_arg[T](
                 func_name,
                 py_args,
@@ -1689,7 +1696,7 @@ def check_and_get_or_convert_arg[
     try:
         return check_and_get_arg[Int](func_name, py_args, index)
     except e:
-        converted_arg_ptr.init_pointee_move(
+        converted_arg_ptr.unsafe_write(
             _try_convert_arg[Int](
                 func_name,
                 py_args,

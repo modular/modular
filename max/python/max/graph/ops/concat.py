@@ -30,14 +30,32 @@ def concat(
 
     .. code-block:: python
 
-        a = ops.constant([[1, 2], [3, 4]], DType.int32, device=device)
-        b = ops.constant([[5, 6], [7, 8]], DType.int32, device=device)
-        vertical = ops.concat([a, b], axis=0)
-        # vertical has shape (4, 2):
-        # [[1, 2], [3, 4], [5, 6], [7, 8]]
-        horizontal = ops.concat([a, b], axis=1)
-        # horizontal has shape (2, 4):
-        # [[1, 2, 5, 6], [3, 4, 7, 8]]
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("concat_example") as graph:
+            a = ops.constant([[1, 2], [3, 4]], DType.int32, device=device)
+            b = ops.constant([[5, 6], [7, 8]], DType.int32, device=device)
+            graph.output(
+                ops.concat([a, b], axis=0),  # vertical, shape (4, 2)
+                ops.concat([a, b], axis=1),  # horizontal, shape (2, 4)
+            )
+
+        model = InferenceSession().load(graph)
+        vertical, horizontal = model.execute()
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.array_equal(
+            vertical.to_numpy(), [[1, 2], [3, 4], [5, 6], [7, 8]]
+        )
+        assert np.array_equal(
+            horizontal.to_numpy(), [[1, 2, 5, 6], [3, 4, 7, 8]]
+        )
 
     Args:
         original_vals: The list of symbolic tensor values to concatenate.

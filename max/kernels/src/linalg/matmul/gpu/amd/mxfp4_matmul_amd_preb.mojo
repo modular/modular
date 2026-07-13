@@ -313,7 +313,7 @@ struct BlockScaledMmaOp_PreB[
             # K_byte_base the starting byte offset based on the Kth block tile we are on.
             # mma_k_idx * Self.MMA_K_BYTES, shifts that based on the mma_k tile we are
             # processing in that block. Finally we add the lane's klane offset within that K tile,
-            # This is usally a multiple of 16
+            # This is usually a multiple of 16
 
             var k_byte_log = (
                 k_byte_base
@@ -322,7 +322,7 @@ struct BlockScaledMmaOp_PreB[
             )
 
             # we pass in the logical Nth row, and K byte to get the shuffled
-            # coordiante we are loading from
+            # coordinate we are loading from
             b_reg_v[slot, mma_k_idx, i, 0] = b_loader.load_fragment(
                 n_log, k_byte_log
             )
