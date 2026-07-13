@@ -1098,6 +1098,14 @@ def test_ref_field(var mem: MemPair):
   r = Pointer(to=mem.a)
 
   # Subfield reference keeps entire value alive.
+  _ = r[].x
+  # CHECK: lit.ref.load
+  # CHECK: lit.ownership.use
+
+  # Pointer comparison doesn't access the pointee so the value is already deleted.
+
+  # CHECK: lit.ref.load %r
+  # CHECK: lit.ref.load %r
   # CHECK: lit.call {{.*}}__eq__
   _ = r == r
   # CHECK-NEXT: lit.call {{.*}}MemPair::@"__del__
