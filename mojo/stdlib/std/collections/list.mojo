@@ -140,7 +140,8 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
     "Use `deinit_with()` to explicitly destroy a `List` of"
     " non-`ImplicitlyDeletable` elements"
 )
-struct List[T: Movable](
+@stable(since="1.0")
+struct List[T: Movable, /](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
@@ -383,12 +384,14 @@ struct List[T: Movable](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
+    @stable(since="1.0")
     def __init__(out self):
         """Constructs an empty list."""
         self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
         self.capacity = 0
 
+    @stable(since="1.0")
     def __init__(out self, *, capacity: Int):
         """Constructs a list with the given capacity.
 
@@ -475,6 +478,7 @@ struct List[T: Movable](
         self._annotate_increase(unsafe_uninit_length)
         self._len = unsafe_uninit_length
 
+    @stable(since="1.0")
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         """Creates a deep copy of the given list.
 
@@ -495,6 +499,7 @@ struct List[T: Movable](
                 ).unsafe_with_layout(Layout[Self.T](count=self.capacity))
             )
 
+    @stable(since="1.0")
     def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroy all elements in the list and free its memory."""
         destroy_n(
@@ -1317,6 +1322,7 @@ struct List[T: Movable](
 
         return res^
 
+    @stable(since="1.0")
     def __getitem__[
         origin: Origin, //
     ](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:

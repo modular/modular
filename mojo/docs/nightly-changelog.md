@@ -285,8 +285,23 @@ This version is still a work in progress.
 
 ## Library stabilizations
 
-- The traits `ImplicitlyDeletable`, `Movable`, `Copyable`, and
-  `ImplicitlyCopyable` are now stable.
+- `trait ImplicitlyDeletable`
+- `trait Movable`
+- `trait Copyable`
+- `trait ImplicitlyCopyable`
+
+- List
+  - `def __init__(out self)`
+  - `def __init__(out self, *, capacity: Int)`
+  - `def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):`
+  - `def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):`
+
+  - ```def __getitem__[
+        origin: Origin, //
+      ](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:
+    ```
+
+- Span
 
 ## Library changes
 
