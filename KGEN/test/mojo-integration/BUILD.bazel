@@ -52,11 +52,12 @@ lit_tests(
     # This tests require the std, where other tests do
     # not require them
     srcs = glob(["*.test"]),
-    data = [":fixtures"] + [
-        "//oss/modular/mojo/stdlib/std:std_srcs",
+    data = [
+        ":fixtures",
+        "@mojo//:std_srcs",
     ],
     env = {
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //oss/modular/mojo/stdlib/std:std_srcs)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations @mojo//:std_srcs)",
     },
     mojo_deps = [
         "@mojo//:std",

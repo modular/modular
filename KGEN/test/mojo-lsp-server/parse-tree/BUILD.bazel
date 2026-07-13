@@ -62,7 +62,7 @@ modular_py_test(
     srcs = ["lsp_smoke_stdlib_main.py"],
     args = [
         "--scan-root-file",
-        "$(rootpath //oss/modular/mojo/stdlib/std:__init__.mojo)",
+        "$(rootpath @mojo//:__init__.mojo)",
     ] + [
         arg
         for f in _NO_RUN_LIST
@@ -73,8 +73,8 @@ modular_py_test(
     ],
     data = [
         "//KGEN/tools/kgen",
-        "//oss/modular/mojo/stdlib/std:__init__.mojo",
-        "//oss/modular/mojo/stdlib/std:std_srcs",
+        "@mojo//:__init__.mojo",
+        "@mojo//:std_srcs",
     ],
     main = "lsp_smoke_stdlib_main.py",
     # mojo_deps drives the auto-set MODULAR_MOJO_MAX_IMPORT_PATH, giving the
@@ -108,7 +108,7 @@ modular_py_binary(
         # __init__.mojo is already pulled in via std_srcs's glob; no need to
         # list it separately (this target doesn't need its own
         # $(rootpath ...) reference to it, unlike lsp-parse-smoke-stdlib).
-        "//oss/modular/mojo/stdlib/std:std_srcs",
+        "@mojo//:std_srcs",
     ],
     main = "lsp_smoke_one_main.py",
     mojo_deps = [

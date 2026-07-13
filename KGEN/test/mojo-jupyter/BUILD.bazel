@@ -21,11 +21,11 @@ lit_tests(
     ]) + [
         # TODO(MOTO-1544): kept here (not srcs) so the file is referenced.
         "test_completion_incremental.test",
-        "//oss/modular/mojo/stdlib/std:std_srcs",
+        "@mojo//:std_srcs",
         "//KGEN/unittests:lit-lldb-init.in",
     ],
     env = {
-        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //oss/modular/mojo/stdlib/std:std_srcs)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations @mojo//:std_srcs)",
     },
     force_strip = True,  # TODO(MOTO-1190): Debug and fix this duplicate symbol issue
     target_compatible_with = select({
