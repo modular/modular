@@ -705,11 +705,20 @@ class PipelineArgs(ConfigFileModel):
             A :class:`PipelineArgs` populated from the given config.
         """
         main = pipeline_config.models.get("main") or MAXModelConfig()
+        # Multi-component (diffusion) manifests have no "main" entry; their
+        # per-component configs can't be reconstructed from the flat fields,
+        # so carry the manifest through verbatim.
+        manifest = (
+            pipeline_config.models
+            if "main" not in pipeline_config.models
+            else None
+        )
         runtime = pipeline_config.runtime
         sampling = pipeline_config.sampling
         profiling = pipeline_config.profiling
 
         return cls(
+            models=manifest,
             # top-level
             model_override=list(pipeline_config.model_override),
             task=pipeline_config.task,
