@@ -349,6 +349,7 @@ def test[
         )
     print("  PASSED")
 
+    _ = mla_args
     _ = q_fp8_device_ptr
     _ = k_fp8_device_ptr
     _ = q_bf16_dequant_device_ptr
