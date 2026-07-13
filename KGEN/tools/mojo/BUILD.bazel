@@ -96,6 +96,7 @@ modular_cc_library(
     srcs = glob(["**/*.cpp"]),
     hdrs = glob(["**/*.h"]),
     includes = ["."],
+    local_defines = ["MOJO_COMPILER_ACCELERATOR_SUPPORT=1"],
     strip_include_prefix = "",
     deps = [
         ":Build.inc_files",

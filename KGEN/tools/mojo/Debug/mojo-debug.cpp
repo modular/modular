@@ -5,7 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-debug.h"
-#include "../Common/CudaGdb.h"
+#if MOJO_COMPILER_ACCELERATOR_SUPPORT
+#include "../Common/internal/CudaGdb.h"
+#endif
 #include "../Common/LLDB.h"
 #include "Init/Init.h"
 #include "KGEN/Support/Configuration.h"
@@ -47,6 +49,7 @@ getDebuggerArgs(llvm::opt::InputArgList &parsedArgs) {
   return debuggerArgs;
 }
 
+#if MOJO_COMPILER_ACCELERATOR_SUPPORT
 static std::optional<std::string>
 getCudaGDBPath(llvm::opt::InputArgList &parsedArgs) {
   StringRef path = parsedArgs.getLastArgValue(options::OPT_cudaGDBPath);
@@ -54,6 +57,7 @@ getCudaGDBPath(llvm::opt::InputArgList &parsedArgs) {
     return path.str();
   return {};
 }
+#endif // MOJO_COMPILER_ACCELERATOR_SUPPORT
 
 auto getCompilationOptions(llvm::opt::InputArgList &parsedArgs) {
   return parsedArgs.filtered(options::OPT_CompilationOptionGroup,
@@ -147,8 +151,6 @@ static int debug(const State &state) {
   }
 
   bool dryRun = parsedArgs.hasArg(options::OPT_dry_run);
-  bool useCudaGDB = parsedArgs.hasArg(options::OPT_cudaGDB);
-  bool breakOnLaunch = parsedArgs.hasArg(options::OPT_breakOnLaunch);
   bool stopOnEntry = parsedArgs.hasArg(options::OPT_stopOnEntry);
   SmallVector<std::string> initCommands;
   for (std::string &val :
@@ -156,11 +158,23 @@ static int debug(const State &state) {
     initCommands.push_back(val);
   }
 
+#if MOJO_COMPILER_ACCELERATOR_SUPPORT
+  bool useCudaGDB = parsedArgs.hasArg(options::OPT_cudaGDB);
+  bool breakOnLaunch = parsedArgs.hasArg(options::OPT_breakOnLaunch);
   if (breakOnLaunch && !useCudaGDB)
     return state.reportError(Twine("--break-on-launch requires --cuda-gdb"));
   std::optional<std::string> cudaGdbPath = getCudaGDBPath(parsedArgs);
   if (cudaGdbPath.has_value() && !useCudaGDB)
     return state.reportError(Twine("--cuda-gdb-path requires --cuda-gdb"));
+#else
+  if (parsedArgs.hasArg(options::OPT_cudaGDB) ||
+      parsedArgs.hasArg(options::OPT_breakOnLaunch) ||
+      parsedArgs.hasArg(options::OPT_cudaGDBPath))
+    return state.reportError(
+        Twine("cuda-gdb support is not available in this build"));
+  bool useCudaGDB = false;
+  bool breakOnLaunch = false;
+#endif // MOJO_COMPILER_ACCELERATOR_SUPPORT
   StringRef rpcTerminal =
       parsedArgs.getLastArgValue(options::OPT_terminal, "console");
   SmallVector<std::string> debuggerArgs = getDebuggerArgs(parsedArgs);
@@ -215,11 +229,12 @@ static int debug(const State &state) {
     // When using the LLDB CLI, the first run arg has to be the target.
     runArgs.insert(runArgs.begin(), *target);
 
+#if MOJO_COMPILER_ACCELERATOR_SUPPORT
     if (useCudaGDB)
       return invokeCudaGdb(state, debuggerArgs, runArgs, cudaGdbPath,
                            breakOnLaunch, dryRun);
-    else
-      return invokeLLDB(state, debuggerArgs, runArgs, dryRun);
+#endif // MOJO_COMPILER_ACCELERATOR_SUPPORT
+    return invokeLLDB(state, debuggerArgs, runArgs, dryRun);
   }
 
   std::optional<StringRef> pid;
@@ -245,11 +260,12 @@ static int debug(const State &state) {
       if (processName)
         llvm::append_values(debuggerArgs, std::string("-n"),
                             resolvePath(processName->str()));
+#if MOJO_COMPILER_ACCELERATOR_SUPPORT
       if (useCudaGDB)
         return invokeCudaGdb(state, debuggerArgs, {}, cudaGdbPath,
                              breakOnLaunch, dryRun);
-      else
-        return invokeLLDB(state, debuggerArgs, {}, dryRun);
+#endif // MOJO_COMPILER_ACCELERATOR_SUPPORT
+      return invokeLLDB(state, debuggerArgs, {}, dryRun);
     }
   }
 
@@ -258,11 +274,12 @@ static int debug(const State &state) {
         Twine("unexpected option '", rpcArg->getSpelling()) + "'");
 
   // This is a regular cli passthrough.
+#if MOJO_COMPILER_ACCELERATOR_SUPPORT
   if (useCudaGDB)
     return invokeCudaGdb(state, debuggerArgs, {}, cudaGdbPath, breakOnLaunch,
                          dryRun);
-  else
-    return invokeLLDB(state, debuggerArgs, {}, dryRun);
+#endif // MOJO_COMPILER_ACCELERATOR_SUPPORT
+  return invokeLLDB(state, debuggerArgs, {}, dryRun);
 }
 
 void M::registerDebugSubcommand(SubcommandRegistry &registry) {
