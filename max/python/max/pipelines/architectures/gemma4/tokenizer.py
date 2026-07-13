@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Sequence
@@ -402,7 +403,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
                 padded_pos,
                 video_num_soft_tokens,
                 video_metadata_list,
-            ) = self.video_processor(request.videos)
+            ) = await asyncio.to_thread(self.video_processor, request.videos)
             k = self.video_processor.pooling_kernel_size
             for pv, pos in zip(padded_pvs, padded_pos, strict=True):
                 real_mask = pos[:, :, 0] >= 0
