@@ -27,6 +27,7 @@ from _mojo_module import (
     Function,
     Queue,
     Stream,
+    copy,
 )
 
 
@@ -84,6 +85,7 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
             b.add_type[Queue]("Queue")
             .def_method[Queue.synchronize]("synchronize")
             .def_method[Queue.record_event]("record_event")
+            .def_method[Queue.copy]("copy")
             .def_method[Queue.copy_to_device]("copy_to_device")
             .def_method[Queue.copy_from_device]("copy_from_device")
             .def_method[Queue.copy_intra_device]("copy_intra_device")
@@ -97,6 +99,7 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
             b.add_type[Stream]("Stream")
             .def_method[Stream.synchronize]("synchronize")
             .def_method[Stream.record_event]("record_event")
+            .def_method[Stream.copy]("copy")
             .def_method[Stream.copy_to_device]("copy_to_device")
             .def_method[Stream.copy_from_device]("copy_from_device")
             .def_method[Stream.copy_intra_device]("copy_intra_device")
@@ -111,6 +114,8 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
             .def_method[Event.synchronize]("synchronize")
             .def_method[Event.is_ready]("is_ready")
         )
+
+        b.def_function[copy]("copy")
 
         return b.finalize()
     except e:

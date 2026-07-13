@@ -519,6 +519,99 @@ struct RawDriver(Movable):
                 message=String(t"failed to copy intra-device: {err.message}"),
             )
 
+    def copy_inter_device(
+        self,
+        queue: QueueHandle,
+        dst: M_driver_memory_view,
+        src: M_driver_memory_view,
+        src_context: ContextHandle,
+    ) raises HALError:
+        var status = self._raw.queue_copy_inter_device.f(
+            queue,
+            ImmutPointer(to=dst),
+            ImmutPointer(to=src),
+            src_context,
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to copy inter-device: {err.message}"),
+            )
+
+    def copy_to_device_sync(
+        self,
+        context: ContextHandle,
+        dst: M_driver_memory_view,
+        src: UnsafePointer[mut=False, UInt8, _],
+    ) raises HALError:
+        var status = self._raw.copy_to_device_sync.f(
+            context, ImmutPointer(to=dst), src
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to copy to device (sync): {err.message}"
+                ),
+            )
+
+    def copy_from_device_sync(
+        self,
+        context: ContextHandle,
+        dst: UnsafePointer[mut=True, UInt8, _],
+        src: M_driver_memory_view,
+    ) raises HALError:
+        var status = self._raw.copy_from_device_sync.f(
+            context, dst, ImmutPointer(to=src)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to copy from device (sync): {err.message}"
+                ),
+            )
+
+    def copy_intra_device_sync(
+        self,
+        context: ContextHandle,
+        dst: M_driver_memory_view,
+        src: M_driver_memory_view,
+    ) raises HALError:
+        var status = self._raw.copy_intra_device_sync.f(
+            context, ImmutPointer(to=dst), ImmutPointer(to=src)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to copy intra-device (sync): {err.message}"
+                ),
+            )
+
+    def copy_inter_device_sync(
+        self,
+        context: ContextHandle,
+        dst: M_driver_memory_view,
+        src: M_driver_memory_view,
+        src_context: ContextHandle,
+    ) raises HALError:
+        var status = self._raw.copy_inter_device_sync.f(
+            context, ImmutPointer(to=dst), ImmutPointer(to=src), src_context
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to copy inter-device (sync): {err.message}"
+                ),
+            )
+
     def set_memory(
         self,
         queue: QueueHandle,
@@ -935,6 +1028,58 @@ struct RawPlugin(Movable):
             src: MemoryViewHandle[src_origin],
         ) thin -> PluginResultCode,
     ]
+    var queue_copy_inter_device: HALFunction[
+        "M_driver_queue_copy_inter_device",
+        def[
+            dst_origin: ImmutOrigin, src_origin: ImmutOrigin
+        ](
+            queue: QueueHandle,
+            dst: MemoryViewHandle[dst_origin],
+            src: MemoryViewHandle[src_origin],
+            src_context: ContextHandle,
+        ) thin -> PluginResultCode,
+    ]
+    var copy_to_device_sync: HALFunction[
+        "M_driver_copy_to_device_sync",
+        def[
+            dst_origin: ImmutOrigin, src_origin: ImmutOrigin
+        ](
+            context: ContextHandle,
+            dst: MemoryViewHandle[dst_origin],
+            src: UnsafePointer[UInt8, src_origin],
+        ) thin -> PluginResultCode,
+    ]
+    var copy_from_device_sync: HALFunction[
+        "M_driver_copy_from_device_sync",
+        def[
+            dst_origin: MutOrigin, src_origin: ImmutOrigin
+        ](
+            context: ContextHandle,
+            dst: UnsafePointer[UInt8, dst_origin],
+            src: MemoryViewHandle[src_origin],
+        ) thin -> PluginResultCode,
+    ]
+    var copy_intra_device_sync: HALFunction[
+        "M_driver_copy_intra_device_sync",
+        def[
+            dst_origin: ImmutOrigin, src_origin: ImmutOrigin
+        ](
+            context: ContextHandle,
+            dst: MemoryViewHandle[dst_origin],
+            src: MemoryViewHandle[src_origin],
+        ) thin -> PluginResultCode,
+    ]
+    var copy_inter_device_sync: HALFunction[
+        "M_driver_copy_inter_device_sync",
+        def[
+            dst_origin: ImmutOrigin, src_origin: ImmutOrigin
+        ](
+            context: ContextHandle,
+            dst: MemoryViewHandle[dst_origin],
+            src: MemoryViewHandle[src_origin],
+            src_context: ContextHandle,
+        ) thin -> PluginResultCode,
+    ]
     var queue_set_memory: HALFunction[
         "M_driver_queue_set_memory",
         def[
@@ -1128,6 +1273,21 @@ struct RawPlugin(Movable):
             handle, so_path
         )
         self.queue_copy_intra_device = type_of(self.queue_copy_intra_device)(
+            handle, so_path
+        )
+        self.queue_copy_inter_device = type_of(self.queue_copy_inter_device)(
+            handle, so_path
+        )
+        self.copy_to_device_sync = type_of(self.copy_to_device_sync)(
+            handle, so_path
+        )
+        self.copy_from_device_sync = type_of(self.copy_from_device_sync)(
+            handle, so_path
+        )
+        self.copy_intra_device_sync = type_of(self.copy_intra_device_sync)(
+            handle, so_path
+        )
+        self.copy_inter_device_sync = type_of(self.copy_inter_device_sync)(
             handle, so_path
         )
         self.queue_set_memory = type_of(self.queue_set_memory)(handle, so_path)

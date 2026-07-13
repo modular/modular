@@ -25,6 +25,7 @@ import mojo.importer
 from .buffer import Buffer, BufferView
 from .bundle import Bundle
 from .context import Context
+from .copy import copy
 from .device import Device
 from .driver import Driver
 from .event import Event
@@ -43,4 +44,5 @@ __all__ = [
     "Function",
     "Queue",
     "Stream",
+    "copy",
 ]

@@ -52,6 +52,16 @@ class Stream:
     def record_event(self) -> Event:
         return Event._wrap(self._inner.record_event())
 
+    def copy(self, *, dst: Buffer, src: Buffer) -> None:
+        """Enqueues a copy of `src` into the front of `dst`, after all previous
+        stream ops.
+
+        Dispatches by operand residency (device-to-device, or a pinned buffer
+        to/from device); a pinned-to-pinned copy has no queue transport and
+        raises — use the module-level `copy` for that.
+        """
+        self._inner.copy(dst._inner, src._inner)
+
     def copy_to_device(self, dst: BufferView, src_address: int) -> None:
         self._inner.copy_to_device(dst._inner, src_address)
 

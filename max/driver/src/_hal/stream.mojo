@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .plugin import OpaquePointer, FunctionHandle, OutParam
-from .buffer import BufferView
+from .buffer import Buffer, BufferView
 from .context import Context
 from .queue import Queue
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable
@@ -115,6 +115,9 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         )
         self._chain_signal()
 
+    # Direction-specific transports. Callable directly for fine-grained
+    # control, and the raw-host path (a bare pointer, not a `Buffer`) that
+    # `copy` cannot express; `copy` (below) dispatches to these by residency.
     def copy_to_device(
         mut self,
         dst: BufferView,
@@ -167,6 +170,36 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         `value_size` of 1 is equivalent to `set_memory`."""
         self._chain_wait()
         self._queue[].fill(dst, value, value_size)
+        self._chain_signal()
+
+    # ===-------------------------------------------------------------------===#
+    # Unified copy
+    # ===-------------------------------------------------------------------===#
+
+    def copy(
+        mut self,
+        *,
+        dst: Buffer[Self.device_spec],
+        src: Buffer[Self.device_spec],
+    ) raises HALError:
+        """Buffer-to-buffer copy of `src` into the front of `dst`. Runs after
+        all previous Stream ops.
+
+        Transfers exactly `src.byte_size` bytes; `dst` must be at least that
+        large, and any remaining tail of `dst` is left untouched. The transfer
+        runs on this stream, so the device-resident operand it touches must
+        reside on this stream's device — `dst` for a to-device or same-device
+        copy, `src` for a device-to-pinned-host copy. A pinned host operand may
+        come from any device's context. A device-to-device copy whose source is
+        on another device is a peer copy that the caller must order against the
+        source's producers itself.
+
+        Args:
+            dst: Destination buffer.
+            src: Source buffer.
+        """
+        self._chain_wait()
+        self._queue[].copy(dst=dst, src=src)
         self._chain_signal()
 
     def record_event[

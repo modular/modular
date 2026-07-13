@@ -260,6 +260,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         return Buffer[Self.device_spec](
             _handle=self._raw[].alloc_sync(self._handle, byte_size),
             byte_size=byte_size,
+            is_host_pinned=False,
             _context=self._self_ref.try_upgrade().value(),
         )
 
@@ -272,6 +273,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         return Buffer[Self.device_spec](
             _handle=self._raw[].alloc_pinned(self._handle, byte_size),
             byte_size=byte_size,
+            is_host_pinned=True,
             _context=self._self_ref.try_upgrade().value(),
         )
 
@@ -298,6 +300,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
                 self._handle, address, byte_size, owning
             ),
             byte_size=byte_size,
+            is_host_pinned=False,
             _context=self._self_ref.try_upgrade().value(),
         )
 
@@ -317,6 +320,25 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     ) raises HALError -> UInt64:
         """Get the GPU address of a device memory allocation."""
         return self._raw[].get_memory_property["address", UInt64](mem._handle)
+
+    def memory_get_host_address[
+        mut: Bool, //, origin: Origin[mut=mut]
+    ](self, mem: Buffer[Self.device_spec]) raises HALError -> UnsafePointer[
+        UInt8, origin
+    ]:
+        """Get a host-dereferenceable pointer to a host-accessible allocation.
+
+        Host-accessible memory is any allocation on a host (CPU) device and
+        pinned GPU allocations (`alloc_host_pinned`); on unified-memory GPUs
+        every allocation qualifies. The plugin is the authority on residency:
+        """
+        return UnsafePointer[UInt8, origin](
+            unsafe_from_address=Int(
+                self._raw[].get_memory_property["host_address", UInt64](
+                    mem._handle
+                )
+            )
+        )
 
     # ===-------------------------------------------------------------------===#
     # Function execution

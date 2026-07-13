@@ -17,8 +17,9 @@ from .plugin import (
     QueueHandle,
     FunctionHandle,
 )
-from .buffer import BufferView
+from .buffer import Buffer, BufferView
 from .context import Context
+from .copy import _enqueue_copy
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable, _EventInner
 from .device import DeviceSpec
 from .status import STATUS_SUCCESS, HALError
@@ -111,6 +112,9 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             shared_mem_bytes=shared_mem_bytes,
         )
 
+    # Direction-specific transports. Callable directly for fine-grained
+    # control, and the raw-host path (a bare pointer, not a `Buffer`) that
+    # `copy` cannot express; `copy` (below) dispatches to these by residency.
     def copy_to_device(
         self,
         dst: BufferView,
@@ -174,6 +178,38 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         or 8; a `value_size` of 1 is equivalent to `set_memory`.
         """
         self._raw[].fill(self._handle, dst._view, value, value_size)
+
+    # ===-------------------------------------------------------------------===#
+    # Unified copy
+    # ===-------------------------------------------------------------------===#
+
+    def copy(
+        self,
+        *,
+        dst: Buffer[Self.device_spec],
+        src: Buffer[Self.device_spec],
+    ) raises HALError:
+        """Enqueues a buffer-to-buffer copy of `src` into the front of `dst`.
+
+        Transfers exactly `src.byte_size` bytes; `dst` must be at least that
+        large, and any remaining tail of `dst` is left untouched. The transfer
+        runs on this queue, so the device-resident operand it touches must
+        reside on this queue's device — `dst` for a to-device or same-device
+        copy, `src` for a device-to-pinned-host copy. A pinned host operand is
+        only a host pointer and may come from any device's context. A
+        device-to-device copy whose source is on another device is a peer copy;
+
+        Args:
+            dst: Destination buffer.
+            src: Source buffer.
+        """
+        _enqueue_copy(
+            self._raw,
+            self._handle,
+            self._context[]._device[].id,
+            dst=dst,
+            src=src,
+        )
 
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,

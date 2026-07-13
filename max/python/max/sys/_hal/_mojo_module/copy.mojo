@@ -10,18 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Hardware Abstraction Layer (HAL) — Mojo bindings.
+"""Python binding for the module-level HAL `copy`."""
 
-Provides a Mojo-native library layer around the HAL C plugin API.
-"""
+from std.python import PythonObject
+from _hal.copy import copy as _hal_copy
 
-from .status import HALError, STATUS_SUCCESS
-from .plugin import FunctionHandle, RawDriver
-from .driver import Driver, get_device_spec
-from .device import Device
-from .buffer import Buffer, BufferView
-from .context import Context, RuntimeBundle
-from .copy import copy
-from .event import Event
-from .queue import Queue
-from .stream import Stream
+from .buffer import Buffer
+
+
+def copy(dst_obj: PythonObject, src_obj: PythonObject) raises:
+    """Synchronously copies device buffer `src` into `dst`.
+
+    Projects the module-level Mojo HAL `copy(dst, src)` — residency dispatch and
+    the blocking, stream-less plugin copy ops all happen on the Mojo side.
+    """
+    var dst_ptr = dst_obj.downcast_value_ptr[Buffer]()
+    var src_ptr = src_obj.downcast_value_ptr[Buffer]()
+    _hal_copy(dst=dst_ptr[]._hal, src=src_ptr[]._hal)
