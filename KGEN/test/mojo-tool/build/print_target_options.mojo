@@ -58,15 +58,16 @@
 # CHECK_INVALID_TARGET: error: unknown target triple 'invalid-unknown-unknown'
 # CHECK_INVALID_TARGET: Use --print-supported-targets to see available architectures.
 
+# Sections print in target-name order: amdgpu, metal, nvptx.
 # CHECK_ACCELERATORS: Supported GPU and Accelerator Architectures:
-# CHECK_ACCELERATORS: NVIDIA (CUDA):
-# CHECK_ACCELERATORS: sm_80
-# CHECK_ACCELERATORS: sm_90
 # CHECK_ACCELERATORS: AMD (ROCm/HIP):
 # CHECK_ACCELERATORS: gfx942
 # CHECK_ACCELERATORS: gfx950
 # CHECK_ACCELERATORS: Apple Silicon GPU:
 # CHECK_ACCELERATORS: apple-m4
+# CHECK_ACCELERATORS: NVIDIA (CUDA):
+# CHECK_ACCELERATORS: sm_80
+# CHECK_ACCELERATORS: sm_90
 
 
 def main():

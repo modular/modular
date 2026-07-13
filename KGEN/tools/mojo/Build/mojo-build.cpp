@@ -7,6 +7,8 @@
 #include "mojo-build.h"
 #include "../Common/Compilation.h"
 
+#include <algorithm>
+
 #include "AsyncRT/CompilerSupport/Context.h"
 #include "Cache/CachedTransform.h"
 #include "Init/Init.h"
@@ -29,6 +31,7 @@
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
 #include "Support/PlatformLibNames.h"
+#include "Target/TargetTraits.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -45,11 +48,14 @@
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Basic/TargetOptions.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
@@ -202,85 +208,41 @@ static int printSupportedCpus(StringRef userTriple) {
   return EXIT_SUCCESS;
 }
 
-/// Print all supported GPU and accelerator architectures.
-///
-/// SYNC: This list must stay in sync with _all_targets in
-///       oss/modular/mojo/stdlib/std/gpu/host/info.mojo.
-/// Run the following test to verify:
-///       bazel test
-///       //KGEN/test/mojo-tool:build/verify_supported_accelerators_sync.mojo.test
-///
-/// TODO: single-source this information with info.mojo
+/// Print the supported GPU and accelerator architectures declared by the
+/// registered `TargetTraits`.
 static int printSupportedAccelerators() {
   // The '#' characters below are intentional.
   // These delimiters allow Mojo tests to extract the architecture list
   // without needing to know specific architecture prefixes.
-  llvm::outs() << R"(Supported GPU and Accelerator Architectures:
+  llvm::outs() << "Supported GPU and Accelerator Architectures:\n\n#\n";
 
-#
-NVIDIA (CUDA):
-  sm_52       - Maxwell (GTX 970)
-  sm_60       - Pascal (Tesla P100)
-  sm_61       - Pascal (GTX 1060, GTX 1080 Ti)
-  sm_75       - Turing (RTX 2060)
-  sm_80       - Ampere datacenter (A100)
-  sm_86       - Ampere workstation (A10)
-  sm_87       - Ampere embedded (Jetson Orin)
-  sm_89       - Ada Lovelace (L4, RTX 4090)
-  sm_90       - Hopper (H100)
-  sm_90a      - Hopper with extensions
-  sm_100      - Blackwell datacenter (B100, B200)
-  sm_100a     - Blackwell datacenter with extensions
-  sm_103      - Blackwell datacenter (B300)
-  sm_103a     - Blackwell datacenter with extensions
-  sm_110      - Blackwell embedded (Jetson Thor)
-  sm_110a     - Blackwell embedded with extensions
-  sm_120      - Blackwell consumer (RTX 5090)
-  sm_120a     - Blackwell consumer with extensions
-  sm_121      - Blackwell (DGX Spark)
-  sm_121a     - Blackwell with extensions
+  // Print one section per target, name-sorted.
+  llvm::SmallVector<const TargetTraits *> targets;
+  for (const std::unique_ptr<TargetTraits> &traits :
+       TargetTraitsRegistry::get().targets())
+    if (!traits->acceleratorSectionTitle().empty())
+      targets.push_back(traits.get());
+  llvm::sort(targets, [](const TargetTraits *lhs, const TargetTraits *rhs) {
+    return lhs->name() < rhs->name();
+  });
 
-AMD (ROCm/HIP):
-  gfx90a      - CDNA2 (MI250X)
-  gfx942      - CDNA3 (MI300X)
-  mi300a      - CDNA3 APU (MI300A)
-  mi300x      - (alias) -> gfx942
-  gfx950      - CDNA4 (MI355X)
-  mi355x      - (alias) -> gfx950
-  gfx1030     - RDNA2 (Radeon 6900)
-  gfx1033     - RDNA2 (Van Gogh)
-  gfx1100     - RDNA3 (Radeon 7900)
-  gfx1101     - RDNA3 (Radeon 7800/7700)
-  gfx1102     - RDNA3 (Radeon 7600)
-  gfx1103     - RDNA3 (Radeon 780M)
-  gfx1150     - RDNA3+ (Radeon 880M)
-  gfx1151     - RDNA3+ (Radeon 8060S)
-  gfx1152     - RDNA3+ (Radeon 860M)
-  gfx1200     - RDNA4 (Radeon 9060)
-  gfx1201     - RDNA4 (Radeon 9070)
+  llvm::ListSeparator sectionSep("\n");
+  for (const TargetTraits *traits : targets) {
+    llvm::outs() << sectionSep << traits->acceleratorSectionTitle() << "\n";
+    // Pad the arch column so the descriptions line up.
+    size_t width = 12;
+    for (const TargetTraits::AcceleratorArch &arch :
+         traits->supportedAcceleratorArchs())
+      width = std::max(width, arch.arch.size() + 2);
+    for (const TargetTraits::AcceleratorArch &arch :
+         traits->supportedAcceleratorArchs())
+      llvm::outs() << "  " << llvm::left_justify(arch.arch, width) << "- "
+                   << arch.description << "\n";
+  }
 
-Apple Silicon GPU:
-  apple-m1         - Apple M1
-  apple-m1-metal4  - Apple M1 (Metal 4.0 / macOS 26)
-  apple-m2         - Apple M2
-  apple-m2-metal4  - Apple M2 (Metal 4.0 / macOS 26)
-  apple-m3         - Apple M3
-  apple-m3-metal4  - Apple M3 (Metal 4.0 / macOS 26)
-  apple-m4         - Apple M4
-  apple-m4-metal4  - Apple M4 (Metal 4.0 / macOS 26)
-  apple-m5         - Apple M5
-  apple-m5-metal4  - Apple M5 (Metal 4.0 / macOS 26)
+  llvm::outs() << "#\n";
 
-Other:
-  cuda        - Generic CUDA
-#
-
-Alternative formats supported:
-  nvidia:<arch>  - e.g., nvidia:sm_90a, nvidia:80
-  amdgpu:<arch>  - e.g., amdgpu:gfx942
-
-Usage: mojo build --target-accelerator <arch> file.mojo
-)";
+  llvm::outs() << "\nUsage: mojo build --target-accelerator <arch> file.mojo\n";
 
   return EXIT_SUCCESS;
 }
