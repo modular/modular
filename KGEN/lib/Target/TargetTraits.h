@@ -31,14 +31,14 @@ struct object_creator;
 namespace M::KGEN {
 
 /// Per-target metadata dispatched by triple. Carries only cheap, broadly-useful
-/// facts about a target (its output-file extensions today); the heavy codegen
-/// behavior stays on `TargetBackend` and the MLIR-lowering hooks on
-/// `TargetLowering`.
+/// facts about a target (output-file extensions, accelerator arch tables); the
+/// heavy codegen behavior stays on `TargetBackend` and the MLIR-lowering hooks
+/// on `TargetLowering`.
 class TargetTraits {
 public:
   virtual ~TargetTraits() = default;
 
-  /// Short name of the target, e.g. "host", "nvptx".
+  /// Short name of the target, e.g. "host".
   virtual llvm::StringRef name() const = 0;
   /// Whether these traits describe `triple`.
   virtual bool matches(const llvm::Triple &triple) const = 0;
@@ -53,14 +53,29 @@ public:
     return matches(triple) ? this : nullptr;
   }
 
-  /// File extension for this target's assembly output (e.g. ".ptx", ".s").
+  /// File extension for this target's assembly output (e.g. ".s").
   virtual llvm::StringRef getAsmExtension() const = 0;
   /// File extension for this target's LLVM IR output. Each target uses a
-  /// distinct spelling (e.g. ".nvptx.ll") so offload kernels from different
-  /// targets do not collide in one output directory.
+  /// distinct spelling so offload kernels from different targets do not
+  /// collide in one output directory.
   virtual llvm::StringRef getLLVMExtension() const = 0;
-  /// File extension for this target's object output (e.g. ".cubin", ".o").
+  /// File extension for this target's object output (e.g. ".o").
   virtual llvm::StringRef getObjectExtension() const = 0;
+
+  /// One accelerator architecture accepted by `--target-accelerator`.
+  struct AcceleratorArch {
+    llvm::StringRef arch;
+    llvm::StringRef description;
+  };
+
+  /// Title of this target's section in the `--print-supported-accelerators`
+  /// table. Targets with no accelerator archs return an empty title and are
+  /// omitted from the table.
+  virtual llvm::StringRef acceleratorSectionTitle() const { return {}; }
+  /// The accelerator archs this target accepts, in display order.
+  virtual llvm::ArrayRef<AcceleratorArch> supportedAcceleratorArchs() const {
+    return {};
+  }
 };
 
 /// Registry of `TargetTraits`, dispatched by triple. Mirrors
@@ -85,7 +100,7 @@ private:
 };
 
 /// Registers `TraitsT` at static-init, e.g.:
-///   static RegisterTargetTraits<NVPTXTraits> X;
+///   static RegisterTargetTraits<HostTraits> X;
 template <typename TraitsT>
 struct RegisterTargetTraits {
   RegisterTargetTraits() {
