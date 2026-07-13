@@ -22,6 +22,7 @@ exclude = [
     "Faux/mojo_llm_from_scratch",
     "CloudInfra/workloads/max-product-dashboard",
     "Kernels/claude_kb/index.md",  # generated catalog; one-line entries exceed line-length by design
+    "Kernels/claude_kb/entries",  # machine-generated reference entries: deep file:line citations legitimately exceed line-length; gated by validate.py/gc.py, not markdown lint
 ]
 
 [ul-style]
