@@ -510,3 +510,19 @@ struct RaisingFieldwiseInit(ImplicitlyCopyable):
     # CHECK-LABEL: lit.fn @"__init__{{.*}} throws
     def __init__(out self, x: Int) raises:
         pass
+
+# ===----------------------------------------------------------------------=== #
+# @__defines_interior_origins
+# ===----------------------------------------------------------------------=== #
+
+# CHECK-LABEL: lit.fn @"with_interior_origins()"
+# CHECK-SAME: definesInteriorOrigins
+@__defines_interior_origins
+def with_interior_origins():
+    pass
+
+
+# CHECK-LABEL: lit.fn @"without_interior_origins()"
+# CHECK-NOT: definesInteriorOrigins
+def without_interior_origins():
+    pass
