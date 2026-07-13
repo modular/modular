@@ -24,6 +24,13 @@ from std.memory import (
     UnsafeMaybeUninit,
 )
 from std.memory.arc_pointer import WeakPointer
+from _hal.execution_config import (
+    ExecutionConfig,
+    BlockExecutionConfig,
+    GridBlockExecutionConfig,
+    GPUExecutionConfiguration,
+    NearComputeGeneralPurposeScratchpadExecutionConfig,
+)
 
 
 @fieldwise_init
@@ -112,6 +119,28 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             arg_sizes,
             num_args,
             shared_mem_bytes=shared_mem_bytes,
+        )
+        self._chain_signal()
+
+    def execute[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+    ](
+        mut self,
+        func: FunctionHandle,
+        execution_config: ExecutionConfigType,
+        args: UnsafePointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
+        arg_sizes: UnsafePointer[mut=True, UInt64, _],
+        num_args: UInt32,
+    ) raises HALError:
+        """Enqueues a function execution. Runs after all previous Stream ops."""
+        self._chain_wait()
+        self._queue[].execute(
+            func,
+            execution_config,
+            args,
+            arg_sizes,
+            num_args,
         )
         self._chain_signal()
 

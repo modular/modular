@@ -31,6 +31,13 @@ from std.memory import (
     UnsafeMaybeUninit,
 )
 from std.memory.arc_pointer import WeakPointer
+from _hal.execution_config import (
+    ExecutionConfig,
+    BlockExecutionConfig,
+    GridBlockExecutionConfig,
+    GPUExecutionConfiguration,
+    NearComputeGeneralPurposeScratchpadExecutionConfig,
+)
 
 
 @fieldwise_init
@@ -110,6 +117,79 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             arg_sizes,
             num_args,
             shared_mem_bytes=shared_mem_bytes,
+        )
+
+    def execute[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+    ](
+        self,
+        func: FunctionHandle,
+        execution_config: ExecutionConfigType,
+        args: UnsafePointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
+        arg_sizes: UnsafePointer[mut=True, UInt64, _],
+        num_args: UInt32,
+    ) raises HALError:
+        """
+        Enqueue an execution of the passed function as a kernel on this queue.
+
+        Totally ordered with respect to other operations within this queue
+        if backed by a stream.
+        """
+        var grid_dim = execution_config.get_grid_dim()
+        var block_dim = execution_config.get_block_dim()
+
+        debug_assert(
+            grid_dim.x() > 0 and grid_dim.y() > 0 and grid_dim.z() > 0,
+            "grid dimensions must be positive",
+        )
+        debug_assert(
+            block_dim.x() > 0 and block_dim.y() > 0 and block_dim.z() > 0,
+            "block dimensions must be positive",
+        )
+        debug_assert(
+            grid_dim.x() <= 0xFFFFFFFF
+            and grid_dim.y() <= 0xFFFFFFFF
+            and grid_dim.z() <= 0xFFFFFFFF,
+            "grid dimensions must fit in 32 bits",
+        )
+        debug_assert(
+            block_dim.x() <= 0xFFFFFFFF
+            and block_dim.y() <= 0xFFFFFFFF
+            and block_dim.z() <= 0xFFFFFFFF,
+            "block dimensions must fit in 32 bits",
+        )
+
+        var grid = Tuple(
+            UInt32(grid_dim.x()), UInt32(grid_dim.y()), UInt32(grid_dim.z())
+        )
+        var block = Tuple(
+            UInt32(block_dim.x()), UInt32(block_dim.y()), UInt32(block_dim.z())
+        )
+
+        var near_compute_scratchpad_usage: UInt64 = 0
+        comptime if conforms_to(
+            ExecutionConfigType,
+            NearComputeGeneralPurposeScratchpadExecutionConfig,
+        ):
+            near_compute_scratchpad_usage = (
+                execution_config.get_near_compute_scratchpad_usage()
+            )
+
+        debug_assert(
+            near_compute_scratchpad_usage <= 0xFFFFFFFF,
+            "near compute scratchpad usage must fit in 32 bits",
+        )
+
+        self._raw[].execute_function(
+            self._handle,
+            func,
+            grid,
+            block,
+            args,
+            arg_sizes,
+            num_args,
+            shared_mem_bytes=UInt32(near_compute_scratchpad_usage),
         )
 
     # Direction-specific transports. Callable directly for fine-grained
