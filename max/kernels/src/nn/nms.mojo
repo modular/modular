@@ -173,21 +173,23 @@ def non_max_suppression[
 
     var pred_count = 0
 
-    @parameter
     @always_inline
-    def store_to_outputs(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
+    def store_to_outputs(
+        batch_idx: Int64, class_idx: Int64, box_idx: Int64
+    ) {output, mut pred_count}:
         """Store selected box indices to output tensor."""
         output[pred_count, 0] = batch_idx
         output[pred_count, 1] = class_idx
         output[pred_count, 2] = box_idx
         pred_count += 1
 
-    non_max_suppression[dtype, store_to_outputs](
+    non_max_suppression[dtype](
         boxes,
         scores,
         max_output_boxes_per_class,
         iou_threshold,
         score_threshold,
+        store_to_outputs,
     )
 
 
@@ -221,18 +223,20 @@ def non_max_suppression_shape_func[
 
     var box_pred_count: Int64 = 0
 
-    @parameter
     @always_inline
-    def incr_pred_count(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
+    def incr_pred_count(
+        batch_idx: Int64, class_idx: Int64, box_idx: Int64
+    ) {mut box_pred_count}:
         """Count selected boxes without storing them."""
         box_pred_count += 1
 
-    non_max_suppression[dtype, incr_pred_count](
+    non_max_suppression[dtype](
         boxes,
         scores,
         max_output_boxes_per_class,
         iou_threshold,
         score_threshold,
+        incr_pred_count,
     )
 
     return IndexList[2](Int(box_pred_count), 3)
@@ -240,13 +244,14 @@ def non_max_suppression_shape_func[
 
 def non_max_suppression[
     dtype: DType,
-    func: def(Int64, Int64, Int64) capturing[_] -> None,
+    FuncType: ImplicitlyCopyable & def(Int64, Int64, Int64) -> None,
 ](
     boxes: TileTensor[dtype, ...],
     scores: TileTensor[dtype, ...],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
+    func: FuncType,
 ):
     """Implements the NonMaxSuppression operator from the ONNX spec https://github.com/onnx/onnx/blob/main/docs/Operators.md#nonmaxsuppression.
     """
