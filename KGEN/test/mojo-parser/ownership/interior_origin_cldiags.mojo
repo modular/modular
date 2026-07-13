@@ -28,6 +28,7 @@ struct MyListInterior[T: AnyType]:
         pass
 
     @__defines_interior_origins
+    @__unsafe_disable_nested_origin_exclusivity
     def __getitem__(
         ref self
     ) -> ref[self.data.get_ref_with_unsafe_interior_origin["element"](self)] Self.T:
@@ -93,3 +94,16 @@ def test_field_sensitive_nested_invalidation():
     # However, it should invalidate the first list.
     # expected-error @+1 {{use of invalidated interior reference 'list_of_two_intlists["element"].first["element"]'}}
     first_list_elt += 4
+
+def test_dominance_lifetime():
+    var list = MyListInterior[Int]()
+    ref elt_ref2 = list[]
+    elt_ref2 += 4 # This works
+    list.mutate()
+
+    elt_ref3 = list[]  # expected-note {{origin was defined here, after the reference was formed}}
+    elt_ref3 += 4   # This works because the ref was refreshed.
+
+    # This is an error because the ref is invalidated.
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    elt_ref2 += 4

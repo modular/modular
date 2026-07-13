@@ -2110,6 +2110,11 @@ void UninitializedValueScan::invalidateInteriorOriginsForOperand(
   if (!isDeref)
     return;
 
+  // __unsafe_disable_nested_origin_exclusivity does not invalidate internal
+  // origins, because it is a promise that they won't be accessed.
+  if (isNestedOriginExclusivityDisabled(op))
+    return;
+
   // Given a mutation of an origin "o", invalidate any interior origins derived
   // from it, like "o[]" or "o.field[]".
   interiorOriginTracker.invalidateOnMutation(
@@ -2318,45 +2323,113 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
   invalidateInteriorOriginsForOperand(value, /*isDeref=*/true, op);
 }
 
+/// Given an operand that uses an interior origin, figure out what program point
+/// defined it.  For example, the operand might be a !lit.ref for a ref operand,
+/// or a struct value like a Pointer that contains the origin, or it might be
+/// something like a by-ref DictIterator that contains the origin.
+static Operation *getProgramPointThatDefinedInteriorOrigin(Value v) {
+  // FIXME: This doesn't seem enough to handle the by-ref operand case, it will
+  // get the reference to the VarDecl, not necessarily the store.  This is
+  // "close enough" for now, but should be evaluated as things shape up.
+  while (1) {
+    // Look through stuff that is generally transparent to CheckLifetimes.
+    if (auto structGER = v.getDefiningOp<RefStructGEROp>())
+      v = structGER.getOperand();
+    else if (auto rebind = v.getDefiningOp<RebindOp>())
+      v = rebind.getOperand();
+    else if (auto immut = v.getDefiningOp<RefImmutOp>())
+      v = immut.getOperand();
+    else if (auto load = v.getDefiningOp<RefLoadOp>()) {
+      // Looking through ref loads will give us the vardecl for local values,
+      // which is strictly more conservative than looking at the load itself:
+      //
+      //   %vd = lit.var.decl
+      //   ... some stuff ...
+      //   %tmp = lit.ref.load %vd
+      //
+      // Here we treat the program point for the reference as %vd instead of
+      // %tmp.
+      v = load.getOperand();
+    } else
+      return v.getDefiningOp();
+  }
+}
+
 void UninitializedValueScan::checkInteriorOriginUsage(
     InteriorOriginAttr interior, Value operand, Operation &op) {
+
+  auto getOriginStr = [&]() -> std::string {
+    std::string originStr;
+    llvm::raw_string_ostream originOs(originStr);
+    OriginPrinter().print(originOs, interior, /*elideOriginOf=*/true);
+    return originStr;
+  };
 
   // If we know it isn't live because it has never been invalidated, or got
   // invalidated, then it is obviously not live.
   auto &entry =
       liveness.interior[interiorOriginTracker.getInteriorOriginID(interior)];
-  if (entry.getInt()) {
-    // If it is live, then we're done.
-    // TODO: Handle dominance.
-    // if (!valueSet.domInfo.properlyDominates(valueInfo.value, &op))
-    //  continue;
+  if (!entry.getInt()) {
+    // If the interior origin is based on something else uninitialized, then
+    // complain about the base of the access, not its internals.
+    SmallVector<InteriorOriginAttr> dummy;
+    for (ValueRef access :
+         valueSet.getValueRefsForOrigin(interior.getBase(), dummy)) {
+      if (!access.isAllPresent(liveness.tracked)) {
+        diagnoseUsageError(access, op);
+        return;
+      }
+    }
+
+    // TODO: If we get a lot of redundant diagnostics for invalidated origins,
+    // we can add a bitvector to UVS to squelch them.
+    auto diag = emitError(op.getLoc());
+    if (Operation *invalidatingOp = entry.getPointer()) {
+      diag << "use of invalidated interior reference '" << getOriginStr()
+           << "'";
+      diag.attachNote(invalidatingOp->getLoc())
+          << "origin was invalidated here";
+    } else {
+      diag << "use of a never-initialized interior reference '"
+           << getOriginStr() << "'";
+    }
+
+    // Mark the liveness sentinel as having an error diagnosed to make sure the
+    // pass fails.
+    valueSet.getValueInfo(0).hasErrorDiagnosed = true;
     return;
   }
 
-  // Okay, it isn't live, complain about it.
+  // If the interior origin is available at this program point, we still need
+  // to verify that the actual reference being used hasn't been invalidated
+  // and reinstated.  Consider something like:
+  //
+  //     ref r1 = list[i] # Def #1
+  //     list.append(4) # Could reallocate the memory 'r1' points to.
+  //     ref r2 = list[j] # Def #2
+  //     use(r2)  # This is clearly fine.
+  //     use(r)   # This is invalid because 'r' was invalidated.
+  //
+  // To handle this, we look at the operation in the interior origin entry,
+  // which is the first operation that defined the interior origin.  If that
+  // operation dominates the reference, then it is valid (as in the case of
+  // Def #2 dominating r2). If that operation does not dominate the reference
+  // (as in Def #2 not dominating r1) then it is invalid.
+  Operation *definingOp = entry.getPointer();
+  Operation *operandPt = getProgramPointThatDefinedInteriorOrigin(operand);
+  // TODO: What about block arguments?
+  assert(operandPt && "operand wasn't defined by a program point?");
 
-  // If the interior origin is based on something else uninitialized, then
-  // complain about the base of the access, not the indirect aspect.
-  SmallVector<InteriorOriginAttr> dummy;
-  for (ValueRef access :
-       valueSet.getValueRefsForOrigin(interior.getBase(), dummy)) {
-    if (!access.isAllPresent(liveness.tracked)) {
-      diagnoseUsageError(access, op);
-      return;
-    }
-  }
+  // If the defining operation dominates the operand, then it is valid.
+  if (valueSet.domInfo.dominates(definingOp, operandPt))
+    return;
 
-  // TODO: If we get a lot of redundant diagnostics for invalidated origins, we
-  // can add a bitvector to UVS to squelch them.
-  SmallString<128> originStr;
-  llvm::raw_svector_ostream originOs(originStr);
-  OriginPrinter().print(originOs, interior, /*elideOriginOf=*/true);
-
+  // Otherwise, it is valid for some other reference but was reinitialized since
+  // this reference was formed.
   auto diag = emitError(op.getLoc(), "use of invalidated interior reference '");
-  diag << originStr << "'";
-
-  if (Operation *invalidatingOp = entry.getPointer())
-    diag.attachNote(invalidatingOp->getLoc()) << "origin was invalidated here";
+  diag << getOriginStr() << "'";
+  diag.attachNote(definingOp->getLoc())
+      << "origin was defined here, after the reference was formed";
 
   // We mark the liveness sentinel as having an error diagnosed to make sure the
   // pass fails.
@@ -2542,6 +2615,12 @@ void UninitializedValueScan::scanBlock(Block &block) {
       }
     }
 
+    // Process any origins accessed indirectly.
+    for (auto [origin, value] : originEffects) {
+      checkOriginAccesses(origin, value, op);
+      hasAnyOrigin |= sugarIsa<AnyOriginAttr>(origin);
+    }
+
     assert(resultEffects.size() == op.getNumResults() &&
            "getOperationEffects returned wrong # effects");
     for (auto [result, effect] : llvm::zip(op.getResults(), resultEffects)) {
@@ -2605,12 +2684,6 @@ void UninitializedValueScan::scanBlock(Block &block) {
         definedOrigins.push_back(cast<RefType>(result.getType()).getOrigin());
         break;
       }
-    }
-
-    // Process any origins accessed indirectly.
-    for (auto [origin, value] : originEffects) {
-      checkOriginAccesses(origin, value, op);
-      hasAnyOrigin |= sugarIsa<AnyOriginAttr>(origin);
     }
 
     // If the operation used a #lit.any.origin value, then we treat it as an
