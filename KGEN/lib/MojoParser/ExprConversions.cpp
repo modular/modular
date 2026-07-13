@@ -954,22 +954,28 @@ classifyGeneratorToGenerator(ASTExprAnd<CValue> valueExpr,
 // Zero Cost Conversions
 //===----------------------------------------------------------------------===//
 
-static TypedAttr stripTypeValueUpcast(TypedAttr typeValue) {
-  if (auto upcast = sugarDynCast<UpcastAttr>(typeValue))
-    return stripTypeValueUpcast(upcast.getInputTypeValue());
+static TypedAttr stripTypeValueCasts(TypedAttr typeValue) {
+  typeValue = LIT::stripIdentityWrappers(typeValue);
   if (auto typeParam = sugarDynCast<TypeParamAttr>(typeValue))
     if (auto paramType = sugarDynCast<ParamType>(typeParam.getTypeValue()))
-      return stripTypeValueUpcast(paramType.getParam());
+      typeValue = LIT::stripIdentityWrappers(paramType.getParam());
   return typeValue;
 }
 
-static TypedAttr stripTypeValueDowncast(TypedAttr typeValue) {
-  if (auto downcast = sugarDynCast<DowncastAttr>(typeValue))
-    return stripTypeValueDowncast(downcast.getInputTypeValue());
-  if (auto typeParam = sugarDynCast<TypeParamAttr>(typeValue))
-    if (auto paramType = sugarDynCast<ParamType>(typeParam.getTypeValue()))
-      return stripTypeValueDowncast(paramType.getParam());
-  return typeValue;
+// Returns true if `fromParam` and `toParam` denote the same parameter value up
+// to `downcast`/`upcast` wrappers. A downcasted (or upcasted) type-value is
+// semantically equivalent to its underlying type-value for rebind purposes. The
+// wrappers only add (or relax) compile-time trait constraints.
+static bool zeroCostConvertibleTypeValues(TypedAttr fromParam,
+                                          TypedAttr toParam) {
+  if (isEqualCanon(fromParam, toParam))
+    return true;
+
+  // This also covers combined upcast/downcast cases, e.g. when a downcasted
+  // type from struct_field_types is compared against an upcasted metatype,
+  // which can occur in generic serialization code that uses reflection to
+  // iterate over fields while also using trait-based dispatch.
+  return stripTypeValueCasts(fromParam) == stripTypeValueCasts(toParam);
 }
 
 static bool canZeroCostConvertParamTypes(ParamType fromParamType,
@@ -984,8 +990,8 @@ static bool canZeroCostConvertParamTypes(ParamType fromParamType,
       if (fromGetWitness.getWitnessName() != toGetWitness.getWitnessName())
         return false;
 
-      auto fromTypeValue = stripTypeValueUpcast(fromGetWitness.getTypeValue());
-      auto toTypeValue = stripTypeValueUpcast(toGetWitness.getTypeValue());
+      auto fromTypeValue = stripTypeValueCasts(fromGetWitness.getTypeValue());
+      auto toTypeValue = stripTypeValueCasts(toGetWitness.getTypeValue());
       if (fromTypeValue != toTypeValue)
         return false;
 
@@ -994,27 +1000,8 @@ static bool canZeroCostConvertParamTypes(ParamType fromParamType,
   }
 
   // Handle downcast<X> -> X conversions.
-  // A downcasted type is semantically equivalent to its underlying type for
-  // rebind purposes - the downcast only adds compile-time trait constraints.
-  auto fromParam = fromParamType.getParam();
-  auto toParam = toParamType.getParam();
-
-  auto strippedFrom = stripTypeValueDowncast(fromParam);
-  auto strippedTo = stripTypeValueDowncast(toParam);
-
-  // If either had downcast wrappers, compare the underlying types
-  if (strippedFrom != fromParam || strippedTo != toParam) {
-    if (strippedFrom == strippedTo)
-      return true;
-    // Handle combined upcast/downcast cases, e.g. when a downcasted type from
-    // struct_field_types is compared against an upcasted metatype. This can
-    // occur in generic serialization code that uses reflection to iterate over
-    // fields while also using trait-based dispatch.
-    if (stripTypeValueUpcast(strippedFrom) == stripTypeValueUpcast(strippedTo))
-      return true;
-  }
-
-  return false;
+  return zeroCostConvertibleTypeValues(fromParamType.getParam(),
+                                       toParamType.getParam());
 }
 
 static FailureOr<bool>
@@ -1076,6 +1063,24 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
         toSig = toSig.getSpecializedGenerator(toType.getParamBindings(),
                                               &shared.getEvaluationContext());
         return canZeroCostConvert(fromSig, toSig, shared);
+      }
+
+      // Otherwise, if both types reference the same struct declaration (e.g.
+      // `Iter[X]` vs `Iter[Y]`), the conversion is zero-cost as long as each
+      // pair of parameter bindings is zero-cost convertible. We conservatively
+      // require both sides to be `StructType` here, though in principle this
+      // just needs both sides to be some metatype of struct types at the same
+      // type-universe level.
+      if (fromDecl == toDecl && sugarIsa<StructType>(fromType) &&
+          sugarIsa<StructType>(toType)) {
+        ArrayRef<TypedAttr> fromParams = fromType.getParamBindings();
+        ArrayRef<TypedAttr> toParams = toType.getParamBindings();
+        if (fromParams.size() == toParams.size() &&
+            llvm::all_of(llvm::zip(fromParams, toParams), [](auto pair) {
+              return zeroCostConvertibleTypeValues(std::get<0>(pair),
+                                                   std::get<1>(pair));
+            }))
+          return true;
       }
       return false;
     }

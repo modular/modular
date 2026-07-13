@@ -292,6 +292,10 @@ TraitType getTraitBoundFromAssumptions(
     TypedAttr typeAttr, ArrayRef<ConstraintAttr> assumptions,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver);
 
+/// Peel off transparent wrappers that do not change type identity: rebind,
+/// upcast, and downcast.
+TypedAttr stripIdentityWrappers(TypedAttr attr);
+
 /// TODO: `ClosureEmitter.cpp` has a nearly identical helper
 /// (`getUnderlyingParamRef`). Unify these implementations to avoid drift.
 ///

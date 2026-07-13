@@ -860,8 +860,6 @@ Attribute IndexToDeclRefRemapper::tryReplace(Attribute attr, size_t depth) {
 // Constraint Implication
 //===----------------------------------------------------------------------===//
 
-static TypedAttr stripIdentityWrappers(TypedAttr attr);
-
 /// Normalize a `conforms_to` for structural comparison: strip identity wrappers
 /// (rebind/upcast/downcast) from the type value so `conforms_to(upcast<T>, X)`
 /// matches `conforms_to(T, X)`, and decompose concrete variadic lists and
@@ -1097,12 +1095,7 @@ static void forEachConformsToInProposition(
   visit(proposition);
 }
 
-/// Peel off transparent wrappers that do not change identity for the purpose
-/// of matching a type parameter against a conforms_to constraint: rebind,
-/// upcast, and downcast. Stripping upcasts/downcasts lets us match the same
-/// underlying parameter even when one side has been statically widened
-/// (e.g. `T: Movable` upcast to `AnyType`) or narrowed.
-static TypedAttr stripIdentityWrappers(TypedAttr attr) {
+TypedAttr LIT::stripIdentityWrappers(TypedAttr attr) {
   while (true) {
     TypedAttr stripped = ParamOperatorAttr::stripRebind(attr);
     stripped = UpcastAttr::strip(stripped);
