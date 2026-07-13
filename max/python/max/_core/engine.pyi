@@ -392,7 +392,7 @@ class DebugConfig:
     @property
     def profiling_output_path(self) -> str:
         """
-        Location of the Chrome-trace JSON that is written when profiling stops. An empty value falls back to the built-in default. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_OUTPUT_PATH`` environment variable.
+        Where to write the Chrome-trace JSON. Accepts a file path; supports ``{pid}`` and ``{rank}`` template substitution and directory mode (existing-directory paths auto-generate ``trace_rank<rank>_<pid>_<unix-ts>_<seq>.json`` inside). An empty value lets ``Range.cpp`` fall back to its built-in default. Mirrored by ``MODULAR_MAX_DEBUG_PROFILING_OUTPUT_PATH``.
         """
 
     @profiling_output_path.setter
