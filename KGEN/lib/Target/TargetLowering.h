@@ -126,6 +126,12 @@ public:
     return false;
   }
 
+  /// Returns whether `op` is a target-specific operation that makes the
+  /// enclosing function convergent (e.g. a GPU barrier). Used by the
+  /// infer-function-attrs pass to propagate the `convergent` attribute.
+  /// Default false.
+  virtual bool isConvergentOp(mlir::Operation *op) const { return false; }
+
   /// Marks `func` (an exported `llvm.func` lowered for this target) with any
   /// target-specific attribute or calling convention that identifies it as a
   /// kernel entry point to the backend. The default does nothing, which is
