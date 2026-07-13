@@ -802,3 +802,21 @@ This version is still a work in progress.
       def operate(self) -> Self.Output where conforms_to(Self.T, Movable):
           return Int(123)
   ```
+
+- A method whose return type is a generic struct instantiated with a
+  parameter that only satisfies the struct's declared trait bound via the
+  method's own `where` clause (rather than via the parameter's own
+  declaration) is now accepted, instead of spuriously rejecting the returned
+  value as a different, unconvertible type.
+
+  ```mojo
+  struct Collection[T: AnyType](Movable):
+      def foo(
+          var self,
+      ) -> Iter[Self.T] where conforms_to(Self.T, ImplicitlyDeletable):
+          return Iter(self^)
+
+  @fieldwise_init
+  struct Iter[T: ImplicitlyDeletable]:
+      var _collection: Collection[Self.T]
+  ```
