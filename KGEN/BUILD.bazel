@@ -1057,8 +1057,16 @@ modular_cc_library(
 # own source file; dropping a target's file drops it from the build.
 modular_cc_library(
     name = "TargetTraits",
-    srcs = ["lib/Target/TargetTraits.cpp"] + glob(["lib/Target/*/*.cpp"]),
-    hdrs = ["lib/Target/TargetTraits.h"] + glob(["lib/Target/*/*.h"]),
+    # TargetLowering.{cpp,h} live in this same directory but belong to the
+    # separate :TargetLowering target, so exclude them from this recursive glob.
+    srcs = glob(
+        ["lib/Target/**/*.cpp"],
+        exclude = ["lib/Target/TargetLowering.cpp"],
+    ),
+    hdrs = glob(
+        ["lib/Target/**/*.h"],
+        exclude = ["lib/Target/TargetLowering.h"],
+    ),
     strip_include_prefix = "lib",
     visibility = [
         "//KGEN:consumers",
