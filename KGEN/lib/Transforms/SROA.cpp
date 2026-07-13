@@ -512,8 +512,78 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
                uint32_t maxNumElements, SmallVector<Value> &valueMemCache)
       : Replacer(builder, alloc, alloc, maxNumElements, valueMemCache) {}
 
+  /// True if `ptr` reaches the slot only through offset-zero bitcasts/GEPs and
+  /// is used solely to load/store the slot's own element type -- a round-trip
+  /// pun aliasing the slot. A different type or address-space change is not.
+  bool isRoundTripAlias(Value ptr) {
+    Type slotTy = alloc.getResult().getType();
+    for (Operation *user : ptr.getUsers()) {
+      if (auto store = dyn_cast<POP::StoreOp>(user)) {
+        if (store.getArg() == ptr || ptr.getType() != slotTy)
+          return false;
+      } else if (isa<POP::LoadOp>(user)) {
+        if (ptr.getType() != slotTy)
+          return false;
+      } else if (isa<PointerBitcastOp>(user)) {
+        if (!isRoundTripAlias(user->getResult(0)))
+          return false;
+      } else if (auto gep = dyn_cast<StructGEPOp>(user)) {
+        auto idx = dyn_cast<IntegerAttr>(gep.getIndex());
+        if (!idx || idx.getInt() != 0 || !isRoundTripAlias(gep.getResult()))
+          return false;
+      } else if (auto gep = dyn_cast<POP::ArrayGEPOp>(user)) {
+        APInt idx;
+        if (!matchPattern(gep.getIndex(), mlir::m_ConstantInt(&idx)) ||
+            !idx.isZero() || !isRoundTripAlias(gep.getResult()))
+          return false;
+      } else {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Point a validated round-trip chain's element-typed leaves at `target` and
+  /// queue the dead bitcast/GEP ops for deletion, deepest first.
+  void rewriteRoundTrip(Value ptr, Value target,
+                        SmallVectorImpl<Operation *> &toDelete) {
+    for (Operation *user : llvm::make_early_inc_range(ptr.getUsers())) {
+      if (isa<PointerBitcastOp, StructGEPOp, POP::ArrayGEPOp>(user)) {
+        rewriteRoundTrip(user->getResult(0), target, toDelete);
+        toDelete.push_back(user);
+      }
+    }
+    if (ptr.getType() == target.getType())
+      ptr.replaceAllUsesWith(target);
+  }
+
+  /// Fold pointer-bitcast round-trip puns on the slot in place -- rewrite them
+  /// to the allocation itself and delete the dead chains, without decomposing
+  /// -- leaving the slot for mem2reg to promote. Returns whether it changed
+  /// anything. Used for scalar slots, where there is nothing to split.
+  bool foldRoundTrips(SmallVectorImpl<Operation *> &toDelete) {
+    SmallVector<PointerBitcastOp> puns;
+    for (Operation *user : alloc->getUsers()) {
+      if (auto bitcast = dyn_cast<PointerBitcastOp>(user))
+        if (isRoundTripAlias(bitcast.getResult()))
+          puns.push_back(bitcast);
+    }
+    for (PointerBitcastOp bitcast : puns) {
+      rewriteRoundTrip(bitcast.getResult(), alloc.getResult(), toDelete);
+      toDelete.push_back(bitcast);
+    }
+    return !puns.empty();
+  }
+
   bool canRun() {
     for (Operation *user : alloc->getUsers()) {
+      // Look through a pointer-bitcast round-trip pun.
+      if (auto bitcast = dyn_cast<PointerBitcastOp>(user)) {
+        if (!isRoundTripAlias(bitcast.getResult()))
+          return false;
+        continue;
+      }
+
       if (!isa<POP::OffsetOp, POP::StoreOp, POP::LoadOp, POP::ArrayGEPOp,
                StructGEPOp, StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(
               user))
@@ -582,7 +652,9 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
 
   void replaceUserImpl(Operation *user,
                        SmallVectorImpl<Operation *> &toDelete) {
-    if (auto offset = dyn_cast<OffsetOp>(user)) {
+    if (auto bitcast = dyn_cast<PointerBitcastOp>(user)) {
+      rewriteRoundTrip(bitcast.getResult(), newAllocas[0], toDelete);
+    } else if (auto offset = dyn_cast<OffsetOp>(user)) {
       APInt index;
       matchPattern(offset.getIndex(), mlir::m_ConstantInt(&index));
       offset.replaceAllUsesWith(newAllocas[index.getLimitedValue()]);
@@ -670,6 +742,13 @@ void SROAPass::runOnOperation() {
         ReplaceArray replacer{builder, alloc, arrayTy, maxNumElements,
                               valueMemCache};
         changed |= replacer.run(toDelete);
+      } else if (llvm::any_of(alloc->getUsers(), [](Operation *user) {
+                   return isa<PointerBitcastOp>(user);
+                 })) {
+        // Scalar slot punned through a pointer-bitcast round-trip: fold the pun
+        // to the slot in place (no decomposition) so mem2reg can promote it.
+        ReplaceStack replacer{builder, alloc, maxNumElements, valueMemCache};
+        changed |= replacer.foldRoundTrips(toDelete);
       }
     });
 
