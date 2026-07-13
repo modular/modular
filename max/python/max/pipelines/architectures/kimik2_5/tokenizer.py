@@ -459,6 +459,16 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             array=encoded_prompt.astype(np.int64, copy=False),
         )
 
+        # Key each image on its raw encoded bytes (+ the resolution size
+        # class), not on hash_image(pixels): the raw-byte key is byte-identical
+        # across torch/BLAS/device so a separate encoder can reproduce it for
+        # cache-aware routing, whereas the post-resize float hash cannot. The
+        # vision processor resizes deterministically from the encoded bytes +
+        # fixed config, so the process-wide total-patch budget is the size
+        # tier. request.images is 1:1 with pixel_values and start_and_end_idxs
+        # (one processed chunk + one contiguous media-pad run per image).
+        image_size_tier = self.vision_processor.cfg.in_patch_limit
+
         context = KimiK2_5TextAndVisionContext(
             request_id=request.request_id,
             eos_tracker=await self.create_eos_tracker(request),
@@ -484,12 +494,15 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixels,
-                    image_hash=hash_image(pixels)
+                    image_hash=hash_image(raw_bytes, image_size_tier)
                     if self.enable_prefix_caching or self.enable_vision_caching
                     else None,
                 )
-                for (start_idx, end_idx), pixels in zip(
-                    start_and_end_idxs, pixel_values, strict=True
+                for (start_idx, end_idx), pixels, raw_bytes in zip(
+                    start_and_end_idxs,
+                    pixel_values,
+                    request.images,
+                    strict=True,
                 )
             ],
             vision_token_ids=self.vision_token_ids,
