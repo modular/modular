@@ -316,6 +316,8 @@ struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form
     a complete attribute that can be passed to GPU kernel launches. It provides
     a way to specify various execution parameters that control kernel behavior.
+
+    These are CUDA only, and are not supported on any other target.
     """
 
     var id: LaunchAttributeID
