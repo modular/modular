@@ -38,17 +38,17 @@ def takeOwnedAnyTypePack[*Ts: AnyType](var *rest: *Ts):
 # CHECK-LABEL: lit.fn @"takeOwnedAnyTypePack[{{.*}},*::AnyType
 
 # Test implicit lifetimes / param list.
-# CHECK-SAME: Ts: !lit.struct<#TypeList <:!lit.anytrait<!AnyType> !AnyType{{.*}}> pos_vararg
+# CHECK-SAME: Ts: !lit.struct<#TypeList <:meta<!AnyType> !AnyType{{.*}}> pos_vararg
 
 # Check the argument pack.
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> true}, :origin<true> *"rest.origin._mlir_origin
-# CHECK-SAME: :!lit.anytrait<!AnyType> !AnyType, {{.*}}, :param_list<!AnyType> {{.*}}Ts>>, mut *"rest{{.*}}"> owned_in_mem|pack_vararg)
+# CHECK-SAME: :meta<!AnyType> !AnyType, {{.*}}, :param_list<!AnyType> {{.*}}Ts>>, mut *"rest{{.*}}"> owned_in_mem|pack_vararg)
 
 
 # Check the argument pack.
 # CHECK-LABEL: lit.fn @"takeOwnedSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> true}, {{.*}}origin<true> *"rest
-# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait_AnyType, :param_list<!SomeTrait_AnyType> {{.*}}Ts>>, mut *"rest`3"> owned_in_mem|pack_vararg)
+# CHECK-SAME: :meta<!AnyType> !SomeTrait_AnyType, :param_list<!SomeTrait_AnyType> {{.*}}Ts>>, mut *"rest`3"> owned_in_mem|pack_vararg)
 def takeOwnedSomeTraitPack[*Ts: SomeTrait](var *rest: *Ts):
     pass
 
@@ -116,7 +116,7 @@ def test_owned_trait():
 # Check the argument pack.
 # CHECK-LABEL: lit.fn @"takeInoutSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> true}, {{.*}}origin<true> *"rest
-# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait_AnyType, :param_list<!SomeTrait_AnyType> {{.*}}Ts>>, imm *"rest`3"> mut|pack_vararg)
+# CHECK-SAME: :meta<!AnyType> !SomeTrait_AnyType, :param_list<!SomeTrait_AnyType> {{.*}}Ts>>, imm *"rest`3"> mut|pack_vararg)
 def takeInoutSomeTraitPack[*Ts: SomeTrait](mut *rest: *Ts):
     pass
 
@@ -180,7 +180,7 @@ def test_empty_pack():
 
 
 # CHECK-LABEL: lit.struct.decl @MyTuple
-# CHECK-SAME: Ts: !lit.struct<#TypeList <:!lit.anytrait<!AnyType> !AnyType{{.*}}> pos_vararg>
+# CHECK-SAME: Ts: !lit.struct<#TypeList <:meta<!AnyType> !AnyType{{.*}}> pos_vararg>
 struct MyTuple[*Ts: AnyType]:
     @implicit
     def __init__(out self, *args: *Self.Ts):
@@ -188,15 +188,15 @@ struct MyTuple[*Ts: AnyType]:
 
 
 # CHECK-LABEL: lit.fn @"pack
-# CHECK-SAME: Ts: !lit.struct<#TypeList <:!lit.anytrait<!AnyType> !AnyType{{.*}}> pos_vararg
-# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> *"args.origin{{.*}}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> {{.*}}Ts>>, imm *"args`3"> read_mem|pack_vararg)
+# CHECK-SAME: Ts: !lit.struct<#TypeList <:meta<!AnyType> !AnyType{{.*}}> pos_vararg
+# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> *"args.origin{{.*}}, :meta<!AnyType> !AnyType, :param_list<!AnyType> {{.*}}Ts>>, imm *"args`3"> read_mem|pack_vararg)
 def pack[*Ts: AnyType](*args: *Ts):
     pass
 
 
 # CHECK-LABEL: lit.fn @"packBorrowed[
-# CHECK-SAME: Ts: !lit.struct<#TypeList <:!lit.anytrait<!AnyType> !AnyType{{.*}}> pos_vararg
-# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> *"args.origin{{.*}}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> {{.*}}Ts>>, imm *"args`3"> read_mem|pack_vararg)
+# CHECK-SAME: Ts: !lit.struct<#TypeList <:meta<!AnyType> !AnyType{{.*}}> pos_vararg
+# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> *"args.origin{{.*}}, :meta<!AnyType> !AnyType, :param_list<!AnyType> {{.*}}Ts>>, imm *"args`3"> read_mem|pack_vararg)
 def packBorrowed[*Ts: AnyType](*args: *Ts):
     pass
 
@@ -240,7 +240,7 @@ def usePacks(x: FloatDyn, y: Int):
 def test_comptime_call[a: Int]():
     # CHECK: lit.alias.decl *"foo`": none =
     # CHECK-SAME: <apply(:!lit.generator<[1](
-    # CHECK-SAME: "args": !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> #lit.comptime.origin, {{.*}}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> [!Int], {{.*}}>, imm #lit.comptime.origin> read_mem|pack_vararg)
+    # CHECK-SAME: "args": !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> #lit.comptime.origin, {{.*}}, :meta<!AnyType> !AnyType, :param_list<!AnyType> [!Int], {{.*}}>, imm #lit.comptime.origin> read_mem|pack_vararg)
     # CHECK-SAME: <store_to_mem(a)>))
     comptime foo = pack(a)
 

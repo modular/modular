@@ -23,6 +23,6 @@ comptime TabulateIndices = ParameterList.tabulate[5, AddOne]
 
 # `TypeList.of` infers the element trait from its arguments, so no explicit
 # `Trait=` keyword argument is required.
-# CHECK-LABEL: lit.alias.decl *"TLOf{{[^"]*}}": meta<!lit.struct<#TypeList <:!lit.anytrait<!AnyType> !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable
+# CHECK-LABEL: lit.alias.decl *"TLOf{{[^"]*}}": meta<!lit.struct<#TypeList <:meta<!AnyType> !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable
 # CHECK-SAME: :param_list<!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !Bool]
 comptime TLOf = TypeList.of[Int, Bool]

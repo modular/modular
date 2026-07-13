@@ -736,7 +736,9 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       //
       // foo() # we infer elt : !kgen.param_list<!AnyType & !Foo>
       auto metaType = paramTp.getParam().getType();
-      // TODO: should we make AnyTraitType a `MetaType`?.
+      // TODO: AnyTraitType is now literally a MetaType<TraitType>, so this
+      // branch and the generic MetaType fallthrough below could probably be
+      // folded into a single `sugarCast<MetaType>(metaType).getType()`.
       if (auto anyTrait = sugarDynCast<AnyTraitType>(metaType))
         return anyTrait.getTraitType();
 

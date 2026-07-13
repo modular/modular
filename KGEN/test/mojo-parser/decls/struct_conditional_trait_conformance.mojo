@@ -11,8 +11,8 @@
 
 # Type aliases with constraints are generated for constrained trait compositions.
 # Check for constrained trait type aliases containing the expected constraints:
-# CHECK-DAG: @Copyable where #kgen.constraint<{{.*}}conforms_to(:{{.*}} T, :!lit.anytrait<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
-# CHECK-DAG: @Intable where #kgen.constraint<{{.*}}conforms_to(:{{.*}} T, :!lit.anytrait<!AnyType_ImplicitlyDeletable_Intable> !AnyType_ImplicitlyDeletable_Intable)
+# CHECK-DAG: @Copyable where #kgen.constraint<{{.*}}conforms_to(:{{.*}} T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK-DAG: @Intable where #kgen.constraint<{{.*}}conforms_to(:{{.*}} T, :meta<!AnyType_ImplicitlyDeletable_Intable> !AnyType_ImplicitlyDeletable_Intable)
 
 
 # ===========================================================================
@@ -35,7 +35,7 @@ struct UnconditionalMovable[T: Movable & ImplicitlyDeletable](Movable):
 # Verify the ConformanceOp has the constraint attached:
 # CHECK: lit.struct.decl @ConditionalCopyable<T: !AnyType_ImplicitlyDeletable_Movable>
 # CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :!lit.anytrait<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 struct ConditionalCopyable[T: Movable & ImplicitlyDeletable](
     Copyable where conforms_to(T, Copyable), Movable
 ):
@@ -57,9 +57,9 @@ struct ConditionalCopyable[T: Movable & ImplicitlyDeletable](
 # Verify ConformanceOps have constraints for both Copyable and Intable:
 # CHECK: lit.struct.decl @MultipleConditionalConformances<T: !AnyType_ImplicitlyDeletable_Movable>
 # CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :!lit.anytrait<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 # CHECK: kgen.conformance @"std::builtin::stubs::Intable"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :!lit.anytrait<!AnyType_ImplicitlyDeletable_Intable> !AnyType_ImplicitlyDeletable_Intable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_ImplicitlyDeletable_Intable> !AnyType_ImplicitlyDeletable_Intable)
 struct MultipleConditionalConformances[T: Movable & ImplicitlyDeletable](
     Copyable where conforms_to(T, Copyable),
     Intable where conforms_to(T, Intable),
@@ -239,9 +239,9 @@ struct CompoundMethodConstraint[T: Movable & ImplicitlyDeletable](
 #
 # CHECK: lit.struct.decl @CompositionConditional<T: !AnyType_ImplicitlyDeletable_Movable>
 # CHECK: kgen.conformance @"{{.*}}CompTraitA"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :!lit.anytrait<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 # CHECK: kgen.conformance @"{{.*}}CompTraitB"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :!lit.anytrait<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 
 trait CompTraitA:
     def comp_a_method(self): ...
@@ -272,7 +272,7 @@ struct CompositionConditional[T: Movable & ImplicitlyDeletable](
 #
 # CHECK: lit.struct.decl @DuplicateSameConstraint<T: !AnyType_ImplicitlyDeletable_Movable>
 # CHECK: kgen.conformance @"{{.*}}DupSameTrait"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :!lit.anytrait<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 
 trait DupSameTrait:
     def dup_method(self): ...
@@ -299,9 +299,9 @@ struct DuplicateSameConstraint[T: Movable & ImplicitlyDeletable](
 #
 # CHECK: lit.struct.decl @CompositionStandaloneSameConstraint<T: !AnyType_ImplicitlyDeletable_Movable>
 # CHECK: kgen.conformance @"{{.*}}CSTraitA"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :!lit.anytrait<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 # CHECK: kgen.conformance @"{{.*}}CSTraitB"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :!lit.anytrait<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_ImplicitlyDeletable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 
 trait CSTraitA:
     def cs_a_method(self): ...

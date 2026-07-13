@@ -36,9 +36,14 @@ bool LIT::isMetaType(Type type) {
     return isMetaType(genType.getBody());
   if (auto param = dyn_cast<ParamType>(type))
     return sugarIsa<StructMetaType, AnyTraitType>(param.getParam().getType());
-  return isa<NonStructTypeType, StructMetaType, StructMetaMetaType, TraitType,
-             AnyTraitType, TypeType, FnLiteralTypeGeneratorMetaType,
-             FnLiteralTypeGeneratorMetaMetaType>(type);
+  if (isa<NonStructTypeType, StructMetaType, TraitType, TypeType,
+          FnLiteralTypeGeneratorMetaType>(type))
+    return true;
+  // A plain MetaType wrapping something already meta-classified is itself a
+  // metatype too.
+  if (auto meta = dyn_cast<MetaType>(type))
+    return isMetaType(meta.getType());
+  return false;
 }
 bool LIT::isVariadicOfMetaType(Type type) {
   auto va = sugarDynCast<ParamListType>(type);

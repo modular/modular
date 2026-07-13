@@ -41,12 +41,6 @@ def TraitType : DialectType<(type
   ConcreteAttrArray<"ConstraintAttr">:$constraints
 )>;
 
-def AnyTraitType : DialectType<(type
-  ConcreteType<"TraitType">:$traitType
-)> {
-  let cBuilder = "get<$_resultType>(context, $_args)";
-}
-
 def MetaType : DialectType<(type
   Type:$type
 )> {
@@ -101,7 +95,6 @@ def LITDialectTypes : DialectTypes<"lit"> {
     TypeSignatureType,
     StructType,
     TraitType,
-    AnyTraitType,
     MetaType,
     OriginType,
     OriginSetType,

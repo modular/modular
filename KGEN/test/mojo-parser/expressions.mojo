@@ -1037,7 +1037,7 @@ def function_types():
   comptime p1 = def[a: Int, b: ParamType[a]]() thin raises -> None
 
   # CHECK: lit.alias.decl *"p2{{.*}}"Ts": !lit.struct<#TypeList{{.*}} pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack
-  # CHECK-SAME: <:!Bool {:scalar<bool> false},  :origin<false> *(0,2){{.*}}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> *(0,0), :!Bool {:scalar<bool> false}, {{.*}}>>, imm *[0,0]>
+  # CHECK-SAME: <:!Bool {:scalar<bool> false},  :origin<false> *(0,2){{.*}}, :meta<!AnyType> !AnyType, :param_list<!AnyType> *(0,0), :!Bool {:scalar<bool> false}, {{.*}}>>, imm *[0,0]>
   # CHECK-SAME: read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
   comptime p2 = async def[*Ts: AnyType](* *Ts) thin -> None
 

@@ -277,7 +277,7 @@ struct CutDownVariadicPack[element_trait: type_of(AnyType), //,
         # CHECK-NEXT: [[REFVAL:%.*]] = lit.call {{.*}}get_element{{.*}}(%self)
         # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}([[REFVAL]])
         # CHECK-NEXT: lit.call{{.*}} func,
-        # CHECK-SAME: :!kgen.param<:!lit.anytrait<!AnyType> element_trait> #kgen.param_list.get<:param_list<:!lit.anytrait<!AnyType> element_trait>
+        # CHECK-SAME: :!kgen.param<:meta<!AnyType> element_trait> #kgen.param_list.get<:param_list<:meta<!AnyType> element_trait>
         # CHECK-SAME: element_types{{.*}}([[REF]])
         func(self.get_element[i]()[])
 

@@ -70,7 +70,7 @@ def variadic_trait_elt[T: ImplicitlyCopyable](*xs: T):
 # CHECK-SAME: <{{.*}}, Ts:
 
 # CHECK-SAME: %rest: !lit.ref<!lit.struct<#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> *"rest
-# CHECK-SAME: :!lit.anytrait<!AnyType> !AnyType_Copyable_ImplicitlyCopyable_Movable, :param_list<!AnyType_Copyable_ImplicitlyCopyable_Movable> *"Ts.values`"
+# CHECK-SAME: :meta<!AnyType> !AnyType_Copyable_ImplicitlyCopyable_Movable, :param_list<!AnyType_Copyable_ImplicitlyCopyable_Movable> *"Ts.values`"
 def trait_pack[T: ImplicitlyCopyable, *Ts: ImplicitlyCopyable](first: T, *rest: *Ts):
     pass
 
