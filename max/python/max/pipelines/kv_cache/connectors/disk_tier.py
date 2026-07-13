@@ -28,7 +28,6 @@ from __future__ import annotations
 import itertools
 import json
 import logging
-import mmap
 import os
 import queue
 import tempfile
@@ -176,11 +175,6 @@ class DiskTier:
     directory across a block-size change (page size, model, dtype, or TP degree)
     is unsupported: the stale, wrong-sized blocks are not detected and may be
     read as valid data. Point a changed configuration at a fresh ``cache_dir``.
-
-    The `use_direct_io` flag controls whether the OS page cache is bypassed.
-    This should be turned on for better performance if most local CPU memory is
-    consumed (ie: for CPU KVCache). In other cases, leaving this off will yield
-    better performance as reads and writes will be buffered by the OS page cache.
     """
 
     def __init__(
@@ -190,7 +184,6 @@ class DiskTier:
         max_disk_size_bytes: int,
         kv_hash_algo: KVHashAlgo = "ahash64",
         num_workers: int = 16,
-        use_direct_io: bool = False,
     ) -> None:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
@@ -201,44 +194,6 @@ class DiskTier:
 
         self._block_nbytes = block_nbytes
         self._max_disk_size_bytes = max_disk_size_bytes
-
-        # Optional O_DIRECT for bypassing OS page cache.
-        self._use_direct_io = use_direct_io
-        self._fs_block_size = 4096
-        if self._use_direct_io:
-            if not hasattr(os, "O_DIRECT"):
-                logger.warning(
-                    "O_DIRECT not available on this platform, "
-                    "falling back to buffered I/O"
-                )
-                self._use_direct_io = False
-            else:
-                stat = os.statvfs(str(self._cache_dir))
-                self._fs_block_size = stat.f_bsize
-                total = self._block_nbytes
-                if total % self._fs_block_size != 0:
-                    logger.warning(
-                        "Block size (%d) not aligned to FS block size "
-                        "(%d). Disabling O_DIRECT.",
-                        total,
-                        self._fs_block_size,
-                    )
-                    self._use_direct_io = False
-                else:
-                    logger.info(
-                        "O_DIRECT enabled for disk cache at %s (FS block size=%d)",
-                        self._cache_dir,
-                        self._fs_block_size,
-                    )
-
-        # Pre-allocated aligned buffer for O_DIRECT (one per worker thread).
-        # mmap anonymous regions are always page-aligned, satisfying
-        # O_DIRECT's buffer alignment requirement.  Allocated lazily in
-        # _get_aligned_buf() on first use per thread.
-        self._aligned_buf_size = (
-            self._block_nbytes if self._use_direct_io else 0
-        )
-        self._tls = threading.local()
 
         # LRU tracking: hashes that have been saved to disk
         # The value for the dict is ignored.
@@ -405,16 +360,11 @@ class DiskTier:
         hogs the gil for any significant amount of time.
         """
         path = self._hash_to_path(block_hash)
-        if self._use_direct_io:
-            self._read_file_direct(path, dest)
-        else:
-            with open(path, "rb") as f:
-                assert dest.data.contiguous
-                n = f.readinto(dest.data)
-                if n != dest.nbytes:
-                    raise OSError(
-                        f"Short read: got {n}, expected {dest.nbytes}"
-                    )
+        with open(path, "rb") as f:
+            assert dest.data.contiguous
+            n = f.readinto(dest.data)
+            if n != dest.nbytes:
+                raise OSError(f"Short read: got {n}, expected {dest.nbytes}")
 
     def _write_block_sync(
         self,
@@ -427,85 +377,13 @@ class DiskTier:
         hogs the gil for any significant amount of time.
         """
         path = self._hash_to_path(block_hash)
-        if self._use_direct_io:
-            self._write_file_direct(path, src)
-        else:
-            with open(path, "wb") as f:
-                assert src.data.contiguous
-                f.write(src.data)
+        with open(path, "wb") as f:
+            assert src.data.contiguous
+            f.write(src.data)
 
         with self._lock:
             self._pending_hashes.discard(block_hash)
             self._saved_hashes[block_hash] = None
-
-    # -- O_DIRECT helpers --
-
-    def _get_aligned_buf(self) -> mmap.mmap:
-        """Return a thread-local page-aligned staging buffer for O_DIRECT.
-
-        Allocated once per worker thread via ``threading.local()`` and
-        reused for every subsequent I/O operation — no per-call allocation.
-        """
-        buf = getattr(self._tls, "aligned_buf", None)
-        if buf is None or buf.closed:
-            buf = mmap.mmap(-1, self._aligned_buf_size)
-            self._tls.aligned_buf = buf
-        return buf
-
-    def _write_file_direct(
-        self, path: Path, src: npt.NDArray[np.uint8]
-    ) -> None:
-        """Write src to path using O_DIRECT (bypass OS page cache).
-
-        Issues a single ``os.write()`` via a ``memoryview``slice.
-        """
-        buf = self._get_aligned_buf()
-        buf.seek(0)
-        assert src.data.contiguous
-        buf.write(src.data)
-        total = buf.tell()
-
-        fd = os.open(
-            str(path),
-            os.O_CREAT | os.O_WRONLY | os.O_TRUNC | os.O_DIRECT,
-            0o644,
-        )
-        try:
-            # memoryview is zero-copy — preserves the mmap's page-aligned
-            # address so os.write sees an aligned buffer.
-            os.write(fd, memoryview(buf)[:total])
-        finally:
-            os.close(fd)
-
-    def _read_file_direct(
-        self, path: Path, array: npt.NDArray[np.uint8]
-    ) -> None:
-        """Read into *array* from *path* using O_DIRECT.
-
-        Single ``os.read()`` into the pre-allocated page-aligned buffer.
-        """
-        nbytes = array.nbytes
-        buf = self._get_aligned_buf()
-        assert len(buf) == nbytes
-        assert array.data.contiguous
-
-        fd = os.open(str(path), os.O_RDONLY | os.O_DIRECT)
-        try:
-            # Read the whole file in one aligned read.
-            n = os.readv(fd, [memoryview(buf)])
-            if n != nbytes:
-                raise OSError(
-                    f"Short O_DIRECT read: got {n}, expected {nbytes}"
-                )
-        finally:
-            os.close(fd)
-
-        # np.copyto releases the GIL during the memcpy.
-        # np.frombuffer on the mmap directly is zero-copy (buffer protocol);
-        np.copyto(
-            array.reshape(-1),
-            np.frombuffer(buf, dtype=array.dtype),
-        )
 
     # -- file paths --
 
