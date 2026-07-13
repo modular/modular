@@ -1304,6 +1304,7 @@ struct UnsafePointer[
         while True:
             pass
 
+    @__unsafe_disable_nested_origin_exclusivity
     def __getitem__(
         self, offset: Int
     ) -> ref[Self.origin, Self.address_space] Self.type:
