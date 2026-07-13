@@ -54,6 +54,7 @@ from std.gpu.memory import (
     ReduceOp,
     async_copy,
     cp_async_bulk_tensor_global_shared_cta,
+    cp_async_bulk_tensor_global_shared_cta_elect,
     cp_async_bulk_tensor_reduce_global_shared_cta,
     cp_async_bulk_tensor_shared_cluster_global,
     cp_async_bulk_tensor_shared_cluster_global_elect,
@@ -71,7 +72,14 @@ from std.gpu.sync import (
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
 )
-from layout import IntTuple, Layout, LayoutTensor, TileTensor
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout.runtime_tuple import (
     coalesce_nested_tuple,
     flatten,
@@ -3154,8 +3162,13 @@ struct TMATensorTile[
             coords: Base 2D coordinates in the source tensor.
             multicast_mask: Bit mask specifying CTAs that receive the data.
         """
+        # `_offset_storage` yields an offset-derived storage policy; storages
+        # are copy-compatible, so reinterpret it as `dst`'s own storage type.
         var dst_slice = type_of(dst)(
-            dst.ptr + cta_rank * tma_load_size, dst.layout
+            rebind[type_of(dst._storage)](
+                dst._offset_storage(cta_rank * tma_load_size)
+            ),
+            dst.layout,
         )
 
         self.async_multicast_load(
@@ -5334,7 +5347,7 @@ struct TMATensorTileArray[
     @always_inline
     def __init__(
         out self,
-        tensormaps_device: DeviceBuffer[DType.uint8],
+        mut tensormaps_device: DeviceBuffer[DType.uint8],
     ):
         """
         Initializes a new TMATensorTileArray.
@@ -5342,8 +5355,10 @@ struct TMATensorTileArray[
         Args:
             tensormaps_device: Device buffer to store TMA descriptors.
         """
-
-        self.tensormaps_ptr = tensormaps_device.unsafe_ptr()
+        # TODO: this type should properly hold origins
+        self.tensormaps_ptr = tensormaps_device.unsafe_ptr().unsafe_origin_cast[
+            MutUntrackedOrigin
+        ]()
 
     @always_inline
     def __getitem__(
@@ -5380,7 +5395,9 @@ struct RaggedTMA3DTile[
     *,
     BM: Int,
     BN: Int,
+    middle_dim: Int,
     group: Int = 1,
+    tma_blocks_per_op: Int = 0,
 ](DevicePassable, ImplicitlyCopyable):
     """
     Creates a TMA descriptor for loading/storing from ragged 3D arrays with a
@@ -5389,17 +5406,39 @@ struct RaggedTMA3DTile[
     has been allocated in front of the gmem pointer, otherwise
     `CUDA_ERROR_ILLEGAL_ADDRESS` may result.
 
-    When `group > 1`, the gmem is treated as 4D `(rows, middle_dim, group, depth)`
-    and a 5D TMA descriptor is created. The smem tile has `BM_seq * group = BM`
-    rows, where `BM_seq = BM // group` is the number of distinct sequence positions.
-    The `dynamic_dim` parameter in copy methods represents valid sequence positions.
+    The `(middle_dim, rows)` selector dims are always folded into one outermost
+    descriptor dim (both are `box == 1` and GMEM-contiguous), dropping one rank:
+    each copy issues coordinate `(ragged_idx + dynamic_dim) * middle_dim + middle_idx`
+    on that dim. Fewer descriptor dims means fewer per-issue `UMOV`s into uniform
+    registers (which `ptxas` allocates poorly), at no offsetting cost.
+
+    When `group > 1`, the gmem is treated as 4D `(rows, middle_dim, group, depth)`.
+    The smem tile has `BM_seq * group = BM` rows, where `BM_seq = BM // group` is the
+    number of distinct sequence positions. The `dynamic_dim` parameter in copy
+    methods represents valid sequence positions. The descriptor is rank-4
+    (`merged, BM_seq, group, depth`), or rank-5 when `tma_blocks_per_op > 0`.
+
+    When `tma_blocks_per_op > 0` (only valid for `swizzle_mode == SWIZZLE_NONE`),
+    the contiguous `depth` dimension is split into
+    `(depth // swizzle_granularity, swizzle_granularity)` and a *blocks* dimension is
+    added to the descriptor box, so a single `async_copy_batched` copies
+    `tma_blocks_per_op` swizzle-granularity blocks at once rather than one block per
+    `async_copy_from_col`. With the selector merge this is rank-4 for `group == 1`
+    and rank-5 for `group > 1`. The blocks dimension's global extent is the true
+    block count, so a box that overhangs the end is masked off by the TMA.
 
     Parameters:
         dtype: The data type of the tensor.
         swizzle_mode: The swizzling mode to use for memory access.
         BM: The number of rows of the corresponding 2D shared memory tile.
         BN: The number of columns of the corresponding 2D shared memory tile.
+        middle_dim: The middle (head) extent, folded into the ragged-selector
+            coordinate. Each copy issues coordinate
+            `(ragged_idx + dynamic_dim) * middle_dim + middle_idx` on the merged
+            outermost descriptor dim.
         group: The number of heads fused into each sequence position (default 1).
+        tma_blocks_per_op: Swizzle-granularity blocks copied per `async_copy_batched`
+            (0 = disabled, use the per-block `async_copy_from_col` path).
     """
 
     comptime BM_seq: Int = Self.BM // Self.group
@@ -5444,15 +5483,18 @@ struct RaggedTMA3DTile[
             Self.BM,
             ", BN = ",
             Self.BN,
+            ", middle_dim = ",
+            Self.middle_dim,
             ", group = ",
             Self.group,
+            ", tma_blocks_per_op = ",
+            Self.tma_blocks_per_op,
         )
 
     @always_inline
-    @implicit
     def __init__(out self, descriptor: TMADescriptor):
         """
-        Initializes a new TMATensorTile with the provided TMA descriptor.
+        Initializes a new RaggedTMA3DTile with the provided TMA descriptor.
 
         Args:
             descriptor: The TMA descriptor that defines the memory access pattern.
@@ -5469,7 +5511,6 @@ struct RaggedTMA3DTile[
         ptr: UnsafePointer[Scalar[Self.dtype], _],
         *,
         rows: Int,
-        middle_dim: Int,
     ) raises -> Self:
         """
         Create a RaggedTMA3DTile.
@@ -5481,7 +5522,6 @@ struct RaggedTMA3DTile[
             ctx: The device context used to create the TMA descriptors.
             ptr: The global memory pointer.
             rows: The size of the ragged dimension.
-            middle_dim: The size of the middle dimension.
 
         Returns:
             A RaggedTMA3DTile corresponding to the gmem.
@@ -5489,41 +5529,109 @@ struct RaggedTMA3DTile[
         Raises:
             If TMA descriptor creation fails.
         """
+        # The `(middle_dim, rows)` selector dims are folded into one outermost
+        # `merged` dim: extent `middle_dim*(rows+1)`, stride = the head stride
+        # (`depth` for group==1, `group*depth` for group>1), box 1. Each copy
+        # issues coordinate `(ragged_idx + dynamic_dim)*middle_dim + middle_idx`
+        # on it. This drops one descriptor rank everywhere.
+        merged_extent = Self.middle_dim * (rows + 1)
         comptime if Self.group > 1:
-            # 5D descriptor for fused GQA: gmem is (rows, middle_dim, group, depth)
-            stride = middle_dim * (Self.group * depth)
-            return create_tma_descriptor[Self.dtype, 5, Self.swizzle_mode](
-                DeviceBuffer(
-                    ctx,
-                    ptr - stride * Self.BM_seq,
-                    1,
-                    owning=False,
-                ),
-                IndexList[5](
-                    rows + 1,
-                    middle_dim,
-                    Self.BM_seq,
-                    Self.group,
-                    depth,
-                ),
-                IndexList[5](stride, Self.group * depth, stride, depth, 1),
-                IndexList[5](
-                    1, 1, Self.BM_seq, Self.group, Self.swizzle_granularity
-                ),
-            )
+            # Fused GQA: gmem is 4D (rows, middle_dim, group, depth).
+            stride = Self.middle_dim * (Self.group * depth)
+            comptime if Self.tma_blocks_per_op > 0:
+                # Batched fused-GQA store: split `depth` into (n_blocks, K) and
+                # add a *blocks* box dim. Rank-5 dims (inner->outer) =
+                # (K, group, BM_seq, n_blocks, merged); the SMEM box traversal
+                # (K, group, BM_seq, blocks) matches the blocked smem
+                # `[blocks, BM_seq, group, K]` that `write_block` produces
+                # (local_row = bm_seq*group + g).
+                comptime assert (
+                    Self.swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE
+                ), (
+                    "tma_blocks_per_op requires SWIZZLE_NONE (identity smem"
+                    " layout)."
+                )
+                comptime assert (
+                    depth % Self.swizzle_granularity == 0
+                ), "depth must be a multiple of the swizzle granularity."
+                comptime K = Self.swizzle_granularity
+                comptime n_blocks = depth // K
+                return Self(
+                    create_tma_descriptor[Self.dtype, 5, Self.swizzle_mode](
+                        DeviceBuffer(
+                            ctx, ptr - stride * Self.BM_seq, 1, owning=False
+                        ),
+                        IndexList[5](
+                            merged_extent, n_blocks, Self.BM_seq, Self.group, K
+                        ),
+                        IndexList[5](Self.group * depth, K, stride, depth, 1),
+                        IndexList[5](
+                            1,
+                            Self.tma_blocks_per_op,
+                            Self.BM_seq,
+                            Self.group,
+                            K,
+                        ),
+                    ),
+                )
+            else:
+                # Per-block / load fused-GQA: rank-4 dims (inner->outer) =
+                # (depth, group, BM_seq, merged).
+                return Self(
+                    create_tma_descriptor[Self.dtype, 4, Self.swizzle_mode](
+                        DeviceBuffer(
+                            ctx, ptr - stride * Self.BM_seq, 1, owning=False
+                        ),
+                        IndexList[4](
+                            merged_extent, Self.BM_seq, Self.group, depth
+                        ),
+                        IndexList[4](Self.group * depth, stride, depth, 1),
+                        IndexList[4](
+                            1, Self.BM_seq, Self.group, Self.swizzle_granularity
+                        ),
+                    ),
+                )
         else:
-            stride = middle_dim * depth
-            return create_tma_descriptor[Self.dtype, 4, Self.swizzle_mode](
-                DeviceBuffer(
-                    ctx,
-                    ptr - stride * Self.BM,
-                    1,
-                    owning=False,
-                ),
-                IndexList[4](rows + 1, middle_dim, Self.BM, depth),
-                IndexList[4](stride, depth, stride, 1),
-                IndexList[4](1, 1, Self.BM, Self.swizzle_granularity),
-            )
+            # group == 1: gmem is 3D (rows, middle_dim, depth).
+            stride = Self.middle_dim * depth
+            comptime if Self.tma_blocks_per_op > 0:
+                # Batched store: split `depth` into (n_blocks, K) + blocks box.
+                # Rank-4 dims (inner->outer) = (K, BM, n_blocks, merged); the
+                # SMEM box traversal (K, BM, blocks) == blocked smem
+                # `[blocks, BM, K]` that `write_block` produces.
+                comptime assert (
+                    Self.swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE
+                ), (
+                    "tma_blocks_per_op requires SWIZZLE_NONE (identity smem"
+                    " layout)."
+                )
+                comptime assert (
+                    depth % Self.swizzle_granularity == 0
+                ), "depth must be a multiple of the swizzle granularity."
+                comptime K = Self.swizzle_granularity
+                comptime n_blocks = depth // K
+                return Self(
+                    create_tma_descriptor[Self.dtype, 4, Self.swizzle_mode](
+                        DeviceBuffer(
+                            ctx, ptr - stride * Self.BM, 1, owning=False
+                        ),
+                        IndexList[4](merged_extent, n_blocks, Self.BM, K),
+                        IndexList[4](depth, K, stride, 1),
+                        IndexList[4](1, Self.tma_blocks_per_op, Self.BM, K),
+                    ),
+                )
+            else:
+                # Per-block / load: rank-3 dims (inner->outer) = (depth, BM, merged).
+                return Self(
+                    create_tma_descriptor[Self.dtype, 3, Self.swizzle_mode](
+                        DeviceBuffer(
+                            ctx, ptr - stride * Self.BM, 1, owning=False
+                        ),
+                        IndexList[3](merged_extent, Self.BM, depth),
+                        IndexList[3](depth, stride, 1),
+                        IndexList[3](1, Self.BM, Self.swizzle_granularity),
+                    ),
+                )
 
     @always_inline
     def __init__(out self, *, copy: Self):
@@ -5534,78 +5642,6 @@ struct RaggedTMA3DTile[
             copy: The other `RaggedTMA3DTile` instance to copy from.
         """
         self.descriptor = copy.descriptor
-
-    @always_inline("nodebug")
-    def async_copy_to[
-        cta_group: Int = 1
-    ](
-        self,
-        dst: UnsafePointer[
-            Scalar[Self.dtype], _, address_space=AddressSpace.SHARED
-        ],
-        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        *,
-        ragged_idx: UInt32,
-        dynamic_dim: UInt32,
-        middle_idx: UInt32,
-    ):
-        """
-        Copy from the `RaggedTMA3DTile` source to the smem destination.
-
-        Parameters:
-            cta_group: If the TMA is issued with cta_group == 2, only the leader CTA needs
-                       to be notified upon completion.
-
-        Args:
-            dst: The destination shared memory pointer to which we copy memory.
-            mem_barrier: The memory barrier used to track and synchronize the asynchronous transfer.
-            ragged_idx: Index into the ragged dimension.
-            dynamic_dim: Number of rows (or seq positions when group > 1) to copy.
-            middle_idx: Index into the middle (generally head) dimension.
-
-        """
-
-        comptime if Self.group > 1:
-            var offset_ragged_idx = Int(ragged_idx + dynamic_dim)
-            var box_idx = Int(UInt32(Self.BM_seq) - dynamic_dim)
-
-            comptime for col in range(
-                ceildiv(Self.BN, Self.swizzle_granularity)
-            ):
-                comptime copy_offset = col * Self.BM * Self.swizzle_granularity
-
-                cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
-                    dst.mut_cast[True]() + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
-                    mem_barrier.unsafe_ptr(),
-                    Index(
-                        col * Self.swizzle_granularity,
-                        0,
-                        box_idx,
-                        Int(middle_idx),
-                        offset_ragged_idx,
-                    ),
-                )
-        else:
-            var offset_ragged_idx = Int(ragged_idx + dynamic_dim)
-            var box_idx = Int(UInt32(Self.BM) - dynamic_dim)
-
-            comptime for col in range(
-                ceildiv(Self.BN, Self.swizzle_granularity)
-            ):
-                comptime copy_offset = col * Self.BM * Self.swizzle_granularity
-
-                cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
-                    dst.mut_cast[True]() + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
-                    mem_barrier.unsafe_ptr(),
-                    Index(
-                        col * Self.swizzle_granularity,
-                        box_idx,
-                        Int(middle_idx),
-                        offset_ragged_idx,
-                    ),
-                )
 
     @always_inline
     def async_copy_from_col[
@@ -5620,9 +5656,14 @@ struct RaggedTMA3DTile[
         ragged_idx: UInt32,
         dynamic_dim: UInt32,
         middle_idx: UInt32,
+        elect: Int32,
     ):
         """Copy a single swizzle_granularity-wide column chunk from smem to
         gmem.
+
+        The TMA store is PTX-predicated on `elect`, so call this unconditionally
+        from every lane (no warp-divergent `if elect != 0:` wrapper); only the
+        elected lane issues the copy.
 
         Parameters:
             col: Which column chunk (0-indexed, each chunk is
@@ -5637,45 +5678,51 @@ struct RaggedTMA3DTile[
             dynamic_dim: Number of rows (or seq positions when group > 1)
                 to copy.
             middle_idx: Index into the middle (generally head) dimension.
+            elect: `0` on non-elected lanes (skip the TMA), non-zero on the
+                single elected lane (issue the TMA).
         """
         comptime copy_offset = col * Self.BM * Self.swizzle_granularity
+        # `merged` folds (middle_dim, rows) into the outermost descriptor dim.
+        var offset_ragged_idx = Int(ragged_idx + dynamic_dim)
+        var merged = offset_ragged_idx * Self.middle_dim + Int(middle_idx)
 
         comptime if Self.group > 1:
-            var offset_ragged_idx = Int(ragged_idx + dynamic_dim)
             var box_idx = Int(UInt32(Self.BM_seq) - dynamic_dim)
 
-            cp_async_bulk_tensor_global_shared_cta[
+            cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
                 UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                # dims (inner->outer): (depth, group, BM_seq, merged)
                 Index(
                     col * Self.swizzle_granularity,
                     0,
                     box_idx,
-                    Int(middle_idx),
-                    offset_ragged_idx,
+                    merged,
                 ),
+                elect,
             )
         else:
-            var offset_ragged_idx = Int(ragged_idx + dynamic_dim)
             var box_idx = Int(UInt32(Self.BM) - dynamic_dim)
 
-            cp_async_bulk_tensor_global_shared_cta[
+            cp_async_bulk_tensor_global_shared_cta_elect[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
                 UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                # dims (inner->outer): (depth, BM, merged)
                 Index(
                     col * Self.swizzle_granularity,
                     box_idx,
-                    Int(middle_idx),
-                    offset_ragged_idx,
+                    merged,
                 ),
+                elect,
             )
 
     @always_inline
-    def async_copy_from[
+    def async_copy_batched[
+        col_start: Int,
         eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
     ](
         self,
@@ -5686,27 +5733,64 @@ struct RaggedTMA3DTile[
         ragged_idx: UInt32,
         dynamic_dim: UInt32,
         middle_idx: UInt32,
+        elect: Int32,
     ):
-        """
-        Copy from the smem source to the `RaggedTMA3DTile` destination.
+        """Copy `tma_blocks_per_op` swizzle_granularity-wide column blocks from
+        smem to gmem in a single TMA, starting at block `col_start`.
 
-        Args:
-            src: The source shared memory pointer from which we copy memory.
-            ragged_idx: Index into the ragged dimension.
-            dynamic_dim: Number of rows to copy.
-            middle_idx: Index into the middle (generally head) dimension.
+        Only valid when `tma_blocks_per_op > 0` (SWIZZLE_NONE). The descriptor
+        box covers `tma_blocks_per_op` blocks; if `col_start + tma_blocks_per_op`
+        overruns the true block count, the TMA masks the overhang off (no gmem
+        write). With the (middle_dim, rows) selector merge the descriptor is
+        rank-4 for `group == 1` and rank-5 for `group > 1`.
+
+        The TMA store is PTX-predicated on `elect`, so call this unconditionally
+        from every lane (no warp-divergent `if elect != 0:` wrapper); only the
+        elected lane issues the copy.
 
         Parameters:
-            eviction_policy: Optional cache eviction policy that controls how the data is handled
-                in the cache hierarchy. Defaults to EVICT_FIRST.
-        """
+            col_start: First block (0-indexed, each block is swizzle_granularity
+                columns) copied by this op.
+            eviction_policy: Optional cache eviction policy that controls how the
+                data is handled in the cache hierarchy. Defaults to EVICT_FIRST.
 
-        comptime for col in range(ceildiv(Self.BN, Self.swizzle_granularity)):
-            self.async_copy_from_col[col, eviction_policy](
-                src,
-                ragged_idx=ragged_idx,
-                dynamic_dim=dynamic_dim,
-                middle_idx=middle_idx,
+        Args:
+            src: Source shared memory pointer (base of the full blocked tile).
+            ragged_idx: Index into the ragged dimension.
+            dynamic_dim: Number of rows (or seq positions when group > 1) to copy.
+            middle_idx: Index into the middle (generally head) dimension.
+            elect: `0` on non-elected lanes (skip the TMA), non-zero on the
+                single elected lane (issue the TMA).
+        """
+        comptime assert (
+            Self.tma_blocks_per_op > 0
+        ), "async_copy_batched requires tma_blocks_per_op > 0."
+        comptime copy_offset = col_start * Self.BM * Self.swizzle_granularity
+        # `merged` folds (middle_dim, rows) into the outermost descriptor dim.
+        var offset_ragged_idx = Int(ragged_idx + dynamic_dim)
+        var merged = offset_ragged_idx * Self.middle_dim + Int(middle_idx)
+
+        comptime if Self.group > 1:
+            var box_idx = Int(UInt32(Self.BM_seq) - dynamic_dim)
+            # dims (inner->outer): (K, group, BM_seq, n_blocks, merged)
+            cp_async_bulk_tensor_global_shared_cta_elect[
+                eviction_policy=eviction_policy
+            ](
+                src + copy_offset,
+                UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                Index(0, 0, box_idx, col_start, merged),
+                elect,
+            )
+        else:
+            var box_idx = Int(UInt32(Self.BM) - dynamic_dim)
+            # dims (inner->outer): (K, BM, n_blocks, merged)
+            cp_async_bulk_tensor_global_shared_cta_elect[
+                eviction_policy=eviction_policy
+            ](
+                src + copy_offset,
+                UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                Index(0, box_idx, col_start, merged),
+                elect,
             )
 
     @always_inline

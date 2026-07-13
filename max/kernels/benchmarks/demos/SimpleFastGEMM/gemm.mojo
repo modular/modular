@@ -25,6 +25,7 @@ from linalg.utils import (
 
 
 from layout import TileTensor, Coord, Idx, row_major
+from layout.tensor_storage import PointerStorage
 
 comptime dtype = DType.float32
 comptime simd_size = simd_width_of[dtype]()
@@ -50,9 +51,11 @@ def print_mat(a_ptr: UnsafePointer[Scalar[dtype], _], m: Int, n: Int):
 
 
 def gemm_naive(
-    a: TileTensor[dtype, element_size=1, ...],
-    b: TileTensor[dtype, element_size=1, ...],
-    c: TileTensor[mut=True, dtype, element_size=1, ...],
+    a: TileTensor[dtype, Storage=PointerStorage[element_width=1], ...],
+    b: TileTensor[dtype, Storage=PointerStorage[element_width=1], ...],
+    c: TileTensor[
+        mut=True, dtype, Storage=PointerStorage[element_width=1], ...
+    ],
     m: Int,
     n: Int,
     k: Int,
@@ -229,12 +232,11 @@ def main() raises:
     print(m * n, end="")
     print(" errors")
 
-    @parameter
-    def bench_gemm():
+    def bench_gemm() {var}:
         gemm(a.ptr, b2.ptr, c2.ptr, m, n, k, mc, nc, kc)
 
     var num_warmup: Int = 1
-    var time = std.benchmark.run[func3=bench_gemm](num_warmup).mean()
+    var time = std.benchmark.run(bench_gemm, num_warmup).mean()
     var flops = 2.0 * Float64(m) * Float64(n) * Float64(k) / time / 1e9
     print(time, end="")
     print(" seconds")

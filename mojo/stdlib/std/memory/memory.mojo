@@ -439,7 +439,7 @@ def _free(ptr: UnsafePointer[mut=True, ...]):
     comptime if is_gpu():
         libc.free(ptr.bitcast[NoneType]())
     else:
-        __mlir_op.`pop.aligned_free`(ptr.address)
+        __mlir_op.`pop.aligned_free`(ptr._get_kgen_pointer())
 
 
 @always_inline
@@ -496,12 +496,12 @@ def is_trivially_copyable[T: Copyable]() -> Bool:
 
 
 @always_inline("nodebug")
-def is_trivially_destructible[T: ImplicitlyDeletable]() -> Bool:
+def is_trivially_deletable[T: AnyType]() -> Bool:
     """Returns whether `T` has a trivial destructor.
 
     A destructor is trivial when the compiler generates it and all of `T`'s
     fields are themselves trivially destructible. In practice this means
-    `__del__` is a no-op.
+    `__del__` is a no-op. A non-`ImplicitlyDeletable` (linear) type returns `False`
 
     Parameters:
         T: The type to check.
@@ -509,7 +509,10 @@ def is_trivially_destructible[T: ImplicitlyDeletable]() -> Bool:
     Returns:
         `True` if `T` has a trivial destructor.
     """
-    return T.__del__is_trivial
+    comptime if conforms_to(T, ImplicitlyDeletable):
+        return T.__del__is_trivial
+    else:
+        return False
 
 
 # ===-----------------------------------------------------------------------===#
@@ -600,7 +603,7 @@ def uninit_copy_n[
 
     For types with trivial copy constructors, this is optimized to a single
     `memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise, it
-    calls `init_pointee_copy()` on each element.
+    calls `unsafe_write()` on each element.
 
     The destination memory is treated as a raw span of bits to write to. Any
     existing values at `dest` are silently overwritten without being destroyed.
@@ -639,7 +642,7 @@ def uninit_copy_n[
             memcpy(dest=dest, src=src, count=count)
     else:
         for i in range(count):
-            (dest + i).init_pointee_copy((src + i)[])
+            (dest + i).unsafe_write(copy=(src + i)[])
 
 
 @always_inline
@@ -652,7 +655,7 @@ def destroy_n[
     the memory uninitialized.
 
     For types with trivial destructors, this is a no-op and generates no code.
-    Otherwise, it calls `destroy_pointee()` on each element.
+    Otherwise, it calls `unsafe_deinit_pointee()` on each element.
 
     Parameters:
         T: The type of values to destroy, which must be `ImplicitlyDeletable`.
@@ -669,12 +672,12 @@ def destroy_n[
         must not be read or destroyed again until re-initialized.
     """
 
-    comptime if is_trivially_destructible[T]():
+    comptime if is_trivially_deletable[T]():
         # Trivial destructors don't need to be called!
         pass
     else:
         for i in range(count):
-            (pointer + i).destroy_pointee()
+            (pointer + i).unsafe_deinit_pointee()
 
 
 # ===-----------------------------------------------------------------------===#

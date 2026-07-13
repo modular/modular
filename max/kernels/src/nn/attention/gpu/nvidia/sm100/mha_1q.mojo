@@ -2130,6 +2130,22 @@ def _mha_sm100[
     comptime assert (
         accum_type.is_floating_point()
     ), "accum_type must be floating point"
+
+    # Fixed P scale of 256 (= 2^8) for FP8-QKV only. The
+    # un-normalized softmax probabilities P sit in the e4m3 subnormal floor;
+    # lifting them by 256 before the fp8 cast that feeds the P@V MMA reduces
+    # PV-GEMM quantization error. P is produced by the SHARED
+    # `_rowmax_online_softmax`/`_rowsum` helpers (also used by bf16/MLA), so
+    # rather than bias those we scale `p_reg_tile` by 256 in-place right after
+    # each rowmax-exp (fp8-guarded). `_rowsum` then reads the scaled P, and the
+    # sink_contribution is scaled to match, so numerator (stored P, P@V) and
+    # denominator (row_sum + sink) stay in the same 256x scale and cancel
+    # through the final 1/row_sum normalize. Overflow-safe: max P after
+    # row-max subtraction = exp2(0)*256 = 256 < 448 (e4m3 max). The scale is
+    # applied ONLY inside `comptime if kv_type.is_float8()` branches below, so
+    # the bf16 codegen is byte-identical (a `* 1.0` would otherwise survive as
+    # a real fmul).
+    comptime p_fp8_scale: Scalar[accum_type] = 256.0
     comptime max_tmem_cols = 512
     # When P can't fit alongside O in one TMEM bank, store P in SMEM
     # and use SS MMA for UMMA1 (P@V). S and O go in separate TMEM banks.
@@ -2804,6 +2820,20 @@ def _mha_sm100[
 
         @parameter
         @always_inline
+        def scale_p_for_fp8():
+            # Apply the cuDNN-style 256x P scale in-place on p_reg_tile (fp8
+            # only; comptime-dead for bf16 where p_fp8_scale == 1.0). Called
+            # right after `_rowmax_online_softmax` exponentiates P and BEFORE
+            # `_rowsum`, so the row-sum sees the same 256x as the stored P.
+            comptime if kv_type.is_float8():
+                var vp = vectorize_p_reg_tile()
+                var s = SIMD[accum_type, element_layout.size()](p_fp8_scale)
+                comptime for row in range(num_rows_per_warp):
+                    comptime for col in range(num_cols_p):
+                        vp[row, col] = vp[row, col] * s
+
+        @parameter
+        @always_inline
         def apply_mask(
             position: PositionType,
             mask_status: TileMaskStatus,
@@ -3022,6 +3052,10 @@ def _mha_sm100[
 
         rowmax.copy_from(attention_rowmax)
 
+        # Lift P out of the e4m3 subnormal floor (fp8 only) before rowsum and
+        # the fp8 cast feeding P@V. See p_fp8_scale comment above.
+        scale_p_for_fp8()
+
         comptime assert p_vec_output_layout.size() > 0, "layout: " + String(
             p_vec_output_layout
         )
@@ -3040,7 +3074,16 @@ def _mha_sm100[
                 var sink_weight = (
                     sink_weights_ptr[head_idx].cast[accum_type]() * log2e
                 )
-                var sink_contribution = exp2(sink_weight - rowmax[i])
+                # Scale the sink mass to match the 256x-lifted P so it cancels
+                # through 1/row_sum. The `comptime if kv_type.is_float8()`
+                # keeps the bf16 sink expression byte-identical (no `* 1.0`).
+                var sink_contribution: type_of(exp2(sink_weight - rowmax[i]))
+                comptime if kv_type.is_float8():
+                    sink_contribution = (
+                        exp2(sink_weight - rowmax[i]) * p_fp8_scale
+                    )
+                else:
+                    sink_contribution = exp2(sink_weight - rowmax[i])
                 attention_rowsum[i] += sink_contribution[0]
 
         rowsum.copy_from(attention_rowsum)
@@ -3114,6 +3157,12 @@ def _mha_sm100[
             var current_rowmax = _rowmax_online_softmax[
                 1, mma_thread_layout, use_exp2=True
             ](vectorize_p_reg_tile(), rowmax, False)
+
+            # Lift this iteration's P by 256x (fp8 only) before its rowsum and
+            # the fp8 cast feeding P@V, matching the initial tile. The running
+            # `rowsum` accumulates these 256x-scaled per-tile sums, and the
+            # 256x P@V output is normalized by 1/rowsum -> exact cancel.
+            scale_p_for_fp8()
 
             score_frag_rowmax = current_rowmax
             score_frag_rowsum = rebind[type_of(rowsum)](

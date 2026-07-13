@@ -26,7 +26,14 @@ from std.gpu.host import DeviceContext
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
-from nn.topk import _top_k_cpu, _topk_gpu, gumbel_sampling_gpu, topk_gpu
+from nn.topk import (
+    _top_k_cpu,
+    _topk_dead_val,
+    _topk_gpu,
+    gumbel_sampling_fused_gpu,
+    gumbel_sampling_gpu,
+    topk_gpu,
+)
 from std.testing import assert_almost_equal, assert_equal, assert_true
 
 from std.utils import IndexList
@@ -721,6 +728,198 @@ def test_gumbel_zero_temperature[dtype: DType](ctx: DeviceContext) raises:
             )
 
 
+def test_gumbel_fused_matches_two_kernel[
+    dtype: DType
+](ctx: DeviceContext, N: Int, batch_size: Int) raises:
+    """Bit-identity: fused Gumbel-argmax must match the two-kernel path.
+
+    Both paths use the same Philox RNG seeded identically per vocab element, so
+    the noised logits are bit-identical and the argmax winner must match exactly
+    for every batch row.
+    """
+    print(
+        "==== Running gumbel fused == two-kernel: N=",
+        N,
+        " batch_size=",
+        batch_size,
+        sep="",
+    )
+
+    var device_in = ctx.enqueue_create_buffer[dtype](batch_size * N)
+    var device_temp = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var device_seed = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var out_ref = ctx.enqueue_create_buffer[DType.int32](batch_size)
+    var out_fused = ctx.enqueue_create_buffer[DType.int32](batch_size)
+
+    with device_in.map_to_host() as in_host:
+        for i in range(batch_size * N):
+            in_host[i] = Scalar[dtype](random_float64(-5.0, 5.0))
+    with device_temp.map_to_host() as temp_host:
+        for b in range(batch_size):
+            temp_host[b] = Float32(0.5 + 0.1 * Float32(b))
+    with device_seed.map_to_host() as seed_host:
+        for b in range(batch_size):
+            seed_host[b] = UInt64(1234 + b)
+
+    var in_tt = TileTensor(device_in, row_major(batch_size, N))
+    var temp_tt = TileTensor(device_temp, row_major(batch_size))
+    var seed_tt = TileTensor(device_seed, row_major(batch_size))
+    var ref_tt = TileTensor(out_ref, row_major(batch_size, 1))
+    var fused_tt = TileTensor(out_fused, row_major(batch_size, 1))
+
+    gumbel_sampling_gpu(
+        ctx,
+        in_tt.as_unsafe_any_origin().as_immut(),
+        ref_tt,
+        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
+        seed=seed_tt.as_unsafe_any_origin().as_immut(),
+    )
+    gumbel_sampling_fused_gpu(
+        ctx,
+        in_tt.as_unsafe_any_origin().as_immut(),
+        fused_tt,
+        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
+        seed=seed_tt.as_unsafe_any_origin().as_immut(),
+    )
+    ctx.synchronize()
+
+    with out_ref.map_to_host() as ref_host, out_fused.map_to_host() as fused_host:
+        for b in range(batch_size):
+            assert_equal(
+                Int(fused_host[b]),
+                Int(ref_host[b]),
+                "fused != two-kernel at row "
+                + String(b)
+                + ": fused="
+                + String(Int(fused_host[b]))
+                + " ref="
+                + String(Int(ref_host[b])),
+            )
+
+    _ = device_in^
+    _ = device_temp^
+    _ = device_seed^
+    _ = out_ref^
+    _ = out_fused^
+
+
+def test_topk_zero_k_row[dtype: DType](ctx: DeviceContext) raises:
+    """Regression: a per-row ``k == 0`` must emit the skip-token sentinel, not garbage.
+
+    A per-row ``k == 0`` makes ``_topk_stage2`` take the sampling skip branch
+    (loop guard ``k >= k_batch`` fires immediately at ``k == 0``): it writes the
+    output token index ``0`` and fills the values buffer positions ``k..max_k``
+    with `_topk_dead_val` (``-inf`` for ``largest=True``).  The subsequent
+    ``range(k_batch)`` sampling loop runs zero iterations, so the ``0`` sentinel
+    survives.  Token ``0`` (not ``-1``) is used because this index is consumed
+    downstream as an array index (gather_nd / embedding lookup), where a
+    negative index would read out of bounds.  A batch row with ``k == 0`` must
+    therefore produce token index ``0``, while neighboring ``k > 0`` rows still
+    sample a valid token in ``[0, N)``.
+    """
+    print("==== Running Top-K [k=0 zero row] sampling=True, N=256 batch_size=4")
+    comptime N = 256
+    comptime batch_size = 4
+    comptime block_size = 256
+    comptime largest = True
+    comptime sampling = True
+    comptime zero_row = 1  # the single row whose per-row k is 0
+    comptime nonzero_k = 5
+    comptime out_idx_len = 1  # sampling emits one token per row
+    comptime max_k = nonzero_k
+    comptime dead_val = _topk_dead_val[dtype, largest]()
+
+    var num_blocks_per_input_ = ceildiv(N, block_size)
+
+    # Device buffers; host staging is handled by `map_to_host()` below.
+    var device_in = ctx.enqueue_create_buffer[dtype](batch_size * N)
+    var K_device_buffer = ctx.enqueue_create_buffer[DType.int64](batch_size)
+    var device_out_vals = ctx.enqueue_create_buffer[dtype](batch_size * max_k)
+    var device_out_idxs = ctx.enqueue_create_buffer[DType.int32](
+        batch_size * out_idx_len
+    )
+    var device_local_topk_vals = ctx.enqueue_create_buffer[dtype](
+        batch_size * num_blocks_per_input_ * max_k
+    )
+    var device_local_topk_idxs = ctx.enqueue_create_buffer[DType.int32](
+        batch_size * num_blocks_per_input_ * max_k
+    )
+
+    # Fill inputs on host; `map_to_host` pushes them to device at block exit.
+    with device_in.map_to_host() as in_host:
+        var in_tensor = TileTensor(in_host, row_major(batch_size, N))
+        fill_iota[dtype](in_tensor)
+    # Per-row K: one row is 0 (the skip case under test), the rest nonzero_k.
+    with K_device_buffer.map_to_host() as k_host:
+        for i in range(batch_size):
+            k_host[i] = Int64(0) if i == zero_row else Int64(nonzero_k)
+
+    var device_in_tt = TileTensor(device_in, row_major(batch_size, N))
+    var device_out_vals_tt = TileTensor(
+        device_out_vals, row_major(batch_size, max_k)
+    )
+    var device_out_idxs_tt = TileTensor(
+        device_out_idxs, row_major(batch_size, out_idx_len)
+    )
+    var device_local_topk_vals_tt = TileTensor(
+        device_local_topk_vals,
+        row_major(batch_size, num_blocks_per_input_ * max_k),
+    )
+    var device_local_topk_idxs_tt = TileTensor(
+        device_local_topk_idxs,
+        row_major(batch_size, num_blocks_per_input_ * max_k),
+    )
+    var k_tt = TileTensor(K_device_buffer, row_major(batch_size))
+
+    _topk_gpu[sampling=sampling, largest=largest](
+        ctx,
+        max_k,
+        device_in_tt,
+        device_local_topk_vals_tt,
+        device_local_topk_idxs_tt,
+        device_out_vals_tt,
+        device_out_idxs_tt,
+        k=k_tt.as_unsafe_any_origin().as_immut(),
+        block_size=block_size,
+    )
+
+    # Read outputs; `map_to_host` copies device->host and syncs on block entry.
+    with device_out_idxs.map_to_host() as idxs_host:
+        # Primary assertion: the k=0 row emits the 0 skip-token sentinel (0,
+        # not -1, so the token is safe to use as a downstream array index).
+        var zero_tok = Int(idxs_host[zero_row])
+        assert_equal(
+            zero_tok,
+            0,
+            "k=0 row must emit skip-token sentinel 0, got " + String(zero_tok),
+        )
+
+        # Neighboring k>0 rows must still sample a valid token in [0, N).
+        for b in range(batch_size):
+            if b == zero_row:
+                continue
+            var tok = Int(idxs_host[b])
+            assert_true(
+                tok >= 0 and tok < N,
+                "nonzero-k row token out of range [0, N): got "
+                + String(tok)
+                + " for N="
+                + String(N),
+            )
+
+    # Secondary check: the k=0 row's values buffer holds the dead value (-inf)
+    # in positions k..max_k (here k==0, so the whole row).
+    with device_out_vals.map_to_host() as vals_host:
+        for j in range(max_k):
+            assert_equal(
+                vals_host[zero_row * max_k + j],
+                dead_val,
+                "k=0 row vals["
+                + String(j)
+                + "] must be the dead value sentinel",
+            )
+
+
 def main() raises:
     comptime llama3_vocab_size = 128256
     with DeviceContext() as ctx:
@@ -1023,6 +1222,25 @@ def main() raises:
         print_test_case(test_nan_batch)
         test_case_batched[dtype, fill_nan](ctx, test_nan_batch)
 
+        # Regression: large top_k (2048) forces the public topk_gpu to reduce
+        # num_blocks_per_input so the stage-2 reduction fits the device
+        # per-block shared-memory limit. Verify the result still matches the CPU
+        # reference (values and indices) with the clamp active. Pre-fix these
+        # launched with CUDA_ERROR_INVALID_VALUE.
+        comptime test_case_large_k = TestCaseMultiRank[
+            _sampling=False, rank=2, _largest=True
+        ](input_shape=IndexList[2](2, 4096), K=2048)
+        print_test_case(test_case_large_k)
+        test_case_multi_rank[dtype, fill_iota](ctx, test_case_large_k)
+
+        # Same, but with an explicit num_blocks_per_input=8 that the clamp must
+        # override (8 * 2048 candidates would overflow stage-2 shared memory).
+        comptime test_case_large_k_nb = TestCaseMultiRank[
+            _sampling=False, rank=2, _largest=True
+        ](input_shape=IndexList[2](2, 4096), K=2048, num_blocks_per_input=8)
+        print_test_case(test_case_large_k_nb)
+        test_case_multi_rank[dtype, fill_iota](ctx, test_case_large_k_nb)
+
         # Run multi-rank tests
         test_multi_rank[dtype, False](ctx)
         test_multi_rank[dtype, True](ctx)
@@ -1031,3 +1249,15 @@ def main() raises:
 
         # Regression: temperature == 0 in gumbel path must not yield NaN or -1.
         test_gumbel_zero_temperature[dtype](ctx)
+
+        test_gumbel_fused_matches_two_kernel[dtype](ctx, N=256, batch_size=2)
+        test_gumbel_fused_matches_two_kernel[dtype](ctx, N=32000, batch_size=8)
+        test_gumbel_fused_matches_two_kernel[dtype](
+            ctx, N=llama3_vocab_size, batch_size=4
+        )
+        test_gumbel_fused_matches_two_kernel[bf16_type](
+            ctx, N=32000, batch_size=8
+        )
+
+        # Regression: a per-row k=0 must emit the skip-token sentinel (0), not garbage.
+        test_topk_zero_k_row[dtype](ctx)

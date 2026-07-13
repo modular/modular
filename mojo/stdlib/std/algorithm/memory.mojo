@@ -20,6 +20,7 @@ from std.algorithm import parallel_memcpy
 ```
 """
 
+from . import sync_parallelize
 from std.math import ceildiv
 
 from std.memory import memcpy

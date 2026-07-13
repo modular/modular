@@ -40,9 +40,9 @@ from std.utils._nicheable import UnsafeNicheable, NicheIndex
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy("You must use .destroy() to consume `ExplicitDestroy`")
+@explicit_destroy("Use .destroy() to consume `ExplicitDestroy`")
 @fieldwise_init
-struct ExplicitDestroy(Movable):
+struct ExplicitDestroy(ImplicitlyDeletable where False, Movable):
     """Test type that is explicitly-destroyed."""
 
     var value: Int
@@ -448,7 +448,7 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
 
     def __del__(deinit self):
         """Sets the target flag to True when destroyed."""
-        self.target.init_pointee_move(True)
+        self.target.unsafe_write(True)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -456,9 +456,8 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy
 @fieldwise_init
-struct ExplicitDelOnly(Movable):
+struct ExplicitDelOnly(ImplicitlyDeletable where False, Movable):
     """Utility for testing container support for linear types."""
 
     var data: Int

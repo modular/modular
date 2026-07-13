@@ -36,6 +36,7 @@ Ring Buffer Configuration:
 - Can be changed to SplitCounterSync in the RingBuffer type aliases for reduced contention
 - The trait-based design allows easy experimentation with different sync strategies
 """
+from std.sys import simd_width_of
 from std.gpu import (
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -44,6 +45,7 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
+from std.gpu.host import DeviceContext
 from std.gpu.intrinsics import inlined_assembly
 from layout import Layout, LayoutTensor, TileTensor
 from layout.layout import blocked_product

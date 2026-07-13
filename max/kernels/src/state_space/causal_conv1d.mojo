@@ -80,9 +80,6 @@ Activation Support:
     - SiLU: Sigmoid Linear Unit activation (x * sigmoid(x))
 """
 
-from std.math import exp
-from std.sys.info import align_of
-
 from std.algorithm import sync_parallelize
 from std.gpu.host import DeviceContext
 from std.gpu import (
@@ -91,33 +88,7 @@ from std.gpu import (
     thread_idx,
 )
 from layout import TensorLayout, TileTensor
-
-
-# ===----------------------------------------------------------------------=== #
-# Activation Functions
-# ===----------------------------------------------------------------------=== #
-
-
-def silu[
-    dtype: DType, width: SIMDSize
-](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
-    """Sigmoid Linear Unit (SiLU) activation function.
-
-    Computes x * sigmoid(x) = x / (1 + exp(-x)).
-
-    Args:
-        x: Input SIMD vector.
-
-    Returns:
-        SiLU activation applied element-wise.
-
-    Constraints:
-        The dtype must be a floating-point type.
-    """
-    # Branchless and width-generic. For very negative x, exp(-x) -> +inf and
-    # x / (1 + inf) -> 0, which is exactly the small-x clamp, so no explicit
-    # guard is needed (and a scalar `if` would not vectorize).
-    return x / (1 + exp(-x))
+from nn.activations import silu
 
 
 @always_inline

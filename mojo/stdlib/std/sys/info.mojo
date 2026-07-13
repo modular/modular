@@ -767,7 +767,7 @@ comptime _AMD_RDNA2_ARCHS: List[StaticString] = [
     "gfx1030",  # Navi 21 (RX 6900/6800)
     "gfx1031",  # Navi 22 (RX 6700)
     "gfx1032",  # Navi 23 (RX 6600)
-    "gfx1033",  # Navi 24
+    "gfx1033",  # Navi 24 (Van Gogh)
     "gfx1034",  # Navi 24
     "gfx1035",  # Rembrandt APU
     "gfx1036",  # Raphael APU
@@ -783,7 +783,7 @@ def _is_amd_rdna2() -> Bool:
         gfx1030: Navi 21 (RX 6900/6800)
         gfx1031: Navi 22 (RX 6700)
         gfx1032: Navi 23 (RX 6600)
-        gfx1033: Navi 24
+        gfx1033: Navi 24 (Van Gogh)
         gfx1034: Navi 24
         gfx1035: Rembrandt APU
         gfx1036: Raphael APU
@@ -1044,6 +1044,26 @@ def simd_byte_width[target: _TargetType = _current_target()]() -> Int:
     """
     comptime CHAR_BIT = 8
     return simd_bit_width[target]() // CHAR_BIT
+
+
+@always_inline("nodebug")
+def stdlib_plugin[target: _TargetType = _current_target()]() -> StaticString:
+    """Returns the stdlib plugin name for the specified target.
+
+    Parameters:
+        target: The target architecture.
+
+    Returns:
+        The stdlib plugin name for the specified target.
+    """
+    return StaticString(
+        __mlir_attr[
+            `#kgen.param.expr<target_get_field,`,
+            target,
+            `, "stdlib_plugin" : !kgen.string`,
+            `> : !kgen.string`,
+        ]
+    )
 
 
 @always_inline("nodebug")

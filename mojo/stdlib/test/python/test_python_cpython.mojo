@@ -72,7 +72,9 @@ def _test_exception_handling_api(cpy: CPython) raises:
     assert_true(cpy.PyErr_Occurred())
     cpy.PyErr_Clear()
 
-    cpy.PyErr_SetString(ValueError, msg.as_c_string_slice().unsafe_ptr())
+    cpy.PyErr_SetString(
+        ValueError, msg.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin()
+    )
     assert_true(cpy.PyErr_Occurred())
 
     if cpy.version.minor < 12:
@@ -292,9 +294,9 @@ def _test_dictionary_object_api(cpy: CPython) raises:
 
     var succ = cpy.PyDict_Next(
         d,
-        UnsafePointer(to=pos),
-        UnsafePointer(to=key),
-        UnsafePointer(to=value),
+        UnsafePointer(to=pos).as_unsafe_any_origin(),
+        UnsafePointer(to=key).as_unsafe_any_origin(),
+        UnsafePointer(to=value).as_unsafe_any_origin(),
     )
     assert_equal(pos, 1)
     assert_equal(key, b)
@@ -303,9 +305,9 @@ def _test_dictionary_object_api(cpy: CPython) raises:
 
     succ = cpy.PyDict_Next(
         d,
-        UnsafePointer(to=pos),
-        UnsafePointer(to=key),
-        UnsafePointer(to=value),
+        UnsafePointer(to=pos).as_unsafe_any_origin(),
+        UnsafePointer(to=key).as_unsafe_any_origin(),
+        UnsafePointer(to=value).as_unsafe_any_origin(),
     )
     assert_false(succ)
 
@@ -326,7 +328,12 @@ def _test_module_object_api(cpy: CPython) raises:
 
     var funcs = InlineArray[PyMethodDef, 1](fill={})
     # returns 0 on success, -1 on failure
-    assert_equal(cpy.PyModule_AddFunctions(mod, funcs.unsafe_ptr()), 0)
+    assert_equal(
+        cpy.PyModule_AddFunctions(
+            mod, funcs.unsafe_ptr().as_unsafe_any_origin()
+        ),
+        0,
+    )
     _ = funcs
 
     var n = cpy.PyLong_FromSsize_t(0)
@@ -334,7 +341,7 @@ def _test_module_object_api(cpy: CPython) raises:
     # returns 0 on success, -1 on failure
     assert_equal(
         cpy.PyModule_AddObjectRef(
-            mod, name.as_c_string_slice().unsafe_ptr(), n
+            mod, name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(), n
         ),
         0,
     )

@@ -28,7 +28,6 @@ from std.ffi import CStringSlice
 
 from std.bit import byte_swap
 from std.memory import Span, bitcast, memcpy
-from std.reflection.traits import AllWritable
 
 
 def constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
@@ -151,7 +150,7 @@ def write_sequence_to[
         end: The ending delimiter.
         sep: The separator between items (default: `", "`).
     """
-    comptime assert AllWritable[*Ts]  # satisfy where clause.
+    comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
     args._write_to(writer, start=start, end=end, sep=sep)
 
 
@@ -216,13 +215,13 @@ struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
 @always_inline
 def write_repr_to[T: AnyType](t: T, mut writer: Some[Writer]):
     comptime assert conforms_to(T, Writable), "T must be Writable"
-    trait_downcast[Writable](t).write_repr_to(writer)
+    t.write_repr_to(writer)
 
 
 @always_inline
 def write_to[T: AnyType](t: T, mut writer: Some[Writer]):
     comptime assert conforms_to(T, Writable), "T must be Writable"
-    trait_downcast[Writable](t).write_to(writer)
+    t.write_to(writer)
 
 
 struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
@@ -345,7 +344,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Returns:
             A reference to this `FormatStruct` instance for method chaining.
         """
-        comptime assert AllWritable[*Ts]  # satisfy where clause.
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
         args._write_to(self._writer[], start="[", end="]")
         return self
 
@@ -363,7 +362,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Args:
             args: The field values to write.
         """
-        comptime assert AllWritable[*Ts]  # satisfy where clause.
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
         args._write_to(self._writer[], start="(", end=")")
 
     # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
@@ -392,9 +391,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
 comptime HEAP_BUFFER_BYTES = get_defined_int["HEAP_BUFFER_BYTES", 2048]()
 """How much memory to pre-allocate for the heap buffer, will abort if exceeded."""
 
-comptime STACK_BUFFER_BYTES = UInt(
-    get_defined_int["STACK_BUFFER_BYTES", 4096]()
-)
+comptime STACK_BUFFER_BYTES = get_defined_int["STACK_BUFFER_BYTES", 4096]()
 """The size of the stack buffer for IO operations from CPU."""
 
 
@@ -404,11 +401,13 @@ struct _WriteBufferHeap(Writable, Writer):
 
     def __init__(out self):
         comptime alignment: Int = align_of[Byte]()
-        self._data = __mlir_op.`pop.stack_allocation`[
-            count=HEAP_BUFFER_BYTES.__mlir_index__(),
-            _type=type_of(self._data)._mlir_type,
-            alignment=alignment.__mlir_index__(),
-        ]()
+        self._data = {
+            _mlir_value = __mlir_op.`pop.stack_allocation`[
+                count=HEAP_BUFFER_BYTES.__mlir_index__(),
+                _type=type_of(self._data)._mlir_type,
+                alignment=alignment.__mlir_index__(),
+            ]()
+        }
         self._pos = 0
 
     def write_list[
@@ -481,7 +480,7 @@ struct _WriteBufferStack[
     origin: MutOrigin,
     W: Writer,
     //,
-    stack_buffer_bytes: UInt = STACK_BUFFER_BYTES,
+    stack_buffer_bytes: Int = STACK_BUFFER_BYTES,
 ](Writer):
     var data: InlineArray[UInt8, Int(Self.stack_buffer_bytes)]
     var pos: Int

@@ -2862,21 +2862,21 @@ def run_test_sparse_extra_kv[
 
     var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
         LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
+            blocks_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
         LayoutTensor[mut=False, DType.uint32, cl_layout](
-            cache_lengths_lt.ptr,
+            cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
         LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
+            lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
                 lookup_table_lt.runtime_layout.stride.value,
@@ -2911,21 +2911,21 @@ def run_test_sparse_extra_kv[
         kv_type, kv_params, PAGE_SIZE
     ](
         LayoutTensor[kv_type, Layout.row_major[6]()](
-            extra_blocks_lt.ptr,
+            extra_blocks_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major[6]()](
                 extra_blocks_lt.runtime_layout.shape.value,
                 extra_blocks_lt.runtime_layout.stride.value,
             ),
         ),
         LayoutTensor[mut=False, DType.uint32, cl_layout](
-            extra_cache_lengths_lt.ptr,
+            extra_cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 extra_cache_lengths_lt.runtime_layout.shape.value,
                 extra_cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
         LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
-            extra_lookup_table_lt.ptr,
+            extra_lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 extra_lookup_table_lt.runtime_layout.shape.value,
                 extra_lookup_table_lt.runtime_layout.stride.value,

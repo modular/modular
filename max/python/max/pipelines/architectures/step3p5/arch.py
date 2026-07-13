@@ -20,6 +20,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.modeling.types import PipelineTask
 
+from .batch_processor import Step3p5BatchProcessor
 from .model import Step3p5Model
 from .model_config import Step3p5Config
 from .weight_adapters import convert_step3p5_state_dict
@@ -39,8 +40,11 @@ step3p5_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_step3p5_state_dict,
     },
     config=Step3p5Config,
+    batching=Step3p5BatchProcessor,
     multi_gpu_supported=True,
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         0, always_signal_buffers=True
     ),
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

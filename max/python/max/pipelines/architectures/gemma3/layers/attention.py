@@ -31,7 +31,11 @@ from max.nn.kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.quant_config import QuantConfig
@@ -238,7 +242,6 @@ class Gemma3Attention(Module, Shardable):
                     input_row_offsets=kwargs["input_row_offsets"],
                     mask_variant=MHAMaskVariant.NULL_MASK,
                     scale=self.scale,
-                    local_window_size=self.local_window_size,
                 )
 
             def _causal_attn() -> TensorValue:
@@ -250,7 +253,6 @@ class Gemma3Attention(Module, Shardable):
                     input_row_offsets=kwargs["input_row_offsets"],
                     mask_variant=MHAMaskVariant.CAUSAL_MASK,
                     scale=self.scale,
-                    local_window_size=self.local_window_size,
                 )
 
             attn_out = ops.cond(
@@ -269,7 +271,6 @@ class Gemma3Attention(Module, Shardable):
                 input_row_offsets=kwargs["input_row_offsets"],
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
                 scale=self.scale,
-                local_window_size=self.local_window_size,
             )
 
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
@@ -346,6 +347,7 @@ class Gemma3Attention(Module, Shardable):
                 device_idx=shard_idx,
                 num_devices=self.sharding_strategy.num_devices,
             )
+            assert isinstance(self.kv_params, MHAKVCacheParams)
             sharded_num_kv_heads = num_heads_for_device(
                 num_heads=self.kv_params.n_kv_heads,
                 device_idx=shard_idx,

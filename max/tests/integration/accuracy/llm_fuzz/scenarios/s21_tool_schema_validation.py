@@ -25,6 +25,7 @@ What it catches:
   - Extra properties when additionalProperties: false
   - Malformed JSON in arguments string
   - Enum violations
+  - Array cardinality (minItems/maxItems) violations
   - Nested object schema violations
   - Inconsistencies between streaming and non-streaming tool calls
   - Tool call ID format issues (missing id, empty id)
@@ -36,6 +37,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from helpers import parse_json
+from jsonschema import Draft7Validator
 
 from scenarios import BaseScenario, ScenarioResult, Verdict, register_scenario
 
@@ -43,112 +45,31 @@ if TYPE_CHECKING:
     from client import FuzzClient, RawResponse, RunConfig
 
 # ---------------------------------------------------------------------------
-# JSON schema validation (minimal, no external deps)
+# JSON schema validation (jsonschema Draft 7)
 # ---------------------------------------------------------------------------
 
 
 def _validate_against_schema(
     instance: object, schema: dict[str, Any]
 ) -> list[str]:
-    """Validate a JSON instance against a JSON Schema. Returns a list of errors."""
-    errors: list[str] = []
-    _validate_node(instance, schema, "", errors)
-    return errors
+    """Validate a JSON instance against a JSON Schema (Draft 7).
 
-
-def _validate_node(
-    instance: object,
-    schema: dict[str, Any],
-    path: str,
-    errors: list[str],
-) -> None:
-    """Recursive schema validator covering types, required, enum, properties, items."""
-    if not isinstance(schema, dict):
-        return
-
-    # type check
-    expected_type = schema.get("type")
-    if expected_type:
-        type_map: dict[str, type | tuple[type, ...]] = {
-            "string": str,
-            "number": (int, float),
-            "integer": int,
-            "boolean": bool,
-            "array": list,
-            "object": dict,
-            "null": type(None),
-        }
-        py_types = type_map.get(expected_type)
-        if py_types:
-            if not isinstance(instance, py_types):
-                # bool is a subtype of int in Python; reject bools for number/integer
-                if expected_type in ("number", "integer") and isinstance(
-                    instance, bool
-                ):
-                    errors.append(
-                        f"{path or '(root)'}: expected {expected_type}, got bool"
-                    )
-                    return
-                errors.append(
-                    f"{path or '(root)'}: expected {expected_type}, got {type(instance).__name__}"
-                )
-                return
-
-    # enum check
-    if "enum" in schema:
-        if instance not in schema["enum"]:
-            errors.append(
-                f"{path or '(root)'}: {instance!r} not in enum {schema['enum']}"
-            )
-
-    # object properties
-    if expected_type == "object" and isinstance(instance, dict):
-        properties = schema.get("properties", {})
-        required = schema.get("required", [])
-        additional = schema.get("additionalProperties", True)
-
-        for req_key in required:
-            if req_key not in instance:
-                errors.append(f"{path}.{req_key}: required field missing")
-
-        if additional is False:
-            allowed = set(properties.keys())
-            for key in instance:
-                if key not in allowed:
-                    errors.append(f"{path}.{key}: extra property not allowed")
-
-        for key, value in instance.items():
-            if key in properties:
-                _validate_node(value, properties[key], f"{path}.{key}", errors)
-
-    # array items
-    if expected_type == "array" and isinstance(instance, list):
-        items_schema = schema.get("items")
-        if items_schema:
-            for i, item in enumerate(instance):
-                _validate_node(item, items_schema, f"{path}[{i}]", errors)
-
-    # min/max for numbers
-    if isinstance(instance, (int, float)) and not isinstance(instance, bool):
-        if "minimum" in schema and instance < schema["minimum"]:
-            errors.append(
-                f"{path or '(root)'}: {instance} < minimum {schema['minimum']}"
-            )
-        if "maximum" in schema and instance > schema["maximum"]:
-            errors.append(
-                f"{path or '(root)'}: {instance} > maximum {schema['maximum']}"
-            )
-
-    # minLength/maxLength for strings
-    if isinstance(instance, str):
-        if "minLength" in schema and len(instance) < schema["minLength"]:
-            errors.append(
-                f"{path or '(root)'}: string length {len(instance)} < minLength {schema['minLength']}"
-            )
-        if "maxLength" in schema and len(instance) > schema["maxLength"]:
-            errors.append(
-                f"{path or '(root)'}: string length {len(instance)} > maxLength {schema['maxLength']}"
-            )
+    Returns a list of human-readable error strings (empty when valid). Uses the
+    ``jsonschema`` ``Draft7Validator`` with ``FORMAT_CHECKER`` so the full
+    keyword set is covered -- including semantic keywords (``pattern``,
+    ``format``, ``multipleOf``, ``not``, ``if``/``then``, ``minProperties``)
+    that a hand-rolled walker would miss.
+    """
+    try:
+        validator = Draft7Validator(
+            schema, format_checker=Draft7Validator.FORMAT_CHECKER
+        )
+    except Exception as e:  # malformed tool schema
+        return [f"invalid schema: {e}"]
+    return [
+        f"{err.validator}@{err.json_path}: {err.message}"
+        for err in sorted(validator.iter_errors(instance), key=str)
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +282,324 @@ NESTED_TOOL = {
 
 
 # ---------------------------------------------------------------------------
+# Schema-enforcement cases
+# ---------------------------------------------------------------------------
+# Each forces a named tool call and asks for an argument value that is valid
+# JSON but violates a declared schema keyword. Unlike the cases above (which
+# use natural prompts the model satisfies on its own), these adversarial
+# prompts only conform when the server actively constrains tool arguments to
+# the schema, so they expose whether schema enforcement is on. Each case is
+# repeat-sampled (see ``_schema_enforcement``).
+#
+# ``enforceable`` marks keywords that grammar-based constrained decoding can
+# satisfy (type/enum/required/additionalProperties/minItems/maxItems/maximum/
+# maxLength/pattern/format/minProperties): a violation there is a real defect
+# (FAIL). The rest (``multipleOf``/``not``/``if``-``then``) cannot be expressed
+# as a token grammar on any engine, so a violation is expected -- graded PASS.
+
+
+def _enforce_tool(
+    name: str,
+    properties: dict[str, Any],
+    required: list[str],
+    description: str,
+    **extra_params: Any,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": False,
+    }
+    params.update(extra_params)
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": params,
+        },
+    }
+
+
+_ENFORCE_REPEATS = 4
+
+_ENFORCEMENT_CASES: list[dict[str, Any]] = [
+    # --- grammar-enforceable: FAIL when the schema is not enforced ----------
+    {
+        "name": "wrong_type",
+        "expect": "type",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "set_reminder",
+            {
+                "minutes": {"type": "integer"},
+                "message": {"type": "string"},
+            },
+            ["minutes", "message"],
+            "Schedule a reminder after some minutes.",
+        ),
+        "prompt": (
+            "Call set_reminder with message set to 'take a break' and minutes "
+            'set to the JSON string "ten" -- the word ten in double quotes, '
+            "NOT a number."
+        ),
+    },
+    {
+        "name": "missing_required",
+        "expect": "required",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "create_user",
+            {
+                "username": {"type": "string"},
+                "email": {"type": "string"},
+            },
+            ["username", "email"],
+            "Create a user account.",
+        ),
+        "prompt": (
+            "Call create_user with username set to 'alice' only. Do NOT "
+            "include the email field at all -- omit it entirely."
+        ),
+    },
+    {
+        "name": "additional_property",
+        "expect": "additionalProperties",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "set_volume",
+            {"level": {"type": "integer"}},
+            ["level"],
+            "Set the speaker volume.",
+        ),
+        "prompt": (
+            "Call set_volume with level set to 5 and ALSO add an extra field "
+            "named muted set to true."
+        ),
+    },
+    {
+        "name": "nested_wrong_type",
+        "expect": "type",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "set_location",
+            {
+                "coords": {
+                    "type": "object",
+                    "properties": {
+                        "lat": {"type": "number"},
+                        "lon": {"type": "number"},
+                    },
+                    "required": ["lat", "lon"],
+                    "additionalProperties": False,
+                }
+            },
+            ["coords"],
+            "Set a geographic location.",
+        ),
+        "prompt": (
+            'Call set_location with coords.lat set to the JSON string "north" '
+            "and coords.lon set to 12.5."
+        ),
+    },
+    {
+        "name": "object_as_array",
+        "expect": "type",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "configure",
+            {"options": {"type": "object"}},
+            ["options"],
+            "Apply a configuration object.",
+        ),
+        "prompt": (
+            'Call configure with options set to a JSON array: ["a", "b"] '
+            "(an array, not an object)."
+        ),
+    },
+    {
+        "name": "number_over_maximum",
+        "expect": "maximum",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "set_age",
+            {"age": {"type": "integer", "minimum": 0, "maximum": 120}},
+            ["age"],
+            "Set a person's age in years.",
+        ),
+        "prompt": "Call set_age with age set to 999.",
+    },
+    {
+        "name": "max_length",
+        "expect": "maxLength",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "set_username",
+            {"username": {"type": "string", "maxLength": 8}},
+            ["username"],
+            "Set a short username (at most 8 characters).",
+        ),
+        "prompt": (
+            "Call set_username with username set to "
+            '"this_is_a_very_long_username_exceeding_the_limit".'
+        ),
+    },
+    {
+        "name": "string_pattern",
+        "expect": "pattern",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "set_ticket",
+            {"code": {"type": "string", "pattern": "^[A-Z]{3}-[0-9]{4}$"}},
+            ["code"],
+            "Set a ticket code formatted like ABC-1234.",
+        ),
+        "prompt": 'Call set_ticket with code set to "hello world".',
+    },
+    {
+        "name": "format_email",
+        "expect": "format",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "set_contact",
+            {"email": {"type": "string", "format": "email"}},
+            ["email"],
+            "Set a contact email address.",
+        ),
+        "prompt": 'Call set_contact with email set to "not an email".',
+    },
+    {
+        "name": "min_properties",
+        "expect": "minProperties",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "set_metadata",
+            {
+                "a": {"type": "string"},
+                "b": {"type": "string"},
+                "c": {"type": "string"},
+            },
+            [],
+            "Set metadata with at least three fields.",
+            minProperties=3,
+        ),
+        "prompt": 'Call set_metadata with only field a set to "x".',
+    },
+    {
+        "name": "enum_violation",
+        "expect": "enum",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "set_role",
+            {"role": {"type": "string", "enum": ["admin", "user", "guest"]}},
+            ["role"],
+            "Assign an account role.",
+        ),
+        "prompt": 'Call set_role with role set to "SUPERADMIN".',
+    },
+    {
+        "name": "array_max_items",
+        "expect": "maxItems",
+        "enforceable": True,
+        "tool": _enforce_tool(
+            "add_tags",
+            {
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 3,
+                }
+            },
+            ["tags"],
+            "Attach at most three tags.",
+        ),
+        "prompt": "Call add_tags with these seven tags: a, b, c, d, e, f, g.",
+    },
+    # --- grammar-inexpressible: violation is PASS (expected), never FAIL -----
+    {
+        "name": "multiple_of",
+        "expect": "multipleOf",
+        "enforceable": False,
+        "tool": _enforce_tool(
+            "set_price",
+            {"amount": {"type": "number", "multipleOf": 5}},
+            ["amount"],
+            "Set a price that must be a multiple of 5.",
+        ),
+        "prompt": "Call set_price with amount set to 7.",
+    },
+    {
+        "name": "not_forbidden",
+        "expect": "not",
+        "enforceable": False,
+        "tool": _enforce_tool(
+            "set_status",
+            {"status": {"type": "string", "not": {"enum": ["banned"]}}},
+            ["status"],
+            "Set a status that must not be the forbidden value.",
+        ),
+        "prompt": 'Call set_status with status set to "banned".',
+    },
+    {
+        "name": "conditional_required",
+        "expect": "if/then",
+        "enforceable": False,
+        "tool": _enforce_tool(
+            "create_timed_event",
+            {
+                "all_day": {"type": "boolean"},
+                "start_time": {"type": "string"},
+            },
+            ["all_day"],
+            "Create an event; non-all-day events require a start time.",
+            **{
+                "if": {"properties": {"all_day": {"const": False}}},
+                "then": {"required": ["start_time"]},
+            },
+        ),
+        "prompt": (
+            "Call create_timed_event with all_day set to false and do NOT "
+            "include start_time."
+        ),
+    },
+]
+
+
+# Enforcement cases whose keyword the constrained-decoding backend genuinely
+# cannot enforce, so the honest outcome is an enforce-or-400 up front rather
+# than a best-effort 200 that silently violates the schema. Mirrors the honest-
+# rejection contract in the sibling ``s32_structured_output_schema_limits``
+# (``array_unique_unenforceable`` / ``_EXPECT_REJECT`` /
+# ``_is_honest_rejection``): for these a clean 400 naming the construct is a
+# PASS, not a FAIL. ``multipleOf`` / ``not`` / ``if``-``then`` are CFG-
+# inexpressible on every backend; ``minProperties`` is unenforceable for the
+# decomposing-codec models (e.g. gemma4) whose enforce-or-400 gate rejects it --
+# both surface the same 400. This only credits the 400 PATH: the ``enforceable``
+# flag is left untouched, so a schema-violating 200 still grades as before (a
+# JSON-arg model that DOES enforce ``minProperties`` is still FAILed on a
+# violation; the universally-inexpressible three are PASS, a violation being
+# expected).
+_EXPECT_HONEST_REJECT: frozenset[str] = frozenset(
+    {"min_properties", "multiple_of", "not_forbidden", "conditional_required"}
+)
+
+
+def _is_honest_rejection(status: int) -> bool:
+    """True if ``status`` is an honest refusal of the unenforceable construct.
+
+    These requests are well-formed (valid JSON, structurally valid tool
+    schema), so the only reason to reject one is the construct itself: a clean
+    400 is the backend honestly declining to build a grammar it cannot enforce,
+    whatever the exact message says. Matching on status alone -- rather than an
+    ``"enforce"`` substring that is backend- and version-specific -- keeps a
+    correctly-refused request from grading FAIL just because a backend words its
+    400 differently (or omits the word entirely).
+    """
+    return status == 400
+
+
+# ---------------------------------------------------------------------------
 # Scenario
 # ---------------------------------------------------------------------------
 
@@ -389,6 +628,7 @@ class ToolSchemaValidation(BaseScenario):
         results.extend(await self._multi_turn_tool(client, model))
         results.extend(await self._streaming_schema(client, model))
         results.extend(await self._concurrent_schema(client, model))
+        results.extend(await self._schema_enforcement(client, model))
 
         return results
 
@@ -521,6 +761,136 @@ class ToolSchemaValidation(BaseScenario):
             f"{stats['valid']}/{stats['triggered']} tool calls valid",
             stats,
         )
+
+    # =====================================================================
+    # 0. Schema enforcement (forced named tool call, adversarial value)
+    # =====================================================================
+
+    async def _schema_enforcement(
+        self, client: FuzzClient, model: str
+    ) -> list[ScenarioResult]:
+        """Force a named tool call asking for a value that violates a declared
+        keyword, then validate the arguments against the schema.
+
+        Each case is repeated ``_ENFORCE_REPEATS`` times at ``temperature=0``
+        with reasoning disabled, so a grammar that enforces only intermittently
+        (e.g. under serving-state / compiler-cache contention) is caught while a
+        correct backend stays deterministic. Conforming is a PASS; a
+        grammar-enforceable violation is a FAIL; a violation of a keyword no
+        token grammar can express is a PASS (expected, not a defect).
+        """
+        results: list[ScenarioResult] = []
+        for case in _ENFORCEMENT_CASES:
+            tool = case["tool"]
+            fname = tool["function"]["name"]
+            test = f"enforce_{case['name']}"
+            expect_honest_reject = case["name"] in _EXPECT_HONEST_REJECT
+
+            fired = 0
+            conformant = 0
+            honest_reject = 0
+            first_bad: tuple[dict[str, Any], RawResponse, str] | None = None
+            last: tuple[dict[str, Any], RawResponse] | None = None
+            transport: tuple[Verdict, str] | None = None
+
+            for _ in range(_ENFORCE_REPEATS):
+                payload = self._req(
+                    model,
+                    case["prompt"],
+                    [tool],
+                    tool_choice={
+                        "type": "function",
+                        "function": {"name": fname},
+                    },
+                    temperature=0.0,
+                    chat_template_kwargs={
+                        "enable_thinking": False,
+                        "thinking": False,
+                    },
+                )
+                resp = await client.post_json(
+                    payload, timeout=self._fuzz_config.timeout * 2
+                )
+                last = (payload, resp)
+
+                if resp.error or resp.status != 200:
+                    transport = self._assess_tool_response(resp, [tool])[:2]
+                    # A CFG-inexpressible keyword the backend cannot enforce is
+                    # honestly refused with an enforce-or-400 (see
+                    # _EXPECT_HONEST_REJECT); count those so the fired==0 branch
+                    # can credit the honest rejection as a PASS.
+                    if expect_honest_reject and _is_honest_rejection(
+                        resp.status
+                    ):
+                        honest_reject += 1
+                    continue
+
+                data, _perr = parse_json(resp.body)
+                tool_calls = _get_tool_calls(data or {})
+                if not tool_calls:
+                    continue
+                fired += 1
+                valid, detail = _validate_tool_call(tool_calls[0], [tool])
+                if valid:
+                    conformant += 1
+                elif first_bad is None:
+                    first_bad = (payload, resp, detail)
+
+            # A forced tool_choice that never fired is a server fault (or the
+            # transport error behind it) -- UNLESS it is a CFG-inexpressible
+            # construct the backend honestly refused with an enforce-or-400,
+            # which is the correct outcome (mirrors s32's honest-rejection
+            # contract), so a clean rejection across all repeats is a PASS.
+            if fired == 0:
+                assert last is not None
+                payload, resp = last
+                if expect_honest_reject and honest_reject == _ENFORCE_REPEATS:
+                    verdict = Verdict.PASS
+                    note = (
+                        f"honest enforce-or-400 ({case['expect']}): rejected "
+                        f"{honest_reject}/{_ENFORCE_REPEATS}; unenforceable "
+                        "construct refused up front, never a best-effort 200"
+                    )
+                else:
+                    verdict, note = transport or (
+                        Verdict.FAIL,
+                        "forced tool_choice produced no tool call",
+                    )
+            else:
+                violations = fired - conformant
+                if violations == 0:
+                    assert last is not None
+                    payload, resp = last
+                    verdict = Verdict.PASS
+                    note = (
+                        f"args conform {conformant}/{fired} ({case['expect']})"
+                    )
+                else:
+                    assert first_bad is not None
+                    payload, resp, bad = first_bad
+                    if case["enforceable"]:
+                        verdict = Verdict.FAIL
+                        note = (
+                            f"schema not enforced ({case['expect']}): "
+                            f"{violations}/{fired} violated; {bad}"
+                        )
+                    else:
+                        verdict = Verdict.PASS
+                        note = (
+                            f"{case['expect']} not grammar-enforceable; "
+                            f"{violations}/{fired} violated (expected): {bad}"
+                        )
+            results.append(
+                self.make_result(
+                    self.name,
+                    test,
+                    verdict,
+                    status_code=resp.status,
+                    detail=note,
+                    **self._exchange_verbose(payload, resp),
+                )
+            )
+        return results
 
     # =====================================================================
     # 1. Single-tool basic schema validation (4 tests)

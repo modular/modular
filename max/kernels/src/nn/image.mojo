@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import TensorLayout, TileTensor, coord
+from layout import TensorLayout, TileTensor
 
+from std.utils.coord import dyn_coord
 from std.utils.index import IndexList
 
 
@@ -136,11 +137,11 @@ struct ImageData[
             data layout.
         """
         if self.get_image_layout() == Image2DLayout.NCHW:
-            return Int(self.data.layout(coord[DType.int64]((n, c, h, w))))
+            return Int(self.data.layout(dyn_coord[DType.int64]((n, c, h, w))))
 
         if self.get_image_layout() == Image2DLayout.RSCF:
-            return Int(self.data.layout(coord[DType.int64]((h, w, c, n))))
-        return Int(self.data.layout(coord[DType.int64]((n, h, w, c))))
+            return Int(self.data.layout(dyn_coord[DType.int64]((h, w, c, n))))
+        return Int(self.data.layout(dyn_coord[DType.int64]((n, h, w, c))))
 
     def get_flat_index(self, n: Int, c: Int, h: Int, w: Int) -> Int:
         """Converts the dimension index to the flat index of the underlying

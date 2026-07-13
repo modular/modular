@@ -27,7 +27,11 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVConnectorType,
+    MHAKVCacheParams,
+)
 from max.pipelines.lib import (
     KVCacheConfig,
     KVConnectorConfig,
@@ -255,6 +259,7 @@ class TestArchConfigWithAttentionKVCache:
         kv_params = config.get_kv_params()
 
         # Verify the KVCacheParams fields
+        assert isinstance(kv_params, MHAKVCacheParams)
         assert kv_params.dtype == DType.bfloat16
         assert kv_params.n_kv_heads == 8  # from ConcreteArchConfig
         assert kv_params.head_dim == 64  # from ConcreteArchConfig
@@ -354,7 +359,7 @@ def test_to_params_replication_disabled_by_default() -> None:
     kv_cache_config = KVCacheConfig()
     with pytest.raises(
         ValueError,
-        match=r"Number of KV heads \(4\) must be divisible by the number of devices \(8\)",
+        match=r"Number of KV heads \(4\) must be divisible by the tensor parallel degree \(8\)",
     ):
         kv_cache_config.to_params(
             dtype=DType.bfloat16,
