@@ -39,7 +39,12 @@ from std.memory import (
     UnsafeMaybeUninit,
 )
 
-from .status import STATUS_SUCCESS, STATUS_UNKNOWN_ERROR, HALError
+from .status import (
+    STATUS_SUCCESS,
+    STATUS_UNKNOWN_ERROR,
+    STATUS_UNKNOWN_PROPERTY_NAME,
+    HALError,
+)
 from .device import DeviceSpec
 
 # ===-----------------------------------------------------------------------===#
@@ -65,6 +70,12 @@ struct M_driver_dim(TrivialRegisterPassable):
     var x: UInt32
     var y: UInt32
     var z: UInt32
+
+
+@fieldwise_init
+struct M_driver_dlpack_device(TrivialRegisterPassable):
+    var device_type: Int32
+    var device_id: Int32
 
 
 @fieldwise_init
@@ -464,7 +475,7 @@ struct RawDriver(Movable):
     def get_queue_property[
         name: StringLiteral, T: TrivialRegisterPassable
     ](self, queue: QueueHandle) raises HALError -> T:
-        """Query a named property of a queue (e.g. its native handle)."""
+        """Query a named property of a queue."""
         var value = UnsafeMaybeUninit[T]()
         var status = self._raw.queue_property.f(
             queue,
@@ -477,6 +488,50 @@ struct RawDriver(Movable):
                 err.status,
                 message=String(
                     t"failed to get queue property '{name}': {err.message}"
+                ),
+            )
+        return value.unsafe_assume_init_ref()
+
+    def get_optional_queue_property[
+        name: StringLiteral, T: TrivialRegisterPassable
+    ](self, queue: QueueHandle) raises HALError -> OptionalReg[T]:
+        """Queries a queue property, returning None if the plugin does not
+        expose it (`UNKNOWN_PROPERTY_NAME`) instead of raising. Any other
+        failure still raises."""
+        var value = UnsafeMaybeUninit[T]()
+        var status = self._raw.queue_property.f(
+            queue,
+            name.as_c_string_slice(),
+            OutParam[T](to=value).bitcast[NoneType](),
+        )
+        if status == STATUS_UNKNOWN_PROPERTY_NAME:
+            return OptionalReg[T]()
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to get queue property '{name}': {err.message}"
+                ),
+            )
+        return OptionalReg[T](value.unsafe_assume_init_ref())
+
+    def get_device_property[
+        name: StringLiteral, T: TrivialRegisterPassable
+    ](self, device: DeviceHandle) raises HALError -> T:
+        """Query a named property of a device."""
+        var value = UnsafeMaybeUninit[T]()
+        var status = self._raw.device_property.f(
+            device,
+            name.as_c_string_slice(),
+            OutParam[T](to=value).bitcast[NoneType](),
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to get device property '{name}': {err.message}"
                 ),
             )
         return value.unsafe_assume_init_ref()

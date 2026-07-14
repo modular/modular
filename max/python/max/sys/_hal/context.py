@@ -55,6 +55,22 @@ class Context:
         """Id of the device this context is bound to."""
         return self._inner.get_device_id()
 
+    def get_dlpack_device(self, pinned: bool) -> tuple[int, int]:
+        """Returns the DLPack ``(device_type, device_id)`` for this device.
+
+        The backing plugin reports its own DLPack device type (and its
+        host-pinned variant when ``pinned`` is True), mirroring the legacy
+        driver's ``getDLDevice``.
+
+        Args:
+            pinned: Whether the allocation is host-pinned, selecting the
+                plugin's host-accessible DLPack variant.
+
+        Returns:
+            The ``(device_type, device_id)`` pair per the DLPack protocol.
+        """
+        return self._inner.get_dlpack_device(pinned)
+
     def create_queue(self) -> Queue:
         return Queue._wrap(self._inner.create_queue())
 
@@ -68,7 +84,12 @@ class Context:
         return Buffer._wrap(self._inner.alloc_host_pinned(byte_size))
 
     def wrap_memory(
-        self, address: int, byte_size: int, *, owning: bool = False
+        self,
+        address: int,
+        byte_size: int,
+        *,
+        owning: bool = False,
+        pinned: bool = False,
     ) -> Buffer:
         """Wraps an existing device memory region in a buffer handle.
 
@@ -86,11 +107,16 @@ class Context:
                 backing plugin uses for device memory.
             byte_size: Size of the region in bytes.
             owning: Whether dropping the buffer frees the region.
+            pinned: Whether the region is host-pinned memory. Recorded on the
+                buffer so its free path matches a pinned allocation; a
+                non-owning wrapped buffer frees nothing either way.
 
         Returns:
             A buffer handle over the region.
         """
-        return Buffer._wrap(self._inner.wrap_memory(address, byte_size, owning))
+        return Buffer._wrap(
+            self._inner.wrap_memory(address, byte_size, owning, pinned)
+        )
 
     def unwrap_memory(self, buffer: Buffer) -> int:
         """Releases ownership of ``buffer``'s region and returns its address.

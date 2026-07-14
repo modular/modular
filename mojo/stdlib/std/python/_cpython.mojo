@@ -881,6 +881,11 @@ comptime PyErr_Fetch = ExternalFunction[
         _CPointer[PyObjectPtr, MutUntrackedOrigin],
     ) thin abi("C") -> None,
 ]
+comptime PyErr_Restore = ExternalFunction[
+    "PyErr_Restore",
+    # void PyErr_Restore(PyObject *type, PyObject *value, PyObject *traceback)
+    def(PyObjectPtr, PyObjectPtr, PyObjectPtr) thin abi("C") -> None,
+]
 
 # Initialization, Finalization, and Threads
 comptime PyEval_SaveThread = ExternalFunction[
@@ -1235,6 +1240,11 @@ comptime PyCapsule_GetPointer = ExternalFunction[
         PyObjectPtr, _CPointer[c_char, ImmutAnyOrigin]
     ) thin abi("C") -> OpaquePointer[MutUntrackedOrigin],
 ]
+comptime PyCapsule_IsValid = ExternalFunction[
+    "PyCapsule_IsValid",
+    # int PyCapsule_IsValid(PyObject *capsule, const char *name)
+    def(PyObjectPtr, _CPointer[c_char, ImmutAnyOrigin]) thin abi("C") -> c_int,
+]
 
 # Memory Management
 comptime PyObject_Free = ExternalFunction[
@@ -1394,6 +1404,7 @@ struct CPython(Defaultable, Movable):
     var _PyErr_Occurred: PyErr_Occurred.type
     var _PyErr_GetRaisedException: PyErr_GetRaisedException.type
     var _PyErr_Fetch: PyErr_Fetch.type
+    var _PyErr_Restore: PyErr_Restore.type
     # Initialization, Finalization, and Threads
     var _PyEval_SaveThread: PyEval_SaveThread.type
     var _PyEval_RestoreThread: PyEval_RestoreThread.type
@@ -1476,6 +1487,7 @@ struct CPython(Defaultable, Movable):
     # Capsules
     var _PyCapsule_New: PyCapsule_New.type
     var _PyCapsule_GetPointer: PyCapsule_GetPointer.type
+    var _PyCapsule_IsValid: PyCapsule_IsValid.type
     # Memory Management
     var _PyObject_Free: PyObject_Free.type
     # Object Implementation Support
@@ -1560,6 +1572,7 @@ struct CPython(Defaultable, Movable):
         else:
             self._PyErr_GetRaisedException = _PyErr_GetRaisedException_dummy
         self._PyErr_Fetch = PyErr_Fetch.load(self.lib.borrow())
+        self._PyErr_Restore = PyErr_Restore.load(self.lib.borrow())
         # Initialization, Finalization, and Threads
         self._PyEval_SaveThread = PyEval_SaveThread.load(self.lib.borrow())
         self._PyEval_RestoreThread = PyEval_RestoreThread.load(
@@ -1693,6 +1706,7 @@ struct CPython(Defaultable, Movable):
         self._PyCapsule_GetPointer = PyCapsule_GetPointer.load(
             self.lib.borrow()
         )
+        self._PyCapsule_IsValid = PyCapsule_IsValid.load(self.lib.borrow())
         # Memory Management
         self._PyObject_Free = PyObject_Free.load(self.lib.borrow())
         # Object Implementation Support
@@ -2042,6 +2056,52 @@ struct CPython(Defaultable, Movable):
         )
 
         return value
+
+    def PyErr_FetchTriple(
+        self,
+    ) -> Tuple[PyObjectPtr, PyObjectPtr, PyObjectPtr]:
+        """Retrieve and clear the error indicator as a `(type, value,
+        traceback)` triple of new references.
+
+        Unlike `PyErr_Fetch`, this returns all three references so a caller can
+        hand them straight back to `PyErr_Restore` without leaking. Works on
+        every supported CPython version; the 3.12 deprecation of the underlying
+        C function does not remove it.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Fetch
+        """
+        var type = PyObjectPtr()
+        var value = PyObjectPtr()
+        var traceback = PyObjectPtr()
+
+        self._PyErr_Fetch(
+            UnsafePointer(to=type).unsafe_origin_cast[MutUntrackedOrigin](),
+            UnsafePointer(to=value).unsafe_origin_cast[MutUntrackedOrigin](),
+            UnsafePointer(to=traceback).unsafe_origin_cast[
+                MutUntrackedOrigin
+            ](),
+        )
+
+        return (type, value, traceback)
+
+    def PyErr_Restore(
+        self,
+        type: PyObjectPtr,
+        value: PyObjectPtr,
+        traceback: PyObjectPtr,
+    ):
+        """Set the error indicator from a `(type, value, traceback)` triple,
+        stealing a reference to each argument.
+
+        Pairs with `PyErr_FetchTriple`: passing back exactly what was fetched
+        round-trips the indicator (including the null-fields case, which clears
+        it).
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Restore
+        """
+        self._PyErr_Restore(type, value, traceback)
 
     # ===-------------------------------------------------------------------===#
     # Initialization, Finalization, and Threads
@@ -3007,6 +3067,27 @@ struct CPython(Defaultable, Movable):
         if self.PyErr_Occurred():
             raise self.get_error()
         return r
+
+    def PyCapsule_IsValid(
+        self,
+        capsule: PyObjectPtr,
+        var name: String,
+    ) -> Bool:
+        """Return whether `capsule` is a valid capsule bearing the given name.
+
+        Does not set an exception and is safe to call with an error already
+        pending.
+
+        References:
+        - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_IsValid
+        """
+        return (
+            self._PyCapsule_IsValid(
+                capsule,
+                name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
+            )
+            != 0
+        )
 
     # ===-------------------------------------------------------------------===#
     # Memory Management

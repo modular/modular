@@ -47,8 +47,9 @@ class Queue:
         self._inner.synchronize()
 
     @property
-    def native_handle(self) -> int:
-        """Backend stream/queue object as an integer handle.
+    def native_handle(self) -> int | None:
+        """Backend stream/queue object as an integer handle, or ``None`` if the
+        queue has no native handle (a device with no OS-level stream object).
 
         The raw native handle (``CUstream`` / ``hipStream_t`` /
         ``MTLCommandQueue`` address), not an assigned id — suitable to

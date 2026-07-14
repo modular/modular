@@ -22,6 +22,7 @@ from .plugin import (
     M_driver_static_bundle,
     M_driver_slice,
     M_driver_bundle_compilation_options,
+    M_driver_dlpack_device,
 )
 
 from .buffer import Buffer, BufferView
@@ -155,6 +156,12 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     def get_device_id(self) -> Int64:
         """Returns the id of the device this context is bound to."""
         return self._device[].id
+
+    def get_dlpack_device(
+        self, pinned: Bool
+    ) raises HALError -> M_driver_dlpack_device:
+        """Returns the DLPack `(device_type, device_id)` for this context."""
+        return self._device[].get_dlpack_device(pinned)
 
     # ===-------------------------------------------------------------------===#
     # Synchronous copies

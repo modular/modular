@@ -55,6 +55,7 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
             b.add_type[Context]("Context")
             .def_method[Context.get_driver_name]("get_driver_name")
             .def_method[Context.get_device_id]("get_device_id")
+            .def_method[Context.get_dlpack_device]("get_dlpack_device")
             .def_method[Context.create_queue]("create_queue")
             .def_method[Context.create_stream]("create_stream")
             .def_method[Context.alloc_sync]("alloc_sync")

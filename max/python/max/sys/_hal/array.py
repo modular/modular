@@ -30,6 +30,12 @@ import numpy as np
 import numpy.typing as npt
 from max.dtype import DType
 
+from ._dlpack import (  # type: ignore[import-not-found]
+    import_dlpack as _import_dlpack,
+)
+from ._dlpack import (
+    make_dlpack_capsule as _make_dlpack_capsule,
+)
 from .buffer import Buffer
 from .context import Context
 from .queue import Queue
@@ -85,11 +91,47 @@ def _contiguous_suffix(
     return split, run_len
 
 
+def _export_dlpack_capsule(
+    array: Array, *, max_version: tuple[int, int] | None
+) -> Any:
+    """Builds a DLPack capsule sharing ``array``'s memory zero-copy.
+
+    Ownership is delegated to the C++ ``_dlpack`` extension: it wraps the
+    memory in a nanobind ``ndarray`` view, holds ``array`` alive, and frees
+    everything when the consumer runs the capsule's deleter.
+
+    Args:
+        array: The array to export; its memory is shared, not copied.
+        max_version: The consumer's maximum supported DLPack version, or
+            ``None``. ``(1, 0)`` or newer yields a versioned
+            ``dltensor_versioned`` capsule; otherwise the classic unversioned
+            ``dltensor``.
+
+    Returns:
+        A ``PyCapsule`` wrapping the managed tensor.
+    """
+    device_type, device_id = array.__dlpack_device__()
+    strides = None if array.is_contiguous else list(array.strides)
+    return _make_dlpack_capsule(
+        array,
+        array.data_ptr if array.byte_size else 0,
+        device_type,
+        device_id,
+        array.dtype,
+        list(array.shape),
+        strides,
+        max_version,
+    )
+
+
 class Array:
     """A dtype + shape + strides view over a HAL ``Buffer``.
 
-    Not constructed directly; use :meth:`empty`, :meth:`full`, or
-    :meth:`from_numpy`, or slice an existing ``Array``.
+    Not constructed directly; use :meth:`empty`, :meth:`full`,
+    :meth:`from_numpy`, or :meth:`from_dlpack`, or slice an existing
+    ``Array``. Also implements the DLPack protocol (:meth:`__dlpack__` /
+    :meth:`__dlpack_device__`), so consumers on the same device (torch,
+    cupy, ...) can adopt the memory zero-copy.
     """
 
     _buffer: Buffer
@@ -200,16 +242,31 @@ class Array:
         cls,
         context: Context,
         np_array: npt.NDArray[Any],
+        *,
+        copy: bool = True,
     ) -> Array:
-        """Allocates a device array from ``np_array`` (blocking H2D copy).
+        """Allocates a device array from ``np_array``.
 
         Args:
             context: The context whose device the array is allocated on.
             np_array: The source array.
+            copy: If ``True`` (the default), the data is copied to the device
+                (blocking H2D). ``copy=False`` adopts ``np_array``'s memory
+                zero-copy by delegating to :meth:`from_dlpack`, which succeeds
+                only when ``np_array`` is already on ``context``'s device — a
+                host (CPU) context — and raises ``ValueError`` on a device
+                context, where host memory cannot be adopted.
 
         Returns:
-            A new contiguous ``Array`` holding the data.
+            A new ``Array`` holding the data: contiguous when copied, or
+            sharing ``np_array``'s memory and strides when ``copy=False``.
+
+        Raises:
+            ValueError: If ``copy=False`` and ``np_array`` is not on
+                ``context``'s device.
         """
+        if not copy:
+            return cls.from_dlpack(context, np_array)
         host = np.ascontiguousarray(np_array)
         dtype = DType.from_numpy(host.dtype)
         arr = cls.empty(context, dtype, host.shape)
@@ -252,13 +309,17 @@ class Array:
         shape: Sequence[int],
         *,
         offset: int = 0,
+        copy: bool = True,
     ) -> Array:
         """Allocates a device array from a binary file's raw bytes.
 
-        The file is memory-mapped read-only, its packed bytes are copied to
-        the device (blocking H2D), and the mapping is dropped. Because the
-        bytes are copied raw, any dtype works — including ones with no numpy
-        equivalent (``bfloat16``, ``float4``).
+        With ``copy=True`` (the default) the file is memory-mapped, its packed
+        bytes are copied to the device (blocking H2D), and the mapping is
+        dropped. With ``copy=False`` the file is mapped copy-on-write and
+        adopted zero-copy (via :meth:`from_dlpack`), which keeps the mapping
+        alive for the array's lifetime and needs ``context`` to be a host (CPU)
+        context. Either way the bytes are reinterpreted raw, so any dtype works
+        — including ones with no numpy equivalent (``bfloat16``, ``float4``).
 
         Args:
             context: The context whose device the array is allocated on.
@@ -266,13 +327,17 @@ class Array:
             dtype: The element type of the stored data.
             shape: The shape of the stored data.
             offset: Byte offset into the file where the data starts.
+            copy: If ``True`` (the default), the bytes are copied to the
+                device. ``copy=False`` adopts a copy-on-write mapping of the
+                file zero-copy.
 
         Returns:
             A new contiguous ``Array`` holding the file's data.
 
         Raises:
-            ValueError: If the file is too short for ``offset`` plus the
-                packed byte size of ``dtype`` and ``shape``.
+            ValueError: If the file is too short for ``offset`` plus the packed
+                byte size of ``dtype`` and ``shape``, or if ``copy=False`` and
+                ``context`` is not a host context.
         """
         shape = tuple(int(d) for d in shape)
         nbytes = _packed_byte_len(dtype, math.prod(shape))
@@ -283,12 +348,205 @@ class Array:
                 f"offset {offset}, but dtype {dtype} with shape {shape} "
                 f"needs {nbytes}"
             )
+        if not copy:
+            if nbytes == 0:
+                return cls.empty(context, dtype, shape)
+            # Map copy-on-write, not read-only: reads still share the file's
+            # pages with no eager copy, but numpy can export a "c" mapping over
+            # DLPack, whereas a read-only ("r") mapping is refused (DLPack
+            # cannot signal read-only in the unversioned capsule). from_dlpack
+            # adopts the mapping and its keepalive holds it alive for the
+            # buffer's lifetime; reinterpret the raw bytes as the requested
+            # dtype.
+            host = np.memmap(
+                path, dtype=np.uint8, mode="c", offset=offset, shape=(nbytes,)
+            )
+            adopted = cls.from_dlpack(context, host)
+            return cls._make(
+                buffer=adopted._buffer,
+                context=context,
+                dtype=dtype,
+                shape=shape,
+                strides=_row_major_strides(shape),
+                byte_offset=0,
+                pinned=False,
+            )
         arr = cls.empty(context, dtype, shape)
         if nbytes:
             host = np.memmap(
                 path, dtype=np.uint8, mode="r", offset=offset, shape=(nbytes,)
             )
             context.copy_to_device_sync(arr._buffer.view(), host.ctypes.data)
+        return arr
+
+    @classmethod
+    def from_dlpack(
+        cls, context: Context, array: Any, *, copy: bool | None = None
+    ) -> Array:
+        """Creates an array on ``context`` from a DLPack producer.
+
+        Three producer kinds are handled:
+
+        - Another HAL ``Array`` on the same context: returned as-is
+          (zero-copy), or deep-copied with ``copy=True``.
+        - A producer on this context's device — its device memory or its
+          host-pinned variant (e.g. a torch CUDA tensor, or a pinned CUDA
+          tensor a CUDA context can access directly): adopted zero-copy where
+          the backing plugin supports wrapping foreign allocations; the
+          producer's deleter runs when the array's buffer is released.
+        - Pageable host memory (a plain numpy array, a CPU torch tensor):
+          imported only with ``copy=True``, which reads it host-side via
+          ``np.from_dlpack`` and copies it to the device (blocking H2D); the
+          dtype must be numpy-representable (see :meth:`from_numpy`).
+
+        Args:
+            context: The context whose device the array lives on.
+            array: An object implementing the DLPack protocol.
+            copy: If ``True``, always makes a copy. If ``None`` (the
+                default), adopts zero-copy where possible; a producer that can
+                only be copied — memory not accessible to this context's
+                device — raises rather than copying to the device silently. If
+                ``False``, requires zero-copy and raises where a copy would be
+                needed.
+
+        Returns:
+            An ``Array`` on ``context`` holding the producer's data.
+
+        Raises:
+            NotImplementedError: If the producer's memory can be neither
+                adopted nor copied (a foreign device, a cross-context
+                ``Array``, or a device producer on a plugin without memory
+                wrapping).
+            ValueError: If a copy would be required but ``copy`` is not
+                ``True`` — e.g. importing pageable host memory, which is not
+                accessible to this context's device and cannot be adopted
+                zero-copy.
+            BufferError: If a device producer's capsule is invalid, its
+                dtype has no ``DType`` equivalent, or it has negative
+                strides.
+        """
+        if isinstance(array, Array):
+            if array._context is not context:
+                raise NotImplementedError(
+                    "from_dlpack cannot import an Array from another "
+                    "context; cross-context copies are not supported"
+                )
+            if copy:
+                dup = cls.empty(context, array.dtype, array.shape)
+                Array.copy(array, dup)
+                return dup
+            return array
+        if hasattr(array, "__dlpack_device__"):
+            producer_device = tuple(array.__dlpack_device__())
+            own = context.get_dlpack_device(pinned=False)
+            own_pinned = context.get_dlpack_device(pinned=True)
+            if producer_device in (own, own_pinned):
+                # The producer is on this context's device — its device
+                # memory, or its host-pinned variant, which the device can
+                # access directly. Adopt it zero-copy.
+                pinned = producer_device == own_pinned and own_pinned != own
+                return cls._adopt_device_dlpack(
+                    context, array, copy=copy, pinned=pinned
+                )
+        # Not on this device (host memory, or a device this context cannot
+        # reach): it can't be adopted, only copied, and only host-readable
+        # memory can be. Require an explicit copy=True rather than crossing the
+        # host/device boundary silently; numpy rejects memory it can't read.
+        if not copy:
+            raise ValueError(
+                "from_dlpack can only adopt a producer already on this "
+                "context's device; for host-accessible memory pass copy=True "
+                "to copy it to the device, or use Array.from_numpy."
+            )
+        try:
+            host_array = np.from_dlpack(array)
+        except (BufferError, RuntimeError, TypeError) as exc:
+            raise NotImplementedError(
+                "from_dlpack cannot import this producer: its memory is "
+                "neither on this context's device nor host-readable"
+            ) from exc
+        return cls.from_numpy(context, host_array)
+
+    @classmethod
+    def _adopt_device_dlpack(
+        cls,
+        context: Context,
+        array: Any,
+        *,
+        copy: bool | None,
+        pinned: bool = False,
+    ) -> Array:
+        """Adopts a producer's memory zero-copy.
+
+        The producer must already be on this context's device;
+        :meth:`from_dlpack` verifies that before calling. Consumes the
+        producer's capsule, wraps its data pointer via the plugin's memory
+        wrap, and holds the producer's managed tensor — and so the foreign
+        allocation — alive until the resulting buffer is released, at which
+        point the producer's deleter runs. ``pinned`` marks the wrapped
+        buffer as host-pinned, for a producer on the device's pinned-host
+        DLPack variant.
+        """
+        # Lend the producer our stream so it orders its in-flight work ahead of
+        # anything we run on it.
+        adopt_queue = context.create_queue()
+        stream_handle = adopt_queue.native_handle
+        keepalive = _import_dlpack(array, stream_handle)
+        dtype = keepalive.dtype
+        shape = tuple(keepalive.shape)
+        if keepalive.strides is not None:
+            strides = tuple(keepalive.strides)
+        else:
+            strides = _row_major_strides(shape)
+        if any(s < 0 for s in strides):
+            raise BufferError(
+                "cannot adopt a DLPack tensor with negative strides"
+            )
+        if math.prod(shape) == 0:
+            return cls.empty(context, dtype, shape)
+
+        if not keepalive.data:
+            raise BufferError(
+                "the producer's DLPack tensor has a NULL data pointer"
+            )
+        address = keepalive.data + keepalive.byte_offset
+        span_elems = 1 + sum(
+            (dim - 1) * stride
+            for dim, stride in zip(shape, strides, strict=False)
+        )
+        try:
+            buffer = context.wrap_memory(
+                address, span_elems * dtype.size_in_bytes, pinned=pinned
+            )
+        except Exception as e:
+            raise NotImplementedError(
+                f"the {context.driver_name} plugin cannot wrap foreign "
+                f"allocations: {e}"
+            ) from e
+
+        # Complete the ordering established above: host-wait on the work the
+        # producer planted on our lent stream — and only that, not the whole
+        # device. After it returns the data is settled, so the Array's
+        # blocking ops on any queue are safe.
+        adopt_queue.synchronize()
+
+        # The C++ keepalive owns the producer's deleter obligation; hold it on
+        # the buffer so the foreign allocation lives exactly as long as the
+        # buffer.
+        buffer._keepalive = keepalive
+        arr = cls._make(
+            buffer=buffer,
+            context=context,
+            dtype=dtype,
+            shape=shape,
+            strides=strides,
+            byte_offset=0,
+            pinned=pinned,
+        )
+        if copy:
+            dup = cls.empty(context, dtype, shape)
+            Array.copy(arr, dup)
+            return dup
         return arr
 
     # ------------------------------------------------------------------
@@ -359,9 +617,9 @@ class Array:
     def data_ptr(self) -> int:
         """Backend address of this array's first element.
 
-        Passes through the HAL's notion of the allocation's address (a device
-        virtual address on CUDA/HIP, a host-visible address on Metal) plus the
-        array's byte offset; never a fabricated value.
+        For a pinned allocation this is a host pointer the host can
+        dereference directly; otherwise it is a backend device address the
+        host cannot dereference.
         """
         base = self._context.memory_get_address(self._buffer)
         return base + self._byte_offset
@@ -438,17 +696,30 @@ class Array:
                 )
                 src_byte += run_bytes
 
-    def as_numpy(self) -> npt.NDArray[Any]:
-        """Returns the array's contents as a numpy array (blocking D2H copy).
+    def as_numpy(self, *, copy: bool = True) -> npt.NDArray[Any]:
+        """Returns the array's contents as a numpy array.
 
         A strided array is materialized contiguous first.
+
+        Args:
+            copy: If ``True`` (the default), the data is copied to the host
+                (blocking D2H). ``copy=False`` returns a zero-copy numpy view
+                of the array's memory via :meth:`__dlpack__`; the memory must be
+                host-accessible (a CPU or host-pinned array), so a device array
+                cannot be viewed and ``numpy`` rejects it.
 
         Returns:
             A numpy array holding the data.
 
         Raises:
-            ValueError: If the dtype has no numpy equivalent (e.g. ``bfloat16``).
+            BufferError: If ``copy=False`` and the memory is not
+                host-accessible, the dtype has no DLPack encoding, or the array
+                has negative strides.
+            ValueError: If ``copy=True`` and the dtype has no numpy equivalent
+                (e.g. ``bfloat16``).
         """
+        if not copy:
+            return np.from_dlpack(self)
         source = self if self.is_contiguous else self.contiguous()
         out = np.empty(self._shape, dtype=self._dtype.to_numpy())
         if out.nbytes:
@@ -652,6 +923,104 @@ class Array:
                 f"{target.shape}; broadcasting beyond a scalar is not supported"
             )
         Array.copy(src, target)
+
+    # ------------------------------------------------------------------
+    # DLPack protocol
+    # ------------------------------------------------------------------
+
+    def __dlpack_device__(self) -> tuple[int, int]:
+        """Returns the DLPack ``(device_type, device_id)`` pair.
+
+        The device type is derived from the HAL plugin backing the array's
+        context. A pinned array reports the plugin's
+        host-accessible variant with device id 0, matching the legacy
+        driver.
+
+        Returns:
+            The ``(device_type, device_id)`` pair per the DLPack protocol.
+
+        Raises:
+            BufferError: If the backing plugin has no DLPack device type.
+        """
+        try:
+            return self._context.get_dlpack_device(self._pinned)
+        except Exception as e:
+            raise BufferError(
+                f"the {self._context.driver_name} plugin has no DLPack "
+                "device type"
+            ) from e
+
+    def __dlpack__(
+        self,
+        *,
+        stream: int | None = None,
+        max_version: tuple[int, int] | None = None,
+        dl_device: tuple[int, int] | None = None,
+        copy: bool | None = None,
+    ) -> Any:
+        """Returns a DLPack capsule sharing this array's device memory,
+        zero-copy.
+
+        The capsule carries a managed tensor whose deleter keeps this array
+        alive until the consumer releases it;
+        consumers on the same device adopt the memory zero-copy. A strided
+        (non-contiguous) array exports its element strides; only negative
+        strides cannot be exported.
+
+        This array exports its memory zero-copy only — it never makes a copy
+        for the consumer, so ``copy=True`` is refused. To hand the consumer an
+        independent buffer, copy this array first with :meth:`copy` and export
+        the copy.
+
+        The exported memory reflects whatever work has already completed;
+        ``__dlpack__`` does not synchronize. An async write left pending by a
+        ``Queue`` / ``Stream`` ``array_*`` op (or any caller-owned executor) is
+        NOT awaited here, so synchronize the producing executor before
+        exporting. ``stream`` is the consumer's stream handle per the DLPack
+        protocol (an integer — not a HAL ``Queue`` / ``Stream``); it is
+        accepted but ignored.
+
+        Args:
+            stream: The consumer's stream handle, per the DLPack protocol.
+            max_version: The maximum DLPack version the consumer supports.
+                For ``(1, 0)`` and newer, a DLPack 1.0
+                ``DLManagedTensorVersioned`` capsule (named
+                ``dltensor_versioned``) is returned; otherwise the classic
+                unversioned ``dltensor``.
+            dl_device: The device the consumer wants the data on. Only this
+                array's own device is supported.
+            copy: Accepted for the array-api protocol. ``False`` / ``None``
+                export zero-copy; ``True`` is refused, since this array cannot
+                copy for the consumer.
+
+        Returns:
+            A ``PyCapsule`` wrapping a ``DLManagedTensor`` (or
+            ``DLManagedTensorVersioned``).
+
+        Raises:
+            BufferError: If the dtype has no DLPack encoding, ``copy`` is
+                ``True``, the array has negative strides, or an unsupported
+                ``dl_device`` is requested.
+        """
+        if (
+            dl_device is not None
+            and tuple(dl_device) != self.__dlpack_device__()
+        ):
+            raise BufferError(
+                f"cannot export to device {tuple(dl_device)}; the array "
+                f"lives on {self.__dlpack_device__()}"
+            )
+        if copy:
+            raise BufferError(
+                "this array exports its memory zero-copy only; copy it first "
+                "with Array.copy and export the copy"
+            )
+        if any(s < 0 for s in self._strides):
+            raise BufferError(
+                "cannot export an array with negative strides zero-copy; "
+                "copy it first with Array.copy and export the contiguous copy"
+            )
+        return _export_dlpack_capsule(self, max_version=max_version)
 
     # ------------------------------------------------------------------
     # Internal helpers

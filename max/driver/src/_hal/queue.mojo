@@ -23,7 +23,7 @@ from .copy import _enqueue_copy
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable, _EventInner
 from .device import DeviceSpec
 from .status import STATUS_SUCCESS, HALError
-from std.collections import InlineArray
+from std.collections import InlineArray, OptionalReg
 from std.memory import (
     ArcPointer,
     OpaquePointer,
@@ -343,8 +343,9 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         """
         self._raw[].synchronize_queue(self._handle)
 
-    def native_handle(self) raises HALError -> UInt64:
-        """Returns the backend stream/queue object as an integer handle."""
-        return self._raw[].get_queue_property["native_handle", UInt64](
+    def native_handle(self) raises HALError -> OptionalReg[UInt64]:
+        """Returns the backend stream/queue handle, or None if the queue has
+        none (a device with no OS-level stream object, e.g. CPU)."""
+        return self._raw[].get_optional_queue_property["native_handle", UInt64](
             self._handle
         )

@@ -77,8 +77,12 @@ class Buffer:
     """
 
     _inner: Any
+    # Held for buffers over foreign memory (e.g. an adopted DLPack
+    # producer): whatever must outlive this buffer, released when the
+    # buffer is dropped.
+    _keepalive: object
 
-    __slots__ = ("_inner",)
+    __slots__ = ("_inner", "_keepalive")
 
     def __init__(self) -> None:
         raise TypeError(
@@ -91,6 +95,7 @@ class Buffer:
     def _wrap(cls, inner: object) -> Buffer:
         obj = cls.__new__(cls)
         obj._inner = inner
+        obj._keepalive = None
         return obj
 
     @property

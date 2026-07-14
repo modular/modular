@@ -17,6 +17,7 @@ from .plugin import (
     RawDriver,
     OutParam,
     DeviceHandle,
+    M_driver_dlpack_device,
 )
 from .status import STATUS_SUCCESS, STATUS_INVALID_ARG, HALError
 
@@ -128,3 +129,15 @@ struct Device[spec: DeviceSpec](ImplicitlyDeletable, Movable):
         self,
     ) raises HALError -> ArcPointer[Context[Self.spec]]:
         return Context[Self.spec]._create(self)
+
+    def get_dlpack_device(
+        self, pinned: Bool
+    ) raises HALError -> M_driver_dlpack_device:
+        """Returns the DLPack `(device_type, device_id)` for this device."""
+        if pinned:
+            return self._raw[].get_device_property[
+                "dlpack_device_pinned", M_driver_dlpack_device
+            ](self._handle)
+        return self._raw[].get_device_property[
+            "dlpack_device", M_driver_dlpack_device
+        ](self._handle)

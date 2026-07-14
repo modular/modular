@@ -14,7 +14,7 @@
 
 from std.memory import ArcPointer, UnsafePointer
 from std.os import abort
-from std.python import PythonObject
+from std.python import Python, PythonObject
 from _hal.buffer import Buffer as HALBuffer
 from _hal.context import Context as HALContext
 from _hal.device import get_device_spec
@@ -54,6 +54,18 @@ struct Context(Movable, Writable):
     def get_device_id(py_self: PythonObject) raises -> PythonObject:
         var self_ptr = Self._self_ptr(py_self)
         return PythonObject(Int(self_ptr[]._arc[].get_device_id()))
+
+    @staticmethod
+    def get_dlpack_device(
+        py_self: PythonObject, pinned_obj: PythonObject
+    ) raises -> PythonObject:
+        var self_ptr = Self._self_ptr(py_self)
+        var pinned = Int(py=pinned_obj) != 0
+        var dl = self_ptr[]._arc[].get_dlpack_device(pinned)
+        return Python.tuple(
+            PythonObject(Int(dl.device_type)),
+            PythonObject(Int(dl.device_id)),
+        )
 
     @staticmethod
     def create_queue(py_self: PythonObject) raises -> PythonObject:
@@ -107,18 +119,20 @@ struct Context(Movable, Writable):
         address_obj: PythonObject,
         size_obj: PythonObject,
         owning_obj: PythonObject,
+        pinned_obj: PythonObject,
     ) raises -> PythonObject:
         var self_ptr = Self._self_ptr(py_self)
         var address = UInt64(Int(py=address_obj))
         var byte_size = UInt64(Int(py=size_obj))
         var owning = Int(py=owning_obj) != 0
+        var pinned = Int(py=pinned_obj) != 0
         var hal_buf = self_ptr[]._arc[].wrap_memory(address, byte_size, owning)
         var ctx_arc = self_ptr[]._arc
         return PythonObject(
             alloc=Buffer(
                 _hal=hal_buf^,
                 _ctx=ctx_arc^,
-                _is_pinned=False,
+                _is_pinned=pinned,
             )
         )
 
