@@ -1179,6 +1179,33 @@ def _matmul_gpu[
                                 if k >= 256:
                                     return _small_m_gemm[128, 128, 256]()
 
+                # Skinny-deep fp32 (MoE router gate: N=128, K=6144) leaves
+                # the machine idle, so split the K reduction. Config is built
+                # directly because kernel_helper's warp=block//2 degenerates
+                # at BM=16.
+                comptime split_k_p = 16
+                comptime if (
+                    a_type == DType.float32
+                    and transpose_b
+                    and static_N <= 256
+                    and static_K >= 2048
+                    and static_K % (split_k_p * 64) == 0
+                ):
+                    if m > 1 and m <= 32:
+                        comptime config = MatmulConfig[
+                            a_type, b_type, c_type, transpose_b
+                        ](
+                            block_tile_shape=Index(16, 16, 64),
+                            warp_tile_shape=Index(16, 16, 64),
+                            mma_shape=_amdgpu_get_mma_shape[
+                                a_type, transpose_b
+                            ](),
+                            num_pipeline_stages=1,
+                            num_k_partitions=split_k_p,
+                            pdl_level=pdl_level,
+                        )
+                        return _multistage_gemm[config]()
+
                 comptime sm_count = ctx.default_device_info.sm_count
                 comptime block_shape_list = _amdgpu_matmul_build_block_shape_list[
                     static_N

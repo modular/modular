@@ -40,6 +40,8 @@ from std.gpu.memory import (
 from std.gpu.compute.mma import mma
 from layout.layout import *
 from layout import (
+    Coord,
+    Idx,
     LayoutTensor,
     lt_to_tt,
     RuntimeLayout,
@@ -1111,15 +1113,6 @@ def multistage_gemm_split_k_kernel[
     comptime K = b.shape[1]() if transpose_b else b.shape[0]()
     comptime BK = config.block_tile_shape[2]
 
-    # If K is not divisible by num_partitions, the first num_partitions-1 parts
-    # will be rounded up to multiple of BK.
-    var a_part = a.split[axis=1, split_alignment=BK](
-        num_partitions, block_idx.z
-    )
-    var b_part = b.split[axis=1 if transpose_b else 0, split_alignment=BK](
-        num_partitions, block_idx.z
-    )
-
     comptime work_space_tensor_type = LayoutTensor[
         work_space_type, c_layout, MutAnyOrigin
     ]
@@ -1148,21 +1141,46 @@ def multistage_gemm_split_k_kernel[
     )
 
     var ws_tt = lt_to_tt(work_space_part)
-    var a_tt = lt_to_tt(a_part)
-    var b_tt = lt_to_tt(b_part)
 
     comptime if (
         has_amd_gpu_accelerator()
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b
     ):
+        # `.split` makes the K axis dynamic, but AMDMatmul derives its
+        # K-loop bound from the static shape. Carve comptime K/P tiles so
+        # each partition keeps a static K (parent strides preserved).
+        comptime assert K % config.num_k_partitions == 0, (
+            "AMD split-K carves static K/P tiles, so K must be divisible by"
+            " num_k_partitions (no ragged remainder)."
+        )
+        comptime K_part = K // config.num_k_partitions
+        # AMDMatmul's K-loop iterates K_part // BK tiles by integer division,
+        # so a ragged tail would be silently dropped. The dispatch gate keeps
+        # BK == 64 and K a multiple of num_k_partitions * 64.
+        comptime assert (
+            K_part % BK == 0
+        ), "AMD split-K requires each K partition to be a multiple of BK."
+        var z = Int(block_idx.z)
+        var a_amd = lt_to_tt(a).tile(Coord(M, Idx[K_part]), Coord(0, z))
+        var b_amd = lt_to_tt(b).tile(Coord(Idx[N], Idx[K_part]), Coord(0, z))
         AMDMatmul[
             a_type,
             b_type,
             work_space_type,
             transpose_b,
             k_partition_config,
-        ].run(ws_tt, a_tt, b_tt)
+        ].run(ws_tt, a_amd, b_amd)
 
     else:
+        # If K is not divisible by num_partitions, the first
+        # num_partitions-1 parts are rounded up to a multiple of BK.
+        var a_part = a.split[axis=1, split_alignment=BK](
+            num_partitions, block_idx.z
+        )
+        var b_part = b.split[axis=1 if transpose_b else 0, split_alignment=BK](
+            num_partitions, block_idx.z
+        )
+        var a_tt = lt_to_tt(a_part)
+        var b_tt = lt_to_tt(b_part)
         multistage_gemm_kernel[config=k_partition_config,](ws_tt, a_tt, b_tt)
