@@ -20,7 +20,7 @@
 #include "Support/Configuration.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
-#include "Support/Profiling/Tracy.h"
+#include "Support/Profiling/internal/Tracy.h"
 #include "Support/Threading/Atomics.h"
 #include "Support/Threading/HWInfo.h"
 #include "Support/Threading/SpinWaiter.h"

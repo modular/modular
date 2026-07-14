@@ -271,7 +271,7 @@ modular_cc_test(
     srcs = ["TimeProfilerTest.cpp"],
     deps = [
         "//Support:Globals",
-        "//Support:Profiling",
+        "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
     ],
 )

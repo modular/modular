@@ -959,6 +959,7 @@ modular_shared_library(
         "//Support:ML",
         "//Support:Profiling",
         "//Support:Threading",
+        "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:llvm-symbolizer",
     ] + select({
@@ -991,6 +992,7 @@ modular_cc_library(
         "//Support:Context",
         "//Support:ML",
         "//Support:Profiling",
+        "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:ConversionPasses",
         "@llvm-project//mlir:IR",

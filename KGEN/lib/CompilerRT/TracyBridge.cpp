@@ -9,7 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Profiling/TracyZone.h"
+#include "Support/Profiling/internal/TracyZone.h"
 #include "Support/SymbolExport.h"
 #include <cstddef>
 #include <cstdint>
