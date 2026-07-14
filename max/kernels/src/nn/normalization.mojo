@@ -66,6 +66,7 @@ from std.utils.numerics import get_accum_type, max_finite, min_finite
 from comm.rms_norm_fp8 import rms_norm_fused_fp8
 from std.gpu.primitives.grid_controls import PDLLevel
 from .reshape import reshape
+from .shapes import _get_start_indices_of_nth_subvolume_static
 
 comptime _APPLE_STATIC_SHMEM_MAX_BYTES = 32 * 1024
 """Maximum number of bytes that can be used on Apple GPUs (32K)."""
@@ -1168,54 +1169,26 @@ def rms_norm_gpu_warp_per_row[
                     col += stride
 
 
-# Static-divisor row -> n-D start-index decomposition.
-#
-# Functionally identical to `_get_start_indices_of_nth_subvolume[1](n, shape)`
-# (the `subvolume_rank == 1` row-translation: dim `rank-1` is the column, set by
-# the caller; dims `1..rank-2` are decomposed; dim 0 is the final quotient), but
-# the shape arrives as the `Coord` *type* `ShapeCoord` rather than a runtime
-# `IndexList`. For dims whose extent is statically known in the `Coord` type
-# (`ParamListType[i].is_static_value`), the divisor becomes a compile-time
-# literal, so the `divmod` strength-reduces to a magic-multiply + shift
-# (verified: SASS `IMAD.HI`/`SHF`, no `IDIV`/`MUFU.RCP`) instead of the runtime
-# Newton-reciprocal divide that an `IndexList` divisor forces. Dynamic dims fall
-# back to the runtime value carried in `shape`.
-#
-# The row index `n` stays runtime, so the *result* indices are runtime; only the
-# DIVISORS fold. The `Coord` is never passed to the device (a static-typed
-# `Coord` is not `DevicePassable`); its static dims live in the type and dynamic
-# dims (if any) are read from the captured runtime `shape` value.
+# Rebuild a statically-typed `Coord` from a runtime `IndexList`, preserving the
+# `Coord`'s static dims (`ComptimeInt`) and filling its dynamic leaves from the
+# `IndexList`. Needed at the rms_norm/layer_norm call sites: the static-divisor
+# `divmod` fold needs the `Coord` *type* (its static dims), but a static-typed
+# `Coord` is not `DevicePassable`, so the device closures capture the
+# `DevicePassable` `IndexList` and rebuild the typed `Coord` in-kernel here.
 @always_inline
-def _get_row_start_indices_static[
-    ShapeCoord: CoordLike, rank: Int
-](n: Int, runtime_shape: IndexList[rank]) -> IndexList[rank]:
-    var res = IndexList[rank]()
+def _index_list_to_typed_coord[
+    element_types: TypeList[Trait=CoordLike, ...]
+](witness: Coord[*element_types], il: IndexList[witness.rank]) -> Coord[
+    *element_types
+]:
+    # Default-construct sets every static dim to its `ComptimeInt` literal.
+    var res = Coord[*element_types]()
 
-    # Match `_get_start_indices_of_nth_subvolume`'s fast paths so behavior is
-    # bit-identical for the shapes that reach it.
-    comptime if rank == 2:
-        res[0] = n
-        return res
+    comptime for i in range(witness.rank):
+        comptime ElemT = element_types[i]
+        comptime if not ElemT.is_static_value:
+            res[i] = rebind[ElemT](Scalar[ElemT.DTYPE](il[i]))
 
-    var curr = n
-
-    comptime for i in reversed(range(1, rank - 1)):
-        comptime ElemT = ShapeCoord.ParamListType[i]
-        comptime if ElemT.is_static_value:
-            # Compile-time divisor -> magic-multiply + shift (no `IDIV`).
-            comptime divisor = ElemT.static_value
-            res[i] = umod(curr, divisor)
-            curr = ufloordiv(curr, divisor)
-        else:
-            # Dynamic dim: read the divisor from the runtime `IndexList` (which,
-            # unlike a static-typed `Coord`, is `DevicePassable` and transfers as
-            # a closure capture). This path emits a runtime divide, same as the
-            # `_get_start_indices_of_nth_subvolume` baseline.
-            var divisor = runtime_shape[i]
-            res[i] = umod(curr, divisor)
-            curr = ufloordiv(curr, divisor)
-
-    res[0] = curr
     return res
 
 
@@ -1677,16 +1650,24 @@ def rms_norm_gpu[
     # static-shape path), so the per-row `divmod` strength-reduces to magic-multiply
     # + shift instead of the runtime Newton-reciprocal `IDIV` that the
     # `shape_il`-form wrappers above emit.
-    comptime ShapeCoordType = type_of(shape)
-
+    # The static-divisor fold needs the `Coord` *type* (its static dims), but a
+    # static-typed `Coord` is not `DevicePassable`, so capture the
+    # `DevicePassable` `shape_il` (`IndexList`) and rebuild the typed `Coord`
+    # in-kernel. `type_of(shape)()` reconstructs the static dims at comptime; the
+    # dynamic leaves are filled from `shape_il`.
     @__copy_capture(shape_il)
     @parameter
     @always_inline
     def output_fn_2d_static[
         simd_width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-        var indices = _get_row_start_indices_static[ShapeCoordType, rank](
-            row, shape_il
+        var shape_witness = type_of(shape)()
+        var shape_coord = _index_list_to_typed_coord(
+            shape_witness,
+            rebind[IndexList[shape_witness.rank]](shape_il),
+        )
+        var indices = _get_start_indices_of_nth_subvolume_static(
+            row, shape_coord
         )
         indices[rank - 1] = col
         output_fn[simd_width, alignment](Coord(indices), val)
@@ -1697,8 +1678,13 @@ def rms_norm_gpu[
     def input_fn_2d_static[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        var indices = _get_row_start_indices_static[ShapeCoordType, rank](
-            row, shape_il
+        var shape_witness = type_of(shape)()
+        var shape_coord = _index_list_to_typed_coord(
+            shape_witness,
+            rebind[IndexList[shape_witness.rank]](shape_il),
+        )
+        var indices = _get_start_indices_of_nth_subvolume_static(
+            row, shape_coord
         )
         indices[rank - 1] = col
         return input_fn[simd_width](Coord(indices))
