@@ -165,6 +165,14 @@ public:
   /// understood.
   SMLoc convertLocToSMLoc(LocationAttr loc) const;
 
+  /// If `loc` refers to a source file, remember `includeLoc` as that file's
+  /// "Included from" root for when the file is later rendered into the
+  /// SourceMgr to display a diagnostic. This is for the source files of a
+  /// precompiled package, which are never opened during parsing (only at
+  /// diagnostic time), so their buffers would otherwise have no include
+  /// location. First-wins, and a no-op once the file's buffer already exists.
+  void recordImportedFileIncludeLoc(LocationAttr loc, SMLoc includeLoc);
+
   /// Convert the given source range to an SMRange.
   llvm::SMRange convertToSMRange(SourceRange range) const;
 

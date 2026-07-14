@@ -27,5 +27,8 @@ lit_tests(
     tools = [
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/kgen-translate",
+        # Used by some tests to precompile packages, so those tests exercise
+        # the bytecode-loading paths.
+        "//KGEN/tools/mojo:mojo-compiler-only",
     ],
 )
