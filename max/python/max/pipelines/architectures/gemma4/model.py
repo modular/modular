@@ -57,6 +57,8 @@ from .vision_model.vision_model import Gemma4VisionModel
 from .weight_adapters import (
     convert_safetensor_language_state_dict,
     convert_safetensor_vision_state_dict,
+    fuse_gemma4_projection_weights,
+    gemma4_uses_fused_projections,
 )
 
 logger = logging.getLogger("max.pipelines")
@@ -236,6 +238,13 @@ class Gemma3_MultiModalModel(
         )
 
         self.config = model_config
+
+        # DISTINF-194: pre-fuse gate/up and qkv/qk projections when configured,
+        # matching the FusedMLP / stacked qkv layers the graph builds.
+        if gemma4_uses_fused_projections(model_config):
+            language_weights_dict = fuse_gemma4_projection_weights(
+                language_weights_dict
+            )
 
         # Build and compile vision + language model together.
         with CompilationTimer("vision + language model") as timer:

@@ -1154,3 +1154,152 @@ class MLP(Module, Shardable):
             shards.append(sharded)
 
         return shards
+
+
+class FusedMLP(Module, Shardable):
+    """Stores the gate and up projections as one pre-fused weight.
+
+    The checkpoint provides ``gate_up_proj_fused`` with shape
+    ``[2 * feed_forward_length, hidden_dim]``, with gate rows followed by up
+    rows. Only bias-free, unquantized projections are supported.
+    """
+
+    def __init__(
+        self,
+        dtype: DType,
+        hidden_dim: int,
+        feed_forward_length: int,
+        devices: Sequence[DeviceRef],
+        activation_function: str = "silu",
+        swiglu_limit: float = 0.0,
+        is_sharding: bool = False,
+    ) -> None:
+        """Initializes the fused MLP layer.
+
+        Args:
+            dtype: :class:`~max.dtype.DType` for the layer weights.
+            hidden_dim: The last dimension of the layer input.
+            feed_forward_length: Size of the intermediate projection.
+            devices: Devices to place the weights on. Single-device only.
+            activation_function: Activation applied to the gate output.
+            swiglu_limit: Optional SwiGLU clamp limit (0 disables clamping).
+            is_sharding: Disable weight creation during sharding.
+        """
+        super().__init__()
+        if len(devices) != 1:
+            raise ValueError(
+                f"FusedMLP requires exactly one device, got {len(devices)}"
+            )
+        self.devices = devices
+        self.num_devices = len(devices)
+        self.hidden_dim = hidden_dim
+        self.feed_forward_length = feed_forward_length
+        self.swiglu_limit = swiglu_limit
+        self._activation_function_name = activation_function
+        self.activation_function = activation_function_from_name(
+            activation_function
+        )
+        self._sharding_strategy: ShardingStrategy | None = None
+
+        if not is_sharding:
+            # Byte-layout contract with the engine / weight adapter (row-major):
+            # [gate rows; up rows] -> [2 * feed_forward_length, hidden_dim].
+            self.gate_up_proj_fused = Weight(
+                "gate_up_proj_fused",
+                dtype,
+                [2 * feed_forward_length, hidden_dim],
+                devices[0],
+            )
+            self.down_proj = Linear(
+                in_dim=feed_forward_length,
+                out_dim=hidden_dim,
+                dtype=dtype,
+                device=devices[0],
+            )
+
+    def __call__(self, x: TensorValueLike) -> TensorValue:
+        """Applies the fused MLP transformation to the input."""
+        output = linear(TensorValue(x), self.gate_up_proj_fused)
+        gate_out, up_out = ops.split(
+            output,
+            [self.feed_forward_length, self.feed_forward_length],
+            axis=-1,
+        )
+        gate_out = self.activation_function(gate_out)
+
+        if self.swiglu_limit > 0:
+            lim = ops.constant(
+                self.swiglu_limit, gate_out.dtype, device=gate_out.device
+            )
+            neg_lim = ops.constant(
+                -self.swiglu_limit, up_out.dtype, device=up_out.device
+            )
+            gate_out = ops.min(gate_out, lim)
+            up_out = ops.min(ops.max(up_out, neg_lim), lim)
+
+        return self.down_proj(gate_out * up_out)
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the fused MLP sharding strategy."""
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Sets the sharding strategy.
+
+        Replication across devices and single-device tensor parallelism are
+        supported. Tensor parallelism across multiple devices is not.
+        """
+        if strategy.is_tensor_parallel and strategy.num_devices != 1:
+            raise ValueError(
+                "FusedMLP does not support tensor parallelism across "
+                f"{strategy.num_devices} devices"
+            )
+        self._sharding_strategy = strategy
+        if strategy.is_replicate:
+            self.gate_up_proj_fused.sharding_strategy = strategy
+            self.down_proj.sharding_strategy = strategy
+        elif strategy.is_tensor_parallel:
+            self.gate_up_proj_fused.sharding_strategy = (
+                ShardingStrategy.rowwise(strategy.num_devices)
+            )
+            self.down_proj.sharding_strategy = ShardingStrategy.columnwise(
+                strategy.num_devices
+            )
+        else:
+            raise ValueError(f"Unsupported sharding strategy: {strategy}")
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[FusedMLP]:
+        """Creates sharded views of this fused MLP (single-device only).
+
+        Args:
+            devices: Iterable of devices to place the shards on.
+
+        Returns:
+            List of sharded ``FusedMLP`` instances, one per device.
+        """
+        if self.sharding_strategy is None:
+            raise ValueError("Sharding strategy is not set")
+
+        sharded_gate_up = self.gate_up_proj_fused.shard(devices)
+        sharded_down_projs = self.down_proj.shard(devices)
+
+        shards = []
+        for device, gate_up, down_proj in zip(
+            devices, sharded_gate_up, sharded_down_projs, strict=True
+        ):
+            sharded = FusedMLP(
+                dtype=self.gate_up_proj_fused.dtype,
+                hidden_dim=self.hidden_dim,
+                feed_forward_length=self.feed_forward_length,
+                devices=[device],
+                activation_function=self._activation_function_name,
+                swiglu_limit=self.swiglu_limit,
+                is_sharding=True,
+            )
+            sharded.gate_up_proj_fused = gate_up
+            sharded.down_proj = down_proj
+            shards.append(sharded)
+
+        return shards
