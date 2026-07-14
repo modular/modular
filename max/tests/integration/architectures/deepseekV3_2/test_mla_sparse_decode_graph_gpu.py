@@ -867,3 +867,408 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
 
     context.update(42)
     kv_manager.step([batch])
+
+
+@pytest.mark.skipif(
+    accelerator_api() == "hip",
+    reason="Sparse MLA prefill graph is only wired for NVIDIA GPUs.",
+)
+@pytest.mark.skipif(
+    not is_b100_b200(),
+    reason="Sparse MLA prefill kernel is SM100-class (B100/B200); skip elsewhere.",
+)
+def test_mla_prefill_decode_graph_sparse_prefill_bf16_cache_e2e() -> None:
+    """E2E fresh prefill through the sparse-prefill branch of the combined op.
+
+    Uses ``num_heads=128`` (the sparse-prefill kernel hardcodes the DSv3.2
+    absorbed shape: ``num_q_heads=128``, ``qk_depth=576``, ``v_depth=512``) and a
+    BF16 MLA KV cache (the default for the ``float8_e4m3fn`` weight encoding), so
+    the combined ``.fp8.sparse`` op routes its prefill else-branch to
+    ``mla_sm100_prefill_sparse`` rather than the dense prefill kernel.
+    ``prefill_len > MLA_DECODE_MAX_SEQ_LEN`` (8 on NVIDIA) forces the prefill
+    branch. Asserts numerics (finite, no NaN, correct shape).
+    """
+    device = Accelerator(0)
+    session = InferenceSession(devices=[Accelerator()])
+
+    prefill_len = 32
+    num_heads = 128
+    topk = 64
+    hidden_size = 2048
+    q_lora_rank = 256
+    kv_lora_rank = 512
+    qk_nope_head_dim = 128
+    qk_rope_head_dim = 64
+    v_head_dim = 128
+    page_size = 128
+
+    buffer_size = 4096
+    total_num_pages = 32
+    rope_max_seq_len = 2048
+
+    quant_config = QuantConfig(
+        input_scale=InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=DType.float32,
+            block_size=(1, 128),
+        ),
+        weight_scale=WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float32,
+            block_size=(128, 128),
+        ),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
+        embedding_output_dtype=None,
+        format=QuantFormat.BLOCKSCALED_FP8,
+    )
+
+    scaling_params = DeepseekYarnRopeScalingParams(
+        scaling_factor=40.0,
+        original_max_position_embeddings=4096,
+        beta_fast=32,
+        beta_slow=1,
+        mscale=1.0,
+        mscale_all_dim=1.0,
+    )
+    rope = DeepseekYarnRotaryEmbedding(
+        dim=qk_rope_head_dim,
+        n_heads=num_heads,
+        theta=10000.0,
+        max_seq_len=rope_max_seq_len,
+        scaling_params=scaling_params,
+    )
+
+    index_head_dim = 128
+    mla_kv_params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=kv_lora_rank + qk_rope_head_dim,
+        num_layers=1,
+        page_size=page_size,
+        devices=[DeviceRef.GPU()],
+        num_q_heads=num_heads,
+    )
+    indexer_kv_params = MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=index_head_dim,
+        num_layers=1,
+        page_size=page_size,
+        devices=[DeviceRef.GPU()],
+        num_q_heads=num_heads,
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float32,
+            quantization_granularity=32,
+        ),
+    )
+    multi_kv = MultiKVCacheParams.from_params(
+        {"mla": mla_kv_params, "indexer": indexer_kv_params}
+    )
+
+    sparse_attn = SparseLatentAttentionWithRopeFp8(
+        rope=rope,
+        num_attention_heads=num_heads,
+        num_key_value_heads=1,
+        hidden_size=hidden_size,
+        kv_params=mla_kv_params,
+        quant_config=quant_config,
+        devices=[DeviceRef.GPU()],
+        graph_mode="auto",
+        q_lora_rank=q_lora_rank,
+        kv_lora_rank=kv_lora_rank,
+        qk_nope_head_dim=qk_nope_head_dim,
+        qk_rope_head_dim=qk_rope_head_dim,
+        v_head_dim=v_head_dim,
+        buffer_size=buffer_size,
+        index_topk=topk,
+    )
+
+    kv_manager = PagedKVCacheManager(
+        params=multi_kv,
+        total_num_pages=total_num_pages,
+        session=session,
+        max_batch_size=32,
+    )
+
+    len_mla_kv = len(mla_kv_params.get_symbolic_inputs().inputs[0].flatten())
+    len_indexer_kv = len(
+        indexer_kv_params.get_symbolic_inputs().inputs[0].flatten()
+    )
+    kv_sym = list(multi_kv.flattened_kv_inputs())
+    hidden_type = TensorType(
+        DType.bfloat16,
+        ["total_seq_len", hidden_size],
+        DeviceRef.GPU(),
+    )
+    row_off_type = TensorType(
+        DType.uint32, ["row_offsets_len"], DeviceRef.GPU()
+    )
+
+    def construct() -> Graph:
+        with Graph(
+            "mla_sparse_prefill_bf16_cache_e2e",
+            input_types=[
+                hidden_type,
+                row_off_type,
+                *kv_sym,
+            ],
+        ) as g:
+            hidden = g.inputs[0].tensor
+            input_row_offsets = g.inputs[1].tensor
+            mla_in = g.inputs[2 : 2 + len_mla_kv]
+            idx_in = g.inputs[2 + len_mla_kv : 2 + len_mla_kv + len_indexer_kv]
+            kv_mla = _paged_kv_from_flat_graph_inputs(
+                mla_kv_params, list(mla_in)
+            )
+            kv_idx = _paged_kv_from_flat_graph_inputs(
+                indexer_kv_params, list(idx_in)
+            )
+            layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
+            freqs_cis = ops.cast(rope.freqs_cis, hidden.dtype).to(hidden.device)
+            out, _topk = sparse_attn(
+                layer_idx,
+                hidden,
+                kv_mla,
+                kv_idx,
+                freqs_cis,
+                input_row_offsets,
+                None,
+            )
+            g.output(out)
+        return g
+
+    _ = sparse_attn.state_dict()
+    graph = construct()
+    weights = _random_weights(sparse_attn)
+    model = session.load(graph, weights_registry=weights)
+
+    context = create_text_context(np.empty(prefill_len))
+    kv_manager.claim(context.request_id, replica_idx=0)
+    batch = [context]
+
+    kv_manager.alloc(context, replica_idx=0)
+    kv_ri_pref = kv_manager.runtime_inputs([batch])
+    assert isinstance(kv_ri_pref, MultiKVCacheInputs)
+
+    t_pref = (
+        torch.randn((prefill_len, hidden_size), dtype=torch.float32) * 0.02
+    ).to(torch.bfloat16)
+    hidden_prefill = Buffer.from_dlpack(t_pref).to(device)
+    row_prefill = Buffer.from_numpy(
+        np.array([0, prefill_len], dtype=np.uint32)
+    ).to(device)
+    kv_list = kv_ri_pref.flatten()
+    out_pref = model.execute(hidden_prefill, row_prefill, *kv_list)[0]
+
+    out_t = from_dlpack(out_pref).cpu()
+    out_np = (
+        out_t.float().numpy()
+        if out_t.dtype == torch.bfloat16
+        else out_t.numpy()
+    )
+    assert out_np.shape == (prefill_len, hidden_size)
+    assert not np.isnan(out_np).any()
+    assert np.all(np.isfinite(out_np))
+
+
+@pytest.mark.skipif(
+    accelerator_api() == "hip",
+    reason="Sparse MLA prefill graph is only wired for NVIDIA GPUs.",
+)
+@pytest.mark.skipif(
+    not is_b100_b200(),
+    reason="Sparse MLA prefill kernel is SM100-class (B100/B200); skip elsewhere.",
+)
+def test_mla_sparse_auto_tp_sharded_heads_falls_back_to_decode() -> None:
+    """A TP-sharded head count in ``graph_mode="auto"`` must build via the guard.
+
+    ``mla_sm100_prefill_sparse`` (the combined op's prefill branch) comptime-
+    asserts ``num_q_heads == 128``; tensor-parallel attention shards 128 heads
+    down (e.g. 128 // 8 = 16). Without the head-count guard in
+    ``SparseLatentAttentionWithRopeFp8._mla_impl`` this graph would fail to
+    compile. The guard routes the unsupported count to the head-count-general
+    decode op, so ``session.load`` and a prefill execute succeed. (128 heads
+    exercising the real prefill branch is covered by
+    ``test_mla_prefill_decode_graph_sparse_prefill_bf16_cache_e2e``.)
+    """
+    device = Accelerator(0)
+    session = InferenceSession(devices=[Accelerator()])
+
+    prefill_len = 32
+    num_heads = 16
+    topk = 64
+    hidden_size = 2048
+    q_lora_rank = 256
+    kv_lora_rank = 512
+    qk_nope_head_dim = 128
+    qk_rope_head_dim = 64
+    v_head_dim = 128
+    page_size = 128
+
+    buffer_size = 4096
+    total_num_pages = 32
+    rope_max_seq_len = 2048
+
+    quant_config = QuantConfig(
+        input_scale=InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=DType.float32,
+            block_size=(1, 128),
+        ),
+        weight_scale=WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float32,
+            block_size=(128, 128),
+        ),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
+        embedding_output_dtype=None,
+        format=QuantFormat.BLOCKSCALED_FP8,
+    )
+
+    scaling_params = DeepseekYarnRopeScalingParams(
+        scaling_factor=40.0,
+        original_max_position_embeddings=4096,
+        beta_fast=32,
+        beta_slow=1,
+        mscale=1.0,
+        mscale_all_dim=1.0,
+    )
+    rope = DeepseekYarnRotaryEmbedding(
+        dim=qk_rope_head_dim,
+        n_heads=num_heads,
+        theta=10000.0,
+        max_seq_len=rope_max_seq_len,
+        scaling_params=scaling_params,
+    )
+
+    index_head_dim = 128
+    mla_kv_params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=kv_lora_rank + qk_rope_head_dim,
+        num_layers=1,
+        page_size=page_size,
+        devices=[DeviceRef.GPU()],
+        num_q_heads=num_heads,
+    )
+    indexer_kv_params = MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=index_head_dim,
+        num_layers=1,
+        page_size=page_size,
+        devices=[DeviceRef.GPU()],
+        num_q_heads=num_heads,
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float32,
+            quantization_granularity=32,
+        ),
+    )
+    multi_kv = MultiKVCacheParams.from_params(
+        {"mla": mla_kv_params, "indexer": indexer_kv_params}
+    )
+
+    sparse_attn = SparseLatentAttentionWithRopeFp8(
+        rope=rope,
+        num_attention_heads=num_heads,
+        num_key_value_heads=1,
+        hidden_size=hidden_size,
+        kv_params=mla_kv_params,
+        quant_config=quant_config,
+        devices=[DeviceRef.GPU()],
+        graph_mode="auto",
+        q_lora_rank=q_lora_rank,
+        kv_lora_rank=kv_lora_rank,
+        qk_nope_head_dim=qk_nope_head_dim,
+        qk_rope_head_dim=qk_rope_head_dim,
+        v_head_dim=v_head_dim,
+        buffer_size=buffer_size,
+        index_topk=topk,
+    )
+
+    kv_manager = PagedKVCacheManager(
+        params=multi_kv,
+        total_num_pages=total_num_pages,
+        session=session,
+        max_batch_size=32,
+    )
+
+    len_mla_kv = len(mla_kv_params.get_symbolic_inputs().inputs[0].flatten())
+    len_indexer_kv = len(
+        indexer_kv_params.get_symbolic_inputs().inputs[0].flatten()
+    )
+    kv_sym = list(multi_kv.flattened_kv_inputs())
+    hidden_type = TensorType(
+        DType.bfloat16,
+        ["total_seq_len", hidden_size],
+        DeviceRef.GPU(),
+    )
+    row_off_type = TensorType(
+        DType.uint32, ["row_offsets_len"], DeviceRef.GPU()
+    )
+
+    def construct() -> Graph:
+        with Graph(
+            "mla_sparse_prefill_bf16_cache_e2e",
+            input_types=[
+                hidden_type,
+                row_off_type,
+                *kv_sym,
+            ],
+        ) as g:
+            hidden = g.inputs[0].tensor
+            input_row_offsets = g.inputs[1].tensor
+            mla_in = g.inputs[2 : 2 + len_mla_kv]
+            idx_in = g.inputs[2 + len_mla_kv : 2 + len_mla_kv + len_indexer_kv]
+            kv_mla = _paged_kv_from_flat_graph_inputs(
+                mla_kv_params, list(mla_in)
+            )
+            kv_idx = _paged_kv_from_flat_graph_inputs(
+                indexer_kv_params, list(idx_in)
+            )
+            layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
+            freqs_cis = ops.cast(rope.freqs_cis, hidden.dtype).to(hidden.device)
+            out, _topk = sparse_attn(
+                layer_idx,
+                hidden,
+                kv_mla,
+                kv_idx,
+                freqs_cis,
+                input_row_offsets,
+                None,
+            )
+            g.output(out)
+        return g
+
+    _ = sparse_attn.state_dict()
+    graph = construct()
+    weights = _random_weights(sparse_attn)
+    model = session.load(graph, weights_registry=weights)
+
+    context = create_text_context(np.empty(prefill_len))
+    kv_manager.claim(context.request_id, replica_idx=0)
+    batch = [context]
+
+    kv_manager.alloc(context, replica_idx=0)
+    kv_ri_pref = kv_manager.runtime_inputs([batch])
+    assert isinstance(kv_ri_pref, MultiKVCacheInputs)
+
+    t_pref = (
+        torch.randn((prefill_len, hidden_size), dtype=torch.float32) * 0.02
+    ).to(torch.bfloat16)
+    hidden_prefill = Buffer.from_dlpack(t_pref).to(device)
+    row_prefill = Buffer.from_numpy(
+        np.array([0, prefill_len], dtype=np.uint32)
+    ).to(device)
+    kv_list = kv_ri_pref.flatten()
+    out_pref = model.execute(hidden_prefill, row_prefill, *kv_list)[0]
+
+    out_t = from_dlpack(out_pref).cpu()
+    out_np = (
+        out_t.float().numpy()
+        if out_t.dtype == torch.bfloat16
+        else out_t.numpy()
+    )
+    assert out_np.shape == (prefill_len, hidden_size)
+    assert not np.isnan(out_np).any()
+    assert np.all(np.isfinite(out_np))
