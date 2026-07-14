@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Profiling/Range.h"
+#include "Support/Profiling/internal/Range.h"
 #include "Support/SymbolExport.h"
 
 #include <cstddef>

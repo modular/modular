@@ -400,15 +400,29 @@ modular_cc_library(
 )
 
 modular_cc_library(
+    name = "TimeProfiler",
+    srcs = ["lib/Profiling/TimeProfiler.cpp"],
+    hdrs = ["include/Support/Profiling/TimeProfiler.h"],
+    defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
+    deps = [
+        ":Base",
+        ":Globals",
+        ":MArchTargetMinimal",
+        "//Config",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_library(
     name = "Profiling",
     # RangeKineto.cpp is the libkineto backend; it lives in :ProfilingKineto so
     # libkineto stays out of this Mojo-facing library. RangeBackend.h is the
     # private header both sides share (quote-included from the same directory).
     srcs = glob(
-        ["lib/Profiling/*.cpp"],
-        exclude = ["lib/Profiling/RangeKineto.cpp"],
-    ) + ["lib/Profiling/RangeBackend.h"],
-    hdrs = glob(["include/Support/Profiling/*.h"]),
+        ["lib/Profiling/internal/*.cpp"],
+        exclude = ["lib/Profiling/internal/RangeKineto.cpp"],
+    ) + ["lib/Profiling/internal/RangeBackend.h"],
+    hdrs = glob(["include/Support/Profiling/internal/*.h"]),
     # TracyRocm.cpp uses a constructor to promote Tracy symbols to RTLD_GLOBAL
     # so that the rocprofiler-sdk plugin can resolve them via dlsym.
     copts = ["-Wno-global-constructors"],
@@ -487,8 +501,8 @@ modular_cc_library(
 modular_cc_library(
     name = "ProfilingKineto",
     srcs = [
-        "lib/Profiling/RangeBackend.h",
-        "lib/Profiling/RangeKineto.cpp",
+        "lib/Profiling/internal/RangeBackend.h",
+        "lib/Profiling/internal/RangeKineto.cpp",
     ],
     copts = [
         "-fvisibility=default",
@@ -570,7 +584,7 @@ modular_cc_library(
         ":Buffer",
         ":Filesystem",
         ":ML",
-        ":Profiling",
+        ":TimeProfiler",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:BytecodeOpInterface",
         "@llvm-project//mlir:BytecodeReader",
