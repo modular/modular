@@ -162,20 +162,23 @@ def get_resources_exec_properties(name, test):
         return {}
     default_resources = resources.get("default", {})
     return select({
-        "@@//:asan": _format_exec_properties_resources(resources.get("asan", {}) if "asan" in resources else default_resources, test),
-        "@@//:tsan": _format_exec_properties_resources(resources.get("tsan", {}) if "tsan" in resources else default_resources, test),
-        "@@//:ubsan": _format_exec_properties_resources(resources.get("ubsan", {}) if "ubsan" in resources else default_resources, test),
-        "@@//:b200_gpu": _format_exec_properties_resources(resources.get("b200", {}) if "b200" in resources else default_resources, test),
-        "@@//:mi355_gpu": _format_exec_properties_resources(resources.get("mi355", {}) if "mi355" in resources else default_resources, test),
-        "//conditions:default": _format_exec_properties_resources(default_resources, test),
+        "@@//:asan": _format_exec_properties_resources(resources.get("asan", {}) if "asan" in resources else default_resources, test, max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
+        "@@//:tsan": _format_exec_properties_resources(resources.get("tsan", {}) if "tsan" in resources else default_resources, test, max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
+        "@@//:ubsan": _format_exec_properties_resources(resources.get("ubsan", {}) if "ubsan" in resources else default_resources, test, max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
+        "@@//:b200_gpu": _format_exec_properties_resources(resources.get("b200", {}) if "b200" in resources else default_resources, test, max_cpu = 32, max_memory = 150 * 1024 * 1024 * 1024),
+        "@@//:mi355_gpu": _format_exec_properties_resources(resources.get("mi355", {}) if "mi355" in resources else default_resources, test, max_cpu = 11, max_memory = 150 * 1024 * 1024 * 1024),
+        "@platforms//os:macos": _format_exec_properties_resources(resources.get("macos", {}) if "macos" in resources else default_resources, test, max_cpu = 12, max_memory = 30 * 1024 * 1024 * 1024),
+        "//conditions:default": _format_exec_properties_resources(default_resources, test, max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
     })
 
-def _format_exec_properties_resources(resources, test):
+def _format_exec_properties_resources(resources, test, max_cpu = None, max_memory = None):
     """Format resources for the target
 
     Args:
         resources: The target's resources
         test: Whether the target is a test
+        max_cpu: The maximum cpu resource
+        max_memory: The maximum memory resource
     Returns:
         A dictionary of exec properties for the target
     """
@@ -183,16 +186,17 @@ def _format_exec_properties_resources(resources, test):
         "debug-disable-measured-task-size": "true",
         "debug-disable-predicted-task-size": "true",
     }
+
     if test:
         if "cpu" in resources:
-            result["test.EstimatedCPU"] = str(resources["cpu"])
+            result["test.EstimatedCPU"] = str(min(int(resources["cpu"]), max_cpu))
         if "memory" in resources:
-            result["test.EstimatedMemory"] = str(resources["memory"])
+            result["test.EstimatedMemory"] = str(min(int(resources["memory"]), max_memory))
     else:
         if "cpu" in resources:
-            result["EstimatedCPU"] = str(resources["cpu"])
+            result["EstimatedCPU"] = str(min(int(resources["cpu"]), max_cpu))
         if "memory" in resources:
-            result["EstimatedMemory"] = str(resources["memory"])
+            result["EstimatedMemory"] = str(min(int(resources["memory"]), max_memory))
     return result
 
 def get_default_test_env(exec_properties):
