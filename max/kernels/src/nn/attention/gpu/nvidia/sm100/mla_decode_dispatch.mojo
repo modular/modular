@@ -3193,11 +3193,17 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
         has_variable_topk=has_variable_topk,
     ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
-    # Same extra SMEM budget as the BF16-rope sparse kernel:
+    # Extra SMEM beyond the BF16-rope sparse kernel's budget:
     # - 4 idx_bars barriers (4 * mbar_size bytes)
+    # - per-block cvt→QK handoff bars: 9 blocks x num_kv_stages (144 bytes)
     # - ptr_tmem_addr (4 bytes, UInt32)
     # - idx_smem double-buffered (2 * BN_QK * sizeof(Int32) = 512 bytes)
-    comptime sparse_extra_smem = 4 * config.mbar_size + 4 + 2 * config.BN_QK * 4
+    comptime cvt_blk_bars_smem = (
+        config.padded_q_depth // config.BN_QK
+    ) * config.num_kv_stages * config.mbar_size
+    comptime sparse_extra_smem = (
+        4 * config.mbar_size + cvt_blk_bars_smem + 4 + 2 * config.BN_QK * 4
+    )
     comptime sparse_smem_used = config.smem_used + sparse_extra_smem
 
     ctx.enqueue_function[kernel](

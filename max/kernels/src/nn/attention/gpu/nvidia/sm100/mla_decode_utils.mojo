@@ -1900,6 +1900,41 @@ struct DecodeSM100QKTSS[
             tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
         ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
 
+    @staticmethod
+    @always_inline
+    def mma_block[
+        *, block_idx: Int, num_blocks: Int
+    ](
+        a: MMASmemDescriptorPair,
+        b: MMASmemDescriptorPair,
+        c: UInt32,
+        *,
+        c_scale: UInt32,
+        elect: Int32,
+    ):
+        # One K-block slice of `mma` (same descriptors, same layouts):
+        # absolute k-mmas so the emitted sequence over all blocks matches
+        # the bulk form. Block 0 applies c_scale; later blocks accumulate.
+        comptime assert Self.num_k_mmas % num_blocks == 0, "uneven K blocks"
+        comptime block_k_mmas = Self.num_k_mmas // num_blocks
+        bulk_mma_ws[
+            UMMAKind.KIND_F16,
+            Self.operand_type,
+            Self.operand_type,
+            a_BMN=Self.config.BM,
+            a_BK=Self.BK,
+            a_swizzle=Self.config.swizzle_mode,
+            a_is_k_major=True,
+            b_BMN=Self.config.BN_QK,
+            b_BK=Self.BK,
+            b_swizzle=Self.config.kv_mma_swizzle_mode,
+            b_is_k_major=True,
+            num_k_mmas=block_k_mmas,
+            operand_size=Self.operand_size,
+            tcgen05_mma_type="tcgen05.mma.ws.cta_group::1.",
+            k_start=block_idx * block_k_mmas,
+        ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
+
 
 struct DecodeSM100PVSS[
     operand_type: DType,
@@ -2586,6 +2621,23 @@ def cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
     var fp8x8: SIMD[fp8_dtype, 8] = bitcast[fp8_dtype, 8](u32x2)
     var bf16x8: SIMD[out_dtype, 8] = fp8x8.cast[out_dtype]()
     return bitcast[DType.uint32, 4](bf16x8)
+
+
+@always_inline
+def cvt_fp8x16_from_u32x4_to_bf16x16_packed_2xu32x4[
+    *,
+    fp8_dtype: DType,
+    out_dtype: DType,
+](w: SIMD[DType.uint32, 4]) -> StaticTuple[SIMD[DType.uint32, 4], 2]:
+    """Converts 16 FP8 bytes (one v4.b32 load) to 16 packed BF16 values."""
+    return StaticTuple[SIMD[DType.uint32, 4], 2](
+        cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
+            fp8_dtype=fp8_dtype, out_dtype=out_dtype
+        ](w[0], w[1]),
+        cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
+            fp8_dtype=fp8_dtype, out_dtype=out_dtype
+        ](w[2], w[3]),
+    )
 
 
 @always_inline

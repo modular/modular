@@ -1310,7 +1310,8 @@ def _build_mma[
     #
     # `layout_a` is consulted only for SS (`a_tmem=False`); TS computes the A
     # column stride directly. `cta_group` matters only for non-ws (`ws=False`);
-    # `tcgen05_mma_type` only for ws; `k_start` only for partial.
+    # `tcgen05_mma_type` only for ws. `k_start` offsets the absolute k-index
+    # (partial validity guards, or a k-slice of a full contraction).
     #
     # PREDICATION (the one rule that protects elect codegen): the form depends
     # ONLY on `partial`, never on `ws`.
@@ -1627,6 +1628,7 @@ def bulk_mma_ws[
     tcgen05_mma_type: String,
     mma_k: Int = 16,
     b_page_dense: Bool = False,
+    k_start: Int = 0,
 ](
     idesc: UMMAInsDescriptor[kind],
     a: MMASmemDescriptorPair,
@@ -1639,7 +1641,10 @@ def bulk_mma_ws[
     # dtype/tile params (`_build_mma` takes `Layout` directly). `b_page_dense`
     # selects the row-major page-fold layout for the B operand (K / Q@K' is
     # k-major; the advance crosses a depth chunk by `_CM_NUM_ROWS*gran` instead
-    # of `BN*gran`, derived from this layout).
+    # of `BN*gran`, derived from this layout). `k_start` issues a slice of the
+    # contraction (absolute k-mmas `k_start ..< k_start + num_k_mmas`) against
+    # the un-offset full-tile descriptors; slices with `k_start > 0` always
+    # accumulate (`c_scale` only applies to the absolute first k-mma).
     comptime layout_a = tile_layout_k_major[
         a_dtype, a_BMN, a_BK, a_swizzle
     ]() if a_is_k_major else tile_layout_mn_major[
@@ -1657,6 +1662,7 @@ def bulk_mma_ws[
         operand_size=operand_size,
         mma_k=mma_k,
         num_k_mmas=num_k_mmas,
+        k_start=k_start,
         tcgen05_mma_type=tcgen05_mma_type,
     )
 
