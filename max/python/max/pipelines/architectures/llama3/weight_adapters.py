@@ -18,6 +18,10 @@ from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.weights._compressed_tensors import (
+    convert_compressed_tensors_nvfp4_weight,
+    is_compressed_tensors_nvfp4_config,
+)
 from transformers import LlamaConfig
 
 # Maps from Safetensor to MAX weight names.
@@ -37,12 +41,20 @@ def _convert_safetensor_with_model_config(
     This allows the same conversion logic to be used for both target and draft models.
     """
     new_state_dict: dict[str, WeightData] = {}
+    is_compressed_tensors_nvfp4 = is_compressed_tensors_nvfp4_config(
+        getattr(huggingface_config, "quantization_config", None)
+    )
     # Map the weight names.
     for safetensor_name, value in state_dict.items():
         max_name = safetensor_name
         for before, after in LLAMA_SAFETENSOR_MAPPING.items():
             max_name = max_name.replace(before, after)
-        new_state_dict[max_name] = value.data()
+        data = value.data()
+        if is_compressed_tensors_nvfp4:
+            max_name, data = convert_compressed_tensors_nvfp4_weight(
+                max_name, data
+            )
+        new_state_dict[max_name] = data
     if model_config._quant:
         # hack: argsort the perm_idx array
         for key, weight_data in new_state_dict.items():
