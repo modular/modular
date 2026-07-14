@@ -19,7 +19,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, TileTensor, row_major
 from layout.math import mean, variance
 from nn.normalization import *
-from std.testing import assert_almost_equal
+from std.testing import assert_almost_equal, assert_equal
 
 from std.utils.index import Index, IndexList
 
@@ -181,9 +181,9 @@ def run_layer_norm_gpu[
     @always_inline
     @parameter
     def input_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+        width: Int, alignment: Int
+    ](coords: Coord) -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
 
         return data_buf.raw_load[width=width, alignment=alignment](idx)
 
@@ -200,14 +200,19 @@ def run_layer_norm_gpu[
     @always_inline
     @parameter
     def output_fn[
-        width: SIMDSize, rank_: Int, alignment: Int
-    ](coords: IndexList[rank_], val: SIMD[dtype, width]):
-        var idx = data_buf.layout(Coord(coords))
+        width: SIMDSize, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]):
+        var idx = data_buf.layout(coords)
         data_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
 
-    layer_norm_gpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon, ctx=ctx)
+    # `layer_norm_gpu` migrated to a `Coord` shape boundary (mirror of
+    # `rms_norm_gpu` / softmax migration); `rank` is now an explicit parameter
+    # (no longer inferred from `shape`).
+    layer_norm_gpu[rank, input_fn, gamma_fn, output_fn](
+        Coord(shape), beta, epsilon, ctx=ctx
+    )
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
@@ -229,6 +234,135 @@ def run_layer_norm_gpu[
     _ = data_d
     _ = gamma_d
     _ = beta_d
+
+
+def run_layer_norm_static_vs_dynamic[
+    dtype: DType, *dims: Int
+](ctx: DeviceContext) raises:
+    """Static-divisor fold numerical-equivalence check for `layer_norm_gpu`.
+
+    Runs `layer_norm_gpu` twice on identical data: once with a fully static
+    shape `Coord` (`row_major[*dims]().shape_coord()`, all `ComptimeInt`, so
+    the flattened-row -> n-D `divmod` strength-reduces to magic-multiply +
+    shift) and once with the dynamic `Coord(IndexList)` shape (runtime `IDIV`).
+    The two device outputs must be bit-identical: the fold only changes which
+    instructions the compiler emits, not the arithmetic result. Use rank>=3 so
+    dims `1..rank-2` actually decompose (rank-2 hits the `{n, 0}` fast path and
+    never divides, so the fold is a no-op there).
+    """
+    print("== run_layer_norm_gpu static vs dynamic")
+
+    comptime static_layout = row_major[*dims]()
+    comptime rank = type_of(static_layout).rank
+    comptime assert rank >= 3, "fold only differs for rank>=3 shapes"
+
+    var shape = IndexList[rank]()
+
+    comptime for i in range(rank):
+        shape[i] = dims[i]
+
+    var cols = shape[rank - 1]
+    var rows = shape.flattened_length() // cols
+
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+    var beta_h = ctx.enqueue_create_host_buffer[dtype](cols)
+
+    for i in range(rows * cols):
+        data_h[i] = Scalar[dtype](i)
+    for i in range(cols):
+        gamma_h[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
+        beta_h[i] = (Float64(i) / Float64(cols)).cast[dtype]()
+
+    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
+    var beta_d = ctx.enqueue_create_buffer[dtype](cols)
+    var param_shape = Index(cols)
+    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
+    var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
+    var epsilon = Float32(0)
+    ctx.enqueue_copy(gamma_d, gamma_h)
+    ctx.enqueue_copy(beta_d, beta_h)
+
+    @__copy_capture(gamma)
+    @always_inline
+    @parameter
+    def gamma_fn[
+        width: Int, rank: Int, alignment: Int
+    ](coords: IndexList[rank]) -> SIMD[dtype, width]:
+        var idx = gamma.layout(coords[0])
+        return gamma.raw_load[width=width, alignment=alignment](idx[0])
+
+    # Static run: the `Coord` carries `ComptimeInt` dims, so the fold fires.
+    var out_static_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var out_static_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    ctx.enqueue_copy(out_static_d, data_h)
+    var data_static = TileTensor(out_static_d, static_layout)
+
+    @__copy_capture(data_static)
+    @always_inline
+    @parameter
+    def input_fn_static[
+        width: Int, alignment: Int
+    ](coords: Coord) -> SIMD[dtype, width]:
+        var idx = data_static.layout(coords)
+        return data_static.raw_load[width=width, alignment=alignment](idx)
+
+    @__copy_capture(data_static)
+    @always_inline
+    @parameter
+    def output_fn_static[
+        width: SIMDSize, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]):
+        var idx = data_static.layout(coords)
+        data_static.raw_store[width=width, alignment=alignment](
+            idx, rebind[SIMD[dtype, width]](val)
+        )
+
+    layer_norm_gpu[rank, input_fn_static, gamma_fn, output_fn_static](
+        static_layout.shape_coord(), beta, epsilon, ctx=ctx
+    )
+    ctx.enqueue_copy(out_static_h, out_static_d)
+
+    # Dynamic run: the `Coord` carries runtime leaves, forcing the `IDIV`.
+    var out_dyn_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var out_dyn_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    ctx.enqueue_copy(out_dyn_d, data_h)
+    var data_dyn = TileTensor(out_dyn_d, row_major(Coord(shape)))
+
+    @__copy_capture(data_dyn)
+    @always_inline
+    @parameter
+    def input_fn_dyn[
+        width: Int, alignment: Int
+    ](coords: Coord) -> SIMD[dtype, width]:
+        var idx = data_dyn.layout(coords)
+        return data_dyn.raw_load[width=width, alignment=alignment](idx)
+
+    @__copy_capture(data_dyn)
+    @always_inline
+    @parameter
+    def output_fn_dyn[
+        width: SIMDSize, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]):
+        var idx = data_dyn.layout(coords)
+        data_dyn.raw_store[width=width, alignment=alignment](
+            idx, rebind[SIMD[dtype, width]](val)
+        )
+
+    layer_norm_gpu[rank, input_fn_dyn, gamma_fn, output_fn_dyn](
+        Coord(shape), beta, epsilon, ctx=ctx
+    )
+    ctx.enqueue_copy(out_dyn_h, out_dyn_d)
+    ctx.synchronize()
+
+    # The fold is a codegen change only; results must be bit-identical.
+    for i in range(rows * cols):
+        assert_equal(out_static_h[i], out_dyn_h[i])
+
+    _ = gamma_d
+    _ = beta_d
+    _ = out_static_d
+    _ = out_dyn_d
 
 
 def run_layer_norm_warp_tiling[
@@ -370,3 +504,21 @@ def main() raises:
         run_layer_norm_gpu[DType.float32](ctx, Index(5))
         run_layer_norm_gpu[DType.float32](ctx, Index(3, 4, 10, 20, 8))
         run_layer_norm_gpu[DType.float32](ctx, Index(1, 5, 6, 10, 128))
+
+        # Rank-3 `[B, S, H]` cases exercise the rank>=3 outer-dim decomposition
+        # that the `IndexList`->`Coord` static-divisor folding path targets
+        # (mirror of the rank-3 cases added to `test_rms_norm`). Kept at fp32:
+        # the reference fills `data[i] = i` and `layer_norm` subtracts the row
+        # mean, so a bf16 variant (integers above 256 are no longer exactly
+        # representable) drives the post-mean values into catastrophic
+        # cancellation that swamps the kernel comparison rather than testing it.
+        run_layer_norm_gpu[DType.float32](ctx, Index(8, 3072, 256))
+        run_layer_norm_gpu[DType.float32](ctx, Index(4, 128, 2048))
+
+        # The static-shape path is the whole point of this migration, but the
+        # reference checks above run only the dynamic `Coord(IndexList)` form.
+        # These assert the static (folded-divisor) and dynamic (runtime-divide)
+        # paths produce bit-identical output at rank>=3, so the fold can't
+        # silently diverge (mirror of concat's static-vs-dynamic check).
+        run_layer_norm_static_vs_dynamic[DType.float32, 8, 3072, 256](ctx)
+        run_layer_norm_static_vs_dynamic[DType.float32, 4, 128, 2048](ctx)

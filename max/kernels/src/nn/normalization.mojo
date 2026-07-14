@@ -501,54 +501,94 @@ def layer_norm_reshape[
 
 def layer_norm_gpu[
     dtype: DType,
-    rank: Int,
     //,
-    input_fn: def[width: Int, rank: Int, alignment: Int](
-        IndexList[rank]
-    ) capturing -> SIMD[dtype, width],
+    rank: Int,
+    input_fn: def[width: Int, alignment: Int](Coord) capturing -> SIMD[
+        dtype, width
+    ],
     gamma_fn: def[width: Int, rank: Int, alignment: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
-    output_fn: def[width: SIMDSize, rank: Int, alignment: Int](
-        idx: IndexList[rank], val: SIMD[dtype, width]
+    output_fn: def[width: SIMDSize, alignment: Int](
+        Coord, SIMD[dtype, width]
     ) capturing -> None,
 ](
-    shape: IndexList[rank, ...],
+    shape: Coord,
     beta: TileTensor[mut=False, dtype, ...],
     epsilon: Float32,
     *,
     ctx: DeviceContext,
 ) raises:
+    # Boundary `IndexList` -> `Coord` migration (mirror of the `rms_norm_gpu` /
+    # softmax migration): the public `shape` arrives as a `Coord` (statically
+    # known outer dims are encoded in its type), then is materialized to a
+    # runtime `IndexList` once. The existing runtime arithmetic and the row/col
+    # 2D wrappers run on `shape_il`; `gamma_fn` is column-indexed only (never
+    # row-translated) so it keeps its n-D `IndexList` form and passes straight
+    # through to the kernels.
     comptime assert beta.rank == 1, "beta must have rank 1"
     if rank == 0:
         return
 
+    var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
+
     comptime rank_rs = 2
-    var flattened_shape = layer_norm_reshape[rank_rs](shape)
+    var flattened_shape = layer_norm_reshape[rank_rs](shape_il)
     var rows = flattened_shape[0]
     var cols = flattened_shape[1]
 
     if rows == 0 or cols == 0:
         return
 
+    # The 2D wrappers translate each flattened `(row, col)` back to the original
+    # n-D coordinate. The row -> n-D decomposition divides by the outer dims; on
+    # the static-shape path those divisors are the `ComptimeInt` dims carried in
+    # `type_of(shape)` (a `Coord`), so the per-row `divmod` strength-reduces to
+    # magic-multiply + shift instead of the runtime Newton-reciprocal `IDIV` that
+    # a plain `IndexList` divisor forces. Dynamic dims fall back to the runtime
+    # value in `shape_il`, so this path is behavior-identical to the pre-migration
+    # `_get_start_indices_of_nth_subvolume` form for non-static shapes.
+    #
+    # `@__copy_capture(shape_il)` is required: these wrappers are embedded into
+    # GPU kernels as `capturing` closures, and a captured *local* `var` (unlike
+    # the pre-migration `shape` function parameter, which the old code captured
+    # directly) is not carried to the device without an explicit copy-capture.
+    # Without it the rank-N divmod reads garbage outer dims on device (rank-2 is
+    # unaffected since its outer translation is trivial; rank>=3 produces wrong
+    # results / launch failures).
+    @__copy_capture(shape_il)
     @parameter
     @always_inline
     def input_fn_2d[
         simd_width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        # Translate a given 2D index back to the original n-D tensor
-        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        var shape_witness = type_of(shape)()
+        var shape_coord = _index_list_to_typed_coord(
+            shape_witness,
+            rebind[IndexList[shape_witness.rank]](shape_il),
+        )
+        var indices = _get_start_indices_of_nth_subvolume_static(
+            row, shape_coord
+        )
         indices[rank - 1] = col
-        return input_fn[simd_width, rank, alignment](indices.canonicalize())
+        return input_fn[simd_width, alignment](Coord(indices))
 
+    @__copy_capture(shape_il)
     @parameter
     @always_inline
     def output_fn_2d[
         simd_width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]):
-        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        var shape_witness = type_of(shape)()
+        var shape_coord = _index_list_to_typed_coord(
+            shape_witness,
+            rebind[IndexList[shape_witness.rank]](shape_il),
+        )
+        var indices = _get_start_indices_of_nth_subvolume_static(
+            row, shape_coord
+        )
         indices[rank - 1] = col
-        output_fn[simd_width, rank, alignment](indices.canonicalize(), val)
+        output_fn[simd_width, alignment](Coord(indices), val)
 
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
@@ -833,9 +873,9 @@ def layer_norm_cpu[
 def layer_norm[
     dtype: DType,
     rank: Int,
-    input_0_fn: def[_width: Int, _rank: Int, alignment: Int](
-        IndexList[_rank]
-    ) capturing -> SIMD[dtype, _width],
+    input_0_fn: def[_width: Int, alignment: Int](Coord) capturing -> SIMD[
+        dtype, _width
+    ],
     input_1_fn: def[_width: Int, _rank: Int, alignment: Int](
         IndexList[_rank]
     ) capturing -> SIMD[dtype, _width],
@@ -845,24 +885,55 @@ def layer_norm[
     /,
     target: StaticString = "cpu",
 ](
-    shape: IndexList[rank],
+    shape: Coord,
     gamma_shape: IndexList[1],
     beta: TileTensor[mut=False, dtype, ...],
     epsilon: Float32,
     ctx: DeviceContext,
 ) raises:
+    # Boundary `IndexList` -> `Coord` migration (mirror of public `rms_norm` /
+    # softmax migration). `input_0_fn` and `shape` are `Coord`; `input_1_fn`
+    # (gamma) and `output_0_fn` keep their n-D `IndexList` form for source
+    # compatibility. `shape_il` materializes the runtime `IndexList` once for the
+    # reduction-dim guards, the trace string, and the IndexList-form CPU path;
+    # the GPU path receives the `Coord` directly so its static outer dims fold.
     comptime assert beta.rank == 1, "beta must have rank 1"
+
+    var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
+
     # Note: we only support reduction along the last dimension
-    if gamma_shape[0] != shape[rank - 1]:
+    if gamma_shape[0] != shape_il[rank - 1]:
         raise Error("Gamma size does not match dimension of reduction.")
 
-    if Int(beta.layout.shape[0]().value()) != shape[rank - 1]:
+    if Int(beta.layout.shape[0]().value()) != shape_il[rank - 1]:
         raise Error("Beta size does not match dimension of reduction.")
+
+    # The CPU path consumes an n-D `IndexList`-form input lambda; wrap the
+    # `Coord`-form public lambda back to that interface.
+    @parameter
+    @always_inline
+    def input_fn_il[
+        width: Int, _rank: Int, alignment: Int
+    ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+        return input_0_fn[width, alignment](
+            Coord(rebind[IndexList[rank]](indices))
+        )
+
+    # The GPU path consumes a `Coord`-form output lambda; wrap the n-D
+    # `IndexList`-form public lambda forward to that interface.
+    @parameter
+    @always_inline
+    def output_fn_coord[
+        width: SIMDSize, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+        output_0_fn[width, rank, alignment](
+            rebind[IndexList[rank]](coord_to_index_list(coords)), val
+        )
 
     @always_inline
     @parameter
     def description_fn() -> String:
-        return trace_arg("input", shape, dtype)
+        return trace_arg("input", shape_il, dtype)
 
     with Trace[TraceLevel.OP, target=target](
         "layer_norm",
@@ -870,15 +941,15 @@ def layer_norm[
         task_id=Int(ctx.id()),
     ):
         comptime if is_cpu[target]():
-            layer_norm_cpu[input_0_fn, input_1_fn, output_0_fn](
-                shape.canonicalize(),
+            layer_norm_cpu[input_fn_il, input_1_fn, output_0_fn](
+                shape_il.canonicalize(),
                 beta,
                 epsilon,
                 Optional[DeviceContext](ctx),
             )
         elif is_gpu[target]():
-            layer_norm_gpu[input_0_fn, input_1_fn, output_0_fn](
-                shape.canonicalize(),
+            layer_norm_gpu[rank, input_0_fn, input_1_fn, output_fn_coord](
+                shape,
                 beta,
                 epsilon,
                 ctx=ctx,
@@ -1614,7 +1685,15 @@ def rms_norm_gpu[
 
     var rows = shape_il.flattened_length() // cols
 
-    @parameter
+    # The 2D wrappers translate each flattened `(row, col)` back to the original
+    # n-D coordinate. The row -> n-D decomposition divides by the outer dims; on
+    # the static-shape path those divisors are the `ComptimeInt` dims carried in
+    # `type_of(shape)` (a `Coord`), so the per-row `divmod` strength-reduces to
+    # magic-multiply + shift instead of the runtime Newton-reciprocal `IDIV` that
+    # a plain `IndexList` divisor forces. Dynamic dims fall back to the runtime
+    # value in `shape_il`, so this path is behavior-identical to the pre-migration
+    # `_get_start_indices_of_nth_subvolume` form for non-static shapes.
+    #
     # `@__copy_capture(shape_il)` is required: these wrappers are embedded into
     # GPU kernels as `capturing` closures, and a captured *local* `var` (unlike
     # a function parameter, which the pre-migration code captured directly) is
@@ -1622,43 +1701,17 @@ def rms_norm_gpu[
     # rank-N `_get_start_indices_of_nth_subvolume` divmod reads garbage outer
     # dims on device (rank-2 is unaffected since its outer translation is
     # trivial; rank>=3 produces wrong results / launch failures).
+    #
+    # The static-divisor fold needs the `Coord` *type* (its static dims): a
+    # static-typed `Coord` local `var` captured into a `capturing` closure is
+    # not carried to the device, so capture the `DevicePassable` `shape_il`
+    # (`IndexList`) and rebuild the typed `Coord` in-kernel. `type_of(shape)()`
+    # reconstructs the static dims at comptime; the dynamic leaves are filled
+    # from `shape_il`.
     @__copy_capture(shape_il)
     @parameter
     @always_inline
     def output_fn_2d[
-        simd_width: SIMDSize, alignment: Int
-    ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-        # Translate a given 2D index back to the original n-D tensor
-        var indices = _get_start_indices_of_nth_subvolume(row, shape_il)
-        indices[rank - 1] = col
-        output_fn[simd_width, alignment](Coord(indices), val)
-
-    @__copy_capture(shape_il)
-    @parameter
-    @always_inline
-    def input_fn_2d[
-        simd_width: Int
-    ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        # Translate a given 2D index back to the original n-D tensor
-        var indices = _get_start_indices_of_nth_subvolume(row, shape_il)
-        indices[rank - 1] = col
-        return input_fn[simd_width](Coord(indices))
-
-    # Static-divisor variants of the 2D wrappers. Identical translation, but the
-    # row -> n-D decomposition divides by the statically-known outer dims carried
-    # in `type_of(shape)` (a `Coord` whose inner dims are `ComptimeInt` on the
-    # static-shape path), so the per-row `divmod` strength-reduces to magic-multiply
-    # + shift instead of the runtime Newton-reciprocal `IDIV` that the
-    # `shape_il`-form wrappers above emit.
-    # The static-divisor fold needs the `Coord` *type* (its static dims), but a
-    # static-typed `Coord` is not `DevicePassable`, so capture the
-    # `DevicePassable` `shape_il` (`IndexList`) and rebuild the typed `Coord`
-    # in-kernel. `type_of(shape)()` reconstructs the static dims at comptime; the
-    # dynamic leaves are filled from `shape_il`.
-    @__copy_capture(shape_il)
-    @parameter
-    @always_inline
-    def output_fn_2d_static[
         simd_width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
         var shape_witness = type_of(shape)()
@@ -1675,7 +1728,7 @@ def rms_norm_gpu[
     @__copy_capture(shape_il)
     @parameter
     @always_inline
-    def input_fn_2d_static[
+    def input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
         var shape_witness = type_of(shape)()
@@ -1830,8 +1883,8 @@ def rms_norm_gpu[
                 Storage=gamma.Storage,
                 simd_width,
                 warps_per_block,
-                input_fn_2d_static,
-                output_fn_2d_static,
+                input_fn_2d,
+                output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
             ctx.enqueue_function[kernel](
@@ -1878,8 +1931,8 @@ def rms_norm_gpu[
                             rows_per_block,
                             True,
                             cc,
-                            input_fn_2d_static,
-                            output_fn_2d_static,
+                            input_fn_2d,
+                            output_fn_2d,
                             multiply_before_cast=multiply_before_cast,
                         ]
                         ctx.enqueue_function[kernel](
@@ -1902,8 +1955,8 @@ def rms_norm_gpu[
                     rows_per_block,
                     False,
                     1,
-                    input_fn_2d_static,
-                    output_fn_2d_static,
+                    input_fn_2d,
+                    output_fn_2d,
                     multiply_before_cast=multiply_before_cast,
                 ]
                 ctx.enqueue_function[kernel](
@@ -1961,8 +2014,8 @@ def rms_norm_gpu[
                 Storage=gamma.Storage,
                 simd_width,
                 max_warps_per_block,
-                input_fn_2d_static,
-                output_fn_2d_static,
+                input_fn_2d,
+                output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
             ctx.enqueue_function[kernel](
@@ -1982,8 +2035,8 @@ def rms_norm_gpu[
             Storage=gamma.Storage,
             1,
             max_warps_per_block,
-            input_fn_2d_static,
-            output_fn_2d_static,
+            input_fn_2d,
+            output_fn_2d,
             multiply_before_cast=multiply_before_cast,
         ]
         ctx.enqueue_function[kernel](

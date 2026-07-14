@@ -599,13 +599,21 @@ struct LayerNorm:
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
+        # `IndexList` -> `Coord` boundary migration (mirror of
+        # `ReduceRMSNorm.execute`). The input fusion lambda takes a `Coord`
+        # (the `_lambda_load` Coord overload erases to `IndexList` internally)
+        # and the shape is passed via `input.shape_coord()`, which preserves
+        # statically-known dims in the `Coord` type instead of erasing them to
+        # an all-runtime `IndexList` as `input.shape()` would. `gamma_fn` and
+        # `output_fn` keep their n-D `IndexList` form to match `layer_norm`'s
+        # `input_1_fn` / `output_0_fn`.
         @parameter
         @always_inline
         def input_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @parameter
@@ -628,7 +636,7 @@ struct LayerNorm:
             )
 
         layer_norm[dtype, rank, input_fn, gamma_fn, output_fn, target=target](
-            input.shape(),
+            input.shape_coord(),
             gamma.shape(),
             beta.to_tile_tensor[DType.int64](),
             epsilon,
