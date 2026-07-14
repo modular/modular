@@ -311,8 +311,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
 
   IRMapping mapping;
   OwningOpRef<ModuleOp> module = produceStandaloneModule(
-      symtab, exportedSymbols, mapping,
-      /*overrideExported*/ isGPUBackend(compilationOptions));
+      symtab, exportedSymbols, mapping, overrideExported(compilationOptions));
   // Override the target.
   eraseTargetInfo(*module);
   setTargetInfo(*module, target);
@@ -482,9 +481,9 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       compilationOptions.emissionOptions = offloadInfo.emissionOptions;
       compilationOptions.emissionLinkOptions = offloadInfo.emissionLinkOptions;
 
-      OwningOpRef<ModuleOp> module = produceStandaloneModule(
-          symtab, offloadInfo.exportedSymbols, mapping,
-          /*overrideExported*/ isGPUTriple(target.getTriple()));
+      OwningOpRef<ModuleOp> module =
+          produceStandaloneModule(symtab, offloadInfo.exportedSymbols, mapping,
+                                  overrideExported(target.getTriple()));
 
       // Override the target.
       eraseTargetInfo(*module);
@@ -647,24 +646,16 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
       // If saving offload kernel output files, request the appropriate emission
       // kind (ASM or LLVM IR) for all kernels.
-      // For Metal (air64) targets with --emit=asm, also drop OBJECT emission:
-      // xcrun metallib is macOS-only and is not needed when the goal is
-      // inspection. The ASM content (LLVM IR text) will be aliased under the
-      // OBJECT key after compilation so that rewriteCompileOffloadOp still
-      // finds it.
-      //
-      // Note: for NVIDIA/PTX, EmitAs::ASM is already present in
-      // kernelEmissionKinds by default (PTX text is the natural output), so
-      // only the Metal branch below is strictly load-bearing.
       if (!compilationOptions.offloadOutputPrefix.empty()) {
-        bool metalTarget = isMetalTriple(target.getTriple());
+        const TargetTraits *traits =
+            TargetTraitsRegistry::get().lookup(target.getTriple());
+        // Targets that don't emit a standalone offload object skip OBJECT; the
+        // emitted file is aliased under the OBJECT key below so
+        // rewriteCompileOffloadOp still finds a value to embed.
+        bool aliasFileAsObject = traits && !traits->emitsOffloadObjectFile();
         for (auto &[id, kinds] : kernelEmissionKinds) {
           kinds.insert(compilationOptions.offloadOutputKind);
-          // For Metal, skip OBJECT regardless of output kind: xcrun metallib
-          // is macOS-only, so cross-compilation fails on Linux.  The file
-          // output (ASM or LLVM IR) is aliased under the OBJECT key below so
-          // that rewriteCompileOffloadOp still finds a value to embed.
-          if (metalTarget)
+          if (aliasFileAsObject)
             kinds.erase(EmitAs::OBJECT);
         }
       }
@@ -755,15 +746,14 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           moduleNames.insert({kind, getXXH3Hash(content)});
         }
 
-        // For Metal, OBJECT was not compiled (xcrun skipped for portability).
-        // Alias the file output (ASM or LLVM IR) under the OBJECT key so that
-        // rewriteCompileOffloadOp, which always looks up contents[OBJECT],
+        // Targets that don't emit a standalone offload object didn't compile
+        // OBJECT; alias the emitted file (ASM or LLVM IR) under the OBJECT key
+        // so rewriteCompileOffloadOp, which always looks up contents[OBJECT],
         // still finds a value to embed in the host module.
-        // Note: for --emit=llvm, the aliased content is pre-optimization LLVM
-        // IR (before MetalAIR passes), whereas for --emit=asm it is processed
-        // LLVM IR (post-MetalAIR).  Both are valid for inspection purposes.
-        if (!compilationOptions.offloadOutputPrefix.empty() &&
-            isMetalTriple(target.getTriple())) {
+        const TargetTraits *traits =
+            TargetTraitsRegistry::get().lookup(target.getTriple());
+        if (!compilationOptions.offloadOutputPrefix.empty() && traits &&
+            !traits->emitsOffloadObjectFile()) {
           EmitAs fileKind = compilationOptions.offloadOutputKind;
           auto fileIt = contents.find(fileKind);
           if (fileIt != contents.end() && !contents.count(EmitAs::OBJECT)) {

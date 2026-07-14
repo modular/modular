@@ -182,30 +182,16 @@ public:
   void setDefaultCPU();
 };
 
-// Return true if target triple is `hexagon`
-bool isHexagonTriple(const llvm::Triple &triple);
-
 // Return true if target triple is `air64-`
 bool isMetalTriple(const llvm::Triple &triple);
 
-// Return true if target triple is `nvptx` or `amdgcn` or `air64-`
+// Return true if `triple` is a registered GPU target.
 bool isGPUTriple(const llvm::Triple &triple);
-bool isGPUBackend(const CompilationOptions &options);
 
-// Return true if target triple is `amdgcn`
-bool isAMDGPUBackend(const CompilationOptions &options);
-
-// Return true if target triple is `arm` or `armeb`
-bool isARMBackend(const CompilationOptions &options);
-
-// Return true if target triple is `hexagon`
-bool isHexagonBackend(const CompilationOptions &options);
-
-// Return true if target triple is `nvptx`
-bool isNVPTXBackend(const CompilationOptions &options);
-
-// Return true if target triple is `air64-`
-bool isMetalBackend(const CompilationOptions &options);
+// Whether the standalone module should export all symbols (GPU targets do, so
+// offloaded kernels resolve by symbol at runtime).
+bool overrideExported(const llvm::Triple &triple);
+bool overrideExported(const CompilationOptions &options);
 
 } // namespace M::KGEN
 

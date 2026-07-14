@@ -22,6 +22,7 @@
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/MDialect/MAttrs.h"
 #include "Support/MDialect/MTypes.h"
+#include "Target/TargetTraits.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
@@ -31,10 +32,8 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
-#include "llvm/Support/AMDGPUAddrSpace.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/LogicalResult.h"
-#include "llvm/Support/NVPTXAddrSpace.h"
 
 using namespace M;
 using namespace KGEN;
@@ -477,24 +476,17 @@ LogicalResult StackAllocationOp::verify() {
     return success();
   }
 
-  // LLVM IR verifies the address space on alloca instruction on AMDGPU.
-  // TODO: Re-enable this check when stdlib is updated.
-  if (0 && target.getTriple().isAMDGCN()) {
-    if (addressSpace != llvm::AMDGPUAS::PRIVATE_ADDRESS) {
-      return emitOpError("expected private address space (")
-             << (unsigned)llvm::AMDGPUAS::PRIVATE_ADDRESS
-             << "), but got address space (" << *addressSpace << ')';
-    }
-    return success();
-  }
-  // TODO: Re-enable this check when stdlib is updated.
-  if (0 && target.getTriple().isNVPTX()) {
-    if (addressSpace != llvm::NVPTXAS::AddressSpace::ADDRESS_SPACE_LOCAL) {
-      return emitOpError("expected local address space (")
-             << (unsigned)llvm::NVPTXAS::AddressSpace::ADDRESS_SPACE_LOCAL
-             << "), but got address space (" << *addressSpace << ')';
-    }
-    return success();
+  // Some targets constrain a stack allocation's address space (e.g. AMDGPU
+  // private, NVPTX local); the required value comes from the target's
+  // TargetTraits. TODO: Re-enable this check (guarded by `if (0`) when stdlib
+  // is updated.
+  const TargetTraits *traits =
+      TargetTraitsRegistry::get().lookup(target.getTriple());
+  std::optional<unsigned> expected =
+      traits ? traits->requiredStackAllocationAddressSpace() : std::nullopt;
+  if (0 && expected && *addressSpace != *expected) {
+    return emitOpError("expected address space (")
+           << *expected << "), but got address space (" << *addressSpace << ')';
   }
   return success();
 }

@@ -156,6 +156,11 @@ public:
   REGISTER_GET_KGEN_PLUGIN_FN(GetObjectExtension, getObjectExtension,
                               M::ErrorOr<llvm::StringRef>)
 
+  /// Plugin API for the target's default CPU when none is specified, used to
+  /// build the plugin's `TargetTraits`.
+  REGISTER_GET_KGEN_PLUGIN_FN(GetDefaultCPU, getDefaultCPU,
+                              M::ErrorOr<llvm::StringRef>)
+
   const std::string &getSoPath() const { return soPath; }
 
 private:

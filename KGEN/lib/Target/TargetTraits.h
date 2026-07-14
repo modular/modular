@@ -20,6 +20,7 @@
 #include "llvm/ADT/StringRef.h"
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace llvm {
@@ -51,6 +52,26 @@ public:
   /// direct match.
   virtual const TargetTraits *resolve(const llvm::Triple &triple) const {
     return matches(triple) ? this : nullptr;
+  }
+
+  /// Whether this target is a GPU.
+  virtual bool isGPU() const { return false; }
+
+  /// Default target CPU for `triple` when none is given, or empty to use the
+  /// generic host/cross-compile fallback.
+  virtual llvm::StringRef defaultCPU(const llvm::Triple &triple) const {
+    return {};
+  }
+
+  /// Whether this target emits a standalone object file for offload kernels.
+  /// Targets returning false have their emitted asm/IR file aliased under the
+  /// object key instead (e.g. when the object toolchain is host-only).
+  virtual bool emitsOffloadObjectFile() const { return true; }
+
+  /// Required address space for a stack allocation on this target, or nullopt
+  /// if the target does not constrain it.
+  virtual std::optional<unsigned> requiredStackAllocationAddressSpace() const {
+    return std::nullopt;
   }
 
   /// File extension for this target's assembly output (e.g. ".s").
