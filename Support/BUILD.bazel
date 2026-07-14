@@ -1,6 +1,16 @@
-load("//bazel:api.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_library", "modular_nanobind_library", "modular_shared_library", "pkg_files", "td_library")
+load(
+    "//bazel:api.bzl",
+    "gentbl_cc_library",
+    "gentbl_mlir_dialect",
+    "gentbl_modular_passes",
+    "mlir_nanobind",
+    "modular_cc_library",
+    "modular_nanobind_library",
+    "modular_shared_library",
+    "pkg_files",
+    "td_library",
+)
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES", "CONFIG_SECTION_LOCAL_DEFINES")
-load("//max/python/max/_core/internal/mlir_nanobind:tblgen.bzl", "mlir_nanobind")  # buildifier: disable=bzl-visibility
 
 # gazelle:default_visibility //visibility:public
 # gazelle:default_features layering_check,parse_headers
@@ -420,9 +430,15 @@ modular_cc_library(
     # private header both sides share (quote-included from the same directory).
     srcs = glob(
         ["lib/Profiling/internal/*.cpp"],
+        # For OSS
+        allow_empty = True,
         exclude = ["lib/Profiling/internal/RangeKineto.cpp"],
     ) + ["lib/Profiling/internal/RangeBackend.h"],
-    hdrs = glob(["include/Support/Profiling/internal/*.h"]),
+    hdrs = glob(
+        ["include/Support/Profiling/internal/*.h"],
+        # For OSS
+        allow_empty = True,
+    ),
     # TracyRocm.cpp uses a constructor to promote Tracy symbols to RTLD_GLOBAL
     # so that the rocprofiler-sdk plugin can resolve them via dlsym.
     copts = ["-Wno-global-constructors"],

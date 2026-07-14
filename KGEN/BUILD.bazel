@@ -1,5 +1,18 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
-load("//bazel:api.bzl", "copy_files", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "modular_cc_library", "modular_py_binary", "modular_shared_library", "pkg_files", "td_library")
+load(
+    "//bazel:api.bzl",
+    "copy_files",
+    "dialect_checksum",
+    "gentbl_cc_library",
+    "gentbl_mlir_dialect",
+    "gentbl_modular_passes",
+    "mlir_nanobind",
+    "modular_cc_library",
+    "modular_py_binary",
+    "modular_shared_library",
+    "pkg_files",
+    "td_library",
+)
 load(
     "//bazel:config.bzl",
     "ALLOW_UNUSED_TAG",
@@ -7,8 +20,6 @@ load(
     "CONFIG_SECTION_LOCAL_DEFINES",
     "KERNEL_PROFILING_LOCAL_DEFINES",
 )
-load("//bazel/internal:dialect_checksum.bzl", "dialect_checksum")  # buildifier: disable=bzl-visibility
-load("//max/python/max/_core/internal/mlir_nanobind:tblgen.bzl", "mlir_nanobind")  # buildifier: disable=bzl-visibility
 
 # gazelle:default_visibility //KGEN:consumers
 
@@ -881,11 +892,13 @@ modular_cc_library(
     name = "ToolCommon.headers",
     hdrs = glob(["include/KGEN/ToolCommon/*.h"]),
     defines = ["MLRT_ACCELERATOR_SUPPORT=1"],
+    internal_deps = [
+        "//MLRT:Driver/DeviceContext",
+    ],
     tags = ["no-clang-tidy-headers"],
     visibility = ["//visibility:private"],
     deps = [
         ":KGENPassesIncGen",
-        "//MLRT:Driver/DeviceContext",
         "//Support:CommonCLOptions",
     ],
 )
@@ -933,8 +946,16 @@ modular_shared_library(
     hdrs = glob([
         "include/KGEN/CompilerRT/*.h",
     ]),
+    internal_deps = [
+        "//MLRT:Core",
+        "//MLRT:Driver/DeviceContext",
+    ] + select({
+        "//:tracy_enabled": ["@tracy//:Tracy"],
+        "//conditions:default": [],
+    }),
     local_defines = [
         "MODULAR_BUILDING_COMPILERRT",
+        "MODULAR_KGEN_PROFILING_ENABLED=1",
     ] + CONFIG_SECTION_LOCAL_DEFINES + select({
         "//AsyncRT:alloc_logging_setting": ["MODULAR_ALLOC_LOGGING=1"],
         "//conditions:default": ["MODULAR_ALLOC_LOGGING=0"],
@@ -949,8 +970,6 @@ modular_shared_library(
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
         "//AsyncRT:Support",
-        "//MLRT:Core",
-        "//MLRT:Driver/DeviceContext",
         "//Support:Base",
         "//Support:BinaryID",
         "//Support:Configuration",
@@ -963,10 +982,7 @@ modular_shared_library(
         "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:llvm-symbolizer",
-    ] + select({
-        "//:tracy_enabled": ["@tracy//:Tracy"],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 modular_cc_library(
@@ -978,7 +994,9 @@ modular_cc_library(
             "include/KGEN/Support/ForceLinkMLIRC.h",
         ],
     ),
-    local_defines = CONFIG_SECTION_LOCAL_DEFINES,
+    local_defines = CONFIG_SECTION_LOCAL_DEFINES + [
+        "MODULAR_KGEN_PROFILING_ENABLED=1",
+    ],
     tags = ["no-clang-tidy-headers"],
     visibility = [
         "//KGEN:consumers",
@@ -1087,14 +1105,22 @@ modular_cc_library(
 
 modular_cc_library(
     name = "KGENToLLVM",
-    srcs = glob([
-        "lib/KGENToLLVM/*.cpp",
-        "lib/KGENToLLVM/Target/**/*.cpp",
-    ]),
-    hdrs = glob([
-        "lib/KGENToLLVM/*.h",
-        "lib/KGENToLLVM/Target/**/*.h",
-    ]),
+    srcs = glob(
+        [
+            "lib/KGENToLLVM/*.cpp",
+            "lib/KGENToLLVM/Target/**/*.cpp",
+        ],
+        # For OSS
+        allow_empty = True,
+    ),
+    hdrs = glob(
+        [
+            "lib/KGENToLLVM/*.h",
+            "lib/KGENToLLVM/Target/**/*.h",
+        ],
+        # For OSS
+        allow_empty = True,
+    ),
     strip_include_prefix = "lib",
     visibility = [
         "//KGEN:consumers",
