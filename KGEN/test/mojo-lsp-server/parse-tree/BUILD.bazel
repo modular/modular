@@ -205,7 +205,6 @@ _KERNELS_NO_RUN_LIST = [
     # rather than a real bug -- same category as layout/element.mojo above.
     "layout/tensor_storage.mojo",
     "linalg/grouped_matmul_sm100.mojo",
-    "linalg/matmul/gpu/_multistage_gemm_gpu.mojo",
     "linalg/matmul/gpu/sm90/dispatch.mojo",
     # "cannot implicitly convert 'Int' value to 'UInt32'" at
     # `comptime q_tile_size: UInt32 = q_smem_size // 2` (line 2917), confirmed
