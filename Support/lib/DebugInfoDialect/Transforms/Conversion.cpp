@@ -93,7 +93,8 @@ Attribute
 DebugInfoTypeConverterBase<isCyclic>::convertDebugTypesIn(Attribute attr) {
   auto result = replacer.replace(attr);
   if (auto expr = dyn_cast<DIAggregatesIntoExprAttr>(result))
-    assert(isa<DIStructType>(expr.getType()));
+    assert((isa<DIStructType, DIArrayType>(expr.getType())) &&
+           "aggregate DI expr must resolve to a struct or array type");
   return result;
 }
 

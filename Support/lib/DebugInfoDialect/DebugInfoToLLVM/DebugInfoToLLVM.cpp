@@ -186,36 +186,45 @@ MetadataConverter::convertAttrImpl(DIAggregatesIntoExprAttr attr) {
   if (!prefix)
     return {};
 
-  // The type of the struct field must have been lowered to a DIStructType.
-  auto llvmStructType = cast<LLVM::DICompositeTypeAttr>(
+  // Struct and array aggregates both lower to a DICompositeTypeAttr.
+  auto llvmAggregate = cast<LLVM::DICompositeTypeAttr>(
       convertType(cast<DIType>(attr.getType())));
 
-  // Fragments for single-element structs are elided in the LLVM representation.
-  if (llvmStructType.getElements().size() == 1)
-    return prefix;
+  uint64_t prefixSize;
+  uint64_t fieldSize;
+  if (auto arrayType = dyn_cast<DIArrayType>(attr.getType())) {
+    // An array composite carries DISubranges, not per-field members, so
+    // element `i` is a uniform, tightly-packed fragment.
+    uint64_t count = arrayType.getElementCount();
+    if (count == 0)
+      return prefix;
+    fieldSize = llvmAggregate.getSizeInBits() / count;
+    prefixSize = attr.getFieldIndex() * fieldSize;
+  } else {
+    if (llvmAggregate.getElements().size() == 1)
+      return prefix;
 
-  auto targetMember = cast<LLVM::DIDerivedTypeAttr>(
-      llvmStructType.getElements()[attr.getFieldIndex()]);
-  uint64_t fieldSize = targetMember.getSizeInBits();
+    auto targetMember = cast<LLVM::DIDerivedTypeAttr>(
+        llvmAggregate.getElements()[attr.getFieldIndex()]);
+    fieldSize = targetMember.getSizeInBits();
 
-  // Fragments that cover the entire size of the struct are elided in the LLVM
-  // representation. This can happen if the other elements of this struct are
-  // 0-sized.
-  if (fieldSize == llvmStructType.getSizeInBits())
-    return prefix;
+    prefixSize = 0;
+    for (LLVM::DINodeAttr member :
+         llvmAggregate.getElements().take_front(attr.getFieldIndex())) {
+      auto memberType = cast<LLVM::DIDerivedTypeAttr>(member);
+      uint64_t sizeInBits = memberType.getSizeInBits();
+      uint32_t alignInBits = memberType.getAlignInBits();
+      prefixSize =
+          llvm::alignTo(prefixSize, std::max(1u, alignInBits)) + sizeInBits;
+    }
 
-  uint64_t prefixSize = 0;
-  for (LLVM::DINodeAttr member :
-       llvmStructType.getElements().take_front(attr.getFieldIndex())) {
-    auto memberType = cast<LLVM::DIDerivedTypeAttr>(member);
-    uint64_t sizeInBits = memberType.getSizeInBits();
-    uint32_t alignInBits = memberType.getAlignInBits();
-    prefixSize =
-        llvm::alignTo(prefixSize, std::max(1u, alignInBits)) + sizeInBits;
+    if (uint32_t fieldAlignment = targetMember.getAlignInBits())
+      prefixSize = llvm::alignTo(prefixSize, fieldAlignment);
   }
 
-  if (uint32_t fieldAlignment = targetMember.getAlignInBits())
-    prefixSize = llvm::alignTo(prefixSize, fieldAlignment);
+  // A fragment covering the whole aggregate is elided.
+  if (fieldSize == llvmAggregate.getSizeInBits())
+    return prefix;
 
   SmallVector<LLVM::DIExpressionElemAttr> expr(prefix.getOperations());
   expr.push_back(LLVM::DIExpressionElemAttr::get(

@@ -122,34 +122,39 @@ struct Replacer {
   }
 };
 
-class SROAStructLeafReplacer {
+class SROALeafReplacer {
 public:
   DebugInfo::DIExprParameterizedLeafReplacer<unsigned> direct;
   DebugInfo::DIExprParameterizedLeafReplacer<unsigned> indirect;
 
-  SROAStructLeafReplacer()
+  SROALeafReplacer()
       : direct(directLeafConversion), indirect(indirectLeafConversion) {}
 
 private:
+  /// Element type of field/element `i` of an aggregate (struct or array).
+  static ErrorOr<Type> aggregateElementType(Type aggregate, unsigned i) {
+    if (auto structType = dyn_cast<StructType>(aggregate)) {
+      auto elementTypes = structType.getElementTypes();
+      if (!elementTypes)
+        return Error("expected struct type to have resolved element types");
+      return (*elementTypes)[i];
+    }
+    if (auto arrayType = dyn_cast<POP::ArrayType>(aggregate))
+      return arrayType.getElementType();
+    return Error("expected ir type to be a struct or array type");
+  }
+
   /// Attempt to wrap leaves of the DI expression with AggregatesInto.
-  /// Expects leaves to be of DIStructType.
+  /// Expects leaves to be a struct or array value.
   static ErrorOr<DebugInfo::DIExprAttr> directLeafConversion(Type irType,
                                                              unsigned i) {
-    auto structType = dyn_cast<StructType>(irType);
-    if (!structType)
-      return Error("expected ir type to be a struct type");
+    ErrorOr<Type> newFieldType = aggregateElementType(irType, i);
+    if (newFieldType.isError())
+      return newFieldType.takeError();
 
-    auto elementTypes = structType.getElementTypes();
-    if (!elementTypes)
-      return Error("expected struct type to have resolved element types");
-
-    // The field type of the struct is used directly.
-    auto newFieldType = (*elementTypes)[i];
-
-    // The leaf type is the struct field.
-    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(newFieldType);
-    // The expr is wrapped in an AggregatesInto expr to get back the
-    // struct.
+    // The leaf type is the field/element; wrap in an AggregatesInto expr to
+    // reconstruct the aggregate.
+    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(newFieldType.get());
     auto aggregateExpr =
         DebugInfo::DIAggregatesIntoExprAttr::get(newIrValue, i, irType);
 
@@ -157,36 +162,26 @@ private:
   }
 
   /// Attempt to wrap leaves of the DI expression with AggregatesInto.
-  /// Expects leaves to be a pointer to a DIStructType.
+  /// Expects leaves to be a pointer to a struct or array.
   static ErrorOr<DebugInfo::DIExprAttr> indirectLeafConversion(Type irType,
                                                                unsigned i) {
     auto ptrType = dyn_cast<PointerType>(irType);
     if (!ptrType)
       return Error("expected ir type to be a pointer type");
 
-    auto structType = dyn_cast<StructType>(ptrType.getElementType());
-    if (!structType)
-      return Error("expected ir type to be a pointer to a struct type");
+    Type aggregate = ptrType.getElementType();
+    ErrorOr<Type> fieldType = aggregateElementType(aggregate, i);
+    if (fieldType.isError())
+      return fieldType.takeError();
 
-    auto elementTypes = structType.getElementTypes();
-    if (!elementTypes)
-      return Error("expected struct type to have resolved element types");
-    Type fieldType = (*elementTypes)[i];
-
-    // The element of the struct is immediately allocated into memory,
-    // so we add a pointer type and wrap the expression with a deref.
-    auto newFieldType = PointerType::get(fieldType);
-
-    // The leaf type is a pointer to the struct element.
+    // The element lives in memory (a promoted scalar alloca), so the leaf is a
+    // deref of a pointer-to-element, aggregated back and taken by-ref.
+    auto newFieldType = PointerType::get(fieldType.get());
     auto newIrValue = DebugInfo::DIIRValueExprAttr::get(newFieldType);
-    // The struct element was allocated to memory, so need to deref.
-    auto derefExpr = DebugInfo::DIDerefExprAttr::get(newIrValue, fieldType);
-    // The expr is wrapped in an AggregatesInto expr to get back the
-    // struct.
+    auto derefExpr =
+        DebugInfo::DIDerefExprAttr::get(newIrValue, fieldType.get());
     auto aggregateExpr =
-        DebugInfo::DIAggregatesIntoExprAttr::get(derefExpr, i, structType);
-    // The address to the struct is obtained as the struct was
-    // implicitly promoted.
+        DebugInfo::DIAggregatesIntoExprAttr::get(derefExpr, i, aggregate);
     auto refExpr = DebugInfo::DIRefOfExprAttr::get(aggregateExpr, irType);
 
     return refExpr;
@@ -197,11 +192,11 @@ private:
 struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
   using ContainerType = StructType;
 
-  SROAStructLeafReplacer &leafReplacer;
+  SROALeafReplacer &leafReplacer;
 
   ReplaceStructs(OpBuilder &builder, StackAllocationOp alloc,
                  ContainerType container, uint32_t maxNumElements,
-                 SROAStructLeafReplacer &leafReplacer,
+                 SROALeafReplacer &leafReplacer,
                  SmallVector<Value> &valueMemCache)
       : Replacer(builder, alloc, container, maxNumElements, valueMemCache),
         leafReplacer(leafReplacer) {}
@@ -338,10 +333,14 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
 struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
   using ContainerType = POP::ArrayType;
 
+  SROALeafReplacer &leafReplacer;
+
   ReplaceArray(OpBuilder &builder, StackAllocationOp alloc,
                ContainerType container, uint32_t maxNumElements,
+               SROALeafReplacer &leafReplacer,
                SmallVector<Value> &valueMemCache)
-      : Replacer(builder, alloc, container, maxNumElements, valueMemCache) {}
+      : Replacer(builder, alloc, container, maxNumElements, valueMemCache),
+        leafReplacer(leafReplacer) {}
 
   // We've found the specified GEP into an array, check to see if all the users
   // are known to be safe to promote.  We cannot allow arbitrary uses, because
@@ -375,7 +374,7 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
     for (Operation *user : alloc->getUsers()) {
       // If the user is something which actually expects the full structure like
       // a call then we cannot perform the optimization.
-      if (!isa<POP::ArrayGEPOp, POP::StoreOp, POP::LoadOp,
+      if (!isa<POP::ArrayGEPOp, POP::StoreOp, POP::LoadOp, DebugInfo::ValueOp,
                StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user))
         return false;
 
@@ -498,6 +497,23 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
         auto newArr = POP::ArrayCreateOp::create(builder, load.getLoc(),
                                                  load.getType(), allScalars);
         load.replaceAllUsesWith(newArr.getResult());
+      }
+    } else if (auto value = dyn_cast<DebugInfo::ValueOp>(user)) {
+      // Re-express the debug-info value of the whole array as one per-element
+      // value pointing at the corresponding scalar allocation.
+      OpBuilder b(value);
+      DebugInfo::DILocalVariableAttr valueInfo = value.getValueInfo();
+      DebugInfo::DIExprAttr conversionExpr = value.getConversionExprAttr();
+      for (auto [i, newAlloc] : llvm::enumerate(newAllocas)) {
+        ErrorOr<DebugInfo::DIExprAttr> newConversionExpr =
+            leafReplacer.indirect.apply(conversionExpr, i);
+        if (failed(newConversionExpr)) {
+          // Not enough source information to track this transformation; the
+          // local variable is simply no longer debuggable.
+          continue;
+        }
+        DebugInfo::ValueOp::create(b, value.getLoc(), newAlloc, valueInfo,
+                                   newConversionExpr.get());
       }
     }
   }
@@ -686,7 +702,7 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
 void SROAPass::runOnOperation() {
   OpBuilder builder{getOperation()->getContext()};
 
-  SROAStructLeafReplacer leafReplacer;
+  SROALeafReplacer leafReplacer;
 
   // The loop limit is an arbitrary value to provide an upperbound on compile
   // time. However from experimentation this pass does not take a significant
@@ -739,8 +755,8 @@ void SROAPass::runOnOperation() {
         changed |= replacer.run(toDelete);
       } else if (auto arrayTy =
                      dyn_cast<POP::ArrayType>(ptrType.getElementType())) {
-        ReplaceArray replacer{builder, alloc, arrayTy, maxNumElements,
-                              valueMemCache};
+        ReplaceArray replacer{builder,        alloc,        arrayTy,
+                              maxNumElements, leafReplacer, valueMemCache};
         changed |= replacer.run(toDelete);
       } else if (llvm::any_of(alloc->getUsers(), [](Operation *user) {
                    return isa<PointerBitcastOp>(user);
