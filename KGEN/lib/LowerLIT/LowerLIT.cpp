@@ -142,9 +142,6 @@ struct LITLowerer {
   /// Lower lit.struct.decl and its nested structures.
   LogicalResult lowerStructDecl(StructDeclOp structDecl,
                                 Block::iterator mainSymbolTablePosIter);
-  /// Lower an existing kgen.struct.generator in the input.
-  LogicalResult lowerStructGenerator(StructGeneratorOp structGen,
-                                     Block::iterator mainSymbolTablePosIter);
   /// Lower lit.extension.decl and its nested structures.
   LogicalResult lowerExtensionDecl(ExtensionDeclOp extensionDecl,
                                    Block::iterator mainSymbolTablePosIter);
@@ -165,12 +162,6 @@ struct LITLowerer {
   LogicalResult lowerAllStructs(Block *moduleBody,
                                 Block::iterator mainSymbolTablePosIter,
                                 bool isTopLevel);
-  /// Recursively process all existing struct generator ops in the module
-  /// hierarchy.
-  LogicalResult
-  lowerAllStructGeneratorOps(Block *moduleBody,
-                             Block::iterator mainSymbolTablePosIter,
-                             bool isTopLevel);
 
   /// Recursively process all extensions in the module hierarchy.
   LogicalResult lowerAllExtensions(Block *moduleBody,
@@ -533,25 +524,6 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
 }
 
 LogicalResult
-LITLowerer::lowerStructGenerator(StructGeneratorOp structGen,
-                                 Block::iterator mainSymbolTablePosIter) {
-  ParamDeclArrayAttr inputParams = ParamDeclArrayAttr::get(
-      structGen.getContext(), structGen.getInputParams());
-  SmallVector<ParamDeclAttr> params(inputParams.begin(), inputParams.end());
-  ParamDeclDropMask dropped =
-      removeSingletonParamDecls(singletonTypeHelper, params);
-  inputParams = ParamDeclArrayAttr::get(inputParams.getContext(), params);
-  if (dropped.any())
-    structGen.setInputParams(inputParams);
-
-  StringAttr newName = flattenNameAndReinsertOp(
-      structGen, getTopLevelSymbolTable(), mainSymbolTablePosIter);
-  if (dropped.any())
-    symbolDroppedParamDecls[newName] = dropped;
-  return success();
-}
-
-LogicalResult
 LITLowerer::lowerExtensionDecl(ExtensionDeclOp extensionDecl,
                                Block::iterator mainSymbolTablePosIter) {
   SymbolRefAttr targetStructRef = extensionDecl.getTargetStruct().value();
@@ -682,35 +654,6 @@ LITLowerer::lowerAllStructs(Block *moduleBody,
                                                       : mainSymbolTablePosIter;
       if (failed(lowerAllStructs(package.getBody(), childMainSymbolTablePos,
                                  /*isTopLevel=*/false)))
-        return failure();
-    }
-  }
-  return success();
-}
-
-LogicalResult
-LITLowerer::lowerAllStructGeneratorOps(Block *moduleBody,
-                                       Block::iterator mainSymbolTablePosIter,
-                                       bool isTopLevel) {
-  for (Operation &op : llvm::make_early_inc_range(*moduleBody)) {
-    if (auto structGen = dyn_cast<StructGeneratorOp>(op)) {
-      Block::iterator childMainSymbolTablePos =
-          isTopLevel ? op.getIterator() : mainSymbolTablePosIter;
-      if (failed(lowerStructGenerator(structGen, childMainSymbolTablePos)))
-        return failure();
-    } else if (auto fileModule = dyn_cast<LIT::FileModuleOp>(op)) {
-      Block::iterator childMainSymbolTablePos =
-          isTopLevel ? op.getIterator() : mainSymbolTablePosIter;
-      if (failed(lowerAllStructGeneratorOps(fileModule.getBody(),
-                                            childMainSymbolTablePos,
-                                            /*isTopLevel=*/false)))
-        return failure();
-    } else if (auto package = dyn_cast<LIT::PackageOp>(op)) {
-      Block::iterator childMainSymbolTablePos =
-          isTopLevel ? op.getIterator() : mainSymbolTablePosIter;
-      if (failed(lowerAllStructGeneratorOps(package.getBody(),
-                                            childMainSymbolTablePos,
-                                            /*isTopLevel=*/false)))
         return failure();
     }
   }
@@ -1138,11 +1081,6 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
           module, symtab.getTopLevelSymbolTable(), structDecls);
       LITLowerer lowerer(symtab, renamedSymbols, singletonTypeHelper,
                          structDecls);
-      // Lower existing input struct generators before lowering struct decls.
-      if (failed(lowerer.lowerAllStructGeneratorOps(module.getBody(),
-                                                    Block::iterator(),
-                                                    /*isTopLevel=*/true)))
-        return signalPassFailure();
 
       // Lower all structs first, so that extensions can find them when they
       // need to look up struct info.

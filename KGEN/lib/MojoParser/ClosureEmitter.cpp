@@ -702,7 +702,12 @@ static void generateIsTrivialSpecialAlias(StringRef name, bool value,
 
   ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockEnd(
       declOp->getLoc(), &declOp.getBodyRegion().front());
-  TypedAttr valueAttr = SIMDAttr::getScalarBool(ctx, value);
+  IREmitter emitter(structDecl, EC_AliasValue);
+  SyntheticNode node(structDecl.getLoc());
+  TypedAttr valueAttr =
+      emitter
+          .emitBool({BoolAttr::get(ctx, value), &node}, EC_OperatorOperandValue)
+          .getIfPValue();
 
   ParamDeclAttr paramAttr =
       ParamDeclAttr::get(ctx, StringAttr::get(ctx, name), valueAttr.getType());
@@ -2252,8 +2257,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       structInstType, concreteParams, selfRefParamValues);
 
   // Create a StructType to serve as the self. The __call__ method will become a
-  // method on the struct this StructType references once the kgen.struct
-  // generator is folded into this struct
+  // method on the struct
   StringAttr structName =
       StringAttr::get(ctx, Twine(getFlattenedSymbolName(parentSymbolRef))
                                .concat("::")
@@ -2319,9 +2323,8 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       break;
     }
   }
-  // Delete when the storage struct replaces the kgen.struct.generator. For now
-  // we need to lift the methods to top level because the parameters are stored
-  // in the kgen.struct.generator
+  // Keep the synthesized methods at top level until closure methods are moved
+  // into the storage struct.
   auto promoteToTopLevel = [&](FnOp methodFn) -> FnOp {
     ASTDecl *decl = shared.declResolver->getDeclForFuncSymbol(
         getFullyResolvedSymbolRef(methodFn));
@@ -2339,39 +2342,30 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       it->second = promoteToTopLevel(it->second);
   }
 
-  // TODO: remove once kgen.struct.generator is collapsed into storage struct
+  // The synthesized methods remain at top level, so the storage struct does
+  // not directly provide move or copy initializers yet.
   structOp.removeMoveInitAttr();
   structOp.removeCopyInitAttr();
 
-  // Create the struct generator op. This will be moved into the struct in a
-  // follow up.
-  ParamDeclArrayAttr parameters = ParamDeclArrayAttr::get(ctx, concreteParams);
-  ImplicitLocOpBuilder builder(location, ctx);
-  builder.setInsertionPointToStart(
-      &cast<FileModuleOp>(moduleDecl.getIfOperation()).getBodyRegion().front());
   TraitType traitType = getTraitType(closureParents, moduleDecl);
-  auto structGen = StructGeneratorOp::create(
-      builder, structInstType.getName(), parameters, structInstType, traitType);
-  Block *structGenBody = builder.createBlock(&structGen.getRegion());
+  structOp.setCanonicalTrait(traitType);
 
-  // Register the struct generator in declForTypeSymbol so it can be looked up
-  // when resolving conformance for closure types.
-  SymbolRefAttr structGenSymbol = getFullyResolvedSymbolRef(
-      cast<mlir::SymbolOpInterface>(structGen.getOperation()));
-  ASTDecl &structGenDecl = shared.declResolver->registerStructGeneratorDecl(
-      structGen, structGenSymbol, smLoc, moduleDecl);
-
-  // Emit the conformance ops into the struct gen body by finding the closure
-  // method and FnOp associated with the parent trait.
+  // Emit the conformance ops into the storage struct by finding the closure
+  // method and FnOp associated with each parent trait.
+  ImplicitLocOpBuilder builder(location, ctx);
   auto addWitnessTable = [&](ClosureParent &closureParent) {
     TraitDeclOp traitParent = closureParent.getTrait(moduleDecl);
-    builder.setInsertionPointToStart(structGenBody);
+    builder.setInsertionPointToEnd(&structOp.getFields().front());
     SymbolRefArrayAttr immediateParents = traitParent.getImmediateParentsAttr();
     SymbolRefAttr parentSymbol = closureParent.getSymbolRef(moduleDecl);
     StringAttr parentName = closureParent.getFullSymbolName(moduleDecl);
     ConformanceOp witnessTable = ConformanceOp::create(
         builder, parentName, parentSymbol, immediateParents);
     Block &block = witnessTable.getBody().emplaceBlock();
+
+    ASTDecl &conformDecl = shared.declResolver->addDecl(
+        witnessTable, structDecl.getLoc(), parentName, &structDecl, {}, {}, -1);
+    conformDecl.resolvedness = DeclResolvedness::signature;
 
     // Marker traits like AnyType have no methods -- empty ConformanceOp is
     // sufficient for TypeConformsToTraitAttr::simplify().
@@ -2407,16 +2401,21 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
   for (ClosureParent &closureParent : closureParents)
     addWitnessTable(closureParent);
 
-  // create a SymbolRefAttr from the StructGeneratorOp
-  SymbolRefAttr structGenSymbolRef = getFullyResolvedSymbolRef(
-      cast<mlir::SymbolOpInterface>(structGen.getOperation()));
-  // Type value contains the reference to the struct gen op with the witness
-  // table.
-  auto typeValue = KGEN::TypeValueType::get(
-      ctx, TypeGeneratorRefAttr::get(ctx, structGenSymbolRef,
-                                     concreteStructBindings, traitType));
-  auto typeParamAttr = TypeParamAttr::get(typeValue, kgenStructType, traitType);
-  return Closure{&structDecl, &structGenDecl, promotedCallDecl, typeParamAttr};
+  bool isTrivial = convention == TypeConvention::RegisterPassableTrivial;
+  generateIsTrivialSpecialAlias("__del__is_trivial", isTrivial, shared,
+                                structDecl, implicitlyDestructibleParent,
+                                moduleDecl);
+  generateIsTrivialSpecialAlias("__move_ctor_is_trivial", isTrivial, shared,
+                                structDecl, moveParent, moduleDecl);
+  if (methodImpls.contains(ClosureMethod::COPY))
+    generateIsTrivialSpecialAlias("__copy_ctor_is_trivial", isTrivial, shared,
+                                  structDecl, copyParent, moduleDecl);
+
+  LIT::StructType boundClosureStructType =
+      structOp.bindReference(concreteStructBindings);
+  auto typeParamAttr =
+      TypeParamAttr::get(boundClosureStructType, kgenStructType, traitType);
+  return Closure{&structDecl, promotedCallDecl, typeParamAttr};
 }
 
 static unsigned conventionRank(TypeConvention convention) {

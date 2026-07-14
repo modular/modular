@@ -76,12 +76,6 @@ public:
   ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringRef baseName,
                                 llvm::SMLoc loc, ASTDecl *parentDecl);
 
-  /// Register a StructGeneratorOp in declForTypeSymbol so it can be looked up
-  /// when resolving conformance for closure types. Returns the created decl.
-  ASTDecl &registerStructGeneratorDecl(StructGeneratorOp structGen,
-                                       SymbolRefAttr symbol, llvm::SMLoc loc,
-                                       ASTDecl &parentDecl);
-
   /// Add a declaration that represents an erroneous declaration. The generated
   /// decl is treated as fully resolved, and in an error state.
   ASTDecl &addErroneousDecl(StringRef baseName, llvm::SMLoc loc,

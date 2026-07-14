@@ -63,20 +63,23 @@ static Value allocateHeapMemory(PointerType ptrType, OpBuilder &b,
                                      ValueRange{alignOf, sizeOf});
 }
 
+static TypeGeneratorRefAttr getTypeGeneratorRef(ClosureInitOp closureInit) {
+  auto typeValue = closureInit->getAttrOfType<TypedAttr>("typeValue");
+  if (!typeValue)
+    return {};
+  auto typeParam = dyn_cast<TypeParamAttr>(typeValue);
+  if (!typeParam)
+    return {};
+  auto typeValueType = dyn_cast<TypeValueType>(typeParam.getTypeValue());
+  if (!typeValueType)
+    return {};
+  return dyn_cast<TypeGeneratorRefAttr>(typeValueType.getTypeValue());
+}
+
 static std::optional<std::pair<TypeGeneratorRefAttr, StructInstanceType>>
 getTypeValuePathData(ClosureInitOp closureInit,
                      StructGeneratorOp structGeneratorOp) {
-  auto typeValue = closureInit->getAttrOfType<TypedAttr>("typeValue");
-  if (!typeValue)
-    return std::nullopt;
-  auto typeParam = dyn_cast<TypeParamAttr>(typeValue);
-  if (!typeParam)
-    return std::nullopt;
-  auto typeValueType = dyn_cast<TypeValueType>(typeParam.getTypeValue());
-  if (!typeValueType)
-    return std::nullopt;
-  auto typeGeneratorRef =
-      dyn_cast<TypeGeneratorRefAttr>(typeValueType.getTypeValue());
+  TypeGeneratorRefAttr typeGeneratorRef = getTypeGeneratorRef(closureInit);
   if (!typeGeneratorRef)
     return std::nullopt;
   auto structInstanceType =
@@ -504,32 +507,22 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
   return success();
 }
 
-static StringAttr getFullName(ClosureType closureType) {
-  MLIRContext *ctx = closureType.getContext();
-  StringRef parentName = closureType.getParentSymbol().getRootReference();
-  StringRef closureNameRef = closureType.getName();
-  SmallString<64> fullName;
-  fullName.reserve(parentName.size() + 1 + closureNameRef.size());
-
-  fullName += parentName;
-  fullName += "::";
-  fullName += closureNameRef;
-
-  return StringAttr::get(ctx, fullName);
-}
-
 static LogicalResult liftClosureInit(ModuleOp theModule, ClosureLifter &lifter,
                                      ClosureInitOp closureInit) {
   GeneratorOp parent = closureInit->getParentOfType<GeneratorOp>();
   assert(parent && "closure init should be nested within a generator");
 
   ClosureType closureType = getClosureType(closureInit);
-  StringAttr symbol = getFullName(closureType);
-  StructGeneratorOp structGeneratorOp =
-      lifter.symtab.lookup<StructGeneratorOp>(symbol);
+  StructGeneratorOp structGeneratorOp;
+  TypeGeneratorRefAttr typeGeneratorRef = getTypeGeneratorRef(closureInit);
+  if (typeGeneratorRef) {
+    structGeneratorOp = lifter.symtab.lookup<StructGeneratorOp>(
+        typeGeneratorRef.getSymbol().getRootReference());
+  }
   if (!structGeneratorOp) {
     mlir::emitError(theModule.getLoc())
-        << "missing struct generator op for closure " << closureType.getName();
+        << "missing storage struct generator op for closure "
+        << closureType.getName();
     return failure();
   }
   if (failed(lifter.liftClosureInit(closureInit, parent, structGeneratorOp)))
@@ -540,13 +533,9 @@ static LogicalResult liftClosureInit(ModuleOp theModule, ClosureLifter &lifter,
   auto captures = lifter.paramCaptureToStructAttr.find(key);
   assert(captures != lifter.paramCaptureToStructAttr.end() &&
          "lifting must populate captured parameter set");
-  SmallVector<ParamDeclAttr> inputParams;
-  llvm::append_range(inputParams, captures->second);
-  structGeneratorOp.setInputParams(inputParams);
 
   auto instTypeIt = lifter.closureTypeToStructInstTypes.find(closureType);
   if (instTypeIt != lifter.closureTypeToStructInstTypes.end()) {
-    structGeneratorOp.setValueDomainType(instTypeIt->second);
     lifter.closureTypeToStructGen.insert({closureType, structGeneratorOp});
   }
   return success();

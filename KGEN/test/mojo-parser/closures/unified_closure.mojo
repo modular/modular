@@ -257,21 +257,20 @@ def nested[
 
 # // -----
 
-# COM: Check that the struct generator of the lit op is generated correctly.
+# COM: Check that the closure storage struct is generated correctly.
 
 
 # CHECK: [[TRAIT:!Int_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def(z: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
-# CHECK: kgen.struct.generator @"bindIt(::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)],::String)::myclosure": [[TRAIT]] = struct_inst<"bindIt(::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)],::String)::myclosure"{{.*}}memoryOnly>{
-# CHECK: kgen.conformance @"{{.*}}::AnyType" {
-# CHECK-NEXT: }
-# CHECK: kgen.conformance @"{{.*}}::ImplicitlyDeletable" {
-# CHECK-NEXT: kgen.witness "__del__{{.*}}"
-# CHECK: kgen.conformance @"{{.*}}::Movable" {
-# CHECK-NEXT: kgen.witness "__init__(move:$0$)"
-# CHECK: kgen.conformance @"def(z: Int) -> Int" {
-# CHECK-NEXT: kgen.witness "__call__{{.*}}"
+# CHECK: lit.struct.decl @"bindIt(::SIMD[::DType(int), ::SIMDSize(1)],::SIMD[::DType(int), ::SIMDSize(1)],::String)::myclosure::__storage"
+# CHECK-DAG: kgen.conformance @"{{.*}}::AnyType" {
+# CHECK-DAG: kgen.conformance @"{{.*}}::ImplicitlyDeletable" {
+# CHECK-DAG: kgen.witness "__del__{{.*}}"
+# CHECK-DAG: kgen.conformance @"{{.*}}::Movable" {
+# CHECK-DAG: kgen.witness "__init__(move:$0$)"
+# CHECK-DAG: kgen.conformance @"def(z: Int) -> Int" {
+# CHECK-DAG: kgen.witness "__call__{{.*}}"
 def bindIt(x: Int, y: Int, mem: String) -> Int:
     def myclosure(z: Int) {var x, var y, var mem} -> Int:
         return x + y + z
@@ -282,7 +281,7 @@ def bindIt(x: Int, y: Int, mem: String) -> Int:
 # COM: Check that parameters are emitted correctly
 
 
-# CHECK: kgen.struct.generator @"bindIt({{.*}})::myclosure"
+# CHECK: lit.struct.decl @"bindIt({{.*}})::myclosure::__storage"
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator<<"my_param": !AnyType>
 # CHECK-SAME: [1](!lit.ref<{{.*}}, mut *[0,0]> read_mem, |, "z": !Int) capturing -> !kgen.none>
 # CHECK-SAME: = {{.*}}<:!AnyType ?>
@@ -335,7 +334,7 @@ def make_closure(x: Int, mem: String) -> Int:
 # COM: Check that the origin set is bound to the wrapper
 
 # CHECK-LABEL: lit.fn @"nonemptyOriginSet(::String&)"
-# CHECK: lit.closure.init[#kgen.type<typevalue<:[[TRAIT:!None_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable.*]]
+# CHECK: lit.closure.init[#kgen.type<!lit.struct<{{.*}}> : [[TRAIT:!None_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable.*]]
 
 
 def nonemptyOriginSet(mut byRefMut: String):
@@ -535,8 +534,8 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 # CHECK: lit.trait.decl @"def{{.*}} -> U{1}"
 # CHECK-NEXT: lit.alias.decl U: !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable
 
-# COM: The captured parameter becomes a parameter of the struct generator
-# CHECK: kgen.struct.generator @"makeIt{{.*}}::parametric"<U: !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable>
+# COM: The captured parameter becomes a parameter of the storage struct
+# CHECK: lit.struct.decl @"makeIt{{.*}}::parametric::__storage"<U: !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable, {{.*}}>
 # CHECK: kgen.witness "U" : !AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable = U
 
 
@@ -891,7 +890,7 @@ def struct_callee[
 
 
 # CHECK-LABEL: lit.fn @"repro_struct_attr()"
-# CHECK: lit.closure.init[#kgen.type<typevalue<:trait<@"def() -> Container[Pair(Int(2), Int(0))]"
+# CHECK: lit.closure.init[#kgen.type<!lit.struct<{{.*}}>{{.*}} : !lit.trait<@"def() -> Container[Pair(Int(2), Int(0))]"
 # CHECK: lit.call @unified_closure::@"struct_callee[::SIMD[::DType(int), ::SIMDSize(1)],def[tag: Int, //]() -> Container[Pair(tag, Int(0))]{1}]($1){(eq $1.tag, $0)}"
 # CHECK-SAME: <:!Int {:scalar<index> 2}
 def repro_struct_attr():
@@ -928,7 +927,7 @@ def symbol_callee[
 
 
 # CHECK-LABEL: lit.fn @"repro_symbol_attr()"
-# CHECK: lit.closure.init[#kgen.type<typevalue<:trait<@"def() -> Dispatch[identity]"
+# CHECK: lit.closure.init[#kgen.type<!lit.struct<{{.*}}>{{.*}} : !lit.trait<@"def() -> Dispatch[identity]"
 # CHECK: lit.call @unified_closure::@"symbol_callee[::SIMD[::DType(int), ::SIMDSize(1)],def() -> Dispatch[identity]]($1)"{{.*}}<:!Int {:scalar<index> 1}
 def repro_symbol_attr():
     var x = 10
@@ -1643,7 +1642,7 @@ def top():
 
 # // -----
 
-# COM: Origins are properly captured and lifted into the struct generator
+# COM: Origins are properly captured and lifted into the storage struct
 
 
 def can_mutate[FuncType: def() -> None](impl: FuncType):
@@ -1653,8 +1652,8 @@ def can_mutate[FuncType: def() -> None](impl: FuncType):
 def demo[
     o: Origin[mut=True]
 ](ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC,],):
-    # CHECK: kgen.struct.generator @"demo{{.*}}::write"<*"o._mlir_origin`": origin<true>, o: !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"o._mlir_origin`">>>
-    # CHECK-SAME: struct_inst<"demo{{.*}}::write"[*"o._mlir_origin`", o]<:origin<true> *"o._mlir_origin`", :!lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"o._mlir_origin`">> o>
+    # CHECK: lit.struct.decl @"demo{{.*}}::write::__storage"
+    # CHECK-SAME: <{{.*}}*"o._mlir_origin`": origin<true>, o: !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"o._mlir_origin`">>
     def write() {read ptr}:
         ptr.store(0, 3)
 
@@ -1680,8 +1679,8 @@ def demo[
 ](ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC,],):
     var immut_ptr = ptr.as_immutable()
 
-    # CHECK: kgen.struct.generator @"demo{{.*}}::read"<*"o._mlir_origin`": origin<false>, *"immut_ptr{{.*}}": origin<false>>
-    # CHECK-SAME: struct_inst<"demo{{.*}}::read"[*"o._mlir_origin`", *"immut_ptr{{.*}}"]<:origin<false> *"o._mlir_origin`", :origin<false> *"immut_ptr{{.*}}">
+    # CHECK: lit.struct.decl @"demo{{.*}}::read::__storage"
+    # CHECK-SAME: <{{.*}}*"o._mlir_origin`": origin<false>, {{.*}}*"immut_ptr{{.*}}": origin<false>
 
     def read() {read immut_ptr}:
         _ = immut_ptr[0]
