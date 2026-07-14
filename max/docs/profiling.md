@@ -73,6 +73,11 @@ the profiler writes a trace:
 `{rank}` resolves to the first of the `MODULAR_RANK` or
 `OMPI_COMM_WORLD_RANK` environment variables that is set to a plain integer,
 falling back to `"0"` (a set-but-non-numeric value is treated as unset).
+The rank comes from whatever launcher spawned the process: OpenMPI's
+`mpirun` sets `OMPI_COMM_WORLD_RANK` automatically, while launchers that
+don't use MPI (for example, Kubernetes-managed pods) should set
+`MODULAR_RANK` explicitly — otherwise every process resolves to rank `0`
+and only `{pid}` keeps their outputs distinct.
 
 Directory detection happens on the literal setting, before template
 expansion: a path like `/tmp/traces-{rank}/` takes the template branch even
@@ -111,10 +116,10 @@ is unaffected by any of this.
 - `session.gpu_profiling()` (NVTX/Nsight) is orthogonal. NVTX markers
   continue to feed Nsight Systems independently.
 - Tracy (`--config=tracy`) is mutually exclusive with the libkineto profiler
-  at build time. `--config=tracy` builds do not link libkineto, so
-  `session.profiling.start()` is a no-op there; default builds do not link
-  Tracy GPU. Tracy CPU instrumentation is orthogonal and available in
-  both configurations.
+  at build time: `--config=tracy` builds do not link libkineto, and
+  `--config=kineto` builds (Linux x86_64 only, the sole configuration that
+  links libkineto) do not link Tracy GPU. Default builds link neither. Tracy
+  CPU instrumentation is orthogonal and available in every configuration.
 
 ## See also
 

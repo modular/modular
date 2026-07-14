@@ -474,10 +474,14 @@ class _ProfilingNamespace:
 
        libkineto's profiler state is **process-global**. Calling
        :meth:`start` on one ``InferenceSession`` enables the profiler for the
-       whole process, including any other live sessions. Only one MAX
-       process per host should drive ``start()`` / ``stop()`` at a time —
-       for multi-rank captures, an orchestrator must broadcast the enable
-       command to every rank process.
+       whole process, including any other live sessions.  Single-host
+       tensor-parallel serving is one process driving multiple devices, so
+       one :meth:`start` covers every device.  In a multi-process multi-rank
+       deployment (one OS process per rank, e.g. an MPI-launched run),
+       enabling all ranks means calling :meth:`start` on each rank's own
+       session.  Use a ``{rank}``-templated
+       :attr:`~InferenceSession.debug.profiling_output_path` so the per-rank
+       traces don't collide.
 
        For the same reason, ``with session.profiling:`` blocks **must not be
        nested**: an inner ``__exit__`` will call :meth:`stop` and disable the
