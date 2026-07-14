@@ -595,7 +595,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafePointer(to=x),
         contains=(
-            "UnsafePointer[mut=True, SIMD[DType.int, 1],"
+            "Pointer[mut=True, SIMD[DType.int, 1],"
             " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
@@ -603,7 +603,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafePointer(to=x).as_immutable(),
         contains=(
-            "UnsafePointer[mut=False, SIMD[DType.int, 1],"
+            "Pointer[mut=False, SIMD[DType.int, 1],"
             " address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
@@ -611,7 +611,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafePointer(to=x).address_space_cast[AddressSpace.SHARED](),
         contains=(
-            "UnsafePointer[mut=True, SIMD[DType.int, 1],"
+            "Pointer[mut=True, SIMD[DType.int, 1],"
             " address_space=AddressSpace.SHARED](0x"
         ),
         is_repr=True,
@@ -621,8 +621,7 @@ def test_write_repr_to() raises:
     check_write_to(
         UnsafePointer(to=s),
         contains=(
-            "UnsafePointer[mut=True, String,"
-            " address_space=AddressSpace.GENERIC](0x"
+            "Pointer[mut=True, String, address_space=AddressSpace.GENERIC](0x"
         ),
         is_repr=True,
     )

@@ -342,7 +342,6 @@ def grouped_matmul_block_scaled[
     # Re-wrap 1D TileTensors with GMEMLayout1D to match the kernel's
     # expected types. The caller's TileTensors may have a different symbolic
     # LayoutType (from _IntTupleToCoordLike) than the kernel's GMEMLayout1D.
-    from std.memory import UnsafePointer as Ptr
     from structured_kernels.tile_types import GMEMLayout1D
 
     def _to_1d[

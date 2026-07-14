@@ -46,7 +46,7 @@ def test_declared_arg_types(ctx: DeviceContext) raises:
     comptime assert arg_types[3] == Int
     comptime assert arg_types[4] == Int
 
-    assert_equal(reflect[arg_types[0]].base_name(), "UnsafePointer")
+    assert_equal(reflect[arg_types[0]].base_name(), "Pointer")
 
 
 def test_is_compatible(ctx: DeviceContext) raises:

@@ -41,6 +41,7 @@ from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
 from std.memory import UnsafeMaybeUninit
+from std.memory.unsafe_pointer import Pointer as _CommonPointer
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location, reflect
 from std.utils import StaticTuple
@@ -182,6 +183,22 @@ struct Optional[T: Movable](
         ```
         """
         self._value = Self._type(_NoneType())
+
+    # TODO(MSTDL-2846): Remove this constructor when `_safe` is no longer needed for UnsafePointer.
+    @implicit
+    @doc_hidden
+    def __init__(
+        other: _CommonPointer[...],
+        out self: Optional[
+            _CommonPointer[
+                other.type,
+                other.origin,
+                address_space=other.address_space,
+                _safe=False,
+            ]
+        ],
+    ):
+        self = {value = type_of(self).T(other)}
 
     @implicit
     def __init__(out self, var value: Self.T):
