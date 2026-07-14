@@ -478,6 +478,8 @@ struct Pointer[
     # Aliases
     # ===-------------------------------------------------------------------===#
 
+    comptime _is_unsafe = not Self._safe
+
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         Self.type,
@@ -682,7 +684,9 @@ struct Pointer[
     @always_inline("nodebug")
     def __getitem__[
         I: Indexer, //
-    ](self, offset: I) -> ref[Self.origin, Self.address_space] Self.type:
+    ](self, offset: I) -> ref[
+        Self.origin, Self.address_space
+    ] Self.type where Self._is_unsafe:
         """Return a reference to the underlying data, offset by the given index.
 
         Parameters:
@@ -697,7 +701,7 @@ struct Pointer[
         return (self + offset)[]
 
     @always_inline("nodebug")
-    def __add__[I: Indexer, //](self, offset: I) -> Self:
+    def __add__[I: Indexer, //](self, offset: I) -> Self where Self._is_unsafe:
         """Return a pointer at an offset from the current one.
 
         Parameters:
@@ -716,7 +720,7 @@ struct Pointer[
         }
 
     @always_inline
-    def __sub__[I: Indexer, //](self, offset: I) -> Self:
+    def __sub__[I: Indexer, //](self, offset: I) -> Self where Self._is_unsafe:
         """Return a pointer at an offset from the current one.
 
         Parameters:
@@ -731,7 +735,7 @@ struct Pointer[
         return self + (-1 * index(offset))
 
     @always_inline
-    def __iadd__[I: Indexer, //](mut self, offset: I):
+    def __iadd__[I: Indexer, //](mut self, offset: I) where Self._is_unsafe:
         """Add an offset to this pointer.
 
         Parameters:
@@ -743,7 +747,7 @@ struct Pointer[
         self = self + offset
 
     @always_inline
-    def __isub__[I: Indexer, //](mut self, offset: I):
+    def __isub__[I: Indexer, //](mut self, offset: I) where Self._is_unsafe:
         """Subtract an offset from this pointer.
 
         Parameters:
@@ -1155,7 +1159,7 @@ struct Pointer[
             other.unsafe_write(tmp^)
 
     @always_inline("nodebug")
-    def as_noalias_ptr(self) -> Self:
+    def as_noalias_ptr(self) -> Self where Self._is_unsafe:
         """Cast the pointer to a new pointer that is known not to locally alias
         any other pointer. In other words, the pointer transitively does not
         comptime any other memory value declared in the local function context.
@@ -1180,7 +1184,9 @@ struct Pointer[
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
-    ](self: Pointer[Scalar[dtype], ...]) -> SIMD[dtype, width]:
+    ](self: Pointer[Scalar[dtype], ...]) -> SIMD[dtype, width] where type_of(
+        self
+    )._is_unsafe:
         """Loads `width` elements from the value the pointer points to.
 
         Use `alignment` to specify minimal known alignment in bytes; pass a
@@ -1246,7 +1252,7 @@ struct Pointer[
             # packs bits. Load as uint8 and convert to bool so each
             # element occupies its own byte boundary.
             return rebind[SIMD[dtype, width]](
-                self.bitcast[Scalar[DType.uint8]]()
+                self.unsafe_bitcast[Scalar[DType.uint8]]()
                 .load[
                     width=width,
                     alignment=alignment,
@@ -1257,7 +1263,7 @@ struct Pointer[
                 .cast[DType.bool]()
             )
 
-        var address = self.bitcast[SIMD[dtype, width]]()._mlir_value
+        var address = self.unsafe_bitcast[SIMD[dtype, width]]()._mlir_value
 
         var result = __mlir_op.`pop.load`[
             alignment=alignment.__mlir_index__(),
@@ -1279,7 +1285,12 @@ struct Pointer[
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
-    ](self: Pointer[Scalar[dtype], ...], offset: Scalar,) -> SIMD[dtype, width]:
+    ](
+        self: Pointer[Scalar[dtype], ...],
+        offset: Scalar,
+    ) -> SIMD[
+        dtype, width
+    ] where type_of(self)._is_unsafe:
         """Loads the value the pointer points to with the given offset.
 
         Constraints:
@@ -1320,7 +1331,12 @@ struct Pointer[
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
-    ](self: Pointer[Scalar[dtype], ...], offset: I,) -> SIMD[dtype, width]:
+    ](
+        self: Pointer[Scalar[dtype], ...],
+        offset: I,
+    ) -> SIMD[
+        dtype, width
+    ] where type_of(self)._is_unsafe:
         """Loads the value the pointer points to with the given offset.
 
         Constraints:
@@ -1363,7 +1379,7 @@ struct Pointer[
         self: Pointer[mut=True, Scalar[dtype], ...],
         offset: I,
         val: SIMD[dtype, width],
-    ):
+    ) where type_of(self)._is_unsafe:
         """Stores a single element value at the given offset.
 
         Constraints:
@@ -1400,7 +1416,7 @@ struct Pointer[
         self: Pointer[mut=True, Scalar[dtype], ...],
         offset: Scalar[offset_type],
         val: SIMD[dtype, width],
-    ):
+    ) where type_of(self)._is_unsafe:
         """Stores a single element value at the given offset.
 
         Constraints:
@@ -1432,7 +1448,9 @@ struct Pointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         non_temporal: Bool = False,
-    ](self: Pointer[mut=True, Scalar[dtype], ...], val: SIMD[dtype, width],):
+    ](
+        self: Pointer[mut=True, Scalar[dtype], ...], val: SIMD[dtype, width]
+    ) where type_of(self)._is_unsafe:
         """Stores a single element value `val` at element offset 0.
 
         Specify `alignment` when writing to packed/unaligned memory. Requires a
@@ -1475,7 +1493,7 @@ struct Pointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         non_temporal: Bool = False,
-    ](self: Pointer[mut=True, Scalar[dtype], ...], val: SIMD[dtype, width],):
+    ](self: Pointer[mut=True, Scalar[dtype], ...], val: SIMD[dtype, width]):
         comptime assert width > 0, "width must be a positive integer value"
         comptime assert (
             alignment > 0
@@ -1485,7 +1503,7 @@ struct Pointer[
             # Bool (i1) is sub-byte, so a vector store of SIMD[bool, N]
             # packs bits. Cast to uint8 and store so each element
             # occupies its own byte boundary.
-            self.bitcast[Scalar[DType.uint8]]()._store[
+            self.unsafe_bitcast[Scalar[DType.uint8]]()._store[
                 alignment=alignment,
                 volatile=volatile,
                 non_temporal=non_temporal,
@@ -1495,12 +1513,17 @@ struct Pointer[
                 alignment=alignment.__mlir_index__(),
                 isVolatile=volatile.__mlir_i1__(),
                 isNonTemporal=non_temporal.__mlir_i1__(),
-            ](val, self.bitcast[SIMD[dtype, width]]()._mlir_value)
+            ](val, self.unsafe_bitcast[SIMD[dtype, width]]()._mlir_value)
 
     @always_inline("nodebug")
     def strided_load[
         dtype: DType, T: Intable, //, width: Int
-    ](self: Pointer[Scalar[dtype], ...], stride: T,) -> SIMD[dtype, width]:
+    ](
+        self: Pointer[Scalar[dtype], ...],
+        stride: T,
+    ) -> SIMD[
+        dtype, width
+    ] where type_of(self)._is_unsafe:
         """Performs a strided load of the SIMD vector.
 
         Parameters:
@@ -1528,7 +1551,7 @@ struct Pointer[
         self: Pointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
         stride: T,
-    ):
+    ) where type_of(self)._is_unsafe:
         """Performs a strided store of the SIMD vector.
 
         Parameters:
@@ -1556,7 +1579,7 @@ struct Pointer[
         offset: SIMD[_, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
         default: SIMD[dtype, width] = 0,
-    ) -> SIMD[dtype, width]:
+    ) -> SIMD[dtype, width] where type_of(self)._is_unsafe:
         """Gathers a SIMD vector from offsets of the current pointer.
 
         This method loads from memory addresses calculated by appropriately
@@ -1622,7 +1645,7 @@ struct Pointer[
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
-    ):
+    ) where type_of(self)._is_unsafe:
         """Scatters a SIMD vector into offsets of the current pointer.
 
         This method stores at memory addresses calculated by appropriately
@@ -1674,12 +1697,14 @@ struct Pointer[
         scatter[alignment=alignment](val, base, mask)
 
     @always_inline
-    def free(self: Pointer[mut=True, Self.type, ...]):
+    def free(
+        self: Pointer[mut=True, Self.type, ...]
+    ) where type_of(self)._is_unsafe:
         """Free the memory referenced by the pointer."""
         _free(self)
 
     @always_inline("builtin")
-    def bitcast[
+    def unsafe_bitcast[
         T: AnyType
     ](self) -> Pointer[
         T, Self.origin, address_space=Self.address_space, _safe=Self._safe
@@ -1703,6 +1728,24 @@ struct Pointer[
                 ]._mlir_type,
             ](self._mlir_value)
         }
+
+    @doc_hidden
+    @always_inline("builtin")
+    def bitcast[
+        T: AnyType
+    ](self) -> Pointer[
+        T, Self.origin, address_space=Self.address_space, _safe=Self._safe
+    ] where Self._is_unsafe:
+        """Bitcasts a Pointer to a different type.
+
+        Parameters:
+            T: The target type.
+
+        Returns:
+            A new Pointer object with the specified type and the same address,
+            as the original Pointer.
+        """
+        return self.unsafe_bitcast[T]()
 
     comptime _OriginCastType[
         target_mut: Bool, //, target_origin: Origin[mut=target_mut]
