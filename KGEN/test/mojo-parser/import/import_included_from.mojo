@@ -13,7 +13,11 @@
 # at that declaration, so it exercises the include stack independently of
 # overload resolution.
 
-# RUN: not %parse-mojo-isolated -split-input-file -I=%S/inputs %s 2>&1 | FileCheck %s
+# Note: MLIR diagnostics print "Included from", user-facing Mojo diagnostics
+# print "Imported from". Test for both.
+
+# RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=true -I=%S/inputs %s 2>&1 | FileCheck %s --check-prefixes CHECK,MLIRDIAG
+# RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=false -I=%S/inputs %s 2>&1 | FileCheck %s --check-prefixes CHECK,MOJODIAG
 
 # Reached through an intermediate module: test_package/module.mojo re-exports
 # `parametric_fn` from test_nested_package/module.mojo. The stack flows
@@ -24,8 +28,10 @@ def main():
     _ = parametric_fn()
 
 # CHECK: error: invalid call to 'parametric_fn': failed to infer parameter 'n'
-# CHECK: Included from {{.*}}import_included_from.mojo
-# CHECK-NEXT: Included from {{.*}}test_package{{.*}}module.mojo:{{[0-9]+}}:
+# MLIRDIAG: Included from {{.*}}import_included_from.mojo
+# MLIRDIAG-NEXT: Included from {{.*}}test_package{{.*}}module.mojo:{{[0-9]+}}:
+# MOJODIAG: Imported from {{.*}}import_included_from.mojo
+# MOJODIAG-NEXT: Imported from {{.*}}test_package{{.*}}module.mojo:{{[0-9]+}}:
 # CHECK-NEXT: test_nested_package{{.*}}module.mojo:{{[0-9]+}}:{{[0-9]+}}: note: function declared here
 
 # // -----
@@ -39,8 +45,10 @@ def main():
     _ = parametric_fn()
 
 # CHECK: error: invalid call to 'parametric_fn': failed to infer parameter 'n'
-# CHECK: Included from {{.*}}import_included_from.mojo
-# CHECK-NEXT: Included from {{.*}}test_nested_package{{.*}}__init__.mojo:{{[0-9]+}}:
+# MLIRDIAG: Included from {{.*}}import_included_from.mojo
+# MLIRDIAG-NEXT: Included from {{.*}}test_nested_package{{.*}}__init__.mojo:{{[0-9]+}}:
+# MOJODIAG: Imported from {{.*}}import_included_from.mojo
+# MOJODIAG-NEXT: Imported from {{.*}}test_nested_package{{.*}}__init__.mojo:{{[0-9]+}}:
 # CHECK-NEXT: test_nested_package{{.*}}module.mojo:{{[0-9]+}}:{{[0-9]+}}: note: function declared here
 
 # // -----
@@ -56,7 +64,10 @@ def main():
     _ = needs_param()
 
 # CHECK: error: invalid call to 'needs_param': failed to infer parameter 'n'
-# CHECK: Included from {{.*}}import_included_from.mojo
-# CHECK-NEXT: Included from {{.*}}star_reexport_package{{.*}}__init__.mojo:{{[0-9]+}}:
-# CHECK-NEXT: Included from {{.*}}star_reexport_package{{.*}}subpkg{{.*}}__init__.mojo:{{[0-9]+}}:
+# MLIRDIAG: Included from {{.*}}import_included_from.mojo
+# MLIRDIAG-NEXT: Included from {{.*}}star_reexport_package{{.*}}__init__.mojo:{{[0-9]+}}:
+# MLIRDIAG-NEXT: Included from {{.*}}star_reexport_package{{.*}}subpkg{{.*}}__init__.mojo:{{[0-9]+}}:
+# MOJODIAG: Imported from {{.*}}import_included_from.mojo
+# MOJODIAG-NEXT: Imported from {{.*}}star_reexport_package{{.*}}__init__.mojo:{{[0-9]+}}:
+# MOJODIAG-NEXT: Imported from {{.*}}star_reexport_package{{.*}}subpkg{{.*}}__init__.mojo:{{[0-9]+}}:
 # CHECK-NEXT: star_reexport_package{{.*}}subpkg{{.*}}leaf.mojo:{{[0-9]+}}:{{[0-9]+}}: note: function declared here

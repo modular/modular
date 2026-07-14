@@ -345,13 +345,6 @@ ErrorOrSuccess AutoFixItHandler::exportFixIts() {
 // Diags implementation
 //===----------------------------------------------------------------------===//
 
-/// Diag Handler that expects a `Diags` object via `context`, and invokes the
-/// `prefixStrippingDiagHandler` on the `Diags` object.
-static void prefixStrippingDiagHandler(const llvm::SMDiagnostic &diagnostic,
-                                       void *context) {
-  ((Diags *)context)->diagHandler(diagnostic);
-}
-
 Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
              bool useMLIRDiagnostics, int maxNotesPerDiagnostic,
              StringRef stripFilenamePrefix, bool disableWarnings,
@@ -363,20 +356,9 @@ Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
       useMLIRDiagnostics(useMLIRDiagnostics),
       autoFixItHandler(autoFixItHandler),
       maxNotesPerDiagnostic(maxNotesPerDiagnostic),
-      disableWarnings(disableWarnings), warningsAsErrors(warningsAsErrors) {
-  // Install a prefix-stripping diag handler if necessary.
-  if (!stripFilenamePrefix.empty()) {
-    prevDiagHandler = sourceMgr.getDiagHandler();
-    prevDiagContext = sourceMgr.getDiagContext();
-    sourceMgr.setDiagHandler(::prefixStrippingDiagHandler, this);
-  }
-}
+      disableWarnings(disableWarnings), warningsAsErrors(warningsAsErrors) {}
 
-Diags::~Diags() {
-  // Remove the prefix-stripping diag handler if previously installed.
-  if (!sourceMgrMapper->getStripFilenamePrefix().empty())
-    sourceMgr.setDiagHandler(prevDiagHandler, prevDiagContext);
-}
+Diags::~Diags() {}
 
 /// Return the identifier for the main buffer in the SourceMgr.
 StringAttr Diags::getBufferNameIdentifier() const {
@@ -441,51 +423,51 @@ llvm::SMRange Diags::convertToSMRange(SourceRange range) const {
   return byteLevelRange;
 }
 
-void Diags::printIncludeStack(SMLoc includeLoc, raw_ostream &OS) const {
+void Diags::printImportStack(SMLoc includeLoc, raw_ostream &OS) const {
   if (includeLoc == SMLoc())
     return; // Top of stack.
 
   unsigned bufferID = sourceMgr.FindBufferContainingLoc(includeLoc);
   assert(bufferID && "Invalid or unspecified location!");
-  printIncludeStack(sourceMgr.getBufferInfo(bufferID).IncludeLoc, OS);
+  printImportStack(sourceMgr.getBufferInfo(bufferID).IncludeLoc, OS);
 
   StringAttr bufferName =
       sourceMgrMapper->getFilenameFromBufferId(sourceMgr, bufferID);
+  std::string canonicalBufferName = getCanonicalFilename(bufferName.str());
   auto lineAndColumn = sourceMgr.getLineAndColumn(includeLoc, bufferID);
-  OS << "Included from " << bufferName << ":" << lineAndColumn.first << ":\n";
+  OS << "Imported from " << canonicalBufferName << ":" << lineAndColumn.first
+     << ":\n";
 }
 
 void Diags::emitDiagnostic(const llvm::SMDiagnostic &diag) const {
-  if (prevDiagHandler) {
-    prevDiagHandler(diag, prevDiagContext);
+  auto canonicalDiag = diag;
+
+  StringRef origFilename = diag.getFilename();
+  // Canonicalize the filename of the diag before printing. This strips any
+  // file prefixes we've been asked to.
+  if (!origFilename.empty() && origFilename != "-" &&
+      origFilename != sourceMgrMapper->kUnnamedFileSigil) {
+    std::string filename = getCanonicalFilename(origFilename);
+    canonicalDiag = llvm::SMDiagnostic(
+        *diag.getSourceMgr(), diag.getLoc(), filename, diag.getLineNo(),
+        diag.getColumnNo(), diag.getKind(), diag.getMessage(),
+        diag.getLineContents(), diag.getRanges(), diag.getFixIts());
+  }
+
+  if (auto diagHandler = sourceMgr.getDiagHandler()) {
+    diagHandler(canonicalDiag, sourceMgr.getDiagContext());
     return;
   }
 
-  if (diag.getLoc().isValid()) {
-    SMLoc loc = diag.getLoc();
+  if (canonicalDiag.getLoc().isValid()) {
+    SMLoc loc = canonicalDiag.getLoc();
     unsigned bufferID = sourceMgr.FindBufferContainingLoc(loc);
     assert(bufferID && "Invalid or unspecified location!");
-    printIncludeStack(sourceMgr.getBufferInfo(bufferID).IncludeLoc,
-                      llvm::errs());
+    printImportStack(sourceMgr.getBufferInfo(bufferID).IncludeLoc,
+                     llvm::errs());
   }
 
-  diag.print(nullptr, llvm::errs());
-}
-
-void Diags::diagHandler(const llvm::SMDiagnostic &diag) {
-  StringRef origFilename = diag.getFilename();
-  if (origFilename.empty() || origFilename == "-" ||
-      origFilename == sourceMgrMapper->kUnnamedFileSigil) {
-    emitDiagnostic(diag);
-    return;
-  }
-
-  std::string filename = getCanonicalFilename(origFilename);
-  llvm::SMDiagnostic newDiag(
-      *diag.getSourceMgr(), diag.getLoc(), filename, diag.getLineNo(),
-      diag.getColumnNo(), diag.getKind(), diag.getMessage(),
-      diag.getLineContents(), diag.getRanges(), diag.getFixIts());
-  emitDiagnostic(newDiag);
+  canonicalDiag.print(nullptr, llvm::errs());
 }
 
 //===----------------------------------------------------------------------===//
@@ -672,8 +654,6 @@ llvm::SMDiagnostic InflightDiag::getAsSMDiagnostic(
 
 /// Print the diagnostic + each note through SourceMgr.
 void InflightDiag::emitSourceMgrDiagnostic() {
-  auto &sourceMgr = diags->sourceMgr;
-
   int nMessagesPrinted = 0;
   // The first diagnostic in the sequence is a warning or an error.
   SourceMgr::DiagKind kind =
@@ -689,7 +669,7 @@ void InflightDiag::emitSourceMgrDiagnostic() {
     llvm::SMDiagnostic diag = getAsSMDiagnostic(message, text.str(), kind,
                                                 message.customLineContents);
 
-    sourceMgr.PrintMessage(llvm::errs(), diag);
+    diags->emitDiagnostic(diag);
 
     if (nMessagesPrinted > diags->maxNotesPerDiagnostic)
       break;
