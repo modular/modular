@@ -194,6 +194,8 @@ static void addConformanceTable(
   SmallVector<SymbolRefAttr> symbols;
   llvm::append_range(symbols, oldTraitType.getSymbols());
   symbols.push_back(symbol);
+  canonicalizeTraitCompositionSymbols(structDecl.getShared(), symbols);
+
   TraitType traitType = TraitType::get(ctx, symbols);
   structDeclOp.setCanonicalTrait(traitType);
 }
@@ -504,6 +506,7 @@ getTraitType(SmallVector<ClosureEmitter::ClosureParent> &closureParents,
                                    [&](ClosureEmitter::ClosureParent &parent) {
                                      return parent.getSymbolRef(moduleDecl);
                                    }));
+  canonicalizeTraitCompositionSymbols(moduleDecl.getShared(), symbols);
   return TraitType::get(moduleDecl.getContext(), symbols);
 }
 
@@ -2278,6 +2281,8 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       appendParent(trivialRegisterTypeParent);
     else if (convention == TypeConvention::RegisterPassable)
       appendParent(registerPassableParent);
+
+    canonicalizeTraitCompositionSymbols(shared, symbols);
     structOp.setCanonicalTrait(TraitType::get(ctx, symbols));
   }
   OpBuilder structBuilder(structOp.getRegion());
@@ -3898,12 +3903,14 @@ TraitType ClosureEmitter::getWrapperTraitType(ASTDecl &traitDecl,
   } else if (typeConvention == TypeConvention::RegisterPassable) {
     symbols.push_back(registerPassableParent.getSymbolRef(moduleDecl));
   }
+  canonicalizeTraitCompositionSymbols(shared, symbols);
   return TraitType::get(moduleDecl.getContext(), symbols);
 }
 
 void ClosureEmitter::enumerateWrapperTraits(SmallVectorImpl<char> &out,
                                             TraitType wrapperTraitType,
                                             ASTDecl &moduleDecl) {
+  StringRef traitName(out.data(), out.size());
   if (!parentOrdinals) {
     parentOrdinals.emplace();
     (*parentOrdinals)[moveParent.getSymbolRef(moduleDecl)] = 0;
@@ -3919,11 +3926,17 @@ void ClosureEmitter::enumerateWrapperTraits(SmallVectorImpl<char> &out,
       (*parentOrdinals)[devicePassableTrait->getSymbolRef()] = 5;
   }
   llvm::raw_svector_ostream os(out);
-  for (SymbolRefAttr symbol : wrapperTraitType.getSymbols().drop_front()) {
+  SmallVector<SymbolRefAttr> reducedSymbols =
+      reduceTraitCompositionSymbols(shared, wrapperTraitType.getSymbols());
+  for (SymbolRefAttr symbol : reducedSymbols) {
     auto it = parentOrdinals->find(symbol);
-    assert(it != parentOrdinals->end() &&
+    if (it != parentOrdinals->end()) {
+      os << "_" << it->second;
+      continue;
+    }
+    // Else this gotta be the base trait for closure.
+    assert(traitName == symbol.getLeafReference().strref() &&
            "wrapper trait symbol missing from parent ordinals");
-    os << "_" << it->second;
   }
 }
 

@@ -1473,8 +1473,9 @@ TraitType SharedState::lookupBuiltinTraitType(StringRef traitName, SMLoc loc) {
   ASTDecl *traitDecl = lookupBuiltinTrait(traitName, loc);
   if (!traitDecl || !isa_and_nonnull<TraitDeclOp>(traitDecl->getIfOperation()))
     return {};
-
-  return cast<TraitDeclOp>(traitDecl->getIfOperation()).bindReference();
+  if (failed(declResolver->resolveSignature(*traitDecl, loc)))
+    return {};
+  return cast<TraitDeclOp>(traitDecl->getIfOperation()).getCanonicalTrait();
 }
 
 ASTDecl *SharedState::lookupNamedTypeDecl(StringRef name, ASTDecl &context,

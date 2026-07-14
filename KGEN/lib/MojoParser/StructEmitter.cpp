@@ -430,9 +430,14 @@ LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
   assert(traitDefaultMethodDecl &&
          "Could not find trait default method implementation");
 
-  auto parentTraitRef = traitDefaultMethodDecl->getParentDecl()->getSymbolRef();
+  ASTDecl *parentTraitDecl = traitDefaultMethodDecl->getParentDecl();
+  [[maybe_unused]] LogicalResult result =
+      fnDecl.getShared().getDeclResolver().resolveSignature(*parentTraitDecl,
+                                                            fnDecl.getLoc());
+  assert(result.succeeded() && "failed to resolve signature");
 
-  TraitType parentTrait = TraitType::get(parentTraitRef);
+  TraitType parentTrait =
+      cast<TraitDeclOp>(parentTraitDecl->getIfOperation()).getCanonicalTrait();
   SyntheticNode synthNode(structDecl.getLoc());
   CValue selfTypeCValue(structSelfType.mlirType);
   PValue selfAsTrait = emitter.emitMetaTypeToTraitConversion(
@@ -814,7 +819,7 @@ static Value rebindRefForTrait(Value fieldRef, Type fieldMLIRType,
          "rebindRefForTrait requires a parameterized field type");
   auto paramType = cast<ParamType>(fieldMLIRType);
   TypedAttr downcast =
-      DowncastAttr::get(traitOp.bindReference(), paramType.getParam());
+      DowncastAttr::get(traitOp.getCanonicalTrait(), paramType.getParam());
   Type reboundElementType = ParamType::get(downcast);
   RefType fieldRefType = cast<RefType>(fieldRef.getType());
   return RebindOp::create(b, fieldRefType.getWithElement(reboundElementType),

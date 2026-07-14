@@ -893,13 +893,8 @@ diagnoseUnknownDeclaration(StringRef spelling, ASTDecl &lookupScope,
 static SmallVector<SymbolRefAttr>
 mergeOriginalAndRefinedBounds(TraitType origBound, TraitType refinedBound,
                               SharedState &shared) {
-  // Canonicalize the original bounds so they include the full ancestor chain
-  // (e.g. a DowncastAttr holding `:trait<@Greetable>` omits the implied
-  // `@AnyType`). Without this the "no new traits" check below falsely fires,
-  // because `refinedBound` arrives already canonicalized from
-  // `getTraitBoundFromAssumptions`.
+
   SmallVector<SymbolRefAttr> traitSymbols(origBound.getSymbols());
-  canonicalizeTraitCompositionSymbols(shared, traitSymbols);
   size_t origCount = traitSymbols.size();
 
   // Append refined symbols and fix up the ordering. Both sides are already
@@ -2406,7 +2401,7 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     if (typeDecl != traitDecl) {
       basePValue = emitter.emitMetaTypeToTraitConversion(
           {basePValue, base},
-          cast<TraitDeclOp>(traitDecl->getIfOperation()).bindReference());
+          cast<TraitDeclOp>(traitDecl->getIfOperation()).getCanonicalTrait());
     }
 
     // In the case that aliasDeclOpParam is a dependent associated type alias,

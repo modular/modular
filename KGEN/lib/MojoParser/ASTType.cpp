@@ -965,7 +965,10 @@ std::pair<TriState, ASTDecl *> ASTType::conformsToBuiltinTrait(
   if (!trait)
     return {TriState::no(), {}};
 
-  return {doesConformTo(trait.bindReference(), shared, callerAssumptions),
+  // Micro optimization to avoid creating a canonical trait type for for
+  // checking conformance, we only care the root symbol.
+  return {doesConformTo(TraitType::get(getFullyResolvedSymbolRef(trait)),
+                        shared, callerAssumptions),
           traitDecl};
 }
 

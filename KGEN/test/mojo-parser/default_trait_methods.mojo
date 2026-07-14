@@ -127,14 +127,14 @@ struct ParamTestStruct[T1: Int, x1: Bool](ParamInputTrait):
     # CHECK-SAME: <T: !Barable_AnyType>
     # CHECK-SAME: %item: !lit.ref<:!Barable_AnyType T,
     # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"process_parameterized
-    # CHECK-SAME: <:!ParamInputTrait @default_trait_methods::@ParamTestStruct<:!Int T1, :!Bool x1>, :!Barable_AnyType T>
+    # CHECK-SAME: <:!ParamInputTrait_AnyType @default_trait_methods::@ParamTestStruct<:!Int T1, :!Bool x1>, :!Barable_AnyType T>
 
     # CHECK: lit.fn @"return_parameterized
     # CHECK-SAME: <x: !Int, y: !Int>
     # CHECK-SAME: %self: !lit.ref<!lit.struct<#ParamTestStruct <:!Int T1, :!Bool x1>>,
     # CHECK-SAME: -> !lit.struct<#ParamRPType <:!Int x, :!Int y>>
     # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"return_parameterized
-    # CHECK-SAME: <:!ParamInputTrait @default_trait_methods::@ParamTestStruct<:!Int T1, :!Bool x1>, :!Int x, :!Int y>
+    # CHECK-SAME: <:!ParamInputTrait_AnyType @default_trait_methods::@ParamTestStruct<:!Int T1, :!Bool x1>, :!Int x, :!Int y>
 
     # CHECK: kgen.conformance{{.*}}:ParamInputTrait
     # CHECK-DAG: kgen.witness "process_parameterized{{.*}}"

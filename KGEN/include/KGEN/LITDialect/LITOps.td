@@ -774,8 +774,6 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     /// Trait declarations only have input parameters.
     ArrayRef<ParamDeclAttr> getInputParams() { return getParams(); }
 
-    /// Get a bound reference to the Trait type.
-    TraitType bindReference();
     bool isRegisterPassable() {
       TypeConvention c = getConvention();
       return c == TypeConvention::RegisterPassableTrivial ||

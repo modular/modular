@@ -11,6 +11,7 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/DocString.h"
+#include "KGEN/lib/MojoParser/Traits.h"
 #include "llvm/ADT/StringExtras.h"
 
 using namespace M;
@@ -321,6 +322,15 @@ PValue ASTDecl::getFuncAsPValue() const {
 /// be needed, making it unique for every declaration.  This returns null for
 /// named values that do not have a declaration.
 SymbolRefAttr ASTDecl::getSymbolRef() const {
+  if (auto traitType = dyn_cast_if_present<TraitType>(getIfTypeValue())) {
+    auto reducedSymbols =
+        LIT::reduceTraitCompositionSymbols(getShared(), traitType.getSymbols());
+    // If this is a single trait, return it.
+    if (reducedSymbols.size() == 1)
+      return reducedSymbols[0];
+    return {};
+  }
+
   auto op = dyn_cast_if_present<mlir::SymbolOpInterface>(getIfOperation());
   if (!op)
     return {};

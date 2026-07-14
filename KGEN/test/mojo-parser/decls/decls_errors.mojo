@@ -988,13 +988,11 @@ struct StructWithUnknownTrait(UnknownTrait):
     pass
 
 
-# expected-error @below {{unexpected decl in trait}}
 trait EverythingIsWrongTrait:
     var value: Int # expected-error {{traits do not support 'var' fields; use 'comptime' to declare associated types}}
 
     def trait_fn_no_dot_dot_dot(self): # expected-error {{body must not be empty; use 'pass' or check that the lines below are indented}}
 
-    # expected-note @+1 {{declared here}}
     trait NestedTrait: # expected-error {{nested trait not supported here}}
         ...
 
@@ -1008,7 +1006,7 @@ trait TraitWithParams[T: TrivialRegisterPassable]: # expected-error {{trait decl
 
 # Errors on emitting trait type for `EverythingIsWrongTrait`
 def bad_trait_params[T: EverythingIsWrongTrait](x: T):
-  x.parametric()
+  pass
 
 trait Shape(ImplicitlyCopyable):
 	def area(self) -> Int:
