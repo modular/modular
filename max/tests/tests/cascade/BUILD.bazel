@@ -79,6 +79,7 @@ modular_py_test(
         "//max/python/max/experimental/cascade/http_runtime",
         "//max/python/max/experimental/cascade/pipelines",
         "//max/python/max/serve:process_control",
+        requirement("pydantic"),
         requirement("pytest-asyncio"),
     ],
 )

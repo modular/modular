@@ -22,16 +22,30 @@ See cascade_runtime_v1.proto for reference.
 
 from __future__ import annotations
 
-import importlib
 import json
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, cast
+from typing import Any, TypeAlias, Union, cast
 
 import numpy as np
 from max.experimental.cascade.core import Result, ResultIter, Runtime
-from pydantic import BaseModel
+from max.experimental.cascade.core.type_hints import async_elem_type
+from pydantic import BaseModel, TypeAdapter
 
 from . import cascade_runtime_v1_pb2 as pb
+
+# A decoded, hint-free wire value. BaseModels arrive as dicts; Result rebuilds
+# them later once a type is known.
+CascadeValue: TypeAlias = Union[
+    "np.ndarray",
+    bytes,
+    str,
+    float,
+    bool,
+    int,
+    None,
+    dict[str, "CascadeValue"],
+    list["CascadeValue"],
+]
 
 # ---------------------------------------------------------------------------
 # ValueSlot encode / decode
@@ -96,7 +110,9 @@ def is_remote_ref(slot: pb.ValueSlot) -> bool:
 
 
 async def decode_value_slot(
-    slot: pb.ValueSlot, dial: Callable[[str], Runtime]
+    slot: pb.ValueSlot,
+    dial: Callable[[str], Runtime],
+    type_hint: object | None = None,
 ) -> Any:
     """Decode one ValueSlot back into a Python value.
 
@@ -104,21 +120,31 @@ async def decode_value_slot(
     that owns the referenced result, which may be a *different* server than the
     one we received the slot from. ``dial`` resolves that target by returning a
     lazy runtime client to that worker.
+
+    ``json_string`` slots are validated against ``type_hint`` when one is
+    provided, rebuilding ``pydantic.BaseModel`` payloads, containers like
+    ``list[Model]``, etc)
+
+    Without a hint they decode as generic JSON.
     """
     kind = slot.WhichOneof("kind")
     if kind == "json_string":
-        return json.loads(slot.json_string, object_hook=_object_hook)
+        if type_hint is None:
+            return json.loads(slot.json_string)
+        return TypeAdapter(type_hint).validate_json(slot.json_string)
     if kind == "ndarray":
         return _decode_ndarray(slot.ndarray)
     if kind == "result_ref":
         return Result(
             runtime=dial(slot.result_ref.target),
             result_id=slot.result_ref.result_id,
+            type_hint=type_hint,
         )
     if kind == "stream_ref":
         return ResultIter(
             runtime=dial(slot.stream_ref.target),
             result_id=slot.stream_ref.result_id,
+            type_hint=async_elem_type(type_hint),
         )
     if kind == "bytes_value":
         return bytes(slot.bytes_value)
@@ -136,10 +162,28 @@ def encode_args(args: Sequence[Any]) -> list[pb.ValueSlot]:
 
 
 async def decode_args(
-    args: Sequence[pb.ValueSlot], dial: Callable[[str], Runtime]
+    args: Sequence[pb.ValueSlot],
+    dial: Callable[[str], Runtime],
+    arg_types: dict[str, object | None],
 ) -> list[Any]:
-    """Decode a list of ValueSlots back into positional arguments."""
-    return [await decode_value_slot(value, dial) for value in args]
+    """Decode a list of ValueSlots back into positional arguments.
+
+    Positional args always bind to the first ``len(args)`` declared
+    parameters in order; the rest arrive via kwargs or defaults, so
+    ``arg_types`` (all declared params, declaration-ordered) may be longer.
+    """
+    if len(args) > len(arg_types):
+        raise ValueError(
+            f"Got {len(args)} positional args but the method declares only"
+            f" {len(arg_types)} parameters"
+        )
+
+    return [
+        await decode_value_slot(value, dial, type_hint)
+        for value, type_hint in zip(
+            args, list(arg_types.values())[: len(args)], strict=True
+        )
+    ]
 
 
 def encode_kwargs(kwargs: Mapping[str, Any]) -> dict[str, pb.ValueSlot]:
@@ -148,12 +192,19 @@ def encode_kwargs(kwargs: Mapping[str, Any]) -> dict[str, pb.ValueSlot]:
 
 
 async def decode_kwargs(
-    kwargs: Mapping[str, pb.ValueSlot], dial: Callable[[str], Runtime]
+    kwargs: Mapping[str, pb.ValueSlot],
+    dial: Callable[[str], Runtime],
+    kwarg_types: dict[str, object | None],
 ) -> dict[str, Any]:
     """Decode a name -> ValueSlot mapping back into keyword arguments."""
+    for kwarg in kwargs:
+        if kwarg not in kwarg_types:
+            raise ValueError(
+                f"Got unexpected kwarg {kwarg!r} not declared by the method"
+            )
     return {
-        key: await decode_value_slot(value, dial)
-        for key, value in kwargs.items()
+        kwarg: await decode_value_slot(value, dial, kwarg_types[kwarg])
+        for kwarg, value in kwargs.items()
     }
 
 
@@ -206,57 +257,10 @@ def _decode_ndarray(value: pb.NDArray) -> np.ndarray:
     )
 
 
-# Reserved key used to tag JSON-encoded pydantic models so the decoder can
-# rebuild the original class. Non-Python clients can ignore it (treating the
-# rest of the dict as the model's structured payload) or strip it.
-_PYCLASS_KEY = "__pyclass__"
-
-
 def _json_default(value: Any) -> Any:
-    """``json.dumps`` fallback hook for types stdlib JSON doesn't know.
-
-    Pydantic models are tagged with ``__pyclass__`` so :py:func:`_object_hook`
-    can rebuild the exact class on decode. ``json.dumps`` recurses into the
-    returned dict, so nested models, lists of models, etc. are handled
-    automatically without us walking the tree by hand.
-    """
+    """``json.dumps`` fallback hook for types stdlib JSON doesn't know."""
     if isinstance(value, BaseModel):
-        cls = type(value)
-        return {
-            _PYCLASS_KEY: f"{cls.__module__}:{cls.__qualname__}",
-            **value.model_dump(mode="json"),
-        }
+        return value.model_dump(mode="json")
     raise TypeError(
         f"Object of type {type(value).__name__} is not JSON serializable"
     )
-
-
-def _object_hook(obj: dict[str, Any]) -> Any:
-    """``json.loads`` hook that rebuilds ``__pyclass__``-tagged dicts.
-
-    Called bottom-up by ``json.loads``, so nested models are already
-    rebuilt by the time their parent is processed.
-    """
-    spec = obj.pop(_PYCLASS_KEY, None)
-    if spec is None:
-        return obj
-    return _import_pyclass(spec).model_validate(obj)
-
-
-def _import_pyclass(spec: str) -> type[BaseModel]:
-    """Import a ``module:qualname`` reference and validate it's a BaseModel.
-
-    Using ``:`` as the separator (rather than a final ``.``) keeps nested
-    classes (``Outer.Inner``) unambiguous. The :py:class:`BaseModel`
-    subclass guard is the security boundary: without it the tag would let
-    a sender pick any importable callable to invoke during decode.
-    """
-    module_name, _, attr_path = spec.partition(":")
-    obj: Any = importlib.import_module(module_name)
-    for attr in attr_path.split("."):
-        obj = getattr(obj, attr)
-    if not (isinstance(obj, type) and issubclass(obj, BaseModel)):
-        raise TypeError(
-            f"{_PYCLASS_KEY} {spec!r} does not resolve to a BaseModel subclass"
-        )
-    return obj

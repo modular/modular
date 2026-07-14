@@ -39,6 +39,7 @@ import pytest
 from max.experimental.cascade import (
     GenerateRequest,
     LocalRuntime,
+    Result,
     Runtime,
     Worker,
     worker_method,
@@ -59,6 +60,7 @@ from max.experimental.cascade.pipelines.dummy_textgen import (
     build_dummy_textgen_pipeline,
 )
 from max.serve.process_control import subprocess_manager
+from pydantic import BaseModel
 
 # Each entry is a zero-arg factory whose ``async with`` yields a connected
 # :py:class:`Runtime`. Parameterizing the fixture by factory (rather than by
@@ -83,6 +85,12 @@ async def runtime(
         yield rt
 
 
+class Person(BaseModel):
+    name: str
+    age: int
+    is_lefthanded: bool
+
+
 class _Echo(Worker):
     """Minimal worker covering scalar and streaming worker methods."""
 
@@ -94,6 +102,28 @@ class _Echo(Worker):
     async def count(self, n: int) -> AsyncIterator[int]:
         for i in range(n):
             yield i
+
+    @worker_method()
+    async def hello(self, person: Person) -> str:
+        return "Hello " + person.name + ", how are you?"
+
+    @worker_method()
+    async def add_person(
+        self, name: str, age: int, is_lefthanded: bool
+    ) -> Person:
+        return Person(name=name, age=age, is_lefthanded=is_lefthanded)
+
+    @worker_method()
+    async def greet(self, name: str, excited: bool = False) -> str:
+        return f"Hi {name}" + ("!" if excited else ".")
+
+    @worker_method()
+    async def total(self, nums: list[int]) -> int:
+        return sum(nums)
+
+    @worker_method()
+    async def hello_all(self, people: list[Person]) -> str:
+        return "Hello " + ", ".join(p.name for p in people) + "!"
 
 
 class _Failing(Worker):
@@ -107,7 +137,7 @@ class _Failing(Worker):
     async def exit_hard(self) -> str:
         # Ensure exit happens after server is setup, instead of
         # racing between server shutdown and `sys.exit(1)`.
-        await asyncio.sleep(3)
+        await asyncio.sleep(1)
         sys.exit(1)
 
     @worker_method()
@@ -133,6 +163,88 @@ async def test_scalar_call(runtime: Runtime) -> None:
 
         add_handle = await echo.add(10, -4)
         assert await add_handle == 6
+
+
+@pytest.mark.asyncio
+async def test_basemodel_type_inference_result(runtime: Runtime) -> None:
+    """Test that `pydantic.BaseModel`s get type inferred and decoded properly
+
+    We should not have to explicitly specify which class an argument gets decoded into.
+    """
+    async with _pipeline_method_scope():
+        echo = await runtime.deploy(_Echo())
+        person_handle = await echo.add_person("Lebron", 41, False)
+        greeting_handle = await echo.hello(person_handle)
+        assert await greeting_handle == "Hello Lebron, how are you?"
+
+
+@pytest.mark.asyncio
+async def test_kwargs_type_inference(runtime: Runtime) -> None:
+    """Kwargs decode by name while positional args bind to the leading params.
+
+    Proxy methods are statically positional-only, so exercise the kwargs
+    wire path through ``call_method`` directly.
+    """
+    worker_id = await runtime.deploy_worker(_Echo())
+    # All-kwargs call.
+    async with runtime.call_method(
+        worker_id, "add", (), {"a": 2, "b": 3}
+    ) as result_id:
+        assert await runtime.get_result(result_id) == 5
+    # Mixed positional + kwargs call.
+    async with runtime.call_method(
+        worker_id, "add", (2,), {"b": 4}
+    ) as result_id:
+        assert await runtime.get_result(result_id) == 6
+
+
+@pytest.mark.asyncio
+async def test_kwargs_basemodel_type_inference(runtime: Runtime) -> None:
+    """A result forwarded as a kwarg decodes into its `pydantic.BaseModel`."""
+    worker_id = await runtime.deploy_worker(_Echo())
+    async with runtime.call_method(
+        worker_id, "add_person", ("Lebron", 41, False), {}
+    ) as person_id:
+        person_handle: Result[Person] = Result(person_id, runtime)
+        async with runtime.call_method(
+            worker_id, "hello", (), {"person": person_handle}
+        ) as result_id:
+            assert (
+                await runtime.get_result(result_id)
+                == "Hello Lebron, how are you?"
+            )
+
+
+@pytest.mark.asyncio
+async def test_basemodel_list_type_inference(runtime: Runtime) -> None:
+    """Test a container of pydantic.BaseModels"""
+    async with _pipeline_method_scope():
+        echo = await runtime.deploy(_Echo())
+        people = [
+            Person(name="Lebron", age=41, is_lefthanded=False),
+            Person(name="Max", age=3, is_lefthanded=True),
+        ]
+        greeting_handle = await echo.hello_all(people)
+        assert await greeting_handle == "Hello Lebron, Max!"
+
+
+@pytest.mark.asyncio
+async def test_container_type_inference(runtime: Runtime) -> None:
+    """A non-``BaseModel`` hint (``list[int]``) decodes through the same
+    hinted path as models, not the generic-JSON fallback."""
+    async with _pipeline_method_scope():
+        echo = await runtime.deploy(_Echo())
+        total_handle = await echo.total([1, 2, 3])
+        assert await total_handle == 6
+
+
+@pytest.mark.asyncio
+async def test_default_arg_omitted(runtime: Runtime) -> None:
+    """A call omitting a defaulted param still works."""
+    async with _pipeline_method_scope():
+        echo = await runtime.deploy(_Echo())
+        greeting_handle = await echo.greet("Max")
+        assert await greeting_handle == "Hi Max."
 
 
 @pytest.mark.asyncio
@@ -309,17 +421,25 @@ async def test_worker_exception(runtime: Runtime) -> None:
 async def test_worker_sys_exit(runtime_cls: type) -> None:
     """A subprocess worker that calls ``sys.exit(1)`` surfaces an error.
 
-    Only tested against subprocess runtimes because ``sys.exit`` in-process
-    raises :py:class:`SystemExit` (a :py:class:`BaseException`) which tears
-    through the local task group destructively. In a subprocess runtime the
-    child dies and the transport layer reports the failure as a normal
-    exception.
+    The error surfaces either on the client's ``await handle`` or as
+    ``SubprocessExit`` from ``subprocess_manager``, since both are notified
+    when the child process dies.
+
+    The client is notified since the runtime drops the (gRPC) connection, and
+    the ``subprocess_manager`` is notified since it watches the child's
+    process' termination.
+
+    So wrap the entire pipeline with `pytest.raises`, and check for a successful
+    deploy so a deployment failure stays a real error.
     """
-    async with runtime_cls() as rt, _pipeline_method_scope():
-        worker = await rt.deploy(_Failing())
-        with pytest.raises(Exception):
+    deployed = False
+    with pytest.raises(Exception):
+        async with runtime_cls() as rt, _pipeline_method_scope():
+            worker = await rt.deploy(_Failing())
+            deployed = True
             handle = await worker.exit_hard()
             await handle
+    assert deployed, "worker deploy failed before exit_hard could run"
 
 
 @pytest.mark.asyncio

@@ -42,6 +42,10 @@ from typing import (
 
 from max.experimental.cascade.core.pipeline_method import _get_pipeline_context
 from max.experimental.cascade.core.result import Result, ResultIter
+from max.experimental.cascade.core.type_hints import (
+    return_type,
+    stream_elem_type,
+)
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -132,8 +136,6 @@ class Runtime(AsyncExitStack, ABC):
     def get_result(self, resid: str) -> Awaitable[object]:
         """Await a single result.
 
-        Returns the scalar value for non-streaming calls.
-
         Raises whatever exception the call raised.
         """
         ...
@@ -194,6 +196,7 @@ class Proxy(Generic[T]):
         """Build a wrapper for a coroutine worker method."""
         runtime = self.runtime
         worker_id = self.worker_id
+        ret_type = return_type(method)
 
         @functools.wraps(method)
         async def call(*args: P.args, **kwargs: P.kwargs) -> Result[R]:
@@ -201,7 +204,7 @@ class Proxy(Generic[T]):
             result_id = await context.enter_async_context(
                 runtime.call_method(worker_id, name, args, kwargs)
             )
-            return Result(result_id, runtime)
+            return Result(result_id, runtime, ret_type)
 
         return call
 
@@ -213,6 +216,7 @@ class Proxy(Generic[T]):
         """Build a wrapper for an async-generator worker method."""
         runtime = self.runtime
         worker_id = self.worker_id
+        elem_type = stream_elem_type(method)
 
         @functools.wraps(method)
         async def call_stream(
@@ -222,6 +226,6 @@ class Proxy(Generic[T]):
             result_id = await context.enter_async_context(
                 runtime.call_method(worker_id, name, args, kwargs)
             )
-            return ResultIter(result_id, runtime)
+            return ResultIter(result_id, runtime, elem_type)
 
         return call_stream

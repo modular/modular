@@ -183,7 +183,11 @@ class HttpRuntimeProxy(Runtime):
             # exiting this context deletes the remote result
 
     async def get_result(self, result_id: str) -> object:
-        """Fetch a single result via the proxy's session."""
+        """Fetch a single result via the proxy's session.
+
+        The HTTP transport pickles values, so they arrive as the native
+        Python object with no JSON decoding.
+        """
         async with (
             self.session() as session,
             session.get(f"{self._base_url}/result/{result_id}") as response,
@@ -196,7 +200,10 @@ class HttpRuntimeProxy(Runtime):
         raise value
 
     async def stream_result(self, result_id: str) -> AsyncIterator[object]:
-        """Stream a result via the proxy's session."""
+        """Stream a result via the proxy's session.
+
+        Pickled items arrive as native objects; no JSON decoding.
+        """
         async with (
             self.session() as session,
             session.get(

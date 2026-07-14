@@ -114,8 +114,11 @@ class CascadeRuntimeServicer(rpc.CascadeRuntimeServiceServicer):
         # If an arg is a forwarded Result, decoding dials the peer that owns it
         # (possibly a different server than this one); the value is fetched lazily
         # when the worker awaits the handle.
-        args = await decode_args(list(request.args), dial)
-        kwargs = await decode_kwargs(dict(request.kwargs), dial)
+        arg_types = await self._local.get_func_args_type(
+            request.worker_id, request.method
+        )
+        args = await decode_args(list(request.args), dial, arg_types)
+        kwargs = await decode_kwargs(dict(request.kwargs), dial, arg_types)
         async with self._local.call_method(
             request.worker_id,
             request.method,
