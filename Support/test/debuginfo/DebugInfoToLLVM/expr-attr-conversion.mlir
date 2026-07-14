@@ -53,6 +53,8 @@
             !debuginfo.member<second: !debuginfo.unresolved<i32>>
           )>
 // CHECK-DAG: #[[LOCALVAR_STRUCT:.*]] = #llvm.di_local_variable<{{.*}}name = "foostruct"{{.*}}type = #[[STRUCT_TYPE]]
+// CHECK-DAG: #[[ARRAY_TYPE:.*]] = #llvm.di_composite_type<tag = DW_TAG_array_type,{{.*}}sizeInBits = 64
+// CHECK-DAG: #[[LOCALVAR_ARRAY:.*]] = #llvm.di_local_variable<{{.*}}name = "fooarray"{{.*}}type = #[[ARRAY_TYPE]]
 #local_variable_struct = #debuginfo.local_variable<
   scope = #subprogram,
   name = "foostruct",
@@ -116,5 +118,29 @@ func.func @simplify() {
   // COM: There should be no more DI expr on the second field as it covers the entire struct.
   // CHECK: llvm.intr.dbg.value #[[LOCALVAR_STRUCT_ZSF:[^ ]+]] = {{.*}} : i32
   debuginfo.value #local_variable_struct_zsf #zsf_second = %v1 : i32
+  return
+}
+
+// An `expr.agg` over an *array* aggregate (uniform, tightly-packed elements),
+// which used to be handled only for structs.
+!array = !debuginfo.array<2 x !debuginfo.unresolved<i32>>
+#local_variable_array = #debuginfo.local_variable<
+  scope = #subprogram,
+  name = "fooarray",
+  file = #file,
+  line = 12,
+  arg = 0,
+  alignInBits = 32
+> : !array
+
+#array_agg = #debuginfo.expr.agg<#deref_expr, 1> : !array
+
+// CHECK-LABEL: @array_agg
+func.func @array_agg() {
+  %v = llvm.mlir.constant(2 : i32) : i32
+  %p = llvm.inttoptr %v : i32 to !llvm.ptr
+  // Element 1 of a 2-element i32 array: fragment offset 32, size 32.
+  // CHECK: llvm.intr.dbg.value #[[LOCALVAR_ARRAY]] #llvm.di_expression<[DW_OP_deref, DW_OP_LLVM_fragment(32, 32)]>
+  debuginfo.value #local_variable_array #array_agg = %p : !llvm.ptr
   return
 }
