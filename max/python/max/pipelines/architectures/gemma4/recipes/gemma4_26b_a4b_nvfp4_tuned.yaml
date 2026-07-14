@@ -12,9 +12,19 @@
 ##===----------------------------------------------------------------------===##
 model:
   model_path: nvidia/Gemma-4-26B-A4B-NVFP4
+  device_specs: [0]
   kv_cache:
     kv_cache_format: float8_e4m3fn
     kv_cache_page_size: 128
+    kv_connector: tiered
+
+draft_model:
+  model_path: google/gemma-4-26B-A4B-it-assistant
+  device_specs: [0]
+
+speculative:
+  speculative_method: mtp
+  num_speculative_tokens: 3
 
 runtime:
-  device_graph_capture: false
+  device_graph_capture: true

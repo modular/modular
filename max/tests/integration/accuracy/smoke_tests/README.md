@@ -13,7 +13,7 @@ path or a registered variant that maps to a recipe in `MODEL_RECIPES`
 ./bazelw run //:smoke-test -- meta-llama/Llama-3.2-1B-Instruct
 
 # A registered, recipe-backed variant, with fewer questions for a faster loop:
-./bazelw run //:smoke-test -- google/gemma-4-31B-it__tieredkv \
+./bazelw run //:smoke-test -- google/gemma-4-31B-it__tuned \
   --num-questions 100 --max-concurrent 8
 ```
 

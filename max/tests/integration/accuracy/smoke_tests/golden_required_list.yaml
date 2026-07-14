@@ -31,74 +31,45 @@
 
 required_for_golden:
 
-  # ── Gemma 4 31B (bfloat16) ───────────────────────────────────────────────────
-  # Single-card variants run on B200 + MI355 (MULTI exclusion). Required on B200.
-  # tp2 variant runs only on 2xB200 + 2xMI355. Required on 2xB200.
+  # ── Gemma 4 ──────────────────────────────────────────────────────────────────
+  # Base model + tuned recipe for each variant gate on B200. NVFP4 and the
+  # FP8-KV-cache recipes are MI355-excluded in the matrix, so all gate on B200.
+
+  # Gemma 4 31B (bfloat16)
   - model: google/gemma-4-31B-it
     gpu: B200
     reason: "Gemma 4 31B gates golden on B200"
 
-  - model: google/gemma-4-31B-it__fp8kv
+  - model: google/gemma-4-31B-it__tuned
     gpu: B200
-    reason: "Gemma 4 31B fp8kv gates golden on B200"
+    reason: "Gemma 4 31B tuned recipe gates golden on B200"
 
-  - model: google/gemma-4-31B-it__localkv
+  # Gemma 4 26B A4B (bfloat16)
+  - model: google/gemma-4-26B-A4B-it
     gpu: B200
-    reason: "Gemma 4 31B local-kv gates golden on B200"
+    reason: "Gemma 4 26B A4B gates golden on B200"
 
-  - model: google/gemma-4-31B-it__mtp
+  - model: google/gemma-4-26B-A4B-it__tuned
     gpu: B200
-    reason: "Gemma 4 31B MTP gates golden on B200"
+    reason: "Gemma 4 26B A4B tuned recipe gates golden on B200"
 
-  - model: google/gemma-4-31B-it__tieredkv
-    gpu: B200
-    reason: "Gemma 4 31B tiered-kv gates golden on B200"
-
-  - model: google/gemma-4-31B-it__tp2
-    gpu: 2xB200
-    reason: "Gemma 4 31B tp2 gates golden on 2xB200"
-
-  # ── Gemma 4 26B A4B (bfloat16) ───────────────────────────────────────────────
-  # Custom MAX-only variants. Base HF model excludes max framework; variants run.
-  - model: google/gemma-4-26B-A4B-it__no_dgc
-    gpu: B200
-    reason: "Gemma 4 26B no-dgc gates golden on B200"
-
-  - model: google/gemma-4-26B-A4B-it__localkv
-    gpu: B200
-    reason: "Gemma 4 26B local-kv gates golden on B200"
-
-  - model: google/gemma-4-26B-A4B-it__tieredkv
-    gpu: B200
-    reason: "Gemma 4 26B tiered-kv gates golden on B200"
-
-  # ── Gemma 4 31B NVFP4 ────────────────────────────────────────────────────────
-  # MI355 excluded in matrix; these only run on B200.
+  # Gemma 4 31B NVFP4
   - model: nvidia/Gemma-4-31B-IT-NVFP4
     gpu: B200
     reason: "Gemma 4 31B NVFP4 gates golden on B200"
 
-  - model: nvidia/Gemma-4-31B-IT-NVFP4__localkv
+  - model: nvidia/Gemma-4-31B-IT-NVFP4__tuned
     gpu: B200
-    reason: "Gemma 4 31B NVFP4 local-kv gates golden on B200"
+    reason: "Gemma 4 31B NVFP4 tuned recipe gates golden on B200"
 
-  - model: nvidia/Gemma-4-31B-IT-NVFP4__tieredkv
+  # Gemma 4 26B A4B NVFP4
+  - model: nvidia/Gemma-4-26B-A4B-NVFP4
     gpu: B200
-    reason: "Gemma 4 31B NVFP4 tiered-kv gates golden on B200"
+    reason: "Gemma 4 26B A4B NVFP4 gates golden on B200"
 
-  # ── Gemma 4 26B A4B NVFP4 ────────────────────────────────────────────────────
-  # MI355 excluded in matrix; these only run on B200.
-  - model: nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc
+  - model: nvidia/Gemma-4-26B-A4B-NVFP4__tuned
     gpu: B200
-    reason: "Gemma 4 26B A4B NVFP4 no-dgc gates golden on B200"
-
-  - model: nvidia/Gemma-4-26B-A4B-NVFP4__localkv
-    gpu: B200
-    reason: "Gemma 4 26B A4B NVFP4 local-kv gates golden on B200"
-
-  - model: nvidia/Gemma-4-26B-A4B-NVFP4__tieredkv
-    gpu: B200
-    reason: "Gemma 4 26B A4B NVFP4 tiered-kv gates golden on B200"
+    reason: "Gemma 4 26B A4B NVFP4 tuned recipe gates golden on B200"
 
   # ── Kimi K2.5 (8xB200 only in matrix) ───────────────────────────────────────
   # NON_XL | {"4xMI355"} → only runs on 8xB200.
