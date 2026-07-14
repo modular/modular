@@ -40,6 +40,11 @@ from max.support.algorithm import flatten2d
 if TYPE_CHECKING:
     from .model import Llama3Inputs
 
+#: Number of recent per-step token/offset staging buffer sets to keep alive so
+#: their asynchronous H2D copies finish before the buffers are freed. Only needs
+#: to exceed the overlap scheduler's in-flight depth; a small margin is kept.
+_STAGING_KEEPALIVE_DEPTH = 2
+
 
 class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
     """Ragged batching with pinned host buffers and optional DP / LoRA."""
@@ -50,9 +55,13 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
         runtime: BatchProcessorRuntime,
     ) -> None:
         super().__init__(config, runtime)
-        self._execution_input_buffers: dict[
-            tuple[int, int], tuple[Buffer, Buffer, Buffer, Buffer]
-        ] = {}
+        # Recently-allocated per-step token/offset staging buffers, retained
+        # until their asynchronous H2D copies have completed. Fresh buffers are
+        # allocated every step (never reused across steps): with the overlap
+        # scheduler the next step's host writes would otherwise clobber a
+        # pinned staging buffer whose H2D the current (still in-flight) step is
+        # reading. See ``_prepare_ep_moe_token_inputs`` for details.
+        self._staging_keepalive: list[tuple[Buffer, ...]] = []
 
     def get_symbolic_inputs(
         self,
@@ -86,46 +95,44 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
 
         batch_size = len(context_batch)
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
-        buffer_key = (batch_size, total_seq_len)
-        buffers = self._execution_input_buffers.get(buffer_key)
-        if buffers is None:
-            if pinned:
-                host_tokens: Buffer = DevicePinnedBuffer(
-                    dtype=DType.int64,
-                    shape=(total_seq_len,),
-                    device=device0,
-                )
-                host_row_offsets: Buffer = DevicePinnedBuffer(
-                    dtype=DType.uint32,
-                    shape=(batch_size + 1,),
-                    device=device0,
-                )
-            else:
-                host_tokens = Buffer(
-                    shape=(total_seq_len,),
-                    dtype=DType.int64,
-                    device=device0,
-                )
-                host_row_offsets = Buffer(
-                    shape=(batch_size + 1,),
-                    dtype=DType.uint32,
-                    device=device0,
-                )
-            device_tokens = host_tokens.to(device0)
-            device_row_offsets = host_row_offsets.to(device0)
-            buffers = (
-                host_tokens,
-                host_row_offsets,
-                device_tokens,
-                device_row_offsets,
+        # Allocate fresh host + device token/offset staging every step and
+        # never reuse it across steps. A reused pinned host buffer is written
+        # on the host by the next overlapped step while the current step's
+        # asynchronous H2D is still reading it, so the current step's forward
+        # can observe the next step's tokens/offsets. This only corrupts when
+        # consecutive overlapped steps carry different data (heterogeneous
+        # batches); identical data made it silently benign. Fresh per-step
+        # buffers (kept alive below until their copies finish) remove the
+        # hazard without adding any host/device synchronization.
+        if pinned:
+            host_tokens: Buffer = DevicePinnedBuffer(
+                dtype=DType.int64,
+                shape=(total_seq_len,),
+                device=device0,
             )
-            self._execution_input_buffers[buffer_key] = buffers
-        (
-            host_tokens,
-            host_row_offsets,
-            device_tokens,
-            device_row_offsets,
-        ) = buffers
+            host_row_offsets: Buffer = DevicePinnedBuffer(
+                dtype=DType.uint32,
+                shape=(batch_size + 1,),
+                device=device0,
+            )
+        else:
+            host_tokens = Buffer(
+                shape=(total_seq_len,),
+                dtype=DType.int64,
+                device=device0,
+            )
+            host_row_offsets = Buffer(
+                shape=(batch_size + 1,),
+                dtype=DType.uint32,
+                device=device0,
+            )
+        device_tokens = host_tokens.to(device0)
+        device_row_offsets = host_row_offsets.to(device0)
+        self._staging_keepalive.append(
+            (host_tokens, host_row_offsets, device_tokens, device_row_offsets)
+        )
+        if len(self._staging_keepalive) > _STAGING_KEEPALIVE_DEPTH:
+            del self._staging_keepalive[:-_STAGING_KEEPALIVE_DEPTH]
 
         input_row_offsets_np = host_row_offsets.to_numpy()
         np.cumsum(
@@ -234,46 +241,44 @@ class Llama3EpBatchProcessor(Llama3BatchProcessor):
 
         batch_size = len(context_batch)
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
-        buffer_key = (batch_size, total_seq_len)
-        buffers = self._execution_input_buffers.get(buffer_key)
-        if buffers is None:
-            if pinned:
-                host_tokens: Buffer = DevicePinnedBuffer(
-                    dtype=DType.int64,
-                    shape=(total_seq_len,),
-                    device=device0,
-                )
-                host_row_offsets: Buffer = DevicePinnedBuffer(
-                    dtype=DType.uint32,
-                    shape=(batch_size + 1,),
-                    device=device0,
-                )
-            else:
-                host_tokens = Buffer(
-                    shape=(total_seq_len,),
-                    dtype=DType.int64,
-                    device=device0,
-                )
-                host_row_offsets = Buffer(
-                    shape=(batch_size + 1,),
-                    dtype=DType.uint32,
-                    device=device0,
-                )
-            device_tokens = host_tokens.to(device0)
-            device_row_offsets = host_row_offsets.to(device0)
-            buffers = (
-                host_tokens,
-                host_row_offsets,
-                device_tokens,
-                device_row_offsets,
+        # Allocate fresh host + device token/offset staging every step and
+        # never reuse it across steps. A reused pinned host buffer is written
+        # on the host by the next overlapped step while the current step's
+        # asynchronous H2D is still reading it, so the current step's forward
+        # can observe the next step's tokens/offsets. This only corrupts when
+        # consecutive overlapped steps carry different data (heterogeneous
+        # batches); identical data made it silently benign. Fresh per-step
+        # buffers (kept alive below until their copies finish) remove the
+        # hazard without adding any host/device synchronization.
+        if pinned:
+            host_tokens: Buffer = DevicePinnedBuffer(
+                dtype=DType.int64,
+                shape=(total_seq_len,),
+                device=device0,
             )
-            self._execution_input_buffers[buffer_key] = buffers
-        (
-            host_tokens,
-            host_row_offsets,
-            device_tokens,
-            device_row_offsets,
-        ) = buffers
+            host_row_offsets: Buffer = DevicePinnedBuffer(
+                dtype=DType.uint32,
+                shape=(batch_size + 1,),
+                device=device0,
+            )
+        else:
+            host_tokens = Buffer(
+                shape=(total_seq_len,),
+                dtype=DType.int64,
+                device=device0,
+            )
+            host_row_offsets = Buffer(
+                shape=(batch_size + 1,),
+                dtype=DType.uint32,
+                device=device0,
+            )
+        device_tokens = host_tokens.to(device0)
+        device_row_offsets = host_row_offsets.to(device0)
+        self._staging_keepalive.append(
+            (host_tokens, host_row_offsets, device_tokens, device_row_offsets)
+        )
+        if len(self._staging_keepalive) > _STAGING_KEEPALIVE_DEPTH:
+            del self._staging_keepalive[:-_STAGING_KEEPALIVE_DEPTH]
 
         np.cumsum(
             [0] + [ctx.tokens.active_length for ctx in context_batch],
