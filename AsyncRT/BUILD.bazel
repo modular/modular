@@ -124,8 +124,8 @@ modular_shared_library(
         "//Support:Threading",
         "//Support:TimeProfiler",
         "//Support:TypeID",
-        "//bazel/third-party:tcmalloc_numa_aware",
-        "//bazel/third-party:tcmalloc_want_numa_aware",
+        "//bazel/internal:tcmalloc_numa_aware",
+        "//bazel/internal:tcmalloc_want_numa_aware",
         "@llvm-project//llvm:Support",
     ],
 )
