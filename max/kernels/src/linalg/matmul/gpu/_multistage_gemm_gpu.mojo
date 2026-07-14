@@ -470,7 +470,6 @@ def multistage_mma[
             comptime for k_mma0 in range(num_k_mma_iters):
                 comptime for k_mma1 in range(k_group_size):
                     comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
-                    comptime current = k_mma % num_reg_tiles
                     comptime k_mma_next = k_mma + UInt32(k_group_size)
                     comptime next = Int(k_mma_next % UInt32(num_reg_tiles))
 
@@ -568,7 +567,6 @@ def multistage_mma[
         comptime for k_mma0 in range(num_k_mma_iters):
             comptime for k_mma1 in range(k_group_size):
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
-                comptime current = k_mma % num_reg_tiles
                 comptime k_mma_next = k_mma + UInt32(k_group_size)
                 comptime next = Int(k_mma_next % UInt32(num_reg_tiles))
 
