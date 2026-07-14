@@ -569,7 +569,7 @@ _ENFORCEMENT_CASES: list[dict[str, Any]] = [
 # Enforcement cases whose keyword the constrained-decoding backend genuinely
 # cannot enforce, so the honest outcome is an enforce-or-400 up front rather
 # than a best-effort 200 that silently violates the schema. Mirrors the honest-
-# rejection contract in the sibling ``s32_structured_output_schema_limits``
+# rejection contract in the sibling ``structured_output_schema_limits``
 # (``array_unique_unenforceable`` / ``_EXPECT_REJECT`` /
 # ``_is_honest_rejection``): for these a clean 400 naming the construct is a
 # PASS, not a FAIL. ``multipleOf`` / ``not`` / ``if``-``then`` are CFG-

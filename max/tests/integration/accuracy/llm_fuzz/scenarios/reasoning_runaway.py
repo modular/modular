@@ -13,7 +13,7 @@
 """
 Scenario: Reasoning (chain-of-thought) token runaway
 
-Distinct from ``s29_token_runaway`` (which targets STRUCTURED-OUTPUT /
+Distinct from ``token_runaway`` (which targets STRUCTURED-OUTPUT /
 TOOL-CALLING runaways with tiny caps). This scenario targets PLAIN
 chain-of-thought runaway on hard long-reasoning prompts: no tools, no
 response_format — just a multiple-choice STEM question answered in
