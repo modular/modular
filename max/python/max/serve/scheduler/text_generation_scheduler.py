@@ -188,6 +188,9 @@ class TokenGenerationScheduler(Scheduler):
             batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
             if hasattr(self.pipeline, "batch_spec_decode_metrics")
             else None,
+            batch_vision_metrics=self.pipeline.batch_vision_metrics()
+            if hasattr(self.pipeline, "batch_vision_metrics")
+            else None,
             batch_execution_time_is_previous=is_overlap_active,
             completed_batch_stats=completed_batch_stats,
         )

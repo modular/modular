@@ -197,6 +197,15 @@ This version is still a work in progress.
 - Raised the maximum tool function name length from 64 to 1024 characters.
   Client-supplied tool names that legitimately exceed 64 characters are now
   accepted instead of rejected with a 400 error.
+- Added vision encoder statistics to the scheduler's per-iteration batch log
+  for multimodal models. Each batch line now includes a `Vision Encoder`
+  clause reporting the number of images encoded this iteration versus served
+  from the vision encoder cache (with the cache hit rate), and the image
+  patches and vision tokens encoded. This makes it clear when a slow
+  context-encoding iteration is driven by the vision encoder rather than the
+  language model. The same values are exported as OpenTelemetry metrics under
+  the `maxserve.vision.*` namespace. Applies to models backed by the shared
+  vision encoder cache (Gemma 4, Kimi K2.5, and Gemma 4 MTP).
 - Added an opt-in `emit_reasoning_content` server config. When enabled, chat
   completion responses emit a reasoning model's chain-of-thought under
   `reasoning_content` instead of `reasoning` (the two are never emitted

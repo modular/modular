@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from max.driver import Buffer
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.lib.vision_encoder_cache import VisionEncoderMetrics
 from max.pipelines.modeling.types import (
     BatchType,
     CompletedBatchStats,
@@ -108,6 +109,12 @@ class BatchMetrics:
     # hit/miss counters are gated on this being non-zero.
     num_new_admissions: int = 0
 
+    # Per-iteration vision encoder statistics for multimodal models. None
+    # when the batch did no vision encoding (text-only model, or a batch /
+    # decode step with no images). The vision log clause and vision metrics
+    # are gated on this being non-None.
+    vision_metrics: VisionEncoderMetrics | None = None
+
     @classmethod
     def create(
         cls,
@@ -120,6 +127,7 @@ class BatchMetrics:
         num_terminated_reqs: int,
         total_preemption_count: int,
         batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
+        batch_vision_metrics: VisionEncoderMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
@@ -312,6 +320,7 @@ class BatchMetrics:
             batch_execution_time_is_previous=batch_execution_time_is_previous,
             per_request_hit_rates=per_request_hit_rates,
             num_new_admissions=len(per_request_hit_rates),
+            vision_metrics=batch_vision_metrics,
         )
 
     def pretty_format(self) -> str:
@@ -390,6 +399,17 @@ class BatchMetrics:
                 f"pin {self.rpc_read_latency_avg_ms:.1f}ms | "
             )
 
+        vision_str = ""
+        vm = self.vision_metrics
+        if vm is not None and vm.num_images_total > 0:
+            vision_str = (
+                f"Vision Encoder: {vm.num_images_encoded} imgs, "
+                f"{vm.num_patches_encoded} patches, "
+                f"{vm.num_tokens_encoded} toks encoded, "
+                f"cache hit rate {vm.cache_hit_rate:.1%} "
+                f"({vm.num_images_cached} hit, {vm.num_images_encoded} miss) | "
+            )
+
         exec_label = (
             "Previous Execution"
             if self.batch_execution_time_is_previous
@@ -411,6 +431,7 @@ class BatchMetrics:
             f"{disk_kv_str}"
             f"{dkv_str}"
             f"{spec_decode_str}"
+            f"{vision_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
 
@@ -465,6 +486,15 @@ class BatchMetrics:
             extra["draft_tokens_generated"] = self.draft_tokens_generated
             extra["draft_tokens_accepted"] = self.draft_tokens_accepted
             extra["avg_acceptance_length"] = self.avg_acceptance_length
+
+        vm = self.vision_metrics
+        if vm is not None and vm.num_images_total > 0:
+            extra["vision_images_total"] = vm.num_images_total
+            extra["vision_images_encoded"] = vm.num_images_encoded
+            extra["vision_images_cached"] = vm.num_images_cached
+            extra["vision_patches_encoded"] = vm.num_patches_encoded
+            extra["vision_tokens_encoded"] = vm.num_tokens_encoded
+            extra["vision_cache_hit_rate"] = vm.cache_hit_rate
 
         if (
             self.nixl_read_latency_avg_ms > 0
@@ -566,6 +596,14 @@ class BatchMetrics:
                 acceptance_rate=rate * 100,  # Convert to percentage
             )
 
+        vm = self.vision_metrics
+        if vm is not None and vm.num_images_total > 0:
+            METRICS.vision_images_encoded(vm.num_images_encoded)
+            METRICS.vision_images_cached(vm.num_images_cached)
+            METRICS.vision_patches_encoded(vm.num_patches_encoded)
+            METRICS.vision_tokens_encoded(vm.num_tokens_encoded)
+            METRICS.vision_cache_hit_rate(vm.cache_hit_rate * 100)
+
 
 def publish_completed_batch_metrics(stats: CompletedBatchStats) -> None:
     """Publishes execution-time and throughput telemetry for a completed batch.
@@ -624,6 +662,7 @@ class SchedulerLogger:
         num_terminated_reqs: int,
         total_preemption_count: int,
         batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
+        batch_vision_metrics: VisionEncoderMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
         completed_batch_stats: CompletedBatchStats | None = None,
     ) -> None:
@@ -639,6 +678,8 @@ class SchedulerLogger:
             total_preemption_count: The total number of preemptions.
             batch_spec_decode_metrics: Per-batch speculative decoding metrics
                 for the most recent batch.
+            batch_vision_metrics: Per-batch vision encoder metrics for the
+                most recent batch, or None when no vision encoding ran.
             batch_execution_time_is_previous: When True, ``batch_execution_time_s``
                 is the execution time of the previous batch (the overlap
                 scheduler is active); the log line will read
@@ -665,6 +706,7 @@ class SchedulerLogger:
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=total_preemption_count,
             batch_spec_decode_metrics=batch_spec_decode_metrics,
+            batch_vision_metrics=batch_vision_metrics,
             batch_execution_time_is_previous=batch_execution_time_is_previous,
         )
 

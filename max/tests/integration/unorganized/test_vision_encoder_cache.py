@@ -1119,3 +1119,54 @@ def test_prepare_vision_outputs_chunked_prefill() -> None:
     # positions 4,5 < processed_length=6 → OOB
     # positions 6,7,8,9 → offsets 0,1,2,3
     np.testing.assert_array_equal(indices, [oob, oob, 0, 1, 2, 3])
+
+
+# ---------------------------------------------------------------------------
+# Per-iteration metrics (pop_metrics) tests
+# ---------------------------------------------------------------------------
+
+
+def test_pop_metrics_none_for_text_only() -> None:
+    cache = _make_cache()
+    ctx = FakeContext(request_id=RequestID("r1"), images=[])
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    assert cache.pop_metrics() is None
+
+
+def test_pop_metrics_counts_hits_and_misses() -> None:
+    cache = _make_cache()
+    cache.insert(0xA, [_make_buffer(5)], 5)  # pre-cache image A -> hit
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[
+            _make_image_meta(0, 5, image_hash=0xA),  # cached hit, 5 tokens
+            _make_image_meta(5, 12, image_hash=0xB),  # miss, 7 tokens, 1 patch
+        ],
+    )
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    m = cache.pop_metrics()
+    assert m is not None
+    assert m.num_images_total == 2
+    assert m.num_images_cached == 1
+    assert m.num_images_encoded == 1
+    assert m.num_patches_encoded == 1  # only the miss is encoded
+    assert m.num_tokens_encoded == 7  # 12 - 5
+    assert m.cache_hit_rate == 0.5
+    # pop resets the accumulator.
+    assert cache.pop_metrics() is None
+
+
+def test_pop_metrics_disabled_cache_counts_all_as_encoded() -> None:
+    cache = _make_cache_sized(0)  # caching disabled
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[_make_image_meta(0, 5, image_hash=0xA)],
+    )
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    m = cache.pop_metrics()
+    assert m is not None
+    assert m.num_images_total == 1
+    assert m.num_images_encoded == 1
+    assert m.num_images_cached == 0
+    assert m.num_patches_encoded == 1
+    assert m.num_tokens_encoded == 5

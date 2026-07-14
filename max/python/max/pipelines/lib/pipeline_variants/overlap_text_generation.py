@@ -175,6 +175,7 @@ from ..interfaces import (
     UnifiedEagleOutputs,
 )
 from ..utils import CompilationTimer
+from ..vision_encoder_cache import VisionEncoderMetrics
 
 logger = logging.getLogger("max.pipelines")
 
@@ -3517,6 +3518,18 @@ class OverlapTextGenerationPipeline(
     def kv_manager(self) -> PagedKVCacheManager:
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
+
+    def batch_vision_metrics(self) -> VisionEncoderMetrics | None:
+        """Returns vision encoder metrics for the most recent batch.
+
+        Returns ``None`` for text-only models and for batches that did no
+        vision encoding (e.g. decode steps). The metrics come from the
+        underlying model's :class:`VisionEncoderCache`, if it has one.
+        """
+        cache = getattr(self._pipeline_model, "_ve_cache", None)
+        if cache is None:
+            return None
+        return cache.pop_metrics()
 
     def batch_spec_decode_metrics(
         self,

@@ -418,6 +418,9 @@ class PrefillScheduler(Scheduler):
             completed_batch_stats=self.pipeline.take_completed_batch_stats()
             if hasattr(self.pipeline, "take_completed_batch_stats")
             else None,
+            batch_vision_metrics=self.pipeline.batch_vision_metrics()
+            if hasattr(self.pipeline, "batch_vision_metrics")
+            else None,
         )
 
         return SchedulerProgress.MADE_PROGRESS

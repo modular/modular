@@ -17,6 +17,7 @@ import logging
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from max.pipelines.lib.vision_encoder_cache import VisionEncoderMetrics
 from max.pipelines.modeling.types import BatchType, CompletedBatchStats
 from max.serve.scheduler.utils import (
     BatchMetrics,
@@ -488,6 +489,79 @@ def test_publish_metrics_disk_kv_active() -> None:
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
         metrics.publish_metrics()
     mock_metrics.cache_used_disk_kv_pct.assert_called_once_with(30.0)
+
+
+# ---------------------------------------------------------------------------
+# Vision encoder metrics tests
+# ---------------------------------------------------------------------------
+
+
+def _make_vision_metrics(**overrides: Any) -> VisionEncoderMetrics:
+    base = dict[str, Any](
+        num_images_total=4,
+        num_images_encoded=3,
+        num_images_cached=1,
+        num_patches_encoded=1200,
+        num_tokens_encoded=256,
+    )
+    base.update(overrides)
+    return VisionEncoderMetrics(**base)
+
+
+def test_vision_metrics_cache_hit_rate() -> None:
+    vm = _make_vision_metrics()
+    assert vm.cache_hit_rate == 0.25
+    # No images -> avoid divide-by-zero, report 0.0.
+    assert VisionEncoderMetrics().cache_hit_rate == 0.0
+
+
+def test_metric_to_string_with_vision() -> None:
+    # Vision info is appended inline to the language model batch line.
+    metrics = _make_metrics(vision_metrics=_make_vision_metrics())
+    assert (
+        "Vision Encoder: 3 imgs, 1200 patches, 256 toks encoded, "
+        "cache hit rate 25.0% (1 hit, 3 miss) |"
+    ) in metrics.pretty_format()
+
+
+def test_metric_to_string_no_vision_clause_when_absent() -> None:
+    # No vision metrics at all (text-only model).
+    assert "Vision Encoder" not in _make_metrics().pretty_format()
+    # Vision metrics present but with no images (guarded off).
+    empty = _make_metrics(vision_metrics=VisionEncoderMetrics())
+    assert "Vision Encoder" not in empty.pretty_format()
+
+
+def test_to_log_extra_vision() -> None:
+    extra = _make_metrics(vision_metrics=_make_vision_metrics()).to_log_extra()
+    assert extra["vision_images_total"] == 4
+    assert extra["vision_images_encoded"] == 3
+    assert extra["vision_images_cached"] == 1
+    assert extra["vision_patches_encoded"] == 1200
+    assert extra["vision_tokens_encoded"] == 256
+    assert extra["vision_cache_hit_rate"] == 0.25
+
+    # Absent for text-only batches.
+    assert "vision_images_total" not in _make_metrics().to_log_extra()
+
+
+def test_publish_metrics_vision_active() -> None:
+    metrics = _make_metrics(vision_metrics=_make_vision_metrics())
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+    mock_metrics.vision_images_encoded.assert_called_once_with(3)
+    mock_metrics.vision_images_cached.assert_called_once_with(1)
+    mock_metrics.vision_patches_encoded.assert_called_once_with(1200)
+    mock_metrics.vision_tokens_encoded.assert_called_once_with(256)
+    mock_metrics.vision_cache_hit_rate.assert_called_once_with(25.0)
+
+
+def test_publish_metrics_vision_gated_off() -> None:
+    # No vision metrics -> no vision emissions.
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        _make_metrics().publish_metrics()
+    mock_metrics.vision_images_encoded.assert_not_called()
+    mock_metrics.vision_cache_hit_rate.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
