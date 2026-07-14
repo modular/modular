@@ -113,15 +113,11 @@ struct Queue(Movable, Writable):
         py_self: PythonObject,
         dst_obj: PythonObject,
         value_obj: PythonObject,
-        size_obj: PythonObject,
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
-        var dst_ptr = dst_obj.downcast_value_ptr[Buffer]()
-        var size = UInt64(Int(py=size_obj))
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
         var value = UInt8(Int(py=value_obj))
-        self_ptr[]._arc[].set_memory(
-            dst_ptr[]._hal.view(byte_offset=0, byte_size=size), value
-        )
+        self_ptr[]._arc[].set_memory(dst_view[]._hal, value)
 
     @staticmethod
     def fill(
@@ -129,18 +125,12 @@ struct Queue(Movable, Writable):
         dst_obj: PythonObject,
         value_obj: PythonObject,
         value_size_obj: PythonObject,
-        size_obj: PythonObject,
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
-        var dst_ptr = dst_obj.downcast_value_ptr[Buffer]()
-        var size = UInt64(Int(py=size_obj))
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
         var value = UInt64(Int(py=value_obj))
         var value_size = UInt64(Int(py=value_size_obj))
-        self_ptr[]._arc[].fill(
-            dst_ptr[]._hal.view(byte_offset=0, byte_size=size),
-            value,
-            value_size,
-        )
+        self_ptr[]._arc[].fill(dst_view[]._hal, value, value_size)
 
     @staticmethod
     def wait_for_events(py_self: PythonObject, events_obj: PythonObject) raises:

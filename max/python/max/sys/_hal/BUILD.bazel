@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "mojo_library", "mojo_shared_library")
+load("//bazel:api.bzl", "modular_py_library", "mojo_library", "mojo_shared_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -30,6 +30,7 @@ modular_py_library(
     name = "_hal",
     srcs = [
         "__init__.py",
+        "array.py",
         "buffer.py",
         "bundle.py",
         "context.py",
@@ -49,6 +50,8 @@ modular_py_library(
         "//max:consumers",
     ],
     deps = [
+        "//max/python/max/dtype",
         "@mojo//:python",
+        requirement("numpy"),
     ],
 )

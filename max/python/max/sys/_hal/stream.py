@@ -71,13 +71,11 @@ class Stream:
     def copy_intra_device(self, dst: BufferView, src: BufferView) -> None:
         self._inner.copy_intra_device(dst._inner, src._inner)
 
-    def set_memory(self, dst: Buffer, value: int, byte_size: int) -> None:
-        self._inner.set_memory(dst._inner, value, byte_size)
+    def set_memory(self, dst: BufferView, value: int) -> None:
+        self._inner.set_memory(dst._inner, value)
 
-    def fill(
-        self, dst: Buffer, value: int, value_size: int, byte_size: int
-    ) -> None:
-        self._inner.fill(dst._inner, value, value_size, byte_size)
+    def fill(self, dst: BufferView, value: int, value_size: int) -> None:
+        self._inner.fill(dst._inner, value, value_size)
 
     def wait_for_events(self, *events: Event) -> None:
         self._inner.wait_for_events(tuple(e._inner for e in events))

@@ -21,7 +21,7 @@ from _hal.device import get_device_spec
 from _hal.queue import Queue as HALQueue
 from _hal.stream import Stream as HALStream
 
-from .buffer import Buffer
+from .buffer import Buffer, BufferView
 from .bundle import Bundle
 from .function import Function
 from .queue import Queue
@@ -160,6 +160,45 @@ struct Context(Movable, Writable):
                 _bundle=bundle_arc^,
                 _handle=func_handle,
             )
+        )
+
+    @staticmethod
+    def copy_to_device_sync(
+        py_self: PythonObject,
+        dst_obj: PythonObject,
+        src_addr_obj: PythonObject,
+    ) raises:
+        var self_ptr = Self._self_ptr(py_self)
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
+        var src_ptr = UnsafePointer[UInt8, ImmutAnyOrigin](
+            unsafe_from_address=Int(py=src_addr_obj)
+        )
+        self_ptr[]._arc[].copy_to_device_sync(dst_view[]._hal, src_ptr)
+
+    @staticmethod
+    def copy_from_device_sync(
+        py_self: PythonObject,
+        dst_addr_obj: PythonObject,
+        src_obj: PythonObject,
+    ) raises:
+        var self_ptr = Self._self_ptr(py_self)
+        var src_view = src_obj.downcast_value_ptr[BufferView]()
+        var dst_ptr = UnsafePointer[UInt8, MutAnyOrigin](
+            unsafe_from_address=Int(py=dst_addr_obj)
+        )
+        self_ptr[]._arc[].copy_from_device_sync(dst_ptr, src_view[]._hal)
+
+    @staticmethod
+    def copy_intra_device_sync(
+        py_self: PythonObject,
+        dst_obj: PythonObject,
+        src_obj: PythonObject,
+    ) raises:
+        var self_ptr = Self._self_ptr(py_self)
+        var dst_view = dst_obj.downcast_value_ptr[BufferView]()
+        var src_view = src_obj.downcast_value_ptr[BufferView]()
+        self_ptr[]._arc[].copy_intra_device_sync(
+            dst_view[]._hal, src_view[]._hal
         )
 
     def write_to(self, mut writer: Some[Writer]):

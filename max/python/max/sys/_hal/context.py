@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from .buffer import Buffer
+from .buffer import Buffer, BufferView
 from .bundle import Bundle
 from .function import Function
 from .queue import Queue
@@ -103,6 +103,37 @@ class Context:
 
     def memory_get_address(self, buf: Buffer) -> int:
         return self._inner.memory_get_address(buf._inner)
+
+    # ------------------------------------------------------------------
+    # Synchronous, queue-less copies
+    # ------------------------------------------------------------------
+
+    def copy_to_device_sync(self, dst: BufferView, src_address: int) -> None:
+        """Copies ``dst.byte_size`` bytes from host memory into ``dst``.
+
+        Runs directly on this context, creating no queue or stream, and returns
+        only once the transfer completes. ``src_address`` is a host pointer read
+        for exactly ``dst.byte_size`` bytes.
+        """
+        self._inner.copy_to_device_sync(dst._inner, src_address)
+
+    def copy_from_device_sync(self, dst_address: int, src: BufferView) -> None:
+        """Copies ``src.byte_size`` bytes from ``src`` into host memory.
+
+        Runs directly on this context, creating no queue or stream, and returns
+        only once the transfer completes. ``dst_address`` is a host pointer
+        written with exactly ``src.byte_size`` bytes.
+        """
+        self._inner.copy_from_device_sync(dst_address, src._inner)
+
+    def copy_intra_device_sync(self, dst: BufferView, src: BufferView) -> None:
+        """Copies ``dst.byte_size`` bytes from ``src`` into ``dst``.
+
+        Runs directly on this context, creating no queue or stream, and returns
+        only once the transfer completes. Both views must reside on this
+        context's device.
+        """
+        self._inner.copy_intra_device_sync(dst._inner, src._inner)
 
     def compile(self, compile_fn: Callable[[Any], Any]) -> Bundle:
         """Compile a Mojo kernel for this context, returning a ``Bundle``.

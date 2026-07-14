@@ -24,7 +24,7 @@ from .plugin import (
     M_driver_bundle_compilation_options,
 )
 
-from .buffer import Buffer
+from .buffer import Buffer, BufferView
 from .device import DeviceSpec
 from .stream import Stream
 
@@ -138,6 +138,41 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         return self._handle.unsafe_mut_cast[origin.mut]().unsafe_origin_cast[
             origin
         ]()
+
+    # ===-------------------------------------------------------------------===#
+    # Synchronous copies
+    # ===-------------------------------------------------------------------===#
+
+    def copy_to_device_sync(
+        self,
+        dst: BufferView,
+        src: UnsafePointer[mut=False, UInt8, _],
+    ) raises HALError:
+        """Copies `dst.byte_size` bytes from host memory into `dst`, blocking
+        until complete."""
+        self._raw[].copy_to_device_sync(self._handle, dst._view, src)
+
+    def copy_from_device_sync(
+        self,
+        dst: UnsafePointer[mut=True, UInt8, _],
+        src: BufferView,
+    ) raises HALError:
+        """Copies `src.byte_size` bytes from `src` into host memory, blocking
+        until complete."""
+        self._raw[].copy_from_device_sync(self._handle, dst, src._view)
+
+    def copy_intra_device_sync(
+        self,
+        dst: BufferView,
+        src: BufferView,
+    ) raises HALError:
+        """Copies `dst.byte_size` bytes from `src` into `dst`, blocking until
+        complete."""
+        debug_assert(
+            src.byte_size() >= dst.byte_size(),
+            "copy_intra_device_sync source view smaller than destination",
+        )
+        self._raw[].copy_intra_device_sync(self._handle, dst._view, src._view)
 
     def _compile_inner[
         fn_type: TrivialRegisterPassable,

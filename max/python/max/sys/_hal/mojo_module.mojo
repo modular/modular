@@ -61,6 +61,11 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
             .def_method[Context.unwrap_memory]("unwrap_memory")
             .def_method[Context.memory_get_address]("memory_get_address")
             .def_method[Context.load_function]("load_function")
+            .def_method[Context.copy_to_device_sync]("copy_to_device_sync")
+            .def_method[Context.copy_from_device_sync]("copy_from_device_sync")
+            .def_method[Context.copy_intra_device_sync](
+                "copy_intra_device_sync"
+            )
         )
 
         _ = (
