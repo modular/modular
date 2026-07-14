@@ -1,7 +1,10 @@
 """Public API accessors to reduce the number of load statements needed in BUILD.bazel files."""
 
+load("@llvm-project//mlir:tblgen.bzl", _gentbl_cc_library = "gentbl_cc_library", _td_library = "td_library")
 load("@rules_pkg//pkg:mappings.bzl", _pkg_filegroup = "pkg_filegroup", _pkg_files = "pkg_files", _strip_prefix = "strip_prefix")
 load("//bazel/internal:copy_files.bzl", _copy_files = "copy_files")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:dialect_checksum.bzl", _dialect_checksum = "dialect_checksum")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:kgen.bzl", _kgen_kernel = "kgen_kernel")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:lit.bzl", _lit_tests = "lit_tests")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mef.bzl", "MOJO_DEPS", _mef = "mef")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_cc_binary.bzl", _modular_cc_binary = "modular_cc_binary")  # buildifier: disable=bzl-visibility
@@ -23,14 +26,20 @@ load("//bazel/internal:mojo_shared_library.bzl", _mojo_shared_library = "mojo_sh
 load("//bazel/internal:mojo_test.bzl", _mojo_test = "mojo_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_test_environment.bzl", _mojo_test_environment = "mojo_test_environment")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:py_repl.bzl", _py_repl = "py_repl")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:tablegen.bzl", _driver_option_tablegen = "driver_option_tablegen", _gentbl_mlir_dialect = "gentbl_mlir_dialect", _gentbl_modular_passes = "gentbl_modular_passes")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
+dialect_checksum = _dialect_checksum
+driver_option_tablegen = _driver_option_tablegen
+gentbl_mlir_dialect = _gentbl_mlir_dialect
+gentbl_cc_library = _gentbl_cc_library
+gentbl_modular_passes = _gentbl_modular_passes
 lit_tests = _lit_tests
+kgen_kernel = _kgen_kernel
 modular_multi_py_version_test = _modular_multi_py_version_test
 modular_py_library = _modular_py_library
 modular_py_venv = _modular_py_venv
 modular_run_binary_test = _modular_run_binary_test
-modular_shared_library = _modular_shared_library
 modular_versioned_expand_template = _modular_versioned_expand_template
 mojo_binary = _mojo_binary
 mojo_test = _mojo_test
@@ -42,6 +51,12 @@ pkg_filegroup = _pkg_filegroup
 py_repl = _py_repl
 requirement = _requirement
 strip_prefix = _strip_prefix
+td_library = _td_library
+
+_EXTRA_LOCAL_DEFINES = [
+    "MODULAR_KGEN_PROFILING_ENABLED=0",
+    "MLRT_ACCELERATOR_SUPPORT=0",
+]
 
 def modular_py_test(tags = [], **kwargs):
     if "external-exclusive" in tags:
@@ -70,29 +85,49 @@ def _process_cc_deps(data, deps):
         "data": data + (["@modular_wheel//:wheel"] if needs_wheel else []),
     }
 
-def modular_cc_binary(data = [], deps = [], **kwargs):
+# Ignore internal_deps for public builds
+# buildifier: disable=unused-variable
+def modular_cc_binary(data = [], deps = [], internal_deps = [], local_defines = [], **kwargs):
     _modular_cc_binary(
+        local_defines = local_defines + _EXTRA_LOCAL_DEFINES,
         **(kwargs | _process_cc_deps(
             data = data,
             deps = deps,
         ))
     )
 
-def modular_cc_library(data = [], deps = [], **kwargs):
+# Ignore internal_deps for public builds
+# buildifier: disable=unused-variable
+def modular_cc_library(name, data = [], deps = [], internal_deps = [], local_defines = [], **kwargs):
+    if name in ["Profiling", "ProfilingKineto"]:
+        # Provide TimeProfiler for now since that may be what they're actually after
+        _modular_cc_library(name = name, deps = ["//Support:TimeProfiler"])
+        return
+
     _modular_cc_library(
+        name = name,
+        local_defines = local_defines + _EXTRA_LOCAL_DEFINES,
         **(kwargs | _process_cc_deps(
             data = data,
             deps = deps,
         ))
     )
 
-def modular_cc_test(data = [], deps = [], **kwargs):
+# Ignore internal_deps for public builds
+# buildifier: disable=unused-variable
+def modular_cc_test(data = [], deps = [], internal_deps = [], local_defines = [], **kwargs):
     _modular_cc_test(
+        local_defines = local_defines + _EXTRA_LOCAL_DEFINES,
         **(kwargs | _process_cc_deps(
             data = data,
             deps = deps,
         ))
     )
+
+# Ignore internal_deps for public builds
+# buildifier: disable=unused-variable
+def modular_shared_library(internal_deps = [], **kwargs):
+    _modular_shared_library(**kwargs)
 
 def modular_generate_stubfiles(name, pyi_srcs, deps = [], tags = [], **_kwargs):
     modular_py_library(
@@ -157,4 +192,7 @@ def _noop(**_kwargs):
     pass
 
 install_docs = _noop
+mlir_nanobind = _noop
 modular_nanobind_extension = _noop
+modular_nanobind_library = _noop
+modular_python_binding_library_test = _noop

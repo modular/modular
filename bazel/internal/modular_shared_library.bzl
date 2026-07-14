@@ -197,6 +197,7 @@ def modular_shared_library(
         srcs,
         copts = [],
         deps = [],
+        internal_deps = [],
         hdrs = [],
         textual_hdrs = [],
         defines = [],
@@ -225,6 +226,7 @@ def modular_shared_library(
         name: The name of the final shared library target
         srcs: C++ source files to include in the target
         deps: Deps required to compile the target
+        internal_deps: Same as `deps`, but excluded for external builds.
         hdrs: Headers to propagate for users of the shared library
         textual_hdrs: Headers that are textually included and cannot be built on their own
         additional_compiler_inputs: Non-source files that must be available when compiling the library
@@ -246,7 +248,7 @@ def modular_shared_library(
     _shared_library(
         name = name,
         copts = copts,
-        deps = deps,
+        deps = deps + internal_deps,
         hdrs = hdrs,
         textual_hdrs = textual_hdrs,
         srcs = srcs,

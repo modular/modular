@@ -3,14 +3,19 @@
 bazel_dep(name = "abseil-cpp", version = "20250814.2")
 bazel_dep(name = "apple_support", version = "2.3.0", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
+bazel_dep(name = "aspect_rules_js", version = "2.9.2")  # TODO: bump to pnpm >v9 for v3
+bazel_dep(name = "aspect_rules_ts", version = "3.7.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "curl", version = "8.12.0")
+bazel_dep(name = "fmt", version = "11.2.0")
 bazel_dep(name = "gazelle", version = "0.50.0")
 bazel_dep(name = "google_benchmark", version = "1.9.4")
 bazel_dep(name = "grpc", version = "1.76.0.bcr.1", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_cc", version = "0.2.18")
+bazel_dep(name = "rules_nodejs", version = "6.7.3")
 bazel_dep(name = "rules_mojo", version = "0.6.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
@@ -18,8 +23,13 @@ bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_pycross", version = "0.8.1")
 bazel_dep(name = "rules_python", version = "1.8.5")
 bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "tcmalloc", version = "0.0.0-20250927-12f2552")
 bazel_dep(name = "tomlplusplus", version = "3.4.0")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
+bazel_dep(name = "xxhash", version = "0.8.3.bcr.1")
+
+# TODO: Bump when deps go past this version
+bazel_dep(name = "nlohmann_json", version = "3.12.0.bcr.1")
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
 
@@ -651,6 +661,57 @@ RUMDL_VERSION = "0.1.95"
         ("aarch64-apple-darwin", "sha256-zzNLRkJuqQH6pAi+/dZMSB0zY4BXiySnfGqJXqybpNA="),
     ]
 ]
+
+http_archive(
+    name = "crashpad",
+    build_file = "//bazel/public-patches:crashpad.BUILD",
+    patch_args = ["-p1"],
+    patches = [
+        "//bazel/public-patches:crashpad.patch",
+    ],
+    sha256 = "a0a02abd861da5a768ef95c88f8a343fe518cd2de21b2b0533e13ff0424bfb2c",
+    strip_prefix = "crashpad",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/crashpad/031c47b4b3349d784d330f670360bb8af0266da3/a0a02abd861da5a768ef95c88f8a343fe518cd2de21b2b0533e13ff0424bfb2c/crashpad.tar.gz",
+)
+
+single_version_override(
+    module_name = "opentelemetry-cpp",
+    patch_strip = 1,
+    patches = [
+        # TODO: Remove next bump
+        "//bazel/public-patches:opentelemetry-cpp-loads.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "tcmalloc",
+    patch_strip = 1,
+    patches = [
+        "//bazel/public-patches:tcmalloc-visibility.patch",
+        "//bazel/public-patches:tcmalloc-local-dynamic.patch",
+        "//bazel/public-patches:tcmalloc-numa.patch",
+        "//bazel/public-patches:tcmalloc-glibc-rseq.patch",
+    ],
+)
+
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node", dev_dependency = True)
+node.toolchain(node_version = "22.15.1")
+
+npm.npm_translate_lock(
+    name = "mojo-lsp-server-node-tests",
+    data = ["//KGEN/test/mojo-lsp-server-node:package.json"],
+    dev = True,
+    pnpm_lock = "//KGEN/test/mojo-lsp-server-node:pnpm-lock.yaml",
+)
+use_repo(npm, "mojo-lsp-server-node-tests")
+
+rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext", dev_dependency = True)
+rules_ts_ext.deps(
+    ts_version_from = "//KGEN/test/mojo-lsp-server-node:package.json",
+)
+use_repo(rules_ts_ext, "npm_typescript")
 
 # BEGIN GENERATED LOGIT_VERIFICATION GOLDEN HTTP_FILES
 
