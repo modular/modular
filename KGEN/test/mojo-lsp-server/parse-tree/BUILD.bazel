@@ -199,11 +199,6 @@ _KERNELS_NO_RUN_LIST = [
     "graph_compiler/builtin_kernels/msa.mojo",
     # 2. Genuine diagnostics on the file's own code; needs owner triage.
     "layout/element.mojo",
-    # "attempt to resolve a recursive reference to declaration 'offset'" on
-    # Storage.offset(), confirmed via a direct `kgen -lsp` run. Landed with
-    # #91181; may be a standalone-check limitation on this generic method
-    # rather than a real bug -- same category as layout/element.mojo above.
-    "layout/tensor_storage.mojo",
     "linalg/grouped_matmul_sm100.mojo",
     "linalg/matmul/gpu/sm90/dispatch.mojo",
     # "use of unknown declaration 'k_type'" at line 5530, confirmed via a
