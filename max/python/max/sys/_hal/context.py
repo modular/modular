@@ -72,10 +72,10 @@ class Context:
         return self._inner.get_dlpack_device(pinned)
 
     def create_queue(self) -> Queue:
-        return Queue._wrap(self._inner.create_queue())
+        return Queue._wrap(self._inner.create_queue(), self)
 
     def create_stream(self) -> Stream:
-        return Stream._wrap(self._inner.create_stream())
+        return Stream._wrap(self._inner.create_stream(), self)
 
     def alloc_sync(self, byte_size: int) -> Buffer:
         return Buffer._wrap(self._inner.alloc_sync(byte_size))

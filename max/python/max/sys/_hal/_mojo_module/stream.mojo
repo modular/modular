@@ -54,6 +54,14 @@ struct Stream(Movable, Writable):
         self_ptr[]._arc[].synchronize()
 
     @staticmethod
+    def native_handle(py_self: PythonObject) raises -> PythonObject:
+        var self_ptr = Self._self_ptr(py_self)
+        var handle = self_ptr[]._arc[].native_handle()
+        if handle:
+            return PythonObject(handle.value())
+        return PythonObject(None)
+
+    @staticmethod
     def record_event(py_self: PythonObject) raises -> PythonObject:
         var self_ptr = Self._self_ptr(py_self)
         var hal_evt = self_ptr[]._arc[].record_event[EVENT_FLAG_CPU_VISIBLE]()

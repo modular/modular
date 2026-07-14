@@ -18,6 +18,7 @@ from .queue import Queue
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable
 from .device import DeviceSpec
 from .status import STATUS_SUCCESS, HALError
+from std.collections import OptionalReg
 from std.memory import (
     ArcPointer,
     UnsafePointer,
@@ -256,3 +257,8 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     def synchronize(self) raises HALError:
         """Blocks the host until all submitted ops on this stream complete."""
         self._queue[].synchronize()
+
+    def native_handle(self) raises HALError -> OptionalReg[UInt64]:
+        """Returns the backend stream/queue handle, or None if the underlying
+        queue has none (a device with no OS-level stream object)."""
+        return self._queue[].native_handle()

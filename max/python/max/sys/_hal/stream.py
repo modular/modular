@@ -15,11 +15,18 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import numpy.typing as npt
+from max.dtype import DType
+
+from .array import Array
 from .buffer import Buffer, BufferView
 from .event import Event
 from .function import Function
+
+if TYPE_CHECKING:
+    from .context import Context
 
 
 class Stream:
@@ -32,8 +39,9 @@ class Stream:
     """
 
     _inner: Any
+    _context: Context
 
-    __slots__ = ("_inner",)
+    __slots__ = ("_context", "_inner")
 
     def __init__(self) -> None:
         raise TypeError(
@@ -41,13 +49,23 @@ class Stream:
         )
 
     @classmethod
-    def _wrap(cls, inner: object) -> Stream:
+    def _wrap(cls, inner: object, context: Context) -> Stream:
         obj = cls.__new__(cls)
         obj._inner = inner
+        obj._context = context
         return obj
 
     def synchronize(self) -> None:
         self._inner.synchronize()
+
+    @property
+    def native_handle(self) -> int | None:
+        """Backend stream handle as an integer, or ``None`` if the underlying
+        queue has none (a device with no OS-level stream object).
+
+        Suitable to lend a DLPack producer via ``__dlpack__(stream=...)``.
+        """
+        return self._inner.native_handle()
 
     def record_event(self) -> Event:
         return Event._wrap(self._inner.record_event())
@@ -103,6 +121,79 @@ class Stream:
             arg_sizes,
             shared_mem_bytes,
         )
+
+    # ------------------------------------------------------------------
+    # Async Array operations
+    # ------------------------------------------------------------------
+
+    def array_full(
+        self,
+        dtype: DType,
+        shape: Sequence[int] = (),
+        value: float | int = 0,
+    ) -> Array:
+        """Allocates a device ``Array`` and enqueues a fill on this stream.
+
+        Returns before the fill completes; order it before reading (see the
+        section note above).
+        """
+        arr = Array.empty(self._context, dtype, shape)
+        # Nothing to enqueue for an empty (zero-element) array.
+        if all(arr._shape):
+            arr._enqueue_fill(self, value)
+        return arr
+
+    def array_fill(self, arr: Array, value: float | int) -> None:
+        """Enqueues a fill of ``arr`` with ``value`` on this stream.
+
+        Returns before the fill completes; order it before reading.
+        """
+        arr._enqueue_fill(self, value)
+
+    def array_copy(self, src: Array, dst: Array) -> None:
+        """Enqueues a same-device copy of ``src`` into ``dst`` on this stream.
+
+        Arguments are source-first, matching the blocking :meth:`Array.copy`.
+        The source must be contiguous — a strided source needs an internal temp
+        this fire-and-forget path cannot keep alive; use the blocking
+        :meth:`Array.copy` for that. Returns before the copy completes; order
+        it, and keep ``src`` alive, until then.
+        """
+        if not src.is_contiguous:
+            raise ValueError(
+                "array_copy requires a contiguous source; use the blocking "
+                "Array.copy for a strided source"
+            )
+        Array._enqueue_copy(src, dst, self)
+
+    def array_from_numpy(self, np_array: npt.NDArray[Any]) -> Array:
+        """Allocates a device ``Array`` and enqueues an H2D copy of
+        ``np_array`` on this stream.
+
+        Returns before the copy completes; keep ``np_array`` alive and order
+        the copy before reading. ``np_array`` must be C-contiguous — a
+        non-contiguous source needs an internal temp this fire-and-forget path
+        cannot keep alive; use the blocking :meth:`Array.from_numpy` for that.
+        """
+        if not np_array.flags.c_contiguous:
+            raise ValueError(
+                "array_from_numpy requires a C-contiguous array; use the "
+                "blocking Array.from_numpy for a non-contiguous source"
+            )
+        dtype = DType.from_numpy(np_array.dtype)
+        arr = Array.empty(self._context, dtype, np_array.shape)
+        if np_array.nbytes:
+            self.copy_to_device(arr._buffer.view(), np_array.ctypes.data)
+        return arr
+
+    def array_from_dlpack(self, obj: Any) -> Array:
+        """Imports a DLPack producer onto this stream.
+
+        Adopts a same-device producer zero-copy (lending this stream to order
+        the producer's work) and host-blocks until it is settled, like
+        :meth:`Array.from_dlpack`.
+        """
+        return Array._from_dlpack(self._context, obj, executor=self)
 
     def __repr__(self) -> str:
         return "Stream()"

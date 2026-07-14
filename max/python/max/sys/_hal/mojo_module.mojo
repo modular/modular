@@ -107,6 +107,7 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
         _ = (
             b.add_type[Stream]("Stream")
             .def_method[Stream.synchronize]("synchronize")
+            .def_method[Stream.native_handle]("native_handle")
             .def_method[Stream.record_event]("record_event")
             .def_method[Stream.copy]("copy")
             .def_method[Stream.copy_to_device]("copy_to_device")

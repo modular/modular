@@ -24,7 +24,7 @@ import os
 from collections.abc import Iterator, Sequence
 from itertools import product
 from os import PathLike
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -36,9 +36,12 @@ from ._dlpack import (  # type: ignore[import-not-found]
 from ._dlpack import (
     make_dlpack_capsule as _make_dlpack_capsule,
 )
-from .buffer import Buffer
-from .context import Context
-from .queue import Queue
+
+if TYPE_CHECKING:
+    from .buffer import Buffer
+    from .context import Context
+    from .queue import Queue
+    from .stream import Stream
 
 
 def _row_major_strides(shape: Sequence[int]) -> tuple[int, ...]:
@@ -272,6 +275,7 @@ class Array:
         arr = cls.empty(context, dtype, host.shape)
         if host.nbytes:
             context.copy_to_device_sync(arr._buffer.view(), host.ctypes.data)
+
         return arr
 
     @classmethod
@@ -381,49 +385,62 @@ class Array:
 
     @classmethod
     def from_dlpack(
-        cls, context: Context, array: Any, *, copy: bool | None = None
+        cls,
+        context: Context,
+        array: Any,
     ) -> Array:
-        """Creates an array on ``context`` from a DLPack producer.
+        """Creates an array on ``context`` from a DLPack producer, zero-copy.
 
-        Three producer kinds are handled:
+        Two producer kinds are handled:
 
         - Another HAL ``Array`` on the same context: returned as-is
-          (zero-copy), or deep-copied with ``copy=True``.
+          (zero-copy).
         - A producer on this context's device — its device memory or its
           host-pinned variant (e.g. a torch CUDA tensor, or a pinned CUDA
           tensor a CUDA context can access directly): adopted zero-copy where
           the backing plugin supports wrapping foreign allocations; the
           producer's deleter runs when the array's buffer is released.
-        - Pageable host memory (a plain numpy array, a CPU torch tensor):
-          imported only with ``copy=True``, which reads it host-side via
-          ``np.from_dlpack`` and copies it to the device (blocking H2D); the
-          dtype must be numpy-representable (see :meth:`from_numpy`).
+
+        Memory that is not on this context's device is not adopted and raises
+        ``ValueError`` — e.g. pageable host memory (a plain numpy array, a CPU
+        torch tensor) relative to a device context; copy it with
+        :meth:`from_numpy` instead. On a host (CPU) context, plain host memory
+        *is* on-device and is adopted like any other producer.
 
         Args:
             context: The context whose device the array lives on.
             array: An object implementing the DLPack protocol.
-            copy: If ``True``, always makes a copy. If ``None`` (the
-                default), adopts zero-copy where possible; a producer that can
-                only be copied — memory not accessible to this context's
-                device — raises rather than copying to the device silently. If
-                ``False``, requires zero-copy and raises where a copy would be
-                needed.
 
         Returns:
             An ``Array`` on ``context`` holding the producer's data.
 
         Raises:
-            NotImplementedError: If the producer's memory can be neither
-                adopted nor copied (a foreign device, a cross-context
-                ``Array``, or a device producer on a plugin without memory
-                wrapping).
-            ValueError: If a copy would be required but ``copy`` is not
-                ``True`` — e.g. importing pageable host memory, which is not
-                accessible to this context's device and cannot be adopted
-                zero-copy.
+            NotImplementedError: If the producer is a cross-context ``Array``,
+                or a device producer on a plugin without memory wrapping.
+            ValueError: If the producer is not on this context's device (host
+                memory, or a device this context cannot reach); such memory
+                cannot be adopted zero-copy.
             BufferError: If a device producer's capsule is invalid, its
                 dtype has no ``DType`` equivalent, or it has negative
                 strides.
+        """
+        return cls._from_dlpack(context, array, executor=None)
+
+    @classmethod
+    def _from_dlpack(
+        cls,
+        context: Context,
+        array: Any,
+        *,
+        executor: Queue | Stream | None,
+    ) -> Array:
+        """Shared DLPack import routing for :meth:`from_dlpack` and the
+        ``Queue`` / ``Stream`` ``array_from_dlpack`` methods.
+
+        The device-adopt path host-blocks: it lends the producer ``executor``
+        (the caller's, e.g. from ``Queue.array_from_dlpack``) or an ad-hoc
+        queue, then host-waits it once. The ``Array`` short-circuit returns the
+        producer as-is.
         """
         if isinstance(array, Array):
             if array._context is not context:
@@ -431,10 +448,6 @@ class Array:
                     "from_dlpack cannot import an Array from another "
                     "context; cross-context copies are not supported"
                 )
-            if copy:
-                dup = cls.empty(context, array.dtype, array.shape)
-                Array.copy(array, dup)
-                return dup
             return array
         if hasattr(array, "__dlpack_device__"):
             producer_device = tuple(array.__dlpack_device__())
@@ -446,26 +459,16 @@ class Array:
                 # access directly. Adopt it zero-copy.
                 pinned = producer_device == own_pinned and own_pinned != own
                 return cls._adopt_device_dlpack(
-                    context, array, copy=copy, pinned=pinned
+                    context, array, pinned=pinned, executor=executor
                 )
         # Not on this device (host memory, or a device this context cannot
-        # reach): it can't be adopted, only copied, and only host-readable
-        # memory can be. Require an explicit copy=True rather than crossing the
-        # host/device boundary silently; numpy rejects memory it can't read.
-        if not copy:
-            raise ValueError(
-                "from_dlpack can only adopt a producer already on this "
-                "context's device; for host-accessible memory pass copy=True "
-                "to copy it to the device, or use Array.from_numpy."
-            )
-        try:
-            host_array = np.from_dlpack(array)
-        except (BufferError, RuntimeError, TypeError) as exc:
-            raise NotImplementedError(
-                "from_dlpack cannot import this producer: its memory is "
-                "neither on this context's device nor host-readable"
-            ) from exc
-        return cls.from_numpy(context, host_array)
+        # reach): it can't be adopted zero-copy, and this import copies
+        # nothing. Copy host-accessible memory to the device yourself.
+        raise ValueError(
+            "from_dlpack can only adopt a producer already on this context's "
+            "device; this one is on a different device, or is host memory a "
+            "device context cannot access. Copy it to the device instead."
+        )
 
     @classmethod
     def _adopt_device_dlpack(
@@ -473,8 +476,8 @@ class Array:
         context: Context,
         array: Any,
         *,
-        copy: bool | None,
         pinned: bool = False,
+        executor: Queue | Stream | None = None,
     ) -> Array:
         """Adopts a producer's memory zero-copy.
 
@@ -486,11 +489,17 @@ class Array:
         point the producer's deleter runs. ``pinned`` marks the wrapped
         buffer as host-pinned, for a producer on the device's pinned-host
         DLPack variant.
+
+        The producer is lent an executor — the caller's ``executor`` if given
+        (e.g. from ``Stream.array_from_dlpack``), otherwise an ad-hoc queue —
+        so it orders its in-flight work ahead of ours; that executor is then
+        host-waited once, so the result is settled on return.
         """
-        # Lend the producer our stream so it orders its in-flight work ahead of
-        # anything we run on it.
-        adopt_queue = context.create_queue()
-        stream_handle = adopt_queue.native_handle
+        # Lend the producer an executor (the caller's, or an ad-hoc queue) so
+        # it orders its in-flight work ahead of anything we run on it; we
+        # host-wait it below.
+        lend: Any = executor if executor is not None else context.create_queue()
+        stream_handle = lend.native_handle
         keepalive = _import_dlpack(array, stream_handle)
         dtype = keepalive.dtype
         shape = tuple(keepalive.shape)
@@ -524,12 +533,6 @@ class Array:
                 f"allocations: {e}"
             ) from e
 
-        # Complete the ordering established above: host-wait on the work the
-        # producer planted on our lent stream — and only that, not the whole
-        # device. After it returns the data is settled, so the Array's
-        # blocking ops on any queue are safe.
-        adopt_queue.synchronize()
-
         # The C++ keepalive owns the producer's deleter obligation; hold it on
         # the buffer so the foreign allocation lives exactly as long as the
         # buffer.
@@ -543,10 +546,10 @@ class Array:
             byte_offset=0,
             pinned=pinned,
         )
-        if copy:
-            dup = cls.empty(context, dtype, shape)
-            Array.copy(arr, dup)
-            return dup
+        # Host-block on the work the producer planted on our lent executor —
+        # and only that, not the whole device. After it returns the adopted
+        # data is settled and the Array's ops are safe.
+        lend.synchronize()
         return arr
 
     # ------------------------------------------------------------------
@@ -631,22 +634,37 @@ class Array:
     def fill(self, value: float | int) -> None:
         """Fills every element with ``value`` (blocking).
 
-        Encodes ``value`` to its raw bytes, then writes them across the array.
-        If those bytes are all identical (any zero fill included), a single-byte
-        memset is used; otherwise the full dtype-width pattern is written. A
-        strided array is filled one contiguous run at a time.
+        A zero fill uses a single-byte memset (and is the only value fillable
+        for dtypes with no numpy equivalent); any other value writes its
+        dtype-width byte pattern. A strided array is filled one contiguous run
+        at a time.
         """
-        raw = self._encode_fill(value)
         queue = self._get_queue()
-        if len(set(raw)) == 1:
-            byte = raw[0]
+        self._enqueue_fill(queue, value)
+        queue.synchronize()
+
+    def _enqueue_fill(self, sink: Queue | Stream, value: float | int) -> None:
+        """Enqueues a fill of every element with ``value`` onto ``sink`` (a
+        ``Queue`` or ``Stream``), without host synchronization. Shared by the
+        blocking :meth:`fill` and the async ``array_fill``.
+        """
+        # Zero is all-zero bytes in every dtype, so it fills with a single-byte
+        # memset — and it is the only value expressible for dtypes with no numpy
+        # equivalent (bfloat16, float4), whose to_numpy() would raise. -0.0 does
+        # not qualify: it sets the sign bit, so it takes the pattern path below
+        # to keep the sign.
+        is_positive_zero = value == 0 and not (
+            isinstance(value, float) and math.copysign(1.0, value) < 0.0
+        )
+        if is_positive_zero:
             for src_byte, run_bytes in self._runs():
                 if run_bytes:
                     view = self._buffer.view(
                         byte_offset=src_byte, byte_size=run_bytes
                     )
-                    queue.set_memory(view, byte)
+                    sink.set_memory(view, 0)
         else:
+            raw = np.array(value, dtype=self._dtype.to_numpy()).tobytes()
             packed, value_size = int.from_bytes(raw, "little"), len(raw)
             if value_size not in (1, 2, 4, 8):
                 # Plugins only fill 1/2/4/8-byte patterns; Metal silently
@@ -660,16 +678,33 @@ class Array:
                     view = self._buffer.view(
                         byte_offset=src_byte, byte_size=run_bytes
                     )
-                    queue.fill(view, packed, value_size)
-        queue.synchronize()
+                    sink.fill(view, packed, value_size)
 
     @staticmethod
     def copy(src: Array, dst: Array) -> None:
         """Copies ``src`` into ``dst`` on the same device (blocking).
 
         Shapes and element sizes must match. A strided ``src`` is materialized
-        contiguous first; a strided ``dst`` is written run by run. Runs directly
-        on the context with no queue.
+        contiguous first; a strided ``dst`` is written run by run.
+        """
+        source = Array._validate_copy(src, dst)
+        context = dst._context
+        src_byte = source._byte_offset
+        for dst_byte, run_bytes in dst._runs():
+            if run_bytes:
+                context.copy_intra_device_sync(
+                    dst._buffer.view(byte_offset=dst_byte, byte_size=run_bytes),
+                    source._buffer.view(
+                        byte_offset=src_byte, byte_size=run_bytes
+                    ),
+                )
+                src_byte += run_bytes
+
+    @staticmethod
+    def _validate_copy(src: Array, dst: Array) -> Array:
+        """Validates a same-device copy of ``src`` into ``dst`` and returns the
+        array to read from: ``src`` when contiguous, or a contiguous temp
+        materialized for a strided ``src`` (which blocks).
         """
         if src.shape != dst.shape:
             raise ValueError(f"copy shape mismatch: {src.shape} != {dst.shape}")
@@ -683,18 +718,31 @@ class Array:
                 "copy requires both arrays on the same context; "
                 "cross-context copies are not supported"
             )
-        source = src if src.is_contiguous else src.contiguous()
-        context = dst._context
+        return src if src.is_contiguous else src.contiguous()
+
+    @staticmethod
+    def _enqueue_copy(src: Array, dst: Array, sink: Queue | Stream) -> Array:
+        """Enqueues a same-device copy of ``src`` into ``dst`` onto ``sink``,
+        without host synchronization. Shapes and element sizes must match; a
+        strided ``src`` is materialized contiguous first (which blocks). Used by
+        the async ``array_copy``.
+
+        Returns the array actually read from (``src``, or the contiguous temp
+        made for a strided ``src``) so an async caller can keep it alive until
+        the copy completes.
+        """
+        source = Array._validate_copy(src, dst)
         src_byte = source._byte_offset
         for dst_byte, run_bytes in dst._runs():
             if run_bytes:
-                context.copy_intra_device_sync(
+                sink.copy_intra_device(
                     dst._buffer.view(byte_offset=dst_byte, byte_size=run_bytes),
                     source._buffer.view(
                         byte_offset=src_byte, byte_size=run_bytes
                     ),
                 )
                 src_byte += run_bytes
+        return source
 
     def as_numpy(self, *, copy: bool = True) -> npt.NDArray[Any]:
         """Returns the array's contents as a numpy array.
@@ -1030,19 +1078,6 @@ class Array:
         if self._queue is None:
             self._queue = self._context.create_queue()
         return self._queue
-
-    def _encode_fill(self, value: float | int) -> bytes:
-        # Filling with +0 is all-zero bytes in every dtype, so we can shortcut
-        # and skip numpy. That matters because some dtypes (bfloat16, float4)
-        # have no numpy equivalent, so the numpy path below would fail for them.
-        # -0.0 does not qualify: it sets the sign bit rather than being all
-        # zeros, so it takes the numpy path to keep the sign.
-        is_positive_zero = value == 0 and not (
-            isinstance(value, float) and math.copysign(1.0, value) < 0.0
-        )
-        if is_positive_zero:
-            return b"\x00" * self.element_size
-        return np.array(value, dtype=self._dtype.to_numpy()).tobytes()
 
     def _runs(self) -> Iterator[tuple[int, int]]:
         """Yields ``(buffer_byte_offset, run_bytes)`` for each contiguous run.
