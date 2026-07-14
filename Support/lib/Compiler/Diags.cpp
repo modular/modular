@@ -132,11 +132,30 @@ public:
   std::string getCanonicalFilename(StringRef filename) const;
   StringRef getStripFilenamePrefix() const { return stripFilenamePrefix; }
 
+  /// Record the include location to stamp onto the filename's buffer if and
+  /// when we resolve it. First-wins, and a no-op once the buffer is already
+  /// resolved.
+  void recordIncludeLoc(StringAttr filename, SMLoc includeLoc);
+
+  /// Return the recorded "included from" location for `filename`, if any.
+  /// Returns an invalid SMLoc if nothing was recorded.
+  SMLoc getRecordedIncludeLoc(StringRef filename) const;
+
 private:
   MLIRContext *context;
   std::string stripFilenamePrefix;
-  /// Maps known StringAttr filenames to buffer IDs.
-  llvm::DenseMap<StringAttr, unsigned> filenameToBufId;
+  /// What the mapper knows about a filename.
+  struct FileEntry {
+    /// The SourceMgr buffer for this file. Three states:
+    /// - nullopt -> not yet looked up
+    /// - 0 -> looked up, no buffer exists
+    /// - N -> buffer N.
+    std::optional<unsigned> bufId;
+    /// Include location to stamp on the buffer if/when we resolve it.
+    SMLoc includeLoc;
+  };
+  /// Maps known StringAttr filenames to what we know about them.
+  llvm::DenseMap<StringAttr, FileEntry> filenameToBufId;
   /// Maps buffer IDs to their canonical filenames.
   llvm::DenseMap<unsigned, StringAttr> bufIdToCanonicalFilename;
 };
@@ -144,23 +163,42 @@ private:
 unsigned
 Diags::SourceMgrLocationMapper::getBufferIDForFile(llvm::SourceMgr &sourceMgr,
                                                    StringAttr filename) {
+  FileEntry &entry = filenameToBufId[filename];
   // Check for an existing mapping to the buffer id for this file.
-  auto bufferIt = filenameToBufId.find(filename);
-  if (bufferIt != filenameToBufId.end())
-    return bufferIt->second;
+  if (entry.bufId)
+    return *entry.bufId;
 
   // Look for a buffer in the manager that has this filename.
   for (unsigned i = 1, e = sourceMgr.getNumBuffers() + 1; i != e; ++i) {
     auto *buf = sourceMgr.getMemoryBuffer(i);
     if (buf->getBufferIdentifier() == filename.getValue())
-      return filenameToBufId[filename] = i;
+      return *(entry.bufId = i);
   }
 
-  // Otherwise, try to load the source file.
+  // Otherwise, try to load the source file, resolving it to any recorded
+  // include location.
   std::string ignored;
-  unsigned id = sourceMgr.AddIncludeFile(filename.str(), SMLoc(), ignored);
-  filenameToBufId[filename] = id;
-  return id;
+  return *(entry.bufId = sourceMgr.AddIncludeFile(filename.str(),
+                                                  entry.includeLoc, ignored));
+}
+
+void Diags::SourceMgrLocationMapper::recordIncludeLoc(StringAttr filename,
+                                                      SMLoc includeLoc) {
+  if (!includeLoc.isValid())
+    return;
+  FileEntry &entry = filenameToBufId[filename];
+  // First-wins, and only meaningful before the buffer is resolved: once we've
+  // faulted the file in, its IncludeLoc is fixed.
+  if (!entry.bufId && !entry.includeLoc.isValid())
+    entry.includeLoc = includeLoc;
+}
+
+SMLoc Diags::SourceMgrLocationMapper::getRecordedIncludeLoc(
+    StringRef filename) const {
+  auto it = filenameToBufId.find(StringAttr::get(context, filename));
+  if (it == filenameToBufId.end())
+    return SMLoc();
+  return it->second.includeLoc;
 }
 
 StringAttr Diags::SourceMgrLocationMapper::getFilenameFromBufferId(
@@ -184,7 +222,8 @@ StringAttr Diags::SourceMgrLocationMapper::getFilenameFromBufferId(
   }
 
   bufIdToCanonicalFilename[bufferID] = filename;
-  filenameToBufId[filename] = bufferID;
+  // We already hold this buffer, so record it as resolved.
+  filenameToBufId[filename].bufId = bufferID;
   return filename;
 }
 
@@ -411,6 +450,15 @@ SMLoc Diags::convertLocToSMLoc(LocationAttr loc) const {
   return SMLoc();
 }
 
+void Diags::recordImportedFileIncludeLoc(LocationAttr loc, SMLoc includeLoc) {
+  if (!loc || !includeLoc.isValid())
+    return;
+  // Derive the filename exactly as convertLocToSMLoc does, so we seed the same
+  // filename that will later be looked up when the note's loc is converted.
+  if (FileLineColLoc fileLoc = loc.findInstanceOf<FileLineColLoc>())
+    sourceMgrMapper->recordIncludeLoc(fileLoc.getFilename(), includeLoc);
+}
+
 llvm::SMRange Diags::convertToSMRange(SourceRange range) const {
   SMRange byteLevelRange{range.getStart(), range.getEnd()};
 
@@ -464,6 +512,13 @@ void Diags::emitDiagnostic(const llvm::SMDiagnostic &diag) const {
     unsigned bufferID = sourceMgr.FindBufferContainingLoc(loc);
     assert(bufferID && "Invalid or unspecified location!");
     printImportStack(sourceMgr.getBufferInfo(bufferID).IncludeLoc,
+                     llvm::errs());
+  } else if (!origFilename.empty()) {
+    // The location has no buffer we could resolve - e.g., a precompiled
+    // package's source file that isn't on disk. We may still know where that
+    // package was imported into the user's program, so print that import stack
+    // anyway.
+    printImportStack(sourceMgrMapper->getRecordedIncludeLoc(origFilename),
                      llvm::errs());
   }
 

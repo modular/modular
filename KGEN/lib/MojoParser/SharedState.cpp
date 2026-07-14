@@ -675,6 +675,10 @@ struct SharedState::ModuleState {
   /// compilation units so we can only meaningfully track one location, even if
   /// it's imported in multiple places.
   SMLoc importLoc;
+  /// True for packages pulled in implicitly by the compiler (e.g., std/prelude)
+  /// rather than by a user `import`. Such packages never get an `importLoc`, to
+  /// avoid spurious "included from" locations.
+  bool isImplicitImport = false;
 
   //===--------------------------------------------------------------------===//
   // Package Specific State
@@ -1182,7 +1186,8 @@ static bool isReplOrLspBuffer(StringRef name) {
 
 SharedState::ModuleState &SharedState::importModuleState(StringRef name,
                                                          ASTDecl *context,
-                                                         llvm::SMLoc loc) {
+                                                         llvm::SMLoc loc,
+                                                         bool isImplicit) {
   CompilerTimeTraceScope fullTimeScope(("importModule: " + name).str());
 
   // Only treat the name as a dotted module path (e.g. "pkg.module") when it
@@ -1190,11 +1195,22 @@ SharedState::ModuleState &SharedState::importModuleState(StringRef name,
   // path, which contains ".mojo"; splitting on '.' would produce a phantom
   // package name (e.g. "/abs/path/file") and a spurious "unable to locate
   // module" diagnostic.
-  if (name.contains('.') && !isReplOrLspBuffer(name))
-    return importRelativeModuleState(name, context, loc);
+  ModuleState &state =
+      (name.contains('.') && !isReplOrLspBuffer(name))
+          ? importRelativeModuleState(name, context, loc)
+          // Otherwise, import an absolute module or package
+          // at the top-level.
+          : importSubModuleState(name, impl->topLevelDecl, loc, loc);
 
-  // Otherwise, we're importing an absolute module or package at the top-level.
-  return importSubModuleState(name, impl->topLevelDecl, loc, loc);
+  // An implicit import gets no import location, so its diagnostics aren't
+  // threaded through to the user file that triggered the implicit import. Clear
+  // any location a nested resolution may already have set.
+  if (isImplicit) {
+    state.isImplicitImport = true;
+    state.importLoc = SMLoc();
+  }
+
+  return state;
 }
 
 const llvm::MemoryBuffer *SharedState::openModuleFile(StringRef path,
@@ -1255,7 +1271,7 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
   // Root a package's location at the location of its first resolution: the
   // first reference wins.
   auto rememberImportLoc = [&](ModuleState *state) -> ModuleState * {
-    if (!state->importLoc.isValid())
+    if (!state->importLoc.isValid() && !state->isImplicitImport)
       state->importLoc = loc;
     return state;
   };
@@ -1563,8 +1579,8 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
   // Check if this is the first attempt at resolving the builtin modules.
   if (impl->implicitBuiltinImports.empty()) {
     // Import the main standard library package.
-    impl->stdPackageState =
-        &importModuleState("std", impl->topLevelDecl, moduleDecl.getLoc());
+    impl->stdPackageState = &importModuleState(
+        "std", impl->topLevelDecl, moduleDecl.getLoc(), /*isImplicit=*/true);
     ASTDecl *last = declResolver->getParsedDeclList().back();
     if (last && last->isErroneous()) {
       std::string stdmsg =
@@ -1583,7 +1599,7 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
     // Import the prelude package.
     ASTDecl &preludePackageDecl =
         *importModuleState("std.prelude", impl->topLevelDecl,
-                           moduleDecl.getLoc())
+                           moduleDecl.getLoc(), /*isImplicit=*/true)
              .decl;
     if (failed(
             declResolver->resolveBody(preludePackageDecl, moduleDecl.getLoc())))
@@ -1877,6 +1893,11 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
   // Initialize the module state.
   ModuleState &moduleState = parentState.insertNestedModule(
       declName, std::make_unique<ModuleState>(&decl));
+  // Remember where this package was imported. The package's source files are
+  // only opened at diagnostic time (they aren't parsed here), so when a decl
+  // from this package is lazily materialized we use this to set its location
+  // at the import site.
+  moduleState.importLoc = loc;
   moduleState.bytecodeReader = std::move(bytecodeReader);
   // keep buffer alive for deferred materialize
   moduleState.sourceMgr = sourceMgr;
@@ -2089,6 +2110,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
   // the bytecode reader. To materialize, we need to resolve the bytecode reader
   // from the parent module.
   mlir::BytecodeReader *bytecodeReader = nullptr;
+  SMLoc packageImportLoc;
   ASTDecl *parentDecl = &decl;
   do {
     if (!isa_and_nonnull<FileModuleOp, PackageOp>(parentDecl->getIfOperation()))
@@ -2097,6 +2119,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
     ModuleState *moduleState = impl->moduleStates[parentDecl];
     if (moduleState->bytecodeReader) {
       bytecodeReader = &*moduleState->bytecodeReader;
+      packageImportLoc = moduleState->importLoc;
       break;
     }
   } while ((parentDecl = parentDecl->parentDecl));
@@ -2252,6 +2275,11 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             assert(packageState &&
                    "FileModule or Package nested in non-package");
             StringAttr name = op.getSymNameAttr();
+            // Record the import location *before* materializing the bytecode
+            // decl, as in the process of translating the loc to an SMLoc we
+            // resolve/register a buffer ID. After that happens we're unable to
+            // stamp on an import loc.
+            diags.recordImportedFileIncludeLoc(op->getLoc(), packageImportLoc);
             ASTDecl &decl = addDeclForOp(op, name);
 
             // Record a nested module state for this decl.

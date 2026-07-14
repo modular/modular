@@ -578,9 +578,10 @@ private:
 
   /// Import the specified module or package, returning the module state.
   /// Always returns a valid module state, even if the module could not be
-  /// found.
+  /// found. `isImplicit` marks a package pulled in by the compiler rather than
+  /// a user `import`.
   ModuleState &importModuleState(StringRef name, ASTDecl *context,
-                                 llvm::SMLoc loc);
+                                 llvm::SMLoc loc, bool isImplicit = false);
 
   /// Import the specified module or package nested within the given parent
   /// decl, returning the module state. Always returns a valid module state,
