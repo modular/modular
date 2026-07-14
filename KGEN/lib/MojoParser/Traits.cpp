@@ -1540,16 +1540,11 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // is installed, record the conformance obligation as deferred, and emit a
   // downcast into the target trait type.
   if (verdict.isUnknown() && deferredTypingContext) {
-    // Canonicalize the trait's ancestor symbols so the obligation matches the
-    // spelling of the `where`-clause assumption that discharges it.
-    SmallVector<SymbolRefAttr> symbols(trait.getSymbols());
-    canonicalizeTraitCompositionSymbols(shared, symbols);
-    TraitType canonTrait = TraitType::get(trait.getContext(), symbols);
     // A parameter's trait bound is always unconditional.
-    assert(!canonTrait.hasConstraints() &&
+    assert(!trait.hasConstraints() &&
            "deferred conformance bound should always bean unconditional trait");
     TypedAttr conformsTo =
-        TypeConformsToTraitAttr::get(typePValue, canonTrait.getPValue());
+        TypeConformsToTraitAttr::get(typePValue, trait.getPValue());
     deferredTypingContext->deferredConstraints.push_back(
         {ConstraintAttr::get(
              conformsTo, shared.diags.translateLocation(value.expr->getLoc())),
