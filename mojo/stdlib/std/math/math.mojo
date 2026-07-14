@@ -713,7 +713,10 @@ def _exp2_approx_f32[
     # trick.
     # We use 1.5 * 2^23 (i.e., 2^23 + 2^22) so it works cleanly with
     # round-to-nearest-even across positive/negative inputs in this range.
-    comptime ROUND_BIAS_F32 = 3 * FPUtils[DType.float32].mantissa_mask()
+    # Decomposed as (1.5 * 2) * 2^(23 -1) to avoid floating point arithmetic.
+    comptime ROUND_BIAS_F32 = 3 * (
+        1 << (FPUtils[DType.float32].mantissa_width() - 1)
+    )
     comptime NEG_ROUND_BIAS_F32 = -ROUND_BIAS_F32
 
     # Lower clamp for exp2 range reduction:

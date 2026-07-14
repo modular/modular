@@ -21,17 +21,21 @@ from std.utils.coord import Coord
 
 
 @parameter
-def run_exp_approx_test[simd_width: Int](ctx: DeviceContext) raises:
+def run_exp_approx_test[
+    simd_width: Int
+](ctx: DeviceContext, *, half_range: Float32, rtol: Float64) raises:
     comptime dtype = DType.float32
     comptime length = 256
 
     var in_device = ctx.enqueue_create_buffer[dtype](length)
     var out_device = ctx.enqueue_create_buffer[dtype](length)
 
-    # Fill test data symmetrically around zero
+    # Fill test data with a sweep symmetric around zero spanning
+    # [-half_range, half_range]. See `main` for the ranges exercised.
+    var step = half_range / Scalar[dtype](length // 2)
     with in_device.map_to_host() as in_host:
         for i in range(length):
-            in_host[i] = 0.001 * (Scalar[dtype](i) - length // 2)
+            in_host[i] = step * (Scalar[dtype](i) - length // 2)
 
     var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=length)
     var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=length)
@@ -65,13 +69,17 @@ def run_exp_approx_test[simd_width: Int](ctx: DeviceContext) raises:
                 Scalar[dtype](ref_exp(Scalar[dtype](in_host[i]))),
                 msg=msg,
                 atol=1e-07,
-                # The relaxed relative tolerance (rtol=2e-03) is chosen based on the expected error bounds of the FA-4 exp approximation method.
-                # This value ensures the test passes for all inputs while accounting for the approximation's maximum observed error.
-                rtol=2e-03,
+                rtol=rtol,
             )
 
 
 def main() raises:
     with DeviceContext() as ctx:
-        run_exp_approx_test[1](ctx)
-        run_exp_approx_test[2](ctx)
+        # Full-domain sweep spanning roughly [-87, 87] (staying below the
+        # float32 exp overflow threshold ~88.7).
+        run_exp_approx_test[1](ctx, half_range=87.0, rtol=1.2e-02)
+        run_exp_approx_test[2](ctx, half_range=87.0, rtol=1.2e-02)
+
+        # Near-zero band, where the cubic is most accurate.
+        run_exp_approx_test[1](ctx, half_range=0.128, rtol=1.5e-03)
+        run_exp_approx_test[2](ctx, half_range=0.128, rtol=1.5e-03)
