@@ -4,7 +4,9 @@
 // COM: Test that closure init is replaced
 
 
-kgen.struct.generator @"foo::fn" = struct_inst<"foo::fn" memoryOnly> {
+#closure_type = #kgen.type<typevalue<#kgen.genref<@"foo::fn">>, pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>>> : !kgen.type
+
+kgen.struct.generator @"foo::fn" = struct_inst<"foo::fn"(capture0: struct<(index, pointer<index>)>, capture1: struct<(index, pointer<index>)>) memoryOnly> {
   kgen.conformance @"AnyType" {
     kgen.witness "__del__" : (!kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> deinit_mem) -> !kgen.none = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<del>>
   }
@@ -25,7 +27,7 @@ kgen.struct.generator @"foo::fn" = struct_inst<"foo::fn" memoryOnly> {
 // CHECK:         kgen.call_param[(!kgen.pointer<struct<(index, pointer<index>)>> read_mem, !kgen.pointer<struct<(index, pointer<index>)>> byref_result) -> !kgen.none: @copy](%[[ARG1]], %[[GEP1]])
 // CHECK:         kgen.return
 kgen.generator @foo<C>(%arg0 : !kgen.pointer<struct<(index, pointer<index>)>>, %arg1 : !kgen.pointer<struct<(index, pointer<index>)>>) {
-  kgen.closure.init(%arg0[@move, @del move], %arg1[@copy, @move, @del])() -> index : (!kgen.pointer<struct<(index, pointer<index>)>>, !kgen.pointer<struct<(index, pointer<index>)>>), !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> {closureType = !kgen.closure<@foo, "fn" escaping>}
+  kgen.closure.init(%arg0[@move, @del move], %arg1[@copy, @move, @del])() -> index : (!kgen.pointer<struct<(index, pointer<index>)>>, !kgen.pointer<struct<(index, pointer<index>)>>), !kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> {closureType = !kgen.closure<@foo, "fn" escaping>, typeValue = #closure_type}
   kgen.return
 }
 

@@ -49,27 +49,7 @@ ParserEvaluationContext::resolveStructOp(TypedAttr typeValue,
         resolvedType.getParamValues(), &astDecl,
         /*instance=*/nullptr};
   }
-
-  // Otherwise, this is a raw StructGeneratorOp for a closure.
-  TypedAttr typeRef = getTypeRefForTypeValueIfResolved(typeValue);
-  auto genRef = dyn_cast_if_present<TypeGeneratorRefAttr>(typeRef);
-  if (!genRef)
-    return failure();
-
-  // Look up the ASTDecl for the struct generator using its symbol.
-  ASTDecl *structGenDecl =
-      shared.declResolver->getDeclForTypeSymbolIfExists(genRef.getSymbol());
-  if (!structGenDecl)
-    return failure();
-
-  auto structGen =
-      dyn_cast_or_null<StructGeneratorOp>(structGenDecl->getIfOperation());
-  if (!structGen)
-    return failure();
-
-  return ResolvedStructHandle{
-      cast<StructDeclInterface>(structGen.getOperation()),
-      genRef.getParamValues(), structGenDecl, /*instance=*/nullptr};
+  return failure();
 }
 
 FuncInterface
@@ -98,14 +78,6 @@ Operation *ParserEvaluationContext::resolveConformanceForStruct(
 
     return conformDecl.getIfOperation();
   }
-
-  // This is a raw StructGeneratorOp for a closure.
-  auto structGen = cast<StructGeneratorOp>(astDecl->getIfOperation());
-  // Find the ConformanceOp within the struct generator directly as they're
-  // always created resolved.
-  for (auto conformance : structGen.getBody().getOps<ConformanceOp>())
-    if (conformance.getSymName() == traitName)
-      return conformance;
 
   return nullptr;
 }

@@ -857,27 +857,3 @@ lit.fn @metadata_closure(%x: index) -> !kgen.none {
   kgen.return %none : !kgen.none
 }
 
-// -----
-
-// COM: kgen.struct.generators are pruned of singleton parameters. This is only used in the context of closures and should be temporary
-
-// CHECK: #kgen.type<typevalue<#kgen.genref<@"demo::fn">>, pointer<pointer<none>>> : !kgen.type
-#type_value = #kgen.type<typevalue<#kgen.genref<@"demo::fn"<:origin<false> #lit.any.origin, :origin<false> #lit.any.origin>>>, pointer<pointer<none>>> : !kgen.type
-#capture_type = #kgen.type<index> : !kgen.type
-
-// CHECK: kgen.struct.generator @"demo::fn" = struct_inst<"demo::fn"(cap: index) memoryOnly>
-kgen.struct.generator @"demo::fn"<o1: origin<false>, o2: origin<false>> =
-    struct_inst<"demo::fn"[o1, o2]<:origin<false> o1, :origin<false> o2>(cap: index) memoryOnly> {
-  kgen.conformance @"closure_trait" {
-    kgen.witness "__call__" :
-        (!kgen.pointer<struct_inst<"demo::fn"[o1, o2]<:origin<false> o1, :origin<false> o2>(cap: index) memoryOnly>> read_mem) ->
-            index = #kgen.closure.symbol<@"demo", "fn",
-                    #kgen.closure_method<call>, <:origin<false> o1, :origin<false> o2>>
-  }
-}
-
-lit.fn @demo<o1: origin<false>, o2: origin<false>>(%arg0: index) -> !kgen.none {
-  %0 = lit.closure.init[#type_value](%arg0)() -> index : (index), !lit.ref<!kgen.closure<@demo, "fn" nonescaping>, mut *"fn`1"> {captureNames = ["cap"], captureTypes = [#capture_type]}
-  %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
-}

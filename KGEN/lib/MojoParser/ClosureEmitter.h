@@ -247,9 +247,8 @@ public:
   /// Bundles the IR artifacts produced by liftClosure.
   struct Closure {
     ASTDecl *structDecl;         ///< The closure storage struct.
-    ASTDecl *structGenDecl;      ///< The kgen.struct.generator.
     ASTDecl *promotedCallMethod; ///< The lifted __call__ function.
-    TypedAttr typeAttr; ///< Type ref to the struct gen (+ witness table).
+    TypedAttr typeAttr;          ///< Bound closure storage struct type.
   };
 
 private:
