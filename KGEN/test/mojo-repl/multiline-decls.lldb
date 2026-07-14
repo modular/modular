@@ -71,9 +71,9 @@ from std.gpu.host import DeviceContext
 
 comptime unary_fn_type = __mlir_type[
     `(`,
-    UnsafePointer[Int, _],
+    UnsafePointer[Int, MutAnyOrigin],
     `, `,
-    UnsafePointer[Int, _],
+    UnsafePointer[Int, MutAnyOrigin],
     `, `,
     DeviceContext,
     `) -> `,
@@ -83,4 +83,3 @@ comptime unary_fn_type = __mlir_type[
 # CHECK-NOT: error
 def using_alias(callback: unary_fn_type):
   pass
-

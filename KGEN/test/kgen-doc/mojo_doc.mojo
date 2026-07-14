@@ -373,7 +373,7 @@ def fn_with_fn_param_and_arg[
 # CHECK: "name": "logsoftmax",
 # CHECK:     "args":
 # CHECK:         "name": "output"
-# CHECK:         "type": "UnsafePointer[Scalar[dtype]]"
+# CHECK:         "type": "Pointer[Scalar[dtype], _safe=False]"
 # CHECK:     "parameters":
 # CHECK:         "name": "origins"
 # CHECK:         "type": "OriginSet"

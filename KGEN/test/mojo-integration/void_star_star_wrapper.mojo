@@ -43,10 +43,10 @@ struct KernelArgPack[kernel: KernelFunction[_]]:
         )
 
 
-# Rudimentary check to see if a type is an UnsafePointer.
+# Rudimentary check to see if a type is an Pointer.
 def looks_like_pointer[T: AnyType]() -> Bool:
     comptime base_name = reflect[T].base_name()
-    return base_name == "UnsafePointer"
+    return base_name == "Pointer"
 
 
 # Wrapped kernel entry point parameterized by the actual kernel to be invoked.
