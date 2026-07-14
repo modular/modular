@@ -629,12 +629,12 @@ def _mock_inputs(batch_size: int, batch_type: BatchType) -> MagicMock:
     return inputs
 
 
-def _mock_sch_config() -> MagicMock:
+def _mock_sch_config(dp: int = 1) -> MagicMock:
     config = MagicMock()
     config.max_batch_size = 32
     config.target_tokens_per_batch_ce = 4096
     config.max_batch_total_tokens = 0
-    config.data_parallel_degree = 1
+    config.data_parallel_degree = dp
     return config
 
 
@@ -882,3 +882,114 @@ def test_scheduler_overlap_attributes_execution_metrics_to_completed_batch() -> 
             (16 / FakeOverlapPipeline.FAKE_EXECUTION_TIME_S, "CE")
         ]
         assert recorder.creation_calls[-1][1] == "TG"
+
+
+# ---------------------------------------------------------------------------
+# DP active-token occupancy tests
+# ---------------------------------------------------------------------------
+
+
+def _mock_ctx(active_length: int, padding: bool = False) -> MagicMock:
+    ctx = MagicMock()
+    ctx.tokens.active_length = active_length
+    # Explicit False: an auto-created Mock attribute would be truthy and the
+    # context would be skipped as a padding dummy.
+    ctx._is_padding_ctx = padding
+    return ctx
+
+
+def _mock_dp_inputs(
+    rank_batches: list[list[MagicMock]],
+    batch_type: BatchType = BatchType.CE,
+) -> MagicMock:
+    inputs = MagicMock()
+    inputs.batches = rank_batches
+    inputs.flat_batch = [ctx for batch in rank_batches for ctx in batch]
+    inputs.input_tokens = sum(
+        ctx.tokens.active_length for ctx in inputs.flat_batch
+    )
+    inputs.context_tokens = 0
+    inputs.batch_type = batch_type
+    return inputs
+
+
+def _create_dp_metrics(inputs: MagicMock, dp: int) -> BatchMetrics:
+    return BatchMetrics.create(
+        sch_config=_mock_sch_config(dp=dp),
+        inputs=inputs,
+        kv_cache=None,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+
+def test_dp_occupancy_imbalanced_ce() -> None:
+    """The motivating case: one rank prefills 8k tokens while the other has
+    a handful of decodes -> ~50% occupancy at DP2."""
+    inputs = _mock_dp_inputs([[_mock_ctx(8000)], [_mock_ctx(8)]])
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_active_token_occupancy_pct == 100.0 * 8008 / 16000
+
+
+def test_dp_occupancy_balanced() -> None:
+    inputs = _mock_dp_inputs(
+        [[_mock_ctx(4000)], [_mock_ctx(2000), _mock_ctx(2000)]]
+    )
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_active_token_occupancy_pct == 100.0
+
+
+def test_dp_occupancy_skipped_at_dp1() -> None:
+    inputs = _mock_dp_inputs([[_mock_ctx(8000)]])
+    metrics = _create_dp_metrics(inputs, dp=1)
+    assert metrics.dp_active_token_occupancy_pct is None
+
+
+def test_dp_occupancy_skipped_on_empty_batch() -> None:
+    inputs = _mock_dp_inputs([[], []])
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_active_token_occupancy_pct is None
+
+
+def test_dp_occupancy_excludes_padding_dummies() -> None:
+    """Padding dummies keep device-graph shapes valid but are not scheduler
+    placement decisions; a padded-out rank counts as zero load."""
+    inputs = _mock_dp_inputs([[_mock_ctx(8000)], [_mock_ctx(1, padding=True)]])
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_active_token_occupancy_pct == 50.0
+
+
+def test_dp_occupancy_missing_replicas_count_as_zero() -> None:
+    inputs = _mock_dp_inputs([[_mock_ctx(8000)]])
+    metrics = _create_dp_metrics(inputs, dp=2)
+    assert metrics.dp_active_token_occupancy_pct == 50.0
+
+
+def test_publish_metrics_dp_occupancy() -> None:
+    metrics = _make_metrics(dp_active_token_occupancy_pct=50.0)
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+    mock_metrics.dp_active_token_occupancy.assert_called_once_with(
+        50.0, batch_type="CE"
+    )
+
+
+def test_publish_metrics_dp_occupancy_skipped_when_unset() -> None:
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        _make_metrics().publish_metrics()
+    mock_metrics.dp_active_token_occupancy.assert_not_called()
+
+
+def test_dp_occupancy_in_log_line_and_extra() -> None:
+    metrics = _make_metrics(dp_active_token_occupancy_pct=50.0)
+    assert "DP Occupancy: 50.0% | " in metrics.pretty_format()
+    extra = metrics.to_log_extra()
+    assert extra["dp_active_token_occupancy_pct"] == 50.0
+
+    # Absent at DP1 (field defaults to None).
+    plain = _make_metrics()
+    assert "DP Occupancy" not in plain.pretty_format()
+    assert "dp_active_token_occupancy_pct" not in plain.to_log_extra()

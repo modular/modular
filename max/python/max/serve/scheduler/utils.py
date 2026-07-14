@@ -97,6 +97,13 @@ class BatchMetrics:
     # previous batch (i.e. the overlap scheduler is active).
     batch_execution_time_is_previous: bool = False
 
+    # Data-parallel balance of this batch's active-token load: mean/max of
+    # per-rank active-token sums as a percentage (100 = perfectly balanced;
+    # the floor is 100/DP-degree). ``None`` when data_parallel_degree == 1 or
+    # the batch is empty. DP padding dummies are excluded so this reflects the
+    # batch constructor's placement decisions, not the padded shapes.
+    dp_active_token_occupancy_pct: float | None = None
+
     # Per-request KV cache hit rates for requests admitted in this batch
     # (cached_prefix_length / prompt_length). Empty for non-CE batches and
     # for CE batches that admit no new requests (e.g. follow-up prefill
@@ -161,6 +168,31 @@ class BatchMetrics:
         nixl_read_gib_per_s = 0.0
         nixl_write_gib_per_s = 0.0
         num_replicas = sch_config.data_parallel_degree
+
+        # Data-parallel balance: ranks step together, so the heaviest rank
+        # sets the step cost; mean/max is the fraction of that synchronized
+        # capacity doing useful work. Padding dummies are excluded (measure
+        # the constructor's placement, not the padded shapes); replicas
+        # missing from ``batches`` scheduled zero tokens.
+        dp_active_token_occupancy_pct: float | None = None
+        if num_replicas > 1:
+            per_rank_active = [
+                sum(
+                    ctx.tokens.active_length
+                    for ctx in replica_batch
+                    if not ctx._is_padding_ctx
+                )
+                for replica_batch in inputs.batches
+            ]
+            per_rank_active.extend([0] * (num_replicas - len(per_rank_active)))
+            max_rank_tokens = max(per_rank_active, default=0)
+            if max_rank_tokens > 0:
+                dp_active_token_occupancy_pct = (
+                    100.0
+                    * sum(per_rank_active)
+                    / (num_replicas * max_rank_tokens)
+                )
+
         if kv_cache is not None:
             # TODO SERVOPT-939: Add some sugar
             total_kv_blocks = sum(
@@ -318,6 +350,7 @@ class BatchMetrics:
             nixl_read_gib_per_s=nixl_read_gib_per_s,
             nixl_write_gib_per_s=nixl_write_gib_per_s,
             batch_execution_time_is_previous=batch_execution_time_is_previous,
+            dp_active_token_occupancy_pct=dp_active_token_occupancy_pct,
             per_request_hit_rates=per_request_hit_rates,
             num_new_admissions=len(per_request_hit_rates),
             vision_metrics=batch_vision_metrics,
@@ -416,6 +449,12 @@ class BatchMetrics:
             else "Execution"
         )
 
+        dp_str = ""
+        if self.dp_active_token_occupancy_pct is not None:
+            dp_str = (
+                f"DP Occupancy: {self.dp_active_token_occupancy_pct:.1f}% | "
+            )
+
         return (
             f"Executed {self.batch_type.value} batch with {self.batch_size} reqs | "
             f"Terminated: {self.terminated_reqs} reqs, "
@@ -426,6 +465,7 @@ class BatchMetrics:
             f"Generation Tput: {_to_human_readable_throughput(self.generation_throughput)} | "
             f"Batch creation: {to_human_readable_latency(self.batch_creation_time_s)}, "
             f"{exec_label}: {to_human_readable_latency(self.batch_execution_time_s)} | "
+            f"{dp_str}"
             f"{kv_str}"
             f"{host_kv_str}"
             f"{disk_kv_str}"
@@ -459,6 +499,11 @@ class BatchMetrics:
             "batch_execution_time_is_previous": self.batch_execution_time_is_previous,
             "total_preemption_count": self.total_preemption_count,
         }
+
+        if self.dp_active_token_occupancy_pct is not None:
+            extra["dp_active_token_occupancy_pct"] = (
+                self.dp_active_token_occupancy_pct
+            )
 
         if self.total_kv_blocks != 0:
             extra["used_kv_pct"] = self.used_kv_pct
@@ -550,6 +595,14 @@ class BatchMetrics:
         METRICS.batch_creation_time(
             self.batch_creation_time_s * 1000, batch_type=bt
         )
+
+        # DP balance describes the enqueued batch's composition, so it is
+        # published every iteration regardless of overlap deferral.
+        if self.dp_active_token_occupancy_pct is not None:
+            METRICS.dp_active_token_occupancy(
+                self.dp_active_token_occupancy_pct, batch_type=bt
+            )
+
         METRICS.cache_num_used_blocks(
             int(self.total_kv_blocks * self.used_kv_pct)
         )

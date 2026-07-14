@@ -315,6 +315,17 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="tokens/s",
         description="Per-batch generation-side throughput in tokens/second.",
     ),  # type: ignore
+    "maxserve.dp_active_token_occupancy": _meter.create_histogram(
+        "maxserve.dp_active_token_occupancy",
+        unit="%",
+        description=(
+            "Per-batch data-parallel balance: mean/max of per-rank "
+            "active-token load as a percentage. 100 = perfectly balanced "
+            "ranks; the floor is 100/DP-degree (all load on one rank). "
+            "Excludes DP padding dummies. Recorded only when "
+            "data_parallel_degree > 1."
+        ),
+    ),  # type: ignore
     "maxserve.batch_terminated_reqs": _meter.create_histogram(
         "maxserve.batch_terminated_reqs",
         unit="reqs",
@@ -996,6 +1007,16 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.batch_generation_throughput",
                 tps,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+            MetricLevel.BASIC,
+        )
+
+    def dp_active_token_occupancy(self, pct: float, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dp_active_token_occupancy",
+                pct,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
             MetricLevel.BASIC,
