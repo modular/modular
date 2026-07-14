@@ -412,9 +412,9 @@ def cluster_mask_base[
     comptime if axis == 0:
         return UInt16((1 << cluster_shape[0]) - 1)
 
-    var mask: UInt16 = 1
+    var mask: UInt16 = 0
 
     comptime for i in range(cluster_shape[1]):
-        mask |= mask << UInt16(i * cluster_shape[0])
+        mask |= UInt16(1 << (i * cluster_shape[0]))
 
     return mask

@@ -306,3 +306,23 @@ def main() raises:
                         Idx[2560],
                         Idx[8192],
                     )
+
+        # Regression test for tall clusters (cluster_shape[1] > 2 with a
+        # narrow dim 0): `cluster_mask_base` used to set multicast-mask bits
+        # past the cluster size for these shapes, which traps on device.
+        # Mirrors the tuned skinny-M 32 x 1536 x 1536 config.
+        test_blackwell_matmul_tma_umma_warp_specialized[
+            dtype,
+            dtype,
+            DType.bfloat16,
+            Index(64, 8, 64),
+            Index(128, 16, 16),
+            cluster_shape=StaticTuple[Int32, 3](2, 4, 1),
+            block_swizzle_size=0,
+            swapAB=True,
+        ](
+            ctx,
+            Int(32),
+            Idx[1536],
+            Idx[1536],
+        )
