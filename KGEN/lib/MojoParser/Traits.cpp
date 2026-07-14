@@ -65,7 +65,14 @@ getTraitFunctionSignature(ASTDecl &declScope, FnOp traitFn,
                           ASTType structSelfType, SymbolRefAttr traitSymbol,
                           const ExprNode *expr,
                           ParameterEvaluator &traitAliasReplacer) {
-  TraitType trait = TraitType::get(traitSymbol);
+  ASTDecl &traitDecl =
+      declScope.getShared().declResolver->getDeclForTypeSymbol(traitSymbol);
+  LogicalResult result = declScope.getShared().declResolver->resolveSignature(
+      traitDecl, llvm::SMLoc());
+  assert(result.succeeded() && "failed to resolve signature");
+
+  TraitType trait =
+      cast<TraitDeclOp>(traitDecl.getIfOperation()).getCanonicalTrait();
   FnTypeGeneratorType signature = traitFn.getFullSignature();
   SmallVector<TypedAttr> params;
   ArrayRef<Type> paramTypes = signature.getInputParamTypes();

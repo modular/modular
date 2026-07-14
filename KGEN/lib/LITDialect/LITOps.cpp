@@ -1980,10 +1980,6 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
   result.regions[0]->push_back(new Block());
 }
 
-TraitType TraitDeclOp::bindReference() {
-  return TraitType::get(getFullyResolvedSymbolRef(*this));
-}
-
 //===----------------------------------------------------------------------===//
 // TryOp
 //===----------------------------------------------------------------------===//

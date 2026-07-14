@@ -306,7 +306,10 @@ public:
   TraitType getCanonicalTrait(TraitType trait);
   /// Given a list of symbols, canonicalize the list and return the canonical
   /// trait type.
-  TraitType getCanonicalTrait(SmallVectorImpl<SymbolRefAttr> &symbols);
+  TraitType getCanonicalTrait(
+      SmallVectorImpl<SymbolRefAttr> &symbols,
+      const DenseMap<SymbolRefAttr, ConstraintAttr> &constraintMap =
+          DenseMap<SymbolRefAttr, ConstraintAttr>());
 
   /// Define the self parameter of the trait and add inheritance attributes. For
   /// example, given:

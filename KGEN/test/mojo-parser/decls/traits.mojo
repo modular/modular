@@ -8,9 +8,9 @@
 
 
 # CHECK-LABEL: lit.trait.decl @Trait
-# CHECK-SAME: <?, [[T:.*]]: !Trait>
+# CHECK-SAME: <?, [[T:.*]]: !AnyType_Trait>
 trait Trait:
-    # CHECK: lit.fn @"f0{{.*}}(%self: !lit.ref<:!Trait [[T]], imm {{.*}}> read_mem) -> !kgen.none
+    # CHECK: lit.fn @"f0{{.*}}(%self: !lit.ref<:!AnyType_Trait [[T]], imm {{.*}}> read_mem) -> !kgen.none
     # CHECK-NEXT: kgen.unreachable
     def f0(self):
         ...
@@ -75,9 +75,9 @@ trait EmptyTrait:
 
 
 # CHECK-LABEL: lit.trait.decl @Trait1
-# CHECK-SAME: <?, [[T:.*]]: !Trait1>
+# CHECK-SAME: <?, [[T:.*]]: !AnyType_Trait1>
 trait Trait1:
-    # CHECK: lit.fn @"f{{.*}}(%self: !lit.ref<{{.*}}> read_mem, ?, %__result__: !lit.ref<:!Trait1 [[T]], mut {{.*}}> byref_result) -> !kgen.none
+    # CHECK: lit.fn @"f{{.*}}(%self: !lit.ref<{{.*}}> read_mem, ?, %__result__: !lit.ref<:!AnyType_Trait1 [[T]], mut {{.*}}> byref_result) -> !kgen.none
     def f(self) -> Self:
         ...
 
@@ -905,14 +905,14 @@ struct ParamType[x: Int](TrivialRegisterPassable):
 
 # CHECK: lit.trait.decl @RGTrait{{.*}}
 trait RGTrait(ImplicitlyDeletable, RegisterPassable):
-    # CHECK-NEXT: lit.fn @"doSomething{{.*}}"[imm *"{{.*}}"](%self: !lit.ref<:!RGTrait *"{{.*}}", imm *"{{.*}}"> read_mem) -> !kgen.none
+    # CHECK-NEXT: lit.fn @"doSomething{{.*}}"[imm *"{{.*}}"](%self: !lit.ref<:!AnyType_ImplicitlyDeletable_Movable_RegisterPassable_RGTrait *"{{.*}}", imm *"{{.*}}"> read_mem) -> !kgen.none
     def doSomething(self):
         ...
-    # CHECK: lit.fn @"__del__({{.*}})"[mut *"{{.*}}"](%self: !lit.ref<:!RGTrait *"{{.*}}", mut *"{{.*}}"> deinit_mem, |) -> !kgen.none
+    # CHECK: lit.fn @"__del__({{.*}})"[mut *"{{.*}}"](%self: !lit.ref<:!AnyType_ImplicitlyDeletable_Movable_RegisterPassable_RGTrait *"{{.*}}", mut *"{{.*}}"> deinit_mem, |) -> !kgen.none
 
 # CHECK-LABEL: lit.trait.decl @RGTrivialTrait{{.*}} register_passable_trivial
 trait RGTrivialTrait(TrivialRegisterPassable):
-    # CHECK-NEXT: lit.fn @"doSomething{{.*}}"(%self: !kgen.param<:!RGTrivialTrait {{.*}}>) -> !kgen.none
+    # CHECK-NEXT: lit.fn @"doSomething{{.*}}"(%self: !kgen.param<:!AnyType_Copyable_ImplicitlyCopyable_ImplicitlyDeletable_Movable_RegisterPassable_TrivialRegisterPassable_RGTrivialTrait {{.*}}>) -> !kgen.none
     def doSomething(self):
         ...
 

@@ -4019,8 +4019,13 @@ LogicalResult
 DeclResolver::addSelfTypeToTrait(TraitDeclOp traitOp, ASTDecl &decl,
                                  SmallVector<SymbolRefAttr> &parentTraits,
                                  DenseSet<SymbolRefAttr> &immediateParents) {
-  auto actualType = ParamDeclAttr::get(decl.mangleParamName("_Self"),
-                                       traitOp.bindReference());
+  // Add the trait itself to its canonical trait list.
+  parentTraits.push_back(getFullyResolvedSymbolRef(traitOp));
+  TraitType canonTrait = getCanonicalTrait(parentTraits);
+  traitOp.setCanonicalTrait(canonTrait);
+
+  auto actualType =
+      ParamDeclAttr::get(decl.mangleParamName("_Self"), canonTrait);
 
   MLIRContext *ctx = getContext();
   auto paramArray = ParamDeclArrayAttr::get(ctx, {actualType});
@@ -4032,11 +4037,6 @@ DeclResolver::addSelfTypeToTrait(TraitDeclOp traitOp, ASTDecl &decl,
     return failure();
   traitOp.setParams(paramArray);
   traitOp.setSignature(sig);
-
-  // Add the trait itself to its canonical trait list.
-  parentTraits.push_back(getFullyResolvedSymbolRef(traitOp));
-  TraitType canonTrait = getCanonicalTrait(parentTraits);
-  traitOp.setCanonicalTrait(canonTrait);
 
   // Add the immediate parents to the trait.
   SmallVector<SymbolRefAttr> immediateParentsVec(immediateParents.begin(),
@@ -4963,6 +4963,8 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
   // Functions are deduplicated by filtering out all inherited functions.
 
   for (SymbolRefAttr symbol : traitType.getSymbols()) {
+    // FIXME: we need to handle trait type with constraints correctly here...
+    // The constraints need to be preserved on the incorporated decls.
     ASTDecl &parentDecl = getDeclForTypeSymbol(symbol);
     if (failed(resolveBody(parentDecl, traitDecl.getLoc())))
       return failure();

@@ -7,9 +7,9 @@
 # RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values -split-input-file | FileCheck %s
 
 # LIT dialect asm aliases for trait composition.
-# CHECK-DAG: !Trait1 = !lit.trait<@trait_composition::@Trait1>
-# CHECK-DAG: !Trait2 = !lit.trait<@trait_composition::@Trait2>
-# CHECK-DAG: !Trait3 = !lit.trait<@trait_composition::@Trait3>
+# CHECK-DAG: !AnyType_Trait1 = !lit.trait<@std::@builtin::@stubs::@AnyType, @trait_composition::@Trait1>
+# CHECK-DAG: !AnyType_Trait2 = !lit.trait<@std::@builtin::@stubs::@AnyType, @trait_composition::@Trait2>
+# CHECK-DAG: !AnyType_Trait3 = !lit.trait<@std::@builtin::@stubs::@AnyType, @trait_composition::@Trait3>
 # CHECK-DAG: !AnyType_Trait1_Trait2 = !lit.trait<@std::@builtin::@stubs::@AnyType, @trait_composition::@Trait1, @trait_composition::@Trait2>
 # CHECK-DAG: !AnyType_Trait1_Trait2_Trait3 = !lit.trait<@std::@builtin::@stubs::@AnyType, @trait_composition::@Trait1, @trait_composition::@Trait2, @trait_composition::@Trait3>
 
@@ -326,8 +326,8 @@ trait SubHandle(Handle):
 
 # CHECK-LABEL: lit.trait.decl @SubHandle
 # CHECK: lit.fn @"transfer
-# CHECK-SAME: %self: !lit.ref<:!SubHandle *"_Self`"
-# CHECK-SAME: :!AnyType_Handle upcast(:!SubHandle *"_Self`")
+# CHECK-SAME: %self: !lit.ref<:!AnyType_Handle_SubHandle *"_Self`"
+# CHECK-SAME: :!AnyType_Handle upcast(:!AnyType_Handle_SubHandle *"_Self`")
 # CHECK-SAME: inheritedFrom = @{{.*}}::@Handle
 def main():
     pass

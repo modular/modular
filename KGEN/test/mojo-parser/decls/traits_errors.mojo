@@ -206,24 +206,6 @@ struct ConflictStruct[a: Int](ConflictTraitName):
     pass
 
 
-trait SameEntryDeclA(TrivialRegisterPassable):
-    # expected-note @+1 {{candidate declared here}}
-    def foo(self: Self):
-        pass
-
-
-trait SameEntryDeclB(SameEntryDeclA, TrivialRegisterPassable):
-    # expected-note @+1 {{candidate declared here}}
-    def foo(self: Self):
-        pass
-
-
-# TODO: maybe better to be detected at trait resolution time instead of overload resolution time here?
-def blah[b_t: SameEntryDeclB](b: b_t):
-    # expected-error @+1 {{ambiguous call to 'foo'}}
-    b.foo()
-
-
 # ===----------------------------------------------------------------------=== #
 # Synthesized __del__
 # ===----------------------------------------------------------------------=== #

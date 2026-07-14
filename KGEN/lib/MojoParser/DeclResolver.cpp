@@ -383,14 +383,25 @@ TraitType DeclResolver::getCanonicalTrait(TraitType trait) {
   if (TraitType canonical = traitCanonicalizationCache.lookup(trait))
     return canonical;
   SmallVector<SymbolRefAttr> symbols(trait.getSymbols());
-  return traitCanonicalizationCache[trait] = getCanonicalTrait(symbols);
+  DenseMap<SymbolRefAttr, ConstraintAttr> constraintMap;
+  if (trait.hasConstraints())
+    for (auto [symbol, constraint] :
+         llvm::zip_equal(symbols, trait.getConstraints()))
+      constraintMap[symbol] = constraint;
+
+  return traitCanonicalizationCache[trait] =
+             getCanonicalTrait(symbols, constraintMap);
 }
 
-TraitType
-DeclResolver::getCanonicalTrait(SmallVectorImpl<SymbolRefAttr> &symbols) {
-  if (!symbols.empty())
-    canonicalizeTraitCompositionSymbols(shared, symbols);
-  return TraitType::get(getContext(), symbols);
+TraitType DeclResolver::getCanonicalTrait(
+    SmallVectorImpl<SymbolRefAttr> &symbols,
+    const DenseMap<SymbolRefAttr, ConstraintAttr> &constraintMap) {
+  SmallVector<ConstraintAttr> constraints = {};
+  if (!symbols.empty()) {
+    constraints =
+        canonicalizeTraitSymbolsAndConstraints(shared, symbols, constraintMap);
+  }
+  return TraitType::get(getContext(), symbols, constraints);
 }
 
 void DeclResolver::attachDeclToTraitCompositionDecl(ASTDecl *traitDecl,
@@ -1502,27 +1513,30 @@ Operation *DeclResolver::finalizeFuncSignature(FnOp funcOp, ASTDecl &decl) {
 }
 
 ASTDecl *DeclResolver::getTraitDecl(TraitType trait) {
-  ArrayRef<SymbolRefAttr> symbols = trait.getSymbols();
+  SmallVector<SymbolRefAttr> symbols =
+      LIT::reduceTraitCompositionSymbols(shared, trait.getSymbols());
   if (symbols.size() == 1)
     return &getDeclForTypeSymbol(symbols.front());
 
-  TraitType canonTraitType = getCanonicalTrait(trait);
+  assert(getCanonicalTrait(trait) == trait &&
+         "trait type should always be canonicalized");
+
   // Check if the canonicalized trait type has a hit.
-  if (auto it = canonicalTraitCompositionDecls.find(canonTraitType);
+  if (auto it = canonicalTraitCompositionDecls.find(trait);
       it != canonicalTraitCompositionDecls.end())
     return it->second;
 
   // Otherwise, create a new decl and register for the canonical trait type.
   // Trait compositions are anonymous declarations and do not have a source
   // location themselves. Conformance errors will be routed to its member decls.
-  ASTDecl *decl = &createUnlistedDecl(DeclIRValue(canonTraitType), /*loc=*/{},
+  ASTDecl *decl = &createUnlistedDecl(DeclIRValue(trait), /*loc=*/{},
                                       /*parentDecl=*/nullptr, LexerCursor(),
                                       LexerCursor(), /*indentation=*/-1);
 
   // Initialize the decl to signature-resolved since we do not have anything to
   // do for the signature resolve phase.
   decl->resolvedness = DeclResolvedness::signature;
-  canonicalTraitCompositionDecls[canonTraitType] = decl;
+  canonicalTraitCompositionDecls[trait] = decl;
   return decl;
 }
 
