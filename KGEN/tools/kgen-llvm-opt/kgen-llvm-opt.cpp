@@ -31,6 +31,7 @@
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/CommonCLOptions.h"
+#include "Target/TargetTraits.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/Analysis/RuntimeLibcallInfo.h"
 #include "llvm/Bitcode/BitcodeWriterPass.h"
@@ -232,12 +233,13 @@ buildPipeline(PassBuilder &pb, const CLOptions &clOptions, Triple triple) {
   return mpm;
 }
 
-// Custom hack to handle Metal that is not supported in upstream
-// Replace air64 with arm64
-static std::string fixTargetTriple(std::string triple) {
-  if (triple.find("air64") != std::string::npos)
-    triple = triple.replace(triple.find("air64"), 5, "arm64");
-  return triple;
+// Normalize a target triple for codegen via its registered TargetTraits (a
+// target may compile through a different LLVM triple).
+static std::string fixTargetTriple(StringRef triple) {
+  if (const M::KGEN::TargetTraits *traits =
+          M::KGEN::TargetTraitsRegistry::get().lookup(Triple(triple)))
+    return traits->codegenTriple(triple);
+  return triple.str();
 }
 
 int main(int argc, char **argv) {
@@ -291,9 +293,6 @@ int main(int argc, char **argv) {
 
   cl::ParseCommandLineOptions(
       argc, argv, "llvm .bc -> .bc modular optimizer and analysis printer\n");
-
-  bool useCustomizedBitcodeWriter =
-      (clOptions.outputBCVersion != BCVersionNo::DEFAULT);
 
   LLVMContext context;
   SMDiagnostic err;
@@ -372,13 +371,39 @@ int main(int argc, char **argv) {
   if (!clOptions.targetTriple.empty())
     module->setTargetTriple(Triple(Triple::normalize(clOptions.targetTriple)));
 
-  const bool isMetalTriple = M::KGEN::isMetalTriple(module->getTargetTriple());
+  const M::KGEN::TargetTraits *traits =
+      M::KGEN::TargetTraitsRegistry::get().lookup(module->getTargetTriple());
+
+  // A target may force a specific bitcode version, overriding any CLI
+  // selection.
+  unsigned forcedBCVersion = traits ? traits->forcedBitcodeVersion() : 0;
+  BCVersionNo bcVersion = clOptions.outputBCVersion;
+  switch (forcedBCVersion) {
+  case 0:
+    break;
+  case 17:
+    bcVersion = BCVersionNo::LLVM17;
+    break;
+  case 19:
+    bcVersion = BCVersionNo::LLVM19;
+    break;
+  case 21:
+    bcVersion = BCVersionNo::LLVM21;
+    break;
+  default:
+    errs() << argv[0] << ": unsupported forced bitcode version "
+           << forcedBCVersion << " for target '"
+           << (traits ? traits->name() : "<unknown>") << "'\n";
+    return 1;
+  }
+
+  bool useExplicitBitcodeWriter = bcVersion != BCVersionNo::DEFAULT;
   Triple moduleTriple(fixTargetTriple(module->getTargetTriple().str()));
   TargetLibraryInfoImpl tlii(moduleTriple);
   std::string cpuStr, featuresStr;
   std::unique_ptr<TargetMachine> targetMachine;
 
-  if (isMetalTriple || moduleTriple.getArch()) {
+  if (moduleTriple.getArch()) {
     const TargetOptions options =
         codegen::InitTargetOptionsFromCodeGenFlags(moduleTriple);
     cpuStr = codegen::getCPUStr();
@@ -422,9 +447,9 @@ int main(int argc, char **argv) {
                                 /*EmitSummaryIndex=*/false));
     break;
   case OK_OutputBitcode:
-    // For metal use custom bitcode writer that emits AIR. That helps to test it
-    // too.
-    if (!isMetalTriple && !useCustomizedBitcodeWriter) {
+    // With no explicit bitcode version requested, use the standard writer here;
+    // an explicit version is written after the run below.
+    if (!useExplicitBitcodeWriter) {
       mpm.addPass(BitcodeWriterPass(out->os(),
                                     /*ShouldPreserveBitcodeUseListOrder=*/false,
                                     /*EmitSummaryIndex=*/false,
@@ -455,14 +480,8 @@ int main(int argc, char **argv) {
   if (!clOptions.downgradeIR && verifyModule(*module, &llvm::errs()))
     return 1;
 
-  if (isMetalTriple && outputKind == OK_OutputBitcode) {
-    M::KGEN::LLVM::WriteBitcode17ToFile(*module, out->os(),
-                                        /*ShouldPreserveUseListOrder = */ false,
-                                        /*ModuleSummaryIndex =*/nullptr,
-                                        /*GenerateHash = */ false,
-                                        /*ModuleHash = */ nullptr);
-  } else if (outputKind == OK_OutputBitcode) {
-    switch (clOptions.outputBCVersion) {
+  if (useExplicitBitcodeWriter && outputKind == OK_OutputBitcode) {
+    switch (bcVersion) {
     case BCVersionNo::LLVM17:
       M::KGEN::LLVM::WriteBitcode17ToFile(
           *module, out->os(),

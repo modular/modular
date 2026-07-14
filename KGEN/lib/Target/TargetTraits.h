@@ -74,6 +74,17 @@ public:
     return std::nullopt;
   }
 
+  /// LLVM triple to use for this target's codegen, given `triple`. Defaults to
+  /// `triple` unchanged; a target that compiles through a different LLVM triple
+  /// normalizes it here.
+  virtual std::string codegenTriple(llvm::StringRef triple) const {
+    return triple.str();
+  }
+
+  /// Bitcode format version this target requires (an LLVM major version), or 0
+  /// to use the caller's default. Overrides the caller-selected version.
+  virtual unsigned forcedBitcodeVersion() const { return 0; }
+
   /// File extension for this target's assembly output (e.g. ".s").
   virtual llvm::StringRef getAsmExtension() const = 0;
   /// File extension for this target's LLVM IR output. Each target uses a
