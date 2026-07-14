@@ -936,36 +936,31 @@ struct Dict[
             )
         )
 
+    # TODO(MSTDL-2390): Remove `Copyable` constraints once we have better iter traits.
+    # TODO(MOCO-4308): Remove redundant `KeyElement` constraints
     def __reversed__(
         ref self,
     ) -> _DictKeyIter[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
-        downcast[Self.V, Copyable & ImplicitlyDeletable],
+        Self.K,
+        Self.V,
         Self.H,
         origin_of(self),
         False,
-    ]:
+    ] where conforms_to(
+        Self.K, KeyElement & Copyable & ImplicitlyDeletable
+    ) and conforms_to(
+        Self.V, Copyable & ImplicitlyDeletable
+    ):
         """Iterate backwards over the dict keys, returning immutable references.
 
         Returns:
             A reversed iterator of immutable references to the dict keys.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraints once we have better iter traits.
-        comptime assert conforms_to(Self.K, Copyable) and conforms_to(
-            Self.V, Copyable
-        ), "Dict iteration requires the key and value types to be `Copyable`."
-        comptime DictCopyable = Dict[
-            downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
-            downcast[Self.V, Copyable & ImplicitlyDeletable],
-            Self.H,
-        ]
         return _DictKeyIter(
             _DictEntryIter[forward=False](
                 len(self._order) - 1,
                 0,
-                rebind[Pointer[DictCopyable, origin_of(self)]](
-                    Pointer(to=self)
-                )[],
+                Pointer(to=self),
             )
         )
 
@@ -1423,14 +1418,20 @@ struct Dict[
         """
         return Self.__iter__(self)
 
+    # TODO(MOCO-4308): Remove redundant `KeyElement` constraints
+    # TODO(MSTDL-2390): Remove `Copyable` constraints once we have better iter traits.
     def values(
         ref self,
     ) -> _DictValueIter[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
-        downcast[Self.V, Copyable & ImplicitlyDeletable],
+        Self.K,
+        Self.V,
         Self.H,
         origin_of(self),
-    ]:
+    ] where conforms_to(
+        Self.K, KeyElement & Copyable & ImplicitlyDeletable
+    ) and conforms_to(
+        Self.V, ImplicitlyDeletable & Copyable
+    ):
         """Iterate over the dict's values as references.
 
         Returns:
@@ -1447,24 +1448,7 @@ struct Dict[
             # All values will be printed, but order is not guaranteed
         ```
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraints once we have better iter traits.
-        comptime assert conforms_to(Self.K, Copyable) and conforms_to(
-            Self.V, Copyable
-        ), "Dict iteration requires the key and value types to be `Copyable`."
-        comptime DictCopyable = Dict[
-            downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
-            downcast[Self.V, Copyable & ImplicitlyDeletable],
-            Self.H,
-        ]
-        return _DictValueIter(
-            _DictEntryIter(
-                0,
-                0,
-                rebind[Pointer[DictCopyable, origin_of(self)]](
-                    Pointer(to=self)
-                )[],
-            )
-        )
+        return _DictValueIter(_DictEntryIter(0, 0, Pointer(to=self)))
 
     def items(
         ref self,
@@ -1513,11 +1497,15 @@ struct Dict[
     def take_items(
         mut self,
     ) -> _TakeDictEntryIter[
-        downcast[Self.K, KeyElement & ImplicitlyDeletable],
-        downcast[Self.V, Movable & ImplicitlyDeletable],
+        Self.K,
+        Self.V,
         Self.H,
         origin_of(self),
-    ]:
+    ] where conforms_to(
+        Self.K, KeyElement & ImplicitlyDeletable
+    ) and conforms_to(
+        Self.V, Movable & ImplicitlyDeletable
+    ):
         """Iterate over the dict's entries and move them out of the dictionary
         effectively draining the dictionary.
 
@@ -1540,18 +1528,7 @@ struct Dict[
         # prints 0
         ```
         """
-        return _TakeDictEntryIter(
-            rebind[
-                Pointer[
-                    Dict[
-                        downcast[Self.K, KeyElement & ImplicitlyDeletable],
-                        downcast[Self.V, Movable & ImplicitlyDeletable],
-                        Self.H,
-                    ],
-                    origin_of(self),
-                ]
-            ](Pointer(to=self))[]
-        )
+        return _TakeDictEntryIter(Pointer(to=self)[])
 
     def update(
         mut self, other: Self, /
@@ -2053,10 +2030,10 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDeletable](
         ref self,
     ) -> _DictValueIter[
         Self.key_type,
-        downcast[Self.V, Copyable & ImplicitlyDeletable],
+        Self.V,
         default_comp_time_hasher,
         origin_of(self._dict),
-    ]:
+    ] where conforms_to(Self.V, Copyable & ImplicitlyDeletable):
         """Iterate over the keyword dict's values as references.
 
         Returns:
@@ -2068,10 +2045,10 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDeletable](
         ref self,
     ) -> _DictEntryIter[
         Self.key_type,
-        downcast[Self.V, Copyable & ImplicitlyDeletable],
+        Self.V,
         default_comp_time_hasher,
         origin_of(self._dict),
-    ]:
+    ] where conforms_to(Self.V, Copyable & ImplicitlyDeletable):
         """Iterate over the keyword dictionary's entries as immutable
         references.
 

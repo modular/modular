@@ -384,19 +384,19 @@ struct Span[
     @always_inline
     def __reversed__(
         self,
-    ) -> _SpanIter[downcast[Self.T, Copyable], Self.origin, forward=False,]:
+    ) -> _SpanIter[
+        Self.T,
+        Self.origin,
+        forward=False,
+    ] where conforms_to(
+        Self.T, Copyable
+    ):
         """Iterate backwards over the `Span`.
 
         Returns:
             A reversed iterator of the `Span` elements.
         """
-        comptime assert conforms_to(
-            Self.T, Copyable
-        ), "Span iteration requires the element to be `Copyable`"
-        return _SpanIter[forward=False](
-            len(self),
-            rebind[Span[downcast[Self.T, Copyable], Self.origin]](self),
-        )
+        return _SpanIter[forward=False](len(self), self)
 
     # ===------------------------------------------------------------------===#
     # Trait implementations

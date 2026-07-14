@@ -443,11 +443,7 @@ struct List[T: Movable, /](
         IterableType: Iterable,
     ](
         ref iterable: IterableType,
-        out self: List[
-            downcast[
-                IterableType.IteratorType[origin_of(iterable)].Element, Copyable
-            ]
-        ],
+        out self: List[IterableType.IteratorType[origin_of(iterable)].Element],
     ) where conforms_to(
         IterableType.IteratorType[origin_of(iterable)].Element, Copyable
     ):
@@ -696,21 +692,17 @@ struct List[T: Movable, /](
 
     def __reversed__(
         ref self,
-    ) -> _ListIter[downcast[Self.T, Copyable], origin_of(self), False]:
+    ) -> _ListIter[Self.T, origin_of(self), False] where conforms_to(
+        Self.T, Copyable
+    ):
         """Iterate backwards over the list, returning immutable references.
 
         Returns:
             A reversed iterator of immutable references to the list elements.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
-            Self.T, Copyable
-        ), "List iteration requires the element to be `Copyable`."
         return _ListIter[forward=False](
             index=len(self),
-            src=rebind[
-                UnsafePointer[downcast[Self.T, Copyable], origin_of(self)]
-            ](self.unsafe_ptr()),
+            src=self.unsafe_ptr(),
             length=self._len,
         )
 

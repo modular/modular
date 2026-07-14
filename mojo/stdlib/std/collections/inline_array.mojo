@@ -928,14 +928,15 @@ struct InlineArray[ElementType: Movable, size: Int](
             ](Pointer(to=self)),
         }
 
+    # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
     def __reversed__(
         ref self,
     ) -> _InlineArrayIter[
-        downcast[Self.ElementType, Copyable],
+        Self.ElementType,
         Self.size,
         origin_of(self),
         False,
-    ]:
+    ] where conforms_to(Self.ElementType, Copyable):
         """Iterate over elements of the array in reverse order, returning
         immutable references.
 
@@ -943,18 +944,7 @@ struct InlineArray[ElementType: Movable, size: Int](
             An iterator of immutable references to the array elements in reverse
             order.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
-            Self.ElementType, Copyable
-        ), "InlineArray iteration requires the element to be `Copyable`."
         return _InlineArrayIter[forward=False](
             Self.size,
-            rebind[
-                Pointer[
-                    InlineArray[
-                        downcast[Self.ElementType, Copyable], Self.size
-                    ],
-                    origin_of(self),
-                ]
-            ](Pointer(to=self)),
+            Pointer(to=self),
         )
