@@ -2914,7 +2914,6 @@ def _mha_sm100[
                 num_rows=WM // 2, row_size=BN, access_size=8
             ]()
             # Reuse a_smem for c tile in smem
-            comptime q_tile_size: UInt32 = q_smem_size // 2
             accum_smem_tile = LayoutTensor[
                 output_type,
                 Layout.row_major(BM, config.padded_depth),
