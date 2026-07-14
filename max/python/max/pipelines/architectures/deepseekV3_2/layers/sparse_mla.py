@@ -221,7 +221,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             attn_kwargs["w_uv"] = w_uv
             attn_kwargs["w_uv_scale"] = w_uv_scale
 
-        if self.graph_mode in ["decode", "auto"]:
+        if self.graph_mode in ["prefill", "decode", "auto"]:
             attn_kwargs["w_uk"] = w_uk
             attn_kwargs["w_uk_scale"] = w_uk_scale
             attn_kwargs["w_uv"] = w_uv
@@ -244,11 +244,11 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 "sparse_indices_stride": sparse_indices_stride,
             }
 
-        if effective_graph_mode == "prefill":
-            result = mla_prefill_graph(**attn_kwargs)
-        elif effective_graph_mode == "decode":
+        if effective_graph_mode == "decode":
             result = mla_decode_graph(**attn_kwargs, **sparse_kw)
         else:
+            # TODO(KERN-3198): "prefill" uses the combined op because
+            # mla_prefill_graph doesn't support sparse args yet.
             result = mla_prefill_decode_graph(**attn_kwargs, **sparse_kw)
 
         return result.reshape((-1, self.n_heads * self.v_head_dim))
