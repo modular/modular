@@ -2872,11 +2872,15 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         var byte_size = UInt64(size * size_of[Self.dtype]())
         var buffer = ctx._context[].alloc_host_pinned(byte_size)
         var addr = UInt64(0)
+        var host_ptr: UnsafePointer[UInt8, MutUntrackedOrigin]
         if byte_size > 0:
-            addr = ctx._context[].memory_get_address(buffer)
-        var host_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
-            unsafe_from_address=Int(addr)
-        )
+            host_ptr = ctx._context[].memory_get_host_address[
+                MutUntrackedOrigin
+            ](buffer)
+        else:
+            host_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
+                unsafe_from_address=Int(addr)
+            )
         self._ctx = ctx
         self._inner = ArcPointer(
             _HostBufferInner(buffer^, ctx._context, host_ptr)
