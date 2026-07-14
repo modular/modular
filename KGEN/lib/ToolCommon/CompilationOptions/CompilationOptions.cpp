@@ -6,9 +6,9 @@
 
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Target/TargetTraits.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/TargetParser/ARMTargetParser.h"
 #include <string>
 
 using namespace M;
@@ -137,12 +137,13 @@ void CompilationOptions::print(raw_ostream &os) const {
 
 void CompilationOptions::setDefaultCPU() {
   llvm::Triple triple(targetTriple);
-  if (isHexagonBackend(*this)) {
-    // Set hexagon default CPU same as
-    // https://github.com/llvm/llvm-project/blob/8d59cca1ab9cf4e39e43bf695e415de9ccd41115/clang/lib/Driver/ToolChains/Hexagon.cpp#L804
-    targetCpu = "hexagonv68";
-  } else if (isARMBackend(*this)) {
-    targetCpu = llvm::ARM::getDefaultCPU(triple.getArchName());
+  // A registered target supplies its own default CPU (e.g. the host target's
+  // ARM baseline, or a plugin target); otherwise use the host/cross fallback.
+  const TargetTraits *traits = TargetTraitsRegistry::get().lookup(triple);
+  llvm::StringRef targetDefault =
+      traits ? traits->defaultCPU(triple) : llvm::StringRef();
+  if (!targetDefault.empty()) {
+    targetCpu = targetDefault.str();
   } else if (triple.getArch() !=
              llvm::Triple(llvm::sys::getDefaultTargetTriple()).getArch()) {
     // When cross-compiling, the host CPU is invalid for the target arch.
@@ -159,13 +160,10 @@ void CompilationOptions::setDefaultCPU() {
 }
 
 bool M::KGEN::isGPUTriple(const llvm::Triple &triple) {
-  // llvm::Triple defines isAMDGPU and isAMDGCN functions. The main difference
-  // is that isAMDGPU checks for TeraScale muarch, which we don't support.
-  return triple.isNVPTX() || triple.isAMDGCN() || isMetalTriple(triple);
-}
-
-bool M::KGEN::isHexagonTriple(const llvm::Triple &triple) {
-  return triple.getArch() == llvm::Triple::hexagon;
+  // GPU-ness lives in the registered TargetTraits, so dropping a target's
+  // sources drops it here too.
+  const TargetTraits *traits = TargetTraitsRegistry::get().lookup(triple);
+  return traits && traits->isGPU();
 }
 
 bool M::KGEN::isMetalTriple(const llvm::Triple &triple) {
@@ -176,33 +174,10 @@ bool M::KGEN::isMetalTriple(const llvm::Triple &triple) {
   return tripleStr.starts_with("air64-");
 }
 
-bool M::KGEN::isGPUBackend(const CompilationOptions &options) {
-  llvm::Triple triple(options.targetTriple);
+bool M::KGEN::overrideExported(const llvm::Triple &triple) {
   return isGPUTriple(triple);
 }
 
-bool M::KGEN::isNVPTXBackend(const CompilationOptions &options) {
-  llvm::Triple triple(options.targetTriple);
-  return triple.isNVPTX();
-}
-
-bool M::KGEN::isAMDGPUBackend(const CompilationOptions &options) {
-  llvm::Triple triple(options.targetTriple);
-  return triple.isAMDGCN();
-}
-
-bool M::KGEN::isMetalBackend(const CompilationOptions &options) {
-  // check compilation options for Metal backend
-  return options.targetAccelerator == "metal" ||
-         llvm::StringRef(options.targetTriple).starts_with("air64-");
-}
-
-bool M::KGEN::isHexagonBackend(const CompilationOptions &options) {
-  llvm::Triple triple(options.targetTriple);
-  return isHexagonTriple(triple);
-}
-
-bool M::KGEN::isARMBackend(const CompilationOptions &options) {
-  llvm::Triple triple(options.targetTriple);
-  return triple.isARM();
+bool M::KGEN::overrideExported(const CompilationOptions &options) {
+  return overrideExported(llvm::Triple(options.targetTriple));
 }
