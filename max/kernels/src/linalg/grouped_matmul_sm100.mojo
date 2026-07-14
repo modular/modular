@@ -907,7 +907,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     comptime TMA_LOAD_THREADS = WARP_SIZE
     comptime MMA_THREADS = WARP_SIZE
     comptime EPILOGUE_THREADS = num_output_warps * WARP_SIZE
-    comptime CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
+    comptime CLUSTER_SIZE = Int(cluster_shape[0]) * Int(cluster_shape[1])
     comptime clc_producer_arv_count = 1
     comptime clc_consumer_arv_count = SCHEDULER_THREADS + CLUSTER_SIZE * (
         TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS
