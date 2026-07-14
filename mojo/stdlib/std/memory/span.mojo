@@ -56,7 +56,7 @@ Parameters:
     origin: The origin of the span.
 """
 
-comptime ImmutSpan[
+comptime ImmSpan[
     T: AnyType,
     origin: ImmutOrigin,
 ] = Span[T, origin]
@@ -66,6 +66,10 @@ Parameters:
     T: The type of the elements in the span.
     origin: The origin of the span.
 """
+
+
+@doc_hidden
+comptime ImmutSpan = ImmSpan
 
 
 @fieldwise_init

@@ -187,7 +187,7 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
-comptime ImmutPointer[
+comptime ImmPointer[
     type: AnyType,
     origin: ImmutOrigin,
     *,
@@ -200,6 +200,10 @@ Parameters:
     origin: The origin of the pointer.
     address_space: The address space of the pointer.
 """
+
+
+@doc_hidden
+comptime ImmutPointer = ImmPointer
 
 
 # ===-----------------------------------------------------------------------===#

@@ -253,7 +253,7 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
-comptime ImmutUnsafePointer[
+comptime ImmUnsafePointer[
     type: AnyType,
     origin: ImmutOrigin,
     *,
@@ -266,6 +266,10 @@ Parameters:
     origin: The origin of the pointer.
     address_space: The address space of the pointer.
 """
+
+
+@doc_hidden
+comptime ImmutUnsafePointer = ImmUnsafePointer
 
 comptime OpaquePointer[
     mut: Bool,
@@ -294,7 +298,7 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
-comptime ImmutOpaquePointer[
+comptime ImmOpaquePointer[
     origin: ImmutOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -305,6 +309,10 @@ Parameters:
     origin: The origin of the pointer.
     address_space: The address space of the pointer.
 """
+
+
+@doc_hidden
+comptime ImmutOpaquePointer = ImmOpaquePointer
 
 comptime OptionalUnsafePointer[
     mut: Bool,

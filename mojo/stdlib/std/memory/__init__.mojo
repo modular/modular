@@ -45,18 +45,21 @@ from .stack_allocation import stack_allocation
 from .owned_pointer import OwnedPointer
 from .pointer import (
     AddressSpace,
+    ImmPointer,
     ImmutPointer,
     MutPointer,
     Pointer,
 )
-from .span import ImmutSpan, MutSpan, Span
+from .span import ImmutSpan, ImmSpan, MutSpan, Span
 from .unsafe import bitcast, pack_bits
 from .unsafe_pointer import (
     alloc,
+    ImmOpaquePointer,
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
     OptionalUnsafePointer,
+    ImmUnsafePointer,
     ImmutUnsafePointer,
     MutUnsafePointer,
     UnsafePointer,
