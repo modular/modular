@@ -352,6 +352,24 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "mmmu-video-eval",
+    testonly = True,
+    srcs = ["run_mmmu_video_eval.py"],
+    ignore_extra_deps = [
+        requirement("pillow"),
+    ],
+    main = "run_mmmu_video_eval.py",
+    deps = [
+        requirement("click"),
+        requirement("datasets"),
+        requirement("huggingface-hub"),
+        requirement("openai"),
+        requirement("pillow"),
+        requirement("tqdm"),
+    ],
+)
+
+modular_py_binary(
     name = "pipelines-lm-eval",
     testonly = True,
     srcs = ["pipelines_lm_eval.py"],
