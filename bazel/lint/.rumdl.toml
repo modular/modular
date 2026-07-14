@@ -19,6 +19,7 @@ exclude = [
     ".claude",
     "third-party",
     "oss/mojo-gpu-puzzles/book",
+    "oss/skills",
     "Faux/mojo_llm_from_scratch",
     "CloudInfra/workloads/max-product-dashboard",
     "Kernels/claude_kb/index.md",  # generated catalog; one-line entries exceed line-length by design
