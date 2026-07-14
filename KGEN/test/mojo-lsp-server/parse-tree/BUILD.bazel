@@ -206,13 +206,6 @@ _KERNELS_NO_RUN_LIST = [
     "layout/tensor_storage.mojo",
     "linalg/grouped_matmul_sm100.mojo",
     "linalg/matmul/gpu/sm90/dispatch.mojo",
-    # "cannot implicitly convert 'Int' value to 'UInt32'" at
-    # `comptime q_tile_size: UInt32 = q_smem_size // 2` (line 2917), confirmed
-    # via a direct `kgen -lsp` run. Previously miscategorized alongside the
-    # nesting/visibility-gap files above; it isn't one -- an unrelated,
-    # pre-existing diagnostic on the file's own code, same as the rest of
-    # this category.
-    "nn/attention/gpu/nvidia/sm100/mha_1q.mojo",
     # "use of unknown declaration 'k_type'" at line 5530, confirmed via a
     # direct `kgen -lsp` run. Previously hidden behind the
     # apple_accelerate.mojo bytecode-reader crash (see comment above); needs
