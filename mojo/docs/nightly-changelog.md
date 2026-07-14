@@ -124,7 +124,21 @@ This version is still a work in progress.
       ^
   ```
 
-  Note that this is only possible for source packages for now
+  Note that for precompiled packages (`.mojoc` files), locations *inside* the
+  package are omitted. For example, the above would instead resemble the
+  following for a precompiled `foo` package:
+
+  ```text
+  Included from /bug.mojo:2:
+  /foo/nested_pkg/my_module.mojo:1:5: note: candidate not viable: unexpected argument
+  def bar(): pass
+      ^
+  ```
+
+  Note also that for brevity the compiler does not report where any `std`
+  packages are pulled in as they're treated as privileged and implicitly
+  imported into every module. This includes if the user explicitly imports all
+  or part of the standard library themselves.
 
 ## Language changes
 
