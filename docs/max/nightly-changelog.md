@@ -499,6 +499,14 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed the compiled-model cache (`.max_cache`) not invalidating when the
+  Mojo kernel libraries change. The cache key previously content-hashed only
+  the two built-in kernel packages, not the packages they import
+  (`linalg`, `nn`, ...), so rebuilding after a kernel-source edit could
+  silently serve a stale compiled model — for example during back-to-back
+  kernel A/B benchmarking. The key now covers every Mojo binary package on
+  the module import path, so kernel changes correctly trigger a recompile
+  and clearing caches by hand is no longer needed.
 - Fixed the structured-output grammar backend silently defaulting to
   `llguidance` instead of the intended global default `xgrammar` for models
   launched via `max serve`. The `--structured-output-backend` flag hardcoded
