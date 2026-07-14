@@ -6552,6 +6552,14 @@ def _is_sm10x_gpu() -> bool:
         return False
 
 
+def _is_sm12x_gpu() -> bool:
+    """Checks if the current accelerator is NVIDIA SM120/SM121 (consumer Blackwell)."""
+    try:
+        return accelerator_architecture_name().startswith("sm_12")
+    except Exception:
+        return False
+
+
 def _is_apple_gpu() -> bool:
     """Checks if the current accelerator is an Apple (Metal) GPU."""
     try:
@@ -6634,8 +6642,8 @@ def quantize_dynamic_block_scaled(
     if int(input.shape[1]) % k_alignment != 0:
         raise ValueError(f"input.shape[1] must be a multiple of {k_alignment}")
 
-    if _is_sm10x_gpu():
-        # SM100 TCGEN05: rank-5 interleaved scales layout.
+    if _is_sm10x_gpu() or _is_sm12x_gpu():
+        # SM100 / SM120 TCGEN05: rank-5 interleaved scales layout.
         SF_ATOM_M = [32, 4]
         SF_ATOM_K = 4
         SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
