@@ -53,6 +53,8 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
 
         _ = (
             b.add_type[Context]("Context")
+            .def_method[Context.get_driver_name]("get_driver_name")
+            .def_method[Context.get_device_id]("get_device_id")
             .def_method[Context.create_queue]("create_queue")
             .def_method[Context.create_stream]("create_stream")
             .def_method[Context.alloc_sync]("alloc_sync")
@@ -89,6 +91,7 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
         _ = (
             b.add_type[Queue]("Queue")
             .def_method[Queue.synchronize]("synchronize")
+            .def_method[Queue.native_handle]("native_handle")
             .def_method[Queue.record_event]("record_event")
             .def_method[Queue.copy]("copy")
             .def_method[Queue.copy_to_device]("copy_to_device")

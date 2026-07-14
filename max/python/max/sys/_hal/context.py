@@ -45,6 +45,16 @@ class Context:
         obj._inner = inner
         return obj
 
+    @property
+    def driver_name(self) -> str:
+        """Name of the HAL plugin driver backing this context (e.g. "CUDA")."""
+        return self._inner.get_driver_name()
+
+    @property
+    def device_id(self) -> int:
+        """Id of the device this context is bound to."""
+        return self._inner.get_device_id()
+
     def create_queue(self) -> Queue:
         return Queue._wrap(self._inner.create_queue())
 

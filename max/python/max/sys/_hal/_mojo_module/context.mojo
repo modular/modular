@@ -46,6 +46,16 @@ struct Context(Movable, Writable):
             abort(String("Context method receiver was not a Context: ", e))
 
     @staticmethod
+    def get_driver_name(py_self: PythonObject) raises -> PythonObject:
+        var self_ptr = Self._self_ptr(py_self)
+        return PythonObject(self_ptr[]._arc[].get_driver_name())
+
+    @staticmethod
+    def get_device_id(py_self: PythonObject) raises -> PythonObject:
+        var self_ptr = Self._self_ptr(py_self)
+        return PythonObject(Int(self_ptr[]._arc[].get_device_id()))
+
+    @staticmethod
     def create_queue(py_self: PythonObject) raises -> PythonObject:
         var self_ptr = Self._self_ptr(py_self)
         var queue_arc = HALQueue[Self.device_spec]._create(self_ptr[]._arc[])

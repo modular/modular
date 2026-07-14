@@ -140,6 +140,23 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         ]()
 
     # ===-------------------------------------------------------------------===#
+    # Queries
+    # ===-------------------------------------------------------------------===#
+
+    def get_driver_name(self) raises HALError -> String:
+        """Returns the API name reported by the plugin backing this context.
+
+        This is the plugin's own identity (e.g. "CUDA", "Metal", "HIP"),
+        not the loader label from the plugin spec, so it is stable however
+        the plugin was loaded.
+        """
+        return self._raw[].get_api_name()
+
+    def get_device_id(self) -> Int64:
+        """Returns the id of the device this context is bound to."""
+        return self._device[].id
+
+    # ===-------------------------------------------------------------------===#
     # Synchronous copies
     # ===-------------------------------------------------------------------===#
 

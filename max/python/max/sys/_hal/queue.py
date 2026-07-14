@@ -46,6 +46,16 @@ class Queue:
     def synchronize(self) -> None:
         self._inner.synchronize()
 
+    @property
+    def native_handle(self) -> int:
+        """Backend stream/queue object as an integer handle.
+
+        The raw native handle (``CUstream`` / ``hipStream_t`` /
+        ``MTLCommandQueue`` address), not an assigned id — suitable to
+        pass to a DLPack producer's ``__dlpack__(stream=...)``.
+        """
+        return self._inner.native_handle()
+
     def record_event(self) -> Event:
         return Event._wrap(self._inner.record_event())
 

@@ -54,6 +54,15 @@ struct Queue(Movable, Writable):
         self_ptr[]._arc[].synchronize()
 
     @staticmethod
+    def native_handle(py_self: PythonObject) raises -> PythonObject:
+        var self_ptr = Self._self_ptr(py_self)
+        # Hand the UInt64 straight to PythonObject (unsigned -> a full
+        # unsigned Python int via PyLong_FromSize_t). Do NOT wrap in Int():
+        # that takes the signed path and a handle with bit 63 set would
+        # surface negative — and -1 is DLPack's "no sync" sentinel.
+        return PythonObject(self_ptr[]._arc[].native_handle())
+
+    @staticmethod
     def record_event(py_self: PythonObject) raises -> PythonObject:
         var self_ptr = Self._self_ptr(py_self)
         var hal_evt = self_ptr[]._arc[].record_event[EVENT_FLAG_CPU_VISIBLE]()

@@ -461,6 +461,26 @@ struct RawDriver(Movable):
             )
         return value.unsafe_assume_init_ref()
 
+    def get_queue_property[
+        name: StringLiteral, T: TrivialRegisterPassable
+    ](self, queue: QueueHandle) raises HALError -> T:
+        """Query a named property of a queue (e.g. its native handle)."""
+        var value = UnsafeMaybeUninit[T]()
+        var status = self._raw.queue_property.f(
+            queue,
+            name.as_c_string_slice(),
+            OutParam[T](to=value).bitcast[NoneType](),
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to get queue property '{name}': {err.message}"
+                ),
+            )
+        return value.unsafe_assume_init_ref()
+
     # ===-------------------------------------------------------------------===#
     # Copy operations
     # ===-------------------------------------------------------------------===#
@@ -824,6 +844,28 @@ struct RawDriver(Movable):
                 err.status,
                 message=String(t"failed to execute function: {err.message}"),
             )
+
+    def get_api_name(self) raises HALError -> String:
+        """Retrieve the plugin-reported API name (e.g. "CUDA", "Metal")."""
+        var value = UnsafeMaybeUninit[OpaquePointer[ImmutUntrackedOrigin]]()
+        var status = self._raw.property.f(
+            self._driver_handle,
+            "api".as_c_string_slice(),
+            OutParam[OpaquePointer[ImmutUntrackedOrigin]](to=value),
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to get driver 'api' property: {err.message}"
+                ),
+            )
+        return String(
+            CStringSlice(
+                unsafe_from_ptr=value.unsafe_assume_init_ref().bitcast[Int8]()
+            )
+        )
 
     # ===-------------------------------------------------------------------===#
     # Status
@@ -1206,6 +1248,16 @@ struct RawPlugin(Movable):
             queue: QueueHandle, is_stream: OutParam[Bool, _]
         ) thin -> PluginResultCode,
     ]
+    var queue_property: HALFunction[
+        "M_driver_queue_property",
+        def[
+            value_origin: MutOrigin
+        ](
+            queue: QueueHandle,
+            property_name: CStringSlice[_],
+            value: OpaquePointer[value_origin],
+        ) thin -> PluginResultCode,
+    ]
     var bundle_load: HALFunction[
         "M_driver_bundle_load",
         def[
@@ -1313,6 +1365,7 @@ struct RawPlugin(Movable):
             handle, so_path
         )
         self.queue_is_stream = type_of(self.queue_is_stream)(handle, so_path)
+        self.queue_property = type_of(self.queue_property)(handle, so_path)
         self.bundle_load = type_of(self.bundle_load)(handle, so_path)
         self.bundle_unload = type_of(self.bundle_unload)(handle, so_path)
 
