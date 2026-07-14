@@ -448,6 +448,60 @@ struct ConvertPOPToLLVMPattern : public mlir::ConvertOpToLLVMPattern<OpT> {
 };
 
 //===----------------------------------------------------------------------===//
+// OneToOneFloatOrIntConversion
+//===----------------------------------------------------------------------===//
+
+/// Compile-time detection of an op accessor `getFastmathFlags()`.
+template <typename, typename = void>
+struct has_getFastmathFlags : std::false_type {};
+
+template <typename T>
+struct has_getFastmathFlags<
+    T, std::void_t<decltype(std::declval<T>().getFastmathFlags())>>
+    : std::true_type {};
+
+template <typename OpT>
+static inline mlir::LLVM::FastmathFlags fastmathFlagsOrDefault(OpT &op) {
+  if constexpr (has_getFastmathFlags<OpT>::value)
+    return static_cast<mlir::LLVM::FastmathFlags>(op.getFastmathFlags());
+  else
+    return LLVM_FASTMATH_FLAGS;
+}
+
+/// This patterns converts a scalar POP dialect operation to either an integer
+/// or floating point LLVM operation one-to-one.
+template <typename Op, typename FloatOp, typename SIntOp,
+          typename UIntOp = SIntOp>
+struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
+  using ConvertPOPToLLVMPattern<Op>::ConvertPOPToLLVMPattern;
+
+  mlir::LogicalResult
+  matchAndRewrite(Op op, typename Op::Adaptor adaptor,
+                  mlir::ConversionPatternRewriter &rewriter) const override {
+    KGENDType dtype = *op.getType().getResolvedDType();
+    Type type = this->convertType(op.getType());
+
+    if (dtype.isBool() || dtype.isInt() || dtype.isIndex() ||
+        dtype.isUIndex()) {
+      if (std::is_same_v<SIntOp, UIntOp> || dtype.isSInt() || dtype.isIndex())
+        rewriter.replaceOpWithNewOp<SIntOp>(op, type, adaptor.getLhs(),
+                                            adaptor.getRhs());
+      else
+        rewriter.replaceOpWithNewOp<UIntOp>(op, type, adaptor.getLhs(),
+                                            adaptor.getRhs());
+    } else {
+      // Take flags from a `getFastmathFlags()` accessor if present.
+      // Otherwise, default to `contract`.
+      mlir::LLVM::FastmathFlags fastmathFlags = fastmathFlagsOrDefault(op);
+      rewriter.replaceOpWithNewOp<FloatOp>(op, type, adaptor.getLhs(),
+                                           adaptor.getRhs(), fastmathFlags);
+    }
+
+    return mlir::success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertSymbolOpToLLVM
 //===----------------------------------------------------------------------===//
 

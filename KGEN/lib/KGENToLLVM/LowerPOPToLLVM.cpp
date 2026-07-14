@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 
 #include "CABILowering.h"
@@ -31,7 +30,6 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/IR/Attributes.h"
 #include <mlir/IR/SymbolTable.h>
-#include <type_traits>
 #include <utility>
 
 using namespace M;
@@ -53,60 +51,6 @@ convertFastmathFlags(FastmathFlags fmf, ConversionPatternRewriter &rewriter) {
   return rewriter.getAttr<LLVM::FastmathFlagsAttr>(
       static_cast<LLVM::FastmathFlags>(fmf));
 }
-
-// Compile-time detection of an op accessor `getFastmathFlags()`.
-template <typename, typename = void>
-struct has_getFastmathFlags : std::false_type {};
-
-template <typename T>
-struct has_getFastmathFlags<
-    T, std::void_t<decltype(std::declval<T>().getFastmathFlags())>>
-    : std::true_type {};
-
-template <typename OpT>
-static inline LLVM::FastmathFlags fastmathFlagsOrDefault(OpT &op) {
-  if constexpr (has_getFastmathFlags<OpT>::value)
-    return static_cast<LLVM::FastmathFlags>(op.getFastmathFlags());
-  else
-    return LLVM_FASTMATH_FLAGS;
-}
-
-//===----------------------------------------------------------------------===//
-// OneToOneFloatOrIntConversion
-//===----------------------------------------------------------------------===//
-
-/// This patterns converts a scalar POP dialect operation to either an integer
-/// or floating point LLVM operation one-to-one.
-template <typename Op, typename FloatOp, typename SIntOp,
-          typename UIntOp = SIntOp>
-struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
-  using ConvertPOPToLLVMPattern<Op>::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(Op op, typename Op::Adaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().getResolvedDType();
-    Type type = this->convertType(op.getType());
-
-    if (dtype.isBool() || dtype.isInt() || dtype.isIndex() ||
-        dtype.isUIndex()) {
-      if (std::is_same_v<SIntOp, UIntOp> || dtype.isSInt() || dtype.isIndex())
-        rewriter.replaceOpWithNewOp<SIntOp>(op, type, adaptor.getLhs(),
-                                            adaptor.getRhs());
-      else
-        rewriter.replaceOpWithNewOp<UIntOp>(op, type, adaptor.getLhs(),
-                                            adaptor.getRhs());
-    } else {
-      // Take flags from a `getFastmathFlags()` accessor if present.
-      // Otherwise, default to `contract`.
-      LLVM::FastmathFlags fastmathFlags = fastmathFlagsOrDefault(op);
-      rewriter.replaceOpWithNewOp<FloatOp>(op, type, adaptor.getLhs(),
-                                           adaptor.getRhs(), fastmathFlags);
-    }
-
-    return success();
-  }
-};
 
 //===----------------------------------------------------------------------===//
 // ConvertPOPNeg
@@ -1885,32 +1829,6 @@ struct ConvertPOPSIMDReduceAnd
 };
 
 //===----------------------------------------------------------------------===//
-// Hexagon Conversions
-//===----------------------------------------------------------------------===//
-
-template <typename POPOpT, typename FOpT, typename SOpT, typename UOpT>
-struct ConvertOneToOneFloatOrIntOnHexagon
-    : public OneToOneFloatOrIntConversion<POPOpT, FOpT, SOpT, UOpT> {
-  using BaseT = OneToOneFloatOrIntConversion<POPOpT, FOpT, SOpT, UOpT>;
-  using BaseT::BaseT;
-
-  LogicalResult
-  matchAndRewrite(POPOpT op, typename POPOpT::Adaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    if (!isHexagonTriple(this->getTypeConverter()->getTarget().getTriple()))
-      return failure();
-    return BaseT::matchAndRewrite(op, adaptor, rewriter);
-  }
-};
-
-using ConvertPOPMinOnHexagon =
-    ConvertOneToOneFloatOrIntOnHexagon<MinOp, LLVM::MinimumOp, LLVM::SMinOp,
-                                       LLVM::UMinOp>;
-using ConvertPOPMaxOnHexagon =
-    ConvertOneToOneFloatOrIntOnHexagon<MaxOp, LLVM::MaximumOp, LLVM::SMaxOp,
-                                       LLVM::UMaxOp>;
-
-//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -2103,12 +2021,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   mlir::RewritePatternSet patterns(&getContext());
   populatePOPToLLVMPatterns(typeConverter, patterns);
 
-  if (isHexagonTriple(targetInfo.getTriple())) {
-    patterns.insert<ConvertPOPMaxOnHexagon, ConvertPOPMinOnHexagon>(
-        typeConverter);
-  } else {
-    patterns.insert<ConvertPOPMax, ConvertPOPMin>(typeConverter);
-  }
+  patterns.insert<ConvertPOPMax, ConvertPOPMin>(typeConverter);
   mlir::index::populateIndexToLLVMConversionPatterns(typeConverter, patterns);
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
