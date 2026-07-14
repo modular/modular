@@ -34,6 +34,7 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 
 @lldb_formatter_wrapping_type
 struct Tuple[*element_types: Movable](
+    Comparable where element_types.all_conforms_to[Comparable](),
     Copyable where element_types.all_conforms_to[Copyable](),
     Defaultable where element_types.all_conforms_to[Defaultable](),
     Equatable where element_types.all_conforms_to[Equatable](),

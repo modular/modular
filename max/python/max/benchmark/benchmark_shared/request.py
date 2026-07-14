@@ -1502,8 +1502,9 @@ class RequestCounter:
             self.total_sent_requests += 1
             if self.total_sent_requests == self.max_requests:
                 logger.info(
-                    f"Ending run: max requests {self.max_requests} have been"
-                    " sent"
+                    f"Request cap reached (--num-prompts={self.max_requests}):"
+                    " no new requests will start; waiting for queued and"
+                    " in-flight requests to complete."
                 )
             return True
 
