@@ -10,3 +10,12 @@ mojo_test(
         "@mojo//:test_utils",
     ],
 )
+
+mojo_test(
+    name = "test_gpu_target_plugin.mojo.test",
+    srcs = ["test_gpu_target_plugin.mojo"],
+    deps = [
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)

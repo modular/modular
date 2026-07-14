@@ -328,6 +328,7 @@ def _get_metal_m1_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
+        `stdlib_plugin = "metal", `,
         `arch = "apple-m1", `,
         `features = "+metal3_2,+air2_7_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
@@ -344,6 +345,7 @@ def _get_metal_m2_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
+        `stdlib_plugin = "metal", `,
         `arch = "apple-m2", `,
         `features = "+metal3_2,+air2_7_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
@@ -360,6 +362,7 @@ def _get_metal_m3_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
+        `stdlib_plugin = "metal", `,
         `arch = "apple-m3", `,
         `features = "+metal3_2,+air2_7_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
@@ -376,6 +379,7 @@ def _get_metal_m4_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
+        `stdlib_plugin = "metal", `,
         `arch = "apple-m4", `,
         `features = "+metal3_2,+air2_7_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
@@ -392,6 +396,7 @@ def _get_metal_m5_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
+        `stdlib_plugin = "metal", `,
         `arch = "apple-m5", `,
         `features = "+metal3_2,+air2_7_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
@@ -408,6 +413,7 @@ def _get_metal_m1_metal4_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
+        `stdlib_plugin = "metal", `,
         `arch = "apple-m1", `,
         `features = "+metal4_0,+air2_8_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
@@ -424,6 +430,7 @@ def _get_metal_m2_metal4_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
+        `stdlib_plugin = "metal", `,
         `arch = "apple-m2", `,
         `features = "+metal4_0,+air2_8_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
@@ -440,6 +447,7 @@ def _get_metal_m3_metal4_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
+        `stdlib_plugin = "metal", `,
         `arch = "apple-m3", `,
         `features = "+metal4_0,+air2_8_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
@@ -456,6 +464,7 @@ def _get_metal_m4_metal4_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
+        `stdlib_plugin = "metal", `,
         `arch = "apple-m4", `,
         `features = "+metal4_0,+air2_8_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
@@ -472,6 +481,7 @@ def _get_metal_m5_metal4_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
+        `stdlib_plugin = "metal", `,
         `arch = "apple-m5", `,
         `features = "+metal4_0,+air2_8_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
@@ -621,6 +631,7 @@ def _get_a100_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_80", `,
         `features = "+ptx81,+sm_80", `,
         `tune_cpu = "sm_80", `,
@@ -656,6 +667,7 @@ def _get_a10_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_86", `,
         `features = "+ptx81,+sm_86", `,
         `tune_cpu = "sm_86", `,
@@ -691,6 +703,7 @@ def _get_orin_nano_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_87", `,
         `features = "+ptx81,+sm_87", `,
         `tune_cpu = "sm_87", `,
@@ -727,6 +740,7 @@ def _get_jetson_thor_target() -> _TargetType:
 
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_110", `,
         `features = "+ptx90,+sm_110", `,
         `tune_cpu = "sm_110", `,
@@ -762,6 +776,7 @@ def _get_dgx_spark_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_121a", `,
         `features = "+ptx88,+sm_121a", `,
         `tune_cpu = "sm_121a", `,
@@ -797,6 +812,7 @@ def _get_l4_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_89", `,
         `features = "+ptx81,+sm_89", `,
         `tune_cpu = "sm_89", `,
@@ -832,6 +848,7 @@ def _get_rtx4090m_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_89", `,
         `features = "+ptx81,+sm_89", `,
         `tune_cpu = "sm_90a", `,
@@ -867,6 +884,7 @@ def _get_rtx4090_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_89", `,
         `features = "+ptx81,+sm_89", `,
         `tune_cpu = "sm_90a", `,
@@ -903,6 +921,7 @@ def _get_h100_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_90a", `,
         `features = "+ptx85,+sm_90a", `,
         `tune_cpu = "sm_90a", `,
@@ -939,6 +958,7 @@ def _get_b100_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_100a", `,
         `features = "+ptx88,+sm_100a", `,
         `tune_cpu = "sm_100a", `,
@@ -988,6 +1008,7 @@ def _get_b300_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_103a", `,
         `features = "+ptx88,+sm_103a", `,
         `tune_cpu = "sm_103a", `,
@@ -1060,6 +1081,7 @@ def _get_rtx5090_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_120a", `,
         `features = "+ptx87,+sm_120a", `,
         `tune_cpu = "sm_120a", `,
@@ -1097,6 +1119,7 @@ def _get_rtx3090_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_86", `,
         `features = "+ptx63,+sm_86", `,
         `tune_cpu = "sm_86", `,
@@ -1135,6 +1158,7 @@ def _get_gtx1080ti_target() -> _TargetType:
     # Note: GTX 1080 Ti doesn't specify tune_cpu, data_layout, or index_bit_width
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_61", `,
         `features = "+ptx50,+sm_61", `,
         `simd_bit_width = 128`,
@@ -1170,6 +1194,7 @@ def _get_gtx1060_target() -> _TargetType:
 
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_61", `,
         `features = "+ptx50,+sm_61", `,
         `tune_cpu = "sm_61", `,
@@ -1207,6 +1232,7 @@ def _get_gtx970_target() -> _TargetType:
     # Note: GTX 970 doesn't specify tune_cpu, data_layout, or index_bit_width
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_52", `,
         `features = "+ptx50,+sm_52", `,
         `simd_bit_width = 128`,
@@ -1240,6 +1266,7 @@ def _get_teslap100_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_60", `,
         `features = "+ptx50,+sm_60", `,
         `tune_cpu = "sm_60", `,
@@ -1276,6 +1303,7 @@ def _get_rtx2060_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
         `arch = "sm_75", `,
         `features = "+ptx63,+sm_75", `,
         `tune_cpu = "sm_75", `,
@@ -1312,6 +1340,7 @@ def _get_mi250x_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx90a", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1347,6 +1376,7 @@ def _get_mi300x_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx942", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1382,6 +1412,7 @@ def _get_mi300a_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx942", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1424,6 +1455,7 @@ def _get_mi355x_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx950", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1459,6 +1491,7 @@ def _get_9070_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx1201", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1476,6 +1509,7 @@ def _get_9060_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx1200", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1493,6 +1527,7 @@ def _get_7900_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx1100", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1510,6 +1545,7 @@ def _get_7800_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx1101", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1527,6 +1563,7 @@ def _get_7600_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx1102", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1544,6 +1581,7 @@ def _get_6900_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx1030", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1561,6 +1599,7 @@ def _get_780m_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx1103", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1578,6 +1617,7 @@ def _get_880m_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx1150", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1595,6 +1635,7 @@ def _get_8060s_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx1151", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1612,6 +1653,7 @@ def _get_860m_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx1152", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
@@ -1629,6 +1671,7 @@ def _get_steamdeck_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `stdlib_plugin = "hip", `,
         `arch = "gfx1033", `,
         `features = "", `,
         `data_layout = "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
