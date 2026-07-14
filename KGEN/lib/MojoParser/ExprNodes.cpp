@@ -2374,7 +2374,7 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
                                     traitType.getSymbols().end());
         }
       }
-      canonicalizeTraitCompositionSymbols(shared, mergedTraitSymbols);
+      sortAndDeduplicateSymbols(mergedTraitSymbols);
       aliasType = TraitType::get(emitter.getContext(), mergedTraitSymbols);
     }
 
@@ -5160,14 +5160,6 @@ AnyValue MagicFunctionNode::emitConformsTo(ExprDest &dest,
     return {};
   }
 
-  if (auto traitType = sugarDynCast<TraitType>(traitToCheck.getIfTypeValue())) {
-    SmallVector<mlir::SymbolRefAttr> symbols(traitType.getSymbols());
-    // Canonicalize to include the full ancestor chain so that
-    // constraintImplies can use simple set containment for subsumption.
-    canonicalizeTraitCompositionSymbols(emitter.shared, symbols);
-    auto canonicalTraitType = TraitType::get(traitType.getContext(), symbols);
-    traitToCheck = canonicalTraitType.getPValue();
-  }
   TypedAttr conformToI1 =
       TypeConformsToTraitAttr::get(checkedAttr, traitToCheck.get());
   return emitter.emitBool({conformToI1, this}, dest);

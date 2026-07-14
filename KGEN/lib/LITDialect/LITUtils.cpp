@@ -685,10 +685,8 @@ FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
   if (!traitType)
     return failure();
 
-  SmallVector<SymbolRefAttr> symbols(traitType.getSymbols());
-  canonicalizeTraitCompositionSymbols(symbols, traitDeclResolver);
-
-  DenseSet<SymbolRefAttr> symbolSet(symbols.begin(), symbols.end());
+  DenseSet<SymbolRefAttr> symbolSet(traitType.getSymbols().begin(),
+                                    traitType.getSymbols().end());
   for (SymbolRefAttr toCheck : *traitSymbolsOr) {
     if (!symbolSet.contains(toCheck))
       return failure();
@@ -795,24 +793,6 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
 
     if (!toTrait || !fromTrait)
       return failure();
-
-#ifndef MODULAR_PRODUCTION
-    SmallVector<mlir::SymbolRefAttr> fromTraitSymbols(fromTrait.getSymbols());
-    canonicalizeTraitCompositionSymbols(
-        fromTraitSymbols, [&](SymbolRefAttr symbol) -> TraitDeclOp {
-          return symtab.lookupSymbolIn<TraitDeclOp>(module, symbol);
-        });
-    assert(fromTraitSymbols.size() == fromTrait.getSymbols().size() &&
-           "trait type should have been canonicalized");
-
-    SmallVector<mlir::SymbolRefAttr> toTraitsSymbols(toTrait.getSymbols());
-    canonicalizeTraitCompositionSymbols(
-        toTraitsSymbols, [&](SymbolRefAttr symbol) -> TraitDeclOp {
-          return symtab.lookupSymbolIn<TraitDeclOp>(module, symbol);
-        });
-    assert(fromTraitSymbols.size() == fromTrait.getSymbols().size() &&
-           "trait type should have been canonicalized");
-#endif
 
     llvm::SmallPtrSet<SymbolRefAttr, 16> fromSymbols(
         fromTrait.getSymbols().begin(), fromTrait.getSymbols().end());
@@ -1145,7 +1125,7 @@ TraitType LIT::getTraitBoundFromAssumptions(
     return {};
 
   // Canonicalize to include ancestor traits.
-  canonicalizeTraitCompositionSymbols(allTraits, traitDeclResolver);
+  sortAndDeduplicateSymbols(allTraits);
 
   return TraitType::get(typeAttr.getContext(), allTraits);
 }

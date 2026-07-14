@@ -461,7 +461,6 @@ static TraitType refineWithContextualWhereClauses(
 
   // Merge original bounds with refinements (see ExprNodes.cpp).
   SmallVector<SymbolRefAttr> traitSymbols(curTrait.getSymbols());
-  canonicalizeTraitCompositionSymbols(traitSymbols, traitDeclResolver);
   size_t origCount = traitSymbols.size();
   llvm::append_range(traitSymbols, refinedBound.getSymbols());
   sortAndDeduplicateSymbols(traitSymbols);
