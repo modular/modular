@@ -80,9 +80,9 @@ struct Deque[ElementType: Movable](
         iterable_origin: The origin of the iterable.
     """
 
-    comptime IteratorOwnedType: Iterator = _DequeIterOwned[
-        downcast[Self.ElementType, ImplicitlyDeletable]
-    ]
+    comptime IteratorOwnedType: Iterator where conforms_to(
+        Self.ElementType, ImplicitlyDeletable
+    ) = _DequeIterOwned[Self.ElementType]
     """The owned iterator type for this deque."""
 
     # ===-------------------------------------------------------------------===#
@@ -434,12 +434,7 @@ struct Deque[ElementType: Movable](
         Returns:
             An iterator that owns the deque's elements.
         """
-        return {
-            rebind_var[Deque[downcast[Self.ElementType, ImplicitlyDeletable]]](
-                self^
-            ),
-            0,
-        }
+        return {self^, 0}
 
     def __iter__(
         ref self,
@@ -473,34 +468,18 @@ struct Deque[ElementType: Movable](
     def __reversed__(
         ref self,
     ) -> _DequeIter[
-        downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
+        Self.ElementType,
         origin_of(self),
         False,
-    ]:
+    ] where conforms_to(Self.ElementType, Copyable & ImplicitlyDeletable):
         """Iterate backwards over the deque, returning the references.
 
         Returns:
             A reversed iterator of the references to the deque elements.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
-            Self.ElementType, Copyable & ImplicitlyDeletable
-        ), (
-            "Deque iteration requires the element to be `Copyable &"
-            " ImplicitlyDeletable`."
-        )
         return _DequeIter[forward=False](
             len(self),
-            rebind[
-                Pointer[
-                    Deque[
-                        downcast[
-                            Self.ElementType, Copyable & ImplicitlyDeletable
-                        ]
-                    ],
-                    origin_of(self),
-                ]
-            ](Pointer(to=self)),
+            Pointer(to=self),
         )
 
     # ===-------------------------------------------------------------------===#

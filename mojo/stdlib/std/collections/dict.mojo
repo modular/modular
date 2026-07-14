@@ -480,7 +480,10 @@ struct Dict[
         K, ImplicitlyDeletable
     ) and conforms_to(V, ImplicitlyDeletable),
     Iterable,
-    IterableOwned,
+    # TODO(MOCO-4308): Remove redundant 'KeyElement' and 'Movable' constraints
+    IterableOwned where conforms_to(
+        K, KeyElement & ImplicitlyDeletable
+    ) and conforms_to(V, Movable & ImplicitlyDeletable),
     Movable,
     Sized,
     Writable where (
@@ -689,10 +692,15 @@ struct Dict[
         iterable_mut: Whether the iterable is mutable.
         iterable_origin: The origin of the iterable.
     """
-    # TODO(MOCO-4205): Remove trait_downcast and downcast
-    comptime IteratorOwnedType: Iterator = _DictKeyIterOwned[
-        downcast[Self.K, KeyElement & ImplicitlyDeletable],
-        downcast[Self.V, Movable & ImplicitlyDeletable],
+
+    # TODO(MOCO-4308): Remove redundant 'KeyElement' and 'Movable' constraints
+    comptime IteratorOwnedType: Iterator where conforms_to(
+        Self.K, KeyElement & ImplicitlyDeletable
+    ) and conforms_to(
+        Self.V, Movable & ImplicitlyDeletable
+    ) = _DictKeyIterOwned[
+        Self.K,
+        Self.V,
         Self.H,
     ]
     """The owned iterator type for this dictionary."""
@@ -892,24 +900,18 @@ struct Dict[
         var found, _ = self._table.find_slot(hash[Self.H](key), key)
         return found
 
-    def __iter__(var self) -> Self.IteratorOwnedType:
+    # TODO(MOCO-4308): Remove redundant 'KeyElement' and 'Movable' constraints
+    def __iter__(
+        var self,
+    ) -> Self.IteratorOwnedType where conforms_to(
+        Self.K, KeyElement & ImplicitlyDeletable
+    ) and conforms_to(Self.V, Movable & ImplicitlyDeletable):
         """Consume the dictionary and iterate over its keys.
 
         Returns:
             An iterator that owns the dictionary's keys.
         """
-        return {
-            _DictEntryIterOwned(
-                rebind_var[
-                    Dict[
-                        downcast[Self.K, KeyElement & ImplicitlyDeletable],
-                        downcast[Self.V, Movable & ImplicitlyDeletable],
-                        Self.H,
-                    ]
-                ](self^),
-                0,
-            )
-        }
+        return {_DictEntryIterOwned(self^, 0)}
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the dict's keys as immutable references.

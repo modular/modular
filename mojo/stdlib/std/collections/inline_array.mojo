@@ -219,7 +219,8 @@ struct InlineArray[ElementType: Movable, size: Int](
     ImplicitlyCopyable where conforms_to(ElementType, ImplicitlyCopyable),
     ImplicitlyDeletable where conforms_to(ElementType, ImplicitlyDeletable),
     Iterable,
-    IterableOwned where conforms_to(ElementType, ImplicitlyDeletable),
+    # TODO(MOCO-4308): Remove redundant 'Movable' constraint
+    IterableOwned where conforms_to(ElementType, Movable & ImplicitlyDeletable),
     Movable,
     Sized,
     Writable where conforms_to(ElementType, Writable),
@@ -301,9 +302,10 @@ struct InlineArray[ElementType: Movable, size: Int](
         iterable_origin: The origin of the iterable.
     """
 
-    comptime IteratorOwnedType: Iterator = _InlineArrayIterOwned[
-        downcast[Self.ElementType, ImplicitlyDeletable], Self.size
-    ]
+    # TODO(MOCO-4308): Remove redundant 'Movable' constraint
+    comptime IteratorOwnedType: Iterator where conforms_to(
+        Self.ElementType, Movable & ImplicitlyDeletable
+    ) = _InlineArrayIterOwned[Self.ElementType, Self.size]
     """The owned iterator type for this array."""
 
     def _to_device_type(
@@ -887,24 +889,19 @@ struct InlineArray[ElementType: Movable, size: Int](
             Self.size,
         ).fields[FieldsFn=write_fields]()
 
+    # TODO(MOCO-4308): Remove redundant 'Movable' constraint
     def __iter__(
         var self,
     ) -> Self.IteratorOwnedType where conforms_to(
-        Self.ElementType, ImplicitlyDeletable
+        Self.ElementType, Movable & ImplicitlyDeletable
     ):
         """Consume the array and return an iterator over its elements.
 
         Returns:
             An iterator that owns the array's elements.
         """
-        return Self.IteratorOwnedType(
-            rebind_var[
-                InlineArray[
-                    downcast[Self.ElementType, ImplicitlyDeletable],
-                    Self.size,
-                ]
-            ](self^)
-        )
+        # TODO(MOCO-4309): return Self.IteratorOwnedType(self^)
+        return _InlineArrayIterOwned(self^)
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the array, returning immutable references.
@@ -916,17 +913,7 @@ struct InlineArray[ElementType: Movable, size: Int](
         comptime assert conforms_to(
             Self.ElementType, Copyable
         ), "InlineArray iteration requires the element to be `Copyable`."
-        return {
-            0,
-            rebind[
-                Pointer[
-                    InlineArray[
-                        downcast[Self.ElementType, Copyable], Self.size
-                    ],
-                    origin_of(self),
-                ]
-            ](Pointer(to=self)),
-        }
+        return {0, Pointer(to=self)}
 
     # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
     def __reversed__(
