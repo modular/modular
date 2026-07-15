@@ -12,7 +12,6 @@ mojo_library(
     srcs = glob(["*.mojo"]),
     validate_missing_docs = False,
     deps = [
-        "//max:compiler",
         "//max:extensibility",
         "@mojo//:std",
     ],

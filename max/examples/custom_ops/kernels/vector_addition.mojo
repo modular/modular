@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # DOC: max/develop/build-custom-ops.mdx
-import compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 from std.math import ceildiv
@@ -73,7 +73,7 @@ def _vector_addition_gpu(
     )
 
 
-@compiler.register("vector_addition")
+@extensibility.register("vector_addition")
 struct VectorAddition:
     @staticmethod
     def execute[

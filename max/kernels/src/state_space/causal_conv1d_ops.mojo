@@ -19,7 +19,7 @@ Provides compiler-registered operations for causal 1D convolution:
 
 from std.math import ceildiv
 
-import extensibility as compiler
+import extensibility
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from std.memory import unsafe_memcpy
@@ -41,7 +41,7 @@ from extensibility import InputTensor, OutputTensor
 # ============================================================================
 
 
-@compiler.register("causal_conv1d")
+@extensibility.register("causal_conv1d")
 struct CausalConv1D[activation: StaticString]:
     """Causal 1D convolution operation with bias.
 
@@ -323,7 +323,7 @@ struct CausalConv1D[activation: StaticString]:
             raise Error("Unsupported target device")
 
 
-@compiler.register_shape_function("causal_conv1d")
+@extensibility.register_shape_function("causal_conv1d")
 def causal_conv1d_shape[
     dtype: DType,
     rank: Int,
@@ -340,7 +340,7 @@ def causal_conv1d_shape[
 # ===----------------------------------------------------------------------=== #
 
 
-@compiler.register("causal_conv1d_update")
+@extensibility.register("causal_conv1d_update")
 struct CausalConv1DUpdate[activation: StaticString]:
     """Incremental causal conv1d update for autoregressive decoding.
 
@@ -506,7 +506,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
             raise Error("Unsupported target device")
 
 
-@compiler.register_shape_function("causal_conv1d_update")
+@extensibility.register_shape_function("causal_conv1d_update")
 def causal_conv1d_update_shape[
     dtype: DType,
     rank: Int,

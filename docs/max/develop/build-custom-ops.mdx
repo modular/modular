@@ -105,7 +105,7 @@ function arguments.
 Let's inspect the struct and function signatures:
 
 ```mojo title="kernels/add_one.mojo"
-@compiler.register("add_one")
+@extensibility.register("add_one")
 struct AddOne:
     @staticmethod
     def execute[
@@ -119,9 +119,10 @@ struct AddOne:
 ```
 
 The struct must include the
-[`@compiler.register()`](/max/api/mojo-decorators/compiler-register) decorator,
-which registers the custom op with MAX. The `add_one` name we set here is the
-name we'll use to add the op to our Python graph in the next section.
+[`@extensibility.register()`](/max/api/mojo-decorators/extensibility-register)
+decorator, which registers the custom op with MAX. The `add_one` name we set
+here is the name we'll use to add the op to our Python graph in the next
+section.
 
 The rest of the `execute()` signature describes the custom op's graph node to
 the graph compiler: the parameters, inputs, and outputs. The `execute()`
@@ -149,7 +150,7 @@ the following code. The op's core computation that adds `1` to each element in
 the tensor happens in the `elementwise_add_one()` closure function.
 
 ```mojo title="kernels/add_one.mojo" {11-18}
-@compiler.register("add_one")
+@extensibility.register("add_one")
 struct AddOne:
     @staticmethod
     def execute[
@@ -185,10 +186,10 @@ the [next example](#example-2-write-device-specific-kernels).)
 
 If you don't annotate output shapes manually in the Python graph, you must tell
 the compiler how to infer them by registering a shape function with
-[`@compiler.register_shape_function()`](/max/api/mojo-decorators/compiler-register):
+[`@extensibility.register_shape_function()`](/max/api/mojo-decorators/extensibility-register):
 
 ```mojo title="kernels/add_one.mojo"
-@compiler.register_shape_function("add_one")
+@extensibility.register_shape_function("add_one")
 def add_one_shape(x: InputTensor) -> IndexList[x.rank]:
     return x.shape()
 ```
@@ -316,7 +317,7 @@ written specifically for parallelism across GPU threads.
 The vector addition op in `kernels/vector_addition.mojo` looks like this:
 
 ```mojo title="kernels/vector_addition.mojo"
-@compiler.register("vector_addition")
+@extensibility.register("vector_addition")
 struct VectorAddition:
     @staticmethod
     def execute[

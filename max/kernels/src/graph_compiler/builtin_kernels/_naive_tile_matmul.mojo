@@ -22,7 +22,7 @@ on) is expected to be removed once every kernel for the target device has been
 ported to `TileTensor` and the tile path is productionized (see GEX-3919).
 """
 
-import extensibility as compiler
+import extensibility
 
 from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext
@@ -172,7 +172,7 @@ struct _NaiveMatmulTileAdapter[
 # resolves to the generic SIMD `mo.matmul` and only the tile-codegen path
 # (flag on) selects this kernel. Expected to be removed once the real tile
 # matmul lands and the tile-codegen transition completes (see GEX-3919).
-@compiler.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a")
+@extensibility.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a")
 struct MatmulTileSM100:
     @staticmethod
     def execute[

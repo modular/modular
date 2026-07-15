@@ -24,7 +24,7 @@ from std.sys.info import (
     _accelerator_arch,
     has_apple_gpu_accelerator,
 )
-import extensibility as compiler
+import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -106,7 +106,7 @@ from std.utils import IndexList
 from .kernels import *
 
 
-@compiler.register("mo.composite.matmul_fused_partial_rms_norm")
+@extensibility.register("mo.composite.matmul_fused_partial_rms_norm")
 struct MatmulFusedPartialRMSNorm:
     """Fuses GEMV (M=1 matmul) with partial RMS normalization.
 
@@ -156,7 +156,9 @@ struct MatmulFusedPartialRMSNorm:
         )
 
 
-@compiler.register_shape_function("mo.composite.matmul_fused_partial_rms_norm")
+@extensibility.register_shape_function(
+    "mo.composite.matmul_fused_partial_rms_norm"
+)
 def composite_matmul_fused_partial_rms_norm_shape[
     dtype: DType,
     rank: Int,
@@ -172,7 +174,7 @@ def composite_matmul_fused_partial_rms_norm_shape[
     return input.shape()
 
 
-@compiler.register("mo.matmul")
+@extensibility.register("mo.matmul")
 struct Matmul:
     @staticmethod
     def execute[
@@ -247,7 +249,7 @@ struct Matmul:
         )
 
 
-@compiler.register("mo.batch_matmul")
+@extensibility.register("mo.batch_matmul")
 struct BatchMatmul:
     @staticmethod
     def execute[
@@ -300,7 +302,7 @@ struct BatchMatmul:
         ](c_tile, a_tile, b_tile, context=ctx)
 
 
-@compiler.register_shape_function("mo.batch_matmul")
+@extensibility.register_shape_function("mo.batch_matmul")
 def batch_matmul_shape[
     rank: Int,
     a_type: DType,
@@ -315,7 +317,7 @@ def batch_matmul_shape[
     )
 
 
-@compiler.register("mo.composite.matmul_add")
+@extensibility.register("mo.composite.matmul_add")
 struct FusedMatmulAdd:
     @staticmethod
     def execute[
@@ -358,7 +360,7 @@ struct FusedMatmulAdd:
         )
 
 
-@compiler.register("mo.linalg.band_part")
+@extensibility.register("mo.linalg.band_part")
 struct LinalgBandPart:
     @staticmethod
     def execute[
@@ -396,7 +398,7 @@ struct LinalgBandPart:
         )
 
 
-@compiler.register("mo.grouped.matmul.ragged")
+@extensibility.register("mo.grouped.matmul.ragged")
 struct Struct_grouped_matmul_ragged:
     @always_inline
     @staticmethod
@@ -427,7 +429,7 @@ struct Struct_grouped_matmul_ragged:
         )
 
 
-@compiler.register("mo.grouped.matmul.block.scaled")
+@extensibility.register("mo.grouped.matmul.block.scaled")
 struct Struct_grouped_matmul_block_scaled:
     """MOGG wrapper for grouped block-scaled matrix multiplication.
 
@@ -506,7 +508,7 @@ struct Struct_grouped_matmul_block_scaled:
         )
 
 
-@compiler.register("mo.grouped.matmul.block.scaled.swiglu")
+@extensibility.register("mo.grouped.matmul.block.scaled.swiglu")
 struct Struct_grouped_matmul_block_scaled_swiglu:
     """MOGG wrapper for fused grouped NVFP4 matmul + SwiGLU + NVFP4 quant.
 
@@ -605,7 +607,7 @@ struct Struct_grouped_matmul_block_scaled_swiglu:
         )
 
 
-@compiler.register("mo.grouped.matmul.dynamic.scaled.fp8")
+@extensibility.register("mo.grouped.matmul.dynamic.scaled.fp8")
 struct Struct_grouped_matmul_dynamic_scaled_fp8:
     @always_inline
     @staticmethod
@@ -660,7 +662,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         )
 
 
-@compiler.register("mo.grouped.matmul.rowwise.dynamic.scaled.fp8")
+@extensibility.register("mo.grouped.matmul.rowwise.dynamic.scaled.fp8")
 struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
     """MOGG wrapper for grouped (ragged MoE) rowwise/per-token scaled FP8 matmul.
 
@@ -714,7 +716,7 @@ struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
         )
 
 
-@compiler.register("mo.grouped.matmul.block.scaled.mxfp4")
+@extensibility.register("mo.grouped.matmul.block.scaled.mxfp4")
 struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
     """MOGG wrapper for grouped block-scaled matrix multiplication.
 
@@ -815,7 +817,7 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
             )
 
 
-@compiler.register("mo.batched.matmul.dynamic.scaled.fp8")
+@extensibility.register("mo.batched.matmul.dynamic.scaled.fp8")
 struct Struct_batched_matmul_dynamic_scaled_fp8:
     @always_inline
     @staticmethod
@@ -865,7 +867,7 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
         )
 
 
-@compiler.register("mo.matmul.dynamic.block.scaled")
+@extensibility.register("mo.matmul.dynamic.block.scaled")
 struct Struct_matmul_dynamic_block_scaled:
     @always_inline
     @staticmethod
@@ -949,7 +951,7 @@ struct Struct_matmul_dynamic_block_scaled:
         )
 
 
-@compiler.register("mo.matmul.dynamic.block.scaled.mxfp4")
+@extensibility.register("mo.matmul.dynamic.block.scaled.mxfp4")
 struct Struct_matmul_dynamic_block_scaled_mxfp4:
     @always_inline
     @staticmethod
@@ -980,7 +982,7 @@ struct Struct_matmul_dynamic_block_scaled_mxfp4:
         )
 
 
-@compiler.register("mo.matmul.mxfp4.dequant.fp8")
+@extensibility.register("mo.matmul.mxfp4.dequant.fp8")
 struct Struct_matmul_mxfp4_dequant_fp8:
     @always_inline
     @staticmethod
@@ -1026,7 +1028,7 @@ struct Struct_matmul_mxfp4_dequant_fp8:
         )
 
 
-@compiler.register("mo.matmul.weight.only.block.scaled.apple")
+@extensibility.register("mo.matmul.weight.only.block.scaled.apple")
 struct Struct_matmul_weight_only_block_scaled_apple:
     """Apple M5 weight-only NVFP4 (W4A16) matmul: `out = a @ dequant(b)^T`.
 
@@ -1130,7 +1132,7 @@ def _apple_int8_w8a8_dispatch[
     _ = asc_buf^
 
 
-@compiler.register("mo.matmul.int8.w8a8.apple")
+@extensibility.register("mo.matmul.int8.w8a8.apple")
 struct Struct_matmul_int8_w8a8_apple:
     """Apple M5 int8 W8A8 matmul (no bias): `out = dequant(quant(a) @ b^T)`.
 
@@ -1174,7 +1176,7 @@ struct Struct_matmul_int8_w8a8_apple:
         )
 
 
-@compiler.register("mo.matmul.int8.w8a8.apple.bias")
+@extensibility.register("mo.matmul.int8.w8a8.apple.bias")
 struct Struct_matmul_int8_w8a8_apple_bias:
     """Apple M5 int8 W8A8 matmul WITH per-output-channel bias.
 
@@ -1208,7 +1210,7 @@ struct Struct_matmul_int8_w8a8_apple_bias:
         )
 
 
-@compiler.register("layout_transform_KN_to_KNkni")
+@extensibility.register("layout_transform_KN_to_KNkni")
 struct LayoutTransformMatmulKN2KNkni:
     @always_inline
     @staticmethod
@@ -1239,7 +1241,7 @@ struct LayoutTransformMatmulKN2KNkni:
         )
 
 
-@compiler.register("layout_transform_NK_to_KNkni")
+@extensibility.register("layout_transform_NK_to_KNkni")
 struct LayoutTransformMatmulNK2KNkni:
     @always_inline
     @staticmethod
@@ -1270,7 +1272,7 @@ struct LayoutTransformMatmulNK2KNkni:
         )
 
 
-@compiler.register("pack_matmul_b_shape_func")
+@extensibility.register("pack_matmul_b_shape_func")
 struct PackMatmulBShapeFunc:
     @always_inline
     @staticmethod
@@ -1278,7 +1280,7 @@ struct PackMatmulBShapeFunc:
         raise Error("Only meant to be used for shape function!")
 
 
-@compiler.register_shape_function("pack_matmul_b_shape_func")
+@extensibility.register_shape_function("pack_matmul_b_shape_func")
 def pack_matmul_b_shape_func_shape[
     a_type: DType,
     a_shape: IntTuple,
@@ -1298,7 +1300,7 @@ def pack_matmul_b_shape_func_shape[
     ](b_input.to_tile_tensor[DType.int64]().as_immut(), kernel_type_m)
 
 
-@compiler.register("mo.matmul_dynamic_scaled_fp8")
+@extensibility.register("mo.matmul_dynamic_scaled_fp8")
 struct MatmulDynamicScaledFloat8:
     @always_inline
     @staticmethod
@@ -1341,7 +1343,7 @@ struct MatmulDynamicScaledFloat8:
         )
 
 
-@compiler.register("mo.matmul_static_scaled_float8")
+@extensibility.register("mo.matmul_static_scaled_float8")
 struct MatmulStaticScaledFloat8:
     @always_inline
     @staticmethod
@@ -1446,7 +1448,7 @@ struct MatmulStaticScaledFloat8:
             )
 
 
-@compiler.register("mo.merge_ragged_tensors")
+@extensibility.register("mo.merge_ragged_tensors")
 struct MergeRaggedTensors:
     @always_inline
     @staticmethod
@@ -1475,7 +1477,7 @@ struct MergeRaggedTensors:
         )
 
 
-@compiler.register("mo.lora_sgmv.ragged")
+@extensibility.register("mo.lora_sgmv.ragged")
 struct Struct_lora_sgmv_ragged:
     @always_inline
     @staticmethod
@@ -1511,7 +1513,7 @@ struct Struct_lora_sgmv_ragged:
         )
 
 
-@compiler.register("mo.lora_sgmv.qkv_shrink.ragged")
+@extensibility.register("mo.lora_sgmv.qkv_shrink.ragged")
 struct Struct_lora_sgmv_qkv_shrink_ragged:
     @always_inline
     @staticmethod
@@ -1547,7 +1549,7 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
         )
 
 
-@compiler.register("mo.matmul_swiglu", type="gpu")
+@extensibility.register("mo.matmul_swiglu", type="gpu")
 struct MatmulSwiGLU:
     """Fused GEMM+SwiGLU on SM100 for BF16 inputs.
 
@@ -1578,7 +1580,7 @@ struct MatmulSwiGLU:
         )
 
 
-@compiler.register("mo.matmul_swiglu_bias", type="gpu")
+@extensibility.register("mo.matmul_swiglu_bias", type="gpu")
 struct MatmulSwiGLUBias:
     """Fused GEMM+SwiGLU+bias on SM100 for BF16 inputs.
 

@@ -1,26 +1,26 @@
 ---
-title: '@compiler.register'
+title: '@extensibility.register'
 description: Registers a custom operation for use with the MAX Graph API.
 codeTitle: true
 ---
 
-The `@compiler.register` decorator registers a custom operation for MAX graphs.
-For more information, see the
+The `@extensibility.register` decorator registers a custom operation for MAX
+graphs. For more information, see the
 [MAX documentation about custom ops](https://docs.modular.com/max/develop/custom-ops/).
 
 To define a custom operation:
 
-- Import the `compiler` package.
+- Import the `extensibility` package.
 
 - Create a struct that implements the `execute()` and (optional) `shape()`
   static methods.
 
-- Register it using the `@compiler.register` decorator.
+- Register it using the `@extensibility.register` decorator.
 
 The following snippet shows the outline of a custom operation:
 
 ```mojo
-@compiler.register("add_vectors_custom")
+@extensibility.register("add_vectors_custom")
 struct AddVectorsCustom:
 
     @staticmethod
@@ -32,7 +32,7 @@ struct AddVectorsCustom:
         pass
 ```
 
-The `@compiler.register` decorator takes a single argument, the name of the
+The `@extensibility.register` decorator takes a single argument, the name of the
 custom operation, as a string. This name is used to load the custom op into your
 graph.
 
@@ -75,12 +75,12 @@ arguments:
   support and is also provided for CPU execution (via `CpuDeviceContext`).
 
 ```mojo
-import compiler
+import extensibility
 from std.utils.index import IndexList
 from max.tensor import OutputTensor, InputTensor, foreach, ManagedTensorSlice
 from std.gpu.host import DeviceContext
 
-@compiler.register("add_vectors_custom")
+@extensibility.register("add_vectors_custom")
 struct AddVectorsCustom:
     @staticmethod
     def execute[

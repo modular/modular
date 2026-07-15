@@ -13,7 +13,7 @@
 
 from std.math import iota
 
-import compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 from std.complex import ComplexSIMD
@@ -26,7 +26,7 @@ from std.utils.index import IndexList
 comptime float_dtype = DType.float32
 
 
-@compiler.register("mandelbrot")
+@extensibility.register("mandelbrot")
 struct Mandelbrot:
     @staticmethod
     def execute[

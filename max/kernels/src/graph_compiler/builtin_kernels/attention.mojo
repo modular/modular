@@ -17,7 +17,7 @@
 # ===-----------------------------------------------------------------------===#
 
 from std.collections import OptionalReg
-import extensibility as compiler
+import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -102,7 +102,7 @@ from .kernels import (
 )
 
 
-@compiler.register("mo.mla.indexer.ragged.float8.paged")
+@extensibility.register("mo.mla.indexer.ragged.float8.paged")
 struct MLAIndexerRaggedFloat8Paged:
     @staticmethod
     def execute[
@@ -236,7 +236,7 @@ struct MLAIndexerRaggedFloat8Paged:
         )
 
 
-@compiler.register("mo.composite.masked_flash_attention_gpu")
+@extensibility.register("mo.composite.masked_flash_attention_gpu")
 struct MaskedFlashAttentionGPU:
     @staticmethod
     def execute[
@@ -307,7 +307,7 @@ struct MaskedFlashAttentionGPU:
         )
 
 
-@compiler.register("mo.mha.no_cache")
+@extensibility.register("mo.mha.no_cache")
 struct FlashAttentionGPU:
     @staticmethod
     def execute[
@@ -391,7 +391,7 @@ struct FlashAttentionGPU:
         ]()
 
 
-@compiler.register("mo.mha.padded.no_cache")
+@extensibility.register("mo.mha.padded.no_cache")
 struct PaddedFlashAttentionGPU:
     @staticmethod
     def execute[
@@ -445,7 +445,7 @@ struct PaddedFlashAttentionGPU:
         ]()
 
 
-@compiler.register("mo.mha.ragged.no_cache")
+@extensibility.register("mo.mha.ragged.no_cache")
 struct RaggedFlashAttentionGPU:
     @staticmethod
     def execute[
@@ -505,7 +505,7 @@ struct RaggedFlashAttentionGPU:
         ]()
 
 
-@compiler.register("mo.composite.no_mask_flash_attention_cpu")
+@extensibility.register("mo.composite.no_mask_flash_attention_cpu")
 struct NoMaskFlashAttentionCPU:
     @staticmethod
     def execute[
@@ -558,7 +558,7 @@ struct NoMaskFlashAttentionCPU:
         )
 
 
-@compiler.register("with_mask_flash_attention_split_kv_cpu")
+@extensibility.register("with_mask_flash_attention_split_kv_cpu")
 struct WithMaskFlashAttentionSplitKVCPU:
     @staticmethod
     def execute[
@@ -642,7 +642,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         )
 
 
-@compiler.register_shape_function("with_mask_flash_attention_split_kv_cpu")
+@extensibility.register_shape_function("with_mask_flash_attention_split_kv_cpu")
 def with_mask_flash_attention_split_kv_cpu_shape[
     dtype: DType,
     rank: Int,
@@ -658,7 +658,7 @@ def with_mask_flash_attention_split_kv_cpu_shape[
     return q.shape()
 
 
-@compiler.register("mo.composite.masked_flash_attention_cpu")
+@extensibility.register("mo.composite.masked_flash_attention_cpu")
 struct WithMaskFlashAttentionCPU:
     @staticmethod
     def execute[
@@ -714,7 +714,7 @@ struct WithMaskFlashAttentionCPU:
         )
 
 
-@compiler.register("mo.fused_qkv_matmul.padded.paged")
+@extensibility.register("mo.fused_qkv_matmul.padded.paged")
 struct Struct_fused_qkv_matmul_padded_paged:
     @always_inline
     @staticmethod
@@ -762,7 +762,7 @@ struct Struct_fused_qkv_matmul_padded_paged:
         )
 
 
-@compiler.register("mo.fused_qkv_matmul.ragged.paged")
+@extensibility.register("mo.fused_qkv_matmul.ragged.paged")
 struct Struct_fused_qkv_matmul_padded_ragged:
     @always_inline
     @staticmethod
@@ -803,7 +803,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
         )
 
 
-@compiler.register("mo.fused_qkv_matmul.ragged.paged.quantized")
+@extensibility.register("mo.fused_qkv_matmul.ragged.paged.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_quantized:
     @always_inline
     @staticmethod
@@ -853,7 +853,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
         )
 
 
-@compiler.register("mo.fused_qkv_matmul.ragged.paged.bias")
+@extensibility.register("mo.fused_qkv_matmul.ragged.paged.bias")
 struct Struct_fused_qkv_matmul_padded_ragged_bias:
     @always_inline
     @staticmethod
@@ -896,7 +896,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
         )
 
 
-@compiler.register("mo.fused_qkv_matmul.ragged.paged.scale")
+@extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale")
 struct Struct_fused_qkv_matmul_padded_ragged_scale:
     @always_inline
     @staticmethod
@@ -959,7 +959,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
         )
 
 
-@compiler.register("mo.fused_qkv_matmul.ragged.paged.scale.float4")
+@extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale.float4")
 struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
     @always_inline
     @staticmethod
@@ -1011,7 +1011,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
         )
 
 
-@compiler.register("mo.fused_qkv_matmul.ragged.paged.scale.mxfp8")
+@extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale.mxfp8")
 struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
     # Delegates to the NVFP4 entry point, which is dual-mode and also handles
     # MXFP8 from its data dtype, scale dtype, and SF_VECTOR_SIZE parameters. The
@@ -1067,7 +1067,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
         )
 
 
-@compiler.register("mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8")
+@extensibility.register("mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8")
 struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
     # Dual-cache fused QKV + index-QK matmul for MiniMax-M3. Like the
     # single-cache mxfp8 struct above, this delegates to the dual-mode NVFP4
@@ -1151,7 +1151,7 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
         )
 
 
-@compiler.register("mo.fused_qkv_matmul.ragged.paged.scale.bias")
+@extensibility.register("mo.fused_qkv_matmul.ragged.paged.scale.bias")
 struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
     @always_inline
     @staticmethod
@@ -1216,7 +1216,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
         )
 
 
-@compiler.register("mo.fused_qkv_matmul.ragged.paged.bias.quantized")
+@extensibility.register("mo.fused_qkv_matmul.ragged.paged.bias.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
     @always_inline
     @staticmethod
@@ -1268,7 +1268,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         )
 
 
-@compiler.register("mo.fused_qk_rope.ragged.paged.with_position_id")
+@extensibility.register("mo.fused_qk_rope.ragged.paged.with_position_id")
 struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
     @always_inline
     @staticmethod
@@ -1319,7 +1319,7 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
         )
 
 
-@compiler.register("mo.fused_qk_rope.ragged.paged")
+@extensibility.register("mo.fused_qk_rope.ragged.paged")
 struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     @always_inline
     @staticmethod
@@ -1370,7 +1370,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         )
 
 
-@compiler.register("mo.fused_qk_rope.padded.paged")
+@extensibility.register("mo.fused_qk_rope.padded.paged")
 struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
     @always_inline
     @staticmethod
@@ -1412,7 +1412,7 @@ struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
         )
 
 
-@compiler.register("mo.mha.padded.paged")
+@extensibility.register("mo.mha.padded.paged")
 struct Struct_mha_padded_paged:
     @always_inline
     @staticmethod
@@ -1466,7 +1466,7 @@ struct Struct_mha_padded_paged:
         )
 
 
-@compiler.register("mo.mha.decode.get_num_partitions")
+@extensibility.register("mo.mha.decode.get_num_partitions")
 struct Struct_mha_decode_num_partitions:
     @always_inline
     @staticmethod
@@ -1510,7 +1510,7 @@ struct Struct_mha_decode_num_partitions:
         )
 
 
-@compiler.register("mo.mha.ragged.paged")
+@extensibility.register("mo.mha.ragged.paged")
 struct Struct_mha_ragged_paged_scalar_args:
     @always_inline
     @staticmethod
@@ -1560,7 +1560,7 @@ struct Struct_mha_ragged_paged_scalar_args:
         )
 
 
-@compiler.register("mo.mha.ragged.paged.sink_weights")
+@extensibility.register("mo.mha.ragged.paged.sink_weights")
 struct Struct_mha_ragged_paged_sink_weights_scalar_args:
     @always_inline
     @staticmethod
@@ -1617,7 +1617,7 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
         )
 
 
-@compiler.register("mo.mla.decode.ragged.paged")
+@extensibility.register("mo.mla.decode.ragged.paged")
 struct Struct_mla_decode_ragged_paged:
     @always_inline
     @staticmethod
@@ -1667,7 +1667,7 @@ struct Struct_mla_decode_ragged_paged:
         )
 
 
-@compiler.register("mo.mla.decode.ragged.paged.scaled")
+@extensibility.register("mo.mla.decode.ragged.paged.scaled")
 struct Struct_mla_decode_ragged_paged_scaled:
     @always_inline
     @staticmethod
@@ -1770,7 +1770,7 @@ struct Struct_mla_decode_ragged_paged_scaled:
         )
 
 
-@compiler.register("mo.mla.prefill.ragged.paged")
+@extensibility.register("mo.mla.prefill.ragged.paged")
 struct Struct_mla_prefill_ragged_paged:
     @always_inline
     @staticmethod
@@ -1822,7 +1822,7 @@ struct Struct_mla_prefill_ragged_paged:
         )
 
 
-@compiler.register("mo.mla.prefill.ragged.plan")
+@extensibility.register("mo.mla.prefill.ragged.plan")
 struct Struct_mla_prefill_ragged_plan:
     @always_inline
     @staticmethod
@@ -1867,7 +1867,7 @@ struct Struct_mla_prefill_ragged_plan:
         )
 
 
-@compiler.register("mo.mla.decompress.k.cache.ragged.paged")
+@extensibility.register("mo.mla.decompress.k.cache.ragged.paged")
 struct Struct_mla_decompress_k_cache_ragged_paged:
     @always_inline
     @staticmethod
@@ -1910,7 +1910,7 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
         )
 
 
-@compiler.register("mo.mla.graph.prefill.paged.fp8")
+@extensibility.register("mo.mla.graph.prefill.paged.fp8")
 struct Struct_mla_prefill_graph_paged:
     @always_inline
     @staticmethod
@@ -1998,7 +1998,7 @@ struct Struct_mla_prefill_graph_paged:
         )
 
 
-@compiler.register("mo.mla.compute_dispatch_args.scalar")
+@extensibility.register("mo.mla.compute_dispatch_args.scalar")
 struct Struct_mla_compute_dispatch_args_scalar:
     @always_inline
     @staticmethod
@@ -2052,7 +2052,7 @@ struct Struct_mla_compute_dispatch_args_scalar:
         output[2] = Int64(scalars[2])
 
 
-@compiler.register("mo.mla.graph.decode.paged.fp8")
+@extensibility.register("mo.mla.graph.decode.paged.fp8")
 struct Struct_mla_decode_graph_paged_fp8:
     @always_inline
     @staticmethod
@@ -2144,7 +2144,7 @@ struct Struct_mla_decode_graph_paged_fp8:
             )
 
 
-@compiler.register("mo.mla.graph.decode.paged.fp8.sparse")
+@extensibility.register("mo.mla.graph.decode.paged.fp8.sparse")
 struct Struct_mla_decode_graph_paged_fp8_sparse:
     @always_inline
     @staticmethod
@@ -2270,7 +2270,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
             )
 
 
-@compiler.register("mo.mla.graph.prefill.paged")
+@extensibility.register("mo.mla.graph.prefill.paged")
 struct Struct_mla_prefill_graph_bf16_paged:
     @always_inline
     @staticmethod
@@ -2346,7 +2346,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
         )
 
 
-@compiler.register("mo.mla.graph.decode.paged")
+@extensibility.register("mo.mla.graph.decode.paged")
 struct Struct_mla_decode_graph_bf16_paged:
     @always_inline
     @staticmethod
@@ -2426,7 +2426,7 @@ struct Struct_mla_decode_graph_bf16_paged:
             )
 
 
-@compiler.register("mo.mla.graph.decode.paged.sparse")
+@extensibility.register("mo.mla.graph.decode.paged.sparse")
 struct Struct_mla_decode_graph_bf16_paged_sparse:
     @always_inline
     @staticmethod
@@ -2535,7 +2535,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
             )
 
 
-@compiler.register("mo.mla.graph.prefill.decode.paged.fp8")
+@extensibility.register("mo.mla.graph.prefill.decode.paged.fp8")
 struct Struct_mla_prefill_graph_decode_paged_fp8:
     @always_inline
     @staticmethod
@@ -2639,7 +2639,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
             )
 
 
-@compiler.register("mo.mla.graph.prefill.decode.paged.fp8.sparse")
+@extensibility.register("mo.mla.graph.prefill.decode.paged.fp8.sparse")
 struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
     @always_inline
     @staticmethod
@@ -2776,7 +2776,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
             )
 
 
-@compiler.register("mo.mla.prefill.sparse.paged")
+@extensibility.register("mo.mla.prefill.sparse.paged")
 struct Struct_mla_prefill_sparse_paged:
     @always_inline
     @staticmethod
@@ -2890,7 +2890,7 @@ struct Struct_mla_prefill_sparse_paged:
             )
 
 
-@compiler.register("mo.mla.prefill.sparse.paged.fp8")
+@extensibility.register("mo.mla.prefill.sparse.paged.fp8")
 struct Struct_mla_prefill_sparse_paged_fp8:
     @always_inline
     @staticmethod
@@ -2997,7 +2997,7 @@ struct Struct_mla_prefill_sparse_paged_fp8:
             )
 
 
-@compiler.register("mo.mla.graph.prefill.decode.paged")
+@extensibility.register("mo.mla.graph.prefill.decode.paged")
 struct Struct_mla_prefill_graph_decode_bf16_paged:
     @always_inline
     @staticmethod
@@ -3086,7 +3086,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
             )
 
 
-@compiler.register("mo.mla.graph.prefill.decode.paged.quantized")
+@extensibility.register("mo.mla.graph.prefill.decode.paged.quantized")
 struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
     @always_inline
     @staticmethod
@@ -3178,7 +3178,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
             )
 
 
-@compiler.register("mo.cross_attention.ragged.paged")
+@extensibility.register("mo.cross_attention.ragged.paged")
 struct Struct_cross_attention_ragged_paged:
     @always_inline
     @staticmethod

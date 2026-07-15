@@ -17,7 +17,7 @@
 # ===-----------------------------------------------------------------------===#
 
 from std.sys.info import simd_width_of, _current_target
-import extensibility as compiler
+import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -73,7 +73,7 @@ from std.utils import IndexList
 from .kernels import *
 
 
-@compiler.register("mo.kv_cache.store.paged.ragged")
+@extensibility.register("mo.kv_cache.store.paged.ragged")
 struct Struct_kv_cache_store_paged:
     @always_inline
     @staticmethod
@@ -124,7 +124,7 @@ struct Struct_kv_cache_store_paged:
         )
 
 
-@compiler.register("mo.kv_cache.store_k_scales.paged.ragged")
+@extensibility.register("mo.kv_cache.store_k_scales.paged.ragged")
 struct Struct_kv_cache_store_k_scales_paged:
     @always_inline
     @staticmethod
@@ -252,7 +252,7 @@ struct Struct_kv_cache_store_k_scales_paged:
         )
 
 
-@compiler.register("mo.kv_cache.store.paged.padded")
+@extensibility.register("mo.kv_cache.store.paged.padded")
 struct Struct_kv_cache_store_padded:
     @always_inline
     @staticmethod
@@ -303,7 +303,7 @@ struct Struct_kv_cache_store_padded:
         )
 
 
-@compiler.register("mo.rms_norm_kv_cache.ragged.paged")
+@extensibility.register("mo.rms_norm_kv_cache.ragged.paged")
 struct Struct_rms_norm_kv_cache_ragged_paged:
     @always_inline
     @staticmethod
@@ -351,7 +351,7 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         )
 
 
-@compiler.register("mo.fused_qk_rms_norm.ragged.paged")
+@extensibility.register("mo.fused_qk_rms_norm.ragged.paged")
 struct Struct_fused_qk_rms_norm_ragged_paged:
     @always_inline
     @staticmethod
@@ -401,7 +401,7 @@ struct Struct_fused_qk_rms_norm_ragged_paged:
         )
 
 
-@compiler.register("mo.fused_qk_rms_norm_rope.ragged.paged")
+@extensibility.register("mo.fused_qk_rms_norm_rope.ragged.paged")
 struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
     @always_inline
     @staticmethod
@@ -455,7 +455,7 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
         )
 
 
-@compiler.register("mo.rms_norm_value_cache.ragged.paged")
+@extensibility.register("mo.rms_norm_value_cache.ragged.paged")
 struct Struct_rms_norm_value_cache_ragged_paged:
     @always_inline
     @staticmethod
@@ -503,7 +503,7 @@ struct Struct_rms_norm_value_cache_ragged_paged:
         )
 
 
-@compiler.register("mo.print_kv_cache.paged")
+@extensibility.register("mo.print_kv_cache.paged")
 struct Struct_print_kv_cache_paged:
     @always_inline
     @staticmethod
@@ -538,7 +538,7 @@ struct Struct_print_kv_cache_paged:
         )
 
 
-@compiler.register("mo.kv_matmul.ragged.paged")
+@extensibility.register("mo.kv_matmul.ragged.paged")
 struct Struct_kv_matmul_ragged_paged:
     @always_inline
     @staticmethod
@@ -575,7 +575,7 @@ struct Struct_kv_matmul_ragged_paged:
         )
 
 
-@compiler.register("mo.k_matmul.ragged.paged")
+@extensibility.register("mo.k_matmul.ragged.paged")
 struct Struct_k_matmul_ragged_paged:
     @always_inline
     @staticmethod
@@ -612,7 +612,7 @@ struct Struct_k_matmul_ragged_paged:
         )
 
 
-@compiler.register("mo.k_matmul.ragged.paged.scale")
+@extensibility.register("mo.k_matmul.ragged.paged.scale")
 struct Struct_k_matmul_ragged_paged_scale:
     @always_inline
     @staticmethod
@@ -663,7 +663,7 @@ struct Struct_k_matmul_ragged_paged_scale:
         )
 
 
-@compiler.register("mo.kv_cache.row_offsets.ragged.paged")
+@extensibility.register("mo.kv_cache.row_offsets.ragged.paged")
 struct Struct_kv_cache_row_offsets_ragged_paged:
     @always_inline
     @staticmethod
@@ -683,7 +683,7 @@ struct Struct_kv_cache_row_offsets_ragged_paged:
         )
 
 
-@compiler.register("mo.kv_cache.ragged.paged.radd")
+@extensibility.register("mo.kv_cache.ragged.paged.radd")
 struct Struct_kv_cache_ragged_paged_radd:
     @always_inline
     @staticmethod
@@ -721,7 +721,7 @@ struct Struct_kv_cache_ragged_paged_radd:
         )
 
 
-@compiler.register("mo.kv_cache.ragged.paged.2m_iadd")
+@extensibility.register("mo.kv_cache.ragged.paged.2m_iadd")
 struct Struct_kv_cache_ragged_paged_2m_iadd:
     @always_inline
     @staticmethod
@@ -766,7 +766,7 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
         )
 
 
-@compiler.register("mo.kv_cache.copy_pages_d2h")
+@extensibility.register("mo.kv_cache.copy_pages_d2h")
 struct KVCacheCopyPagesD2H:
     @staticmethod
     def execute[

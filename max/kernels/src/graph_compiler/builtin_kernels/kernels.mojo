@@ -19,7 +19,7 @@ from std.collections import OptionalReg
 from std.math import align_up, ceildiv, iota
 from std.random import seed
 from std.sys.info import size_of
-import extensibility as compiler
+import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -227,7 +227,7 @@ def export() abi("Mojo"):
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.range")
+@extensibility.register("mo.range")
 struct Range:
     @staticmethod
     def execute[
@@ -253,7 +253,7 @@ struct Range:
         ](func, output, ctx)
 
 
-@compiler.register_shape_function("mo.range")
+@extensibility.register_shape_function("mo.range")
 def range_shape[
     dtype: DType
 ](
@@ -270,7 +270,7 @@ def range_shape[
 
 
 # useful for testing --> identity op that simply copies input into output
-@compiler.register("copy")
+@extensibility.register("copy")
 struct Copy:
     @staticmethod
     def execute[
@@ -293,7 +293,7 @@ struct Copy:
         foreach[func](output, ctx)
 
 
-@compiler.register("nan_check_count")
+@extensibility.register("nan_check_count")
 struct NanCheckCountOp:
     """Counts NaN/Inf values in a floating-point tensor.
 
@@ -319,7 +319,7 @@ struct NanCheckCountOp:
         )
 
 
-@compiler.register("nan_check_raise")
+@extensibility.register("nan_check_raise")
 struct NanCheckRaiseOp:
     """Raises an error if NaN or Inf counts are non-zero.
 
@@ -403,7 +403,7 @@ comptime _SliceStrideTypes[
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.max_pool")
+@extensibility.register("mo.max_pool")
 struct MaxPool:
     @staticmethod
     def execute[
@@ -431,7 +431,7 @@ struct MaxPool:
         )
 
 
-@compiler.register_shape_function("mo.max_pool")
+@extensibility.register_shape_function("mo.max_pool")
 def max_pool_shape[
     dtype: DType,
     int_type: DType,
@@ -453,7 +453,7 @@ def max_pool_shape[
     )
 
 
-@compiler.register("mo.max_pool_ceil_mode_true")
+@extensibility.register("mo.max_pool_ceil_mode_true")
 struct MaxPoolCeilModeTrue:
     @staticmethod
     def execute[
@@ -481,7 +481,7 @@ struct MaxPoolCeilModeTrue:
         )
 
 
-@compiler.register_shape_function("mo.max_pool_ceil_mode_true")
+@extensibility.register_shape_function("mo.max_pool_ceil_mode_true")
 def max_pool_ceil_mode_true_shape[
     dtype: DType,
     int_type: DType,
@@ -508,7 +508,7 @@ def max_pool_ceil_mode_true_shape[
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.non_maximum_suppression")
+@extensibility.register("mo.non_maximum_suppression")
 struct NonMaximumSuppression:
     @staticmethod
     def execute[
@@ -535,7 +535,7 @@ struct NonMaximumSuppression:
         )
 
 
-@compiler.register_shape_function("mo.non_maximum_suppression")
+@extensibility.register_shape_function("mo.non_maximum_suppression")
 def non_maximum_suppression_shape[
     dtype: DType
 ](
@@ -563,7 +563,7 @@ def non_maximum_suppression_shape[
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.roi_align")
+@extensibility.register("mo.roi_align")
 struct ROIAlign:
     @staticmethod
     def execute[
@@ -590,7 +590,7 @@ struct ROIAlign:
         )
 
 
-@compiler.register_shape_function("mo.roi_align")
+@extensibility.register_shape_function("mo.roi_align")
 def roi_align_shape(
     input: InputTensor[rank=4, ...],
     rois: InputTensor[rank=2, ...],
@@ -616,7 +616,7 @@ def roi_align_shape(
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("repeat_interleave")
+@extensibility.register("repeat_interleave")
 struct RepeatInterleave:
     @staticmethod
     def execute(
@@ -639,7 +639,7 @@ struct RepeatInterleave:
         )
 
 
-@compiler.register_shape_function("repeat_interleave")
+@extensibility.register_shape_function("repeat_interleave")
 def repeat_interleave_kernel_shape(
     input: InputTensor, repeats: InputTensor[rank=1, ...], axis: Scalar
 ) raises -> IndexList[input.rank]:
@@ -659,7 +659,7 @@ def repeat_interleave_kernel_shape(
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.random.normal")
+@extensibility.register("mo.random.normal")
 struct RandomNormal:
     @staticmethod
     def execute[
@@ -693,7 +693,7 @@ struct RandomNormal:
         )
 
 
-@compiler.register_shape_function("mo.random.normal")
+@extensibility.register_shape_function("mo.random.normal")
 def random_normal_shape[
     output_rank: Int
 ](
@@ -709,7 +709,7 @@ def random_normal_shape[
     return unrolled_shape
 
 
-@compiler.register("mo.random.uniform")
+@extensibility.register("mo.random.uniform")
 struct RandomUniform:
     @staticmethod
     def execute[
@@ -743,7 +743,7 @@ struct RandomUniform:
         )
 
 
-@compiler.register_shape_function("mo.random.uniform")
+@extensibility.register_shape_function("mo.random.uniform")
 def random_uniform_shape[
     output_rank: Int
 ](
@@ -861,7 +861,7 @@ def concat_from_list_shape_impl[
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("fold")
+@extensibility.register("fold")
 struct Fold:
     @staticmethod
     def execute[
@@ -902,7 +902,7 @@ struct Fold:
         )
 
 
-@compiler.register_shape_function("fold")
+@extensibility.register_shape_function("fold")
 def fold_kernel_shape[
     dtype: DType,
     stride_h: Int,
@@ -933,7 +933,7 @@ def fold_kernel_shape[
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("irfft")
+@extensibility.register("irfft")
 struct IRFFT:
     @staticmethod
     def execute[
@@ -1088,7 +1088,7 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
     )
 
 
-@compiler.register("mo.rope_split_store.ragged.paged")
+@extensibility.register("mo.rope_split_store.ragged.paged")
 struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
     @always_inline
     @staticmethod
@@ -1134,7 +1134,7 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
         )
 
 
-@compiler.register("mo.rope_split_store.ragged.paged.with_position_id")
+@extensibility.register("mo.rope_split_store.ragged.paged.with_position_id")
 struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
     @always_inline
     @staticmethod
@@ -1254,7 +1254,7 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.rope.ragged")
+@extensibility.register("mo.rope.ragged")
 struct Struct_rope_ragged_paged[interleaved: Bool]:
     @always_inline
     @staticmethod
@@ -1321,7 +1321,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         )
 
 
-@compiler.register("mo.rope.ragged.with_position_id")
+@extensibility.register("mo.rope.ragged.with_position_id")
 struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
     @always_inline
     @staticmethod
@@ -1525,7 +1525,7 @@ def _execute_mha_ragged_paged_scalar_args[
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.moe.create.indices")
+@extensibility.register("mo.moe.create.indices")
 struct Struct_moe_create_indices:
     @always_inline
     @staticmethod
@@ -1551,7 +1551,7 @@ struct Struct_moe_create_indices:
         )
 
 
-@compiler.register("mo.moe.router.group.limited")
+@extensibility.register("mo.moe.router.group.limited")
 struct Struct_moe_router_group_limited:
     @always_inline
     @staticmethod
@@ -1603,7 +1603,7 @@ struct Struct_moe_router_group_limited:
         )
 
 
-@compiler.register("mo.moe.create.indices.with.scales.offset")
+@extensibility.register("mo.moe.create.indices.with.scales.offset")
 struct Struct_moe_create_indices_with_scales_offset:
     @always_inline
     @staticmethod
@@ -1631,7 +1631,7 @@ struct Struct_moe_create_indices_with_scales_offset:
         )
 
 
-@compiler.register("mo.moe.single.group.router.eplb")
+@extensibility.register("mo.moe.single.group.router.eplb")
 struct Struct_moe_single_group_router_eplb:
     @always_inline
     @staticmethod
@@ -1693,7 +1693,7 @@ struct Struct_moe_single_group_router_eplb:
         )
 
 
-@compiler.register("mo.moe.single.group.router")
+@extensibility.register("mo.moe.single.group.router")
 struct Struct_moe_single_group_router:
     @always_inline
     @staticmethod
@@ -1741,7 +1741,7 @@ struct Struct_moe_single_group_router:
         )
 
 
-@compiler.register("mo.moe.eplb.remap")
+@extensibility.register("mo.moe.eplb.remap")
 struct Struct_moe_eplb_remap:
     @always_inline
     @staticmethod
@@ -1810,7 +1810,7 @@ def layout_transform_conv_transpose_filter_common[
     )
 
 
-@compiler.register("pack_conv_transpose_filter_shape")
+@extensibility.register("pack_conv_transpose_filter_shape")
 struct PackConvTransposeFilterShape:
     @always_inline
     @staticmethod
@@ -1821,7 +1821,7 @@ struct PackConvTransposeFilterShape:
         raise Error("Only meant to be used for shape function!")
 
 
-@compiler.register_shape_function("pack_conv_transpose_filter_shape")
+@extensibility.register_shape_function("pack_conv_transpose_filter_shape")
 def pack_conv_transpose_filter_shape_shape[
     rank: Int,
     filter_type: DType,
@@ -1946,7 +1946,7 @@ def print_kv_cache_paged_generic_kernel_api[
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("sampler.fused_token_sampling")
+@extensibility.register("sampler.fused_token_sampling")
 struct Struct_fused_token_sampling:
     @always_inline
     @staticmethod
@@ -2024,7 +2024,7 @@ struct Struct_fused_token_sampling:
             )
 
 
-@compiler.register("min_p_sampling")
+@extensibility.register("min_p_sampling")
 struct Struct_min_p_sampling:
     @always_inline
     @staticmethod
@@ -2060,7 +2060,7 @@ struct Struct_min_p_sampling:
             )
 
 
-@compiler.register("sampler.apply_penalties")
+@extensibility.register("sampler.apply_penalties")
 struct Struct_sampler_apply_penalties:
     @always_inline
     @staticmethod
@@ -2092,7 +2092,7 @@ struct Struct_sampler_apply_penalties:
         )
 
 
-@compiler.register("sampler.update_frequency_data")
+@extensibility.register("sampler.update_frequency_data")
 struct Struct_sampler_update_frequency_data:
     @always_inline
     @staticmethod
@@ -2159,7 +2159,7 @@ def _partitioned_scratch_requirement[
     return vecs_per_device * pessemistic_simd_width * size_of[dtype]()
 
 
-@compiler.register("mo.bundled.allreduce.sum")
+@extensibility.register("mo.bundled.allreduce.sum")
 struct BundledAllReduceSum:
     @staticmethod
     def execute[
@@ -2245,7 +2245,7 @@ struct BundledAllReduceSum:
         )
 
 
-@compiler.register("mo.composite.bundled.allreduce_add_rms_norm_quant_fp8")
+@extensibility.register("mo.composite.bundled.allreduce_add_rms_norm_quant_fp8")
 struct BundledAllReduceAddRMSNormQuantFP8:
     @staticmethod
     def execute[
@@ -2366,7 +2366,7 @@ struct BundledAllReduceAddRMSNormQuantFP8:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.eagle_prefill_shift_tokens")
+@extensibility.register("mo.eagle_prefill_shift_tokens")
 struct EaglePrefillShiftTokens:
     @always_inline
     @staticmethod
@@ -2396,7 +2396,7 @@ struct EaglePrefillShiftTokens:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("learnable_2d_interp_pos_emb")
+@extensibility.register("learnable_2d_interp_pos_emb")
 struct Learnable2DInterpPosEmb:
     @always_inline
     @staticmethod
@@ -2426,7 +2426,7 @@ struct Learnable2DInterpPosEmb:
         )
 
 
-@compiler.register("mo.spatial_merge")
+@extensibility.register("mo.spatial_merge")
 struct SpatialMerge:
     @always_inline
     @staticmethod
@@ -2454,7 +2454,7 @@ struct SpatialMerge:
         )
 
 
-@compiler.register("tpool_patch_merger")
+@extensibility.register("tpool_patch_merger")
 struct TPoolPatchMerger:
     @always_inline
     @staticmethod
@@ -2502,7 +2502,7 @@ struct TPoolPatchMerger:
         )
 
 
-@compiler.register_shape_function("tpool_patch_merger")
+@extensibility.register_shape_function("tpool_patch_merger")
 def tpool_patch_merger_shape(
     input: InputTensor[rank=2, ...],
     _grid_thws: InputTensor[dtype=DType.int64, rank=2, ...],
@@ -2520,7 +2520,7 @@ def tpool_patch_merger_shape(
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("gated_delta_conv1d_fwd")
+@extensibility.register("gated_delta_conv1d_fwd")
 struct GatedDeltaConv1dFwd:
     """Gated DeltaNet causal conv1d forward pass (Pass 1 of two-pass prefill).
 
@@ -2678,7 +2678,7 @@ struct GatedDeltaConv1dFwd:
             )
 
 
-@compiler.register_shape_function("gated_delta_conv1d_fwd")
+@extensibility.register_shape_function("gated_delta_conv1d_fwd")
 def gated_delta_conv1d_fwd_shape[
     work_dtype: DType,
     state_dtype: DType,
@@ -2693,7 +2693,7 @@ def gated_delta_conv1d_fwd_shape[
     return qkv_input_ragged.shape()
 
 
-@compiler.register("gated_delta_recurrence_fwd")
+@extensibility.register("gated_delta_recurrence_fwd")
 struct GatedDeltaRecurrenceFwd:
     """Gated DeltaNet recurrence forward pass (Pass 2 of two-pass prefill).
 
@@ -2901,7 +2901,7 @@ struct GatedDeltaRecurrenceFwd:
             )
 
 
-@compiler.register_shape_function("gated_delta_recurrence_fwd")
+@extensibility.register_shape_function("gated_delta_recurrence_fwd")
 def gated_delta_recurrence_fwd_shape[
     work_dtype: DType,
     state_dtype: DType,
@@ -2921,7 +2921,7 @@ def gated_delta_recurrence_fwd_shape[
     return IndexList[2](total_seq_len, value_dim)
 
 
-@compiler.register("mamba2_ssd_chunk_scan_varlen_fwd")
+@extensibility.register("mamba2_ssd_chunk_scan_varlen_fwd")
 struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
     """Varlen Mamba-2 SSD chunked-scan prefill forward.
 
@@ -3156,7 +3156,7 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
             raise Error("Unsupported target device")
 
 
-@compiler.register_shape_function("mamba2_ssd_chunk_scan_varlen_fwd")
+@extensibility.register_shape_function("mamba2_ssd_chunk_scan_varlen_fwd")
 def mamba2_ssd_chunk_scan_varlen_fwd_shape[
     dtype: DType,
 ](
@@ -3175,7 +3175,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_shape[
     return x.shape()
 
 
-@compiler.register("mamba2_ssd_chunk_scan_varlen_fwd_inplace")
+@extensibility.register("mamba2_ssd_chunk_scan_varlen_fwd_inplace")
 struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
     """Varlen Mamba-2 SSD chunked-scan — in-place SSM-pool write-back.
 
@@ -3482,7 +3482,9 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
             raise Error("Unsupported target device")
 
 
-@compiler.register_shape_function("mamba2_ssd_chunk_scan_varlen_fwd_inplace")
+@extensibility.register_shape_function(
+    "mamba2_ssd_chunk_scan_varlen_fwd_inplace"
+)
 def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape[
     dtype: DType,
 ](
@@ -3502,7 +3504,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape[
     return x.shape()
 
 
-@compiler.register("causal_conv1d_varlen_fwd")
+@extensibility.register("causal_conv1d_varlen_fwd")
 struct CausalConv1DVarlenFwd[activation: StaticString]:
     """Varlen causal 1D convolution forward pass.
 
@@ -3717,7 +3719,7 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
             raise Error("Unsupported target device")
 
 
-@compiler.register_shape_function("causal_conv1d_varlen_fwd")
+@extensibility.register_shape_function("causal_conv1d_varlen_fwd")
 def causal_conv1d_varlen_fwd_shape[
     dtype: DType,
 ](
@@ -3742,7 +3744,7 @@ def causal_conv1d_varlen_fwd_shape[
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.sleep")
+@extensibility.register("mo.sleep")
 struct Sleep:
     @staticmethod
     def execute[
@@ -3780,7 +3782,7 @@ struct Sleep:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.inplace_memcpy")
+@extensibility.register("mo.inplace_memcpy")
 struct InplaceMemcpy[DstDevice: StaticString, SrcDevice: StaticString]:
     """Copies the contents of `src` into `dst` in place.
 
@@ -3839,7 +3841,7 @@ struct InplaceMemcpy[DstDevice: StaticString, SrcDevice: StaticString]:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.launch_host_func")
+@extensibility.register("mo.launch_host_func")
 struct LaunchHostFunc:
     """Enqueues a pre-packed host callback on the device's default stream.
 
@@ -3872,7 +3874,7 @@ struct LaunchHostFunc:
         ctx.stream().enqueue_host_func(rebind[_HostFuncTy](tr_ptr), ud_ptr)
 
 
-@compiler.register("mo.wait_host_value")
+@extensibility.register("mo.wait_host_value")
 struct WaitHostValue:
     """Stalls the stream until a host-visible flag reaches a given value.
 
@@ -3911,7 +3913,7 @@ struct WaitHostValue:
         ctx.stream().wait_for_host_value(flag, value)
 
 
-@compiler.register("mo.wait_host_value_with_dep")
+@extensibility.register("mo.wait_host_value_with_dep")
 struct WaitHostValueWithDep:
     """Variant of `mo.wait_host_value` that takes a fake mutable
     dependency operand.

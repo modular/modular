@@ -81,7 +81,7 @@ Three attention routes, picked at runtime from `kv_collection.max_seq_length`
   * `> 4`              -> PREFILL (`msa_sm100_prefill_{plan,run}`, device CSR).
 """
 
-import extensibility as compiler
+import extensibility
 
 from std.collections import OptionalReg
 from std.gpu.host import DeviceContext, DeviceBuffer
@@ -113,7 +113,7 @@ from msa.amd.prefill import msa_amd_prefill_run
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.msa.indexer.ragged.paged")
+@extensibility.register("mo.msa.indexer.ragged.paged")
 struct Struct_msa_indexer_ragged_paged:
     @always_inline
     @staticmethod
@@ -276,7 +276,7 @@ struct Struct_msa_indexer_ragged_paged:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.msa.attention.ragged.paged")
+@extensibility.register("mo.msa.attention.ragged.paged")
 struct Struct_msa_attention_ragged_paged:
     @always_inline
     @staticmethod

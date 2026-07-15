@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """RMSNorm fused residual op registration for state space models."""
 
-import extensibility as compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_gpu
@@ -31,7 +31,7 @@ from state_space.rms_norm_fused_residual import (
 # ===----------------------------------------------------------------------=== #
 
 
-@compiler.register("rms_norm_fused_residual")
+@extensibility.register("rms_norm_fused_residual")
 struct RMSNormFusedResidual:
     """RMS normalization with fused residual connection for Mamba blocks.
 
@@ -203,7 +203,7 @@ struct RMSNormFusedResidual:
             )
 
 
-@compiler.register_shape_function("rms_norm_fused_residual")
+@extensibility.register_shape_function("rms_norm_fused_residual")
 def rms_norm_fused_residual_shape[
     dtype: DType,
     rank: Int,

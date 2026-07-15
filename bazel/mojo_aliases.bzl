@@ -33,7 +33,6 @@ _MAX_PACKAGES = {
     "pipeline": "kernels/src/pipeline",
     "structured_kernels": "kernels/src/structured_kernels",
     "testdata": "kernels/test/testdata",
-    "compiler": "compiler/src:compiler",
     "_cublas": "kernels/src/_cublas",
     "_cufft": "kernels/src/_cufft",
     "_curand": "kernels/src/_curand",

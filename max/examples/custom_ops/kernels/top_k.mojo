@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 from std.math import iota
@@ -49,7 +49,7 @@ struct TopKElement[T: DType](Comparable, TrivialRegisterPassable):
         return self.val < rhs.val
 
 
-@compiler.register("top_k_custom")
+@extensibility.register("top_k_custom")
 struct TopK:
     """Registers the `top_k_custom` op, allowing python to use it from the `max`
     package. This is a simplified version without bottom_k and sorting options,

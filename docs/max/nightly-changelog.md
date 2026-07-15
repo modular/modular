@@ -506,6 +506,8 @@ This version is still a work in progress.
   `IOSpec.FusedInput`, `IOSpec.FusedOutput`) instead of module-level aliases.
   Update custom-op call sites to qualify these names under `IOSpec`, for
   example `Tensor[IOSpec.Input, spec]`.
+- The `compiler` Mojo package has been removed. It only re-exported 4 symbols
+  from `extensibility`, please use that directly instead.
 
 ## Fixes
 

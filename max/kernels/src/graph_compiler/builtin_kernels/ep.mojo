@@ -16,7 +16,7 @@ Expert Parallelism (EP) Communication Kernel.
 """
 
 
-import extensibility as compiler
+import extensibility
 from comm.sync import is_p2p_enabled
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextList
@@ -78,7 +78,7 @@ from shmem.ep_comm import (
 comptime RT_LAYOUT_2D = type_of(row_major(Int64(1), Int64(1)))
 
 
-@compiler.register("ep.init")
+@extensibility.register("ep.init")
 struct Struct_ep_init:
     @always_inline
     @staticmethod
@@ -287,7 +287,7 @@ struct Struct_ep_init:
         my_rank_tensor[0] = my_rank
 
 
-@compiler.register("ep.dispatch_async")
+@extensibility.register("ep.dispatch_async")
 struct Struct_ep_dispatch_async:
     @always_inline
     @staticmethod
@@ -369,7 +369,7 @@ struct Struct_ep_dispatch_async:
             raise Error("Invalid dispatch format string: ", dispatch_fmt_str)
 
 
-@compiler.register("ep.dispatch_async.block.scaled.nv")
+@extensibility.register("ep.dispatch_async.block.scaled.nv")
 struct Struct_ep_dispatch_async_block_scaled_nv:
     @always_inline
     @staticmethod
@@ -436,7 +436,7 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
         )
 
 
-@compiler.register("ep.dispatch_async.mxfp4")
+@extensibility.register("ep.dispatch_async.mxfp4")
 struct Struct_ep_dispatch_async_mxfp4:
     @always_inline
     @staticmethod
@@ -491,7 +491,7 @@ struct Struct_ep_dispatch_async_mxfp4:
         )
 
 
-@compiler.register("ep.dispatch_wait")
+@extensibility.register("ep.dispatch_wait")
 struct Struct_ep_dispatch_wait:
     @always_inline
     @staticmethod
@@ -547,7 +547,7 @@ struct Struct_ep_dispatch_wait:
         )
 
 
-@compiler.register("ep.dispatch_wait.fp8")
+@extensibility.register("ep.dispatch_wait.fp8")
 struct Struct_ep_dispatch_wait_fp8:
     @always_inline
     @staticmethod
@@ -610,7 +610,7 @@ struct Struct_ep_dispatch_wait_fp8:
         )
 
 
-@compiler.register("ep.dispatch_wait.block.scaled.nv")
+@extensibility.register("ep.dispatch_wait.block.scaled.nv")
 struct Struct_ep_dispatch_wait_block_scaled_nv:
     @always_inline
     @staticmethod
@@ -675,7 +675,7 @@ struct Struct_ep_dispatch_wait_block_scaled_nv:
         )
 
 
-@compiler.register("ep.dispatch_wait.mxfp4")
+@extensibility.register("ep.dispatch_wait.mxfp4")
 struct Struct_ep_dispatch_wait_mxfp4:
     @always_inline
     @staticmethod
@@ -751,7 +751,7 @@ struct Struct_ep_dispatch_wait_mxfp4:
         )
 
 
-@compiler.register("ep.dispatch")
+@extensibility.register("ep.dispatch")
 struct Struct_ep_dispatch:
     @always_inline
     @staticmethod
@@ -814,7 +814,7 @@ struct Struct_ep_dispatch:
         )
 
 
-@compiler.register("ep.dispatch.fp8")
+@extensibility.register("ep.dispatch.fp8")
 struct Struct_ep_dispatch_fp8:
     @always_inline
     @staticmethod
@@ -882,7 +882,7 @@ struct Struct_ep_dispatch_fp8:
         )
 
 
-@compiler.register("ep.dispatch.block.scaled.nv")
+@extensibility.register("ep.dispatch.block.scaled.nv")
 struct Struct_ep_dispatch_block_scaled_nv:
     @always_inline
     @staticmethod
@@ -966,7 +966,7 @@ struct Struct_ep_dispatch_block_scaled_nv:
         )
 
 
-@compiler.register("ep.dispatch.mxfp4")
+@extensibility.register("ep.dispatch.mxfp4")
 struct Struct_ep_dispatch_mxfp4:
     @always_inline
     @staticmethod
@@ -1048,7 +1048,7 @@ struct Struct_ep_dispatch_mxfp4:
         )
 
 
-@compiler.register("mo.distributed.ep.dispatch.block.scaled.nv")
+@extensibility.register("mo.distributed.ep.dispatch.block.scaled.nv")
 struct DistributedEPDispatchBlockScaledNV:
     @staticmethod
     def execute[
@@ -1159,7 +1159,7 @@ struct DistributedEPDispatchBlockScaledNV:
         _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
 
 
-@compiler.register("mo.distributed.ep.dispatch.mxfp4")
+@extensibility.register("mo.distributed.ep.dispatch.mxfp4")
 struct DistributedEPDispatchMXFP4:
     @staticmethod
     def execute[
@@ -1254,7 +1254,7 @@ struct DistributedEPDispatchMXFP4:
         _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
 
 
-@compiler.register("mo.distributed.ep.dispatch")
+@extensibility.register("mo.distributed.ep.dispatch")
 struct DistributedEPDispatch:
     @staticmethod
     def execute[
@@ -1333,7 +1333,7 @@ struct DistributedEPDispatch:
         _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
 
 
-@compiler.register("mo.distributed.ep.dispatch.fp8")
+@extensibility.register("mo.distributed.ep.dispatch.fp8")
 struct DistributedEPDispatchFP8:
     @staticmethod
     def execute[
@@ -1421,7 +1421,7 @@ struct DistributedEPDispatchFP8:
         _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
 
 
-@compiler.register("mo.distributed.ep.combine")
+@extensibility.register("mo.distributed.ep.combine")
 struct DistributedEPCombine:
     @staticmethod
     def execute[
@@ -1525,7 +1525,7 @@ struct DistributedEPCombine:
         _launch_device_collective[num_devices](launch_combine, gpu_ctxs)
 
 
-@compiler.register("ep.combine_async")
+@extensibility.register("ep.combine_async")
 struct Struct_ep_combine_async:
     @always_inline
     @staticmethod
@@ -1570,7 +1570,7 @@ struct Struct_ep_combine_async:
         )
 
 
-@compiler.register("ep.combine_wait")
+@extensibility.register("ep.combine_wait")
 struct Struct_ep_combine_wait:
     @parameter
     @always_inline
@@ -1649,7 +1649,7 @@ struct Struct_ep_combine_wait:
         )
 
 
-@compiler.register("ep.combine")
+@extensibility.register("ep.combine")
 struct Struct_ep_combine:
     @always_inline
     @staticmethod
@@ -1732,7 +1732,7 @@ struct Struct_ep_combine:
         )
 
 
-@compiler.register("ep.combine.skip_a2a")
+@extensibility.register("ep.combine.skip_a2a")
 struct Struct_ep_combine_skip_a2a:
     @always_inline
     @staticmethod
@@ -1821,7 +1821,7 @@ struct Struct_ep_combine_skip_a2a:
         )
 
 
-@compiler.register("ep.fused_silu")
+@extensibility.register("ep.fused_silu")
 struct Struct_ep_fused_silu:
     @always_inline
     @staticmethod
@@ -1894,7 +1894,7 @@ struct Struct_ep_fused_silu:
             )
 
 
-@compiler.register("ep.fused_silu.fp8")
+@extensibility.register("ep.fused_silu.fp8")
 struct Struct_ep_fused_silu_fp8:
     @always_inline
     @staticmethod
@@ -1978,7 +1978,7 @@ struct Struct_ep_fused_silu_fp8:
             )
 
 
-@compiler.register("ep.fused_silu.mxfp4")
+@extensibility.register("ep.fused_silu.mxfp4")
 struct Struct_ep_fused_silu_mxfp4:
     @always_inline
     @staticmethod
@@ -2079,7 +2079,7 @@ struct Struct_ep_fused_silu_mxfp4:
             )
 
 
-@compiler.register("ep.fused_silu.nvfp4")
+@extensibility.register("ep.fused_silu.nvfp4")
 struct Struct_ep_fused_silu_nvfp4:
     @always_inline
     @staticmethod

@@ -17,7 +17,7 @@ from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
 
-import compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 from std.gpu import (
@@ -920,7 +920,7 @@ def tensor_core_matrix_multiplication[
 # ===-----------------------------------------------------------------------=== #
 
 
-@compiler.register("matrix_multiplication")
+@extensibility.register("matrix_multiplication")
 struct MatrixMultiplication[algorithm: StaticString]:
     """
     The central custom operation that dispatches to multiple different

@@ -13,7 +13,7 @@
 
 # DOC: max/develop/build-custom-ops.mdx
 
-import compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 
@@ -23,7 +23,7 @@ from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
-@compiler.register("add_one")
+@extensibility.register("add_one")
 struct AddOne:
     @staticmethod
     def execute[
@@ -45,7 +45,7 @@ struct AddOne:
 
 # You only need to implement this if you do not manually annotate
 # output shapes in the graph.
-@compiler.register_shape_function("add_one")
+@extensibility.register_shape_function("add_one")
 def add_one_shape(
     x: InputTensor,
 ) raises -> IndexList[x.rank]:

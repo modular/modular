@@ -19,7 +19,7 @@
 from std.math import ceildiv
 from std.sys import get_defined_bool
 from std.sys.info import size_of
-import extensibility as compiler
+import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -80,7 +80,7 @@ from .kernels import (
 )
 
 
-@compiler.register("mo.distributed.allreduce.sum")
+@extensibility.register("mo.distributed.allreduce.sum")
 struct DistributedAllReduceSum:
     @staticmethod
     def execute[
@@ -235,7 +235,7 @@ struct DistributedAllReduceSum:
         _launch_device_collective[num_devices](launch_allreduce, dev_ctxs_input)
 
 
-@compiler.register("mo.distributed.reducescatter.sum")
+@extensibility.register("mo.distributed.reducescatter.sum")
 struct DistributedReduceScatterSum:
     @staticmethod
     def execute[
@@ -360,7 +360,7 @@ struct DistributedReduceScatterSum:
         )
 
 
-@compiler.register("mo.distributed.allgather")
+@extensibility.register("mo.distributed.allgather")
 struct DistributedAllGather:
     @staticmethod
     def execute[
@@ -474,7 +474,7 @@ struct DistributedAllGather:
         _launch_device_collective[num_devices](launch_allgather, dev_ctxs_input)
 
 
-@compiler.register("mo.distributed.broadcast")
+@extensibility.register("mo.distributed.broadcast")
 struct DistributedBroadcast:
     """Distributed broadcast: copy tensor from root GPU to all GPUs.
 
@@ -575,7 +575,7 @@ struct DistributedBroadcast:
         _launch_device_collective[num_devices](launch_broadcast, dev_ctxs_input)
 
 
-@compiler.register("mo.distributed.scatter")
+@extensibility.register("mo.distributed.scatter")
 struct DistributedScatter:
     """Distributed scatter: send different chunks to different device groups.
 
@@ -663,7 +663,9 @@ struct DistributedScatter:
         _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input)
 
 
-@compiler.register("mo.composite.distributed.allreduce_add_rms_norm_quant_fp8")
+@extensibility.register(
+    "mo.composite.distributed.allreduce_add_rms_norm_quant_fp8"
+)
 struct DistributedAllReduceAddRMSNormQuantFP8:
     @staticmethod
     def execute[
@@ -803,7 +805,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         _launch_device_collective[num_devices](launch_fused_allreduce, dev_ctxs)
 
 
-@compiler.register("mo.composite.distributed.matmul_reduce_scatter.sum")
+@extensibility.register("mo.composite.distributed.matmul_reduce_scatter.sum")
 struct DistributedMatmulReduceScatterSum:
     @staticmethod
     def execute[
@@ -938,7 +940,7 @@ struct DistributedMatmulReduceScatterSum:
         ](c_peer_tt, a_per_peer, b_per_peer, rank_sigs, dev_ctxs_input)
 
 
-@compiler.register("lamport_allreduce_rmsnorm")
+@extensibility.register("lamport_allreduce_rmsnorm")
 struct LamportAllreduceRMSNorm:
     """Per-rank fused Lamport allreduce + RMSNorm (high-perf protocol).
 

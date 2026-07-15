@@ -16,7 +16,7 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-import extensibility as compiler
+import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -55,7 +55,7 @@ from .kernels import (
 )
 
 
-@compiler.register("mo.convert_e4m3fn_to_e4m3fnuz")
+@extensibility.register("mo.convert_e4m3fn_to_e4m3fnuz")
 struct ConvertE4M3FNToE4M3FNUZ:
     @staticmethod
     def execute[
@@ -73,14 +73,14 @@ struct ConvertE4M3FNToE4M3FNUZ:
         )
 
 
-@compiler.register_shape_function("mo.convert_e4m3fn_to_e4m3fnuz")
+@extensibility.register_shape_function("mo.convert_e4m3fn_to_e4m3fnuz")
 def convert_e4m3fn_to_e4m3fnuz_shape(
     input: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
 ) -> IndexList[2]:
     return IndexList[2](input.dim_size[0](), input.dim_size[1]())
 
 
-@compiler.register("mo.avg_pool")
+@extensibility.register("mo.avg_pool")
 struct AvgPool:
     @staticmethod
     def execute[
@@ -109,7 +109,7 @@ struct AvgPool:
         )
 
 
-@compiler.register_shape_function("mo.avg_pool")
+@extensibility.register_shape_function("mo.avg_pool")
 def avg_pool_shape[
     dtype: DType,
     int_type: DType,
@@ -131,7 +131,7 @@ def avg_pool_shape[
     )
 
 
-@compiler.register("mo.avg_pool_ceil_mode_true")
+@extensibility.register("mo.avg_pool_ceil_mode_true")
 struct AvgPoolCeilModeTrue:
     @staticmethod
     def execute[
@@ -160,7 +160,7 @@ struct AvgPoolCeilModeTrue:
         )
 
 
-@compiler.register_shape_function("mo.avg_pool_ceil_mode_true")
+@extensibility.register_shape_function("mo.avg_pool_ceil_mode_true")
 def avg_pool_ceil_mode_true_shape[
     dtype: DType,
     int_type: DType,
@@ -182,7 +182,7 @@ def avg_pool_ceil_mode_true_shape[
     )
 
 
-@compiler.register("mo.pad.constant")
+@extensibility.register("mo.pad.constant")
 struct PadConstant:
     @staticmethod
     def execute[
@@ -217,7 +217,7 @@ struct PadConstant:
             comptime assert False, "Unknown target " + target
 
 
-@compiler.register_shape_function("mo.pad.constant")
+@extensibility.register_shape_function("mo.pad.constant")
 def pad_constant_shape[
     dtype: DType,
     rank: Int,
@@ -236,7 +236,7 @@ def pad_constant_shape[
     )
 
 
-@compiler.register("mo.pad.repeat")
+@extensibility.register("mo.pad.repeat")
 struct PadRepeat:
     @staticmethod
     def execute[
@@ -255,7 +255,7 @@ struct PadRepeat:
         )
 
 
-@compiler.register_shape_function("mo.pad.repeat")
+@extensibility.register_shape_function("mo.pad.repeat")
 def pad_repeat_shape[
     dtype: DType,
     rank: Int,
@@ -271,7 +271,7 @@ def pad_repeat_shape[
     )
 
 
-@compiler.register("mo.pad.reflect")
+@extensibility.register("mo.pad.reflect")
 struct PadReflect:
     @staticmethod
     def execute[
@@ -290,7 +290,7 @@ struct PadReflect:
         )
 
 
-@compiler.register_shape_function("mo.pad.reflect")
+@extensibility.register_shape_function("mo.pad.reflect")
 def pad_reflect_shape[
     dtype: DType,
     rank: Int,
@@ -306,7 +306,7 @@ def pad_reflect_shape[
     )
 
 
-@compiler.register("mo.conv")
+@extensibility.register("mo.conv")
 struct Conv:
     @staticmethod
     def execute[
@@ -465,7 +465,7 @@ struct Conv:
             )
 
 
-@compiler.register_shape_function("mo.conv")
+@extensibility.register_shape_function("mo.conv")
 def mo_conv_shape(
     input: InputTensor,
     filter: InputTensor,
@@ -486,7 +486,7 @@ def mo_conv_shape(
     )
 
 
-@compiler.register("conv2d_residual_add")
+@extensibility.register("conv2d_residual_add")
 struct Conv2dResidualAdd:
     """Fused conv2d + TMA residual add + bias for SM100 (Blackwell).
 
@@ -567,7 +567,7 @@ struct Conv2dResidualAdd:
         )
 
 
-@compiler.register_shape_function("conv2d_residual_add")
+@extensibility.register_shape_function("conv2d_residual_add")
 def conv2d_residual_add_shape(
     input: InputTensor[rank=4, ...],
     filter: InputTensor[rank=4, ...],
@@ -578,7 +578,7 @@ def conv2d_residual_add_shape(
     return source.shape()
 
 
-@compiler.register("mo.conv_transpose")
+@extensibility.register("mo.conv_transpose")
 struct ConvTranspose:
     @staticmethod
     def execute[
@@ -714,7 +714,7 @@ struct ConvTranspose:
             )
 
 
-@compiler.register_shape_function("mo.conv_transpose")
+@extensibility.register_shape_function("mo.conv_transpose")
 def mo_conv_transpose_shape[
     dtype: DType
 ](
@@ -737,7 +737,7 @@ def mo_conv_transpose_shape[
     )
 
 
-@compiler.register("layout_transform_RSFC_to_FRSCf")
+@extensibility.register("layout_transform_RSFC_to_FRSCf")
 struct LayoutTransformRSFC2FRSCf:
     @always_inline
     @staticmethod
@@ -750,7 +750,7 @@ struct LayoutTransformRSFC2FRSCf:
         layout_transform_conv_transpose_filter_common(packed_filter, filter)
 
 
-@compiler.register("layout_transform_QRSFC_to_FQRSCf")
+@extensibility.register("layout_transform_QRSFC_to_FQRSCf")
 struct LayoutTransformQRSFC2FQRSCf:
     @always_inline
     @staticmethod
@@ -763,7 +763,7 @@ struct LayoutTransformQRSFC2FQRSCf:
         layout_transform_conv_transpose_filter_common(packed_filter, filter)
 
 
-@compiler.register("pack_conv_filter_shape")
+@extensibility.register("pack_conv_filter_shape")
 struct PackConvFilterShape:
     @always_inline
     @staticmethod
@@ -771,7 +771,7 @@ struct PackConvFilterShape:
         raise Error("Only meant to be used for shape function!")
 
 
-@compiler.register_shape_function("pack_conv_filter_shape")
+@extensibility.register_shape_function("pack_conv_filter_shape")
 def pack_conv_filter_shape_fn[
     rank: Int,
     filter_type: DType,
@@ -820,7 +820,7 @@ def pack_conv_filter_shape_fn[
     )
 
 
-@compiler.register("layout_transform_QRSCF_to_FQRSCf")
+@extensibility.register("layout_transform_QRSCF_to_FQRSCf")
 struct LayoutTransformQRSCF2FQRSCf:
     @always_inline
     @staticmethod
@@ -835,7 +835,7 @@ struct LayoutTransformQRSCF2FQRSCf:
         )
 
 
-@compiler.register("layout_transform_RSCF_to_FRSCf")
+@extensibility.register("layout_transform_RSCF_to_FRSCf")
 struct LayoutTransformRSCF2FRSCf:
     @always_inline
     @staticmethod
@@ -850,7 +850,7 @@ struct LayoutTransformRSCF2FRSCf:
         )
 
 
-@compiler.register("layout_transform_FCRS_to_FRSCf")
+@extensibility.register("layout_transform_FCRS_to_FRSCf")
 struct LayoutTransformFCRS2FRSCf:
     @always_inline
     @staticmethod
@@ -865,7 +865,7 @@ struct LayoutTransformFCRS2FRSCf:
         )
 
 
-@compiler.register("layout_transform_FCQRS_to_FQRSCf")
+@extensibility.register("layout_transform_FCQRS_to_FQRSCf")
 struct LayoutTransformFCQRS2FQRSCf:
     @always_inline
     @staticmethod

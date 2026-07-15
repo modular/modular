@@ -13,7 +13,7 @@
 
 # DOC: max/develop/custom-kernels-pytorch.mdx
 
-import compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 from extensibility import InputTensor, OutputTensor, foreach
@@ -22,7 +22,7 @@ from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
 
-@compiler.register("grayscale")
+@extensibility.register("grayscale")
 struct Grayscale:
     """Convert RGB image tensor to grayscale using weighted formula."""
 

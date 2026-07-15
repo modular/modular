@@ -19,7 +19,7 @@
 from std.math import gcd
 from std.sys import align_of
 from std.sys.info import simd_width_of
-import extensibility as compiler
+import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -132,7 +132,7 @@ def check_axis_in_range[dim_size: Int](idx: Int) raises:
     raise Error("indices must be in range [-dim_size, dim_size)")
 
 
-@compiler.register("mo.squeeze_shape")
+@extensibility.register("mo.squeeze_shape")
 struct SqueezeShape:
     @staticmethod
     def execute[
@@ -181,7 +181,7 @@ struct SqueezeShape:
             output_shape_index += 1
 
 
-@compiler.register_shape_function("mo.squeeze_shape")
+@extensibility.register_shape_function("mo.squeeze_shape")
 def squeeze_shape_fn[
     dtype: DType, indices_type: DType
 ](
@@ -198,7 +198,7 @@ def squeeze_shape_fn[
     return IndexList[1](out_dim)
 
 
-@compiler.register("mo.unsqueeze_shape")
+@extensibility.register("mo.unsqueeze_shape")
 struct UnsqueezeShape:
     @staticmethod
     def execute[
@@ -249,7 +249,7 @@ struct UnsqueezeShape:
             orig_shape_index += 1
 
 
-@compiler.register_shape_function("mo.unsqueeze_shape")
+@extensibility.register_shape_function("mo.unsqueeze_shape")
 def unsqueeze_shape_fn[
     dtype: DType, indices_type: DType
 ](
@@ -260,7 +260,7 @@ def unsqueeze_shape_fn[
     return IndexList[1](out_dim)
 
 
-@compiler.register("mo.scatter_nd")
+@extensibility.register("mo.scatter_nd")
 struct ScatterND:
     @staticmethod
     def execute[
@@ -282,7 +282,7 @@ struct ScatterND:
         )
 
 
-@compiler.register_shape_function("mo.scatter_nd")
+@extensibility.register_shape_function("mo.scatter_nd")
 def scatter_nd_shape_fn[](
     input: InputTensor,
     updates: InputTensor[dtype=input.dtype, ...],
@@ -297,7 +297,7 @@ def scatter_nd_shape_fn[](
     )
 
 
-@compiler.register("mo.scatter_nd.skip_neg_indices")
+@extensibility.register("mo.scatter_nd.skip_neg_indices")
 struct ScatterNDSkipNegIndices:
     @staticmethod
     def execute[
@@ -331,7 +331,7 @@ struct ScatterNDSkipNegIndices:
         )
 
 
-@compiler.register("mo.scatter_nd.add")
+@extensibility.register("mo.scatter_nd.add")
 struct ScatterNDAdd:
     @staticmethod
     def execute[
@@ -364,7 +364,7 @@ struct ScatterNDAdd:
         )
 
 
-@compiler.register_shape_function("mo.scatter_nd.add")
+@extensibility.register_shape_function("mo.scatter_nd.add")
 def scatter_nd_add_shape[](
     input: InputTensor,
     updates: InputTensor[dtype=input.dtype, ...],
@@ -379,7 +379,7 @@ def scatter_nd_add_shape[](
     )
 
 
-@compiler.register("mo.scatter_nd.mul")
+@extensibility.register("mo.scatter_nd.mul")
 struct ScatterNDMul:
     @staticmethod
     def execute[
@@ -412,7 +412,7 @@ struct ScatterNDMul:
         )
 
 
-@compiler.register_shape_function("mo.scatter_nd.mul")
+@extensibility.register_shape_function("mo.scatter_nd.mul")
 def scatter_nd_mul_shape[](
     input: InputTensor,
     updates: InputTensor[dtype=input.dtype, ...],
@@ -427,7 +427,7 @@ def scatter_nd_mul_shape[](
     )
 
 
-@compiler.register("mo.scatter_nd.min")
+@extensibility.register("mo.scatter_nd.min")
 struct ScatterNDMin:
     @staticmethod
     def execute[
@@ -460,7 +460,7 @@ struct ScatterNDMin:
         )
 
 
-@compiler.register_shape_function("mo.scatter_nd.min")
+@extensibility.register_shape_function("mo.scatter_nd.min")
 def scatter_nd_min_shape[](
     input: InputTensor,
     updates: InputTensor[dtype=input.dtype, ...],
@@ -475,7 +475,7 @@ def scatter_nd_min_shape[](
     )
 
 
-@compiler.register("mo.scatter_nd.max")
+@extensibility.register("mo.scatter_nd.max")
 struct ScatterNDMax:
     @staticmethod
     def execute[
@@ -508,7 +508,7 @@ struct ScatterNDMax:
         )
 
 
-@compiler.register_shape_function("mo.scatter_nd.max")
+@extensibility.register_shape_function("mo.scatter_nd.max")
 def scatter_nd_max_shape[](
     input: InputTensor,
     updates: InputTensor[dtype=input.dtype, ...],
@@ -523,7 +523,7 @@ def scatter_nd_max_shape[](
     )
 
 
-@compiler.register("mo.apply_packed_bitmask")
+@extensibility.register("mo.apply_packed_bitmask")
 struct ApplyPackedBitmask:
     @staticmethod
     def execute[
@@ -546,7 +546,7 @@ struct ApplyPackedBitmask:
         )
 
 
-@compiler.register("mo.scatter_set_constant")
+@extensibility.register("mo.scatter_set_constant")
 struct ScatterSetConstant:
     @staticmethod
     def execute[
@@ -568,7 +568,7 @@ struct ScatterSetConstant:
         )
 
 
-@compiler.register("mo.scatter")
+@extensibility.register("mo.scatter")
 struct Scatter:
     @staticmethod
     def execute[
@@ -602,7 +602,7 @@ struct Scatter:
         )
 
 
-@compiler.register_shape_function("mo.scatter")
+@extensibility.register_shape_function("mo.scatter")
 def scatter_shape_fn[
     axis: Int,
 ](
@@ -620,7 +620,7 @@ def scatter_shape_fn[
     )
 
 
-@compiler.register("mo.scatter.add")
+@extensibility.register("mo.scatter.add")
 struct ScatterAdd:
     @staticmethod
     def execute[
@@ -654,7 +654,7 @@ struct ScatterAdd:
         )
 
 
-@compiler.register_shape_function("mo.scatter.add")
+@extensibility.register_shape_function("mo.scatter.add")
 def scatter_add_shape_fn(
     input: InputTensor,
     updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
@@ -671,7 +671,7 @@ def scatter_add_shape_fn(
     )
 
 
-@compiler.register("mo.scatter.max")
+@extensibility.register("mo.scatter.max")
 struct ScatterMax:
     @staticmethod
     def execute[
@@ -705,7 +705,7 @@ struct ScatterMax:
         )
 
 
-@compiler.register_shape_function("mo.scatter.max")
+@extensibility.register_shape_function("mo.scatter.max")
 def scatter_max_shape_fn(
     input: InputTensor,
     updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
@@ -722,7 +722,7 @@ def scatter_max_shape_fn(
     )
 
 
-@compiler.register("mo.scatter.min")
+@extensibility.register("mo.scatter.min")
 struct ScatterMin:
     @staticmethod
     def execute[
@@ -756,7 +756,7 @@ struct ScatterMin:
         )
 
 
-@compiler.register_shape_function("mo.scatter.min")
+@extensibility.register_shape_function("mo.scatter.min")
 def scatter_min_shape_fn(
     input: InputTensor,
     updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
@@ -773,7 +773,7 @@ def scatter_min_shape_fn(
     )
 
 
-@compiler.register("mo.scatter.mul")
+@extensibility.register("mo.scatter.mul")
 struct ScatterMul:
     @staticmethod
     def execute[
@@ -807,7 +807,7 @@ struct ScatterMul:
         )
 
 
-@compiler.register_shape_function("mo.scatter.mul")
+@extensibility.register_shape_function("mo.scatter.mul")
 def scatter_mul_shape_fn(
     input: InputTensor,
     updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
@@ -824,7 +824,7 @@ def scatter_mul_shape_fn(
     )
 
 
-@compiler.register("mo.broadcast_to")
+@extensibility.register("mo.broadcast_to")
 struct BroadcastTo:
     # The `execute` method should never be used in the graph compiler.
     # We expect `mo.broadcast_to` to always simplify to `mo.static.broadcast_to`
@@ -876,7 +876,7 @@ struct BroadcastTo:
         return output_shape
 
 
-@compiler.register_shape_function("mo.broadcast_to")
+@extensibility.register_shape_function("mo.broadcast_to")
 def broadcast_to_shape_fn[
     input_rank: Int, output_rank: Int
 ](
@@ -886,7 +886,7 @@ def broadcast_to_shape_fn[
     return BroadcastTo.shape_impl[output_rank=output_rank](input, shape)
 
 
-@compiler.register("mo.broadcast_shape")
+@extensibility.register("mo.broadcast_shape")
 struct BroadcastShape:
     @always_inline
     @staticmethod
@@ -942,7 +942,7 @@ struct BroadcastShape:
         return BroadcastShape.broadcast_shape_impl(out_buf, lhs_buf, rhs_buf)
 
 
-@compiler.register_shape_function("mo.broadcast_shape")
+@extensibility.register_shape_function("mo.broadcast_shape")
 def broadcast_shape_fn(
     lhs_buf: InputTensor[rank=1, ...], rhs_buf: InputTensor[rank=1, ...]
 ) raises -> IndexList[1]:
@@ -951,8 +951,8 @@ def broadcast_shape_fn(
     return IndexList[1](max(lhs_dim, rhs_dim))
 
 
-@compiler.register("mo.static.broadcast_to")
-@compiler.view_kernel
+@extensibility.register("mo.static.broadcast_to")
+@extensibility.view_kernel
 struct StaticBroadcastTo:
     @always_inline
     @staticmethod
@@ -1047,8 +1047,8 @@ struct StaticBroadcastTo:
         ](z, x_view, ctx)
 
 
-@compiler.register("mo.static.reshape")
-@compiler.view_kernel
+@extensibility.register("mo.static.reshape")
+@extensibility.view_kernel
 struct StaticReshape:
     @staticmethod
     def update_input_view[
@@ -1102,7 +1102,7 @@ struct StaticReshape:
         ](output, view_tensor, ctx)
 
 
-@compiler.register("mo.reshape")
+@extensibility.register("mo.reshape")
 struct Reshape:
     # The `execute` method should never be used in the graph compiler.
     # We expect `mo.reshape` to always simplify to `mo.static.reshape`
@@ -1113,7 +1113,7 @@ struct Reshape:
         raise Error("Should never be called!")
 
 
-@compiler.register_shape_function("mo.reshape")
+@extensibility.register_shape_function("mo.reshape")
 def reshape_shape_fn[
     output_rank: Int
 ](input: InputTensor, shape: InputTensor[rank=1, ...]) raises -> IndexList[
@@ -1125,8 +1125,8 @@ def reshape_shape_fn[
     )
 
 
-@compiler.register("mo.transpose")
-@compiler.view_kernel
+@extensibility.register("mo.transpose")
+@extensibility.view_kernel
 struct Transpose:
     @always_inline
     @staticmethod
@@ -1223,7 +1223,7 @@ struct Transpose:
         return out
 
 
-@compiler.register_shape_function("mo.transpose")
+@extensibility.register_shape_function("mo.transpose")
 def transpose_shape_fn(
     input: InputTensor,
     permutations: InputTensor[rank=1, ...],
@@ -1231,8 +1231,8 @@ def transpose_shape_fn(
     return Transpose.shape_impl(input, permutations)
 
 
-@compiler.register("mo.slice")
-@compiler.view_kernel
+@extensibility.register("mo.slice")
+@extensibility.view_kernel
 struct Slice:
     @staticmethod
     def get_view_alignment[
@@ -1353,7 +1353,7 @@ struct Slice:
         ](output, view_tensor, ctx)
 
 
-@compiler.register_shape_function("mo.slice")
+@extensibility.register_shape_function("mo.slice")
 def slice_shape_fn(
     input: InputTensor,
     starts: InputTensor[rank=1, ...],
@@ -1370,7 +1370,7 @@ def slice_shape_fn(
     )
 
 
-@compiler.register("mo.mutable.store")
+@extensibility.register("mo.mutable.store")
 struct MutableStore(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
@@ -1392,7 +1392,7 @@ struct MutableStore(ElementwiseUnaryOp):
         raise Error("exec should never be called !")
 
 
-@compiler.register("mo.mutable.store.slice")
+@extensibility.register("mo.mutable.store.slice")
 struct MutableStoreSlice:
     @staticmethod
     def execute[
@@ -1417,7 +1417,7 @@ struct MutableStoreSlice:
         )
 
 
-@compiler.register("mo.gather_nd")
+@extensibility.register("mo.gather_nd")
 struct GatherND:
     @staticmethod
     def execute[
@@ -1438,7 +1438,7 @@ struct GatherND:
         )
 
 
-@compiler.register_shape_function("mo.gather_nd")
+@extensibility.register_shape_function("mo.gather_nd")
 def gather_nd_shape_fn[
     batch_dims: Int, output_rank: Int
 ](data: InputTensor, indices: InputTensor,) raises -> IndexList[output_rank]:
@@ -1451,7 +1451,7 @@ def gather_nd_shape_fn[
     )
 
 
-@compiler.register("mo.gather")
+@extensibility.register("mo.gather")
 struct Gather:
     @staticmethod
     def execute[
@@ -1509,7 +1509,7 @@ struct Gather:
         )
 
 
-@compiler.register_shape_function("mo.gather")
+@extensibility.register_shape_function("mo.gather")
 def gather_shape_fn[
     output_rank: Int,
     axis: Int,
@@ -1521,7 +1521,7 @@ def gather_shape_fn[
     )
 
 
-@compiler.register("mo.gather_sum")
+@extensibility.register("mo.gather_sum")
 struct GatherSum:
     @staticmethod
     def execute[
@@ -1550,7 +1550,7 @@ struct GatherSum:
         )
 
 
-@compiler.register("mo.tile")
+@extensibility.register("mo.tile")
 struct Tile:
     @staticmethod
     def execute[
@@ -1567,7 +1567,7 @@ struct Tile:
         )
 
 
-@compiler.register_shape_function("mo.tile")
+@extensibility.register_shape_function("mo.tile")
 def tile_shape_fn(
     input: InputTensor,
     repeats: InputTensor[rank=1, ...],
@@ -1580,7 +1580,7 @@ def tile_shape_fn(
     )
 
 
-@compiler.register("mo.shard_and_stack")
+@extensibility.register("mo.shard_and_stack")
 struct ShardWeights:
     @staticmethod
     def execute[
@@ -1597,7 +1597,7 @@ struct ShardWeights:
         shard_and_stack[axis](outputs, inputs, dev_ctxs_input)
 
 
-@compiler.register("mo.concat")
+@extensibility.register("mo.concat")
 struct Concat:
     @staticmethod
     def execute[
@@ -1664,7 +1664,7 @@ struct Concat:
         )
 
 
-@compiler.register_shape_function("mo.concat")
+@extensibility.register_shape_function("mo.concat")
 def concat_shape_fn[
     dtype: DType,
     rank: Int,
@@ -1675,7 +1675,7 @@ def concat_shape_fn[
     return concat_shape_impl(axis, inputs)
 
 
-@compiler.register("mo.composite.concat_slice")
+@extensibility.register("mo.composite.concat_slice")
 struct FusedConcatSlice:
     @staticmethod
     def execute[
@@ -1789,7 +1789,7 @@ struct FusedConcatSlice:
         )
 
 
-@compiler.register("mo.dual_fused_concat_slice")
+@extensibility.register("mo.dual_fused_concat_slice")
 struct DualFusedConcatSlice:
     @staticmethod
     def execute[
@@ -1984,7 +1984,7 @@ struct DualFusedConcatSlice:
         )
 
 
-@compiler.register("mo.split")
+@extensibility.register("mo.split")
 struct Split:
     @staticmethod
     def execute[
@@ -2039,7 +2039,7 @@ struct Split:
         )
 
 
-@compiler.register("split_ith_output_shape")
+@extensibility.register("split_ith_output_shape")
 struct SplitOutputShapeHelper:
     @staticmethod
     def execute(
@@ -2051,7 +2051,7 @@ struct SplitOutputShapeHelper:
         raise Error("Should not be called directly.")
 
 
-@compiler.register_shape_function("split_ith_output_shape")
+@extensibility.register_shape_function("split_ith_output_shape")
 def split_ith_output_shape_fn[
     rank: Int,
     input_type: DType,
@@ -2088,7 +2088,7 @@ def split_ith_output_shape_fn[
     return output_shape
 
 
-@compiler.register("index_tensor")
+@extensibility.register("index_tensor")
 struct IndexTensor:
     @staticmethod
     def execute[
@@ -2113,7 +2113,7 @@ struct IndexTensor:
         )
 
 
-@compiler.register("advanced_indexing_getitem")
+@extensibility.register("advanced_indexing_getitem")
 struct AdvancedIndexingGetItem:
     @always_inline
     @staticmethod
@@ -2177,7 +2177,7 @@ struct AdvancedIndexingGetItem:
         )
 
 
-@compiler.register_shape_function("advanced_indexing_getitem")
+@extensibility.register_shape_function("advanced_indexing_getitem")
 def advanced_indexing_getitem_shape_fn[
     input_rank: Int,
     index_rank: Int,
@@ -2197,7 +2197,7 @@ def advanced_indexing_getitem_shape_fn[
     ](input_tensor.shape(), indices[0].shape())
 
 
-@compiler.register("advanced_indexing_setitem_inplace")
+@extensibility.register("advanced_indexing_setitem_inplace")
 struct AdvancedIndexingSetItemInplace:
     @always_inline
     @staticmethod
@@ -2255,7 +2255,7 @@ struct AdvancedIndexingSetItemInplace:
         )
 
 
-@compiler.register("advanced_indexing_setitem")
+@extensibility.register("advanced_indexing_setitem")
 struct AdvancedIndexingSetItem:
     @always_inline
     @staticmethod
@@ -2321,7 +2321,7 @@ struct AdvancedIndexingSetItem:
         ](tensor, updates, indices, ctx)
 
 
-@compiler.register("mo.sliced.add.ragged")
+@extensibility.register("mo.sliced.add.ragged")
 struct Struct_sliced_add_ragged:
     @always_inline
     @staticmethod

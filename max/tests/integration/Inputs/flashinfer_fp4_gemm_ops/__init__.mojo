@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """FlashInfer FP4 GEMM custom op for loading TVM FFI modules."""
 
-import extensibility as compiler
+import extensibility
 import std.format
 from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUstream
@@ -75,7 +75,7 @@ struct Module:
             raise Error("FlashInfer fp4_gemm failed: {}".format(error))
 
 
-@compiler.register("flashinfer_fp4_gemm")
+@extensibility.register("flashinfer_fp4_gemm")
 struct FlashInferFP4Gemm[lib_path: StaticString]:
     """Custom op that calls FlashInfer FP4 GEMM via TVM FFI.
 

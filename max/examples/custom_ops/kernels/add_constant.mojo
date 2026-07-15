@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler
+import extensibility
 
 from std.gpu.host import DeviceContext
 
@@ -21,7 +21,7 @@ from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
-@compiler.register("add_constant")
+@extensibility.register("add_constant")
 struct AddConstant[value: Int]:
     @staticmethod
     def execute[
@@ -43,7 +43,7 @@ struct AddConstant[value: Int]:
 
 # You only need to implement this if you do not manually annotate
 # output shapes in the graph.
-@compiler.register_shape_function("add_constant")
+@extensibility.register_shape_function("add_constant")
 def add_constant_shape(
     x: InputTensor,
 ) raises -> IndexList[x.rank]:
