@@ -109,20 +109,41 @@ struct WarpRole(Equatable, TrivialRegisterPassable):
         return self == Self(Int32(other))
 
 
-def warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
+def warp_idx_to_role[
+    single_softmax_wg: Bool = False
+](warp_idx: UInt32) -> WarpRole:
     var wg_idx = warp_idx // 4
-    if wg_idx == 0:
-        return WarpRole.Softmax0
-    elif wg_idx == 1:
-        return WarpRole.Softmax1
-    elif wg_idx == 2:
-        return WarpRole.Correction
-    elif warp_idx == 12:
-        return WarpRole.MMA
-    elif warp_idx == 13:
-        return WarpRole.Load
+    comptime if single_softmax_wg:
+        # Generic single-O (wide-V): WG1's softmax is a full no-op, so it is
+        # dropped and the roles pack into 3 warpgroups (384 threads). WG0 keeps
+        # Softmax0; Correction moves down from WG2 into WG1; the MMA/Load warps
+        # move down from WG3 (warps 12/13) into WG2 (warps 8/9). Correction /
+        # MMA / Load bodies are position-independent (local row via
+        # `thread_idx.x % WARPGROUP_SIZE`; MMA/Load `elect()` not absolute
+        # warp index), so the remap is transparent.
+        if wg_idx == 0:
+            return WarpRole.Softmax0
+        elif wg_idx == 1:
+            return WarpRole.Correction
+        elif warp_idx == 8:
+            return WarpRole.MMA
+        elif warp_idx == 9:
+            return WarpRole.Load
+        else:
+            return WarpRole.Empty
     else:
-        return WarpRole.Empty
+        if wg_idx == 0:
+            return WarpRole.Softmax0
+        elif wg_idx == 1:
+            return WarpRole.Softmax1
+        elif wg_idx == 2:
+            return WarpRole.Correction
+        elif warp_idx == 12:
+            return WarpRole.MMA
+        elif warp_idx == 13:
+            return WarpRole.Load
+        else:
+            return WarpRole.Empty
 
 
 __extension SM100MLA:
@@ -134,7 +155,7 @@ __extension SM100MLA:
     @__llvm_arg_metadata(ragged_tma_store, `nvvm.grid_constant`)
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-            Int32(Self.config.num_threads)
+            Int32(Self.config.launch_num_threads())
         )
     )
     @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
@@ -448,7 +469,24 @@ __extension SM100MLA:
         var ptr_tmem_addr = attn_smem.tmem_addr_ptr()
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
-        comptime num_reg_softmax = 184
+        #
+        # Non-single-O keeps the 4-WG (512-thread) split at 184. Generic
+        # single-O drops WG1 (3 WGs / 384 threads), freeing the WG1 register
+        # budget for the lone remaining softmax WG. 208 is NOT "give softmax the
+        # max": `num_reg_softmax` is that WG's `setmaxnreg` peak, and ptxas folds
+        # the peak into the whole-function allocation it runs for the shared
+        # prologue, so the peak must clear the prologue WITHOUT spilling a live
+        # scalar to local memory. That is non-monotonic -- measured on B200,
+        # single-O spills at 184/192/216/232 and at the "obvious" max 256 (896
+        # local-ld sectors), and is spill-free only on the narrow {200, 208}
+        # island (208 chosen). A ptxas/toolchain bump can move the island;
+        # re-verify that the single-O `mla_prefill_generic` launch reports ZERO
+        # local traffic (else sweep `num_reg_softmax` by 8 to re-find it):
+        #   ncu --target-processes all --kernel-name-base demangled \
+        #       --kernel-name regex:"mla_prefill_generic" \
+        #       --print-metric-instances values --metrics \
+        #       l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum <binary>
+        comptime num_reg_softmax = 208 if Self.config.fa4_config.single_o else 184
         comptime num_reg_correction = 96
         comptime num_reg_other = 48
         comptime num_reg_empty = 24
@@ -499,7 +537,7 @@ __extension SM100MLA:
         # consumers must not re-read `tmem_addr_ptr()` in their bodies.
         var tmem_addr = ptr_tmem_addr[0]
 
-        var role = warp_idx_to_role(warp_idx)
+        var role = warp_idx_to_role[Self.config.fa4_config.single_o](warp_idx)
 
         # warp group partitioning
         # Two QO:
@@ -522,6 +560,7 @@ __extension SM100MLA:
                 False,
                 Self.MaxSeqLenType,
                 output_nonempty=output_nonempty,
+                single_softmax_wg=Self.config.fa4_config.single_o,
             ](
                 attn_smem,
                 tmem_addr,
@@ -2793,7 +2832,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
             max_num_prompt_tiles * PartitionType().num_partitions()
         )
 
-        comptime num_threads = cfg.num_threads
+        comptime num_threads = cfg.launch_num_threads()
         # When the launched (2Q) kernel may dispatch to the 1Q body at
         # runtime, it builds the 1Q `SM100AttentionSMem` over the same
         # dynamic-smem region, so reserve the max of both footprints.

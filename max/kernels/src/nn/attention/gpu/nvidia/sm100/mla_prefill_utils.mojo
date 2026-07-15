@@ -49,7 +49,7 @@ from layout.tensor_core_async import (
 from linalg.arch.sm100.mma import smem_descriptor
 
 from std.gpu.host.info import B200
-from std.gpu.globals import WARP_SIZE
+from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from std.gpu.memory import fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.compute.arch.mma_nvidia_sm100 import (
@@ -287,6 +287,23 @@ struct MLAConfig[
         return self.smem_used
 
     @always_inline
+    def launch_num_threads(self) -> Int:
+        """Threads to launch for this config's kernel.
+
+        The generic single-O (wide-V) path drops the redundant 2nd softmax
+        warpgroup -- WG1 is a full no-op there (see the single-O serial-KV
+        accumulation) -- so it launches 3 warpgroups (Softmax0 + Correction +
+        MMA/Load/Empty) instead of 4. Every other config keeps the standard
+        4-warpgroup (`num_threads` = 512) layout. Only the generic kernel calls
+        this; the per-token-scale / blockscale siblings read the `num_threads`
+        field directly and stay at 512 even for their own single-O configs
+        (they keep the 2nd softmax WG).
+        """
+        if self.fa4_config.single_o:
+            return 3 * WARPGROUP_SIZE
+        return self.num_threads
+
+    @always_inline
     def prefer_1q(
         self,
         max_prompt_len: UInt32,
@@ -323,12 +340,6 @@ struct MLAConfig[
 
     def correction_smem_elements(self) -> Int:
         return self.BM * Self.num_correction_cols
-
-    def num_active_warps_per_group(self) -> Int:
-        return 4
-
-    def num_active_threads_per_group(self) -> Int:
-        return WARP_SIZE * self.num_active_warps_per_group()
 
 
 @always_inline

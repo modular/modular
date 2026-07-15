@@ -99,6 +99,17 @@ def main() raises:
     duplicated here. Decode / seq==1-as-decode, attention sinks, GQA
     ``group != 1`` (MLA is per-head K/V), NullMask (MLA is causal), and
     ``seq_len > num_keys`` are not applicable to this path.
+
+    Single-O register-spill guard (manual -- no automated assertion here).
+    The REAL-GLM single-O section also exercises the ``num_reg_softmax = 208``
+    tuning in ``mla_prefill_generic.mojo``, whose spill-freedom sits on a
+    narrow, ptxas-version-dependent allocation island. That is a ptxas/SASS
+    property with no lightweight in-tree check (the AOT binary is JIT'd with no
+    static device code; ``_compile_code`` emits pre-ptxas PTX where the spill
+    never appears; ``_dump_sass`` needs a GPU + CUDA Toolkit and would be
+    brittle as the island moves). After any ptxas/toolchain bump, re-verify
+    ZERO local ld/st sectors on the single-O ``mla_prefill_generic`` launch
+    using the ncu recipe documented at that ``num_reg_softmax`` line.
     """
     with DeviceContext() as ctx:
         comptime if _is_sm10x_gpu(ctx.default_device_info):

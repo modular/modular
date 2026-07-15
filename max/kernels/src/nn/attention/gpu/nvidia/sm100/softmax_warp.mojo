@@ -1075,6 +1075,15 @@ def fa4_softmax[
     # MLA). A pure-2Q kernel (or one whose mask needs the runtime FULL_MASK
     # slow path, where MLA cannot switch) must leave this False.
     output_nonempty: Bool = False,
+    # The generic MLA-prefill single-O path physically drops the 2nd softmax
+    # warpgroup (launches 3 WGs / 384 threads). When True, WG0 is the ONLY
+    # softmax WG, so the WG0<->WG1 pair rendezvous `named_barrier[2*WG](2)`
+    # before the terminal TMEM dealloc must be skipped (no WG1 arrives ->
+    # otherwise a 256-thread barrier with only 128 arrivals hangs). Default
+    # False keeps the per-token-scale / blockscale siblings (still 2 softmax
+    # WGs even for their single-O configs) and every non-single-O path
+    # byte-identical.
+    single_softmax_wg: Bool = False,
 ](
     smem: SM100AttentionSMem[config],
     tmem_addr: UInt32,
@@ -2271,7 +2280,13 @@ def fa4_softmax[
             # WG1 already participated in `named_barrier[2*WG](2)` and
             # returned; WG0 must hit it here so the pair-WG sync resolves
             # before TMEM dealloc. Mirrors the unconditional sync below.
-            named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
+            # When the generic single-O path drops WG1 entirely
+            # (`single_softmax_wg`), there is no peer WG to rendezvous with, so
+            # this 256-thread barrier would hang with only WG0's 128 arrivals.
+            # The correction / MMA -> dealloc ordering is carried by the
+            # o-producer mbars (unchanged), not this softmax-only barrier.
+            comptime if not single_softmax_wg:
+                named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
             # Pair-CTA and 1Q split-K defer dealloc to the kernel terminal
             # (after the cluster_sync); only plain single-CTA deallocs inline.
             comptime if not config.pair_cta and config.splitk_partitions == 1:
