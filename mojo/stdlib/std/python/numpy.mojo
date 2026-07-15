@@ -16,7 +16,7 @@ These functions move flat numeric data between Mojo `Span` and NumPy
 arrays when a Mojo program drives CPython (via `Python.import_module`), without
 hand-written `ctypes` plumbing:
 
-- `to_numpy_array` builds a NumPy array from a Mojo `Span` by copying
+- `copy_to_numpy_array` builds a NumPy array from a Mojo `Span` by copying
   the data into a new, independent array.
 - `from_numpy_array` borrows a NumPy array's buffer as a Mojo `Span`
   (zero-copy).
@@ -67,11 +67,11 @@ def _is_numpy_dtype[dtype: DType]() -> Bool:
 
 
 # ===----------------------------------------------------------------------=== #
-# to_numpy_array
+# copy_to_numpy_array
 # ===----------------------------------------------------------------------=== #
 
 
-def to_numpy_array[
+def copy_to_numpy_array[
     dtype: DType, origin: Origin
 ](data: Span[Scalar[dtype], origin]) raises -> PythonObject:
     """Builds a 1-D NumPy array from a Mojo `Span` of scalars.
@@ -85,7 +85,7 @@ def to_numpy_array[
     Example:
 
     ```mojo
-    from std.python.numpy import to_numpy_array
+    from std.python.numpy import copy_to_numpy_array
     from std.math import sin
 
     var values = List[Float64](capacity=1024)
@@ -93,7 +93,7 @@ def to_numpy_array[
         var x = Float64(i) * 0.01
         values.append(sin(x) * sin(x))
 
-    var arr = to_numpy_array(values)  # an independent NumPy float64 array
+    var arr = copy_to_numpy_array(values)  # an independent NumPy float64 array
     ```
 
     Parameters:
@@ -116,7 +116,7 @@ def to_numpy_array[
     """
     comptime is_supported = _is_numpy_dtype[dtype]()
     comptime assert is_supported, String(
-        "to_numpy_array: unsupported dtype '",
+        "copy_to_numpy_array: unsupported dtype '",
         dtype,
         "'; expected a fixed-width numeric dtype (int8-int64, uint8-uint64,",
         " float16, float32, or float64). Note: `Int` is a machine-word integer",

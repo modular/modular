@@ -379,19 +379,19 @@ This version is still a work in progress.
   return type, so every range flavor (including the typed scalar ranges) can
   conform and return its own reversed iterator.
 
-- Added `to_numpy_array` and `from_numpy_array` to the new `python.numpy` module
-  for moving flat numeric data between Mojo `Span`/`List` and NumPy arrays
-  without hand-written `ctypes` plumbing:
+- Added `copy_to_numpy_array` and `from_numpy_array` to the new `python.numpy`
+  module for moving flat numeric data between Mojo `Span`/`List` and NumPy
+  arrays without hand-written `ctypes` plumbing:
 
   ```mojo
-  from std.python.numpy import from_numpy_array, to_numpy_array
+  from std.python.numpy import from_numpy_array, copy_to_numpy_array
 
   var values: List[Float64] = [1.0, 2.0, 3.0]
-  var array = to_numpy_array(values)                 # NumPy array (copies)
+  var array = copy_to_numpy_array(values)            # NumPy array (copies)
   var span = from_numpy_array[DType.float64](array)  # borrow array as a Span
   ```
 
-  Both support the fixed-width numeric dtypes. `to_numpy_array` copies its
+  Both support the fixed-width numeric dtypes. `copy_to_numpy_array` copies its
   input into a new, independent array; `from_numpy_array` borrows the array's
   buffer zero-copy.
 
