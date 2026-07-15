@@ -702,10 +702,11 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
       declRef = dyn_cast<DeclRefNode>(callNode->callee);
 
     if (!callNode || !declRef) {
-      // Qualified decorator names like @compiler.register_shape_function(args)
-      // have an AttributeRefNode callee. Fall through to applyBodyDecorators
-      // (same path as struct decorators) where validateCompilerDecorator
-      // handles the whitelist check.
+      // Qualified decorator names like
+      // @extensibility.register_shape_function(args) have an AttributeRefNode
+      // callee. Fall through to applyBodyDecorators (same path as struct
+      // decorators) where validateCompilerDecorator handles the whitelist
+      // check.
       if (callNode && isa<AttributeRefNode>(callNode->callee))
         return failure();
       emitError(decorator->getLoc(), "invalid expression in decorator");

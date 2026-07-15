@@ -17,7 +17,7 @@ TEST(MOGGAnnotateTests, MissingReadWriteParams) {
 import compiler_internal as compiler
 from tensor import ManagedTensorSlice, OutputTensor, InputTensor
 
-@compiler.register("Missing")
+@extensibility.register("Missing")
 struct Missing:
     @staticmethod
     def execute(a: ManagedTensorSlice):
@@ -43,7 +43,7 @@ TEST(MOGGAnnotateTests, OutputAfterInput) {
 import compiler_internal as compiler
 from tensor import ManagedTensorSlice, OutputTensor, InputTensor
 
-@compiler.register("OutputAfterInput")
+@extensibility.register("OutputAfterInput")
 struct OutputAfterInput:
     @staticmethod
     def execute(a: InputTensor, b: OutputTensor):
@@ -67,7 +67,7 @@ TEST(MOGGAnnotateTests, InputTensorsForShape) {
 import compiler_internal as compiler
 from tensor import ManagedTensorSlice, OutputTensor, InputTensor
 
-@compiler.register("InputTensorsForShape")
+@extensibility.register("InputTensorsForShape")
 struct InputTensorsForShape:
     @staticmethod
     def execute(a: InputTensor):
@@ -97,7 +97,7 @@ import compiler_internal as compiler
 from tensor import OutputTensor
 from tensor.managed_tensor_slice import _MutableInputTensor as MutableInputTensor
 
-@compiler.register("non_input_tensor_list")
+@extensibility.register("non_input_tensor_list")
 struct NonInputTensorList:
     @staticmethod
     def execute[
@@ -132,7 +132,7 @@ TEST(MOGGAnnotateTests, PytorchFallbackInvalidArgument) {
 import compiler_internal as compiler
 from python import Python, PythonObject
 
-@compiler.register("pytorch_fallback")
+@extensibility.register("pytorch_fallback")
 struct InvalidPytorchFallBackArgument:
     @staticmethod
     def execute():
@@ -165,7 +165,7 @@ TEST(MOGGAnnotateTests, PytorchFallbackInvalidResult) {
 import compiler_internal as compiler
 from python import Python, PythonObject
 
-@compiler.register("pytorch_fallback")
+@extensibility.register("pytorch_fallback")
 struct InvalidPytorchFallBackResult:
     @staticmethod
     def execute():
@@ -194,7 +194,7 @@ TEST(MOGGAnnotateTests, PytorchFallbackInvalidOutResult) {
 import compiler_internal as compiler
 from python import Python, PythonObject
 
-@compiler.register("pytorch_fallback")
+@extensibility.register("pytorch_fallback")
 struct InvalidPytorchFallBackResult:
     @staticmethod
     def execute():
