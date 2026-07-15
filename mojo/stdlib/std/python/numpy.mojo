@@ -77,7 +77,10 @@ def to_numpy_array[
     """Builds a 1-D NumPy array from a Mojo `Span` of scalars.
 
     The data is copied into a new, independent NumPy array, so the result
-    remains valid after `data` is later mutated or freed.
+    remains valid after `data` is later mutated or freed. Unlike
+    `from_numpy_array`, which returns a zero-copy view, this function does not
+    alias `data`: mutating `data` after this call is not reflected in the
+    returned array, and writes to the array are not reflected in `data`.
 
     Example:
 
@@ -112,9 +115,14 @@ def to_numpy_array[
         If NumPy is unavailable, or if the underlying NumPy calls fail.
     """
     comptime is_supported = _is_numpy_dtype[dtype]()
-    comptime assert (
-        is_supported
-    ), "to_numpy_array: unsupported dtype; expected a fixed-width numeric dtype"
+    comptime assert is_supported, String(
+        "to_numpy_array: unsupported dtype '",
+        dtype,
+        "'; expected a fixed-width numeric dtype (int8-int64, uint8-uint64,",
+        " float16, float32, or float64). Note: `Int` is a machine-word integer",
+        " and is not supported here — use a fixed-width scalar such as",
+        " `Int64` (for example, `[Int64(i) for i in range(n)]`).",
+    )
 
     var np = Python.import_module("numpy")
     var n = len(data)
@@ -189,9 +197,11 @@ def from_numpy_array[
         match `dtype`, or is not writable when borrowed mutably.
     """
     comptime is_supported = _is_numpy_dtype[dtype]()
-    comptime assert is_supported, (
-        "from_numpy_array: unsupported dtype; expected a fixed-width numeric"
-        " dtype"
+    comptime assert is_supported, String(
+        "from_numpy_array: unsupported dtype '",
+        dtype,
+        "'; expected a fixed-width numeric dtype (int8-int64, uint8-uint64,",
+        " float16, float32, or float64).",
     )
 
     var ndim = Int(py=array.ndim)
