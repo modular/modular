@@ -25,7 +25,7 @@ import numpy as np
 import pytest
 import torch
 from max import _interpreter
-from max._interpreter_ops import adopted_from_manifest
+from max._interpreter_ops import GC_FAMILIES, adopted_from_manifest
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
@@ -91,7 +91,11 @@ def _require_warm_adoption() -> None:
                 " in max/tests/tests/BUILD.bazel."
             )
         return
-    unadopted = [f for f in ("matmul", "unary") if not adopted_from_manifest(f)]
+    # Derive from the registry, not a hand-maintained tuple, so this adoption
+    # gate can't drift from the families the warm actually covers (MXF-533).
+    unadopted = [
+        f.name for f in GC_FAMILIES if not adopted_from_manifest(f.name)
+    ]
     if unadopted:
         raise RuntimeError(
             f"eager-GC warm is wired but {unadopted} did not adopt from the"

@@ -122,14 +122,24 @@ SOFTMAX: dict[
 from .gc_compile import adopted_from_manifest
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
 
+# Every warm path iterates this; each ``*_gc.py`` self-registers at import
+# (MXF-533), so there's no hand-maintained list to drift.
+GC_FAMILIES: tuple[gc_compile.GCOpFamily, ...] = (
+    gc_compile.registered_families()
+)
+
+
+def compile_all_families() -> None:
+    """Compile every registered GC family's full sweep into the cache."""
+    for family in GC_FAMILIES:
+        family.compile_sweep()
+
 
 # Opt-in (MAX_EAGER_OP_PRECOMPILE=1) precompile of the full GC matrix; lazy
-# per-dispatch otherwise (MXF-508). Wrapped in a function to defer the
-# matmul_gc / unary_gc symbol access past their import cycle with this module.
+# per-dispatch otherwise (MXF-508).
 def _precompile_gc_models() -> None:
     if gc_compile.should_precompile():
-        matmul_gc.compile_matmul_sweep()
-        unary_elementwise_gc.compile_unary_sweep()
+        compile_all_families()
 
 
 _precompile_gc_models()
@@ -137,11 +147,13 @@ _precompile_gc_models()
 __all__ = [
     "BINARY_ELEMENTWISE",
     "BINARY_ELEMENTWISE_COMPARISON",
+    "GC_FAMILIES",
     "REDUCE",
     "SOFTMAX",
     "UNARY_MIXED",
     "_MO_OP_HANDLERS",
     "adopted_from_manifest",
+    "compile_all_families",
     "lookup_handler",
     "register_op_handler",
 ]

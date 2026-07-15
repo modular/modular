@@ -29,18 +29,109 @@ This module must not import from ``handlers.py``.
 """
 
 import json
+import logging
 import os
 import platform
+import sys
 import threading
+from collections.abc import Callable, Container, Mapping, Sequence
+from dataclasses import dataclass, field
+from math import prod
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
-from max import engine
+from max import _core, engine
+from max._mlir_context import in_default_mlir_context
 from max.driver import (
     Device,
+    DeviceSpec,
     accelerator_architecture_name,
     accelerator_count,
+    load_devices,
 )
+from max.dtype import DType
+from max.graph import Module
+
+logger = logging.getLogger(__name__)
+
+
+def canonical_op_name(
+    op_type: type[_core.Operation], known_names: Container[str]
+) -> str:
+    """Canonical ``mo`` op-name for an mo- or rmo-dialect *op_type*.
+
+    The ops library emits ``rmo`` ops; most share the ``mo`` name (``AddOp``)
+    but some prefix ``Mo`` (``rmo.MoExpOp`` vs ``mo.ExpOp``). Strip a leading
+    ``Mo`` when that yields a *known_names* entry, reusing the ``mo`` sweep's
+    cache entry; unknown names pass through.
+    """
+    name = op_type.__name__
+    if name in known_names:
+        return name
+    if name.startswith("Mo") and name[2:] in known_names:
+        return name[2:]
+    return name
+
+
+# Stateless building blocks the eager GC op-family caches share (binary, unary,
+# reduce-axis, shape-rearrange); hoisted here so a new family imports them.
+CPU_FLOAT_DTYPES = [DType.float32, DType.float64]
+GPU_FLOAT_DTYPES = [DType.float16, DType.float32, DType.bfloat16]
+SIGNED_INT_DTYPES = [DType.int8, DType.int16, DType.int32, DType.int64]
+UNSIGNED_INT_DTYPES = [DType.uint8, DType.uint16, DType.uint32, DType.uint64]
+
+_SpecT = TypeVar("_SpecT")
+
+
+def float_dtypes(device: Device) -> list[DType]:
+    """Returns the float dtypes swept on *device*.
+
+    CPU is f32/f64 (16-bit float kernels don't compile on CPU); GPU is
+    f16/f32/bf16 (no f64 — NVIDIA rejects it for some ops, Metal lacks it;
+    MSTDL-2711).
+    """
+    return CPU_FLOAT_DTYPES if device.label == "cpu" else GPU_FLOAT_DTYPES
+
+
+def canonical_shape_rank1(shape: Sequence[int]) -> tuple[int]:
+    """Flattens to rank 1; bare ``prod`` keeps scalars at 1 and empty at 0."""
+    return (prod(shape),)
+
+
+def canonical_rank3(shape: Sequence[int], axis: int) -> tuple[int, int, int]:
+    """Collapses *shape* to rank 3 ``[outer, axis, inner]``.
+
+    *axis* is normalized for negatives; ``prod(())`` is 1, so a leading or
+    trailing axis yields an outer/inner dim of 1.
+    """
+    ndim = len(shape)
+    if axis < 0:
+        axis += ndim
+    return (prod(shape[:axis]), shape[axis], prod(shape[axis + 1 :]))
+
+
+def discover_devices() -> list[Device]:
+    """Returns CPU + every accelerator slot in sweep/warm key order."""
+    return load_devices([DeviceSpec.cpu()]) + load_devices(
+        [DeviceSpec.accelerator(i) for i in range(accelerator_count())]
+    )
+
+
+def device_class_of(device: Device) -> str:
+    """Manifest slot key for *device*: ``"cpu"`` or ``"gpu:{id}"``.
+
+    One source for the device->slot naming, shared by the warm producer
+    (writes slots) and adoption (reads them)."""
+    return "cpu" if device.label == "cpu" else f"gpu:{device.id}"
+
+
+def spec_for(
+    op_type: type[_core.Operation], ops_by_name: Mapping[str, _SpecT]
+) -> _SpecT | None:
+    """Looks up *op_type*'s spec by canonical (mo) name in *ops_by_name*."""
+    name = canonical_op_name(op_type, ops_by_name)
+    return ops_by_name.get(name)
+
 
 # Lazy-per-dispatch by default; ``=1`` precompiles the whole matrix at import
 # (MXF-508).
@@ -240,21 +331,11 @@ def manifest_entry_path(
     return None
 
 
-# Op families whose models were force-loaded from the warm manifest this process
-# (vs compiled). A consumer can query this to assert the warm actually took
-# effect, not merely that it was wired, without parsing the stderr marker.
-_MANIFEST_ADOPTED: set[str] = set()
-
-
-def note_manifest_adoption(family: str) -> None:
-    """Record that ``family``'s models were force-loaded from the warm manifest."""
-    _MANIFEST_ADOPTED.add(family)
-
-
 def adopted_from_manifest(family: str) -> bool:
-    """Whether ``family`` ("matmul"/"unary") sourced its models from the warm
-    manifest this process, rather than a cold or lazy compile."""
-    return family in _MANIFEST_ADOPTED
+    """Whether ``family`` sourced its models from the warm manifest this process,
+    rather than a cold or lazy compile."""
+    cache = _REGISTRY.get(family)
+    return cache.manifest_adopted if cache is not None else False
 
 
 # Serializes lazy first-dispatches so concurrent threads don't race on cache
@@ -278,3 +359,134 @@ def session_for(device: Device) -> engine.InferenceSession:
         session = engine.InferenceSession(devices=[device])
         _SESSION_CACHE[cache_key] = session
     return session
+
+
+@dataclass
+class GCOpFamily:
+    """One eager GC op family's model cache plus warm/adopt/dispatch logic.
+
+    Registered once per family (:func:`register_family`); replaces the
+    per-module ``_swept`` / ``_X_MODEL_CACHE`` globals each ``*_gc.py`` copied.
+    """
+
+    name: str
+    """Family id; namespaces cache keys and per-slot MEF names."""
+    build_module: Callable[[], Module]
+    """Builds the full sweep matrix (every device it sweeps)."""
+    build_module_for_device: Callable[[Device], Module]
+    """Builds one device's slot module."""
+    sweep_devices: Callable[[], list[Device]]
+    """Returns the devices this family sweeps."""
+
+    cache: dict[str, engine.Model] = field(default_factory=dict)
+    """Compiled models, keyed by graph_name."""
+    swept: bool = False
+    """Whether a whole-matrix sweep or adoption has been attempted."""
+    manifest_adopted: bool = False
+    """Whether the cache was force-loaded from a manifest."""
+
+    @in_default_mlir_context
+    def compile_sweep(self) -> None:
+        """Force-load an adoptable manifest, else batch-compile every target."""
+        if self._adopt_manifest_if_adoptable():
+            return
+        session = engine.InferenceSession(devices=self.sweep_devices())
+        self.cache.update(
+            session.load_all(self.build_module(), weights_registry={})
+        )
+        self.swept = True
+
+    def ensure_swept(self) -> None:
+        """Attempt whole-cache adoption once before per-target compilation.
+
+        Force-loads an adoptable manifest; failing that, batch-sweeps a matching
+        warm stamp. A no-op after the first attempt.
+        """
+        if self.swept:
+            return
+        if self._adopt_manifest_if_adoptable():
+            return
+        if warm_stamp_matches():
+            self.swept = True
+            try:
+                self.compile_sweep()
+            except RuntimeError:
+                # If the sweep fails to compile, fall back to lazy per-target
+                # compilation rather than breaking import.
+                logger.warning(
+                    "Eager interpreter warm-cache adoption failed;"
+                    " compiling %s targets on demand.",
+                    self.name,
+                    exc_info=True,
+                )
+
+    def _adopt_manifest_if_adoptable(self) -> bool:
+        manifest = read_manifest()
+        if manifest is None or not manifest_adoptable(manifest):
+            return False
+        self.swept = True
+        return self._adopt_from_manifest(manifest)
+
+    def _adopt_from_manifest(self, manifest: dict[str, Any]) -> bool:
+        """Force-load this family's per-slot MEFs named in *manifest*."""
+        # Load the slots for exactly the devices the session spans: both come
+        # from the one sweep_devices() call, so they can't diverge.
+        devices = self.sweep_devices()
+        try:
+            session = engine.InferenceSession(devices=devices)
+            loaded: dict[str, engine.Model] = {}
+            names: list[str] = []
+            for device in devices:
+                device_class = device_class_of(device)
+                mef = manifest_entry_path(manifest, self.name, device_class)
+                if mef is None or not mef.exists():
+                    return False
+                loaded.update(session.load_all(str(mef), weights_registry={}))
+                names.append(mef.name)
+        except Exception:
+            # Loading a .mef re-raises whatever the backend threw, so catch
+            # broadly and fall back to compiling on demand.
+            logger.warning(
+                "Eager warm manifest force-load failed; compiling on demand.",
+                exc_info=True,
+            )
+            return False
+        self.cache.update(loaded)
+        self.manifest_adopted = True
+        # Force-load bypasses the keyed cache, so [modular-cache] logging is
+        # silent; this stderr marker signals it ran.
+        print(
+            f"[eager-warm] manifest force-load: {self.name} {names}"
+            f" ({len(loaded)} models)",
+            file=sys.stderr,
+            flush=True,
+        )
+        return True
+
+
+_REGISTRY: dict[str, GCOpFamily] = {}
+
+
+def register_family(family: GCOpFamily) -> None:
+    """Register *family*; each ``*_gc.py`` calls this once at import."""
+    _REGISTRY[family.name] = family
+
+
+def registered_families() -> tuple[GCOpFamily, ...]:
+    """Every registered family, in registration (import) order."""
+    return tuple(_REGISTRY.values())
+
+
+@in_default_mlir_context
+def compile_single_target(
+    family: GCOpFamily,
+    key: str,
+    device: Device,
+    build_graph: Callable[[Module], None],
+) -> engine.Model:
+    """Compile one graph into *family*'s cache and return it (lazy path)."""
+    module = Module()
+    build_graph(module)
+    session = session_for(device)
+    family.cache.update(session.load_all(module, weights_registry={}))
+    return family.cache[key]
