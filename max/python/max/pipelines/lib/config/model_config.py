@@ -790,10 +790,18 @@ class MAXModelConfig(MAXModelConfigBase):
         )
 
         # Best-effort encoding and weight_path resolution.
-        # For diffuser sub-components this is the only resolution step;
-        # for LLM models the architecture-level validation in
-        # PipelineConfig runs afterward and is idempotent.
-        self._resolve_encoding_and_weights()
+        #
+        # Diffuser sub-components (subfolder set) resolve their own
+        # encoding/weight_path on demand at consumption time instead --
+        # see resolve_component_encoding_and_weights(), called from every
+        # diffuser consumer (DiffusionPipeline._load_sub_models(),
+        # MAXModelConfig.loader(), and the flux2/flux2_modulev3/wan/
+        # qwen_image_edit component builders) -- so they're skipped here.
+        # LLM models still get this best-effort pass; the
+        # architecture-level validation that finalizes them runs
+        # afterward and is idempotent regardless.
+        if self.subfolder is None:
+            self._resolve_encoding_and_weights()
 
     # ------------------------------------------------------------------
     # Best-effort encoding / weight resolution
@@ -803,9 +811,10 @@ class MAXModelConfig(MAXModelConfigBase):
         """Best-effort resolution of quantization_encoding and weight_path.
 
         Infers encoding and discovers weight files without requiring
-        architecture-level information.  This enables diffuser
-        sub-components to get resolved fields even though they skip
-        architecture validation.
+        architecture-level information. Only called for LLM models
+        (``resolve()`` skips this for diffuser sub-components, which
+        resolve on demand via ``resolve_component_encoding_and_weights()``
+        instead).
 
         For LLM models that later go through
         ``_validate_model_config_against_arch()``, the fields resolved
