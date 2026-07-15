@@ -970,11 +970,12 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
 
   // Verify that the type is copyable in this way so we can generate tailored
   // error messages, rather than just allowing IREmitter to do it.
-  if (!valueType.isImplicitlyCopyable(exprLoc, shared)) {
+  if (!valueType.isImplicitlyCopyable(exprLoc, shared, &declScope)) {
     // If the value is an RValue, it might be that the type isn't copyable or
     // movable at all. If so, give a specific error about this.
-    if (value.ir.getIfRValue() && !valueType.isMovable(exprLoc, shared) &&
-        !valueType.isExplicitlyCopyable(exprLoc, shared)) {
+    if (value.ir.getIfRValue() &&
+        !valueType.isMovable(exprLoc, shared, &declScope) &&
+        !valueType.isExplicitlyCopyable(exprLoc, shared, &declScope)) {
       emitError(exprLoc, "value of type ")
           << valueType
           << " cannot be copied or moved; consider conforming it to 'Movable'"
@@ -1004,7 +1005,8 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
 
     // Suggest transfer if the type is movable, or if it is a transferable
     // MValue.
-    if ((valueType.isMovable(exprLoc, shared) || canTransferFrom())) {
+    if ((valueType.isMovable(exprLoc, shared, &declScope) ||
+         canTransferFrom())) {
       diag.attachNote(exprLoc)
           << "consider transferring the value with '^'"
           << FixIt::insertAfterToken(value.expr->getRangeEnd(), "^",
@@ -1013,7 +1015,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
 
     // Suggest .copy() if the type is explicitly copyable and we're trying to
     // implicitly copy it.
-    if (valueType.isExplicitlyCopyable(exprLoc, shared)) {
+    if (valueType.isExplicitlyCopyable(exprLoc, shared, &declScope)) {
       diag.attachNote(exprLoc)
           << "you can copy it explicitly with '.copy()'"
           << FixIt::insertAfterToken(value.expr->getRangeEnd(), ".copy()",
@@ -1180,7 +1182,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
   // Otherwise, assign with a move constructor.  We own the RValue, so prefer
   // to use move ctor if present.
-  if (valueType.isMovable(exprLoc, shared)) {
+  if (valueType.isMovable(exprLoc, shared, &declScope)) {
     // Invoke `T(*, deinit move: Self)`.
     ExprDest moveDest(destRef, context);
     CallOperands operands(CallSyntax::kImplicitMoveCtor, value.expr,
