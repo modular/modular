@@ -192,9 +192,24 @@ struct Struct_msa_indexer_ragged_paged:
         var total_q = Int(q.dim_size[0]())
         if total_q == 0:
             return
+        # AMD: `max_context_length()` is already post-write (it folds in this
+        # step's query width), so it is the exact block count the split-K
+        # decode top-k routes on -- re-adding `max_prompt_length()` would tip
+        # `chunk_blocks` over the split-K `CHUNK_CAP` at a block-aligned top
+        # context and misroute to the slow path. NVIDIA keeps the prior
+        # `+ max_prompt_length()` for now (unchanged): its decode top-k is the
+        # arch-forked `block_select_topk`, which does not route on this value.
+        #
+        # Safe because `max_context_length()` is >= every per-row post-write
+        # context, so the kernel's own `num_blocks = ceildiv(seq_lens[b] +
+        # in_step_q, block_size)` never exceeds this `max_num_blocks` (which also
+        # sizes the `score` scratch); if that cache invariant broke, `score`
+        # would be under-sized. The decode top-k kernels `debug_assert` it.
+        var extra_keys = 0 if has_amd_gpu_accelerator() else Int(
+            k_cache.max_prompt_length()
+        )
         var max_num_blocks = ceildiv(
-            Int(k_cache.max_context_length())
-            + Int(k_cache.max_prompt_length()),
+            Int(k_cache.max_context_length()) + extra_keys,
             block_size,
         )
 
