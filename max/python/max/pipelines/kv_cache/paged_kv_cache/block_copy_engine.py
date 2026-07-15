@@ -132,6 +132,10 @@ class BlockOffloadEngine:
             self._build_replica_state(units) for units in replica_kv_memory
         ]
 
+        # gpu0 owns the shared host buffer; its main stream is the sync hub in
+        # wait_for_completion(). Held by identity so the barrier can exclude it.
+        self._gpu0_stream = self._replicas[0].main_streams[gpu0.id]
+
         # 2-D [num_host_blocks, bytes_per_page] page-locked host region shared
         # by all replicas; row ``bid`` is block ``bid``. Not GC-freed --
         # close() releases it.
@@ -304,23 +308,32 @@ class BlockOffloadEngine:
 
     @traced
     def wait_for_completion(self) -> None:
-        """Synchronize main streams with the auxiliary streams (all replicas).
+        """Barrier across every main and auxiliary stream of all replicas.
 
-        This ensures that the d2h copies from BatchN completes before
-        BatchN+1 begins. This is needed because BatchN+1 may write to the
-        same blocks as BatchN is reading from.
+        This ensures the d2h copies from BatchN complete before BatchN+1
+        begins (BatchN+1 may overwrite blocks BatchN is still reading), and
+        that the d2h offload of BatchN starts only after BatchN completes.
 
-        Additionally, ensure that d2h offload of BatchN starts after BatchN
-        completes. As such this needs to be a duplex sync.
+        Because the host buffer is shared across replicas, the barrier must
+        also be cross-replica: a page written by one replica's d2h can be read
+        by another replica's h2d. gpu0's stream is used as a hub -- it first
+        waits for every other stream, then every other stream waits for it,
+        transitively ordering all streams against each other.
         """
-        for replica in self._replicas:
-            for main_stream, d2h_auxiliary_stream in zip(
-                replica.main_streams.values(),
-                replica.d2h_auxiliary_streams.values(),
-                strict=True,
-            ):
-                main_stream.wait_for(d2h_auxiliary_stream)
-                d2h_auxiliary_stream.wait_for(main_stream)
+        hub = self._gpu0_stream
+        other_streams = [
+            stream
+            for replica in self._replicas
+            for stream in (
+                *replica.main_streams.values(),
+                *replica.d2h_auxiliary_streams.values(),
+            )
+            if stream is not hub
+        ]
+        for stream in other_streams:
+            hub.wait_for(stream)
+        for stream in other_streams:
+            stream.wait_for(hub)
 
     @traced
     def record_d2h_event(self, replica_idx: int = 0) -> DeviceEventBundle:
