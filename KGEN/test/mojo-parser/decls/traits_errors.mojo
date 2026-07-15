@@ -239,6 +239,48 @@ struct NeverDeletableOuter(ImplicitlyDeletable where False):
     var m: NeverDeletableInner
 
 
+# MOCO-4332: same opt-out idiom as MOCO-4262 above, but for Movable/Copyable.
+# A struct whose own move/copy-ctor synthesis is doomed by `where False` must
+# not require its fields to conform to Movable/Copyable either, even when the
+# field's own conformance is *also* a doomed `where False`.
+struct NeverMovableInner(Movable where False):
+    pass
+
+
+struct NeverMovableOuter(Movable where False):
+    var m: NeverMovableInner
+
+
+struct NeverCopyableInner(Copyable where False):
+    pass
+
+
+struct NeverCopyableOuter(Copyable where False):
+    var m: NeverCopyableInner
+
+
+# Discriminating variants for MOCO-4332: the fix must not over-broaden
+# acceptance. A field that's unconditionally Movable should compile fine
+# (unaffected by the fix), while a field with no Movable conformance at all
+# must still be correctly rejected -- with the same field-focused diagnostic
+# as before the fix, not the confusing struct-declaration-focused one.
+struct UnconditionallyMovableField(Movable):
+    pass
+
+
+struct NeverMovableOuterWithMovableField(Movable where False):
+    var m: UnconditionallyMovableField
+
+
+struct NotMovableAtAll:
+    pass
+
+
+struct NeverMovableOuterWithNonMovableField(Movable where False):
+    # expected-error @below {{cannot synthesize move constructor because field 'm' has non-movable and non-implicitly-copyable type 'NotMovableAtAll'}}
+    var m: NotMovableAtAll
+
+
 # ===----------------------------------------------------------------------=== #
 # Synthesized functions with unsatisfiable where clauses
 # ===----------------------------------------------------------------------=== #
