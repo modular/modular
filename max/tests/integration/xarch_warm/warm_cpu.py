@@ -42,19 +42,28 @@ from max.tests.integration.xarch_warm import warm_lib
     help="Virtual host-CPU target descriptor, e.g. "
     "'triple=x86_64-unknown-linux-gnu;cpu=x86-64-v3'.",
 )
-def main(cpu_target: str) -> None:
+@click.option(
+    "--family",
+    default=None,
+    help="Warm only this GC family (a GC_FAMILIES name); default warms all.",
+)
+def main(cpu_target: str, family: str | None) -> None:
     # Pin the host-CPU target (the warmed CPU kernels' compile key includes it).
     # No virtual accelerator: the real GPU-less worker presents only the CPU
     # slot, so the sweep and stamp are CPU-only.
     set_virtual_cpu_target(cpu_target)
 
     print(
-        f"XARCH_WARM_CPU: warming CPU-only + host {cpu_target}",
+        f"XARCH_WARM_CPU: warming CPU-only + host {cpu_target} "
+        f"(family={family or 'all'})",
         flush=True,
     )
     derived = os.environ["MODULAR_DERIVED_PATH"]
     entries = warm_lib.export_slots(
-        derived, include_cpu=True, include_accelerators=False
+        derived,
+        include_cpu=True,
+        include_accelerators=False,
+        only_family=family,
     )
     # Unset MODULAR_DERIVED_PATH means the warm wasn't pinned to the output dir,
     # so nothing consumable was produced, hard-fail the build action.

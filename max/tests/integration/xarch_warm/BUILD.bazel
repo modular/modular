@@ -1,9 +1,16 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 load(":interp_cache.bzl", "compose_warm_cache", "warm_interp_cache")
 
+# oss/max-llm-book (test_gpt2_accel) force-loads this warm cache (MXF-533), so it
+# needs visibility here. This local directive extends the inherited //max/tests
+# default so gazelle (run by `//:format`) keeps the extra entry below instead of
+# regenerating it back to the parent directive's list.
+# gazelle:default_visibility //max/tests:__subpackages__,//:__pkg__,//oss/modular/max/tests:__subpackages__,//oss/max-llm-book:__subpackages__
+
 package(default_visibility = [
     "//:__pkg__",
     "//max/tests:__subpackages__",
+    "//oss/max-llm-book:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
 
@@ -49,15 +56,10 @@ _GPU_LANE_ONLY = select({
 })
 
 # --- Eager-interpreter GC sweep warm cache -----------------------------------
-# GPU-less build actions warm the matmul + unary GC sweep and emit one MEF per
-# device slot + a manifest as a declared output. The sweep is split into
-# single-purpose actions so the ~20-min CPU sweep runs ONCE per host arch, not
-# once per GPU lane (and not twice on a GPU machine):
-#   - warm_cpu          : CPU slot only; config-independent, so the remote cache
-#                         shares one action across every x86 lane.
-#   - warm_accelerators : accelerator slots only; keyed per GPU lane by --target.
-#   - compose           : merges the two into one GPU-consumer dir.
-# CPU lanes depend on warm_cpu; GPU lanes depend on compose.
+# Split per device class (CPU vs accelerator) AND per GC family so each fragment
+# stays under the 900s action timeout and they run in parallel. warm_cpu
+# composes the CPU fragments (CPU consumers); compose composes CPU + accelerator
+# (GPU consumers). Both composite names are unchanged, so consumers don't move.
 
 # Shared target config so the producer and consumer can't drift, the warmed
 # cache key includes the host-CPU target and device arch, so they must match.
@@ -118,6 +120,14 @@ modular_py_binary(
     ],
 )
 
+# Merge logic in its own library so test_compose can import it without also
+# owning compose.py (a src can't belong to two py targets). Pure stdlib.
+modular_py_library(
+    name = "compose_lib",
+    srcs = ["compose_lib.py"],
+    visibility = ["//visibility:public"],
+)
+
 # Compose producer: no MAX runtime (just file moves + a JSON manifest merge via
 # a click CLI), so no device needed.
 modular_py_binary(
@@ -127,40 +137,68 @@ modular_py_binary(
     tags = ["manual"],
     target_compatible_with = _MACOS_INCOMPATIBLE,
     visibility = ["//visibility:public"],
-    deps = [requirement("click")],
+    deps = [
+        ":compose_lib",
+        requirement("click"),
+    ],
 )
 
-# CPU warm: no `target`, so the producer sets no virtual device and warms just
-# the CPU slot into a manifest with no "gpu" key. Builds on x86 AND aarch64
-# linux (the m7i/m7g eager CI lanes) and every GPU lane, config-independent
-# per host arch, so its action is shared across all x86 lanes by the remote
-# cache. _CPU_TARGET selects the matching host-CPU target, so no GPU-lane gate.
-warm_interp_cache(
+# Unit test for compose_lib.merge (pure stdlib, runs on any platform).
+modular_py_test(
+    name = "test_compose",
+    srcs = ["test_compose.py"],
+    deps = [":compose_lib"],
+)
+
+# Mirrors gc_compile.GC_FAMILIES (names only; Starlark can't read the Python
+# registry); the producer validates --family against it. Fragments don't cache
+# per-family yet -- each depends on the whole _interpreter_ops package (any
+# family change re-runs all) -- MXF-539.
+_WARM_FAMILIES = [
+    "matmul",
+    "unary",
+]
+
+# CPU fragment per family: no --target -> lane-independent (cfg=exec), shared.
+[
+    warm_interp_cache(
+        name = "warm_cpu_" + fam,
+        binary = ":warm_cpu_bin",
+        cpu_target = _CPU_TARGET,
+        family = fam,
+        target_compatible_with = _MACOS_INCOMPATIBLE,
+    )
+    for fam in _WARM_FAMILIES
+]
+
+# Accelerator fragment per family: --target keys it per GPU lane (all slots).
+[
+    warm_interp_cache(
+        name = "warm_accel_" + fam,
+        binary = ":warm_accelerators_bin",
+        cpu_target = _CPU_TARGET,
+        family = fam,
+        target = _GPU_TARGET,
+        target_compatible_with = _GPU_LANE_ONLY,
+    )
+    for fam in _WARM_FAMILIES
+]
+
+# CPU-consumer dir: union of the CPU fragments (name kept: warm_cpu).
+compose_warm_cache(
     name = "warm_cpu",
-    binary = ":warm_cpu_bin",
-    cpu_target = _CPU_TARGET,
+    binary = ":compose_bin",
     target_compatible_with = _MACOS_INCOMPATIBLE,
+    warms = ["warm_cpu_" + fam for fam in _WARM_FAMILIES],
 )
 
-# Accelerator warm: `target` from _GPU_TARGET sets the virtual device; only the
-# accelerator slots are warmed (never the CPU, that's warm_cpu's single
-# action). Keyed per GPU lane by --target, GPU-lane-gated.
-warm_interp_cache(
-    name = "warm_accelerators",
-    binary = ":warm_accelerators_bin",
-    cpu_target = _CPU_TARGET,
-    target = _GPU_TARGET,
-    target_compatible_with = _GPU_LANE_ONLY,
-)
-
-# Compose the lane-shared CPU warm + this lane's accelerator warm into one
-# GPU-consumer dir: union of MEFs + merged manifest + the GPU-context stamp.
+# GPU-consumer dir: union of all fragments (name kept: compose).
 compose_warm_cache(
     name = "compose",
-    accelerators_warm = ":warm_accelerators",
     binary = ":compose_bin",
-    cpu_warm = ":warm_cpu",
     target_compatible_with = _GPU_LANE_ONLY,
+    warms = ["warm_cpu_" + fam for fam in _WARM_FAMILIES] +
+            ["warm_accel_" + fam for fam in _WARM_FAMILIES],
 )
 
 # Consumer: a real GPU box (>=2 GPUs, to exercise multi-slot adoption) on any CI GPU

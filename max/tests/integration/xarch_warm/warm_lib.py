@@ -41,6 +41,7 @@ def export_slots(
     *,
     include_cpu: bool,
     include_accelerators: bool,
+    only_family: str | None = None,
 ) -> list[dict[str, str]]:
     """Compile and export one single-device MEF per (op family, kept device).
 
@@ -58,6 +59,8 @@ def export_slots(
         derived: The cache dir the MEFs are exported into (``MODULAR_DERIVED_PATH``).
         include_cpu: Warm the CPU slot.
         include_accelerators: Warm the accelerator slots.
+        only_family: Warm only this GC family (a ``GC_FAMILIES`` name); ``None``
+            warms all. Raises ``ValueError`` on an unknown family.
 
     Returns:
         One ``{family, device_class, mef}`` entry per exported MEF.
@@ -67,6 +70,13 @@ def export_slots(
     interpreter_ops = importlib.import_module("max._interpreter_ops")
 
     families = interpreter_ops.GC_FAMILIES
+    if only_family is not None:
+        known = {f.name for f in families}
+        if only_family not in known:
+            raise ValueError(
+                f"unknown GC family {only_family!r}; known: {sorted(known)}"
+            )
+        families = tuple(f for f in families if f.name == only_family)
 
     entries: list[dict[str, str]] = []
     for family in families:
