@@ -188,6 +188,18 @@ class DiffusionPipeline(ABC):
                 f"{self.__class__.__name__}.components is not set."
             )
 
+        # Imported here rather than at module scope to break a circular
+        # import: ``max.pipelines.lib`` (``registry.py``,
+        # ``pipeline_variants/__init__.py``) imports ``PixelGenerationPipeline``
+        # from ``diffusion/pipeline.py`` -- a real, necessary dependency, not
+        # just a re-export -- so importing from ``max.pipelines.lib.*`` at
+        # load time here would re-enter a partially-initialized ``lib``
+        # package whenever ``diffusion`` (this package's Bazel target) is
+        # what triggers ``lib`` to load first.
+        from max.pipelines.lib.config.model_config import (
+            _resolve_component_encoding_and_weights,
+        )
+
         models = self.pipeline_config.models
         loaded_sub_models: dict[str, ComponentModel] = {}
 
@@ -205,8 +217,13 @@ class DiffusionPipeline(ABC):
                 )
 
             config_dict = component_config.huggingface_config.to_dict()
-            encoding = component_config.quantization_encoding or "bfloat16"
-            abs_paths = self._get_component_weight_paths(component_config)
+            resolved_encoding, resolved_weight_path = (
+                _resolve_component_encoding_and_weights(component_config)
+            )
+            encoding = resolved_encoding or "bfloat16"
+            abs_paths = self._get_component_weight_paths(
+                component_config, resolved_weight_path
+            )
 
             init_params = inspect.signature(component_cls.__init__).parameters
             init_kwargs: dict[str, Any] = {
@@ -224,14 +241,17 @@ class DiffusionPipeline(ABC):
 
         return loaded_sub_models
 
-    def _get_component_weight_paths(self, component_config: Any) -> list[Path]:
+    def _get_component_weight_paths(
+        self, component_config: Any, weight_path: list[Path]
+    ) -> list[Path]:
         """Resolve absolute weight paths for a single component.
 
-        Uses the component's own ``MAXModelConfig`` (which already has
-        ``weight_path`` and ``huggingface_weight_repo`` resolved after
-        ``ModelManifest.resolve()``).
+        Args:
+            component_config: The component's own ``MAXModelConfig``.
+            weight_path: The component's resolved weight path (see
+                :func:`_resolve_component_encoding_and_weights`).
         """
-        return component_config.resolved_weight_paths()
+        return component_config.resolved_weight_paths(weight_path)
 
     # -----------------------------------------------------------------
     # Denoising cache support (FBCache + TaylorSeer)

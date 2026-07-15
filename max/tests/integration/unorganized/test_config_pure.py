@@ -872,7 +872,12 @@ class TestFloat32WeightFallbackScoping:
             ),
         ):
             # Best-effort (pre-architecture) pass must not bind weight_path.
-            assert _infer_weight_path(config) == []
+            assert (
+                _infer_weight_path(
+                    config, "bfloat16", config._applied_dtype_cast_from
+                )
+                == []
+            )
 
             # Architecture-level given-encoding resolution.
             config.validate_and_resolve_quantization_encoding_weight_path(
@@ -905,7 +910,9 @@ class TestFloat32WeightFallbackScoping:
             new_callable=PropertyMock,
             return_value=_make_f32_only_repo(),
         ):
-            resolved_weight_path = _infer_weight_path(config)
+            resolved_weight_path = _infer_weight_path(
+                config, "bfloat16", config._applied_dtype_cast_from
+            )
 
         assert resolved_weight_path == _F32_SAFETENSORS
         assert config.quantization_encoding == "bfloat16"

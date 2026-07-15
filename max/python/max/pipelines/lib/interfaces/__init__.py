@@ -12,10 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Interfaces for MAX pipelines."""
 
-from max.pipelines.diffusion.interface import (
-    DiffusionPipeline,
-    DiffusionPipelineOutput,
-)
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessor,
     BatchProcessorRuntime,
@@ -59,8 +55,6 @@ __all__ = [
     "ArchVLConfigWithTextSubconfig",
     "BatchProcessor",
     "BatchProcessorRuntime",
-    "DiffusionPipeline",
-    "DiffusionPipelineOutput",
     "GenerateMixin",
     "ModelInputs",
     "ModelOutputs",

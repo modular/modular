@@ -264,31 +264,38 @@ def _infer_quantization_encoding(
     return encoding, cast_from, cast_to
 
 
-def _infer_weight_path(config: MAXModelConfig) -> list[Path]:
+def _infer_weight_path(
+    config: MAXModelConfig,
+    encoding: SupportedEncoding,
+    cast_from: SupportedEncoding | None = None,
+) -> list[Path]:
     """Best-effort discovery of weight files without architecture info.
 
-    Requires ``quantization_encoding`` to be set. Prefers safetensors
-    format as default.
+    Takes *encoding* (and optionally *cast_from*) explicitly rather than
+    reading ``config.quantization_encoding``/``config._applied_dtype_cast_from``
+    so this can be called on a config those fields were never written to
+    (e.g. a diffusion component resolved on demand at consumption time,
+    without going through ``MAXModelConfig.resolve()``).
+
+    Prefers safetensors format as default.
 
     Returns:
         The discovered weight files, or ``[]`` if none are found.
     """
-    assert config.quantization_encoding
-
     weight_files = config.huggingface_weight_repo.files_for_encoding(
-        encoding=config.quantization_encoding
+        encoding=encoding
     )
 
-    if not weight_files and config._applied_dtype_cast_from:
+    if not weight_files and cast_from:
         # We allow ourselves to load float32 safetensors weights as bfloat16.
         weight_files = config.huggingface_weight_repo.files_for_encoding(
-            encoding=config._applied_dtype_cast_from
+            encoding=cast_from
         )
 
     if (
         not weight_files
         and config.subfolder is not None
-        and config.quantization_encoding in ("float16", "bfloat16")
+        and encoding in ("float16", "bfloat16")
     ):
         # A float16/bfloat16 graph can load float32 weights cast at load
         # time by the component's weight adapter, which lets a
@@ -316,6 +323,52 @@ def _infer_weight_path(config: MAXModelConfig) -> list[Path]:
         # Fall back to any available format.
         return next(iter(weight_files.values()))
     return []
+
+
+def _resolve_component_encoding_and_weights(
+    config: MAXModelConfig,
+) -> tuple[SupportedEncoding | None, list[Path]]:
+    """Best-effort resolution of encoding and weight_path for one component.
+
+    Read-only: does not mutate *config*. Intended for callers that consume
+    a ``MAXModelConfig`` directly without going through
+    ``MAXModelConfig.resolve()`` -- e.g. a diffusion per-component builder --
+    so they get the same best-effort inference diffuser sub-components
+    used to get from ``resolve()``, without depending on mutation having
+    happened first.
+
+    Safe to call even when *config* is already fully resolved (e.g. an LLM
+    component whose fields were set by ``resolve()``): both steps are
+    no-ops once ``quantization_encoding``/``weight_path`` are already set.
+
+    Returns:
+        A ``(encoding, weight_path)`` tuple. Either may be left unresolved
+        (``None`` / ``[]``) if ambiguous.
+    """
+    encoding = config.quantization_encoding
+    cast_from = config._applied_dtype_cast_from
+    weight_path = config.weight_path
+
+    if not encoding:
+        try:
+            encoding, cast_from, _ = _infer_quantization_encoding(config)
+        except Exception:
+            logger.debug(
+                "Could not infer quantization_encoding for %s.",
+                config.model_path,
+            )
+            encoding = config.quantization_encoding
+
+    if encoding and not weight_path:
+        try:
+            weight_path = _infer_weight_path(config, encoding, cast_from)
+        except Exception:
+            logger.debug(
+                "Could not resolve weight_path for %s.", config.model_path
+            )
+            weight_path = config.weight_path
+
+    return encoding, weight_path
 
 
 def _finalize_gptq_quant_config(
@@ -783,7 +836,11 @@ class MAXModelConfig(MAXModelConfigBase):
         # Stage 2: discover weight files if encoding is set but paths are not.
         if self.quantization_encoding and not self.weight_path:
             try:
-                self.weight_path = _infer_weight_path(self)
+                self.weight_path = _infer_weight_path(
+                    self,
+                    self.quantization_encoding,
+                    self._applied_dtype_cast_from,
+                )
             except Exception:
                 logger.debug(
                     "Could not resolve weight_path for %s; "
@@ -1468,29 +1525,41 @@ class MAXModelConfig(MAXModelConfigBase):
             )
             return None
 
-    def resolved_weight_paths(self) -> list[Path]:
+    def resolved_weight_paths(
+        self, weight_path: list[Path] | None = None
+    ) -> list[Path]:
         """Resolve weight paths to absolute local paths, downloading if needed.
 
         For online repos, downloads weight files from HuggingFace Hub.
         For local repos, constructs absolute paths from the repo root.
 
+        Args:
+            weight_path: Weight files to resolve, relative to the repo.
+                Defaults to ``self.weight_path``. Pass an explicit,
+                already-resolved list for a config whose ``weight_path``
+                was never populated via ``resolve()`` (e.g. a diffusion
+                component resolved on demand at consumption time -- see
+                :func:`_resolve_component_encoding_and_weights`).
+
         Returns:
             Absolute paths to weight files on disk.
         """
-        if not self.weight_path:
+        if weight_path is None:
+            weight_path = self.weight_path
+        if not weight_path:
             return []
 
         weight_repo = self.huggingface_weight_repo
         if weight_repo.repo_type == "online":
             return download_weight_files(
                 huggingface_model_id=weight_repo.repo_id,
-                filenames=[str(x) for x in self.weight_path],
+                filenames=[str(x) for x in weight_path],
                 revision=self.huggingface_weight_revision,
                 force_download=self.force_download,
             )
         else:
             local_path = Path(weight_repo.repo_id)
-            return [local_path / x for x in self.weight_path]
+            return [local_path / x for x in weight_path]
 
     def loader(self) -> WeightLoader:
         """Returns a :class:`WeightLoader` over this config's weights.
@@ -1506,6 +1575,11 @@ class MAXModelConfig(MAXModelConfigBase):
         download side-effect from :meth:`resolved_weight_paths` for
         online repos.
 
+        Resolves ``quantization_encoding``/``weight_path`` on demand (see
+        :func:`_resolve_component_encoding_and_weights`) rather than
+        assuming ``resolve()`` already populated them -- a no-op when
+        they're already set.
+
         Returns an empty loader when there are no weight paths -- common
         for components in a diffusion manifest that are config-only
         (for example, the scheduler).
@@ -1513,7 +1587,8 @@ class MAXModelConfig(MAXModelConfigBase):
         Returns:
             A :class:`WeightLoader` over this config's source namespace.
         """
-        paths = self.resolved_weight_paths()
+        _, weight_path = _resolve_component_encoding_and_weights(self)
+        paths = self.resolved_weight_paths(weight_path)
         if not paths:
             return dict_loader({})
         return _loader_over_weights(load_weights(paths))
