@@ -2064,7 +2064,7 @@ ElaborationState Elaborator::processCompileOffload(ImplNode *parent,
   auto [symbol, offloadGenerator] = offloadFuncOr.takeValue();
 
   // If `func` is a transparent thunk, reroute the offload to its wrapped
-  // function so the GPU side compiles the user's kernel directly. Mutating
+  // function so the offload side compiles the user's kernel directly. Mutating
   // the op here keeps `bundleCompileOffloadOp` thunk-agnostic.
   if (auto thunkCallee = parent->getEvaluator().resolveTransparentThunkCallee(
           offloadGenerator, symbol, op.getLoc())) {
@@ -2942,7 +2942,7 @@ LogicalResult Elaborator::run(
 
   renameFunctions(theModule, target.isGPU(), failed);
 
-  // Fill populate_captures stubs with the body generated during GPU offload
+  // Fill populate_captures stubs with the body generated during offload
   // compilation.
   //
   // @__name kernels are renamed by renameFunctions above, so this fill step
@@ -2951,9 +2951,10 @@ LogicalResult Elaborator::run(
   //
   //   - The host stub was created in evaluateCompileOffloadClosureAttr using
   //     the pre-rename sym (mangleParameterValues of the generator).
-  //   - writeCaptureArgs (in KGENCompiler) names the GPU-side populate function
+  //   - writeCaptureArgs (in KGENCompiler) names the offload-side populate
+  //     function
   //     using kernelPreRenameSyms, which captures the same pre-rename sym
-  //     before the GPU rename loop runs.
+  //     before the offload rename loop runs.
   //
   // So populate.getSymName() here is the pre-rename sym, and lookupSymbolIn
   // finds the host stub by that same name.

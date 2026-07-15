@@ -1898,7 +1898,7 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
      Example:
 
      ```mlir
-     %0 = kgen.compile_offload<nvptx, 0, "", : ()->() @kernel> : !kgen.none
+     %0 = kgen.compile_offload<target, 0, "", : ()->() @kernel> : !kgen.none
      ```
    }];
 

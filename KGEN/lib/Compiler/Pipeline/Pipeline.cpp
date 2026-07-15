@@ -154,7 +154,8 @@ void KGEN::buildElaborateModulePipeline(
 
 void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
                                         const CompilationOptions &options) {
-  // Verify elaborated IR; GPU checks run later in the lowering pipeline.
+  // Verify elaborated IR; target-specific checks run later in the lowering
+  // pipeline.
   pm.addPass(createKGENVerifierPass(
       KGENVerifierPassOptions{/*useMLIRVerifierOnly=*/true}));
   buildFirstOptPipeline(pm, options);

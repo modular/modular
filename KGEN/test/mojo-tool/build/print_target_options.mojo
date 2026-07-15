@@ -59,7 +59,7 @@
 # CHECK_INVALID_TARGET: Use --print-supported-targets to see available architectures.
 
 # Sections print in target-name order: amdgpu, metal, nvptx.
-# CHECK_ACCELERATORS: Supported GPU and Accelerator Architectures:
+# CHECK_ACCELERATORS: Supported Accelerator Architectures:
 # CHECK_ACCELERATORS: AMD (ROCm/HIP):
 # CHECK_ACCELERATORS: gfx942
 # CHECK_ACCELERATORS: gfx950

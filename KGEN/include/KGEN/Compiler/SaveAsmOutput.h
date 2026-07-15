@@ -58,7 +58,7 @@ mlir::LogicalResult writeTempModule(const std::string &saveTempsPrefix,
 //===----------------------------------------------------------------------===//
 
 /// Reserve a disambiguated base name for an offload output file.
-/// \p ext is the file extension (e.g. ".ptx", ".amdgcn", ".ll").
+/// \p ext is the target-specific file extension (e.g. ".s", ".ll").
 /// The collision key is "<sanitized-name><ext>" so different extensions track
 /// independently. \p nameCountMap is updated in place.
 std::string reserveOffloadOutputBaseName(mlir::StringAttr rawName,
