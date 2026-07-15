@@ -13,8 +13,30 @@
 
 from __future__ import annotations
 
+import os
+import sys
+
 from max.driver import DLPackArray
 from max.experimental.tensor import NestedArray, Number, Tensor
+from python.runfiles import runfiles
+
+# Point the eager warm cache at the build-time-warmed dir before the
+# import-time precompile adopts it (see test_interpreter_ops.py).
+_warm_rloc = os.environ.get("XARCH_WARM_RLOCATION")
+if _warm_rloc:
+    _runfiles = runfiles.Create()
+    _resolved = _runfiles.Rlocation(_warm_rloc) if _runfiles else None
+    if _resolved:
+        os.environ["MODULAR_DERIVED_PATH"] = _resolved
+    else:
+        # Surface a miss: otherwise the warm silently won't adopt and the
+        # cold-compile just reads as a timeout.
+        print(
+            f"[eager-warm] XARCH_WARM_RLOCATION={_warm_rloc!r} did not resolve; "
+            "warm cache not adopted -- GC sweep will cold-compile.",
+            file=sys.stderr,
+            flush=True,
+        )
 
 
 def assert_all_close(

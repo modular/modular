@@ -13,6 +13,7 @@ modular_py_library(
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -33,9 +34,16 @@ modular_py_test(
     ),
     data = [
         "//max/tests/integration/Inputs/kernel_verification_ops",
+        # CPU-only target, so just the CPU warm (see test_interpreter_ops).
+        "//max/tests/integration/xarch_warm:warm_cpu",
     ],
     env = {
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
+        # Batch-compile the GC matrix once at import, not lazily per dispatch.
+        "MAX_EAGER_OP_PRECOMPILE": "1",
+        # Opt in to force-load adoption of the CPU warm above.
+        "MODULAR_EAGER_WARM_ADOPT_ASSERTED": "1",
+        "XARCH_WARM_RLOCATION": "$(rlocationpath //max/tests/integration/xarch_warm:warm_cpu)",
     },
     ignore_extra_deps = [
         # lazy import

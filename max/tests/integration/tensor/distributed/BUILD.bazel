@@ -6,6 +6,23 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+# Force-load the build-warmed eager-GC cache instead of cold-compiling the GC
+# sweep on the timed test's critical path (MXF-533). GPU takes the CPU+accel
+# warm, CPU the CPU warm; the default branch satisfies the pydeps lint aspect.
+_GPU_WARM_DATA = select({
+    "//:b200_gpu": ["//max/tests/integration/xarch_warm:compose"],
+    "//:h100_gpu": ["//max/tests/integration/xarch_warm:compose"],
+    "//:mi355_gpu": ["//max/tests/integration/xarch_warm:compose"],
+    "//conditions:default": [],
+})
+
+_GPU_WARM_RLOCATION = select({
+    "//:b200_gpu": {"XARCH_WARM_RLOCATION": "$(rlocationpath //max/tests/integration/xarch_warm:compose)"},
+    "//:h100_gpu": {"XARCH_WARM_RLOCATION": "$(rlocationpath //max/tests/integration/xarch_warm:compose)"},
+    "//:mi355_gpu": {"XARCH_WARM_RLOCATION": "$(rlocationpath //max/tests/integration/xarch_warm:compose)"},
+    "//conditions:default": {},
+})
+
 modular_py_library(
     name = "test_helpers",
     testonly = True,
@@ -48,6 +65,17 @@ modular_py_library(
     ],
 )
 
+# Package-scope warm-adoption conftest, shared via deps across both subdirs
+# (pytest collects a package-root conftest for its subdir tests). Carries the
+# runfiles dep for rlocation lookup.
+modular_py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["."],
+    deps = ["@rules_python//python/runfiles"],
+)
+
 # Simulated multi-device tests on CPU — runs on all CI (no GPU needed).
 modular_py_test(
     name = "tests_simulated_cpu",
@@ -61,7 +89,17 @@ modular_py_test(
         "functional/test_*_simulated_cpu.py",
         "module/test_*_simulated_cpu.py",
     ]),
+    data = ["//max/tests/integration/xarch_warm:warm_cpu"],
+    env = {
+        # Batch-compile the GC matrix once at import, not lazily per dispatch.
+        "MAX_EAGER_OP_PRECOMPILE": "1",
+        # Adopt the build-warmed CPU GC cache, not cold-compile (MXF-533).
+        "MODULAR_EAGER_WARM_ADOPT_ASSERTED": "1",
+        "XARCH_WARM_RLOCATION": "$(rlocationpath //max/tests/integration/xarch_warm:warm_cpu)",
+    },
     ignore_extra_deps = [
+        # pytest collects conftest at runtime; it is not imported.
+        ":conftest",
         # lazy import
         "//max/python/max/_interpreter_ops",
     ],
@@ -76,6 +114,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":conftest",
         ":test_base",
         ":test_helpers",
         "//max/python/max:tensor",
@@ -122,11 +161,20 @@ modular_py_test(
         "functional/test_*_simulated_gpu.py",
         "module/test_*_simulated_gpu.py",
     ]),
+    data = _GPU_WARM_DATA,
+    env = {
+        # Batch-compile the GC matrix once at import, not lazily per dispatch.
+        "MAX_EAGER_OP_PRECOMPILE": "1",
+        # Adopt the build-warmed GC cache, not cold-compile (MXF-533).
+        "MODULAR_EAGER_WARM_ADOPT_ASSERTED": "1",
+    } | _GPU_WARM_RLOCATION,
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"],
     ignore_extra_deps = [
+        # pytest collects conftest at runtime; it is not imported.
+        ":conftest",
         # lazy import
         "//max/python/max/_interpreter_ops",
     ],
@@ -138,6 +186,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":conftest",
         ":test_base",
         ":test_helpers",
         "//max/python/max/_interpreter_ops",
@@ -155,12 +204,23 @@ modular_py_test(
     modular_py_test(
         name = src.replace("/", "/").removesuffix(".py"),
         size = "enormous",
-        srcs = [src],
+        srcs = [
+            src,
+        ],
+        data = _GPU_WARM_DATA,
+        env = {
+            # Batch-compile the GC matrix once at import, not lazily per dispatch.
+            "MAX_EAGER_OP_PRECOMPILE": "1",
+            # Adopt the build-warmed GC cache, not cold-compile (MXF-533).
+            "MODULAR_EAGER_WARM_ADOPT_ASSERTED": "1",
+        } | _GPU_WARM_RLOCATION,
         exec_properties = {
             "test.resources:gpu-memory": "4",
         },
         gpu_constraints = ["//:has_4_gpus"],
         ignore_extra_deps = [
+            # pytest collects conftest at runtime; it is not imported.
+            ":conftest",
             ":test_base",
             ":test_helpers",
             requirement("numpy"),
@@ -173,6 +233,7 @@ modular_py_test(
             "//conditions:default": [],
         }),
         deps = [
+            ":conftest",
             ":test_base",
             ":test_helpers",
             "//max/python/max/driver",
@@ -187,12 +248,23 @@ modular_py_test(
     modular_py_test(
         name = src.replace("/", "/").removesuffix(".py"),
         size = "enormous",
-        srcs = [src],
+        srcs = [
+            src,
+        ],
+        data = _GPU_WARM_DATA,
+        env = {
+            # Batch-compile the GC matrix once at import, not lazily per dispatch.
+            "MAX_EAGER_OP_PRECOMPILE": "1",
+            # Adopt the build-warmed GC cache, not cold-compile (MXF-533).
+            "MODULAR_EAGER_WARM_ADOPT_ASSERTED": "1",
+        } | _GPU_WARM_RLOCATION,
         exec_properties = {
             "test.resources:gpu-memory": "4",
         },
         gpu_constraints = ["//:has_4_gpus"],
         ignore_extra_deps = [
+            # pytest collects conftest at runtime; it is not imported.
+            ":conftest",
             ":test_helpers",
             "//max/python/max/experimental",
             "//max/python/max/experimental/nn",
@@ -205,6 +277,7 @@ modular_py_test(
             "//conditions:default": [],
         }),
         deps = [
+            ":conftest",
             ":test_base",
             ":test_helpers",
             "//max/python/max/driver",
