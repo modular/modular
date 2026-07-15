@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_nanobind_extension", "modular_py_library", "mojo_library", "mojo_shared_library", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "mojo_library", "mojo_shared_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -26,16 +26,6 @@ mojo_shared_library(
     ],
 )
 
-modular_nanobind_extension(
-    name = "_dlpack",
-    srcs = ["dlpack_bindings.cpp"],
-    visibility = [
-        "//MLRT/test/Driver/HAL:__pkg__",
-        "//max:consumers",
-    ],
-    deps = ["//max/python/max/_core/internal:DLPackPython"],
-)
-
 modular_py_library(
     name = "_hal",
     srcs = [
@@ -53,7 +43,6 @@ modular_py_library(
         "stream.py",
     ],
     data = [
-        ":_dlpack",
         ":mojo_module",
     ],
     visibility = [
@@ -61,6 +50,7 @@ modular_py_library(
         "//max:consumers",
     ],
     deps = [
+        "//max/python/max:_core",
         "//max/python/max/dtype",
         "@mojo//:python",
         requirement("numpy"),

@@ -25,6 +25,9 @@ from . import (
     dialects as dialects,
 )
 from . import (
+    dlpack as dlpack,
+)
+from . import (
     driver as driver,
 )
 from . import (

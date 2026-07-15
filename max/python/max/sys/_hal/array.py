@@ -28,14 +28,13 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.dtype import DType
-
-from ._dlpack import (  # type: ignore[import-not-found]
+from max._core.dlpack import (
     import_dlpack as _import_dlpack,
 )
-from ._dlpack import (
+from max._core.dlpack import (
     make_dlpack_capsule as _make_dlpack_capsule,
 )
+from max.dtype import DType
 
 if TYPE_CHECKING:
     from .buffer import Buffer
@@ -99,7 +98,7 @@ def _export_dlpack_capsule(
 ) -> Any:
     """Builds a DLPack capsule sharing ``array``'s memory zero-copy.
 
-    Ownership is delegated to the C++ ``_dlpack`` extension: it wraps the
+    Ownership is delegated to the C++ ``max._core.dlpack`` binding: it wraps the
     memory in a nanobind ``ndarray`` view, holds ``array`` alive, and frees
     everything when the consumer runs the capsule's deleter.
 
