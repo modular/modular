@@ -14,7 +14,7 @@
 from std.math import align_up, ceildiv
 from std.math.uutils import uceildiv, udivmod, ufloordiv, umod
 from std.os import abort
-from std.atomic import Atomic, Ordering
+from std.atomic import Atomic, Ordering, fence
 from std.sys import is_amd_gpu, is_nvidia_gpu
 from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
 from std.ffi import c_size_t
@@ -3251,6 +3251,8 @@ struct EPCombineKernel[
                     atomic_counter.load[volatile=True](sm_id) != DATA_READY_FLAG
                 ):
                     pass
+                # Acquire the flag's release; the volatile poll is unordered.
+                fence[ordering=Ordering.ACQUIRE, scope=DEVICE_SCOPE]()
             else:
                 while (
                     _counter_atomic.load[ordering=Ordering.ACQUIRE](
@@ -3311,10 +3313,10 @@ struct EPCombineKernel[
                         chunk_idx_in_token * n_chunk_bytes,
                     )
                 )
+                # recv_buf is fresh peer data each round: not invariant.
                 var recv_chunk = bitcast[output_type, dst_simd_width](
                     recv_buf_ptr.load[
                         width=byte_simd_width,
-                        invariant=True,
                         alignment=_align,
                     ](
                         lane_id() * byte_simd_width,
