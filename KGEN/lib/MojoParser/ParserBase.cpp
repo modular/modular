@@ -24,6 +24,18 @@ MojoInflightDiag ParserBase::emitError(SMLoc loc, const Twine &message) {
   return diag;
 }
 
+ParseResult ParserBase::rejectTokenAtStartOfLine(const Twine &what) const {
+  return rejectTokenAtStartOfLine(getToken(), what);
+}
+
+ParseResult ParserBase::rejectTokenAtStartOfLine(Token tok,
+                                                 const Twine &what) const {
+  if (!tok.isStartOfLine())
+    return success();
+  emitError(tok.getLoc(), what + " may not appear at the start of the line");
+  return failure();
+}
+
 /// Consume the specified token if present and return success.  On failure,
 /// output a diagnostic and return failure.
 ParseResult ParserBase::parseToken(Token::Kind expectedToken,
@@ -52,9 +64,22 @@ ParseResult ParserBase::parseToken(Token::Kind expectedToken,
 /// set, it is populated with the source location of the token.  If
 /// `allowKeyword` is true, keywords are allowed, not just identifiers.
 ParseResult ParserBase::parseIdentifier(const Twine &message, SMLoc *loc,
+                                        bool forbidStartOfLine,
                                         bool allowKeyword) {
   if (loc)
     *loc = getToken().getLoc();
+
+  // Enforce the start-of-line restriction only against a token that would
+  // otherwise be accepted as a name, so that e.g. a dangling comma at the end
+  // of an import list still reports the caller's more specific "expected ..."
+  // diagnostic. The condition is ordered so the common (unrestricted) path
+  // short-circuits before doing any extra work: parseIdentifier is hot.
+  if (forbidStartOfLine &&
+      (getToken().isIdentifier() || (allowKeyword && getToken().isKeyword())) &&
+      rejectTokenAtStartOfLine("identifier")) {
+    return failure();
+  }
+
   if (consumeIf(Token::escaped_identifier))
     return success();
 
@@ -73,9 +98,10 @@ ParseResult ParserBase::parseIdentifier(const Twine &message, SMLoc *loc,
 /// identifiers.
 ParseResult ParserBase::parseIdentifier(StringAttr &result,
                                         const Twine &message, SMLoc *loc,
+                                        bool forbidStartOfLine,
                                         bool allowKeyword) {
   result = StringAttr::get(getContext(), getToken().getSpelling());
-  return parseIdentifier(message, loc, allowKeyword);
+  return parseIdentifier(message, loc, forbidStartOfLine, allowKeyword);
 }
 
 /// Parse a list of elements continued with commas.  If a set of terminators

@@ -3120,12 +3120,18 @@ ParseResult StmtParser::parseFromImportStmt(bool hasStableOverride) {
 
   SMLoc importLoc = getToken().getLoc();
   StringAttr moduleAttr;
-  if (parseImportModuleName(moduleAttr, /*allowRelativeImport=*/true) ||
-      parseToken(Token::kw_import, "expected 'import' after module name"))
+  if (parseImportModuleName(moduleAttr, /*allowRelativeImport=*/true))
+    return failure();
+  auto nextTok = getToken();
+  if (parseToken(Token::kw_import, "expected 'import' after module name") ||
+      rejectTokenAtStartOfLine(nextTok, "'import' statement"))
     return failure();
 
   // Check for a wildcard import.
+  nextTok = getToken();
   if (consumeIf(Token::star)) {
+    if (rejectTokenAtStartOfLine(nextTok, "wildcard import"))
+      return failure();
     if (hasStableOverride)
       emitError(importLoc, "@stable(recursive=True) is not supported on "
                            "wildcard imports");
@@ -3166,11 +3172,18 @@ ParseResult StmtParser::parseFromImportStmt(bool hasStableOverride) {
   };
 
   // Parse the set of constructs to import.
+  nextTok = getToken();
   bool isTupleImport = consumeIf(Token::l_paren);
+
+  if (isTupleImport &&
+      rejectTokenAtStartOfLine(nextTok, "beginning of tuple import"))
+    return failure();
+
   do {
     // Parse the next construct to import.
     SMLoc importSourceNameLoc = getToken().getLoc();
     StringRef importSourceName = getTokenSpelling();
+    nextTok = getToken();
     bool missingIdentifier =
         failed(parseIdentifier("expected construct name to import"));
     notifyListenerOfImport();
@@ -3178,13 +3191,22 @@ ParseResult StmtParser::parseFromImportStmt(bool hasStableOverride) {
     // If there was no identifier, then we're done.
     if (missingIdentifier)
       return failure();
+    if (!isTupleImport &&
+        rejectTokenAtStartOfLine(nextTok, "construct name to import"))
+      return failure();
     StringRef importDestName = importSourceName;
     SMLoc importDestLoc = importSourceNameLoc;
+    nextTok = getToken();
     if (consumeIf(Token::kw_as)) {
+      if (rejectTokenAtStartOfLine(nextTok, "'as' keyword"))
+        return failure();
       importDestName = getTokenSpelling();
       importDestLoc = getToken().getLoc();
+      nextTok = getToken();
       if (parseIdentifier("expected name to import '" + importSourceName +
                           "' as"))
+        return failure();
+      if (rejectTokenAtStartOfLine(nextTok, "bound import name"))
         return failure();
     }
 
@@ -3215,8 +3237,11 @@ ParseResult StmtParser::parseFromImportStmt(bool hasStableOverride) {
     }
 
     // Check for more elements to import.
+    nextTok = getToken();
     if (!consumeIf(Token::comma))
       break;
+    if (rejectTokenAtStartOfLine(nextTok, "comma"))
+      return failure();
     // For tuple imports, there may optionally be a trailing comma at the end of
     // the list.
     if (isTupleImport && getToken().is(Token::r_paren))
@@ -3283,7 +3308,10 @@ ParseResult StmtParser::parseImportStmt() {
     return failure();
 
   // Parse the next module to import.
+  auto nextTok = getToken();
   do {
+    if (nextTok.is(Token::comma) && rejectTokenAtStartOfLine(nextTok, "comma"))
+      return failure();
     SMLoc importLoc = getToken().getLoc();
     StringAttr moduleAttr;
     if (parseImportModuleName(moduleAttr, /*allowRelativeImport=*/false))
@@ -3295,11 +3323,17 @@ ParseResult StmtParser::parseImportStmt() {
     StringRef boundModuleName = moduleAttr;
     SMLoc boundNameLoc;
     bool isLeafBinding = false;
+    nextTok = getToken();
     if (consumeIf(Token::kw_as)) {
+      if (rejectTokenAtStartOfLine(nextTok, "'as' keyword"))
+        return failure();
       isLeafBinding = true;
       boundModuleName = getTokenSpelling();
       boundNameLoc = getToken().getLoc();
+      nextTok = getToken();
       if (parseIdentifier("expected name to bind import"))
+        return failure();
+      if (rejectTokenAtStartOfLine(nextTok, "bound import name"))
         return failure();
     }
 
@@ -3329,6 +3363,7 @@ ParseResult StmtParser::parseImportStmt() {
     // reference to the imported module so hover/semantic tokens resolve it.
     if (boundNameLoc.isValid())
       shared.notifyListenerOnRef(&module, boundModuleName, boundNameLoc);
+    nextTok = getToken();
   } while (consumeIf(Token::comma));
 
   return success();
@@ -3367,6 +3402,9 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
     });
   };
 
+  if (rejectTokenAtStartOfLine("module path"))
+    return failure();
+
   // Cache whether we're parsing a relative import so we can emit a good
   // diagnostic if we're in a context where they're not permitted.
   SMLoc relativeErrorLoc = getToken().getLoc();
@@ -3376,19 +3414,23 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
   // Parse the relative '.' indicators that resolve to a parent package. These
   // push "" to the set to indicate relative resolution.
   while (true) {
+    auto nextTok = getToken();
     if (consumeIf(Token::dot))
       moduleNames.push_back("");
     else if (consumeIf(Token::dot_dot_dot))
       llvm::append_range(moduleNames, ArrayRef<StringRef>{"", "", ""});
     else
       break;
+    if (rejectTokenAtStartOfLine(nextTok, "module path"))
+      return failure();
   }
 
   // If we have a non-relative module name, or we require one, try to parse it.
   if (moduleNames.empty() || getToken().isIdentifier()) {
     // Parse the first module name.
     StringRef rootModuleName = getTokenSpelling();
-    bool missingIdentifier = failed(parseIdentifier("expected module name"));
+    bool missingIdentifier = failed(parseIdentifier(
+        "expected module name", /*loc=*/nullptr, /*forbidStartOfLine=*/true));
     notifyListenerOfImport();
 
     // If there was no identifier, then we're done.
@@ -3397,12 +3439,21 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
     moduleNames.push_back(rootModuleName);
 
     // Parse nested module names.
+    auto nextTok = getToken();
     while (consumeIf(Token::dot)) {
       notifyListenerOfImport();
+
+      if (rejectTokenAtStartOfLine(nextTok, "module path"))
+        return failure();
+      nextTok = getToken();
 
       moduleNames.push_back(getTokenSpelling());
       if (parseIdentifier("expected module name"))
         return failure();
+
+      if (rejectTokenAtStartOfLine(nextTok, "module path"))
+        return failure();
+      nextTok = getToken();
     }
   } else {
     notifyListenerOfImport();
@@ -3440,13 +3491,26 @@ ParseResult StmtParser::parseImportModuleName(StringAttr &parsedName,
 
 ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
                                        size_t curIndent) {
-  consumeIf(Token::kw_async);
+  if (consumeIf(Token::kw_async) && rejectTokenAtStartOfLine("'def' keyword"))
+    return failure();
   consumeToken(); // Consume either 'def' or 'fn'.
 
   SMLoc loc;
   StringAttr baseName;
   if (parseIdentifier(baseName, "expected function name", &loc,
+                      /*forbidStartOfLine=*/true,
                       /*allowKeyword=*/true))
+    return failure();
+
+  // The parameter/argument list must begin on the same line as the function
+  // name. Otherwise the decl-extent scan below (skipUntilIndentation) stops at
+  // the start-of-line bracket and truncates the declaration, which surfaces as
+  // a confusing internal error during signature resolution.
+  if (getToken().is(Token::l_square) &&
+      rejectTokenAtStartOfLine("parameter list"))
+    return failure();
+  if (getToken().is(Token::l_paren) &&
+      rejectTokenAtStartOfLine("argument list"))
     return failure();
 
   // Create a op function with an empty signature so we have an IR construct to
@@ -3607,7 +3671,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   SMLoc identifierLoc;
   StringAttr name;
   if (parseIdentifier(name, "expected name for 'var' declaration",
-                      &identifierLoc))
+                      &identifierLoc, /*forbidStartOfLine=*/true))
     return failure();
 
   if (isa_and_nonnull<TraitDeclOp>(getParentDecl().getIfOperation())) {
@@ -3727,6 +3791,8 @@ parseAliasDeclTargetsExpr(ParserBase &p,
                           size_t stmtIndent) {
 
   if (p.getLexer().getToken().isIdentifier()) {
+    if (p.rejectTokenAtStartOfLine("identifier"))
+      return failure();
     LexerCursor cursor(p.getLexer());
     result = p.consumeIdentifier().getSpelling();
     // One of the cases below:
@@ -3855,8 +3921,19 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
 
   SMLoc smLoc;
   StringAttr nameAttr;
-  if (parseIdentifier(nameAttr, "expected struct name", &smLoc))
+  if (parseIdentifier(nameAttr, "expected struct name", &smLoc,
+                      /*forbidStartOfLine=*/true)) {
     return failure();
+  }
+
+  // The parameter list must begin on the same line as the struct name;
+  // otherwise the decl-extent scan below truncates the declaration at the
+  // start-of-line bracket, surfacing as a confusing internal error during
+  // signature resolution.
+  if (getToken().is(Token::l_square) &&
+      rejectTokenAtStartOfLine("parameter list"))
+    return failure();
+
   auto loc = translateLocation(smLoc);
 
   auto newStruct = StructDeclOp::create(builder, loc, nameAttr);
@@ -3887,7 +3964,8 @@ ParseResult StmtParser::parseTraitStmt(LexerCursor startCursor,
 
   SMLoc smLoc;
   StringAttr nameAttr;
-  if (parseIdentifier(nameAttr, "expected trait name", &smLoc))
+  if (parseIdentifier(nameAttr, "expected trait name", &smLoc,
+                      /*forbidStartOfLine=*/true))
     return failure();
   auto loc = translateLocation(smLoc);
 
@@ -3926,7 +4004,7 @@ ParseResult StmtParser::parseExtensionStmt(LexerCursor startCursor,
   // Unprefixed/unsuffixed name. `extension Spaceship`'s base name is Spaceship.
   StringAttr targetStructNameAttr;
   if (parseIdentifier(targetStructNameAttr, "expected extension name",
-                      &nameSMLoc))
+                      &nameSMLoc, /*forbidStartOfLine=*/true))
     return failure();
 
   auto loc = translateLocation(nameSMLoc);

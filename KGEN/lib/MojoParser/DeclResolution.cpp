@@ -1515,6 +1515,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   StringAttr baseName;
   SMLoc identifierLoc;
   if (p.parseIdentifier(baseName, "expected function name", &identifierLoc,
+                        /*forbidStartOfLine=*/false,
                         /*allowKeyword=*/true))
     return failure();
 

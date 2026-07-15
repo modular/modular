@@ -144,6 +144,7 @@ public:
   /// source location of the token. If `allowKeyword` is true, keywords are
   /// allowed, not just identifiers.
   ParseResult parseIdentifier(const Twine &message, SMLoc *loc = nullptr,
+                              bool forbidStartOfLine = false,
                               bool allowKeyword = false);
 
   /// Consume an identifier token, binding its name into the specified result
@@ -151,7 +152,9 @@ public:
   /// location of the token. If `allowKeyword` is true, keywords are
   /// allowed, not just identifiers.
   ParseResult parseIdentifier(StringAttr &result, const Twine &message,
-                              SMLoc *loc = nullptr, bool allowKeyword = false);
+                              SMLoc *loc = nullptr,
+                              bool forbidStartOfLine = false,
+                              bool allowKeyword = false);
 
   /// Consume an identifier token regardless of the delimiter. The location
   /// is set to the delimiter (the delimiter is not consumed)
@@ -213,6 +216,9 @@ public:
   void
   skipUntilIndentation(size_t minIndent, bool stopOnSemicolon = false,
                        llvm::unique_function<bool()> customStopPredicate = {});
+
+  ParseResult rejectTokenAtStartOfLine(const Twine &what) const;
+  ParseResult rejectTokenAtStartOfLine(Token tok, const Twine &what) const;
 
   /// Skip over tokens that make up a function signature starting at the
   /// current token and consume everything up to *and including* the ':' that
