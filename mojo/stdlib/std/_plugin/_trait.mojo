@@ -117,7 +117,7 @@ trait PluginHooks:
     """Plugin hook for emitting a `print()` UTF-8 byte buffer to a file
     descriptor."""
 
-    comptime reduce_generator_fn[target: StaticString]: OptionalReg[
+    comptime reduce_generator_fn: OptionalReg[
         _ReduceGeneratorPluginHookFnType
     ] = None
 
@@ -158,7 +158,6 @@ trait PluginHooks:
 
     @staticmethod
     def elementwise_fn[
-        target: StaticString,
         rank: Int,
         simd_width: Int,
         *,
@@ -172,10 +171,9 @@ trait PluginHooks:
         shape: IndexList[rank, ...],
         ctx: DeviceContext,
     ) raises:
-        """Per-target plugin hook for `elementwise[..., target=target]`.
+        """Per-target plugin hook for `elementwise[...]`.
 
         Parameters:
-            target: The dispatch target (e.g. `"cpu"`, `"gpu"`, `"npu"`).
             rank: The rank of the work domain.
             simd_width: The SIMD lane count for bulk invocations.
             pdl_level: PDL level for overlap control.
@@ -185,14 +183,14 @@ trait PluginHooks:
             shape: The shape of the work domain.
             ctx: The device context to dispatch on.
 
-        Only invoked when `_handles_elementwise[target]` is `True`; the default
+        Only invoked when `_handles_elementwise` is `True`; the default
         is never called and is a no-op.
         """
         pass
 
-    comptime _handles_elementwise[target: StaticString]: Bool = False
-    """If `True` for a given `target`, `_elementwise_impl` dispatches to
-    `elementwise_fn[target, ...]`."""
+    comptime _handles_elementwise: Bool = False
+    """If `True` for this backend, `_elementwise_impl` dispatches to
+    `elementwise_fn[...]`."""
 
 
 # ===-----------------------------------------------------------------------===#

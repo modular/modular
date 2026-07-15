@@ -245,10 +245,10 @@ def _reduce_generator[
             reduce_function,
             reduce_dim=reduce_dim,
         ](shape, init)
-    elif CurrentPlugin.reduce_generator_fn[target]:
+    elif CurrentPlugin.reduce_generator_fn:
         # The plugin hook takes `reduce_dim` as a runtime argument; feed it the
         # compile-time value.
-        return comptime (CurrentPlugin.reduce_generator_fn[target].value())[
+        return comptime (CurrentPlugin.reduce_generator_fn.value())[
             num_reductions,
             init_type,
             input_0_fn,

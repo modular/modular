@@ -21,8 +21,14 @@ leaves every hook at its default value.
 from ._trait import PluginHooks
 from ._overlay import PLUGINS
 from .selector import get_plugin_index
+from std.sys.info import _TargetType
 
 comptime CurrentPlugin: PluginHooks = PLUGINS._get_type_at_index[
     get_plugin_index()
 ]
 """The active `PluginHooks`."""
+
+comptime PluginForTarget[Target: _TargetType] = PLUGINS._get_type_at_index[
+    get_plugin_index[Target]()
+]
+"""The `PluginHooks` to use for the specified kgen.target."""
