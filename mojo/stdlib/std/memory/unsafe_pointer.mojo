@@ -714,6 +714,34 @@ struct Pointer[
 
     @always_inline("nodebug")
     def __getitem__[
+        I: Indexer
+    ](self, *, unsafe_offset: I) -> ref[
+        Self.origin, Self.address_space
+    ] Self.type:
+        """Return a reference to the underlying data, offset by the given index.
+
+        Parameters:
+            I: A type that can be used as an index.
+
+        Args:
+            unsafe_offset: The offset index.
+
+        Returns:
+            An offset reference.
+
+        Safety:
+
+        - The pointer does not track the bounds of the memory it points
+          into, so this does not check whether `unsafe_offset` (in elements
+          of `type`) keeps the result within those bounds. `self` offset by
+          `unsafe_offset` must point to a valid, initialized element of
+          `type`; an out-of-bounds `unsafe_offset` is undefined behavior.
+        """
+        return self.unsafe_offset(unsafe_offset)[]
+
+    @doc_hidden
+    @always_inline("nodebug")
+    def __getitem__[
         I: Indexer, //
     ](self, offset: I) -> ref[
         Self.origin, Self.address_space
@@ -729,8 +757,9 @@ struct Pointer[
         Returns:
             An offset reference.
         """
-        return (self + offset)[]
+        return self[unsafe_offset=offset]
 
+    @doc_hidden
     @always_inline("nodebug")
     def __add__[I: Indexer, //](self, offset: I) -> Self where Self._is_unsafe:
         """Return a pointer at an offset from the current one.
@@ -744,12 +773,9 @@ struct Pointer[
         Returns:
             An offset pointer.
         """
-        return {
-            _mlir_value = __mlir_op.`pop.offset`(
-                self._mlir_value, index(offset).__mlir_index__()
-            )
-        }
+        return self.unsafe_offset(offset)
 
+    @doc_hidden
     @always_inline
     def __sub__[I: Indexer, //](self, offset: I) -> Self where Self._is_unsafe:
         """Return a pointer at an offset from the current one.
@@ -765,6 +791,7 @@ struct Pointer[
         """
         return self + (-1 * index(offset))
 
+    @doc_hidden
     @always_inline
     def __iadd__[I: Indexer, //](mut self, offset: I) where Self._is_unsafe:
         """Add an offset to this pointer.
@@ -777,6 +804,7 @@ struct Pointer[
         """
         self = self + offset
 
+    @doc_hidden
     @always_inline
     def __isub__[I: Indexer, //](mut self, offset: I) where Self._is_unsafe:
         """Subtract an offset from this pointer.
@@ -1102,6 +1130,34 @@ struct Pointer[
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    @always_inline("nodebug")
+    def unsafe_offset[I: Indexer](self, offset: I, /) -> Self:
+        """Return a pointer at an offset from the current one.
+
+        Parameters:
+            I: A type that can be used as an index.
+
+        Args:
+            offset: The offset index.
+
+        Returns:
+            An offset pointer.
+
+        Safety:
+
+        - The pointer does not track the bounds of the memory it points
+          into, so this does not check whether `offset` (in elements of
+          `type`) keeps the result within those bounds. Computing an
+          out-of-bounds pointer is not itself unsafe, but dereferencing
+          (loading from, storing to, or indexing) the result is undefined
+          behavior unless it is back within bounds.
+        """
+        return {
+            _mlir_value = __mlir_op.`pop.offset`(
+                self._mlir_value, index(offset).__mlir_index__()
+            )
+        }
+
     @always_inline
     @staticmethod
     def unsafe_dangling() -> Self:
@@ -1116,6 +1172,12 @@ struct Pointer[
 
         Returns:
             A dangling but well-aligned `Pointer`.
+
+        Safety:
+
+        - The returned pointer does not point to any valid storage. Reading
+          from or writing through it is undefined behavior until it has been
+          reassigned to point at real, live memory.
 
         Example:
 
@@ -1186,10 +1248,36 @@ struct Pointer[
             # the same to avoid undefined behavior when moving from rhs to lhs.
             if self == other:
                 return
-            var tmp = self.take_pointee()
-            self.init_pointee_move_from(other)
+            var tmp = self.unsafe_take_pointee()
+            MutUnsafePointer(self).init_pointee_move_from(
+                MutUnsafePointer(other)
+            )
             other.unsafe_write(tmp^)
 
+    @always_inline("nodebug")
+    def unsafe_as_noalias(self) -> Self:
+        """Cast the pointer to a new pointer that is known not to locally alias
+        any other pointer. In other words, the pointer transitively does not
+        comptime any other memory value declared in the local function context.
+
+        This information is relayed to the optimizer. If the pointer does
+        locally alias another memory value, the behaviour is undefined.
+
+        Returns:
+            A noalias pointer.
+
+        Safety:
+
+        - The pointer must not locally alias any other pointer reachable in
+          the current function context. The optimizer trusts this assertion
+          without checking it, so reads and writes through an aliasing
+          pointer become undefined behavior.
+        """
+        return {
+            _mlir_value = __mlir_op.`pop.noalias_pointer_cast`(self._mlir_value)
+        }
+
+    @doc_hidden
     @always_inline("nodebug")
     def as_noalias_ptr(self) -> Self where Self._is_unsafe:
         """Cast the pointer to a new pointer that is known not to locally alias
@@ -1202,12 +1290,10 @@ struct Pointer[
         Returns:
             A noalias pointer.
         """
-        return {
-            _mlir_value = __mlir_op.`pop.noalias_pointer_cast`(self._mlir_value)
-        }
+        return self.unsafe_as_noalias()
 
     @always_inline("nodebug")
-    def load[
+    def unsafe_load[
         dtype: DType,
         //,
         width: Int = 1,
@@ -1216,9 +1302,7 @@ struct Pointer[
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
-    ](self: Pointer[Scalar[dtype], ...]) -> SIMD[dtype, width] where type_of(
-        self
-    )._is_unsafe:
+    ](self: Pointer[Scalar[dtype], ...]) -> SIMD[dtype, width]:
         """Loads `width` elements from the value the pointer points to.
 
         Use `alignment` to specify minimal known alignment in bytes; pass a
@@ -1230,8 +1314,8 @@ struct Pointer[
 
         ```mojo
         var p = alloc[Int32](8)
-        p.store(0, SIMD[DType.int32, 4](1, 2, 3, 4))
-        var v = p.load[width=4]()
+        p.unsafe_store(0, SIMD[DType.int32, 4](1, 2, 3, 4))
+        var v = p.unsafe_load[width=4]()
         print(v)  # => [1, 2, 3, 4]
         p.free()
         ```
@@ -1249,6 +1333,15 @@ struct Pointer[
 
         Returns:
             The loaded SIMD vector.
+
+        Safety:
+
+        - The pointer does not track how many elements it points to, so
+          `self` must point to `width` contiguous, initialized elements of
+          `dtype`. This is not checked — passing a `width` larger than the
+          number of valid elements reads past the end of them, which is
+          undefined behavior.
+        - The address must satisfy `alignment` bytes of alignment.
         """
         _simd_construction_checks[dtype, width]()
         comptime assert (
@@ -1275,7 +1368,7 @@ struct Pointer[
                     isVolatile=volatile.__mlir_i1__(),
                     isInvariant=invariant.__mlir_i1__(),
                     isNonTemporal=non_temporal.__mlir_i1__(),
-                ]((self + i)._mlir_value)
+                ](self.unsafe_offset(i)._mlir_value)
             comptime if dtype.is_floating_point():
                 _check_not_poison[dtype, width](v)
             return v
@@ -1285,7 +1378,7 @@ struct Pointer[
             # element occupies its own byte boundary.
             return rebind[SIMD[dtype, width]](
                 self.unsafe_bitcast[Scalar[DType.uint8]]()
-                .load[
+                .unsafe_load[
                     width=width,
                     alignment=alignment,
                     volatile=volatile,
@@ -1307,6 +1400,7 @@ struct Pointer[
             _check_not_poison[dtype, width](result)
         return result
 
+    @doc_hidden
     @always_inline("nodebug")
     def load[
         dtype: DType,
@@ -1317,12 +1411,28 @@ struct Pointer[
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
-    ](
-        self: Pointer[Scalar[dtype], ...],
-        offset: Scalar,
-    ) -> SIMD[
-        dtype, width
-    ] where type_of(self)._is_unsafe:
+    ](self: Pointer[Scalar[dtype], ...]) -> SIMD[dtype, width] where type_of(
+        self
+    )._is_unsafe:
+        return self.unsafe_load[
+            width=width,
+            alignment=alignment,
+            volatile=volatile,
+            invariant=invariant,
+            non_temporal=non_temporal,
+        ]()
+
+    @always_inline("nodebug")
+    def unsafe_load[
+        dtype: DType,
+        //,
+        width: Int = 1,
+        *,
+        alignment: Int = align_of[dtype](),
+        volatile: Bool = False,
+        invariant: Bool = _default_invariant[Self.mut](),
+        non_temporal: Bool = False,
+    ](self: Pointer[Scalar[dtype], ...], offset: Scalar) -> SIMD[dtype, width]:
         """Loads the value the pointer points to with the given offset.
 
         Constraints:
@@ -1342,9 +1452,17 @@ struct Pointer[
 
         Returns:
             The loaded value.
+
+        Safety:
+
+        - `self` offset by `offset` elements must point to `width`
+          contiguous, initialized elements of `dtype`. This is not checked —
+          an out-of-bounds `offset`, or a `width` larger than the number of
+          valid elements, is undefined behavior.
+        - The resulting address must satisfy `alignment` bytes of alignment.
         """
         comptime assert offset.dtype.is_integral(), "offset must be an integer"
-        return (self + Int(offset)).load[
+        return self.unsafe_offset(offset).unsafe_load[
             width=width,
             alignment=alignment,
             volatile=volatile,
@@ -1352,9 +1470,9 @@ struct Pointer[
             non_temporal=non_temporal,
         ]()
 
+    @doc_hidden
     @always_inline("nodebug")
     def load[
-        I: Indexer,
         dtype: DType,
         //,
         width: Int = 1,
@@ -1365,10 +1483,30 @@ struct Pointer[
         non_temporal: Bool = False,
     ](
         self: Pointer[Scalar[dtype], ...],
-        offset: I,
+        offset: Scalar,
     ) -> SIMD[
         dtype, width
     ] where type_of(self)._is_unsafe:
+        return self.unsafe_load[
+            width=width,
+            alignment=alignment,
+            volatile=volatile,
+            invariant=invariant,
+            non_temporal=non_temporal,
+        ](offset)
+
+    @always_inline("nodebug")
+    def unsafe_load[
+        I: Indexer,
+        dtype: DType,
+        //,
+        width: Int = 1,
+        *,
+        alignment: Int = align_of[dtype](),
+        volatile: Bool = False,
+        invariant: Bool = _default_invariant[Self.mut](),
+        non_temporal: Bool = False,
+    ](self: Pointer[Scalar[dtype], ...], offset: I) -> SIMD[dtype, width]:
         """Loads the value the pointer points to with the given offset.
 
         Constraints:
@@ -1388,8 +1526,16 @@ struct Pointer[
 
         Returns:
             The loaded value.
+
+        Safety:
+
+        - `self` offset by `offset` elements must point to `width`
+          contiguous, initialized elements of `dtype`. This is not checked —
+          an out-of-bounds `offset`, or a `width` larger than the number of
+          valid elements, is undefined behavior.
+        - The resulting address must satisfy `alignment` bytes of alignment.
         """
-        return (self + offset).load[
+        return self.unsafe_offset(offset).unsafe_load[
             width=width,
             alignment=alignment,
             volatile=volatile,
@@ -1397,8 +1543,34 @@ struct Pointer[
             non_temporal=non_temporal,
         ]()
 
+    @doc_hidden
     @always_inline("nodebug")
-    def store[
+    def load[
+        I: Indexer,
+        dtype: DType,
+        //,
+        width: Int = 1,
+        *,
+        alignment: Int = align_of[dtype](),
+        volatile: Bool = False,
+        invariant: Bool = _default_invariant[Self.mut](),
+        non_temporal: Bool = False,
+    ](
+        self: Pointer[Scalar[dtype], ...],
+        offset: I,
+    ) -> SIMD[
+        dtype, width
+    ] where type_of(self)._is_unsafe:
+        return self.unsafe_load[
+            width=width,
+            alignment=alignment,
+            volatile=volatile,
+            invariant=invariant,
+            non_temporal=non_temporal,
+        ](offset)
+
+    @always_inline("nodebug")
+    def unsafe_store[
         I: Indexer,
         dtype: DType,
         //,
@@ -1411,7 +1583,7 @@ struct Pointer[
         self: Pointer[mut=True, Scalar[dtype], ...],
         offset: I,
         val: SIMD[dtype, width],
-    ) where type_of(self)._is_unsafe:
+    ):
         """Stores a single element value at the given offset.
 
         Constraints:
@@ -1429,13 +1601,21 @@ struct Pointer[
         Args:
             offset: The offset to store to.
             val: The value to store.
+
+        Safety:
+
+        - `self` offset by `offset` elements must point to writable memory
+          for `width` contiguous elements of `dtype`. This is not checked —
+          an out-of-bounds `offset`, or a `width` larger than the number of
+          valid elements, is undefined behavior.
+        - The resulting address must satisfy `alignment` bytes of alignment.
         """
-        (self + offset).store[
+        self.unsafe_offset(offset).unsafe_store[
             alignment=alignment, volatile=volatile, non_temporal=non_temporal
         ](val)
 
     @always_inline("nodebug")
-    def store[
+    def unsafe_store[
         dtype: DType,
         offset_type: DType,
         //,
@@ -1448,7 +1628,7 @@ struct Pointer[
         self: Pointer[mut=True, Scalar[dtype], ...],
         offset: Scalar[offset_type],
         val: SIMD[dtype, width],
-    ) where type_of(self)._is_unsafe:
+    ):
         """Stores a single element value at the given offset.
 
         Constraints:
@@ -1465,14 +1645,22 @@ struct Pointer[
         Args:
             offset: The offset to store to.
             val: The value to store.
+
+        Safety:
+
+        - `self` offset by `offset` elements must point to writable memory
+          for `width` contiguous elements of `dtype`. This is not checked —
+          an out-of-bounds `offset`, or a `width` larger than the number of
+          valid elements, is undefined behavior.
+        - The resulting address must satisfy `alignment` bytes of alignment.
         """
         comptime assert offset_type.is_integral(), "offset must be integer"
-        (self + Int(offset))._store[
+        self.unsafe_offset(offset)._store[
             alignment=alignment, volatile=volatile, non_temporal=non_temporal
         ](val)
 
     @always_inline("nodebug")
-    def store[
+    def unsafe_store[
         dtype: DType,
         //,
         width: SIMDSize = 1,
@@ -1480,9 +1668,7 @@ struct Pointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         non_temporal: Bool = False,
-    ](
-        self: Pointer[mut=True, Scalar[dtype], ...], val: SIMD[dtype, width]
-    ) where type_of(self)._is_unsafe:
+    ](self: Pointer[mut=True, Scalar[dtype], ...], val: SIMD[dtype, width]):
         """Stores a single element value `val` at element offset 0.
 
         Specify `alignment` when writing to packed/unaligned memory. Requires a
@@ -1494,8 +1680,8 @@ struct Pointer[
         ```mojo
         var p = alloc[Float32](4)
         var vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
-        p.store(vec)
-        var out = p.load[width=4]()
+        p.unsafe_store(vec)
+        var out = p.unsafe_load[width=4]()
         print(out)  # => [1.0, 2.0, 3.0, 4.0]
         p.free()
         ```
@@ -1512,9 +1698,83 @@ struct Pointer[
 
         Args:
             val: The SIMD value to store.
+
+        Safety:
+
+        - `self` must point to writable memory for `width` contiguous
+          elements of `dtype`. This is not checked — passing a `width`
+          larger than the number of valid elements writes past the end of
+          them, which is undefined behavior.
+        - The address must satisfy `alignment` bytes of alignment.
         """
         self._store[
             alignment=alignment, volatile=volatile, non_temporal=non_temporal
+        ](val)
+
+    @doc_hidden
+    @always_inline("nodebug")
+    def store[
+        I: Indexer,
+        dtype: DType,
+        //,
+        width: SIMDSize = 1,
+        *,
+        alignment: Int = align_of[dtype](),
+        volatile: Bool = False,
+        non_temporal: Bool = False,
+    ](
+        self: Pointer[mut=True, Scalar[dtype], ...],
+        offset: I,
+        val: SIMD[dtype, width],
+    ) where type_of(self)._is_unsafe:
+        self.unsafe_store[
+            width,
+            alignment=alignment,
+            volatile=volatile,
+            non_temporal=non_temporal,
+        ](offset, val)
+
+    @doc_hidden
+    @always_inline("nodebug")
+    def store[
+        dtype: DType,
+        offset_type: DType,
+        //,
+        width: Int = 1,
+        *,
+        alignment: Int = align_of[dtype](),
+        volatile: Bool = False,
+        non_temporal: Bool = False,
+    ](
+        self: Pointer[mut=True, Scalar[dtype], ...],
+        offset: Scalar[offset_type],
+        val: SIMD[dtype, width],
+    ) where type_of(self)._is_unsafe:
+        self.unsafe_store[
+            width,
+            alignment=alignment,
+            volatile=volatile,
+            non_temporal=non_temporal,
+        ](offset, val)
+
+    @doc_hidden
+    @always_inline("nodebug")
+    def store[
+        dtype: DType,
+        //,
+        width: SIMDSize = 1,
+        *,
+        alignment: Int = align_of[dtype](),
+        volatile: Bool = False,
+        non_temporal: Bool = False,
+    ](
+        self: Pointer[mut=True, Scalar[dtype], ...], val: SIMD[dtype, width]
+    ) where type_of(self)._is_unsafe:
+        self.unsafe_store[
+            width,
+            alignment=alignment,
+            volatile=volatile,
+            non_temporal=non_temporal,
         ](val)
 
     @always_inline("nodebug")
@@ -1548,14 +1808,9 @@ struct Pointer[
             ](val, self.unsafe_bitcast[SIMD[dtype, width]]()._mlir_value)
 
     @always_inline("nodebug")
-    def strided_load[
+    def unsafe_strided_load[
         dtype: DType, T: Intable, //, width: Int
-    ](
-        self: Pointer[Scalar[dtype], ...],
-        stride: T,
-    ) -> SIMD[
-        dtype, width
-    ] where type_of(self)._is_unsafe:
+    ](self: Pointer[Scalar[dtype], ...], stride: T) -> SIMD[dtype, width]:
         """Performs a strided load of the SIMD vector.
 
         Parameters:
@@ -1568,11 +1823,64 @@ struct Pointer[
 
         Returns:
             A vector which is stride loaded.
+
+        Safety:
+
+        - This reads `width` elements from `self`, each `stride` elements
+          apart. Every element read must be an initialized `dtype` value.
+          This is not checked, so an out-of-bounds `stride` or `width` is
+          undefined behavior.
         """
         return strided_load(
             self, Int(stride), SIMD[DType.bool, width](fill=True)
         )
 
+    @doc_hidden
+    @always_inline("nodebug")
+    def strided_load[
+        dtype: DType, T: Intable, //, width: Int
+    ](
+        self: Pointer[Scalar[dtype], ...],
+        stride: T,
+    ) -> SIMD[
+        dtype, width
+    ] where type_of(self)._is_unsafe:
+        return self.unsafe_strided_load[width=width](stride)
+
+    @always_inline("nodebug")
+    def unsafe_strided_store[
+        dtype: DType,
+        T: Intable,
+        //,
+        width: SIMDSize = 1,
+    ](
+        self: Pointer[mut=True, Scalar[dtype], ...],
+        val: SIMD[dtype, width],
+        stride: T,
+    ):
+        """Performs a strided store of the SIMD vector.
+
+        Parameters:
+            dtype: DType of `val`, the SIMD value to store.
+            T: The Intable type of the stride.
+            width: The SIMD width.
+
+        Args:
+            val: The SIMD value to store.
+            stride: The stride between stores.
+
+        Safety:
+
+        - This writes the `width` elements of `val` to `self`, each `stride`
+          elements apart. Every location written must be writable memory
+          for `dtype`. This is not checked, so an out-of-bounds `stride` or
+          `width` is undefined behavior.
+        """
+        strided_store(
+            val, self, Int(stride), SIMD[DType.bool, width](fill=True)
+        )
+
+    @doc_hidden
     @always_inline("nodebug")
     def strided_store[
         dtype: DType,
@@ -1584,23 +1892,10 @@ struct Pointer[
         val: SIMD[dtype, width],
         stride: T,
     ) where type_of(self)._is_unsafe:
-        """Performs a strided store of the SIMD vector.
-
-        Parameters:
-            dtype: DType of `val`, the SIMD value to store.
-            T: The Intable type of the stride.
-            width: The SIMD width.
-
-        Args:
-            val: The SIMD value to store.
-            stride: The stride between stores.
-        """
-        strided_store(
-            val, self, Int(stride), SIMD[DType.bool, width](fill=True)
-        )
+        self.unsafe_strided_store[width=width](val, stride)
 
     @always_inline("nodebug")
-    def gather[
+    def unsafe_gather[
         dtype: DType,
         //,
         *,
@@ -1611,7 +1906,7 @@ struct Pointer[
         offset: SIMD[_, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
         default: SIMD[dtype, width] = 0,
-    ) -> SIMD[dtype, width] where type_of(self)._is_unsafe:
+    ) -> SIMD[dtype, width]:
         """Gathers a SIMD vector from offsets of the current pointer.
 
         This method loads from memory addresses calculated by appropriately
@@ -1642,6 +1937,17 @@ struct Pointer[
 
         Returns:
             The SIMD vector containing the gathered values.
+
+        Safety:
+
+        - This reads from `self` offset by each active lane's `offset`
+          element (the lanes where `mask` is `True`). Each of those
+          locations must be an initialized `dtype` element. This is not
+          checked, so an out-of-bounds `offset` on an active lane is
+          undefined behavior. Lanes where `mask` is `False` are never read,
+          so their `offset` can be anything.
+        - The resulting addresses must satisfy `alignment` bytes of
+          alignment.
         """
         comptime assert (
             offset.dtype.is_integral()
@@ -1656,7 +1962,9 @@ struct Pointer[
             var result = default
             comptime for i in range(width):
                 if mask[i]:
-                    result[i] = self.load[alignment=alignment](Int(offset[i]))
+                    result[i] = self.unsafe_load[alignment=alignment](
+                        Int(offset[i])
+                    )
             return result
 
         var base = offset.cast[DType.int]().fma(
@@ -1665,8 +1973,24 @@ struct Pointer[
         )
         return gather[alignment=alignment](base, mask, default)
 
+    @doc_hidden
     @always_inline("nodebug")
-    def scatter[
+    def gather[
+        dtype: DType,
+        //,
+        *,
+        width: SIMDSize = 1,
+        alignment: Int = align_of[dtype](),
+    ](
+        self: Pointer[Scalar[dtype], ...],
+        offset: SIMD[_, width],
+        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
+        default: SIMD[dtype, width] = 0,
+    ) -> SIMD[dtype, width] where type_of(self)._is_unsafe:
+        return self.unsafe_gather[alignment=alignment](offset, mask, default)
+
+    @always_inline("nodebug")
+    def unsafe_scatter[
         dtype: DType,
         //,
         *,
@@ -1677,7 +2001,7 @@ struct Pointer[
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
-    ) where type_of(self)._is_unsafe:
+    ):
         """Scatters a SIMD vector into offsets of the current pointer.
 
         This method stores at memory addresses calculated by appropriately
@@ -1707,6 +2031,17 @@ struct Pointer[
             val: The SIMD vector containing the values to be scattered.
             mask: The SIMD vector of boolean values, indicating for each
                 element whether to store at memory or not.
+
+        Safety:
+
+        - This writes to `self` offset by each active lane's `offset`
+          element (the lanes where `mask` is `True`). Each of those
+          locations must be writable memory for a `dtype` element. This is
+          not checked, so an out-of-bounds `offset` on an active lane is
+          undefined behavior. Lanes where `mask` is `False` are never
+          written, so their `offset` can be anything.
+        - The resulting addresses must satisfy `alignment` bytes of
+          alignment.
         """
         comptime assert (
             offset.dtype.is_integral()
@@ -1719,7 +2054,9 @@ struct Pointer[
             # See `gather` for the address-space rationale (MOCO-3762).
             comptime for i in range(width):
                 if mask[i]:
-                    self.store[alignment=alignment](Int(offset[i]), val[i])
+                    self.unsafe_store[alignment=alignment](
+                        Int(offset[i]), val[i]
+                    )
             return
 
         var base = offset.cast[DType.int]().fma(
@@ -1728,6 +2065,23 @@ struct Pointer[
         )
         scatter[alignment=alignment](val, base, mask)
 
+    @doc_hidden
+    @always_inline("nodebug")
+    def scatter[
+        dtype: DType,
+        //,
+        *,
+        width: SIMDSize = 1,
+        alignment: Int = align_of[dtype](),
+    ](
+        self: Pointer[mut=True, Scalar[dtype], ...],
+        offset: SIMD[_, width],
+        val: SIMD[dtype, width],
+        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
+    ) where type_of(self)._is_unsafe:
+        self.unsafe_scatter[alignment=alignment](offset, val, mask)
+
+    @doc_hidden
     @always_inline
     def free(
         self: Pointer[mut=True, Self.type, ...]
@@ -1749,6 +2103,13 @@ struct Pointer[
         Returns:
             A new Pointer object with the specified type and the same address,
             as the original Pointer.
+
+        Safety:
+
+        - This does not check that `T` is compatible with the pointee type
+          in size, alignment, or bit layout. Reading or writing through the
+          returned pointer is undefined behavior unless the memory it
+          points to actually holds (or is being written as) a valid `T`.
         """
         return {
             _mlir_value = __mlir_op.`pop.pointer.bitcast`[
@@ -1768,15 +2129,6 @@ struct Pointer[
     ](self) -> Pointer[
         T, Self.origin, address_space=Self.address_space, _safe=Self._safe
     ] where Self._is_unsafe:
-        """Bitcasts a Pointer to a different type.
-
-        Parameters:
-            T: The target type.
-
-        Returns:
-            A new Pointer object with the specified type and the same address,
-            as the original Pointer.
-        """
         return self.unsafe_bitcast[T]()
 
     comptime _OriginCastType[
@@ -1917,7 +2269,7 @@ struct Pointer[
         }
 
     @always_inline("builtin")
-    def address_space_cast[
+    def unsafe_address_space_cast[
         target_address_space: AddressSpace = Self.address_space,
     ](self) -> Pointer[
         Self.type,
@@ -1933,6 +2285,15 @@ struct Pointer[
         Returns:
             A new Pointer object with the same type and the same address,
             as the original Pointer and the new address space.
+
+        Safety:
+
+        - This does not check that the pointer's address is actually valid
+          within `target_address_space`. Dereferencing the returned pointer
+          is undefined behavior unless the address is one the target
+          address space can legally access (for example, casting a
+          `GENERIC` host pointer to a GPU-only address space and then
+          dereferencing it).
         """
         return {
             _mlir_value = __mlir_op.`pop.pointer.bitcast`[
@@ -1945,26 +2306,27 @@ struct Pointer[
             ](self._mlir_value)
         }
 
+    @doc_hidden
+    @always_inline("builtin")
+    def address_space_cast[
+        target_address_space: AddressSpace = Self.address_space,
+    ](self) -> Pointer[
+        Self.type,
+        Self.origin,
+        address_space=target_address_space,
+        _safe=Self._safe,
+    ] where type_of(self)._is_unsafe:
+        return self.unsafe_address_space_cast[target_address_space]()
+
+    @doc_hidden
     @always_inline
     @deprecated(use=unsafe_deinit_pointee)
     def destroy_pointee[
         T: ImplicitlyDeletable, //
     ](self: Pointer[T, _, _safe=_]) where type_of(self).mut:
-        """Destroy the pointed-to value.
-
-        The pointer must point to a valid, initialized instance of `type`.
-        This is equivalent to `_ = self.take_pointee()` but doesn't require
-        `Movable` and is more efficient because it doesn't invoke a move
-        constructor.
-
-        Parameters:
-            T: Pointee type that can be destroyed implicitly (without
-              deinitializer arguments).
-
-        """
         _ = __get_address_as_owned_value(self._mlir_value)
 
-    # TODO(MOCO-2367): Use a `unified` closure parameter here instead.
+    @doc_hidden
     @always_inline
     @deprecated(use=unsafe_deinit_pointee_with)
     def destroy_pointee_with(
@@ -1976,15 +2338,6 @@ struct Pointer[
         ],
         destroy_func: def(var Self.type) thin,
     ) where type_of(self).mut:
-        """Destroy the pointed-to value using a user-provided destructor function.
-
-        This can be used to destroy non-`ImplicitlyDeletable` values in-place
-        without moving.
-
-        Args:
-            destroy_func: A function that takes ownership of the pointee value
-                for the purpose of deinitializing it.
-        """
         destroy_func(__get_address_as_owned_value(self._mlir_value))
 
     @always_inline
@@ -1997,9 +2350,9 @@ struct Pointer[
     ):
         """Destroys the pointed-to value.
 
-        This is equivalent to `_ = self.take_pointee()` but doesn't require
-        `Movable` and is more efficient because it doesn't invoke a move
-        constructor.
+        This is equivalent to `_ = self.unsafe_take_pointee()` but doesn't
+        require `Movable` and is more efficient because it doesn't invoke a
+        move constructor.
 
         Safety:
 
@@ -2011,7 +2364,7 @@ struct Pointer[
           Calling this on a pointer to uninitialized memory is undefined
           behavior.
         """
-        var this = self.address_space_cast[AddressSpace.GENERIC]()
+        var this = self.unsafe_address_space_cast[AddressSpace.GENERIC]()
         _ = __get_address_as_owned_value(this._mlir_value)
 
     @always_inline
@@ -2038,17 +2391,15 @@ struct Pointer[
           `Self.type`. Calling this on a pointer to uninitialized memory
           is undefined behavior.
         """
-        var this = self.address_space_cast[AddressSpace.GENERIC]()
+        var this = self.unsafe_address_space_cast[AddressSpace.GENERIC]()
         deinit_func(__get_address_as_owned_value(this._mlir_value))
 
     @always_inline
-    def take_pointee[
+    def unsafe_take_pointee[
         T: Movable,
         //,
     ](self: Pointer[T, _, _safe=_]) -> T where type_of(self).mut:
         """Move the value at the pointer out, leaving it uninitialized.
-
-        The pointer must point to a valid, initialized instance of `T`.
 
         This performs a _consuming_ move, ending the origin of the value stored
         in this pointer memory location. Subsequent reads of this pointer are
@@ -2060,31 +2411,35 @@ struct Pointer[
 
         Returns:
             The value at the pointer.
+
+        Safety:
+
+        - `self` must point to a valid, initialized instance of `T`. Calling
+          this on a pointer to uninitialized memory is undefined behavior.
+        - This moves the pointee out without running its destructor and
+          leaves the pointee memory uninitialized. Subsequent reads of this
+          pointer are invalid until a new valid value is written using an
+          `unsafe_write()` method.
         """
         return __get_address_as_owned_value(self._mlir_value)
 
+    @doc_hidden
+    @always_inline
+    def take_pointee[
+        T: Movable,
+        //,
+    ](self: Pointer[T, _, _safe=_]) -> T where type_of(self).mut where type_of(
+        self
+    )._is_unsafe:
+        return self.unsafe_take_pointee()
+
+    @doc_hidden
     @always_inline
     @deprecated(use=unsafe_write)
     def init_pointee_move[
         T: Movable,
         //,
     ](self: Pointer[T, _, _safe=_], var value: T) where type_of(self).mut:
-        """Emplace a new value into the pointer location, moving from `value`.
-
-        The pointer memory location is assumed to contain uninitialized data,
-        and consequently the current contents of this pointer are not destructed
-        before writing `value`. Similarly, ownership of `value` is logically
-        transferred into the pointer location.
-
-        When compared to `init_pointee_copy`, this avoids an extra copy on
-        the caller side when the value is an `owned` rvalue.
-
-        Parameters:
-            T: The type the pointer points to, which must be `Movable`.
-
-        Args:
-            value: The value to emplace.
-        """
         __get_address_as_uninit_lvalue(self._mlir_value) = value^
 
     @always_inline
@@ -2103,7 +2458,7 @@ struct Pointer[
         var ptr = alloc[String](1)
         ptr.unsafe_write("foo")
         print(ptr[])  # => foo
-        ptr.destroy_pointee()
+        ptr.unsafe_deinit_pointee()
         ptr.free()
         ```
 
@@ -2112,6 +2467,13 @@ struct Pointer[
 
         Args:
             value: The value to emplace.
+
+        Safety:
+
+        - `self` must point to writable memory for `T` that does not
+          currently hold a valid, live value. Writing into memory that
+          already holds one overwrites it without running its destructor,
+          leaking any resources it owned.
         """
         __get_address_as_uninit_lvalue(self._mlir_value) = value^
 
@@ -2135,40 +2497,33 @@ struct Pointer[
 
         Args:
             copy: The value to copy.
+
+        Safety:
+
+        - `self` must point to writable memory for `T` that does not
+          currently hold a valid, live value. Writing into memory that
+          already holds one overwrites it without running its destructor,
+          leaking any resources it owned.
         """
         __get_address_as_uninit_lvalue(self._mlir_value) = copy.copy()
 
+    @doc_hidden
     @always_inline
     @deprecated(use=unsafe_write)
     def init_pointee_copy[
         T: Copyable,
         //,
     ](self: Pointer[T, _, _safe=_], value: T) where type_of(self).mut:
-        """Emplace a copy of `value` into the pointer location.
-
-        The pointer memory location is assumed to contain uninitialized data,
-        and consequently the current contents of this pointer are not destructed
-        before writing `value`. Similarly, ownership of `value` is logically
-        transferred into the pointer location.
-
-        When compared to `init_pointee_move`, this avoids an extra move on
-        the callee side when the value must be copied.
-
-        Parameters:
-            T: The type the pointer points to, which must be `Copyable`.
-
-        Args:
-            value: The value to emplace.
-        """
         __get_address_as_uninit_lvalue(self._mlir_value) = value.copy()
 
+    @doc_hidden
     @always_inline
     def init_pointee_move_from[
         T: Movable,
         //,
     ](self: Pointer[T, _, _safe=_], src: Pointer[T, _, _safe=_]) where (
-        type_of(self).mut
-    ) and (type_of(src).mut):
+        type_of(self).mut and type_of(src).mut and type_of(self)._is_unsafe
+    ):
         """Moves the value `src` points to into the memory location pointed to
         by `self`.
 
@@ -2183,8 +2538,8 @@ struct Pointer[
         After this call, the `src` pointee value should be treated as
         uninitialized data. Subsequent reads of or destructor calls on the `src`
         pointee value are invalid, unless and until a new valid value has been
-        moved into the `src` pointer's memory location using an
-        `init_pointee_*()` operation.
+        written into the `src` pointer's memory location using an
+        `unsafe_write()` method.
 
         This transfers the value out of `src` and into `self` using at most one
         move constructor call.

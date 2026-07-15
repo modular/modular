@@ -428,6 +428,27 @@ def test_load_and_store_simd_bool() raises:
     p.free()
 
 
+def test_unsafe_methods_on_safe_pointer() raises:
+    var data = List[Int32](length=8, fill=0)
+    for i in range(len(data)):
+        data[i] = Int32(i)
+
+    var ptr: Pointer[Int32, origin_of(data)] = data.unsafe_ptr()
+
+    assert_equal(ptr.unsafe_offset(2)[], Int32(2))
+    assert_equal(ptr[unsafe_offset=3], Int32(3))
+
+    ptr.unsafe_store(4, SIMD[DType.int32, 4](10, 11, 12, 13))
+    assert_equal(
+        ptr.unsafe_load[width=4](4), SIMD[DType.int32, 4](10, 11, 12, 13)
+    )
+
+    assert_equal(
+        Int(ptr.unsafe_address_space_cast[AddressSpace.GENERIC]()), Int(ptr)
+    )
+    assert_equal(Int(ptr.unsafe_as_noalias()), Int(ptr))
+
+
 def test_volatile_load_and_store_simd() raises:
     var ptr = alloc[Int8](16)
     for i in range(16):

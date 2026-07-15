@@ -667,6 +667,18 @@ This version is still a work in progress.
   `ImplicitlyDeletable` pointee, or pass a deinitializing closure to destroy a
   non-`ImplicitlyDeletable` pointee in place.
 
+- `Pointer` gained explicit `unsafe_`-prefixed methods for operations that are
+  individually unsafe — unchecked bounds, aliasing casts, moving or overwriting
+  memory — rather than requiring the whole pointer to be typed unsafe:
+  `unsafe_offset()`, `unsafe_load()`, `unsafe_store()`, `unsafe_strided_load()`,
+  `unsafe_strided_store()`, `unsafe_gather()`, `unsafe_scatter()`,
+  `unsafe_as_noalias()`, `unsafe_address_space_cast()`, and
+  `unsafe_take_pointee()`. These methods work on any `Pointer`. The previous
+  unprefixed names still work, but are now hidden from the generated docs and
+  remain gated behind an unsafe pointer type; prefer the `unsafe_`-prefixed
+  names going forward. Each method's docstring documents the exact `Safety:`
+  requirements the caller must uphold.
+
 ## Tooling changes
 
 - Added a `--lld-path` CLI flag. This overrides the LLD path that Mojo uses.
