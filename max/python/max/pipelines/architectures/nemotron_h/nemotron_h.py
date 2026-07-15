@@ -34,7 +34,7 @@ import functools
 import math
 from collections.abc import Iterable, Sequence
 
-import numpy as np
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -69,6 +69,7 @@ from max.nn.transformer import ReturnLogits, logits_postprocess
 
 from .functional_ops import (
     causal_conv1d_varlen_fwd,
+    gated_group_rmsnorm,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
 )
 from .model_config import NemotronHConfig
@@ -90,6 +91,24 @@ def _weight_dtype(
     if quant_config is not None:
         return DType.float8_e4m3fn
     return model_dtype
+
+
+def _ssm_state_dtype() -> DType:
+    """SSM state-pool STORAGE dtype: bf16 on Apple GPUs, fp32 elsewhere.
+
+    The Mamba-2 SSD scan always accumulates its recurrence in fp32 registers;
+    this only selects the storage dtype of the persistent slot-indexed state
+    pool. On Apple silicon the pool read+write dominates the decode-step
+    traffic, and only the Apple GPU kernel implements the bf16 load ->
+    fp32-accumulate -> round-on-store path, so bf16 is gated to Apple
+    (matching the kernel-side guard in
+    ``mamba2_ssd_chunk_scan_varlen_fwd_inplace``).
+    """
+    try:
+        is_apple = accelerator_api() == "metal"
+    except Exception:
+        is_apple = False
+    return DType.bfloat16 if is_apple else DType.float32
 
 
 class NemotronHMLP(Module):
@@ -370,8 +389,10 @@ class NemotronHAttention(Module):
 
         self.q_dim = self.n_heads * self.head_dim
         self.kv_dim = self.n_kv_heads * self.head_dim
-        # Attention projections always stay bf16 (in the FP8 checkpoint's
-        # exclude list), so no quantization config is wired here.
+        # Attention projections are bf16 here: the 4B FP8 checkpoint excludes
+        # them from quantization, and the 8B Reasoning checkpoint's per-tensor
+        # FP8 q/k/v/o are dequantized to bf16 at load by the weight adapter. So
+        # no quantization config is wired here.
         #
         # Fused QKV: one matmul over the concatenated [q | k | v] out-dim, then
         # ``ops.split``. The HF checkpoint ships q/k/v as separate weights; the
@@ -436,7 +457,8 @@ class NemotronHMamba2Mixer(Module):
     State plumbing (carried by ``model.py``):
     * conv1d state lives in a slot-indexed pool mutated in place by
       ``causal_conv1d_varlen_fwd`` (handles prefill + decode).
-    * SSM state lives in a slot-indexed fp32 pool mutated in place by
+    * SSM state lives in a slot-indexed pool (fp32; bf16 on Apple GPUs — see
+      ``_ssm_state_dtype``) mutated in place by
       ``mamba2_ssd_chunk_scan_varlen_fwd_inplace``: the kernel reads initial
       state from ``ssm_pool[slot_idx[b]]`` and writes the final state back to
       the same slot without any graph-side gather/scatter_nd/buffer_store.
@@ -544,32 +566,22 @@ class NemotronHMamba2Mixer(Module):
     ) -> TensorValue:
         """HF ``Zamba2RMSNormGated`` with ``norm_before_gate=False``.
 
-        ``y`` and ``gate`` are ``[N, intermediate]``. Matches the reference
-        exactly: cast to fp32, ``y = y * silu(gate)``, group RMSNorm over groups
-        of ``group_size``, cast back to the input dtype, THEN multiply by the
-        (fp32) norm weight (so the final product is fp32, matching
-        ``self.weight * hidden_states.to(input_dtype)``).
+        ``y`` and ``gate`` are ``[N, intermediate]``. One fused kernel replaces
+        the ``cast -> silu(gate)*y -> group rms_norm -> *norm_weight -> cast``
+        chain (which otherwise lowers to ~3-4 serial GPU dispatches per layer
+        because the group ``rms_norm`` reduction is a hard fusion boundary). The
+        kernel reproduces the reference bit-for-bit: silu-gate in fp32, group
+        RMSNorm over ``group_size``, cast to the input dtype, multiply by the
+        fp32 norm weight, then cast to the model dtype (folding the final
+        ``out_proj`` cast — hence it returns ``y.dtype``).
         """
-        device = y.device
-        input_dtype = y.dtype
-        yf = ops.cast(y, DType.float32)
-        gatef = ops.cast(gate, DType.float32)
-        yf = yf * ops.silu(gatef)
-        # Group RMSNorm over the last (group_size) axis. Use the dedicated
-        # ``ops.rms_norm`` kernel (with an all-ones weight = pure normalization)
-        # rather than a hand-rolled reshape+mean+rsqrt — the manual reduce over
-        # a reshaped/fused tensor misaligns on GPU. rms_norm normalizes the last
-        # dim and broadcasts back over the leading axes.
-        yg = ops.reshape(yf, [-1, self.group_size])
-        ones = ops.constant(
-            np.ones((self.group_size,), np.float32), device=device
+        return gated_group_rmsnorm(
+            y,
+            gate,
+            self.norm_weight.to(y.device),
+            self.eps,
+            self.group_size,
         )
-        yg = ops.rms_norm(yg, ones, self.eps, multiply_before_cast=True)
-        yf = ops.reshape(yg, [-1, self.intermediate])
-        # Cast to input dtype, then multiply by the fp32 norm weight (upcasts
-        # the product to fp32), exactly as the reference does.
-        w = self.norm_weight.to(device)
-        return w * ops.cast(yf, input_dtype)
 
     def __call__(
         self,
@@ -885,8 +897,10 @@ class NemotronH(Module):
 
         Order: ``tokens, input_row_offsets, return_n_logits, *kv_inputs,
         slot_idx, *conv_pools, *ssm_pools, has_initial_state``. The conv pools
-        are model-dtype mutable buffers; the SSM pools are fp32 mutable buffers
-        mutated in place by ``mamba2_ssd_chunk_scan_varlen_fwd_inplace`` at
+        are model-dtype mutable buffers; the SSM pools are mutable buffers of
+        ``_ssm_state_dtype()`` (fp32; bf16 on Apple GPUs, storage only — the
+        scan accumulates in fp32) mutated in place by
+        ``mamba2_ssd_chunk_scan_varlen_fwd_inplace`` at
         slot ``slot_idx[batch_item]``. ``has_initial_state`` is ``[batch]``
         bool (empty for a fresh prefill, all-True for decode).
         """
@@ -915,7 +929,7 @@ class NemotronH(Module):
         ]
         ssm_pool_types: list[TensorType | BufferType] = [
             BufferType(
-                DType.float32,
+                _ssm_state_dtype(),
                 shape=[
                     "max_slots",
                     self.mamba_nheads,

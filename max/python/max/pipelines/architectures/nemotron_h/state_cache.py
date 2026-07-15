@@ -18,7 +18,8 @@ passed into the model graph as mutable ``BufferType`` inputs:
 * ``conv_pool[l]``: ``[max_slots, conv_dim, conv_kernel - 1]`` (model dtype).
   Mutated in place by ``causal_conv1d_varlen_fwd`` at slot
   ``slot_idx[batch_item]`` — exactly the Qwen3.5 GatedDeltaNet conv pattern.
-* ``ssm_pool[l]``: ``[max_slots, nheads, head_dim, dstate]`` (fp32). Mutated
+* ``ssm_pool[l]``: ``[max_slots, nheads, head_dim, dstate]`` (fp32, or bf16
+  on Apple GPUs — storage only, the scan accumulates in fp32). Mutated
   in place by ``mamba2_ssd_chunk_scan_varlen_fwd_inplace`` at slot
   ``slot_idx[batch_item]`` — the kernel reads initial state from
   ``ssm_pool[slot]`` and writes the updated final state back to the same slot
@@ -66,6 +67,7 @@ class NemotronHStateCache:
         max_slots: int,
         device: Device,
         conv_dtype: DType,
+        ssm_dtype: DType = DType.float32,
     ) -> None:
         self._num_layers = num_mamba_layers
         self._conv_dim = conv_dim
@@ -76,10 +78,13 @@ class NemotronHStateCache:
         self._max_slots = max_slots
         self._device = device
         self._conv_dtype = conv_dtype
+        self._ssm_dtype = ssm_dtype
 
         # Pre-allocate GPU state pools (zero-initialised).
         # conv_pool[l]: [max_slots, conv_dim, K-1] (model dtype, in-place).
-        # ssm_pool[l]:  [max_slots, nheads, head_dim, dstate] (fp32, functional).
+        # ssm_pool[l]:  [max_slots, nheads, head_dim, dstate] (ssm_dtype:
+        # fp32, or bf16 on Apple GPUs — storage only, the scan accumulates
+        # in fp32).
         self._conv_pool: list[Buffer] = [
             Buffer.zeros(
                 [max_slots, conv_dim, conv_kernel - 1],
@@ -91,7 +96,7 @@ class NemotronHStateCache:
         self._ssm_pool: list[Buffer] = [
             Buffer.zeros(
                 [max_slots, nheads, head_dim, dstate],
-                DType.float32,
+                ssm_dtype,
                 device,
             )
             for _ in range(num_mamba_layers)
@@ -102,7 +107,7 @@ class NemotronHStateCache:
             [1, conv_dim, conv_kernel - 1], conv_dtype, device
         )
         self._zero_ssm = Buffer.zeros(
-            [1, nheads, head_dim, dstate], DType.float32, device
+            [1, nheads, head_dim, dstate], ssm_dtype, device
         )
 
         self._free_slots: set[int] = set(range(max_slots))
@@ -134,7 +139,7 @@ class NemotronHStateCache:
             * nheads
             * head_dim
             * dstate
-            * DType.float32.size_in_bytes
+            * ssm_dtype.size_in_bytes
         )
         logger.info(
             f"Nemotron-H state pool: {max_slots} slots x {num_mamba_layers}"

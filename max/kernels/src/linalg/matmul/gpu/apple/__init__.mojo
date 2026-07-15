@@ -21,4 +21,9 @@ from .matmul_kernel import (
 )
 from .fp4_dequant import enqueue_fp4_materialize, fp4_materialize_kernel
 from .fp4_matmul import AppleM5Fp4MatMul, enqueue_apple_fp4_matmul
+from .fp8_gemv import (
+    enqueue_apple_fp8_gemv,
+    enqueue_apple_fp8_matmul,
+    enqueue_fp8_materialize,
+)
 from linalg.arch.apple.mma import ConvIm2colParams

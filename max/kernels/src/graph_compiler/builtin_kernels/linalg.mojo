@@ -54,6 +54,7 @@ from linalg.matmul.gpu.amd import (
 )
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
 from linalg.matmul.gpu.apple.fp4_matmul import enqueue_apple_fp4_matmul
+from linalg.matmul.gpu.apple.fp8_gemv import enqueue_apple_fp8_matmul
 from linalg.matmul.gpu.apple.int8_matmul import (
     enqueue_apple_int8_matmul,
     enqueue_apple_int8_quantize_activation,
@@ -1067,6 +1068,49 @@ struct Struct_matmul_weight_only_block_scaled_apple:
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             b_scales.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@compiler.register("mo.matmul.weight.only.scaled.float8.apple")
+struct Struct_matmul_weight_only_scaled_float8_apple:
+    """Apple M5 weight-only FP8 (W8A16) matmul: `out = a @ dequant(b)^T`.
+
+    The FP8 sibling of `mo.matmul.weight.only.block.scaled.apple`. The activation
+    `a` stays in bf16 (NOT dynamically quantized to FP8), and the FP8-E4M3 weight
+    `b` is widened to f32/bf16 at the point of consumption (register-resident in
+    the `M == 1` GEMV, or a transient bf16 buffer for the `M > 1` interim). Unlike
+    the NVFP4 sibling there is NO per-block weight scale (modelopt static FP8
+    carries one per-tensor scalar `weight_scale`); that scalar is applied at the
+    graph level by the caller as a post-matmul multiply (the FP8 analog of NVFP4's
+    `weight_scale_2`), so it is NOT an input here. `input_scale` cancels for a
+    bf16 activation, so it is not an input either.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "Apple weight-only scaled FP8 matmul only supports GPUs"
+        comptime assert has_apple_gpu_accelerator(), (
+            "mo.matmul.weight.only.scaled.float8.apple requires an Apple"
+            " (Metal) GPU accelerator"
+        )
+
+        enqueue_apple_fp8_matmul[c_type=c_type](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
             context,
         )
 

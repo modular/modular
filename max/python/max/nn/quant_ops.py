@@ -17,6 +17,7 @@ from max.graph import DeviceRef, TensorValue, ops
 from .kernels import (
     _apple_int8_w8a8_matmul,
     _apple_weight_only_block_scaled_matmul,
+    _apple_weight_only_scaled_float8_matmul,
     _fused_qkv_index_ragged_matmul_scaled_mxfp8,
     _fused_qkv_ragged_matmul_scaled_float4,
     _fused_qkv_ragged_matmul_scaled_float8,
@@ -255,6 +256,31 @@ def _matmul_float8(
     Returns:
         The output tensor.
     """
+    if _is_apple_gpu():
+        # Apple M5 weight-only (W8A16) path: keep the activation in bf16 (do NOT
+        # quantize it to FP8) and feed the FP8-E4M3 weight straight to the kernel,
+        # which widens it to f32/bf16 at the point of consumption (register-
+        # resident GEMV at M=1; a transient bf16 buffer for the M>1 interim). The
+        # kernel produces the RAW `x @ W_fp8^T`, so the modelopt per-tensor scalar
+        # `weight_scale` is folded here as a post-matmul multiply -- the FP8 analog
+        # of the NVFP4 `weight_scale_2` fold in `_matmul_float4`. (`input_scale`
+        # cancels: the static path scales x by `1/input_scale` then folds
+        # `input_scale` back into the epilogue; with a bf16 activation neither step
+        # happens, so `weight_scale` is the only surviving global factor. Because
+        # it is a per-tensor scalar it factors out of the sum, so the post-matmul
+        # fold is exact.) Placed before the fnuz conversion (AMD-only) so the
+        # weight stays `float8_e4m3fn`, which Metal reads natively. The gate is
+        # additive: NVIDIA/AMD FP8 below is untouched.
+        res = _apple_weight_only_scaled_float8_matmul(
+            x, weight, out_type=DType.bfloat16
+        )
+        # Fold the per-tensor scale in f32 for precision, then cast to bf16
+        # (folding a bf16-rounded scale would lose mantissa bits before the
+        # multiply). Mirrors the NVFP4 `weight_scale_2` fold.
+        return (res.cast(DType.float32) * weight_scale.to(res.device)).cast(
+            DType.bfloat16
+        )
+
     weight, weight_scale = convert_weights_to_fp8_fnuz_if_needed(
         weight, weight_scale
     )

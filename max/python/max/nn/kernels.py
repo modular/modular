@@ -6333,6 +6333,54 @@ def _apple_weight_only_block_scaled_matmul(
     return result
 
 
+def _apple_weight_only_scaled_float8_matmul(
+    a: TensorValue,
+    b: TensorValue,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Apple M5 weight-only FP8 (W8A16) matmul: ``out = a @ dequant(b).T``.
+
+    The FP8 sibling of :func:`_apple_weight_only_block_scaled_matmul`. The
+    activation ``a`` stays in ``bfloat16`` (it is *not* dynamically quantized to
+    FP8) and the FP8-E4M3 weight ``b`` is widened to f32/bf16 at the point of
+    consumption; weights stay ``float8_e4m3fn`` in DRAM. Unlike the NVFP4 sibling
+    there is no per-block weight scale to pass -- modelopt static FP8 carries one
+    per-tensor scalar ``weight_scale``, which the caller applies as a post-matmul
+    graph-level multiply (the FP8 analog of NVFP4's ``weight_scale_2``). So this
+    op takes neither a scale nor ``input_scale`` (``input_scale`` cancels for a
+    bf16 activation).
+
+    Args:
+        a: The bf16 activation, shape ``[M, K]``.
+        b: The FP8 weight, ``float8_e4m3fn`` shape ``[N, K]`` (``transpose_b``).
+        out_type: The output dtype (``bfloat16``, ``float16``, or ``float32``).
+
+    Returns:
+        The raw (unscaled) matmul result, shape ``[M, N]``.
+    """
+    if a.rank != 2 or b.rank != 2:
+        raise ValueError("Both a and b must be rank 2 tensors")
+    if a.dtype != DType.bfloat16:
+        raise ValueError(f"activation a must be bfloat16, got {a.dtype}")
+    if b.dtype != DType.float8_e4m3fn:
+        raise ValueError(f"weight b must be float8_e4m3fn, got {b.dtype}")
+    if a.shape[1] != b.shape[1]:
+        raise ValueError("a and b must share the K dimension (a[M,K], b[N,K])")
+
+    result = ops.custom(
+        "mo.matmul.weight.only.scaled.float8.apple",
+        device=a.device,
+        values=[a, b],
+        out_types=[
+            TensorType(
+                dtype=out_type, shape=[a.shape[0], b.shape[0]], device=a.device
+            )
+        ],
+    )[0].tensor
+
+    return result
+
+
 def _apple_int8_w8a8_matmul(
     a: TensorValue,
     b: TensorValue,

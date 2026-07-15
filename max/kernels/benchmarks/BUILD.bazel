@@ -49,6 +49,7 @@ _EXTRA_CONSTRAINTS = {
     "gpu/linalg/bench_apple_fp4_matmul.mojo": ["//:apple_gpu"],  # Apple M5 weight-only NVFP4 (W4A16) matmul — Metal only
     "gpu/linalg/bench_apple_fp4_reconcile.mojo": ["//:apple_gpu"],  # Apple M5 W4A16 dispatch-path benchmark — Metal only
     "gpu/linalg/bench_apple_int8_matmul.mojo": ["//:apple_gpu"],  # Apple M5 int8 W8A8 GEMM+dequant + activation-quant — Metal only
+    "gpu/linalg/bench_apple_fp8_gemv.mojo": ["//:apple_gpu"],  # Apple M5 FP8 W8A16 GEMV + tiled matmul — Metal only
     "gpu/nn/bench_conv2d_apple.mojo": ["//:apple_gpu"],  # Apple M5 im2col conv2d vs naive — Metal only
     "gpu/nn/bench_apple_fa_prefill.mojo": ["//:apple_gpu"],  # Apple M5 MMA flash-attention prefill (no-SMEM + SMEM-staged) — Metal only
     "gpu/linalg/bench_matmul.mojo": select({

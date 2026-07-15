@@ -26,8 +26,12 @@ and applies dtype/shape fixups:
   shared-experts up/down projections map 1:1.
 * FP8 (modelopt per-tensor static): F8_E4M3 weights are kept as-is; scale
   tensors (``weight_scale`` / ``input_scale``) cast to float32. Excluded
-  modules (lm_head, attn q/k/v/o, the mamba in/out_proj at [11,16,23,31], all
-  conv1d) stay bf16 — they simply have no scale tensors in the checkpoint.
+  modules (lm_head, the mamba in/out_proj at [11,16,23,31], all conv1d) stay
+  bf16 — they have no scale tensors in the checkpoint. Attention q/k/v/o are
+  bf16 (no scales) in the 4B, but per-tensor FP8 in the 8B Reasoning
+  checkpoint; when FP8 they are dequantized to bf16 at load (widen E4M3->f32,
+  apply the scalar ``weight_scale``) and their scale tensors (``weight_scale``
+  / ``input_scale`` / KV-cache ``k_scale`` / ``v_scale``) are consumed/dropped.
 """
 
 from __future__ import annotations
@@ -40,6 +44,7 @@ from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
 from max.pipelines.lib import PipelineConfig
+from max.pipelines.weights._fp8 import fp8_e4m3fn_to_float32
 from transformers import AutoConfig
 
 # The mamba ``in_proj`` is ONE fused matmul in the nn.Module (matching the HF
@@ -48,10 +53,22 @@ from transformers import AutoConfig
 # ``in_proj.input_scale`` fall through to the generic scale->fp32 path. No
 # row-slicing into separate projections is needed.
 
-# Attention q/k/v projections (always bf16 in the FP8 checkpoint) are fused into
-# one ``qkv_proj.weight`` (concat order q, k, v along the out-dim) to match the
-# single fused-QKV ``Linear`` in the nn.Module. ``o_proj`` is untouched.
-_QKV_RE = re.compile(r"^(blocks\.\d+\.mixer\.)([qkv])_proj\.weight$")
+# Attention q/k/v/o projections. In the bf16 checkpoints (e.g. the 4B) these
+# are bf16; in the FP8 8B Reasoning checkpoint they are per-tensor static FP8
+# (E4M3 weight + scalar f32 ``weight_scale``) and are dequantized to bf16 at
+# load (the attention ``Linear``s are bf16). q/k/v fuse into one
+# ``qkv_proj.weight`` (concat order q, k, v along the out-dim) to match the
+# single fused-QKV ``Linear`` in the nn.Module; ``o_proj`` stays standalone.
+_ATTN_PROJ_RE = re.compile(r"^(blocks\.\d+\.mixer\.)([qkvo])_proj\.weight$")
+# The attention projections' scale tensors: ``weight_scale`` (used to
+# dequantize the FP8 weight, then dropped) plus ``input_scale`` and the
+# KV-cache ``k_scale`` / ``v_scale`` (all unused once attention is bf16, so
+# dropped). Only attention scales match here; mamba/MLP scales fall through to
+# the generic FP8 scale->fp32 path.
+_ATTN_SCALE_RE = re.compile(
+    r"^(blocks\.\d+\.mixer\.)([qkvo])_proj\."
+    r"(weight_scale|input_scale|k_scale|v_scale)$"
+)
 
 # Ordered prefix/name rewrites (applied in sequence; first match wins per
 # group). The real FP8 checkpoint uses the ``backbone.`` prefix; the installed
@@ -119,6 +136,45 @@ def _concat_rows(parts: list[WeightData], new_name: str) -> WeightData:
     )
 
 
+def _attn_proj_bf16(
+    parts: dict[str, WeightData],
+    scales: dict[str, WeightData],
+    which: str,
+    target_name: str,
+) -> WeightData:
+    """Return attention projection ``which`` as bf16, dequantizing if FP8.
+
+    In the FP8 8B Reasoning checkpoint the attention q/k/v/o projections are
+    per-tensor static FP8 (E4M3 weight + scalar f32 ``weight_scale``): widen
+    E4M3 -> f32 via the shared host LUT (:func:`fp8_e4m3fn_to_float32`; the
+    engine can't lower FP8 -> f32 on the host), apply the scalar scale, and cast
+    to bf16 (the attention ``Linear``s are bf16). For checkpoints whose
+    attention is already bf16 (e.g. the 4B) the weight passes through
+    byte-identical and this is a no-op; the mamba/MLP FP8 ``Linear``s keep their
+    native FP8 path untouched.
+    """
+    wd = parts[which]
+    if wd.dtype != DType.float8_e4m3fn:
+        return wd
+    scale = scales.get(which)
+    if scale is None:
+        raise ValueError(
+            f"missing weight_scale for FP8 attention weight '{target_name}'"
+        )
+    scale_f32 = np.from_dlpack(scale.astype(DType.float32).data).astype(
+        np.float32
+    )
+    if scale_f32.size != 1:
+        raise ValueError(
+            f"attention FP8 weight '{target_name}' expects a per-tensor scalar "
+            f"weight_scale, got shape {tuple(scale_f32.shape)}"
+        )
+    deq = np.ascontiguousarray(
+        fp8_e4m3fn_to_float32(wd) * scale_f32.reshape(-1)[0]
+    )
+    return WeightData.from_numpy(deq, target_name).astype(DType.bfloat16)
+
+
 def convert_nemotron_h_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: AutoConfig,
@@ -131,11 +187,16 @@ def convert_nemotron_h_state_dict(
     checkpoint tensors map 1:1 (``in_proj.weight`` -> generic FP8 path;
     ``in_proj.weight_scale`` / ``in_proj.input_scale`` -> generic scale->fp32).
     The attention q/k/v weights are concatenated into one fused
-    ``qkv_proj.weight``.
+    ``qkv_proj.weight`` (with ``o_proj`` standalone); on the FP8 8B Reasoning
+    checkpoint the attention q/k/v/o projections are per-tensor FP8 and are
+    dequantized to bf16 here (their scale tensors are consumed/dropped), while
+    the mamba/MLP FP8 Linears keep their native FP8 path.
     """
     new_state_dict: dict[str, WeightData] = {}
-    # Per-attention-layer q/k/v weights buffered for fusion into qkv_proj.
-    qkv_parts: dict[str, dict[str, WeightData]] = {}
+    # Per-attention-layer q/k/v/o weights + their weight_scales, buffered for
+    # FP8->bf16 dequant (8B) and q/k/v fusion into qkv_proj.
+    attn_parts: dict[str, dict[str, WeightData]] = {}
+    attn_scales: dict[str, dict[str, WeightData]] = {}
     for name, value in state_dict.items():
         max_name = name
         for before, after in _RENAMES:
@@ -146,11 +207,23 @@ def convert_nemotron_h_state_dict(
 
         weight_data = value.data()
 
-        # Buffer attention q/k/v for fusion into a single qkv_proj.weight.
-        qm = _QKV_RE.match(max_name)
-        if qm is not None:
-            prefix, which = qm.group(1), qm.group(2)
-            qkv_parts.setdefault(prefix, {})[which] = weight_data
+        # Buffer attention q/k/v/o weights for FP8->bf16 dequant + q/k/v fusion.
+        am = _ATTN_PROJ_RE.match(max_name)
+        if am is not None:
+            attn_parts.setdefault(am.group(1), {})[am.group(2)] = weight_data
+            continue
+
+        # Buffer the attention weight_scale (to dequantize the FP8 weight) and
+        # drop the other attention scales (input_scale + KV-cache k/v_scale),
+        # all unused once attention is bf16. No-op for bf16-attention (4B)
+        # checkpoints, which carry no attention scales; mamba/MLP scales fall
+        # through to the generic FP8 scale->fp32 path below.
+        sm = _ATTN_SCALE_RE.match(max_name)
+        if sm is not None:
+            if sm.group(3) == "weight_scale":
+                attn_scales.setdefault(sm.group(1), {})[sm.group(2)] = (
+                    weight_data
+                )
             continue
 
         # Scale tensors -> float32 (FP8 kernels require f32 scales). The fused
@@ -190,11 +263,22 @@ def convert_nemotron_h_state_dict(
 
         new_state_dict[max_name] = weight_data
 
-    # Emit the fused qkv_proj.weight per attention layer (concat order q,k,v).
-    for prefix, parts in qkv_parts.items():
+    # Emit the fused qkv_proj.weight (concat q,k,v) + o_proj.weight per
+    # attention layer, dequantizing FP8 projections to bf16 (8B) or passing
+    # bf16 through (4B). Attention scale tensors are consumed here or dropped
+    # above.
+    for prefix, parts in attn_parts.items():
+        scales = attn_scales.get(prefix, {})
         fused_name = f"{prefix}qkv_proj.weight"
         new_state_dict[fused_name] = _concat_rows(
-            [parts["q"], parts["k"], parts["v"]], fused_name
+            [
+                _attn_proj_bf16(parts, scales, "q", f"{prefix}q_proj.weight"),
+                _attn_proj_bf16(parts, scales, "k", f"{prefix}k_proj.weight"),
+                _attn_proj_bf16(parts, scales, "v", f"{prefix}v_proj.weight"),
+            ],
+            fused_name,
         )
+        o_name = f"{prefix}o_proj.weight"
+        new_state_dict[o_name] = _attn_proj_bf16(parts, scales, "o", o_name)
 
     return new_state_dict
