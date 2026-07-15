@@ -104,6 +104,15 @@ struct LValueInitializerType {
 /// write it back yet.
 struct LValueBufferTaken {};
 
+/// This struct is used to represent an LValue with a partially bound type,
+/// the expression can not be eagerly emitted since its type is not yet
+/// concrete. Though we can still use the partially bound type as an contextual
+/// type for inference.
+struct LValuePartiallyBoundType {
+  ASTType type;
+  ExprNode *expr;
+};
+
 /// This class represents the destination context that an expression is being
 /// emitted in, when it may produce an RValue.  Example destinations include:
 ///   - an LValue:
@@ -154,7 +163,11 @@ public:
   }
   ExprDest(LValueInitializerType type, ExprContext context)
       : representation(type), context(context) {}
-
+  ExprDest(LValuePartiallyBoundType dest, ExprContext context)
+      : representation(dest), context(context) {
+    assert(dest.expr && dest.type &&
+           "Cannot init with null ExprNode* or ASTType");
+  }
   ExprDest(ExprDest &&rhs)
       : representation(std::move(rhs.representation)), context(rhs.context),
         patternDeclKind(rhs.patternDeclKind) {
@@ -204,6 +217,15 @@ public:
     if (isa<LValueInitializerType>(representation))
       return cast<LValueInitializerType>(representation).type;
     return {};
+  }
+
+  /// Return the ExprNode for the speculatively generated lvalue.
+  const ExprNode *getLValueExprNode() const {
+    if (isa<const ExprNode *>(representation))
+      return cast<const ExprNode *>(representation);
+    if (isa<LValuePartiallyBoundType>(representation))
+      return cast<LValuePartiallyBoundType>(representation).expr;
+    return nullptr;
   }
 
   /// If this indicates an explicit expected RValue type, return that type.
@@ -273,7 +295,8 @@ private:
   //  This should only be accessed by IREmitter::emitResult.
   friend class IREmitter;
   SmartVariant<NullRepresentation, LValue, LValueBufferTaken, const ExprNode *,
-               Operation *, ASTType, LValueInitializerType>
+               Operation *, ASTType, LValueInitializerType,
+               LValuePartiallyBoundType>
       representation;
   ExprContext context;
 

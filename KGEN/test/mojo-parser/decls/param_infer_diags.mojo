@@ -52,3 +52,14 @@ def infer_two_param_dep_struct[y: Int]():
     # expected-error @+2 {{invalid call to 'take_tied_values': value passed to 'b' cannot be converted from 'TwoIntParamStruct[Int(20), Int(2)]' to 'TwoIntParamStruct[Int(20), Int(1)]'}}
     # expected-note @+1 {{.b of the first value is 'Int(2)' but the second value is 'Int(1)'}}
     take_tied_values(TwoIntParamStruct[10, 1](), TwoIntParamStruct[20, 2]())
+
+
+struct PartiallyBoundParam[T: AnyType]:
+    def __init__(out self: PartiallyBoundParam[Int], var x: Int):
+        pass
+
+
+# TODO: we can potentially support this.
+def infer_partially_bound_var_type():
+    # expected-error @+1 {{can not infer the missing parameters for 'PartiallyBoundParam[_]'}}
+    var v: PartiallyBoundParam = 1

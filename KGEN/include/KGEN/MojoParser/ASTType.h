@@ -84,6 +84,9 @@ public:
   /// Return this type with any parameter bindings removed.
   ASTType getWithoutParameters(SharedState &shared) const;
 
+  /// Return true if this type has any unknown parameters.
+  bool hasUnknownParameters() const;
+
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to
   /// the specified other type.
   bool isEqualCanon(ASTType other) const;

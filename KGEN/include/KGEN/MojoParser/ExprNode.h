@@ -12,6 +12,7 @@
 #ifndef KGEN_MOJOPARSER_EXPRNODE_H
 #define KGEN_MOJOPARSER_EXPRNODE_H
 
+#include "KGEN/MojoParser/ExprDest.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <variant>
@@ -214,6 +215,7 @@ public:
     // Error cases can often propagate in a null AnyValue.
     ELVIITResult(AnyValue value) : storage(value) {}
     ELVIITResult(CValue value) : ELVIITResult(AnyValue(value)) {}
+    ELVIITResult(LValuePartiallyBoundType value) : storage(value) {}
     ELVIITResult(const ExprNode *value) : storage(value) {
       assert(value && "Cannot init with null ExprNode*");
     }
@@ -234,10 +236,15 @@ public:
         return *ptr;
       return nullptr;
     }
+    LValuePartiallyBoundType getIfPartiallyBoundLV() const {
+      if (auto *ptr = std::get_if<LValuePartiallyBoundType>(&storage))
+        return *ptr;
+      return LValuePartiallyBoundType{ASTType(), nullptr};
+    }
 
   private:
     /// The failure case is encoded as a null AnyValue
-    std::variant<AnyValue, const ExprNode *> storage;
+    std::variant<AnyValue, const ExprNode *, LValuePartiallyBoundType> storage;
   };
 
   /// If this expression is an LValue with an inherent type, emit it and return
@@ -246,8 +253,14 @@ public:
   ///
   /// 'kind' indicates whether this pattern is implicitly scoped to the function
   /// or whether it is explicitly a 'var' or 'ref' pattern.
+  ///
+  /// 'allowUnbound' indicates whether the type of the pattern is allowed to
+  /// have unbound parameters (e.g. `x: ParametricList` without explicit
+  /// parameters), which happens when the type can be inferred from an
+  /// initializer.
   virtual ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
-                                                   PatternDeclKind kind) const {
+                                                   PatternDeclKind kind,
+                                                   bool allowUnbound) const {
     return ELVIITResult(this);
   }
 };
@@ -262,7 +275,8 @@ public:
 
   // A default implementation is provided for these that forward to emitIR.
   ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
-                                           PatternDeclKind kind) const override;
+                                           PatternDeclKind kind,
+                                           bool allowUnbound) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
 
   virtual ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
