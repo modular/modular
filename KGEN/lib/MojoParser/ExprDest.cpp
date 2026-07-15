@@ -170,6 +170,11 @@ void ExprDest::dump() const { llvm::errs() << *this; }
   } else if (isa<LValueInitializerType>(representation)) {
     os << "LValueInitializerType: "
        << cast<LValueInitializerType>(representation).type;
+  } else if (isa<LValuePartiallyBoundType>(representation)) {
+    os << "LValuePartiallyBoundType: "
+       << cast<LValuePartiallyBoundType>(representation).type
+       << "\n ExprNode: ";
+    cast<LValuePartiallyBoundType>(representation).expr->print(os);
   } else {
     os << "UNKNOWN VALUE DEST!";
   }
@@ -206,6 +211,8 @@ ASTType ExprDest::getExpectedTypeIfSpecified() const {
     return type;
   if (isa<LValueInitializerType>(representation))
     return cast<LValueInitializerType>(representation).type;
+  if (isa<LValuePartiallyBoundType>(representation))
+    return cast<LValuePartiallyBoundType>(representation).type;
   return cast<LValue>(representation).getRValueType();
 }
 
@@ -224,7 +231,7 @@ void ExprDest::resetForError(IREmitter &emitter) {
       varOp.getResult().setType(varOp.getType().getWithElement(
           emitter.shared.getTypeCheckErrorType()));
     }
-  } else if (auto target = dyn_cast<const ExprNode *>(representation)) {
+  } else if (auto target = getLValueExprNode()) {
     // If emitting the RHS failed, use a "type check error" expression as the
     // RHS so we can make sure to emit any vars declared, to silence
     // downstream errors.
@@ -236,6 +243,32 @@ void ExprDest::resetForError(IREmitter &emitter) {
   }
 
   representation = NullRepresentation();
+}
+
+/// Diagnose a mismatch between a partially-bound LValue destination and the
+/// concrete `existingValueType` produced by the RHS. Returns true (after
+/// emitting an error) when the concrete type cannot satisfy the partially-bound
+/// type; the caller should then clear the destination.
+static bool diagnosePartiallyBoundTypeMismatch(LValuePartiallyBoundType dest,
+                                               Type existingValueType,
+                                               IREmitter &emitter) {
+  if (dest.type.isEqualAllowingUnknownAttr(existingValueType, emitter.shared))
+    return false;
+
+  // TODO: we can infer the missing parameter by emitting a constructor call
+  // here to support:
+  // ```
+  // struct ParamType[T: AnyType]:
+  //   def __init__(out self: ParamType[Int], var x: Int):
+  //     pass
+  //
+  // def test_parametric_list_literal():
+  //   var v: ParamType = 1
+  // ```
+  emitter.emitError(dest.expr->getLoc(),
+                    "can not infer the missing parameters for ")
+      << dest.type;
+  return true;
 }
 
 /// Inspect the ExprDest to see if it implies a specific type for the value
@@ -264,11 +297,24 @@ ASTType ExprDest::resolveImpliedType(SMLoc loc, Type existingValueType,
 
   // If we have an un-emitted expression, emit it using our existingValueType to
   // get an LValue.
-  if (auto *expr = dyn_cast<const ExprNode *>(representation)) {
+  if (auto expr = getLValueExprNode()) {
     // If we have a contextual type available, pass that down to the emitter so
     // implicitly declared variables and discard patterns can know their type.
-    if (!existingValueType)
+    if (!existingValueType) {
+      if (isa<LValuePartiallyBoundType>(representation))
+        return cast<LValuePartiallyBoundType>(representation).type;
       return {};
+    }
+
+    // The concrete existing value type must match the partially bound type.
+    if (isa<LValuePartiallyBoundType>(representation) &&
+        diagnosePartiallyBoundTypeMismatch(
+            cast<LValuePartiallyBoundType>(representation), existingValueType,
+            emitter)) {
+      representation = NullRepresentation(); // Error already emitted!
+      return {};
+    }
+
     if (ASTType nmTarget = ASTType(existingValueType)
                                .getNonmaterializableTarget(emitter.shared))
       existingValueType = nmTarget;
@@ -328,14 +374,22 @@ MLValue ExprDest::getDefinedMLValueIfExists(ASTType resultType,
   }
 
   // If we have an uncollapsed expression, emit it to learn more about it.
-  if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
-    ExprDest dest(LValueInitializerType{resultType}, getContext());
-    dest.patternDeclKind = patternDeclKind;
-    if (LValue lValue = emitter.emitExprLValue(target, dest)) {
-      representation = lValue;
-    } else {
-      dest.resetForError(emitter);
+  if (const ExprNode *target = getLValueExprNode()) {
+    // The concrete existing value type must match the partially bound type.
+    if (isa<LValuePartiallyBoundType>(representation) &&
+        diagnosePartiallyBoundTypeMismatch(
+            cast<LValuePartiallyBoundType>(representation), resultType,
+            emitter)) {
       representation = NullRepresentation(); // Error already emitted!
+    } else {
+      ExprDest dest(LValueInitializerType{resultType}, getContext());
+      dest.patternDeclKind = patternDeclKind;
+      if (LValue lValue = emitter.emitExprLValue(target, dest)) {
+        representation = lValue;
+      } else {
+        dest.resetForError(emitter);
+        representation = NullRepresentation(); // Error already emitted!
+      }
     }
   }
 
@@ -422,7 +476,8 @@ LValue ExprDest::getLValueForResult(SMLoc loc, ASTType resultType,
 
   // If we have an expression node destination, then we need to bind this
   // value to a pattern (aka "target" in Python internals nomenclature).
-  if (isa<const ExprNode *>(representation)) {
+  if (isa<const ExprNode *>(representation) ||
+      isa<LValuePartiallyBoundType>(representation)) {
     // resolveImpliedType will resolve ExprNode destinations into LValues.
     (void)resolveImpliedType(loc, resultType, emitter);
 

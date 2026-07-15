@@ -111,6 +111,21 @@ def test_list_literal():
     impl_definition = [i for i in SimpleIntRange()]
 
 
+struct ParametricList[T: Movable]:
+    def __init__(out self, var *elements: Self.T, __list_literal__: NoneType):
+        pass
+
+
+# CHECK-LABEL: lit.fn @"test_parametric_list_literal()"
+def test_parametric_list_literal():
+    # The struct parameter `T` is inferred as `Int` from the list literal, and
+    # the `__init__` call writes its `out self` result directly into x's decl.
+
+    # CHECK: [[VAR_DECL_X:%.*]] = lit.var.decl "x" var : !lit.ref<!lit.struct<#ParametricList
+    # CHECK: lit.call @{{.*}}::@ParametricList::@"__init__[{{.*}}]]($0$*,__list_literal__:::NoneType)"{{.*}}<:!AnyType_Movable !Int{{.*}}({{.*}}, [[VAR_DECL_X]]) :
+    var x: ParametricList = [1, 2, 3]
+
+
 # CHECK-LABEL: lit.fn @"test_list_comprehension
 def test_list_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#List <:!AnyType_Copyable_Movable !Int>

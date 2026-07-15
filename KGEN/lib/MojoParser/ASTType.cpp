@@ -567,6 +567,11 @@ ASTType ASTType::getWithoutParameters(SharedState &shared) const {
   return *this;
 }
 
+bool ASTType::hasUnknownParameters() const {
+  return llvm::any_of(getParamBindings(),
+                      [](TypedAttr param) { return isa<UnboundAttr>(param); });
+}
+
 bool ASTType::isEqualCanon(ASTType other) const {
   // We have no type sugar yet so we can just do pointer equality tests.
   if (mlirType == other.mlirType)
