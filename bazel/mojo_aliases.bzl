@@ -39,6 +39,7 @@ _MAX_PACKAGES = {
     "_cudnn": "kernels/src/_cudnn",
     "_rocblas": "kernels/src/_rocblas",
     "_miopen": "kernels/src/_miopen",
+    "max_mojo": "mojo/max",
 }
 
 _INTERNAL_PACKAGES = [
