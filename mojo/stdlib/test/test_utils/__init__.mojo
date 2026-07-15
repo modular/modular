@@ -25,6 +25,7 @@ from .types import (
     DelRecorder,
     ExplicitCopyOnly,
     ExplicitDestroy,
+    ExplicitDestroyKey,
     ImplicitCopyOnly,
     ConfigureTrivial,
     MoveCopyCounter,

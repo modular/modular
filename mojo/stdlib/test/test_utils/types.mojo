@@ -54,6 +54,50 @@ struct ExplicitDestroy(ImplicitlyDeletable where False, Movable):
 
 
 # ===----------------------------------------------------------------------=== #
+# ExplicitDestroyKey
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy("Use .destroy() to consume `ExplicitDestroyKey`")
+@fieldwise_init
+struct ExplicitDestroyKey(
+    Equatable, Hashable, ImplicitlyDeletable where False, Movable
+):
+    """Linear key type for testing linear-keyed containers: `Movable`,
+    `Hashable`, and `Equatable`, but explicitly-destroyed (not
+    `ImplicitlyDeletable`)."""
+
+    var value: Int
+    """Int data."""
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compare two keys on their payload.
+
+        Args:
+            other: The other key to compare against.
+
+        Returns:
+            `True` if the payloads are equal, `False` otherwise.
+        """
+        return self.value == other.value
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        """Hash the payload using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        self.value.__hash__(hasher)
+
+    def destroy(deinit self):
+        """Destroys self."""
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
 # MoveOnly
 # ===----------------------------------------------------------------------=== #
 

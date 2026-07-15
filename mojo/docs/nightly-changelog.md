@@ -325,6 +325,19 @@ This version is still a work in progress.
   `ImplicitlyDeletable`. The dictionary's capacity is retained, so it stays
   reusable.
 
+- Added `Dict.insert(key, value)`, which stores a key/value pair and returns
+  the displaced entry as an `Optional[DictEntry]` (empty when the key was not
+  already present). Unlike `dict[key] = value`, `insert` does not destroy the
+  displaced entry; it returns it, and the caller must destroy the returned
+  entry. This is what lets `insert` work when the key or value type is not
+  `ImplicitlyDeletable`:
+
+  ```mojo
+  var d = Dict[Int, Int]()
+  var displaced = d.insert(1, 10)  # None — key 1 was absent
+  displaced = d.insert(1, 20)      # the displaced (1, 10) entry
+  ```
+
 - `Coord` now conforms to `DevicePassable`, so a `Coord` embedded in a
   `DevicePassable` type (such as a `TileTensor`'s `Layout`) is encoded to the
   device through `Coord._to_device_type` instead of a raw field bit-copy, the

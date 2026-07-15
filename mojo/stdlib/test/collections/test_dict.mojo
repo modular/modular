@@ -13,18 +13,20 @@
 
 from std.collections.dict import (
     Dict,
+    DictEntry,
     DictKeyError,
     EmptyDictError,
     OwnedKwargsDict,
 )
 from std.collections._swisstable import GROUP_WIDTH
 
-from std.hashlib import Hasher, default_comp_time_hasher
+from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 
 from test_utils import (
     CopyCounter,
     DelCounter,
     ExplicitDestroy,
+    ExplicitDestroyKey,
     MoveOnly,
     check_write_to,
 )
@@ -1608,6 +1610,148 @@ def test_dict_clear_with_empty() raises:
     d.clear_with(dispose)
     d^.deinit_with(dispose)
     assert_equal(calls, 0)
+
+
+def test_dict_clear_with_linear() raises:
+    # `clear_with` on a populated linear `Dict` (neither key nor value is
+    # `ImplicitlyDeletable`). Populate via `insert`, then verify every entry
+    # reaches the closure once, the dict empties, and its capacity is reused.
+    var d = Dict[ExplicitDestroyKey, ExplicitDestroy]()
+    var disposed = List[Int]()
+    var disposed_keys = List[Int]()
+
+    def dispose_kv(
+        var key: ExplicitDestroyKey, var value: ExplicitDestroy
+    ) {mut}:
+        disposed.append(value.value)
+        disposed_keys.append(key.value)
+        key^.destroy()
+        value^.destroy()
+
+    def dispose_entry(
+        var entry: DictEntry[
+            ExplicitDestroyKey, ExplicitDestroy, default_hasher
+        ]
+    ) {mut}:
+        entry^.deinit_with(dispose_kv)
+
+    d.insert(ExplicitDestroyKey(1), ExplicitDestroy(10)).deinit_with(
+        dispose_entry
+    )
+    d.insert(ExplicitDestroyKey(2), ExplicitDestroy(20)).deinit_with(
+        dispose_entry
+    )
+    d.insert(ExplicitDestroyKey(3), ExplicitDestroy(30)).deinit_with(
+        dispose_entry
+    )
+    var len_before_clear = len(d)
+
+    d.clear_with(dispose_kv)
+
+    var cleared_values = disposed.copy()
+    var cleared_keys = disposed_keys.copy()
+    var len_after_clear = len(d)
+
+    # Capacity is retained, so the emptied dict is reusable.
+    d.insert(ExplicitDestroyKey(4), ExplicitDestroy(40)).deinit_with(
+        dispose_entry
+    )
+    var len_after_reuse = len(d)
+
+    d^.deinit_with(dispose_kv)
+
+    assert_equal(len_before_clear, 3)
+    assert_equal(len_after_clear, 0)
+    assert_equal(len_after_reuse, 1)
+
+    assert_equal(len(cleared_values), 3)
+    assert_true(10 in cleared_values)
+    assert_true(20 in cleared_values)
+    assert_true(30 in cleared_values)
+
+    assert_equal(len(cleared_keys), 3)
+    assert_true(1 in cleared_keys)
+    assert_true(2 in cleared_keys)
+    assert_true(3 in cleared_keys)
+
+    assert_equal(len(disposed), 4)
+    assert_true(40 in disposed)
+
+
+def test_dict_insert_linear_key_and_value() raises:
+    # A linear `Dict` (and a linear `Optional[DictEntry]`) has no implicit
+    # destructor, so every linear value is consumed via `deinit_with` before
+    # any (raising) assert runs, per the linear-in-`raises` idiom.
+    var d = Dict[ExplicitDestroyKey, ExplicitDestroy]()
+    var disposed = List[Int]()
+    var disposed_keys = List[Int]()
+
+    def dispose_kv(
+        var key: ExplicitDestroyKey, var value: ExplicitDestroy
+    ) {mut}:
+        disposed.append(value.value)
+        disposed_keys.append(key.value)
+        key^.destroy()
+        value^.destroy()
+
+    def dispose_entry(
+        var entry: DictEntry[
+            ExplicitDestroyKey, ExplicitDestroy, default_hasher
+        ]
+    ) {mut}:
+        entry^.deinit_with(dispose_kv)
+
+    # New keys: no displaced entry, so each returned `Optional` is empty.
+    var r1 = d.insert(ExplicitDestroyKey(1), ExplicitDestroy(10))
+    var r1_present = Bool(r1)
+    r1^.deinit_with(dispose_entry)
+
+    var r2 = d.insert(ExplicitDestroyKey(2), ExplicitDestroy(20))
+    var r2_present = Bool(r2)
+    r2^.deinit_with(dispose_entry)
+
+    var len_after_new = len(d)
+
+    # Overwrite an existing key: the displaced entry (old key 1, value 10)
+    # comes back — not the just-inserted value 99.
+    var r3 = d.insert(ExplicitDestroyKey(1), ExplicitDestroy(99))
+    var r3_present = Bool(r3)
+    r3^.deinit_with(dispose_entry)
+
+    # Snapshot what the overwrite disposed, before teardown adds survivors.
+    # A store/return swap (keep old, return new) would still leave the same
+    # {10, 20, 99} disposed overall, so the final membership checks alone
+    # can't catch it — pinning the displaced pair here can.
+    var overwrite_disposed_values = disposed.copy()
+    var overwrite_disposed_keys = disposed_keys.copy()
+
+    var len_after_overwrite = len(d)
+
+    # Tear down the linear dict explicitly, disposing the surviving entries.
+    d^.deinit_with(dispose_kv)
+
+    # All linear values consumed; asserts may raise freely now.
+    assert_false(r1_present)
+    assert_false(r2_present)
+    assert_true(r3_present)
+    assert_equal(len_after_new, 2)
+    assert_equal(len_after_overwrite, 2)
+
+    # 1. The overwrite displaced exactly the old pair: value 10, key 1.
+    assert_equal(len(overwrite_disposed_values), 1)
+    assert_equal(overwrite_disposed_values[0], 10)
+    assert_equal(len(overwrite_disposed_keys), 1)
+    assert_equal(overwrite_disposed_keys[0], 1)
+
+    # Displaced 10 (overwrite) + surviving 20 and 99 (teardown).
+    assert_equal(len(disposed), 3)
+    assert_true(10 in disposed)
+    assert_true(20 in disposed)
+    assert_true(99 in disposed)
+
+    # 2. Keys are explicitly destroyed too: old key 1 (displaced) plus the
+    # surviving keys 1 and 2 at teardown.
+    assert_equal(len(disposed_keys), 3)
 
 
 def main() raises:

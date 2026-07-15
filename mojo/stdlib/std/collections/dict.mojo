@@ -888,6 +888,47 @@ struct Dict[
         """
         self._insert(key^, value^)
 
+    def insert(
+        mut self, var key: Self.K, var value: Self.V
+    ) -> Optional[DictEntry[Self.K, Self.V, Self.H]]:
+        """Insert a key/value pair, returning the displaced entry if the key
+        was already present.
+
+        Unlike `__setitem__`, the displaced key and value are moved out and
+        returned (never destroyed in place), so this works when `K` or `V` is
+        linear (non-`ImplicitlyDeletable`). The caller is responsible for
+        disposing of the returned entry.
+
+        Args:
+            key: The key to associate with the value.
+            value: The value to store.
+
+        Returns:
+            The previous entry if `key` was already present, otherwise an
+            empty `Optional`.
+        """
+        self._ensure_capacity()
+        var entry = DictEntry[Self.K, Self.V, Self.H](key^, value^)
+        var found, slot_idx = self._table.find_slot(entry.hash, entry.key)
+
+        if found:
+            # Overwrite: move the displaced entry out and return it (never
+            # destroyed), then move the new entry into the slot.
+            var displaced = (self._table._slots + slot_idx).take_pointee()
+            (self._table._slots + slot_idx).unsafe_write(entry^)
+            return displaced^
+
+        # New entry.
+        self._table.set_ctrl(slot_idx, h2(entry.hash))
+        (self._table._slots + slot_idx).unsafe_write(entry^)
+        self._order.append(Int32(slot_idx))
+        self._table._len += 1
+        self._table._growth_left -= 1
+        assert (
+            self._table._growth_left >= 0
+        ), "_growth_left went negative after insert"
+        return None
+
     def __contains__(self, key: Self.K) -> Bool:
         """Check if a given key is in the dictionary or not.
 
