@@ -13,7 +13,11 @@
 from std.collections import Optional
 from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
-from std.sys.info import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
+from std.sys.info import (
+    has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
+    has_apple_gpu_accelerator,
+)
 
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
@@ -65,6 +69,7 @@ from .matmul.gpu import (
     _amdgpu_matmul_config_from_block_shape,
 )
 from .matmul.gpu.amd import AMDMatmul
+from .matmul.gpu.apple.matmul2d_fp8 import enqueue_grouped_matmul2d_fp8
 from std.algorithm import vectorize
 
 
@@ -1032,6 +1037,21 @@ def grouped_matmul[
         and static_K % amd_bk == 0
     )
 
+    # Apple weight-only FP8 (W8A16) MoE: bf16 activation x float8_e4m3fn weight.
+    # Routes to the tiled simdgroup-MMA grouped kernel (the FP8 analog of the
+    # dense Apple FP8 Linear) instead of the scalar-cast `naive_grouped_matmul`.
+    # A fused epilogue is not applied by the tiled interior store, so shapes with
+    # one fall through to naive (the MoE decode path passes none). Pre-M5 Apple
+    # also falls through (the M5 native-fp8 MMA is unvalidated pre-M5). CUDA/AMD
+    # builds compile this branch out (`has_apple_gpu_accelerator()` is comptime).
+    comptime is_apple_fp8_moe_applicable = (
+        has_apple_gpu_accelerator()
+        and a_type == DType.bfloat16
+        and b_type == DType.float8_e4m3fn
+        and is_expert_shape_static
+        and not elementwise_lambda_fn
+    )
+
     @always_inline
     @parameter
     @__copy_capture(c, a, b)
@@ -1168,6 +1188,56 @@ def grouped_matmul[
                 num_active_experts,
                 ctx,
             )
+        elif is_apple_fp8_moe_applicable:
+            var stats = resolve_usage_stats()
+            var max_num_tokens_per_expert = stats[0]
+            var num_active_experts = stats[1]
+            # M5 has the native fp8-operand simdgroup MMA; pre-M5 Apple falls
+            # back to the dtype-generic naive kernel (still correct there).
+            if ctx.compute_capability() == 5:
+                # The tiled launcher is hard-typed W8A16 (bf16 A, fp8 B); rebind
+                # the dispatch's abstract-dtype operands to the concrete types
+                # the guard already proves (mirrors the dense Apple matmul
+                # dispatch in `matmul/gpu/__init__.mojo`).
+                comptime ABf16 = TileTensor[
+                    DType.bfloat16,
+                    type_of(a).LayoutType,
+                    type_of(a).origin,
+                    address_space=type_of(a).address_space,
+                    linear_idx_type=type_of(a).linear_idx_type,
+                    Storage=type_of(a).Storage,
+                ]
+                comptime BFp8 = TileTensor[
+                    DType.float8_e4m3fn,
+                    type_of(b).LayoutType,
+                    type_of(b).origin,
+                    address_space=type_of(b).address_space,
+                    linear_idx_type=type_of(b).linear_idx_type,
+                    Storage=type_of(b).Storage,
+                ]
+                enqueue_grouped_matmul2d_fp8[c_type=c_type](
+                    c,
+                    rebind[ABf16](a),
+                    rebind[BFp8](b),
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
+            else:
+                naive_grouped_matmul[
+                    elementwise_lambda_fn=elementwise_lambda_fn
+                ](
+                    c,
+                    a,
+                    b,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
         else:
             var stats = resolve_usage_stats()
             var max_num_tokens_per_expert = stats[0]

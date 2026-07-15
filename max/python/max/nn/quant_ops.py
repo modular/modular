@@ -272,14 +272,14 @@ def _matmul_float8(
         # weight stays `float8_e4m3fn`, which Metal reads natively. The gate is
         # additive: NVIDIA/AMD FP8 below is untouched.
         res = _apple_weight_only_scaled_float8_matmul(
-            x, weight, out_type=DType.bfloat16
+            x, weight, out_type=DType.float32
         )
-        # Fold the per-tensor scale in f32 for precision, then cast to bf16
-        # (folding a bf16-rounded scale would lose mantissa bits before the
-        # multiply). Mirrors the NVFP4 `weight_scale_2` fold.
-        return (res.cast(DType.float32) * weight_scale.to(res.device)).cast(
-            DType.bfloat16
-        )
+        # Fold the per-tensor scale in f32, then a single cast to bf16:
+        # fp32-accum -> f32 out -> `* weight_scale` (f32) -> one bf16 round.
+        # Requesting f32 out (not bf16) avoids a premature bf16 round of the raw
+        # matmul BEFORE the scale multiply (folding a bf16-rounded product would
+        # lose mantissa bits). Mirrors the NVFP4 `weight_scale_2` fold.
+        return (res * weight_scale.to(res.device)).cast(DType.bfloat16)
 
     weight, weight_scale = convert_weights_to_fp8_fnuz_if_needed(
         weight, weight_scale

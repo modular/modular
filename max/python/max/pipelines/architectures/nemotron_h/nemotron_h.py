@@ -52,6 +52,8 @@ from max.nn.attention import MHAMaskVariant
 from max.nn.embedding import Embedding
 from max.nn.kernels import (
     flash_attention_ragged,
+    grouped_matmul_ragged,
+    moe_create_indices,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
@@ -183,10 +185,14 @@ class NemotronHExpertMLP(MLP):
             is_sharding=True,
         )
         dev = devices[0]
+        # FP8 (per-tensor static) stores the expert weight as float8_e4m3fn;
+        # the routed-expert grouped matmul widens it on load (weight-only) and
+        # the shared expert runs the dense FP8 Linear path. bf16 otherwise.
+        wdtype = _weight_dtype(dtype, quant_config)
         self.up_proj = Linear(
             in_dim=hidden_dim,
             out_dim=feed_forward_length,
-            dtype=dtype,
+            dtype=wdtype,
             device=dev,
             has_bias=False,
             quant_config=quant_config,
@@ -194,7 +200,7 @@ class NemotronHExpertMLP(MLP):
         self.down_proj = Linear(
             in_dim=feed_forward_length,
             out_dim=hidden_dim,
-            dtype=dtype,
+            dtype=wdtype,
             device=dev,
             has_bias=False,
             quant_config=quant_config,
@@ -347,22 +353,145 @@ class NemotronHMoEGate(MoEGate):
 class NemotronHMoE(MoE):
     """Nemotron-3 MoE mixer: 128 non-gated relu2 experts (top-6) + 1 shared.
 
-    Only :attr:`gate_up_proj` is overridden: the experts are non-gated (relu2,
-    no ``gate_proj``), so the routed-expert weight stack is the up-projection
-    only, ``[num_experts, moe_intermediate_size, hidden]``. Everything else
-    reuses the base :class:`~max.nn.moe.MoE` grouped-matmul routing, which on
-    Apple resolves to MAX's own ``naive_grouped_matmul`` (the else-branch of
-    ``grouped_matmul_ragged``).
+    :attr:`gate_up_proj` is overridden: the experts are non-gated (relu2, no
+    ``gate_proj``), so the routed-expert weight stack is the up-projection only,
+    ``[num_experts, moe_intermediate_size, hidden]``.
+
+    bf16 (no ``quant_config``) reuses the base :class:`~max.nn.moe.MoE`
+    grouped-matmul routing verbatim, which on Apple resolves to MAX's own
+    ``naive_grouped_matmul`` (the else-branch of ``grouped_matmul_ragged``).
+
+    FP8 (per-tensor static ``quant_config``, the 30B-A3B) keeps the routed
+    expert weights as ``float8_e4m3fn`` and feeds them to the SAME grouped
+    matmul: the op is dtype-generic, so the naive kernel widens each E4M3 weight
+    to fp32 on load (bf16 activation x fp8 weight -> fp32 accumulate -> bf16),
+    i.e. weight-only W8A16 — the grouped analog of the dense Apple FP8 Linear.
+    The per-tensor scalar ``weight_scale`` (one per expert) factors out of the
+    matmul sum, so it is folded EXACTLY as a post-matmul per-row multiply
+    (gathered by each permuted row's expert). The shared expert runs the dense
+    FP8 Linear path. Activations stay bf16 (``input_scale`` is unused, matching
+    the dense weight-only path).
     """
 
     @property
     def gate_up_proj(self) -> TensorValue:
         # Non-gated experts: the base property interleaves gate+up and would
         # AttributeError on our gate-less experts. Stack the up projections
-        # only -> [num_experts, moe_intermediate_size, hidden].
+        # only -> [num_experts, moe_intermediate_size, hidden]. FP8 experts
+        # stack as float8_e4m3fn (weight-only); bf16 experts stack as bf16.
         return ops.stack(
             [expert.up_proj.weight for expert in self.experts], axis=0
         )
+
+    def _expert_weight_scales(self, proj_name: str) -> TensorValue:
+        """Stack the per-expert scalar ``weight_scale`` -> ``[num_experts]``.
+
+        Each FP8 expert Linear carries one per-tensor ``weight_scale`` (shape
+        ``()``); stacking yields the per-expert dequant factor gathered by the
+        grouped matmul's permuted rows.
+        """
+        scales: list[TensorValue] = []
+        for expert in self.experts:
+            ws = getattr(expert, proj_name).weight_scale
+            assert ws is not None, (
+                f"FP8 MoE expert {proj_name} is missing weight_scale"
+            )
+            scales.append(ws.to(self.devices[0]))
+        return ops.stack(scales, axis=0)
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        # bf16 MoE (no quant_config): the base grouped-matmul path is exact.
+        if self.quant_config is None:
+            return super().__call__(x)
+
+        # FP8 weight-only (W8A16): mirrors the base routing, but the routed
+        # expert grouped matmuls consume FP8-E4M3 weight stacks (widened to
+        # fp32 on load by the dtype-generic naive grouped-matmul kernel) and the
+        # per-expert scalar ``weight_scale`` is folded post-matmul. A per-tensor
+        # scalar factors out of the sum, so the fold is exact (not merely within
+        # tolerance) -- the grouped analog of the dense Apple FP8 Linear.
+        seq_len = x.shape[0]
+        router_idx, router_weight = self.gate(x)
+        router_idx = ops.reshape(router_idx, [-1])
+
+        (
+            token_expert_order,
+            expert_start_indices,
+            restore_token_order,
+            expert_ids,
+            expert_usage_stats,
+        ) = moe_create_indices(
+            ops.cast(router_idx, DType.int32), self.num_experts
+        )
+
+        permutated_states = ops.gather(
+            x,
+            ops.cast(
+                ops.floor_div(token_expert_order, self.num_experts_per_token),
+                DType.int32,
+            ),
+            axis=0,
+        )
+
+        # Per-permuted-row expert id -> per-row dequant scale. The expert of
+        # permuted row p is ``router_idx[token_expert_order[p]]`` (the same
+        # ordering the grouped matmul groups by), so a gather recovers each
+        # row's ``weight_scale`` without a scatter over the CSR offsets.
+        expert_per_row = ops.gather(
+            ops.cast(router_idx, DType.int32), token_expert_order, axis=0
+        )
+        # Keep the per-row dequant scales in f32 (the stacked ``weight_scale``
+        # is f32); the fold below multiplies in f32 and casts once, matching the
+        # dense Apple FP8 path (`quant_ops.py`), where downcasting the scale to
+        # bf16 before the multiply would lose mantissa bits.
+        up_scale = ops.reshape(
+            ops.gather(
+                self._expert_weight_scales("up_proj"), expert_per_row, axis=0
+            ),
+            [-1, 1],
+        )
+        down_scale = ops.reshape(
+            ops.gather(
+                self._expert_weight_scales("down_proj"), expert_per_row, axis=0
+            ),
+            [-1, 1],
+        )
+
+        # Up projection (weight-only FP8 grouped matmul) -> dequant fold ->
+        # relu2, all in f32. Folding the up scale BEFORE relu2 matches
+        # dequantizing the weight then squaring (weight_scale >= 0, so relu
+        # commutes with it); the trailing cast returns the model dtype for the
+        # down matmul activation.
+        up = grouped_matmul_ragged(
+            permutated_states,
+            self.gate_up_proj,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats,
+        )
+        up = _relu2(up.cast(DType.float32) * up_scale).cast(x.dtype)
+
+        # Down projection (weight-only FP8 grouped matmul) -> dequant fold in
+        # f32, then cast to the model dtype.
+        down = grouped_matmul_ragged(
+            up,
+            self.down_proj,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats,
+        )
+        down = (down.cast(DType.float32) * down_scale).cast(x.dtype)
+
+        down = ops.gather(down, restore_token_order, axis=0).reshape(
+            [seq_len, self.num_experts_per_token, self.hidden_dim]
+        )
+        routed_expert_out = ops.unsqueeze(router_weight, axis=1) @ down
+        routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(x.dtype)
+
+        if self.has_shared_experts:
+            routed_expert_out += self.shared_experts(x)
+
+        return routed_expert_out
 
 
 class NemotronHAttention(Module):
@@ -723,8 +852,10 @@ class NemotronHBlock(Module):
         elif self.kind == "attention":
             self.mixer = NemotronHAttention(config, kv_layer_idx)
         elif self.kind == "moe":
-            # Non-gated relu2 MoE, bf16 (the 30B-A3B has no quant config; the
-            # FP8 layer sets cover only mamba/mlp layers, so none is wired).
+            # Non-gated relu2 MoE. ``quant_config`` is set only when this MoE
+            # layer is FP8 (the 30B-A3B FP8 checkpoint); it makes the routed +
+            # shared expert weights float8_e4m3fn. When None the experts are
+            # bf16 and NemotronHMoE.__call__ delegates to the base MoE.
             self.mixer = NemotronHMoE(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
@@ -742,6 +873,7 @@ class NemotronHBlock(Module):
                 shared_experts_dim=config.moe_shared_expert_intermediate_size,
                 dtype=config.dtype,
                 apply_router_weight_first=False,
+                quant_config=quant_config,
                 # Non-gated: relu2 over the whole up-projection (the moe_dim
                 # split arg from the base MoE is ignored).
                 gated_activation_fn=lambda gate_up, moe_dim: _relu2(gate_up),
@@ -793,6 +925,8 @@ class NemotronH(Module):
             if kind == "mamba" and li in config.fp8_mamba_layers:
                 qc = quant_config
             elif kind == "mlp" and li in config.fp8_mlp_layers:
+                qc = quant_config
+            elif kind == "moe" and li in config.fp8_moe_layers:
                 qc = quant_config
             blocks.append(NemotronHBlock(config, li, kv_layer, quant_config=qc))
             if kind == "attention":

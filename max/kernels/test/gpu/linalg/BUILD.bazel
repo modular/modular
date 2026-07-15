@@ -32,6 +32,9 @@ _EXTRA_CONSTRAINTS = {
     # Apple M5 weight-only FP8 (W8A16): register-resident E4M3 GEMV at M==1 +
     # materialize->dense interim at M>1. Apple M5 only (Metal 4 / AIR 2.8).
     "test_fp8_gemv.mojo": ["//:apple_gpu"],
+    # Apple M5 grouped (MoE) weight-only FP8 (W8A16): tiled simdgroup-MMA
+    # grouped matmul vs the naive reference. Apple M5 only (Metal 4 / AIR 2.8).
+    "test_grouped_matmul_apple_fp8.mojo": ["//:apple_gpu"],
     "test_async_copy_wgmma.mojo": ["//:h100_gpu"],
     "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_gemm_kernel_new.mojo": ["//:nvidia_gpu"],  # Requires 32-thread warps

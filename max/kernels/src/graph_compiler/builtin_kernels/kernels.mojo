@@ -3883,6 +3883,18 @@ struct GatedGroupRMSNorm[group_size: Int]:
         var n_rows = y.dim_size(0)
         var intermediate = y.dim_size(1)
         comptime gs = Self.group_size
+        # The kernel floor-divides `intermediate // gs`; a non-multiple would
+        # silently drop the tail columns of the last (partial) group. The
+        # unfused `ops.reshape(yf, [-1, group_size])` this replaced errored on
+        # a non-multiple, so guard the invariant here (production 7680/960=8 is
+        # exact -- this is a guard, not a behavior change).
+        debug_assert(
+            intermediate % gs == 0,
+            (
+                "gated_group_rmsnorm: intermediate must be a multiple of"
+                " group_size"
+            ),
+        )
         var num_groups = intermediate // gs
 
         var output_tt = output.to_tile_tensor[DType.int32]()

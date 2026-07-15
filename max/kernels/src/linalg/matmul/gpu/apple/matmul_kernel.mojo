@@ -53,14 +53,24 @@ from linalg.utils import elementwise_epilogue_type
 # `patterns/apple-m5-gpu-performance-considerations` -- staging *degrades* it).
 
 
-# The body's MMA op: fp32 accumulation, the kernel's `in_type`, and the
-# simdgroup MMA-fragment count `num_m x num_n` (= `SG_M/16 x SG_N/16`). Default
-# 2x2 is the dense-GEMM optimum; the conv path uses 1x1 (16x16 simdgroup tile).
+# The body's MMA op: `accum_type` accumulation, the kernel's `in_type` A operand,
+# a possibly-distinct `b_type` B/weight operand, and the simdgroup MMA-fragment
+# count `num_m x num_n` (= `SG_M/16 x SG_N/16`). Default 2x2 is the dense-GEMM
+# optimum; the conv path uses 1x1 (16x16 simdgroup tile). `b_type` and
+# `accum_type` default to the dense/conv case (B == A dtype, fp32 accumulate), so
+# existing instantiations are unchanged; the W8A16 FP8 path sets `b_type=fp8`
+# (the B/weight-loader seam swap) and a later int8 slice sets `accum_type=int32`.
 # Type-identical to `AppleM5MatMul.Mma` for the same counts (the two MUST stay in
-# sync). `AccumType` is `InlineArray[SIMD[fp32, 8], num_m*num_n]`, fixed by the
-# fp32 out-type and the fragment count, NOT by `in_type`.
-comptime _BodyMma[in_type: DType, num_m: Int = 2, num_n: Int = 2] = MmaOpApple[
-    DType.float32, in_type, num_m_mmas=num_m, num_n_mmas=num_n
+# sync). `AccumType` is `InlineArray[SIMD[accum_type, 8], num_m*num_n]`, fixed by
+# the accum out-type and the fragment count, NOT by `in_type`.
+comptime _BodyMma[
+    in_type: DType,
+    num_m: Int = 2,
+    num_n: Int = 2,
+    b_type: DType = in_type,
+    accum_type: DType = DType.float32,
+] = MmaOpApple[
+    accum_type, in_type, num_m_mmas=num_m, num_n_mmas=num_n, b_type=b_type
 ]
 
 
@@ -85,6 +95,12 @@ trait AOperandLoader:
     """
 
     comptime in_type: DType
+    # B/weight operand dtype fed to the MMA. Equals `in_type` for dense/conv;
+    # the W8A16 FP8 path sets it to `float8_e4m3fn` (the native fp8 MMA B operand,
+    # the "weight-loader seam" swap). The A loader still ISSUES the MMA (conv
+    # fuses the A-gather into `mma_im2col`, so MMA ownership stays A-side); this
+    # associated dtype only widens the `b_sub`/`mma_op` types it forwards.
+    comptime b_type: DType
     # Simdgroup MMA-fragment counts (= SG_M/16, SG_N/16); the body keys its
     # `mma_op`/`accum` on these so loader and body agree on the accumulator size.
     comptime num_m_mmas: Int
@@ -95,11 +111,19 @@ trait AOperandLoader:
         bounded: Bool, b_layout: TensorLayout
     ](
         mut self,
-        mut mma_op: _BodyMma[Self.in_type, Self.num_m_mmas, Self.num_n_mmas],
+        mut mma_op: _BodyMma[
+            Self.in_type,
+            Self.num_m_mmas,
+            Self.num_n_mmas,
+            b_type=Self.b_type,
+        ],
         mut accum: _BodyMma[
-            Self.in_type, Self.num_m_mmas, Self.num_n_mmas
+            Self.in_type,
+            Self.num_m_mmas,
+            Self.num_n_mmas,
+            b_type=Self.b_type,
         ].AccumType,
-        b_sub: TileTensor[Self.in_type, b_layout, ImmutAnyOrigin],
+        b_sub: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
         conv: ConvIm2colParams,
         k_strip: Int32,
         *,
@@ -113,15 +137,21 @@ trait AOperandLoader:
 
 
 @fieldwise_init
-struct DenseALoader[dtype: DType, a_layout: TensorLayout](
-    AOperandLoader, ImplicitlyCopyable, Movable
-):
+struct DenseALoader[
+    dtype: DType, a_layout: TensorLayout, b_dtype: DType = dtype
+](AOperandLoader, ImplicitlyCopyable, Movable):
     """Plain-GEMM A loader: holds the pre-tiled `(SG_M, K)` slab.
 
     The `run` wrapper bakes the simdgroup's slab base once (see its docstring for
     the hoist rationale); the hot-loop `.tile[SG_M, BK](0, k_strip)` here only
     adds this strip's `k_strip * BK` K offset. The strip sub-tiles are
     type-identical to the per-strip form, so `MmaOpApple.mma` is unchanged.
+
+    `b_dtype` sets the B/weight operand fed to the MMA (defaults to `dtype`, the
+    dense case). The W8A16 FP8 path constructs this loader with `b_dtype=fp8`:
+    the A slab stays bf16 and only `b_sub` / `mma_op` widen to the native-fp8 MMA
+    (KGEN lowers the fp8 B fragment to AIR `<8 x i8>`); the K-loop and
+    accumulation order are byte-for-byte the dense path.
 
     Lifetime: the `a_slab` view is held with `UntrackedOrigin` (struct fields
     cannot expose an `AnyOrigin`); the kernel arg it derives from outlives the
@@ -130,6 +160,8 @@ struct DenseALoader[dtype: DType, a_layout: TensorLayout](
 
     # Satisfy the trait's associated `in_type` from the struct's `dtype` param.
     comptime in_type = Self.dtype
+    # B operand dtype (trait `b_type`), from the struct's `b_dtype` param.
+    comptime b_type = Self.b_dtype
     # Dense GEMM is fixed at the 2x2 (SG=32) simdgroup optimum.
     comptime num_m_mmas = 2
     comptime num_n_mmas = 2
@@ -141,11 +173,19 @@ struct DenseALoader[dtype: DType, a_layout: TensorLayout](
         bounded: Bool, b_layout: TensorLayout
     ](
         mut self,  # stateless for dense; `mut` only to satisfy the trait
-        mut mma_op: _BodyMma[Self.in_type, Self.num_m_mmas, Self.num_n_mmas],
+        mut mma_op: _BodyMma[
+            Self.in_type,
+            Self.num_m_mmas,
+            Self.num_n_mmas,
+            b_type=Self.b_type,
+        ],
         mut accum: _BodyMma[
-            Self.in_type, Self.num_m_mmas, Self.num_n_mmas
+            Self.in_type,
+            Self.num_m_mmas,
+            Self.num_n_mmas,
+            b_type=Self.b_type,
         ].AccumType,
-        b_sub: TileTensor[Self.in_type, b_layout, ImmutAnyOrigin],
+        b_sub: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
         conv: ConvIm2colParams,  # unused by the dense path
         k_strip: Int32,
         *,
@@ -191,6 +231,8 @@ struct Im2colALoader[
     """
 
     comptime in_type = Self.dtype
+    # Conv B (the filter) is the same dtype as A; no fp8/int8 conv path yet.
+    comptime b_type = Self.dtype
     comptime num_m_mmas = Self.num_m
     comptime num_n_mmas = Self.num_n
     comptime NUM_ROWS = Self.num_m * 2  # 2 row-halves x num_m M-fragments
@@ -257,11 +299,19 @@ struct Im2colALoader[
         bounded: Bool, b_layout: TensorLayout
     ](
         mut self,
-        mut mma_op: _BodyMma[Self.in_type, Self.num_m_mmas, Self.num_n_mmas],
+        mut mma_op: _BodyMma[
+            Self.in_type,
+            Self.num_m_mmas,
+            Self.num_n_mmas,
+            b_type=Self.b_type,
+        ],
         mut accum: _BodyMma[
-            Self.in_type, Self.num_m_mmas, Self.num_n_mmas
+            Self.in_type,
+            Self.num_m_mmas,
+            Self.num_n_mmas,
+            b_type=Self.b_type,
         ].AccumType,
-        b_sub: TileTensor[Self.in_type, b_layout, ImmutAnyOrigin],
+        b_sub: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
         conv: ConvIm2colParams,
         k_strip: Int32,
         *,
@@ -306,6 +356,64 @@ struct Im2colALoader[
             self.r += 1
 
 
+# === B-operand (weight) loader policy ====================================== #
+# The B-side dual of `AOperandLoader`. Where `AOperandLoader` owns the A side of
+# each BK strip (and ISSUES the MMA -- conv fuses its A-gather into `mma_im2col`,
+# so MMA ownership must stay A-side to host conv on the shared body), this policy
+# owns the B/weight side: the operand dtype, the accumulator dtype, and whether a
+# cooperative threadgroup-memory (SMEM) staging pass is needed.
+#
+# For the 16x16x16 `MmaOpApple` formats whose B is a native MMA operand
+# (dense-bf16, FP8-W8A16, int8-W8A8) the B strip is a direct DRAM sub-tile the
+# body builds inline and the A loader feeds to the MMA -- so those set
+# `needs_smem=False` and the shared body allocates ZERO threadgroup memory for
+# them (verified via the FP8 AIR dump). Only the FP4 W4A16 cooperative-dequant
+# variant needs SMEM staging (`needs_smem=True`, a later slice); the body will
+# guard its `stack_allocation` + barrier + post-decode OOB handling behind
+# `comptime if W.needs_smem` so the fp8/int8/dense fast paths never pay for it.
+# Mirrors the AMD tile-io write/decode owners (KB
+# `new-primitives/amd-tile-io-expert-objects`: "every DRAM<->register transition
+# has an owner").
+trait WeightLoader:
+    """B/weight-side comptime policy for the shared Apple GEMM body.
+
+    Carries the B operand dtype (`b_type`), the MMA accumulator dtype
+    (`accum_type`; fp32 for dense/fp8/fp4, int32 for a later int8 slice), and the
+    SMEM-staging policy (`needs_smem` / `smem_elems`). The A loader still issues
+    the MMA; this policy tells the body how to source and size the B side.
+    """
+
+    # B/weight operand dtype (native MMA operand: bf16 / fp8 / int8 / -- FP4 uses
+    # packed uint8 + a cooperative dequant, a later slice).
+    comptime b_type: DType
+    # MMA accumulator dtype (fp32 dense/fp8/fp4; int32 for int8 in a later slice).
+    comptime accum_type: DType
+    # True only for cooperative-SMEM formats (FP4); False for dense/fp8/int8, for
+    # which the body allocates NO threadgroup memory.
+    comptime needs_smem: Bool
+    # SMEM staging element count (0 when `needs_smem` is False).
+    comptime smem_elems: Int
+
+
+@fieldwise_init
+struct DenseWeightLoader[b_dtype: DType, accum_dtype: DType = DType.float32](
+    ImplicitlyCopyable, Movable, WeightLoader
+):
+    """Direct-DRAM B policy: dense-bf16 and FP8-W8A16.
+
+    The B strip is a plain `(BK, SG_N)` DRAM sub-tile (coalesced via the
+    col-major `(K, N)` view for `transpose_b=True`) fed straight to the native
+    MMA -- no staging. `b_dtype == in_type` is the dense case; `b_dtype=fp8` is
+    the W8A16 weight-only case (the only divergence from dense is the operand
+    dtype). Stateless: pure comptime policy.
+    """
+
+    comptime b_type = Self.b_dtype
+    comptime accum_type = Self.accum_dtype
+    comptime needs_smem = False
+    comptime smem_elems = 0
+
+
 struct AppleM5MatMul[
     in_type: DType,
     c_type: DType = DType.float32,
@@ -316,12 +424,15 @@ struct AppleM5MatMul[
     block_k: Int = 16,
     sg_m: Int = 32,
     sg_n: Int = 32,
+    b_type: DType = in_type,
+    accum_type: DType = DType.float32,
 ]:
     """Apple M5 simdgroup-tiled GEMM (Metal 4 hardware MMA).
 
     Parameters:
-        in_type: A/B element type (fp16, bf16, fp32; int8 at the MMA-op level).
-        c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
+        in_type: A element type (fp16, bf16, fp32; int8 at the MMA-op level).
+        c_type: Output element type (fp16, bf16, fp32). Accumulation is
+            `accum_type`.
         transpose_b: If True, B is `(N, K)` row-major (viewed as `col_major(K, N)`);
             otherwise B is `(K, N)` row-major.
         elementwise_lambda_fn: Optional fused epilogue; receives
@@ -335,10 +446,19 @@ struct AppleM5MatMul[
             M MMA-fragment count `NUM_MMA_M = SG_M / 16`.
         sg_n: Simdgroup subtile cols `SG_N`. Multiple of `MMA_N` (16); fixes the
             N MMA-fragment count `NUM_MMA_N = SG_N / 16`.
+        b_type: B/weight operand dtype fed to the MMA. Defaults to `in_type` (the
+            dense/conv case). The W8A16 FP8 path sets `b_type=float8_e4m3fn`: the
+            A slab stays `in_type` (bf16) and only the B fragment widens to the
+            native-fp8 MMA operand (the weight-loader seam swap). See
+            `WeightLoader` / `enqueue_matmul2d_fp8`.
+        accum_type: MMA accumulator dtype. fp32 for dense/fp8; a later int8 slice
+            uses int32.
 
     `run` is the GPU kernel entry (TileTensor operands; `M`/`N`/`K` derived from
-    them). `run_split_k_partial` / `run_split_k_reduce` are the split-K kernels.
-    Launch via `enqueue_apple_matmul` / `enqueue_apple_matmul_split_k`.
+    them). `run_split_k_partial` / `run_split_k_reduce` are the split-K kernels
+    (bf16 family; split-K is not wired for `b_type != in_type`). Launch via
+    `enqueue_apple_matmul` / `enqueue_apple_matmul_split_k`; the FP8 W8A16 dense
+    launcher is `enqueue_matmul2d_fp8`.
     """
 
     # === Tile config. BM/BN/BK come from the block_* params (default 64x64
@@ -361,10 +481,11 @@ struct AppleM5MatMul[
     # 4 accumulators, so more only adds register pressure / spills. The conv path
     # overrides sg_m/sg_n (and thus this count) via `enqueue_apple_conv2d`.
     comptime Mma = MmaOpApple[
-        DType.float32,
+        Self.accum_type,
         Self.in_type,
         num_m_mmas=Self.NUM_MMA_M,
         num_n_mmas=Self.NUM_MMA_N,
+        b_type=Self.b_type,
     ]
 
     # === Morton (Z-order) tile scheduling ================================== #
@@ -484,25 +605,47 @@ struct AppleM5MatMul[
     def _run_gemm_body[
         L: AOperandLoader,
         //,
+        W: WeightLoader,
         c_layout: TensorLayout,
         b_layout: TensorLayout,
     ](
         mut loader: L,
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Storage=_],
-        b: TileTensor[L.in_type, b_layout, ImmutAnyOrigin, Storage=_],
+        b: TileTensor[L.b_type, b_layout, ImmutAnyOrigin, Storage=_],
         k: Int,
         conv: ConvIm2colParams,
         log2_grid_m: UInt32,
         log2_grid_n: UInt32,
     ):
-        """Shared GEMM body; the A side comes from `loader.accumulate_strip`.
+        """Shared GEMM body; A side from `loader`, B policy from `W`.
 
         C is `(M, N)` row-major (`M`/`N` derive from `c`); `k` is the contraction
         extent (`a.dim[1]` for plain GEMM, `R*S*C` for conv). B is `(K, N)` for
-        `transpose_b=False` or `(N, K)` for `transpose_b=True`. Grid is
-        `(1<<log2_grid_m) * (1<<log2_grid_n)` threadgroups of 128 threads; OOB
-        threadgroups early-return after Morton decode.
+        `transpose_b=False` or `(N, K)` for `transpose_b=True`, in `Self.b_type`.
+        Grid is `(1<<log2_grid_m) * (1<<log2_grid_n)` threadgroups of 128 threads;
+        OOB threadgroups early-return after Morton decode.
+
+        `W: WeightLoader` is the B-side policy (operand/accumulator dtype + SMEM
+        staging). `loader` produces the A side and ISSUES the MMA; for the direct
+        -DRAM B formats (dense/fp8) the body builds the `(BK, SG_N)` B sub-tile
+        inline and feeds it to `loader.accumulate_strip`, byte-for-byte the dense
+        path with only `Self.b_type` widened. `W.needs_smem` gates the (future)
+        cooperative-SMEM decode; fp8/dense set it False so NO threadgroup memory
+        is allocated.
         """
+        comptime assert (
+            W.b_type == Self.b_type and W.accum_type == Self.accum_type
+        ), "WeightLoader policy must match the kernel's b_type / accum_type"
+        # The WeightLoader carries `accum_type` as the B-side seam contract, but
+        # this shared body accumulates in fp32 (dense/conv/fp8) -- int32
+        # accumulation (int8 W8A8) generalizes the A-loader + epilogue in a later
+        # slice, so keep the body fp32-only until then.
+        comptime assert (
+            Self.accum_type == DType.float32
+        ), "shared GEMM body is fp32-accumulate; int32 accum is a later slice"
+        comptime assert (
+            L.b_type == Self.b_type
+        ), "A-loader b_type must match the kernel's b_type"
         var c_ptr = c.ptr
         var b_ptr = b.ptr
         var m = Int(c.dim[0]())
@@ -515,12 +658,21 @@ struct AppleM5MatMul[
         comptime BK = Self.BK
         comptime SG_M = Self.SG_M
         comptime SG_N = Self.SG_N
-        # Key the MMA op (and B above) on `L.in_type`, not the outer
-        # `Self.in_type`: the erased trait dispatch only sees `L.in_type`, so
-        # both sides must agree on it (see `AOperandLoader`; KB
-        # `patterns/trait-type-erasure-and-stride-layout-workaround`).
-        # Type-identical to `Self.Mma`.
-        comptime Mma = _BodyMma[L.in_type, L.num_m_mmas, L.num_n_mmas]
+        # Key the MMA op entirely on the LOADER `L` (A `in_type` AND B `b_type`):
+        # the erased trait dispatch only sees `L`'s comptimes, so both the body
+        # and `accumulate_strip` must agree on the SAME symbols -- keying B on
+        # `L.b_type` (not `W.b_type`/`Self.b_type`, which are distinct symbols the
+        # checker won't unify across the trait boundary) is the type-erasure
+        # discipline (KB `patterns/trait-type-erasure-and-stride-layout-workaround`).
+        # `L.b_type == W.b_type == Self.b_type` by construction (asserted above).
+        # Accumulation is fp32 (the body's `accum_type` default). Type-identical
+        # to `Self.Mma`.
+        comptime Mma = _BodyMma[
+            L.in_type,
+            L.num_m_mmas,
+            L.num_n_mmas,
+            b_type=L.b_type,
+        ]
         # `c_type` / `elementwise_lambda_fn` / `transpose_b` are struct *params*:
         # spelled `Self.x` below (a param can't be aliased to a same-name local
         # the way the members just above are).
@@ -772,7 +924,7 @@ struct AppleM5MatMul[
     # === Single-pass kernel ================================================ #
 
     @__name(
-        t"apple_matmul_run_{Self.in_type}_{Self.c_type}_tb{Self.transpose_b}"
+        t"apple_matmul_run_{Self.in_type}_{Self.c_type}_tb{Self.transpose_b}_b{Self.b_type}"
     )
     @staticmethod
     def run[
@@ -787,9 +939,7 @@ struct AppleM5MatMul[
         a: TileTensor[
             Self.in_type, a_layout, ImmutAnyOrigin, Storage=a_storage
         ],
-        b: TileTensor[
-            Self.in_type, b_layout, ImmutAnyOrigin, Storage=b_storage
-        ],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],
         log2_grid_m: UInt32,
         log2_grid_n: UInt32,
     ):
@@ -824,12 +974,15 @@ struct AppleM5MatMul[
         var a_ptr = a.ptr.unsafe_origin_cast[ImmutUntrackedOrigin]()
         var a_mat = TileTensor(a_ptr, Layout(Coord(m, k), Coord(k, Idx[1])))
         var a_slab = a_mat.tile(Coord(Idx[SG_M], k), Coord(Int(sg_row_idx), 0))
-        var loader = DenseALoader[Self.in_type, type_of(a_slab).LayoutType](
-            a_slab
-        )
+        var loader = DenseALoader[
+            Self.in_type, type_of(a_slab).LayoutType, b_dtype=Self.b_type
+        ](a_slab)
 
         var no_conv = ConvIm2colParams()  # dense path ignores conv
-        Self._run_gemm_body(loader, c, b, k, no_conv, log2_grid_m, log2_grid_n)
+        # B policy: direct-DRAM (dense-bf16 or FP8-W8A16), no SMEM.
+        Self._run_gemm_body[W=DenseWeightLoader[Self.b_type, Self.accum_type]](
+            loader, c, b, k, no_conv, log2_grid_m, log2_grid_n
+        )
 
     # === Fused online-im2col conv kernel =================================== #
     # Same simdgroup-tiled GEMM body as `run` (`_run_gemm_body`), but the A
@@ -859,6 +1012,9 @@ struct AppleM5MatMul[
         input: TileTensor[
             Self.in_type, input_layout, ImmutAnyOrigin, Storage=input_storage
         ],
+        # Conv filter is `in_type` (the `Im2colALoader`'s `b_type == in_type`);
+        # the body's `b` param keys on the loader's `b_type`, so this stays
+        # `Self.in_type`, not `Self.b_type`.
         b: TileTensor[
             Self.in_type, b_layout, ImmutAnyOrigin, Storage=b_storage
         ],
@@ -911,7 +1067,10 @@ struct AppleM5MatMul[
             cb,
             conv,
         )
-        Self._run_gemm_body(loader, c, b, k, conv, log2_grid_m, log2_grid_n)
+        # Conv B (the filter) is `in_type`; direct-DRAM policy, no SMEM.
+        Self._run_gemm_body[W=DenseWeightLoader[Self.b_type, Self.accum_type]](
+            loader, c, b, k, conv, log2_grid_m, log2_grid_n
+        )
 
     # === Split-K kernels =================================================== #
     # Partition the K axis across `num_splits` threadgroup-sets so large-K /
@@ -959,7 +1118,12 @@ struct AppleM5MatMul[
         comptime BK = Self.BK
         comptime SG_M = Self.SG_M
         comptime SG_N = Self.SG_N
-        comptime Mma = Self.Mma
+        # Split-K is the bf16-family, fp32-accumulate path: A and B are both
+        # `in_type` and the partials are fp32, so pin the MMA to those (NOT the
+        # generalized `Self.Mma`, whose `b_type`/`accum_type` are symbolic and do
+        # not unify with the `in_type` operands / fp32 partials here). fp8 does
+        # not route to split-K.
+        comptime Mma = _BodyMma[Self.in_type, Self.NUM_MMA_M, Self.NUM_MMA_N]
 
         var m_i32 = Int32(m)
         var n_i32 = Int32(n)

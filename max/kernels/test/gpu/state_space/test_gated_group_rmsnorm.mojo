@@ -43,29 +43,49 @@ def run_gated_group_rmsnorm[
     n_rows: Int,
     num_groups: Int,
     group_size: Int,
+    gate_stride: Int = 0,
     eps: Float32 = 1e-5,
     rtol: Float64 = 2e-2,
     atol: Float64 = 1e-2,
 ) raises:
-    """Runs the fused kernel and checks it against a host reference chain."""
+    """Runs the fused kernel and checks it against a host reference chain.
+
+    `gate_stride` sets the gate tile's row stride: 0 means contiguous (stride
+    == intermediate); a value > intermediate models the production layout where
+    the gate is a strided split view of the fused in-proj (row stride wider than
+    the accessed column count). `y`/`output` stay contiguous.
+    """
     var intermediate = num_groups * group_size
     var total = n_rows * intermediate
+    var gstride = gate_stride if gate_stride != 0 else intermediate
+    var gate_total = n_rows * gstride
 
     # Host inputs (deterministic, mixed signs so silu is exercised on both).
     var y_h = ctx.enqueue_create_host_buffer[y_dtype](total)
-    var gate_h = ctx.enqueue_create_host_buffer[gate_dtype](total)
+    var gate_h = ctx.enqueue_create_host_buffer[gate_dtype](gate_total)
     var weight_h = ctx.enqueue_create_host_buffer[DType.float32](intermediate)
     var out_h = ctx.enqueue_create_host_buffer[y_dtype](total)
 
     for i in range(total):
         y_h[i] = Scalar[y_dtype](Float32(((i * 7) % 101) - 50) * 0.05)
-        gate_h[i] = Scalar[gate_dtype](Float32(((i * 13) % 97) - 48) * 0.06)
+    # Gate laid out with row stride `gstride`: the value at logical (n, col)
+    # uses the same formula as the contiguous case (so a strided run exercises a
+    # pure layout change), stored at physical offset `n * gstride + col`. Pad
+    # columns [intermediate, gstride) are zeroed (never read by the kernel).
+    for i in range(gate_total):
+        gate_h[i] = Scalar[gate_dtype](0)
+    for n in range(n_rows):
+        for col in range(intermediate):
+            var lin = n * intermediate + col
+            gate_h[n * gstride + col] = Scalar[gate_dtype](
+                Float32(((lin * 13) % 97) - 48) * 0.06
+            )
     for c in range(intermediate):
         weight_h[c] = Float32(((c * 5) % 41) + 10) * 0.05
 
     # Device buffers + tiles.
     var y_d = ctx.enqueue_create_buffer[y_dtype](total)
-    var gate_d = ctx.enqueue_create_buffer[gate_dtype](total)
+    var gate_d = ctx.enqueue_create_buffer[gate_dtype](gate_total)
     var weight_d = ctx.enqueue_create_buffer[DType.float32](intermediate)
     var out_d = ctx.enqueue_create_buffer[y_dtype](total)
 
@@ -74,7 +94,11 @@ def run_gated_group_rmsnorm[
     ctx.enqueue_copy(weight_d, weight_h)
 
     var y_t = TileTensor(y_d, row_major(Coord(n_rows, intermediate)))
-    var gate_t = TileTensor(gate_d, row_major(Coord(n_rows, intermediate)))
+    # Gate tile: shape (n_rows, gstride) with row stride `gstride`. The kernel
+    # only indexes columns [0, intermediate), so `gstride > intermediate`
+    # exercises the wide-stride access exactly (a split view of the fused
+    # in-proj) with no pointer arithmetic.
+    var gate_t = TileTensor(gate_d, row_major(Coord(n_rows, gstride)))
     var weight_t = TileTensor(weight_d, row_major(Coord(intermediate)))
     var out_t = TileTensor(out_d, row_major(Coord(n_rows, intermediate)))
 
@@ -85,15 +109,17 @@ def run_gated_group_rmsnorm[
     ctx.enqueue_copy(out_h, out_d)
     ctx.synchronize()
 
-    # Host reference: the exact math the fused kernel folds.
+    # Host reference: the exact math the fused kernel folds. `y`/`output` are
+    # contiguous (row stride == intermediate); the gate is read at row stride
+    # `gstride`.
     for n in range(n_rows):
         for g in range(num_groups):
             var base = g * group_size
             var m2 = SIMD[DType.float32, 1](0)
             for j in range(group_size):
-                var idx = n * intermediate + base + j
-                var yv = y_h[idx].cast[DType.float32]()
-                var gv = gate_h[idx].cast[DType.float32]()
+                var col = base + j
+                var yv = y_h[n * intermediate + col].cast[DType.float32]()
+                var gv = gate_h[n * gstride + col].cast[DType.float32]()
                 var gated = yv * silu(gv)
                 m2 += gated * gated
             var nf = rsqrt(m2 / Float32(group_size) + eps)
@@ -101,7 +127,7 @@ def run_gated_group_rmsnorm[
                 var col = base + j
                 var idx = n * intermediate + col
                 var yv = y_h[idx].cast[DType.float32]()
-                var gv = gate_h[idx].cast[DType.float32]()
+                var gv = gate_h[n * gstride + col].cast[DType.float32]()
                 var gated = yv * silu(gv)
                 var t_in = (gated * nf).cast[y_dtype]()
                 var prod = weight_h[col] * t_in.cast[DType.float32]()
@@ -152,6 +178,21 @@ def test_gated_group_rmsnorm_bf16_gate() raises:
         return
     run_gated_group_rmsnorm[DType.bfloat16, DType.bfloat16](
         ctx, n_rows=1, num_groups=8, group_size=960
+    )
+
+
+def test_gated_group_rmsnorm_strided_gate() raises:
+    """Strided gate (production layout): the gate tile's row stride is STRICTLY
+    GREATER than intermediate, mirroring the fused-in-proj split view (bf16
+    gate). `y`/`output` stay contiguous. A strided-access bug would pass the
+    contiguous cases above but fail here.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    # intermediate = 8 * 960 = 7680; pad the gate row stride to 8192 (> 7680).
+    run_gated_group_rmsnorm[DType.bfloat16, DType.bfloat16](
+        ctx, n_rows=3, num_groups=8, group_size=960, gate_stride=8192
     )
 
 

@@ -201,8 +201,13 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     # FP8: set of (kind, layer_idx) modules quantized to FP8 per-tensor static.
     # ``fp8_mamba_layers``: mamba layers whose in/out_proj are FP8.
     # ``fp8_mlp_layers``: MLP layers whose up/down_proj are FP8.
+    # ``fp8_moe_layers``: MoE layers whose routed + shared expert up/down_proj
+    # are FP8 (the 30B-A3B hybrid). The routed-expert grouped matmul consumes
+    # the FP8 weight stack directly (weight-only W8A16); the shared expert runs
+    # the dense FP8 Linear path.
     fp8_mamba_layers: set[int] = field(default_factory=set)
     fp8_mlp_layers: set[int] = field(default_factory=set)
+    fp8_moe_layers: set[int] = field(default_factory=set)
     is_fp8: bool = False
 
     @property
@@ -249,6 +254,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         """
         fp8_mamba: set[int] = set()
         fp8_mlp: set[int] = set()
+        fp8_moe: set[int] = set()
         for name in state_dict:
             if not name.endswith("weight_scale"):
                 continue
@@ -262,12 +268,18 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                     fp8_mamba.add(li)
                 elif proj in ("up_proj", "down_proj"):
                     fp8_mlp.add(li)
+                # MoE routed/shared experts nest one level deeper:
+                # blocks.{i}.mixer.experts.{j}.{up,down}_proj.weight_scale and
+                # blocks.{i}.mixer.shared_experts.{up,down}_proj.weight_scale.
+                elif proj in ("experts", "shared_experts"):
+                    fp8_moe.add(li)
         self.fp8_mamba_layers = fp8_mamba
         self.fp8_mlp_layers = fp8_mlp
-        self.is_fp8 = bool(fp8_mamba or fp8_mlp)
+        self.fp8_moe_layers = fp8_moe
+        self.is_fp8 = bool(fp8_mamba or fp8_mlp or fp8_moe)
         logger.info(
             f"Nemotron-H FP8: {len(fp8_mamba)} mamba layers,"
-            f" {len(fp8_mlp)} MLP layers quantized"
+            f" {len(fp8_mlp)} MLP layers, {len(fp8_moe)} MoE layers quantized"
         )
 
     @staticmethod

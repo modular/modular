@@ -246,6 +246,16 @@ def convert_nemotron_h_state_dict(
         if max_name.endswith(_FP32_SUFFIXES):
             weight_data = weight_data.astype(DType.float32)
 
+        # Router gate score: the FP8 (30B-A3B) checkpoint stores gate.weight as
+        # f32, but the MAX MoEGate gate_score Linear is bf16 (routing math still
+        # runs in f32 inside NemotronHMoEGate). Cast to the declared dtype; the
+        # bf16 checkpoint's router is already bf16 so this is a no-op there.
+        if (
+            max_name.endswith(".mixer.gate.gate_score.weight")
+            and weight_data.dtype == DType.float32
+        ):
+            weight_data = weight_data.astype(DType.bfloat16)
+
         # conv1d weight: keep [dim, 1, K]. HF stores it as [dim, 1, K] already
         # (a Conv1d depthwise weight); if it ever comes in 2-D, expand.
         if max_name.endswith(".conv1d.weight") and len(weight_data.shape) == 2:

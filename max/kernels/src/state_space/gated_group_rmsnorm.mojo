@@ -111,6 +111,11 @@ def gated_group_rmsnorm_kernel[
     var nf = rsqrt(m2 / Float32(group_size) + eps)
 
     # Pass 2: normalize, cast to input dtype, scale by fp32 weight, cast out.
+    # Re-loading y/gate (instead of caching pass-1 `gated` in registers) is
+    # acceptable: at decode this op is launch-bound (a single 1 x 7680 row),
+    # so the extra loads are free. A prefill-scale reuse would want to cache
+    # pass-1 `gated` in registers, but a static register array is blocked today
+    # by the runtime `group_size` (not a comptime bound).
     var jj = lane
     while jj < group_size:
         var col = base + jj
