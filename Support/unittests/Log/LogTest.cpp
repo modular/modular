@@ -198,6 +198,22 @@ TEST_F(LogOutputTest, ChannelPrefixNonDefault) {
 //  EXPECT_NE(capturedOutput().find("[FATL]"), std::string::npos);
 // }
 
+// flush() must make records visible to an independent reader of the log
+// file before it returns — push the sinks' userspace buffers to the OS,
+// not just wait for the ring to drain. The race window is microseconds
+// wide, so loop to make a regression likely to be caught.
+TEST_F(LogOutputTest, FlushMakesRecordVisibleToReader) {
+  for (int i = 0; i < 500; ++i) {
+    auto pos = currentLogEnd();
+    MLOG(LogLevel::INFO, "flush-visibility {}", i);
+    getDefaultLog().flush();
+    auto out = readLogSince(pos);
+    ASSERT_NE(out.find("flush-visibility " + std::to_string(i)),
+              std::string::npos)
+        << "record not visible after flush() on iteration " << i;
+  }
+}
+
 TEST_F(LogOutputTest, TimestampMatchesSimpleFormat) {
   MLOG(LogLevel::INFO, "ts test");
   // Default format: [HH:MM:SS] [INFO] ts test
