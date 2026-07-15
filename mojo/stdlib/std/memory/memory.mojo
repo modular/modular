@@ -258,6 +258,9 @@ def unsafe_memcpy[
         `dest` and `src` must be valid for at least `count * size_of[T]()`
         bytes.
     """
+    if count == 0:
+        return
+
     var n = count * size_of[T]()
 
     var dest_bytes = dest.bitcast[Byte]()
