@@ -51,7 +51,7 @@ from std.bit.mask import is_negative, splat
 from std.memory import (
     Span,
     memcmp,
-    memcpy,
+    unsafe_memcpy,
     pack_bits,
 )
 from std.python import Python, PythonObject

@@ -16,7 +16,7 @@ from std.os import abort
 from std.builtin._format_float import _write_float
 from std.builtin.simd import Float8_e4m3fn, Float8_e5m2
 from std.gpu.host import DeviceContext
-from std.memory import memcmp, memcpy
+from std.memory import memcmp, unsafe_memcpy
 
 
 struct Buffer[capacity: Int](Defaultable, Writer):
@@ -28,17 +28,9 @@ struct Buffer[capacity: Int](Defaultable, Writer):
         self.pos = 0
 
     def write_string(mut self, string: StringSlice):
-        len_bytes = string.byte_length()
-        # If empty then return
-        if len_bytes == 0:
-            return
-        # Continue writing to buffer
-        memcpy(
-            dest=self.data.unsafe_ptr() + self.pos,
-            src=string.unsafe_ptr(),
-            count=len_bytes,
-        )
-        self.pos += len_bytes
+        for i, byte in enumerate(string.bytes()):
+            (self.data.unsafe_ptr() + self.pos)[i] = byte
+        self.pos += string.byte_length()
 
 
 def check_float[
@@ -46,11 +38,9 @@ def check_float[
 ](f8: Scalar[dtype]) where dtype.is_floating_point():
     var f8_str = Buffer[expected.byte_length()]()
     _write_float(f8_str, f8)
-    var res = memcmp(
-        expected.unsafe_ptr(), f8_str.data.unsafe_ptr(), expected.byte_length()
-    )
-    if res != 0:
-        abort()
+    for i, byte in enumerate(expected.bytes()):
+        if byte != f8_str.data[i]:
+            abort()
 
 
 def check_8e5m2[expected: StaticString](f8: Float8_e5m2):

@@ -16,7 +16,7 @@ from .buffer import Buffer
 from .device import DeviceSpec
 from .plugin import RawDriver, QueueHandle
 from .status import STATUS_INVALID_ARG, HALError
-from std.memory import ArcPointer, memcpy
+from std.memory import ArcPointer, unsafe_memcpy
 
 
 # ===----------------------------------------------------------------------=== #
@@ -215,8 +215,8 @@ def copy[
 
     Transfers exactly `src.byte_size` bytes; `dst` must be at least that
     large. The transport follows each operand's residency and blocks until it
-    completes: two pinned host buffers are copied with a plain `memcpy` (they
-    must not overlap); every other combination runs through the plugin's
+    completes: two pinned host buffers are copied with a plain `unsafe_memcpy`
+    (they must not overlap); every other combination runs through the plugin's
     synchronous, stream-less copy ops (no queue is created), on the
     device-resident operand's context. Operands need not share a device —
     device-to-device across GPUs uses a peer transfer, and a pinned host buffer
@@ -245,7 +245,7 @@ def copy[
         var src_ptr = src._context[].memory_get_host_address[ImmutAnyOrigin](
             src
         )
-        memcpy(dest=dst_ptr, src=src_ptr, count=Int(n))
+        unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=Int(n))
         return
 
     _sync_copy(dst._context[]._raw, dst=dst, src=src)

@@ -27,7 +27,7 @@ from std.sys.defines import get_defined_int
 from std.ffi import CStringSlice
 
 from std.bit import byte_swap
-from std.memory import Span, bitcast, memcpy
+from std.memory import Span, bitcast, unsafe_memcpy
 
 
 def constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
@@ -435,7 +435,7 @@ struct _WriteBufferHeap(Writable, Writer):
                 " HEAP_BUFFER_BYTES=4096`\n"
             ]()
             abort()
-        memcpy(
+        unsafe_memcpy(
             dest=self._data + self._pos,
             src=string.unsafe_ptr(),
             count=len_bytes,
@@ -525,7 +525,7 @@ struct _WriteBufferStack[
         elif self.pos + len_bytes > Int(Self.stack_buffer_bytes):
             self.flush()
         # Continue writing to buffer
-        memcpy(
+        unsafe_memcpy(
             dest=self.data.unsafe_ptr() + self.pos,
             src=string.unsafe_ptr(),
             count=len_bytes,

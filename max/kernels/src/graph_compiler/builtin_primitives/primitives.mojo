@@ -54,7 +54,7 @@ from layout.tile_io import (
     LocalToGenericTileCopier,
 )
 from layout.tile_tensor import stack_allocation
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.memory.unsafe_pointer import unsafe_cast
 
 from nn.concat import concat
@@ -854,7 +854,7 @@ def mgp_buffer_device_to_device[
             src_buf.to_device_buffer(src_dev_ctx),
         )
     elif is_cpu[cSrcDevice]() and is_cpu[dDstDevice]():
-        memcpy(
+        unsafe_memcpy(
             dest=dst_buf.unsafe_ptr(),
             src=src_buf.unsafe_ptr(),
             count=src_buf.size(),

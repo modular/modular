@@ -139,7 +139,7 @@ from extensibility import (
 from extensibility import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
-from std.memory import UnsafePointer, memcpy
+from std.memory import UnsafePointer, unsafe_memcpy
 from std.time import sleep
 from std.logger import Logger
 
@@ -3824,7 +3824,7 @@ struct InplaceMemcpy[DstDevice: StaticString, SrcDevice: StaticString]:
             )
         elif is_cpu[Self.DstDevice]() and is_cpu[Self.SrcDevice]():
             # Host-to-host. Plain synchronous memcpy.
-            memcpy(
+            unsafe_memcpy(
                 dest=dst.unsafe_ptr(),
                 src=src.unsafe_ptr(),
                 count=count,

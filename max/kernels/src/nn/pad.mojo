@@ -21,7 +21,7 @@ from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 
 
 from std.utils import IndexList, StaticTuple
@@ -438,7 +438,7 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
             var post_pad_start_ptr = non_pad_start_ptr + self.non_pad
             var input_start_ptr = input + self.input_offset
             _fill(pre_pad_start_ptr, constant, self.pre_pad)
-            memcpy(
+            unsafe_memcpy(
                 dest=non_pad_start_ptr, src=input_start_ptr, count=self.non_pad
             )
             _fill(post_pad_start_ptr, constant, self.post_pad)
@@ -580,9 +580,9 @@ def _memcpy_regions_fast[
 
             # dest and src are non-overlapping slices of the same buffer
             # (shared origin). Opt out of exclusivity with an unsafe any-origin:
-            # memcpy's non-overlap requirement is a caller contract the
+            # unsafe_memcpy's non-overlap requirement is a caller contract the
             # exclusivity checker can't prove.
-            memcpy(
+            unsafe_memcpy(
                 dest=copy_to_ptr,
                 src=copy_from_ptr.as_unsafe_any_origin(),
                 count=output_axis_stride,
@@ -664,7 +664,9 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         # no more dimensions to recurse, copy from input to unpadded region
         var non_pad_start_ptr = output + (output_offset + self.pre_pad)
         var input_start_ptr = input + input_offset
-        memcpy(dest=non_pad_start_ptr, src=input_start_ptr, count=self.non_pad)
+        unsafe_memcpy(
+            dest=non_pad_start_ptr, src=input_start_ptr, count=self.non_pad
+        )
 
     @always_inline
     def memcpy_regions(

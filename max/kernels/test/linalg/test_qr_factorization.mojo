@@ -17,7 +17,7 @@ from std.random import rand, seed
 import internal_utils
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from linalg.qr_factorization import form_q, qr_factorization
-from std.memory import alloc, memcpy
+from std.memory import alloc, unsafe_memcpy
 from std.testing import assert_almost_equal
 
 
@@ -127,7 +127,7 @@ def main() raises:
     seed(123)
     rand[DType.float32](a_ptr, m * n)
     var a = create_tensor[DType.float32, a_layout](m, n, a_ptr)
-    memcpy(dest=a_ptr_copy, src=a_ptr, count=m * n)
+    unsafe_memcpy(dest=a_ptr_copy, src=a_ptr, count=m * n)
     # factorize
     var a_copy = create_tensor[DType.float32, a_layout](m, n, a_ptr_copy)
     var v = create_vector[DType.float32, v_layout](min_mn, v_ptr)

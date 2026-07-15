@@ -17,7 +17,7 @@ from std.sys import size_of
 from std.python import Python, PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.python._cpython import PyObjectPtr
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 
 
 from sha256 import sha256
@@ -171,7 +171,7 @@ def _mojo_block_hasher_sha256(
     var pair = InlineArray[UInt8, 64](fill=UInt8(0))
 
     # Initialise prev with the caller-provided parent hash
-    memcpy(dest=pair.unsafe_ptr() + 32, src=parent_bytes, count=32)
+    unsafe_memcpy(dest=pair.unsafe_ptr() + 32, src=parent_bytes, count=32)
 
     for block_idx in range(num_blocks):
         # Local hash = SHA-256( token_bytes_for_this_block )
@@ -182,15 +182,19 @@ def _mojo_block_hasher_sha256(
         var local_hash = sha256(token_span)
 
         # Pair = local_hash || prev_seq_hash; seq = SHA-256(pair)
-        memcpy(dest=pair.unsafe_ptr(), src=local_hash.unsafe_ptr(), count=32)
+        unsafe_memcpy(
+            dest=pair.unsafe_ptr(), src=local_hash.unsafe_ptr(), count=32
+        )
         var pair_span = Span[Byte, _](ptr=pair.unsafe_ptr(), length=64)
         var seq_hash = sha256(pair_span)
 
         # Write to out[block_idx, :] and shift seq into pair[32:64] for newx iter
-        memcpy(
+        unsafe_memcpy(
             dest=out_bytes + block_idx * 32, src=seq_hash.unsafe_ptr(), count=32
         )
-        memcpy(dest=pair.unsafe_ptr() + 32, src=seq_hash.unsafe_ptr(), count=32)
+        unsafe_memcpy(
+            dest=pair.unsafe_ptr() + 32, src=seq_hash.unsafe_ptr(), count=32
+        )
 
 
 @always_inline
@@ -203,7 +207,7 @@ def _mojo_sha256_oneshot(
     var data_span = Span[Byte, _](ptr=data_ptr[].data, length=n)
     var digest = sha256(data_span)
     var out_bytes = out_ptr[].data
-    memcpy(dest=out_bytes, src=digest.unsafe_ptr(), count=32)
+    unsafe_memcpy(dest=out_bytes, src=digest.unsafe_ptr(), count=32)
 
 
 def mojo_sha256_oneshot(

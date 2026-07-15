@@ -41,7 +41,14 @@ from std.ffi import c_char, CStringSlice
 from std.sys.info import is_32bit
 
 from std.bit import count_leading_zeros
-from std.memory import Layout, ThinAllocation, dealloc, memcmp, memcpy, memset
+from std.memory import (
+    Layout,
+    ThinAllocation,
+    dealloc,
+    memcmp,
+    unsafe_memcpy,
+    memset,
+)
 from std.python import ConvertibleFromPython, PythonObject
 
 # ===----------------------------------------------------------------------=== #
@@ -333,7 +340,7 @@ struct String(
             True
         ]().unsafe_origin_cast[MutUntrackedOrigin]()
         # Always use static constant representation initially, defer inlining
-        # decision until mutation to avoid unnecessary memcpy.
+        # decision until mutation to avoid unnecessary unsafe_memcpy.
         self._capacity_or_data = 0
 
     @always_inline("nodebug")
@@ -351,7 +358,7 @@ struct String(
             _mlir_value=__mlir_op.`pop.string.address`(data.value)
         ).bitcast[Byte]()
         # Always use static constant representation initially, defer inlining
-        # decision until mutation to avoid unnecessary memcpy.
+        # decision until mutation to avoid unnecessary unsafe_memcpy.
         self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
 
     def __init__(out self, tstring: TString):
@@ -384,7 +391,7 @@ struct String(
         ), "String: span is not valid UTF-8"
         var length = len(unsafe_from_utf8)
         self = Self(unsafe_uninit_length=length)
-        memcpy(
+        unsafe_memcpy(
             dest=self.unsafe_ptr_mut(),
             src=unsafe_from_utf8.unsafe_ptr(),
             count=length,
@@ -1002,8 +1009,10 @@ struct String(
 
         var result = String(unsafe_uninit_length=lhs_len + rhs_len)
         var result_ptr = result.unsafe_ptr_mut()
-        memcpy(dest=result_ptr, src=lhs.unsafe_ptr(), count=lhs_len)
-        memcpy(dest=result_ptr + lhs_len, src=rhs.unsafe_ptr(), count=rhs_len)
+        unsafe_memcpy(dest=result_ptr, src=lhs.unsafe_ptr(), count=lhs_len)
+        unsafe_memcpy(
+            dest=result_ptr + lhs_len, src=rhs.unsafe_ptr(), count=rhs_len
+        )
         return result^
 
     def __add__(self, other: StringSlice) -> String:
@@ -1060,7 +1069,7 @@ struct String(
             return
         var old_len = self.byte_length()
         var new_len = old_len + other_len
-        memcpy(
+        unsafe_memcpy(
             dest=self.unsafe_ptr_mut(new_len) + old_len,
             src=other.unsafe_ptr(),
             count=other_len,
@@ -2232,7 +2241,7 @@ struct String(
         var old_ptr = self.unsafe_ptr()
         var new_capacity = (max(capacity, self.capacity() * 2) + 7) >> 3
         var new_ptr = self._alloc(new_capacity << 3)
-        memcpy(dest=new_ptr, src=old_ptr, count=byte_len)
+        unsafe_memcpy(dest=new_ptr, src=old_ptr, count=byte_len)
         # If mutable buffer drop the ref count
         self._drop_ref()
         self._len_or_data = byte_len

@@ -28,7 +28,7 @@ from std.memory import (
     alloc,
     dealloc,
     ThinAllocation,
-    memcpy,
+    unsafe_memcpy,
     memset,
     pack_bits,
     is_trivially_deletable,
@@ -443,7 +443,7 @@ struct SwissTable[
         self._ctrl = alloc(
             Layout[UInt8](count=self._capacity + GROUP_WIDTH)
         ).unsafe_leak()
-        memcpy(
+        unsafe_memcpy(
             dest=self._ctrl,
             src=copy._ctrl,
             count=self._capacity + GROUP_WIDTH,
@@ -822,7 +822,7 @@ struct SwissTable[
             (self._ctrl + pos).store(converted)
 
         # Step 2: Refresh mirror bytes.
-        memcpy(
+        unsafe_memcpy(
             dest=self._ctrl + self._capacity,
             src=self._ctrl,
             count=GROUP_WIDTH,

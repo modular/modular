@@ -13,7 +13,7 @@
 
 from std.collections import OptionalReg
 from std.math import rsqrt
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.random import random_ui64, seed
 
 from std.gpu.host import DeviceContext
@@ -161,7 +161,7 @@ def execute_ragged_flash_attention[
         ragged_ptr = q_ragged_host.ptr + (
             ragged_start_idx * num_q_heads * kv_params.head_size
         )
-        memcpy(
+        unsafe_memcpy(
             dest=padded_ptr,
             src=ragged_ptr,
             count=unpadded_seq_len * num_q_heads * kv_params.head_size,

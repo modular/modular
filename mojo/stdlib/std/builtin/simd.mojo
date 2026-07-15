@@ -82,7 +82,7 @@ from std.builtin.format_int import _write_int
 from std.builtin.simd_size import SIMDSize
 from std.builtin.int import _FromInt
 from std.math import DivModable, Powable
-from std.memory import bitcast, memcpy, pack_bits
+from std.memory import bitcast, unsafe_memcpy, pack_bits
 from std.python import (
     ConvertibleToPython,
     ConvertibleFromPython,
@@ -2426,7 +2426,7 @@ struct SIMD[dtype: DType, size: SIMDSize](
 
         var ptr = UnsafePointer(to=value)
         var array = InlineArray[Byte, size_of[Self]()](uninitialized=True)
-        memcpy(
+        unsafe_memcpy(
             dest=array.unsafe_ptr(),
             src=ptr.bitcast[Byte](),
             count=size_of[Self](),
@@ -4054,7 +4054,8 @@ def _convert_float8_ue8m0_to_f32[
 def _bfloat16_to_f32_scalar(
     val: BFloat16,
 ) -> Float32:
-    # For bfloat16, we can just do a memcpy to perform the cast to float32.
+    # For bfloat16, we can just do an unsafe_memcpy to perform the cast to
+    # float32.
     comptime if is_nvidia_gpu():
         return inlined_assembly[
             "cvt.f32.bf16 $0, $1;" if _is_sm_9x_or_newer() else "mov.b32 $0, {0, $1};",

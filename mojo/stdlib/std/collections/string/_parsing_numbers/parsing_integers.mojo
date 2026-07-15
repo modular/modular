@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import simd_width_of
-from std.memory import memcmp, memcpy
+from std.memory import memcmp, unsafe_memcpy
 
 from .constants import CONTAINER_SIZE, MAXIMUM_UINT64_AS_STRING
 
@@ -26,7 +26,7 @@ def standardize_string_slice(
     var standardized_x = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
     var std_x_ptr = standardized_x.unsafe_ptr()
     var x_len = x.byte_length()
-    memcpy(
+    unsafe_memcpy(
         dest=std_x_ptr + CONTAINER_SIZE - x_len, src=x.unsafe_ptr(), count=x_len
     )
     return standardized_x^

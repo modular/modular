@@ -30,6 +30,7 @@ from .arc_pointer import ArcPointer
 from .memory import (
     memcmp,
     memcpy,
+    unsafe_memcpy,
     memmove,
     memset,
     memset_zero,

@@ -33,7 +33,7 @@ from layout import (
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.kv_cache_ragged import (
     _matmul_k_cache_ragged_scale_impl,
 )
@@ -124,7 +124,7 @@ def _initialize_ragged_inputs[
                 hidden_state_ragged_host_ptr.unsafe_ptr()
                 + (ragged_start_idx + s) * hidden_size
             )
-            memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
+            unsafe_memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
 
     var hidden_state_padded_device = ctx.enqueue_create_buffer[dtype](
         padded_size

@@ -36,7 +36,7 @@ from std.builtin.simd import _simd_construction_checks
 from std.collections import OptionalReg
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.reflection import reflect
-from std.memory import is_trivially_movable, memcpy
+from std.memory import is_trivially_movable, unsafe_memcpy
 from std.memory.memory import _free, _malloc
 from std.memory.pointer import Pointer as LegacyPointer
 from std.memory import UnsafeMaybeUninit
@@ -1143,20 +1143,21 @@ struct Pointer[
             # values.
             #
             # Since `lhs` may overlap with `rhs` we need two temporary stack
-            # values since we cannot call `memcpy` with the potentially
+            # values since we cannot call `unsafe_memcpy` with the potentially
             # overlapping pointers.
             #
             # Even if they are not overlapping, this also produces better llvm
             # code with only 2 loads and 2 stores. Whereas with only 1 temporary
-            # and a memcpy between the pointers it produces 3 load and 3 stores.
+            # and an unsafe_memcpy between the pointers it produces 3 load and
+            # 3 stores.
 
             var self_tmp = UnsafeMaybeUninit[U]()
             var other_tmp = UnsafeMaybeUninit[U]()
-            memcpy(dest=self_tmp.unsafe_ptr(), src=self, count=1)
-            memcpy(dest=other_tmp.unsafe_ptr(), src=other, count=1)
+            unsafe_memcpy(dest=self_tmp.unsafe_ptr(), src=self, count=1)
+            unsafe_memcpy(dest=other_tmp.unsafe_ptr(), src=other, count=1)
 
-            memcpy(dest=self, src=other_tmp.unsafe_ptr(), count=1)
-            memcpy(dest=other, src=self_tmp.unsafe_ptr(), count=1)
+            unsafe_memcpy(dest=self, src=other_tmp.unsafe_ptr(), count=1)
+            unsafe_memcpy(dest=other, src=self_tmp.unsafe_ptr(), count=1)
         else:
             # If `moveinit` is NOT trivial, we need to check if the pointers are
             # the same to avoid undefined behavior when moving from rhs to lhs.

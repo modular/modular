@@ -17,7 +17,7 @@ from std.os import abort
 from std.memory import (
     destroy_n,
     memcmp,
-    memcpy,
+    unsafe_memcpy,
     memmove,
     memset,
     memset_zero,
@@ -62,7 +62,7 @@ def test_memcpy() raises:
     # UnsafePointer test
     pair2.lo = 0
     pair2.hi = 0
-    memcpy(dest=dest, src=src, count=1)
+    unsafe_memcpy(dest=dest, src=src, count=1)
 
     assert_equal(pair2.lo, 1)
     assert_equal(pair2.hi, 2)
@@ -77,7 +77,7 @@ def test_memcpy() raises:
             buf[i] = src[i] = 2
             dst[i] = 0
 
-        memcpy(dest=dst, src=src, count=size)
+        unsafe_memcpy(dest=dst, src=src, count=size)
         var err = memcmp(dst, buf, size)
 
         assert_equal(err, 0)
@@ -109,7 +109,7 @@ def test_memcpy_dtype() raises:
     assert_equal(b[2], -1)
     assert_equal(b[3], -1)
 
-    memcpy(dest=b, src=a, count=4)
+    unsafe_memcpy(dest=b, src=a, count=4)
 
     assert_equal(b[0], 0)
     assert_equal(b[1], 1)
@@ -814,7 +814,8 @@ def test_memmove_non_overlapping_regions() raises:
 
 
 def test_uninit_move_n_trivial() raises:
-    # Test with trivial move type - should use memcpy, not call move constructor
+    # Test with trivial move type - should use unsafe_memcpy, not call move
+    # constructor
     comptime Counter = MoveCounter[Int, trivial_move=True]
     var src = alloc[Counter](3)
     (src + 0).unsafe_write(Counter(10))
@@ -871,7 +872,7 @@ def test_uninit_move_n_nontrivial() raises:
 
 
 def test_uninit_copy_n_trivial() raises:
-    # Test with trivial copy type - should use memcpy, not call copy ctor
+    # Test with trivial copy type - should use unsafe_memcpy, not call copy ctor
     comptime Counter = CopyCounter[Int, trivial_copy=True]
     var src = alloc[Counter](3)
     src.unsafe_write(Counter(0))
@@ -890,7 +891,7 @@ def test_uninit_copy_n_trivial() raises:
     assert_equal(dest[1].value, 1)
     assert_equal(dest[2].value, 2)
 
-    # Verify copy constructor was NOT called (trivial copy uses memcpy)
+    # Verify copy constructor was NOT called (trivial copy uses unsafe_memcpy)
     assert_equal(dest[0].copy_count, 0)
     assert_equal(dest[1].copy_count, 0)
     assert_equal(dest[2].copy_count, 0)
@@ -974,9 +975,9 @@ def test_destroy_n_nontrivial() raises:
 def test_uninit_move_n_zero_count() raises:
     # Test with zero count - should be no-op
     var src = alloc[MoveCounter[String]](1)
-    # Use memcpy to initialize without calling move constructor
+    # Use unsafe_memcpy to initialize without calling move constructor
     var tmp = MoveCounter("test")
-    memcpy(dest=src, src=UnsafePointer(to=tmp), count=1)
+    unsafe_memcpy(dest=src, src=UnsafePointer(to=tmp), count=1)
 
     var dest = alloc[MoveCounter[String]](1)
 

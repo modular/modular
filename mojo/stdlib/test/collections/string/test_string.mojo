@@ -18,7 +18,7 @@ from std.collections.string.string import (
 from std.collections.string.string_slice import _to_string_list
 from std.math import isinf, isnan
 
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.python import Python, PythonObject
 from std.testing import (
     assert_equal,
@@ -1440,7 +1440,7 @@ def test_resize() raises:
 def test_uninit_ctor() raises:
     var hello_len = "hello".byte_length()
     var s = String(unsafe_uninit_length=hello_len)
-    memcpy(
+    unsafe_memcpy(
         dest=s.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
         count=hello_len,
@@ -1450,7 +1450,7 @@ def test_uninit_ctor() raises:
     # Resize with uninitialized memory.
     var s2 = String()
     s2.resize(unsafe_uninit_length=hello_len)
-    memcpy(
+    unsafe_memcpy(
         dest=s2.unsafe_ptr_mut(),
         src=StaticString("hello").unsafe_ptr(),
         count=hello_len,
@@ -1461,7 +1461,7 @@ def test_uninit_ctor() raises:
     var s3 = String()
     var long: StaticString = "hellohellohellohellohellohellohellohellohellohel"
     s3.resize(unsafe_uninit_length=long.byte_length())
-    memcpy(
+    unsafe_memcpy(
         dest=s3.unsafe_ptr_mut(),
         src=long.unsafe_ptr(),
         count=long.byte_length(),

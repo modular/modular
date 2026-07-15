@@ -18,7 +18,7 @@ from std.random import random_ui64
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.attention.cpu.mha import flash_attention_kv_cache
 from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal
@@ -151,7 +151,7 @@ def execute_ragged_flash_attention() raises:
             IndexList[3](Int(mixed_ce_row_offset), 0, 0)
         )
 
-        memcpy(
+        unsafe_memcpy(
             dest=mixed_ce_offset,
             src=true_ce_offset,
             count=mixed_ce_prompt_len * num_q_heads * kv_params.head_size,

@@ -23,7 +23,7 @@ from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.sys import prefetch
 from layout.tile_layout import TensorLayout, row_major
 from std.memory import (
-    memcpy,
+    unsafe_memcpy,
     memset_zero,
     stack_allocation,
 )
@@ -771,7 +771,7 @@ def _pack_b_ndbuffer_impl[
     # Matrix by vector pattern -> use gemv
     if dim1 == 1:
         # For gemv no packing is necessary
-        memcpy(dest=output_buffer.ptr, src=b_input.ptr, count=dim0)
+        unsafe_memcpy(dest=output_buffer.ptr, src=b_input.ptr, count=dim0)
 
     else:
         var n = dim0 if transposed else dim1
@@ -786,7 +786,9 @@ def _pack_b_ndbuffer_impl[
                 transpose(output_buffer, b_input, perm_ptr)
 
             else:
-                memcpy(dest=output_buffer.ptr, src=b_input.ptr, count=n * k)
+                unsafe_memcpy(
+                    dest=output_buffer.ptr, src=b_input.ptr, count=n * k
+                )
             return
 
         @always_inline

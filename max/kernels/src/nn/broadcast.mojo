@@ -13,7 +13,7 @@
 
 
 from layout import TileTensor
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 
 
 # ===-----------------------------------------------------------------------===#
@@ -82,7 +82,7 @@ def broadcast[
     if input_output_have_same_shape:
         var src_ptr = input.ptr
         var dst_ptr = output.ptr
-        memcpy(dest=dst_ptr, src=src_ptr, count=input.num_elements())
+        unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=input.num_elements())
         return
 
     comptime init_axis = 0
@@ -206,5 +206,5 @@ def _tile_1d[
     """
     var dst_ptr = init_dst_ptr
     for _ in range(n):
-        memcpy(dest=dst_ptr, src=src_ptr, count=tile_num_elems)
+        unsafe_memcpy(dest=dst_ptr, src=src_ptr, count=tile_num_elems)
         dst_ptr = dst_ptr + tile_num_elems

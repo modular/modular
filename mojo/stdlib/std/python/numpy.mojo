@@ -27,7 +27,7 @@ supported. This targets the common case of handing computed numeric data to a
 library such as `matplotlib`.
 """
 
-from std.memory import Span, memcpy
+from std.memory import Span, unsafe_memcpy
 
 from .python import Python
 from .python_object import PythonObject
@@ -125,7 +125,7 @@ def to_numpy_array[
 
     var arr = np.empty(n, dtype=dtype_str)
     var dst = arr.ctypes.data.unsafe_get_as_pointer[dtype]()
-    memcpy(dest=dst, src=data.unsafe_ptr(), count=n)
+    unsafe_memcpy(dest=dst, src=data.unsafe_ptr(), count=n)
     return arr
 
 

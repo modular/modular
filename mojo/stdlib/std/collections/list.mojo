@@ -28,7 +28,13 @@ from std.os import abort
 from std.sys import size_of
 
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
-from std.memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
+from std.memory import (
+    Pointer,
+    destroy_n,
+    unsafe_memcpy,
+    uninit_copy_n,
+    uninit_move_n,
+)
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
@@ -1000,7 +1006,9 @@ struct List[T: Movable, /](
         self.reserve(self._len + count)
         self._annotate_increase(count)
         var v_ptr = UnsafePointer(to=value).bitcast[Scalar[dtype]]()
-        memcpy(dest=self._unsafe_next_uninit_ptr(), src=v_ptr, count=count)
+        unsafe_memcpy(
+            dest=self._unsafe_next_uninit_ptr(), src=v_ptr, count=count
+        )
         self._len += count
 
     def pop(mut self) -> Self.T:

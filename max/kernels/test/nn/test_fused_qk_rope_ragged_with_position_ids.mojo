@@ -29,7 +29,7 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import Layout as TileLayout
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -98,7 +98,7 @@ def test_fused_qk_rope[
     k_cache_input_buffer = k_cache_input[dtype]()
     max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
-        memcpy(
+        unsafe_memcpy(
             dest=kv_cache_block.ptr
             + kv_cache_block._offset(
                 IndexList[6](

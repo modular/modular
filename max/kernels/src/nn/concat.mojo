@@ -34,7 +34,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils import IndexList, StaticTuple, product
@@ -88,7 +88,7 @@ def memcpy_or_fuse[
     out_shape: IndexList[rank, ...],
 ) raises:
     comptime if not epilogue_fn:
-        memcpy(dest=dest_data + out_byte_offset, src=src_data, count=n)
+        unsafe_memcpy(dest=dest_data + out_byte_offset, src=src_data, count=n)
     else:
         comptime func = epilogue_fn.value()
         comptime simd_width = simd_width_of[dtype]()
