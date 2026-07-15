@@ -324,6 +324,12 @@ This version is still a work in progress.
   dKV key for the same logical block — no change to the dkv wire
   format, stored block identity, or `DKVExternalBlockMetadata`
   orchestrator hint shape. Default behavior is unchanged.
+- MAX now refreshes an external KV cache tier's recency when a request's prefix
+  is served from the on-GPU cache. Such a hit sends no traffic to the external
+  tier, so a hot shared prefix could otherwise go cold there and be evicted
+  while still resident on device; a best-effort recency `touch` now keeps hot
+  shared prefixes warm in an external tier such as dKV. Set
+  `MODULAR_DKV_DISABLE_G0_TOUCH=1` to disable the refresh.
 
 ### `max` CLI
 

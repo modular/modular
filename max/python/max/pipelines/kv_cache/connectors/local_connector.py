@@ -158,6 +158,14 @@ class LocalConnector:
         self._block_copy_engine.memcpy_d2h(dsts, srcs, replica_idx)
         self._d2h_blocks_copied += len(dsts)
 
+    def touch(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> None:
+        """No-op: this connector does not refresh recency on device-cache hits."""
+        return None
+
     def wait_for_loads(self) -> None:
         """Synchronize the main and auxiliary streams once per forward pass.
 

@@ -146,6 +146,31 @@ class KVConnector(Protocol):
         """
         ...
 
+    def touch(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> None:
+        """Refresh the external tier's recency for blocks served from device (G0).
+
+        Best-effort and fire-and-forget: returns immediately, processes
+        asynchronously, ignores the result, and never raises into the caller.
+        A block served from the on-device prefix cache issues no other
+        external-tier traffic, so without this its external-tier LRU recency
+        can freeze and the tier can evict a block that is still hot on device.
+        There is no companion barrier; a missed touch costs at most a later
+        refetch, never correctness. No-op by default.
+
+        Args:
+            block_hashes: Hashes of the device-served blocks, in canonical
+                bytes form (8 big-endian bytes for ahash64-family, 32 bytes
+                for SHA-256).
+            replica_idx: DP replica that served the blocks. The external tier
+                is replica-agnostic (keyed by hash); this only selects the
+                client.
+        """
+        return None
+
     def wait_for_loads(self) -> None:
         """Order all posted loads before the forward pass.
 
