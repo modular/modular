@@ -2041,9 +2041,8 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
 
   // More special cases for kwVarArg's.
   if (arg.variadicKind == VariadicKind::KwVarArg) {
-    // We build OwnedKwargsDict[ValType].
-    ASTType dictType =
-        shared.getStandardCollectionType(arg.loc, "OwnedKwargsDict");
+    // We build StringDict[ValType].
+    ASTType dictType = shared.getStandardCollectionType(arg.loc, "StringDict");
 
     auto dictDecl = cast<LIT::StructType>(dictType.mlirType);
     // We know these are all UnboundAttrs created by
@@ -2052,7 +2051,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     ArrayRef<TypedAttr> inputUnboundParams = dictDecl.getParamValues();
     if (inputUnboundParams.size() != 1) {
       shared.emitError(arg.loc)
-          << "internal compiler error: OwnedKwargsDict type has unexpected "
+          << "internal compiler error: StringDict type has unexpected "
              "parameter signature; please file a bug";
       arg.isErroneous = true;
     }
@@ -2073,7 +2072,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     }
     fullType = cast<LIT::StructType>(dictType).bindAll(binding.get());
 
-    // OwnedKwargsDict is memory only and since only the callee can access it,
+    // StringDict is memory only and since only the callee can access it,
     // we pass it as owned.
     arg.kgenConvention = ArgConvention::OwnedMem;
     fullType = makeImplicitRefTypeForArg(arg, idx, fullType, /*isMutable*/ true,

@@ -117,7 +117,7 @@ def takes_kwargs(**kwargs: Int):
 
 
 def test_unpack_kwargs_pack(**kwargs: Int):
-    # expected-error @below {{value of type 'OwnedKwargsDict[Int]' cannot be implicitly copied}}
+    # expected-error @below {{value of type 'StringDict[Int]' cannot be implicitly copied}}
     # expected-note @below {{consider transferring the value with '^'}}
     takes_kwargs(**kwargs)
     # Ok!

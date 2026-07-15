@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct OwnedKwargsDict[V: ImplicitlyCopyable]:
+struct StringDict[V: ImplicitlyCopyable]:
     def __init__(out self):
         pass
 
