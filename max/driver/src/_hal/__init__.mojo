@@ -21,6 +21,7 @@ from .driver import Driver, get_device_spec
 from .device import Device
 from .buffer import Buffer, BufferView
 from .context import Context, RuntimeBundle
+from .copy import copy
 from .event import Event
 from .queue import Queue
 from .stream import Stream

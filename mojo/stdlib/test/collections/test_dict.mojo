@@ -1531,8 +1531,8 @@ def test_dict_conditional_implicitly_deletable() raises:
     assert_false(conforms_to(Dict[Int, ExplicitDestroy], ImplicitlyDeletable))
 
 
-def test_dict_destroy_with() raises:
-    # `destroy_with` must hand every entry's key/value to the closure exactly
+def test_dict_deinit_with() raises:
+    # `deinit_with` must hand every entry's key/value to the closure exactly
     # once. Uses a deletable value type because populating a linear-valued dict
     # isn't supported yet (tracked in the linear-usability follow-up).
     var d = Dict[Int, Int]()
@@ -1545,7 +1545,7 @@ def test_dict_destroy_with() raises:
     def dispose(var key: Int, var value: Int) {mut}:
         destroyed.append(value)
 
-    d^.destroy_with(dispose)
+    d^.deinit_with(dispose)
 
     # Order follows slot layout, not insertion, so check membership.
     assert_equal(len(destroyed), 3)
@@ -1554,8 +1554,8 @@ def test_dict_destroy_with() raises:
     assert_true(30 in destroyed)
 
 
-def test_dict_destroy_with_empty() raises:
-    # `destroy_with` on an empty (linear-valued) dict must run and free the
+def test_dict_deinit_with_empty() raises:
+    # `deinit_with` on an empty (linear-valued) dict must run and free the
     # backing without invoking the closure — there are no entries.
     var d = Dict[Int, ExplicitDestroy]()
     var calls = 0
@@ -1564,7 +1564,7 @@ def test_dict_destroy_with_empty() raises:
         calls += 1
         value^.destroy()
 
-    d^.destroy_with(dispose)
+    d^.deinit_with(dispose)
     assert_equal(calls, 0)
 
 
@@ -1606,7 +1606,7 @@ def test_dict_clear_with_empty() raises:
         value^.destroy()
 
     d.clear_with(dispose)
-    d^.destroy_with(dispose)
+    d^.deinit_with(dispose)
     assert_equal(calls, 0)
 
 

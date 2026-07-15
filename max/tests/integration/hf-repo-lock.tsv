@@ -91,6 +91,7 @@ google/gemma-3-1b-it	dcc83ea841ab6100d6b47a070329e1ba4cf78752
 google/gemma-3-27b-it	005ad3404e59d6023443cb575daa05336842228a
 google/gemma-3-4b-it	cf8f8525e9e9984d410dab2ea7f8a294ab58db8c
 google/gemma-4-26B-A4B-it	47b6801b24d15ff9bcd8c96dfaea0be9ed3a0301
+google/gemma-4-26B-A4B-it-assistant	d8888482e6d3cc4637fa8b25c1033cd3573b88ba
 google/gemma-4-31B-it	419b2efe421994fdfd3394e621983d4cc511cd4f
 google/gemma-4-31B-it-assistant	03206cda0a11ee6fab1b4ad1ae2af48b950cc319
 hf-internal-testing/tiny-random-LlamaForCausalLM	f142fc3230c41b4e67f2826b879e289a4e08e679

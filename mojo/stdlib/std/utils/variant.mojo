@@ -852,11 +852,11 @@ struct Variant[*Ts: Movable](
         """
         return Self.Ts.contains[T]()
 
-    def destroy_with[T: Movable, F: def(var T)](deinit self, destroy_func: F):
-        """Destroy a value contained in this Variant in-place using a caller
+    def deinit_with[T: Movable, F: def(var T)](deinit self, deinit_func: F, /):
+        """Deinitialize a value contained in this Variant in-place using a caller
         provided destructor function.
 
-        This method can be used to destroy types that do not conform to
+        This method can be used to deinitialize types that do not conform to
         `ImplicitlyDeletable` in a `Variant` in-place.
 
         This method will abort if this variant does not current contain an
@@ -864,17 +864,17 @@ struct Variant[*Ts: Movable](
 
         Parameters:
             T: The element type the variant is expected to currently contain,
-                and which will be destroyed by `destroy_func`.
-            F: The type of the caller-provided destructor function.
+                and which will be deinitialized by `deinit_func`.
+            F: The type of the caller-provided deinitializer function.
 
         Args:
-            destroy_func: Caller-provided destructor function for destroying
+            deinit_func: Caller-provided function for deinitializing
                 an instance of `T`.
         """
         if not self.isa[T]():
-            abort("Variant.destroy_with: wrong variant type")
+            abort("Variant.deinit_with: wrong variant type")
 
-        destroy_func(self._storage^.take[T]())
+        deinit_func(self._storage^.take[T]())
 
 
 # ===-------------------------------------------------------------------===#

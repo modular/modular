@@ -35,7 +35,7 @@ from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
 
 @explicit_destroy(
-    "Use `destroy_with()` to explicitly destroy a `Deque` of"
+    "Use `deinit_with()` to explicitly destroy a `Deque` of"
     " non-`ImplicitlyDeletable` elements"
 )
 struct Deque[ElementType: Movable](
@@ -59,7 +59,7 @@ struct Deque[ElementType: Movable](
         ElementType: The type of the elements in the deque. Must implement
             `Movable`. A `Deque` is implicitly destructible only when
             `ElementType` is `ImplicitlyDeletable`; otherwise drain it with
-            `destroy_with()`.
+            `deinit_with()`.
     """
 
     # The by-ref iterator still requires `Copyable & ImplicitlyDeletable` (see
@@ -271,22 +271,22 @@ struct Deque[ElementType: Movable](
             (self._data + offset).unsafe_deinit_pointee()
         self^._unsafe_assume_destroyed_and_deallocate()
 
-    def destroy_with(
-        deinit self, destroy_func: Some[def(var Self.ElementType)], /
+    def deinit_with(
+        deinit self, deinit_func: Some[def(var Self.ElementType)], /
     ):
-        """Consumes this deque and destroys its elements using the provided
+        """Consumes this deque and deinitializes its elements using the provided
         closure.
 
         This can be used to destroy a `Deque` of non-`ImplicitlyDeletable`
         values.
 
         Args:
-            destroy_func: The deinitializing closure called on each `Deque`
+            deinit_func: The deinitializing closure called on each `Deque`
                 element.
         """
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            destroy_func(
+            deinit_func(
                 __get_address_as_owned_value(
                     (self._data + offset)._get_kgen_pointer()
                 )

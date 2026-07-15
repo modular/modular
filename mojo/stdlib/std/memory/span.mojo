@@ -152,10 +152,12 @@ struct _SpanIter[
         return (n, {n})
 
 
+@stable(since="1.0")
 struct Span[
     mut: Bool,
     //,
     T: AnyType,
+    /,
     origin: Origin[mut=mut],
 ](
     Boolable,

@@ -43,12 +43,47 @@ from _hal import (
     get_device_spec,
 )
 from _hal.event import EVENT_FLAG_CPU_VISIBLE
+from _hal.execution_config import (
+    ExecutionConfig,
+    BlockExecutionConfig,
+    GridBlockExecutionConfig,
+    NearComputeGeneralPurposeScratchpadExecutionConfig,
+    GPUExecutionConfiguration,
+    ClusterExecutionConfig,
+    LaunchAttributeHolderExecutionConfig,
+    ConstantMemoryMappingExecutionConfig,
+)
 from std.builtin.variadics import TypeList
 
 from std.gpu.host.constant_memory_mapping import ConstantMemoryMapping
 from std.gpu.host.dim import Dim
 from std.gpu.host.info import GPUInfo
 from std.gpu.host.launch_attribute import LaunchAttribute
+
+
+def _check_device_context_hal_only_supported_exec_config[
+    ExecutionConfigType: ExecutionConfig
+](execution_config: ExecutionConfigType) raises:
+    # HAL doesn't yet support cluster launch or arbitrary launch
+    # attributes; the underlying Stream.execute primitive surfaces only
+    # `shared_mem_bytes`. Refuse non-default values rather than silently
+    # dropping them.
+    comptime assert not conforms_to(
+        ExecutionConfigType, ClusterExecutionConfig
+    ), "HAL DeviceContext.enqueue_function does not support `cluster_dim`."
+
+    comptime assert not conforms_to(
+        ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+    ), (
+        "HAL DeviceContext.enqueue_function does not support launch"
+        " `attributes`."
+    )
+    comptime assert not conforms_to(
+        ExecutionConfigType, ConstantMemoryMappingExecutionConfig
+    ), (
+        "HAL DeviceContext.enqueue_function does not support"
+        " `constant_memory` mappings."
+    )
 
 
 def _check_dim[
@@ -331,6 +366,185 @@ struct DeviceContext(
             If the operation fails.
         """
         return DeviceFunction[func, declared_arg_types](self)
+
+    @parameter
+    @always_inline
+    def enqueue_function[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+        func: def(* args: * declared_arg_types) thin -> None,
+        *actual_arg_types: DevicePassable,
+    ](
+        self,
+        mut execution_config: ExecutionConfigType,
+        *args: *actual_arg_types,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a kernel for execution on this device.
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device function.
+            func: The function to compile and launch.
+            actual_arg_types: The dtypes of the arguments being passed to the function.
+
+        Args:
+            execution_config: The execution configuration specifying device specific kernel launch arguments.
+            args: Variadic arguments which are passed to the `func`.
+            location: Source location for the function call.
+
+        You can pass the function directly to `enqueue_function`
+        without compiling it first:
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+        from max.driver._hal.execution_config import GPUExecutionConfiguration
+
+        def kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](GPUExecutionConfiguration(grid_dim=Dim(1, 1, 1), block_dim=Dim(1, 1, 1)))
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times,
+        this incurs 50-500 nanoseconds of overhead per enqueue, so you can
+        compile it first to remove the overhead:
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+
+        def kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            var compiled_func = ctx.compile_function[kernel]()
+            var config = GPUExecutionConfiguration(grid_dim=Dim(1, 1, 1), block_dim=Dim(1, 1, 1))
+            ctx.enqueue_function(compiled_func, config)
+            ctx.synchronize()
+        ```
+
+        Raises:
+            If the operation fails.
+        """
+        var gpu_kernel = self.compile_function[func]()
+        self.enqueue_function(
+            execution_config, gpu_kernel, *args, location=location
+        )
+
+    @parameter
+    @always_inline
+    def enqueue_function[
+        FuncType: def() -> None,
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+    ](
+        self,
+        mut execution_config: ExecutionConfigType,
+        func: FuncType,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a capturing kernel for execution on this device.
+
+        This overload is for kernels that capture variables from their enclosing scope.
+        The `capturing` annotation on the signature function indicates that the kernel
+        can access variables from the surrounding context.
+
+        Parameters:
+            FuncType: The type of the function to launch (usually inferred).
+
+        Args:
+            execution_config: The execution configuration specifying device specific kernel launch arguments.
+            func: The capturing kernel function to compile and launch.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        var grid_dim = execution_config.get_grid_dim()
+        var block_dim = execution_config.get_block_dim()
+
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+
+        var gpu_kernel = DeviceFunction[
+            FuncType.__call__, TypeList.of[Trait=AnyType]()
+        ](self)
+
+        gpu_kernel._call_with_pack(
+            self,
+            execution_config,
+            func,
+            location=location.or_else(call_location()),
+        )
+
+    @parameter
+    @always_inline
+    def enqueue_function[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+        *Ts: DevicePassable,
+    ](
+        self,
+        mut execution_config: ExecutionConfigType,
+        f: DeviceFunction,
+        *args: *Ts,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Enqueues a pre-compiled checked function for execution on this device.
+
+        This overload requires a `DeviceFunction` that was compiled with
+        type checking enabled (via `compile_function`). The function
+        will verify that the argument types match the declared types at
+        compile time.
+
+        Parameters:
+            ExecutionConfigType: The type of the execution configuration.
+            Ts: Argument dtypes.
+
+        Args:
+            execution_config: The execution configuration specifying device specific kernel launch arguments.
+            f: The compiled function to execute.
+            args: Arguments to pass to the function.
+            location: Source location for the function call.
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+
+        def kernel(x: Int):
+            print("Value:", x)
+
+        with DeviceContext() as ctx:
+            var compiled_func = ctx.compile_function[kernel]()
+            var cfg = GPUExecutionConfiguration(grid_dim=Dim(1, 1, 1), block_dim=Dim(1, 1, 1))
+            ctx.enqueue_function(cfg, compiled_func, 42)
+            ctx.synchronize()
+        ```
+
+        Raises:
+            If the operation fails.
+        """
+
+        var grid_dim = execution_config.get_grid_dim()
+        var block_dim = execution_config.get_block_dim()
+
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+        f._call_with_pack_checked(
+            self,
+            execution_config,
+            *args,
+            location=location.or_else(call_location()),
+        )
 
     @parameter
     @always_inline
@@ -1208,6 +1422,51 @@ struct DeviceFunction[
                 " `constant_memory` mappings."
             )
 
+        debug_assert(
+            shared_mem_bytes.or_else(0) >= 0,
+            "shared_mem_bytes must be non-negative",
+        )
+
+        var config = GPUExecutionConfiguration(grid_dim, block_dim)
+        config.set_near_compute_scratchpad_usage(
+            UInt64(shared_mem_bytes.or_else(0))
+        )
+
+        self._call_with_pack_checked[*Ts, ContextT=ContextT](
+            ctx, config, *args, location=location
+        )
+
+    @always_inline
+    @parameter
+    def _call_with_pack_checked[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+        *Ts: DevicePassable,
+        ContextT: _HALFunctionEnqueuer,
+    ](
+        read self,
+        ctx: ContextT,
+        mut execution_config: ExecutionConfigType,
+        *args: *Ts,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        _check_device_context_hal_only_supported_exec_config(execution_config)
+
+        var shared_mem_bytes: UInt64 = 0
+
+        comptime if conforms_to(
+            ExecutionConfigType,
+            NearComputeGeneralPurposeScratchpadExecutionConfig,
+        ):
+            shared_mem_bytes = (
+                execution_config.get_near_compute_scratchpad_usage()
+            )
+
+        debug_assert(
+            shared_mem_bytes >= 0,
+            "shared_mem_bytes must be non-negative",
+        )
+
         comptime num_passed_args = Ts.size
         var validated_args = Self._validate_arguments[
             *Ts, num_args=num_passed_args
@@ -1299,16 +1558,7 @@ struct DeviceFunction[
 
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
-            grid=(
-                UInt32(grid_dim.x()),
-                UInt32(grid_dim.y()),
-                UInt32(grid_dim.z()),
-            ),
-            block=(
-                UInt32(block_dim.x()),
-                UInt32(block_dim.y()),
-                UInt32(block_dim.z()),
-            ),
+            execution_config,
             args=rebind[
                 UnsafePointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
             ](dense_args_addrs),
@@ -1316,7 +1566,6 @@ struct DeviceFunction[
                 dense_args_sizes
             ),
             num_args=UInt32(num_translated_args + num_captures),
-            shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
         )
 
         if num_captures > num_captures_static:
@@ -1438,6 +1687,100 @@ struct DeviceFunction[
             ),
             num_args=UInt32(num_args + num_captures),
             shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
+        )
+
+        if num_captures > num_captures_static:
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=dense_args_addrs
+                ).unsafe_with_layout({count = num_captures + num_args})
+            )
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=dense_args_sizes
+                ).unsafe_with_layout({count = num_captures + num_args})
+            )
+
+    @always_inline
+    @parameter
+    def _call_with_pack[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+        *Ts: AnyType,
+        ContextT: _HALFunctionEnqueuer,
+    ](
+        read self,
+        ctx: ContextT,
+        mut execution_config: ExecutionConfigType,
+        *args: *Ts,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        _check_device_context_hal_only_supported_exec_config(execution_config)
+
+        comptime num_args = Ts.size
+        ref func_info = self._inner[]._compiled[1]
+        var num_captures = max(0, func_info.num_captures)
+        comptime populate = type_of(func_info).populate
+        comptime num_captures_static = 16
+
+        var dense_args_addrs: UnsafePointer[
+            OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
+        ]
+        var dense_args_sizes: UnsafePointer[UInt64, MutUntrackedOrigin]
+        if num_captures > num_captures_static:
+            dense_args_addrs = alloc(
+                Layout[OpaquePointer[MutAnyOrigin]](
+                    count=num_captures + num_args
+                )
+            ).unsafe_leak()
+            dense_args_sizes = alloc(
+                Layout[UInt64](count=num_captures + num_args)
+            ).unsafe_leak()
+            for i in range(num_captures + num_args):
+                dense_args_sizes[i] = 0
+        else:
+            dense_args_addrs = stack_allocation[
+                num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
+            ]()
+            dense_args_sizes = stack_allocation[
+                num_captures_static + num_args, UInt64
+            ]()
+            for i in range(num_captures_static + num_args):
+                dense_args_sizes[i] = 0
+
+        comptime for i in range(num_args):
+            dense_args_addrs[i] = (
+                UnsafePointer(to=args[i])
+                .bitcast[NoneType]()
+                .unsafe_mut_cast[True]()
+                .as_unsafe_any_origin()
+            )
+
+        @parameter
+        def _populate_arg_sizes[i: Int]():
+            dense_args_sizes[i] = UInt64(size_of[Ts[i]]())
+
+        comptime for i in range(num_args):
+            _populate_arg_sizes[i]()
+
+        if num_captures > 0:
+            for i in range(num_captures):
+                dense_args_sizes[num_args + i] = func_info.capture_sizes[i]
+            var capture_args_start = dense_args_addrs + num_args
+            populate(
+                capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
+            )
+
+        ctx._hal_stream()[].execute(
+            self._inner[]._func_handle,
+            execution_config,
+            args=rebind[
+                UnsafePointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
+            ](dense_args_addrs),
+            arg_sizes=rebind[UnsafePointer[UInt64, MutAnyOrigin]](
+                dense_args_sizes
+            ),
+            num_args=UInt32(num_args + num_captures),
         )
 
         if num_captures > num_captures_static:
@@ -1586,6 +1929,55 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
             ),
             num_args=UInt32(num_args),
             shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
+        )
+
+    @always_inline
+    @parameter
+    def _call_with_pack[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+        *Ts: AnyType,
+        ContextT: _HALFunctionEnqueuer,
+    ](
+        read self,
+        ctx: ContextT,
+        mut execution_config: ExecutionConfigType,
+        *args: *Ts,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        _check_device_context_hal_only_supported_exec_config(execution_config)
+
+        comptime num_args = Ts.size
+        var dense_args_addrs = stack_allocation[
+            num_args + 1, OpaquePointer[MutAnyOrigin]
+        ]()
+        var dense_args_sizes = stack_allocation[num_args + 1, UInt64]()
+
+        comptime for i in range(num_args):
+            dense_args_addrs[i] = (
+                UnsafePointer(to=args[i])
+                .bitcast[NoneType]()
+                .unsafe_mut_cast[True]()
+                .as_unsafe_any_origin()
+            )
+
+        @parameter
+        def _populate_arg_sizes[i: Int]():
+            dense_args_sizes[i] = UInt64(size_of[Ts[i]]())
+
+        comptime for i in range(num_args):
+            _populate_arg_sizes[i]()
+
+        ctx._hal_stream()[].execute(
+            self._inner[]._func_handle,
+            execution_config,
+            args=rebind[
+                UnsafePointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]
+            ](dense_args_addrs),
+            arg_sizes=rebind[UnsafePointer[UInt64, MutAnyOrigin]](
+                dense_args_sizes
+            ),
+            num_args=UInt32(num_args),
         )
 
 
@@ -1800,6 +2192,43 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
     @parameter
     @always_inline
     def enqueue_function[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+        func: def(* args: * declared_arg_types) thin -> None,
+        *actual_arg_types: DevicePassable,
+    ](
+        self,
+        mut execution_config: ExecutionConfigType,
+        *args: *actual_arg_types,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a kernel for execution on this stream.
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device function.
+            func: The function to compile and launch.
+            actual_arg_types: The dtypes of the arguments being passed to the function.
+
+        Args:
+            execution_config: The execution configuration for the kernel launch.
+            args: Variadic arguments which are passed to the `func`.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        var gpu_kernel = self._ctx.compile_function[func]()
+        self.enqueue_function(
+            execution_config,
+            gpu_kernel,
+            *args,
+            location=location.or_else(call_location()),
+        )
+
+    @parameter
+    @always_inline
+    def enqueue_function[
         FuncType: def() -> None,
         //,
     ](
@@ -1850,6 +2279,42 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
+
+    @parameter
+    @always_inline
+    def enqueue_function[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        FuncType: def() -> None,
+        //,
+    ](
+        self,
+        mut execution_config: ExecutionConfigType,
+        func: FuncType,
+        *,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a capturing kernel for execution on this stream.
+
+        Parameters:
+            ExecutionConfigType: The type of the execution configuration (usually inferred).
+            FuncType: The type of the function to launch (usually inferred).
+
+        Args:
+            execution_config: The execution configuration for the kernel launch.
+            func: The capturing kernel function to compile and launch.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        var gpu_kernel = DeviceFunction[
+            FuncType.__call__, TypeList.of[Trait=AnyType]()
+        ](self._ctx)
+        self.enqueue_function(
+            execution_config,
+            gpu_kernel,
             location=location.or_else(call_location()),
         )
 
@@ -1909,6 +2374,51 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
     @parameter
     @always_inline
     def enqueue_function[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+        *Ts: DevicePassable,
+    ](
+        self,
+        mut execution_config: ExecutionConfigType,
+        f: DeviceFunction,
+        *args: *Ts,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Enqueues a pre-compiled checked function for execution on this stream.
+
+        Parameters:
+            ExecutionConfigType: The type of the execution configuration (usually inferred).
+            Ts: Argument dtypes.
+
+        Args:
+            execution_config: The execution configuration for the kernel launch.
+            f: The compiled function to execute.
+            args: Arguments to pass to the function.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        var grid_dim = execution_config.get_grid_dim()
+        var block_dim = execution_config.get_block_dim()
+
+        _check_dim["DeviceStream.enqueue_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceStream.enqueue_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+
+        f._call_with_pack_checked(
+            self,
+            execution_config,
+            *args,
+            location=location.or_else(call_location()),
+        )
+
+    @parameter
+    @always_inline
+    def enqueue_function[
         *Ts: AnyType,
     ](
         self,
@@ -1956,6 +2466,50 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
+
+    @parameter
+    @always_inline
+    def enqueue_function[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+        *Ts: AnyType,
+    ](
+        self,
+        mut execution_config: ExecutionConfigType,
+        f: DeviceExternalFunction,
+        *args: *Ts,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Enqueues an external device function for execution on this stream.
+
+        Parameters:
+            ExecutionConfigType: The type of the execution configuration (usually inferred).
+            Ts: Argument types to pass to the external function.
+
+        Args:
+            execution_config: The execution configuration for the kernel launch.
+            f: The external device function to execute.
+            args: Arguments to pass to the function.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        var grid_dim = execution_config.get_grid_dim()
+        var block_dim = execution_config.get_block_dim()
+
+        _check_dim["DeviceStream.enqueue_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceStream.enqueue_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+        f._call_with_pack(
+            self,
+            execution_config,
+            *args,
             location=location.or_else(call_location()),
         )
 

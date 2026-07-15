@@ -17,8 +17,9 @@ from .plugin import (
     QueueHandle,
     FunctionHandle,
 )
-from .buffer import BufferView
+from .buffer import Buffer, BufferView
 from .context import Context
+from .copy import _enqueue_copy
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable, _EventInner
 from .device import DeviceSpec
 from .status import STATUS_SUCCESS, HALError
@@ -30,6 +31,13 @@ from std.memory import (
     UnsafeMaybeUninit,
 )
 from std.memory.arc_pointer import WeakPointer
+from _hal.execution_config import (
+    ExecutionConfig,
+    BlockExecutionConfig,
+    GridBlockExecutionConfig,
+    GPUExecutionConfiguration,
+    NearComputeGeneralPurposeScratchpadExecutionConfig,
+)
 
 
 @fieldwise_init
@@ -111,6 +119,82 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
             shared_mem_bytes=shared_mem_bytes,
         )
 
+    def execute[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        //,
+    ](
+        self,
+        func: FunctionHandle,
+        execution_config: ExecutionConfigType,
+        args: UnsafePointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
+        arg_sizes: UnsafePointer[mut=True, UInt64, _],
+        num_args: UInt32,
+    ) raises HALError:
+        """
+        Enqueue an execution of the passed function as a kernel on this queue.
+
+        Totally ordered with respect to other operations within this queue
+        if backed by a stream.
+        """
+        var grid_dim = execution_config.get_grid_dim()
+        var block_dim = execution_config.get_block_dim()
+
+        debug_assert(
+            grid_dim.x() > 0 and grid_dim.y() > 0 and grid_dim.z() > 0,
+            "grid dimensions must be positive",
+        )
+        debug_assert(
+            block_dim.x() > 0 and block_dim.y() > 0 and block_dim.z() > 0,
+            "block dimensions must be positive",
+        )
+        debug_assert(
+            grid_dim.x() <= 0xFFFFFFFF
+            and grid_dim.y() <= 0xFFFFFFFF
+            and grid_dim.z() <= 0xFFFFFFFF,
+            "grid dimensions must fit in 32 bits",
+        )
+        debug_assert(
+            block_dim.x() <= 0xFFFFFFFF
+            and block_dim.y() <= 0xFFFFFFFF
+            and block_dim.z() <= 0xFFFFFFFF,
+            "block dimensions must fit in 32 bits",
+        )
+
+        var grid = Tuple(
+            UInt32(grid_dim.x()), UInt32(grid_dim.y()), UInt32(grid_dim.z())
+        )
+        var block = Tuple(
+            UInt32(block_dim.x()), UInt32(block_dim.y()), UInt32(block_dim.z())
+        )
+
+        var near_compute_scratchpad_usage: UInt64 = 0
+        comptime if conforms_to(
+            ExecutionConfigType,
+            NearComputeGeneralPurposeScratchpadExecutionConfig,
+        ):
+            near_compute_scratchpad_usage = (
+                execution_config.get_near_compute_scratchpad_usage()
+            )
+
+        debug_assert(
+            near_compute_scratchpad_usage <= 0xFFFFFFFF,
+            "near compute scratchpad usage must fit in 32 bits",
+        )
+
+        self._raw[].execute_function(
+            self._handle,
+            func,
+            grid,
+            block,
+            args,
+            arg_sizes,
+            num_args,
+            shared_mem_bytes=UInt32(near_compute_scratchpad_usage),
+        )
+
+    # Direction-specific transports. Callable directly for fine-grained
+    # control, and the raw-host path (a bare pointer, not a `Buffer`) that
+    # `copy` cannot express; `copy` (below) dispatches to these by residency.
     def copy_to_device(
         self,
         dst: BufferView,
@@ -174,6 +258,38 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         or 8; a `value_size` of 1 is equivalent to `set_memory`.
         """
         self._raw[].fill(self._handle, dst._view, value, value_size)
+
+    # ===-------------------------------------------------------------------===#
+    # Unified copy
+    # ===-------------------------------------------------------------------===#
+
+    def copy(
+        self,
+        *,
+        dst: Buffer[Self.device_spec],
+        src: Buffer[Self.device_spec],
+    ) raises HALError:
+        """Enqueues a buffer-to-buffer copy of `src` into the front of `dst`.
+
+        Transfers exactly `src.byte_size` bytes; `dst` must be at least that
+        large, and any remaining tail of `dst` is left untouched. The transfer
+        runs on this queue, so the device-resident operand it touches must
+        reside on this queue's device — `dst` for a to-device or same-device
+        copy, `src` for a device-to-pinned-host copy. A pinned host operand is
+        only a host pointer and may come from any device's context. A
+        device-to-device copy whose source is on another device is a peer copy;
+
+        Args:
+            dst: Destination buffer.
+            src: Source buffer.
+        """
+        _enqueue_copy(
+            self._raw,
+            self._handle,
+            self._context[]._device[].id,
+            dst=dst,
+            src=src,
+        )
 
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,

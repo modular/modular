@@ -243,7 +243,7 @@ struct _LinkedListIterOwned[T: Movable & ImplicitlyDeletable](
 
 
 @explicit_destroy(
-    "Use `destroy_with()` to explicitly destroy a `LinkedList` with"
+    "Use `deinit_with()` to explicitly destroy a `LinkedList` with"
     " non-`ImplicitlyDeletable` elements"
 )
 struct LinkedList[ElementType: Movable](
@@ -354,11 +354,11 @@ struct LinkedList[ElementType: Movable](
     ):
         """Hand each element to `destroy_func`, then free every node.
 
-        Shared teardown for `clear`, `__del__`, and `destroy_with`.
+        Shared teardown for `clear`, `__del__`, and `deinit_with`.
 
         Leaves the list "spent": `_head`/`_tail` dangle at freed memory, so the
         caller must either reset them (see `clear`) or be about to drop `self`
-        (see `__del__`/`destroy_with`).
+        (see `__del__`/`deinit_with`).
 
         Args:
             destroy_func: A closure called once per element to consume it.
@@ -388,21 +388,21 @@ struct LinkedList[ElementType: Movable](
         """
         self.clear()
 
-    def destroy_with(
-        deinit self, destroy_func: Some[def(var Self.ElementType)], /
+    def deinit_with(
+        deinit self, deinit_func: Some[def(var Self.ElementType)], /
     ):
-        """Consume the list, destroying each element with a closure.
+        """Consume the list, deinitializing each element with a closure.
 
         Use this to tear down a `LinkedList` whose elements are not
         `ImplicitlyDeletable`.
 
         Args:
-            destroy_func: A closure called once per element to destroy it.
+            deinit_func: A closure called once per element to deinitialize it.
 
         Notes:
             Time Complexity: O(n) in len(self).
         """
-        self._delete_list_elements(destroy_func)
+        self._delete_list_elements(deinit_func)
 
     def append(mut self, var value: Self.ElementType):
         """Add an element to the end of the list.

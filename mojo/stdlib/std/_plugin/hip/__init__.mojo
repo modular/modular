@@ -1,4 +1,4 @@
-##===----------------------------------------------------------------------===##
+# ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
@@ -9,11 +9,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-##===----------------------------------------------------------------------===##
-model:
-  model_path: google/gemma-4-26B-A4B-it
-  kv_cache:
-    kv_connector: tiered
+# ===----------------------------------------------------------------------=== #
 
-runtime:
-  device_graph_capture: false
+from .hip_plugin import HIPPlugin

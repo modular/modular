@@ -77,6 +77,7 @@ from max.serve.router.openai_routes import (
     _resolve_grammar_constraints,
     get_tool_parser,
     openai_create_chat_completion,
+    openai_parse_chat_completion_request,
 )
 from max.serve.schemas.openai import (
     ChatCompletionLogprobs,
@@ -2963,3 +2964,101 @@ async def test_non_stream_reasoning_content_wire_serialization(
     assert message_off["reasoning"] == "thinking"
     # The unselected field is null-not-absent on this path (same behavior as above).
     assert message_off["reasoning_content"] is None
+
+
+@pytest.mark.asyncio
+async def test_parse_chat_completion_accepts_replayed_reasoning_key() -> None:
+    """Assistant turns replaying MAX's own ``reasoning`` key carry CoT forward.
+
+    By default (``emit_reasoning_content=False``) MAX emits prior-turn
+    reasoning under the ``reasoning`` JSON key. A client that echoes MAX's
+    assistant output back into a follow-up request therefore sends
+    ``reasoning`` (not ``reasoning_content``). The parser must read both so
+    the chain-of-thought is not silently dropped before the chat template
+    runs. Mirrors the agentic replay: assistant reasoning + tool_calls
+    followed by the tool reply.
+    """
+    settings = Settings(api_types=[APIType.OPENAI], use_heartbeat=False)
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {"role": "user", "content": "What is the weather?"},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning": "The user wants weather; call the tool.",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": "{}",
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_1",
+                    "content": "sunny",
+                },
+            ],
+        }
+    )
+
+    parsed = await openai_parse_chat_completion_request(
+        request, wrap_content=False, settings=settings
+    )
+
+    assistant = parsed.messages[1]
+    assert assistant.role == "assistant"
+    assert (
+        assistant.reasoning_content == "The user wants weather; call the tool."
+    )
+
+
+@pytest.mark.asyncio
+async def test_parse_chat_completion_reasoning_content_key_and_precedence() -> (
+    None
+):
+    """``reasoning_content`` still works and wins when both keys are present."""
+    settings = Settings(api_types=[APIType.OPENAI], use_heartbeat=False)
+
+    # ``reasoning_content`` alone (no regression).
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": "hi",
+                    "reasoning_content": "explicit content key",
+                },
+            ],
+        }
+    )
+    parsed = await openai_parse_chat_completion_request(
+        request, wrap_content=False, settings=settings
+    )
+    assert parsed.messages[0].reasoning_content == "explicit content key"
+
+    # Both keys present: ``reasoning_content`` takes precedence (``or`` semantics).
+    request_both = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": "hi",
+                    "reasoning_content": "wins",
+                    "reasoning": "loses",
+                },
+            ],
+        }
+    )
+    parsed_both = await openai_parse_chat_completion_request(
+        request_both, wrap_content=False, settings=settings
+    )
+    assert parsed_both.messages[0].reasoning_content == "wins"

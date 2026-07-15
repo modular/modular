@@ -13,13 +13,19 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
 from max.graph.weights import WeightsFormat
 from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 from max.pipelines.context import TextContext
-from max.pipelines.lib.registry import SupportedArchitecture
+from max.pipelines.lib.registry import (
+    SupportedArchitecture,
+    _retrieve_chat_template,
+)
 from max.pipelines.lib.tokenizer import TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 from test_common.mocks import (
@@ -496,3 +502,53 @@ def test_architecture_context_types_are_msgspec_compatible() -> None:
                     f"Architecture '{arch.name}' has context_type={context_type.__name__} "
                     f"but tokenizer.new_context() returns {return_type.__name__}."
                 )
+
+
+def test_registry__retrieve_chat_template_none_returns_none() -> None:
+    assert _retrieve_chat_template(None) is None
+
+
+@pytest.mark.parametrize(
+    ("file_content", "expected"),
+    [
+        pytest.param("{{ messages }}", "{{ messages }}", id="plain_text"),
+        pytest.param(
+            json.dumps({"chat_template": "{{ messages }}"}),
+            "{{ messages }}",
+            id="json_with_chat_template_key",
+        ),
+        pytest.param(
+            json.dumps({"some_other_key": "value"}),
+            json.dumps({"some_other_key": "value"}),
+            id="json_without_chat_template_key",
+        ),
+        pytest.param("not { valid json", "not { valid json", id="invalid_json"),
+    ],
+)
+def test_registry__retrieve_chat_template_reads_file(
+    tmp_path: Path, file_content: str, expected: str
+) -> None:
+    # Anything that isn't a JSON object with a "chat_template" key falls
+    # back to the raw file content.
+    template_file = tmp_path / "template.txt"
+    template_file.write_text(file_content)
+
+    assert _retrieve_chat_template(template_file) == expected
+
+
+@pytest.mark.parametrize(
+    ("build_path", "match"),
+    [
+        pytest.param(
+            lambda tmp_path: tmp_path / "missing.jinja",
+            "does not exist",
+            id="missing",
+        ),
+        pytest.param(lambda tmp_path: tmp_path, "not a file", id="directory"),
+    ],
+)
+def test_registry__retrieve_chat_template_invalid_path_raises(
+    tmp_path: Path, build_path: Callable[[Path], Path], match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        _retrieve_chat_template(build_path(tmp_path))

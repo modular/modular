@@ -655,49 +655,49 @@ struct Optional[T: Movable](
         assert self.__bool__(), "`.unsafe_take()` on empty `Optional`"
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
 
-    def destroy_with[F: def(var Self.T)](deinit self, destroy_func: F):
+    def deinit_with[F: def(var Self.T)](deinit self, deinit_func: F, /):
         """Destroy the value contained in this `Optional` in-place using a
-        caller-provided destructor function.
+        caller-provided deinitializer function.
 
         This method can be used to destroy `Optional` values whose element
         type is not `ImplicitlyDeletable`. The `__del__` on `Optional`
-        requires `T: ImplicitlyDeletable`, so explicit-destroy users must
+        requires `T: ImplicitlyDeletable`, so explicit-deinit users must
         destroy an `Optional[T]` through this API instead.
 
-        If `self` is empty, `destroy_func` is not called. Otherwise
-        `destroy_func` is called exactly once on the moved-out value.
+        If `self` is empty, `deinit_func` is not called. Otherwise
+        `deinit_func` is called exactly once on the moved-out value.
 
         Parameters:
-            F: The type of the caller-provided destructor function.
+            F: The type of the caller-provided deinitializer function.
 
         Args:
-            destroy_func: Caller-provided destructor function for destroying
+            deinit_func: Caller-provided deinitializer function for destroying
                 an instance of `Self.T`. Not called when `self` is empty.
 
         Examples:
 
         ```mojo
         @fieldwise_init
-        struct ExplicitDestroy(Movable, ImplicitlyDeletable where False):
+        struct ExplicitDeinit(Movable, ImplicitlyDeletable where False):
             var data: Int
 
-            def destroy(deinit self):
+            def explicit_deinit(deinit self):
                 pass
 
-        var opt = Optional(ExplicitDestroy(5))
-        opt^.destroy_with(ExplicitDestroy.destroy)
+        var opt = Optional(ExplicitDeinit(5))
+        opt^.deinit_with(ExplicitDeinit.explicit_deinit)
         ```
         """
         if self:
             # SAFETY: We just checked that the `Optional` holds a `T`, so
-            # it's safe to dispatch to `Variant.destroy_with[T]` (it would
+            # it's safe to dispatch to `Variant.deinit_with[T]` (it would
             # otherwise abort).
-            self._value^.destroy_with[Self.T](destroy_func)
+            self._value^.deinit_with[Self.T](deinit_func)
         else:
             # Retire the empty `Optional` by destroying its `_NoneType`
-            # payload through `Variant.destroy_with`. `_NoneType` is
+            # payload through `Variant.deinit_with`. `_NoneType` is
             # trivially destructible, so `_NoneType.__del__` is a no-op.
-            self._value^.destroy_with[_NoneType](_NoneType.__del__)
+            self._value^.deinit_with[_NoneType](_NoneType.__del__)
 
     def or_else[
         _T: Movable & ImplicitlyDeletable, //

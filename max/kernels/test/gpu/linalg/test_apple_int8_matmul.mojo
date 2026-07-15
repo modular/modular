@@ -35,6 +35,7 @@ wired into FLUX). These tests pin the kernel numerics, not the quant scheme's
 accuracy.
 """
 
+from std.collections import Optional
 from std.random import random_float64, random_si64, seed
 from std.gpu.host import DeviceContext, HostBuffer
 from std.math import round
@@ -86,7 +87,14 @@ def _fill_fp32(
 
 def _run_gemm_vs_quant_ref[
     with_bias: Bool
-](ctx: DeviceContext, M: Int, N: Int, K: Int, name: String) raises:
+](
+    ctx: DeviceContext,
+    M: Int,
+    N: Int,
+    K: Int,
+    name: String,
+    i32_override: Optional[Bool] = None,
+) raises:
     print("== stage1", name, M, "x", N, "x", K, "bias", with_bias)
 
     var af = ctx.enqueue_create_host_buffer[DType.float32](M * K)
@@ -127,7 +135,7 @@ def _run_gemm_vs_quant_ref[
     var c_tt = TileTensor(cd.unsafe_ptr(), row_major(M, N))
 
     enqueue_apple_int8_matmul[c_type=DType.bfloat16, has_bias=with_bias](
-        c_tt, a_tt, b_tt, as_tt, bs_tt, bias_tt, ctx
+        c_tt, a_tt, b_tt, as_tt, bs_tt, bias_tt, ctx, i32_override
     )
 
     var c_h = ctx.enqueue_create_host_buffer[DType.bfloat16](M * N)
@@ -319,15 +327,30 @@ def test_gemm(ctx: DeviceContext) raises:
     # Ragged M/N (edge tiles).
     _run_gemm_vs_quant_ref[False](ctx, 100, 200, 64, "ragged-mn")
     _run_gemm_vs_quant_ref[False](ctx, 96, 96, 96, "ragged-96")
-    # K tail (K not a multiple of BK=32).
+    # K tail (K not a multiple of BK=64), M/N-aligned. `k-tail-80`/`k-tail-48`
+    # are K % 16 == 0 (width-16 full strips + masked tail); `k-tail-144` has two
+    # full width-16 strips before the masked tail; `k-tail-130` is K % 16 != 0,
+    # exercising the masked width-4 full-strip path (the case the pre-#91003
+    # bounded fallback made slow).
     _run_gemm_vs_quant_ref[False](ctx, 64, 64, 80, "k-tail-80")
     _run_gemm_vs_quant_ref[False](ctx, 128, 128, 48, "k-tail-48")
+    _run_gemm_vs_quant_ref[False](ctx, 64, 64, 144, "k-tail-144")
+    _run_gemm_vs_quant_ref[False](ctx, 128, 256, 130, "k-tail-130")
     # Bias path.
     _run_gemm_vs_quant_ref[True](ctx, 128, 128, 64, "bias-clean")
     _run_gemm_vs_quant_ref[True](ctx, 100, 200, 64, "bias-ragged")
     # FLUX.2-Klein Linear shapes at a small M (host ref is O(M*N*K)).
     _run_gemm_vs_quant_ref[False](ctx, 64, 3072, 3072, "klein-attn")
     _run_gemm_vs_quant_ref[False](ctx, 64, 3072, 9216, "klein-ff-out")
+    # Force both interior legs on one clean K%16==0 shape: the i64 `_mma_width16`
+    # is otherwise dead in CI (clean shapes auto-route to the i32 path), so a
+    # regression to it would pass unnoticed.
+    _run_gemm_vs_quant_ref[False](
+        ctx, 128, 128, 256, "interior-i64-forced", i32_override=False
+    )
+    _run_gemm_vs_quant_ref[False](
+        ctx, 128, 128, 256, "interior-i32-forced", i32_override=True
+    )
 
 
 def test_act_quant(ctx: DeviceContext) raises:

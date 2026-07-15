@@ -260,7 +260,7 @@ struct DeviceGraph(ImplicitlyCopyable):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext, DeviceGraphBuilder
+        from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
 
         def kernel(x: Int):
             print("Value:", x)
@@ -318,7 +318,7 @@ struct DeviceGraphBuilder[arena_origin: ImmutOrigin](Movable):
     Example:
 
     ```mojo
-    from std.gpu.host import DeviceContext, DeviceGraphBuilder
+    from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
 
     def kernel(x: Int):
         print("Value:", x)
@@ -576,7 +576,7 @@ struct DeviceGraphBuilder[arena_origin: ImmutOrigin](Movable):
 
         ```mojo
         from std.gpu import global_idx
-        from std.gpu.host import DeviceContext, DeviceGraphBuilder
+        from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
 
         with DeviceContext() as ctx:
             var scale: Float32 = 2.0
@@ -708,7 +708,7 @@ struct DeviceGraphBuilder[arena_origin: ImmutOrigin](Movable):
         it first:
 
         ```mojo
-        from std.gpu.host import DeviceContext, DeviceGraphBuilder
+        from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
 
         def kernel(x: Int):
             print("Value:", x)
@@ -1080,7 +1080,7 @@ struct DeviceGraphBuilder[arena_origin: ImmutOrigin](Movable):
         Example:
 
         ```mojo
-        from std.gpu.host import DeviceContext, DeviceGraphBuilder
+        from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
 
         with DeviceContext() as ctx:
             var buf_a = ctx.enqueue_create_buffer[DType.uint8](100)

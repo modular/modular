@@ -137,10 +137,11 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
 
 
 @explicit_destroy(
-    "Use `destroy_with()` to explicitly destroy a `List` of"
+    "Use `deinit_with()` to explicitly destroy a `List` of"
     " non-`ImplicitlyDeletable` elements"
 )
-struct List[T: Movable](
+@stable(since="1.0")
+struct List[T: Movable, /](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
@@ -383,12 +384,14 @@ struct List[T: Movable](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
+    @stable(since="1.0")
     def __init__(out self):
         """Constructs an empty list."""
         self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
         self.capacity = 0
 
+    @stable(since="1.0")
     def __init__(out self, *, capacity: Int):
         """Constructs a list with the given capacity.
 
@@ -475,6 +478,7 @@ struct List[T: Movable](
         self._annotate_increase(unsafe_uninit_length)
         self._len = unsafe_uninit_length
 
+    @stable(since="1.0")
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         """Creates a deep copy of the given list.
 
@@ -495,6 +499,7 @@ struct List[T: Movable](
                 ).unsafe_with_layout(Layout[Self.T](count=self.capacity))
             )
 
+    @stable(since="1.0")
     def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroy all elements in the list and free its memory."""
         destroy_n(
@@ -503,18 +508,18 @@ struct List[T: Movable](
         )
         self^._unsafe_assume_destroyed_and_deallocate()
 
-    def destroy_with(deinit self, destroy_func: Some[def(var Self.T)], /):
-        """Consumes this list and destroy its values using the provided closure.
+    def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
+        """Consumes this list and deinitializes its values using the provided closure.
 
         This can be used to destroy a `List` of non-`ImplicitlyDeletable` values.
 
         Args:
-            destroy_func: The deinitializing closure called on each `List` element.
+            deinit_func: The deinitializing closure called on each `List` element.
         """
         for i in range(len(self)):
-            # TODO(MOCO-4111): `destroy_func` cannot convert to UnsafePointer.destroy_pointee_with
-            # `destroy_func` type since UP is bound on `T: AnyType` but List has `T: Movable`.
-            destroy_func(
+            # TODO(MOCO-4111): `deinit_func` cannot convert to UnsafePointer.destroy_pointee_with
+            # `deinit_func` type since UP is bound on `T: AnyType` but List has `T: Movable`.
+            deinit_func(
                 __get_address_as_owned_value(
                     (self.unsafe_ptr() + i)._get_kgen_pointer()
                 )
@@ -1317,6 +1322,7 @@ struct List[T: Movable](
 
         return res^
 
+    @stable(since="1.0")
     def __getitem__[
         origin: Origin, //
     ](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:

@@ -507,9 +507,15 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
-    structured_output_backend: str = Field(
-        default="llguidance",
-        description=("Grammar backend for constrained decoding."),
+    structured_output_backend: str | None = Field(
+        default=None,
+        description=(
+            "Grammar backend for constrained decoding. One of ``xgrammar`` or "
+            "``llguidance``. When unset (``None``), resolved during "
+            "``PipelineConfig.resolve()`` to the architecture's default if it "
+            "declares one, else the global default ``xgrammar``. An explicit "
+            "value always wins."
+        ),
     )
 
     enable_variable_logits: bool = Field(
@@ -705,11 +711,20 @@ class PipelineArgs(ConfigFileModel):
             A :class:`PipelineArgs` populated from the given config.
         """
         main = pipeline_config.models.get("main") or MAXModelConfig()
+        # Multi-component (diffusion) manifests have no "main" entry; their
+        # per-component configs can't be reconstructed from the flat fields,
+        # so carry the manifest through verbatim.
+        manifest = (
+            pipeline_config.models
+            if "main" not in pipeline_config.models
+            else None
+        )
         runtime = pipeline_config.runtime
         sampling = pipeline_config.sampling
         profiling = pipeline_config.profiling
 
         return cls(
+            models=manifest,
             # top-level
             model_override=list(pipeline_config.model_override),
             task=pipeline_config.task,
@@ -776,8 +791,7 @@ class PipelineArgs(ConfigFileModel):
             in_dtype=sampling.in_dtype,
             out_dtype=sampling.out_dtype,
             enable_structured_output=sampling.enable_structured_output,
-            structured_output_backend=sampling.structured_output_backend
-            or "llguidance",
+            structured_output_backend=sampling.structured_output_backend,
             enable_variable_logits=sampling.enable_variable_logits,
             enable_penalties=sampling.enable_penalties,
             enable_min_tokens=sampling.enable_min_tokens,

@@ -786,7 +786,7 @@ def test_linked_list_conditional_implicitly_deletable() raises:
     assert_false(conforms_to(LinkedList[ExplicitDestroy], IterableOwned))
 
 
-def test_linked_list_destroy_with() raises:
+def test_linked_list_deinit_with() raises:
     var ll = LinkedList[ExplicitDestroy]()
     ll.append(ExplicitDestroy(1))
     ll.append(ExplicitDestroy(2))
@@ -799,14 +799,14 @@ def test_linked_list_destroy_with() raises:
         destroy_order.append(data.value)
         data^.destroy()
 
-    ll^.destroy_with(dispose)
+    ll^.deinit_with(dispose)
     assert_equal(len(destroy_order), 5)
     for i in range(len(destroy_order)):
         assert_true(destroy_order[i] == i + 1)
 
 
-def test_empty_linked_list_destroy_with() raises:
-    # `destroy_with` on an empty (linear-valued) linked list must run and free the
+def test_empty_linked_list_deinit_with() raises:
+    # `deinit_with` on an empty (linear-valued) linked list must run and free the
     # backing without invoking the closure — there are no entries.
     var ll = LinkedList[ExplicitDestroy]()
     var calls = 0
@@ -815,7 +815,7 @@ def test_empty_linked_list_destroy_with() raises:
         calls += 1
         data^.destroy()
 
-    ll^.destroy_with(dispose)
+    ll^.deinit_with(dispose)
     assert_equal(calls, 0)
 
 
@@ -839,7 +839,7 @@ def test_linked_list_extend_explicit_destroy() raises:
         order.append(data.value)
         data^.destroy()
 
-    a^.destroy_with(dispose)
+    a^.deinit_with(dispose)
     assert_equal(len(order), 5)
     for i in range(len(order)):
         assert_true(order[i] == i + 1)
@@ -860,7 +860,7 @@ def test_linked_list_extend_into_empty_explicit_destroy() raises:
         order.append(data.value)
         data^.destroy()
 
-    a^.destroy_with(dispose)
+    a^.deinit_with(dispose)
     assert_equal(len(order), 2)
     assert_true(order[0] == 1)
     assert_true(order[1] == 2)
@@ -882,7 +882,7 @@ def test_linked_list_insert_explicit_destroy() raises:
         order.append(data.value)
         data^.destroy()
 
-    l^.destroy_with(dispose)
+    l^.deinit_with(dispose)
     assert_equal(len(order), 4)
     for i in range(len(order)):
         assert_true(order[i] == i + 1)
@@ -891,7 +891,7 @@ def test_linked_list_insert_explicit_destroy() raises:
 def test_linked_list_maybe_pop_explicit_destroy() raises:
     # `maybe_pop` returns `Optional[ExplicitDestroy]`, which is itself a linear
     # type: it can't be implicitly dropped and must be drained through
-    # `Optional.destroy_with`.
+    # `Optional.deinit_with`.
     var ll = LinkedList[ExplicitDestroy]()
     ll.append(ExplicitDestroy(1))
     ll.append(ExplicitDestroy(2))
@@ -900,16 +900,16 @@ def test_linked_list_maybe_pop_explicit_destroy() raises:
     var popped_val = popped.value().value  # tail == 2
     var len_after_pop = len(ll)  # 2 -> 1
     var survivor = ll.get_nth(0).value  # head == 1 remains
-    popped^.destroy_with(ExplicitDestroy.destroy)
+    popped^.deinit_with(ExplicitDestroy.destroy)
 
     # `maybe_pop` on an empty list yields an empty Optional.
     var empty = LinkedList[ExplicitDestroy]()
     var none = empty.maybe_pop()
     var was_empty = not Bool(none)
-    none^.destroy_with(ExplicitDestroy.destroy)
+    none^.deinit_with(ExplicitDestroy.destroy)
 
-    empty^.destroy_with(ExplicitDestroy.destroy)
-    ll^.destroy_with(ExplicitDestroy.destroy)
+    empty^.deinit_with(ExplicitDestroy.destroy)
+    ll^.deinit_with(ExplicitDestroy.destroy)
 
     assert_equal(popped_val, 2)
     assert_equal(len_after_pop, 1)
@@ -931,7 +931,7 @@ def test_linked_list_prepend_explicit_destroy() raises:
         order.append(data.value)
         data^.destroy()
 
-    ll^.destroy_with(dispose)
+    ll^.deinit_with(dispose)
 
     assert_false(empty_before)
     assert_true(nonempty_after)

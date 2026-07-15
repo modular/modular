@@ -285,8 +285,23 @@ This version is still a work in progress.
 
 ## Library stabilizations
 
-- The traits `ImplicitlyDeletable`, `Movable`, `Copyable`, and
-  `ImplicitlyCopyable` are now stable.
+- `trait ImplicitlyDeletable`
+- `trait Movable`
+- `trait Copyable`
+- `trait ImplicitlyCopyable`
+
+- List
+  - `def __init__(out self)`
+  - `def __init__(out self, *, capacity: Int)`
+  - `def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):`
+  - `def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):`
+
+  - ```def __getitem__[
+        origin: Origin, //
+      ](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:
+    ```
+
+- Span
 
 ## Library changes
 
@@ -424,7 +439,7 @@ This version is still a work in progress.
   closure on each element:
 
   ```mojo
-  collection^.destroy_with(my_destroy_closure)
+  collection^.deinit_with(my_destroy_closure)
   ```
 
   Generic code that takes one of these collections by value may now need
@@ -786,4 +801,22 @@ This version is still a work in progress.
 
       def operate(self) -> Self.Output where conforms_to(Self.T, Movable):
           return Int(123)
+  ```
+
+- A method whose return type is a generic struct instantiated with a
+  parameter that only satisfies the struct's declared trait bound via the
+  method's own `where` clause (rather than via the parameter's own
+  declaration) is now accepted, instead of spuriously rejecting the returned
+  value as a different, unconvertible type.
+
+  ```mojo
+  struct Collection[T: AnyType](Movable):
+      def foo(
+          var self,
+      ) -> Iter[Self.T] where conforms_to(Self.T, ImplicitlyDeletable):
+          return Iter(self^)
+
+  @fieldwise_init
+  struct Iter[T: ImplicitlyDeletable]:
+      var _collection: Collection[Self.T]
   ```

@@ -225,7 +225,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 
 @fieldwise_init
 @explicit_destroy(
-    "Use `destroy_with()` to explicitly destroy a `SwissTableEntry` with"
+    "Use `deinit_with()` to explicitly destroy a `SwissTableEntry` with"
     " non-`ImplicitlyDeletable` keys or values"
 )
 struct SwissTableEntry[
@@ -283,20 +283,20 @@ struct SwissTableEntry[
         Constraints:
             Both `K` and `V` must be `ImplicitlyDeletable`. When either is not,
             the entry has no implicit destructor and must be torn down with
-            `destroy_with()`.
+            `deinit_with()`.
         """
         # The key and value are destroyed member-wise; `hash` is trivial.
         pass
 
-    def destroy_with(
-        deinit self, destroy_func: Some[def(var Self.K, var Self.V)]
+    def deinit_with(
+        deinit self, deinit_func: Some[def(var Self.K, var Self.V)]
     ):
-        """Destroy the entry's key and value using a caller-provided closure.
+        """Deinitializes the entry's key and value using a caller-provided closure.
 
         Args:
-            destroy_func: A closure that consumes the entry's key and value.
+            deinit_func: A closure that consumes the entry's key and value.
         """
-        destroy_func(self.key^, self.value^)
+        deinit_func(self.key^, self.value^)
 
     def reap_key(
         deinit self,
@@ -331,7 +331,7 @@ struct SwissTableEntry[
 
 
 @explicit_destroy(
-    "Use `destroy_with()` to explicitly destroy a `SwissTable` with"
+    "Use `deinit_with()` to explicitly destroy a `SwissTable` with"
     " non-`ImplicitlyDeletable` keys or values"
 )
 struct SwissTable[
@@ -468,30 +468,30 @@ struct SwissTable[
         Constraints:
             Both `K` and `V` must be `ImplicitlyDeletable`. When either is not,
             the table has no implicit destructor and must be torn down with
-            `destroy_with()`.
+            `deinit_with()`.
         """
         self._delete_occupied_entries()
         self^._deallocate_storage()
 
-    def destroy_with(
-        var self, destroy_func: Some[def(var Self.K, var Self.V)], /
+    def deinit_with(
+        var self, deinit_func: Some[def(var Self.K, var Self.V)], /
     ):
-        """Destroy all entries with a caller-provided closure, then free memory.
+        """Deinitializes all entries with a caller-provided closure, then free memory.
 
         Use this to tear down a `SwissTable` whose keys or values are not
         `ImplicitlyDeletable`. The closure is called once per occupied entry.
 
         Args:
-            destroy_func: A closure that consumes each entry's key and value.
+            deinit_func: A closure that consumes each entry's key and value.
         """
-        self._delete_occupied_entries_with(destroy_func)
+        self._delete_occupied_entries_with(deinit_func)
         self^._deallocate_storage()
 
     def _deallocate_storage(deinit self):
         """Free the control and slot arrays without touching entry contents.
 
         The caller must have already destroyed or moved out every occupied
-        entry (see `__del__` and `destroy_with`).
+        entry (see `__del__` and `deinit_with`).
         """
         if self._capacity > 0:
             dealloc(
@@ -541,7 +541,7 @@ struct SwissTable[
         """
         for i in range(self._capacity):
             if is_occupied(self._ctrl[i]):
-                (self._slots + i).take_pointee().destroy_with(destroy_func)
+                (self._slots + i).take_pointee().deinit_with(destroy_func)
 
     # ===-------------------------------------------------------------------===#
     # Core operations

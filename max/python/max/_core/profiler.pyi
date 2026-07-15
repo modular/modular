@@ -102,10 +102,43 @@ def kineto_last_trace_error() -> str:
     """
     Return the most recent trace-serialization error message.
 
-    Empty on success, or before any disable has run.
-
-    Used by ``InferenceSession.profiling.wait_for_trace()`` to raise
+    Empty string on success, or before any disable has run.  Used by
+    ``InferenceSession.profiling.wait_for_trace()`` to raise
     :class:`max.engine.ProfilingError` when the configured output path
     was unwritable or libkineto could not serialize the in-memory trace.
     Cleared automatically at the next ``start()``.
+    """
+
+def kineto_have_libkineto() -> bool:
+    """
+    Return ``True`` iff the profiler was compiled with libkineto support.
+
+    Currently returns ``False`` in every build configuration: the
+    function's defining translation unit lives in ``//Support:Profiling``,
+    which does not link libkineto, so the recording paths in ``start()`` /
+    ``stop()`` are compiled out — even in ``--config=kineto`` builds on
+    Linux x86_64, the only configuration that links libkineto into
+    ``max._core`` at all (through the not-yet-wired ``:ProfilingKineto``
+    backend; default builds carry no libkineto).  Starts returning ``True``
+    once the recording path is wired through that backend.  The Python
+    integration
+    tests use this to skip end-to-end file-creation assertions whenever
+    ``stop()`` cannot actually produce a trace.
+    """
+
+def kineto_can_record() -> bool:
+    """
+    Return ``True`` iff this process can actually record a trace right now.
+
+    Stricter than :func:`kineto_have_libkineto` (and therefore likewise
+    ``False`` in every current build configuration): also requires that a
+    CUDA primary context is bound on the calling thread.  Without one,
+    ``enable()`` skips ``libkineto.prepareTrace`` / ``startTrace`` and
+    ``disable()`` symmetrically skips trace serialization, so no file is
+    produced.
+
+    Used by ``test_kineto_profiling.py`` to skip end-to-end file-creation
+    and ``ProfilingError`` assertions on hosts that cannot record (no
+    libkineto in the build, or no live CUDA context — e.g. CI runners
+    without NVIDIA hardware).
     """

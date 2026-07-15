@@ -695,6 +695,17 @@
             },
             "__AUTOGEN:max.profiler__"
           ]
+        },
+        {
+          "type": "category",
+          "label": "max.support.image",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/support.image"
+          },
+          "items": [
+            "__AUTOGEN:max.support.image__"
+          ]
         }
       ]
     },

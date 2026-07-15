@@ -36,6 +36,7 @@ from max.pipelines.context import (
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import (
     BatchType,
+    CompletedBatchStats,
     Pipeline,
     RequestID,
     TextGenerationInputs,
@@ -319,7 +320,15 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
     execute() runs synchronously and has_pending_outputs() returns False.
     ``num_speculative_tokens > 0`` populates draft_tokens_to_verify on each
     context to mimic unified Eagle / MTP output.
+
+    Like the real pipeline, draining a deferred batch records
+    ``CompletedBatchStats`` for it (with the fixed execution time
+    ``FAKE_EXECUTION_TIME_S``), retrievable once via
+    ``take_completed_batch_stats()``.
     """
+
+    FAKE_EXECUTION_TIME_S = 0.125
+    """Execution time reported in CompletedBatchStats for every drained batch."""
 
     def __init__(
         self,
@@ -340,11 +349,22 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
             None
         )
         self._pending_contexts: list[TextContext] = []
+        self._pending_inputs: TextGenerationInputs[TextContext] | None = None
+        self._completed_batch_stats: CompletedBatchStats | None = None
 
     def has_pending_outputs(self) -> bool:
         if self._disable_overlap:
             return False
         return self._pending_outputs is not None
+
+    @property
+    def overlap_active(self) -> bool:
+        return not self._disable_overlap
+
+    def take_completed_batch_stats(self) -> CompletedBatchStats | None:
+        stats = self._completed_batch_stats
+        self._completed_batch_stats = None
+        return stats
 
     def execute(
         self, inputs: TextGenerationInputs[TextContext]
@@ -364,8 +384,20 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
                     output = context.to_generation_output()
                     if output.tokens:
                         outputs[req_id] = output
+        # Record CompletedBatchStats for the drained batch, matching the real
+        # pipeline's _record_completed_batch_stats (with a fixed fake time).
+        if self._pending_inputs is not None:
+            pending = self._pending_inputs
+            self._completed_batch_stats = CompletedBatchStats(
+                batch_type=pending.batch_type,
+                batch_size=len(pending.flat_batch),
+                num_input_tokens=pending.input_tokens,
+                num_context_tokens=pending.context_tokens,
+                execution_time_s=self.FAKE_EXECUTION_TIME_S,
+            )
         self._pending_outputs = None
         self._pending_contexts = []
+        self._pending_inputs = None
 
         if inputs:
             for replica_idx, batch in enumerate(inputs.batches):
@@ -406,6 +438,7 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
             self.kv_manager.step(inputs.batches)
             self._pending_outputs = new_outputs
             self._pending_contexts = list(inputs.flat_batch)
+            self._pending_inputs = inputs
 
         return outputs
 

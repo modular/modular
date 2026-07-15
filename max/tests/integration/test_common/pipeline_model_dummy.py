@@ -218,9 +218,12 @@ class DummyLlamaPipelineModel(DummyPipelineModel):
 
 
 class DummyTextTokenizer(TextTokenizer):
+    init_kwargs: dict[str, Any] = {}
+
     def __init__(
         self, model_path: str, pipeline_config: PipelineConfig, *args, **kwargs
     ) -> None:
+        type(self).init_kwargs = kwargs
         assert pipeline_config.model is not None
         self.max_length = pipeline_config.model.max_length or 100
         # Named _delegate: a public `delegate` attribute signals a HuggingFace

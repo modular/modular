@@ -114,6 +114,27 @@ struct TypeList[
         idx: The index of the type to access.
     """
 
+    comptime _get_type_at_index[idx: __mlir_type.index] = __mlir_attr[
+        `#kgen.param_list.get<:`,
+        Self._mlir_type,
+        ` `,
+        +Self.values,
+        `, `,
+        idx,
+        `> : `,
+        +Self.Trait,
+    ]
+    """Gets a type at the given raw `index`.
+
+    Unlike `__getitem_param__`, this accepts a raw `!kgen.index` so callers can
+    index without constructing a `SIMDSize` (and thus without pulling in
+    `SIMDSize` comparison machinery). Used by the stdlib plugin router during
+    bootstrap.
+
+    Parameters:
+        idx: The raw `index` of the type to access.
+    """
+
     @implicit
     @always_inline("builtin")
     def __init__(

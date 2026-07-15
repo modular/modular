@@ -669,9 +669,6 @@ def dispatch_mask[
 
     # TODO: attach string constants to mask types themselves.
     comptime if MaskName.CAUSAL == mask_type:
-        comptime assert (
-            local_window_size == -1
-        ), "local_window_size is set but CausalMask ignores it"
         return outer_wrapper(CausalMask())
     elif MaskName.CHUNKED == mask_type:
         comptime assert (
@@ -679,9 +676,6 @@ def dispatch_mask[
         ), "You must specify local_window_size for ChunkedMask"
         return outer_wrapper(ChunkedMask[local_window_size]())
     elif MaskName.NULL == mask_type:
-        comptime assert (
-            local_window_size == -1
-        ), "local_window_size is set but NullMask ignores it"
         return outer_wrapper(NullMask())
     elif MaskName.SLIDING_WINDOW_CAUSAL == mask_type:
         comptime assert (

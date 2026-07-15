@@ -2375,3 +2375,51 @@ def test_resolve_backend__unset_no_arch_defaults_to_xgrammar() -> None:
     config._resolve_default_structured_output_backend(arch=None)
 
     assert config.sampling.structured_output_backend == "xgrammar"
+
+
+def test_from_args__unset_backend_preserves_none_sentinel() -> None:
+    """Regression: ``PipelineArgs`` with no ``--structured-output-backend``
+    must carry the ``None`` sentinel into the built ``PipelineConfig``.
+
+    Before the fix, ``PipelineArgs.structured_output_backend`` defaulted to a
+    hardcoded ``"llguidance"`` string, so ``from_args`` produced a
+    ``SamplingConfig`` that already looked like an explicit user choice. That
+    short-circuited ``_resolve_default_structured_output_backend`` and the
+    global ``xgrammar`` default (and any arch pin) was never reached."""
+    args = PipelineArgs(model_path="test/model")
+    assert args.structured_output_backend is None
+
+    config = PipelineConfig.from_args(args)
+
+    assert config.sampling.structured_output_backend is None
+
+
+def test_from_args__unset_backend_resolves_to_xgrammar() -> None:
+    """End-to-end guard for the reported bug: a model launched without an
+    explicit backend and no arch pin ends up on ``xgrammar``, not
+    ``llguidance``."""
+    args = PipelineArgs(model_path="test/model")
+
+    config = PipelineConfig.from_args(args)
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default=None)
+    )
+
+    assert config.sampling.structured_output_backend == "xgrammar"
+
+
+def test_from_args__explicit_backend_is_preserved() -> None:
+    """An explicit ``--structured-output-backend`` value survives
+    ``from_args`` and wins over resolution."""
+    args = PipelineArgs(
+        model_path="test/model", structured_output_backend="llguidance"
+    )
+
+    config = PipelineConfig.from_args(args)
+    assert config.sampling.structured_output_backend == "llguidance"
+
+    config._resolve_default_structured_output_backend(
+        arch=_backend_arch(default=None)
+    )
+
+    assert config.sampling.structured_output_backend == "llguidance"

@@ -80,9 +80,9 @@ HF_MODELS: dict[str, set[str]] = {
     "google/diffusiongemma-26B-A4B-it": MULTI | {"max", "max-ci"},
     "google/gemma-3-1b-it": MULTI | {"vllm@B200", "MI355"},  # TODO(KERN-3014)
     "google/gemma-3-27b-it": MULTI,
-    "google/gemma-4-26B-A4B-it": MULTI | {"max", "max-ci"},  # TODO(SERVOPT-1292)
+    "google/gemma-4-26B-A4B-it": MULTI,
     "google/gemma-4-31B-it": MULTI,
-    "nvidia/Gemma-4-26B-A4B-NVFP4": MULTI | {"max", "max-ci", "MI355"},  # TODO(SERVOPT-1292)
+    "nvidia/Gemma-4-26B-A4B-NVFP4": MULTI | {"MI355"},
     "nvidia/diffusiongemma-26B-A4B-it-NVFP4": MULTI | {"max", "max-ci", "MI355"},
     "nvidia/Gemma-4-31B-IT-NVFP4": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct": MULTI,
@@ -135,20 +135,11 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/Kimi-K2.5-NVFP4__dflash_dp": DISABLE,  # MXSERV-84
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | {"4xMI355"},
-    "google/gemma-4-26B-A4B-it__no_dgc": MULTI,
-    "google/gemma-4-26B-A4B-it__localkv": MULTI,
-    "google/gemma-4-26B-A4B-it__tieredkv": MULTI,
-    "google/gemma-4-31B-it__fp8kv": MULTI | {"MI355"},
-    "google/gemma-4-31B-it__localkv": MULTI,
-    "google/gemma-4-31B-it__mtp": MULTI | {"vllm", "sglang"},
-    "google/gemma-4-31B-it__tieredkv": MULTI,
-    "google/gemma-4-31B-it__tp2": set(RUNNERS) - {"2xB200", "2xMI355"},
-    "nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc": MULTI | {"MI355"},
-    "nvidia/Gemma-4-26B-A4B-NVFP4__fp8kv": MULTI | {"MI355"},
-    "nvidia/Gemma-4-26B-A4B-NVFP4__localkv": MULTI | {"MI355"},
-    "nvidia/Gemma-4-26B-A4B-NVFP4__tieredkv": MULTI | {"MI355"},
-    "nvidia/Gemma-4-31B-IT-NVFP4__localkv": MULTI | {"MI355"},
-    "nvidia/Gemma-4-31B-IT-NVFP4__tieredkv": MULTI | {"MI355"},
+    # Tuned recipes use an FP8 KV cache that does not support MI355.
+    "google/gemma-4-26B-A4B-it__tuned": MULTI | {"MI355"},
+    "google/gemma-4-31B-it__tuned": MULTI | {"MI355"},
+    "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": MULTI | {"MI355"},
+    "nvidia/Gemma-4-31B-IT-NVFP4__tuned": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": MULTI | {"MI355"},

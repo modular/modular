@@ -1,4 +1,4 @@
-##===----------------------------------------------------------------------===##
+# ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
@@ -9,11 +9,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-##===----------------------------------------------------------------------===##
-model:
-  model_path: nvidia/Gemma-4-31B-IT-NVFP4
-  kv_cache:
-    kv_connector: tiered
+# ===----------------------------------------------------------------------=== #
 
-runtime:
-  device_graph_capture: true
+from ._trait import DefaultPlugin, PluginHooks
+from .cuda import CUDAPlugin
+from .hip import HIPPlugin
+from .metal import MetalPlugin
+
+comptime PLUGINS = TypeList.of[
+    Trait=PluginHooks, DefaultPlugin, MetalPlugin, CUDAPlugin, HIPPlugin
+]

@@ -375,6 +375,31 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="percent",
         description="Percentage of disk KV cache blocks in use (0-100%), sampled once per scheduler batch when disk paging is enabled.",
     ),  # type: ignore
+    "maxserve.vision.images_encoded": _meter.create_counter(
+        "maxserve.vision.images_encoded",
+        unit="images",
+        description="Cumulative images run through the vision encoder (cache misses).",
+    ),  # type: ignore
+    "maxserve.vision.images_cached": _meter.create_counter(
+        "maxserve.vision.images_cached",
+        unit="images",
+        description="Cumulative images served from the vision encoder cache (cache hits).",
+    ),  # type: ignore
+    "maxserve.vision.patches_encoded": _meter.create_counter(
+        "maxserve.vision.patches_encoded",
+        unit="patches",
+        description="Cumulative image patches fed to the vision encoder.",
+    ),  # type: ignore
+    "maxserve.vision.tokens_encoded": _meter.create_counter(
+        "maxserve.vision.tokens_encoded",
+        unit="tokens",
+        description="Cumulative merged vision tokens produced by the vision encoder.",
+    ),  # type: ignore
+    "maxserve.vision.cache_hit_rate": _meter.create_histogram(
+        "maxserve.vision.cache_hit_rate",
+        unit="percent",
+        description="Per-batch vision encoder cache hit rate (0-100%).",
+    ),  # type: ignore
 }
 
 
@@ -796,6 +821,56 @@ class _AsyncMetrics:
                 "maxserve.cache.preemption_count", 1, self.extra_attributes
             ),
             MetricLevel.DETAILED,
+        )
+
+    def vision_images_encoded(self, images: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.images_encoded",
+                images,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def vision_images_cached(self, images: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.images_cached",
+                images,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def vision_patches_encoded(self, patches: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.patches_encoded",
+                patches,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def vision_tokens_encoded(self, tokens: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.tokens_encoded",
+                tokens,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def vision_cache_hit_rate(self, hit_rate: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.vision.cache_hit_rate",
+                hit_rate,
+                self.extra_attributes,
+            ),
+            MetricLevel.BASIC,
         )
 
     def input_tokens_per_request(self, value: int) -> None:

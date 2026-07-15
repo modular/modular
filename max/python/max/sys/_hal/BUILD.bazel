@@ -33,6 +33,7 @@ modular_py_library(
         "buffer.py",
         "bundle.py",
         "context.py",
+        "copy.py",
         "device.py",
         "driver.py",
         "event.py",

@@ -61,6 +61,17 @@ struct Queue(Movable, Writable):
         return PythonObject(alloc=Event(_hal=hal_evt^, _ctx_keepalive=ctx_arc))
 
     @staticmethod
+    def copy(
+        py_self: PythonObject,
+        dst_obj: PythonObject,
+        src_obj: PythonObject,
+    ) raises:
+        var self_ptr = Self._self_ptr(py_self)
+        var dst_ptr = dst_obj.downcast_value_ptr[Buffer]()
+        var src_ptr = src_obj.downcast_value_ptr[Buffer]()
+        self_ptr[]._arc[].copy(dst=dst_ptr[]._hal, src=src_ptr[]._hal)
+
+    @staticmethod
     def copy_to_device(
         py_self: PythonObject,
         dst_obj: PythonObject,

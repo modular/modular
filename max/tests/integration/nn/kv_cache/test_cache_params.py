@@ -421,7 +421,7 @@ def test_graph_capture_probe_cache_lengths_mha() -> None:
 
 
 def test_graph_capture_probe_cache_lengths_mla() -> None:
-    """MLA probes at 64-token granularity, with extra probes when q > 1."""
+    """MLA probes at 64-token granularity, regardless of q_max_seq_len."""
     params = MLAKVCacheParams(
         dtype=DType.bfloat16,
         head_dim=576,
@@ -433,10 +433,9 @@ def test_graph_capture_probe_cache_lengths_mla() -> None:
     base = params.graph_capture_probe_cache_lengths(256, 1)
     assert base == [1, 64, 128, 192, 256]
 
-    # Speculative decoding (q > 1) adds the granularity-1 offset probes.
+    # Speculative decoding (q > 1) uses the same probe lengths.
     spec = params.graph_capture_probe_cache_lengths(256, 2)
-    assert set(base).issubset(set(spec))
-    assert 63 in spec and 127 in spec and 191 in spec
+    assert spec == base
 
 
 def test_graph_capture_probe_cache_lengths_filters_min_cache() -> None:
