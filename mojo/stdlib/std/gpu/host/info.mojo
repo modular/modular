@@ -2217,7 +2217,7 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     """
     # Normalize the target architecture to canonical form.
     # NVIDIA: "nvidia:sm_90a" -> "sm_90a", "nvidia:sm90" -> "sm_90", "nvidia:80" -> "sm_80", "sm80" -> "sm_80"
-    # AMD: "mi300x" -> "gfx942", "mi355x" -> "gfx950", "amdgpu:gfx942" -> "gfx942"
+    # AMD: "mi300x" -> "gfx942", "mi355x" -> "gfx950", "amdgpu:gfx942" -> "gfx942", "amd:gfx942" -> "gfx942"
     # Apple: "metal:4" -> "apple-m4"
     comptime target_arch = (
         target_arch0
@@ -2227,12 +2227,14 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         .replace("nvidia:", "sm_")
         .replace("sm", "sm_")
         .replace("sm__", "sm_")
-        # AMD normalization
+        # AMD normalization. Both "amdgpu:" (LLVM/ROCm target prefix) and "amd:"
+        # (vendor name) are accepted, mirroring the "nvidia:" prefix above.
         .replace("mi250x", "gfx90a")
         .replace("mi300x", "gfx942")
         .replace("mi355x", "gfx950")
         .replace("gfx90", "gfx90a")
         .replace("amdgpu:", "")
+        .replace("amd:", "")
         # Apple normalization, general "metal:" → "apple-m" replacement.
         .replace("metal:", "apple-m")
     )

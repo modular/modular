@@ -680,6 +680,15 @@ This version is still a work in progress.
   Metal `os_log` GPU print; print is also suppressed during a capture, which
   otherwise cannot be replayed.
 
+- A bare `--target-accelerator` architecture (for example `gfx950` or `sm_90`)
+  is now handled identically to its vendor-prefixed form (`amdgpu:gfx950`,
+  `nvidia:sm_90`). Previously `has_amd_gpu_accelerator()`,
+  `has_nvidia_gpu_accelerator()`, and `has_apple_gpu_accelerator()` only
+  recognized the vendor-prefixed spelling, so code that specialized on them
+  (such as warp-tiling parameters) could silently take the wrong path and fail
+  a downstream `comptime` constraint. `amd:<arch>` is also now accepted as an
+  alias for `amdgpu:<arch>`, mirroring the existing `nvidia:<arch>` prefix.
+
 - `DeviceContext.load_function` now keys its runtime cache on the requested
   entry-point name as well as the blob. Loading two different entry points
   (for example `kernel_a` and `kernel_b`) from a single PTX/cubin blob no

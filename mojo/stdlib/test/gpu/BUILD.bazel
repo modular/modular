@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:private"])
 _LIT_TESTS = [
     "test_apple_mma_8x8_invalid_types.mojo",
     "test_apple_mma_invalid_types.mojo",
+    "test_target_accelerator_detection.mojo",
 ]
 
 lit_tests(
