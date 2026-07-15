@@ -14,7 +14,8 @@ trait MyInterface:
 
 def make_closure(x: Int) -> Int:
     def parametric[T: MyInterface](a: T):
-        # expected-error @below {{use of unknown declaration 'A'}}
+        # `X` is never referenced, so it's dead code the same as any other
+        # unreferenced comptime alias: never resolved, no diagnostic.
         comptime X = A
         pass
 
