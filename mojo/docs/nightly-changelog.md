@@ -297,6 +297,15 @@ This version is still a work in progress.
       pass
   ```
 
+- The compiler now rejects newlines in the middle of certain statements, where
+  they were previously permitted:
+
+  - Between `def`/`struct`/`trait`/`comptime` keywords and the following
+    identifier
+  - Between the `async` and `def` keywords on function definitions
+  - Anywhere in the midst of an `import` statement, save for parenthesized
+    import lists.
+
 ## Library stabilizations
 
 - `trait ImplicitlyDeletable`
