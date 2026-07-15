@@ -2142,23 +2142,25 @@ struct AdvancedIndexingGetItem:
         comptime assert (
             output_rank == input_rank + index_rank - num_index_tensors
         )
+        # Do not support boolean masks at this time.
+        comptime assert index_type != DType.bool
 
-        @parameter
         @always_inline
         def input_tensor_fn[
-            width: Int
-        ](idx: IndexList[input_rank]) capturing -> SIMD[input_type, width]:
-            return input_tensor._fused_load[width](idx)
+            dtype: DType, width: Int
+        ](idx: IndexList[input_rank]) {var input_tensor} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                input_tensor._fused_load[width](idx)
+            )
 
         @always_inline
-        @parameter
         def indices_fn[
             indices_index: Int,
-        ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
+        ](coordinates: IndexList[index_rank]) {var indices} -> Int:
             comptime assert (
                 indices_index < num_index_tensors
             ), "tensor index out of bounds"
-            return indices[indices_index]._fused_load[width=1](coordinates)
+            return Int(indices[indices_index]._fused_load[width=1](coordinates))
 
         advanced_indexing_getitem[
             input_rank=input_rank,
@@ -2166,12 +2168,12 @@ struct AdvancedIndexingGetItem:
             num_index_tensors=num_index_tensors,
             target=target,
             trace_description=_trace_name,
-            input_tensor_fn=input_tensor_fn,
-            indices_fn=indices_fn,
         ](
             out_tensor.to_tile_tensor[DType.int64](),
             input_tensor.strides(),
             ctx,
+            input_tensor_fn,
+            indices_fn,
         )
 
 
@@ -2223,35 +2225,33 @@ struct AdvancedIndexingSetItemInplace:
         ],
         ctx: DeviceContext,
     ) capturing raises:
-        @parameter
         @always_inline
         def updates_tensor_fn[
-            width: Int
-        ](idx: IndexList[updates_rank]) capturing -> SIMD[input_type, width]:
-            return updates._fused_load[width](idx)
+            dtype: DType, width: Int
+        ](idx: IndexList[updates_rank]) {var updates} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](updates._fused_load[width](idx))
 
         @always_inline
-        @parameter
         def indices_fn[
             indices_index: Int,
-        ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
+        ](coordinates: IndexList[index_rank]) {var indices} -> Int:
             comptime assert (
                 indices_index < num_index_tensors
             ), "tensor index out of bounds"
-            return indices[indices_index]._fused_load[width=1](coordinates)
+            return Int(indices[indices_index]._fused_load[width=1](coordinates))
 
         advanced_indexing_setitem_inplace[
             start_axis=start_axis,
             num_index_tensors=num_index_tensors,
             target=target,
             trace_description=_trace_name,
-            updates_tensor_fn=updates_tensor_fn,
-            indices_fn=indices_fn,
         ](
             input_tensor.to_tile_tensor[DType.int64](),
             indices[0].shape(),
             updates.strides(),
             ctx,
+            updates_tensor_fn,
+            indices_fn,
         )
 
 

@@ -415,22 +415,25 @@ def advanced_indexing_getitem[
     input_rank: Int,
     index_rank: Int,
     input_type: DType,
-    index_type: DType,
     //,
     start_axis: Int,
     num_index_tensors: Int,
     target: StaticString,
     trace_description: StaticString,
-    input_tensor_fn: def[width: Int](IndexList[input_rank]) capturing -> SIMD[
-        input_type, width
+    InputTensorFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[dtype: DType, width: Int](IndexList[input_rank]) -> SIMD[
+        dtype, width
     ],
-    indices_fn: def[indices_index: Int](
-        IndexList[index_rank]
-    ) capturing -> Scalar[index_type],
+    IndicesFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[indices_index: Int](IndexList[index_rank]) -> Int,
 ](
     out_tensor: TileTensor[mut=True, input_type, ...],
     in_tensor_strides: IndexList[input_rank],
     ctx: DeviceContext,
+    input_tensor_fn: InputTensorFn,
+    indices_fn: IndicesFn,
 ) raises:
     """Implement basic numpy-style advanced indexing.
 
@@ -463,7 +466,6 @@ def advanced_indexing_getitem[
         input_rank: The rank of the input tensor.
         index_rank: The rank of the indexing tensors.
         input_type: The dtype of the input tensor.
-        index_type: The dtype of the indexing tensors.
         start_axis: The first dimension in input where the indexing tensors
             are applied. It is assumed the indexing tensors are applied in
             consecutive dimensions.
@@ -471,20 +473,20 @@ def advanced_indexing_getitem[
         target: The target architecture to operation on.
         trace_description: For profiling, the trace name the operation will
             appear under.
-        input_tensor_fn: Fusion lambda for the input tensor.
-        indices_fn: Fusion lambda for the indices tensors.
+        InputTensorFn: The type of the input-tensor fusion lambda.
+        IndicesFn: The type of the indices fusion lambda.
 
     Args:
         out_tensor: The output tensor to write to.
         in_tensor_strides: The strides of the input tensor.
         ctx: The device context as prepared by the graph compiler.
+        input_tensor_fn: Fusion lambda for the input tensor.
+        indices_fn: Fusion lambda for the indices tensors.
 
     TODO(GEX-1951): Support boolean tensor mask support
     TODO(GEX-1952): Support non-contiguous indexing tensor case
     TODO(GEX-1953): Support fusion (especially view-fusion)
     """
-    # Do not support boolean masks at this time.
-    comptime assert index_type != DType.bool
     comptime assert (
         out_tensor.rank == input_rank + index_rank - num_index_tensors
     )
@@ -520,7 +522,7 @@ def advanced_indexing_getitem[
 
         out_tensor.store[width=width, alignment=1](
             output_index,
-            input_tensor_fn[width=width](input_index),
+            input_tensor_fn[input_type, width=width](input_index),
         )
 
     comptime compile_target = _current_target() if is_cpu[
@@ -593,23 +595,26 @@ def advanced_indexing_setitem_inplace[
     index_rank: Int,
     updates_rank: Int,
     input_type: DType,
-    index_type: DType,
     //,
     start_axis: Int,
     num_index_tensors: Int,
     target: StaticString,
     trace_description: StaticString,
-    updates_tensor_fn: def[width: Int](
-        IndexList[updates_rank]
-    ) capturing -> SIMD[input_type, width],
-    indices_fn: def[indices_index: Int](
-        IndexList[index_rank]
-    ) capturing -> Scalar[index_type],
+    UpdatesTensorFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[dtype: DType, width: Int](IndexList[updates_rank]) -> SIMD[
+        dtype, width
+    ],
+    IndicesFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[indices_index: Int](IndexList[index_rank]) -> Int,
 ](
     input_tensor: TileTensor[mut=True, input_type, ...],
     index_tensor_shape: IndexList[index_rank],
     updates_tensor_strides: IndexList[updates_rank],
     ctx: DeviceContext,
+    updates_tensor_fn: UpdatesTensorFn,
+    indices_fn: IndicesFn,
 ) raises:
     """Implement basic numpy-style advanced indexing with assignment.
 
@@ -661,7 +666,6 @@ def advanced_indexing_setitem_inplace[
         index_rank: The rank of the indexing tensors.
         updates_rank: The rank of the updates tensor.
         input_type: The dtype of the input tensor.
-        index_type: The dtype of the indexing tensors.
         start_axis: The first dimension in input where the indexing tensors
             are applied. It is assumed the indexing tensors are applied in
             consecutive dimensions.
@@ -669,14 +673,16 @@ def advanced_indexing_setitem_inplace[
         target: The target architecture to operation on.
         trace_description: For profiling, the trace name the operation will
             appear under.
-        updates_tensor_fn: Fusion lambda for the update tensor.
-        indices_fn: Fusion lambda for the indices tensors.
+        UpdatesTensorFn: The type of the updates-tensor fusion lambda.
+        IndicesFn: The type of the indices fusion lambda.
 
     Args:
         input_tensor: The input tensor being indexed into and modified in-place.
         index_tensor_shape: The shape of each index tensor.
         updates_tensor_strides: The strides of the update tensor.
         ctx: The device context as prepared by the graph compiler.
+        updates_tensor_fn: Fusion lambda for the update tensor.
+        indices_fn: Fusion lambda for the indices tensors.
 
     TODO(GEX-1951): Support boolean tensor mask support
     TODO(GEX-1952): Support non-contiguous indexing tensor case
@@ -740,7 +746,7 @@ def advanced_indexing_setitem_inplace[
             updates_indices[i] = Int(iteration_indices[i].value())
         input_tensor.store[width=width, alignment=1](
             input_tensor_coord,
-            updates_tensor_fn[width=width](updates_indices),
+            updates_tensor_fn[input_type, width=width](updates_indices),
         )
 
     # We can vectorize the assignment only if we are

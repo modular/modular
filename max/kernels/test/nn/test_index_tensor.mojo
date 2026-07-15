@@ -491,22 +491,24 @@ def test_advanced_indexing_getitem(ctx: DeviceContext) raises:
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
     var output_dyn = output_data_buffer.make_dynamic[DType.int64]()
 
-    @parameter
     @always_inline
     def input_tensor_fn[
-        width: Int
-    ](idx: IndexList[input_rank]) capturing -> SIMD[input_type, width]:
-        return input_dyn.load[width=width, alignment=1](Coord(idx))
+        dtype: DType, width: Int
+    ](idx: IndexList[input_rank]) {var input_dyn} -> SIMD[dtype, width]:
+        return rebind[SIMD[dtype, width]](
+            input_dyn.load[width=width, alignment=1](Coord(idx))
+        )
 
     @always_inline
-    @parameter
     def indices_fn[
         indices_index: Int,
-    ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
+    ](coordinates: IndexList[index_rank]) {
+        var _index_a_dyn, var _index_b_dyn
+    } -> Int:
         comptime if indices_index == 0:
-            return _index_a_dyn.load[width=1](Coord(coordinates))
+            return Int(_index_a_dyn.load[width=1](Coord(coordinates)))
         else:
-            return _index_b_dyn.load[width=1](Coord(coordinates))
+            return Int(_index_b_dyn.load[width=1](Coord(coordinates)))
 
     # Build input strides IndexList manually from layout
     var in_strides = IndexList[input_rank](
@@ -522,12 +524,12 @@ def test_advanced_indexing_getitem(ctx: DeviceContext) raises:
         num_index_tensors=num_index_tensors,
         target="cpu",
         trace_description="test_advanced_indexing_getitem",
-        input_tensor_fn=input_tensor_fn,
-        indices_fn=indices_fn,
     ](
         output_dyn,
         in_strides,
         ctx,
+        input_tensor_fn,
+        indices_fn,
     )
 
     var output_stack = InlineArray[
@@ -641,22 +643,24 @@ def test_advanced_indexing_setitem_inplace(ctx: DeviceContext) raises:
     for i in range(updates_shape.flattened_length()):
         updates_stack[i] = Int32(1 + i)
 
-    @parameter
     @always_inline
     def updates_tensor_fn[
-        width: Int
-    ](idx: IndexList[updates_rank]) capturing -> SIMD[input_type, width]:
-        return updates_dyn.load[width=width, alignment=1](Coord(idx))
+        dtype: DType, width: Int
+    ](idx: IndexList[updates_rank]) {var updates_dyn} -> SIMD[dtype, width]:
+        return rebind[SIMD[dtype, width]](
+            updates_dyn.load[width=width, alignment=1](Coord(idx))
+        )
 
     @always_inline
-    @parameter
     def indices_fn[
         indices_index: Int,
-    ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
+    ](coordinates: IndexList[index_rank]) {
+        var _index_a_dyn, var _index_b_dyn
+    } -> Int:
         comptime if indices_index == 0:
-            return _index_a_dyn.load[width=1](Coord(coordinates))
+            return Int(_index_a_dyn.load[width=1](Coord(coordinates)))
         else:
-            return _index_b_dyn.load[width=1](Coord(coordinates))
+            return Int(_index_b_dyn.load[width=1](Coord(coordinates)))
 
     # Build index shape and updates strides manually
     var idx_shape = IndexList[index_rank](
@@ -676,13 +680,13 @@ def test_advanced_indexing_setitem_inplace(ctx: DeviceContext) raises:
         num_index_tensors=num_index_tensors,
         target="cpu",
         trace_description="test_advanced_indexing_setitem_inplace",
-        updates_tensor_fn=updates_tensor_fn,
-        indices_fn=indices_fn,
     ](
         input_dyn,
         idx_shape,
         upd_strides,
         ctx,
+        updates_tensor_fn,
+        indices_fn,
     )
 
     var output_stack = InlineArray[
