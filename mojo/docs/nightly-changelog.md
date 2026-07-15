@@ -902,3 +902,16 @@ This version is still a work in progress.
   struct Iter[T: ImplicitlyDeletable]:
       var _collection: Collection[Self.T]
   ```
+
+- A struct using `where False` to opt out of a builtin trait's implicit
+  synthesis (e.g. `Movable where False`) no longer spuriously fails to
+  compile when one of its fields also opts out of that same trait. For
+  example, this now compiles:
+
+  ```mojo
+  struct One(Movable where False):
+      pass
+
+  struct Two(Movable where False):
+      var y: One
+  ```
