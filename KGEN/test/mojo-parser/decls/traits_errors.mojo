@@ -239,6 +239,60 @@ struct NeverDeletableOuter(ImplicitlyDeletable where False):
     var m: NeverDeletableInner
 
 
+# ===----------------------------------------------------------------------=== #
+# Synthesized functions with unsatisfiable where clauses
+# ===----------------------------------------------------------------------=== #
+
+
+# MOCO-4303: a call resolving only to a compiler-synthesized candidate whose
+# own where clause can never be satisfied (e.g. the move-init synthesized for
+# a `Movable where False` conformance) should be diagnosed the same as having
+# no candidates at all, not by "explaining" why the never-callable candidate
+# doesn't match.
+struct NeverMovable[T: AnyType](Movable where False):
+    pass
+
+
+def never_movable_call_is_no_candidates_found():
+    # expected-error @+1 {{invalid call to '__init__': no candidates found}}
+    var z = NeverMovable[Int]()
+
+
+struct NeverCopyable(Movable, Copyable where False):
+    var v: Int
+
+    def __init__(out self, v: Int):
+        self.v = v
+
+
+def never_copyable_call_is_no_candidates_found():
+    var a = NeverCopyable(1)
+    # expected-error @+1 {{invalid call to 'copy': no candidates found}}
+    var b = a.copy()
+
+
+# Same as above, but exercised through a user-defined trait with a defaulted
+# method (synthesizeDefaultTraitMethodWrapper) instead of a builtin special
+# member (Movable/Copyable/ImplicitlyDeletable). Confirms the fix isn't
+# specific to compiler-synthesized special members.
+trait Greeter:
+    def greet(self, name: String) -> String:
+        return "Hello, " + name
+
+
+struct SilentGreeter(Greeter where False):
+    var x: Int
+
+    def __init__(out self, x: Int):
+        self.x = x
+
+
+def never_greeter_call_is_no_candidates_found():
+    var s = SilentGreeter(1)
+    # expected-error @+1 {{invalid call to 'greet': no candidates found}}
+    var msg = s.greet()
+
+
 # Test that overriding a parent trait's comptime decl with a non-comptime decl is an error.
 # Regression test for MOCO-4227 (latent null-pointer dereference in error path).
 trait TraitWithComptime:
