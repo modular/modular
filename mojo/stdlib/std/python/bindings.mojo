@@ -23,7 +23,7 @@ and Python code.
 from . import ConvertibleFromPython
 from std.ffi import _Global, _CPointer, c_int, c_char
 from std.sys.info import size_of
-from std.collections import OwnedKwargsDict
+from std.collections import StringDict
 
 from std.builtin._startup import _ensure_runtime_init
 from std.reflection import reflect
@@ -1271,22 +1271,22 @@ def _py_c_function_wrapper[
 
 def _convert_kwargs(
     py_kwargs: PythonObject,
-) raises -> OwnedKwargsDict[PythonObject]:
-    """Convert a Python dictionary to an OwnedKwargsDict.
+) raises -> StringDict[PythonObject]:
+    """Convert a Python dictionary to a StringDict.
 
     Args:
         py_kwargs: Python dictionary containing keyword arguments.
 
     Returns:
-        An OwnedKwargsDict containing the keyword arguments.
+        A StringDict containing the keyword arguments.
     """
-    var result = OwnedKwargsDict[PythonObject]()
+    var result = StringDict[PythonObject]()
 
     # Handle the case where kwargs is None or empty
     if not py_kwargs._obj_ptr:
         return result^
 
-    # Iterate through the Python dictionary and populate OwnedKwargsDict
+    # Iterate through the Python dictionary and populate StringDict
     var items = py_kwargs.items()
     for item in items:
         var key = item[0]

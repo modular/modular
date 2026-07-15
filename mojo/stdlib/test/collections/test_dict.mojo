@@ -16,7 +16,7 @@ from std.collections.dict import (
     DictEntry,
     DictKeyError,
     EmptyDictError,
-    OwnedKwargsDict,
+    StringDict,
 )
 from std.collections._swisstable import GROUP_WIDTH
 
@@ -675,7 +675,7 @@ def _test_taking_owned_kwargs_dict(**kwargs: Int) raises:
 
 
 def test_owned_kwargs_dict() raises:
-    var owned_kwargs = OwnedKwargsDict[Int]()
+    var owned_kwargs = StringDict[Int]()
     owned_kwargs._insert("fruit", 8)
     owned_kwargs._insert("dessert", 9)
     _test_taking_owned_kwargs_dict(**owned_kwargs^)
@@ -1825,14 +1825,14 @@ def test_owned_kwargs_dict_linear() raises:
     ) {mut}:
         entry^.deinit_with(dispose_kwarg)
 
-    var kw1 = OwnedKwargsDict[ExplicitDestroy]()
+    var kw1 = StringDict[ExplicitDestroy]()
     var a1 = kw1.insert("linear_fruit", ExplicitDestroy(8))
     a1^.deinit_with(dispose_val)
     var a2 = kw1.insert("linear_dessert", ExplicitDestroy(9))
     a2^.deinit_with(dispose_val)
     _test_taking_owned_kwargs_dict_linear_popitem(**kw1^)
 
-    var kw2 = OwnedKwargsDict[ExplicitDestroy]()
+    var kw2 = StringDict[ExplicitDestroy]()
     var b1 = kw2.insert("linear_fruit", ExplicitDestroy(8))
     b1^.deinit_with(dispose_val)
     var b2 = kw2.insert("linear_dessert", ExplicitDestroy(9))

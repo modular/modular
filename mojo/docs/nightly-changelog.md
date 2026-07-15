@@ -346,7 +346,8 @@ This version is still a work in progress.
   `take_items()`) still requires `ImplicitlyDeletable`, since it drops the
   entries it does not yield.
 
-- `OwnedKwargsDict` (the container backing variadic `**kwargs`) no longer
+- The container backing variadic `**kwargs` has been renamed from
+  `OwnedKwargsDict` to `StringDict`. `StringDict` no longer
   requires its value type `V` to be `ImplicitlyDeletable`. A keyword dictionary
   whose values are linear (non-`ImplicitlyDeletable`) is itself linear and must
   be torn down explicitly with the new `deinit_with(deinit_func)`, which hands

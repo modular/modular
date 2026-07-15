@@ -1884,8 +1884,7 @@ struct Dict[
         self._order = new_order^
 
 
-# TODO(MSTDL-2838): rename `OwnedKwargsDict` to `StringDict`.
-struct OwnedKwargsDict[V: Movable](
+struct StringDict[V: Movable](
     Copyable where conforms_to(V, Copyable),
     Defaultable,
     ImplicitlyDeletable where conforms_to(V, ImplicitlyDeletable),
