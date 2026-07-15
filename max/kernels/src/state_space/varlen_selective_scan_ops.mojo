@@ -20,29 +20,395 @@ This module registers operations for variable-length selective scan:
 from std.math import ceildiv
 
 import extensibility as compiler
-from std.gpu.host import DeviceContext
+from std.gpu.host import DeviceContext, Dim
 from std.gpu.host.info import is_cpu, is_gpu
 
 from extensibility import InputTensor, OutputTensor
+from layout import TensorLayout, TileTensor
 from std.utils.index import IndexList
 
 from state_space.varlen_selective_scan import (
+    Strides1D,
+    Strides2D,
+    Strides3D,
+    Strides4D,
     varlen_selective_scan_fwd_cpu,
     varlen_selective_scan_fwd_gpu,
     varlen_selective_state_update_cpu,
     varlen_selective_state_update_gpu,
 )
 
-# Stride types for kernel calls
-comptime Strides1D = IndexList[1]
-comptime Strides2D = IndexList[2]
-comptime Strides3D = IndexList[3]
-comptime Strides4D = IndexList[4]
+comptime _GPU_FWD_BLOCK_SIZE = 128
+comptime _GPU_UPDATE_BLOCK_SIZE_M = 4
+comptime _PAD_SLOT_ID: Int32 = -1
+
+# Supported d_state values for the varlen kernels, largest first (the varlen
+# path also supports d_state=4). Single source of truth: _validate_d_state and
+# every dispatch_for_d_state below iterate it. Keep _SUPPORTED_D_STATE_VALUES
+# (the human-readable error text) in sync with it.
+comptime _SUPPORTED_D_STATE = [256, 128, 64, 32, 16, 8, 4]
+comptime _SUPPORTED_D_STATE_VALUES = "4, 8, 16, 32, 64, 128, or 256"
 
 
-# ============================================================================
-# Varlen Selective Scan Forward Registration
-# ============================================================================
+def _unsupported_d_state_error(d_state: Int) -> Error:
+    return Error(
+        "Unsupported d_state: "
+        + String(d_state)
+        + ". Expected "
+        + _SUPPORTED_D_STATE_VALUES
+        + "."
+    )
+
+
+def _validate_d_state(d_state: Int) raises:
+    comptime for ds in _SUPPORTED_D_STATE:
+        if d_state == ds:
+            return
+    raise _unsupported_d_state_error(d_state)
+
+
+@fieldwise_init
+struct VarlenSelectiveScanFwdStrides(Copyable, ImplicitlyCopyable, Movable):
+    var u: Strides2D
+    var delta: Strides2D
+    var A: Strides2D
+    var B: Strides3D
+    var C: Strides3D
+    var D: Strides1D
+    var z: Strides2D
+    var delta_bias: Strides1D
+    var ssm_states: Strides3D
+    var output: Strides2D
+
+
+@fieldwise_init
+struct VarlenSelectiveStateUpdateStrides(Copyable, ImplicitlyCopyable, Movable):
+    var state: Strides4D
+    var x: Strides3D
+    var dt: Strides3D
+    var dt_bias: Strides2D
+    var A: Strides3D
+    var B: Strides3D
+    var C: Strides3D
+    var D: Strides2D
+    var z: Strides3D
+    var output: Strides3D
+
+
+@fieldwise_init
+struct VarlenSelectiveScanFwdArgs[
+    dtype: DType,
+    output_LT: TensorLayout,
+    ssm_states_LT: TensorLayout,
+    z_LT: TensorLayout,
+    u_LT: TensorLayout,
+    delta_LT: TensorLayout,
+    A_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
+    D_LT: TensorLayout,
+    delta_bias_LT: TensorLayout,
+    query_start_loc_LT: TensorLayout,
+    cache_indices_LT: TensorLayout,
+    has_initial_state_LT: TensorLayout,
+]:
+    var ctx: DeviceContext
+    var dim: Int
+    var ngroups: Int
+    var batch: Int
+    var pad_slot_id: Int32
+    var delta_softplus_int8: Int8
+    var output_tt: TileTensor[
+        mut=True, Self.dtype, Self.output_LT, MutUntrackedOrigin
+    ]
+    var ssm_states_tt: TileTensor[
+        mut=True, Self.dtype, Self.ssm_states_LT, MutUntrackedOrigin
+    ]
+    var z_tt: TileTensor[mut=True, Self.dtype, Self.z_LT, MutUntrackedOrigin]
+    var u_tt: TileTensor[Self.dtype, Self.u_LT, MutUntrackedOrigin]
+    var delta_tt: TileTensor[Self.dtype, Self.delta_LT, MutUntrackedOrigin]
+    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutUntrackedOrigin]
+    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutUntrackedOrigin]
+    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutUntrackedOrigin]
+    var D_tt: TileTensor[Self.dtype, Self.D_LT, MutUntrackedOrigin]
+    var delta_bias_tt: TileTensor[
+        Self.dtype, Self.delta_bias_LT, MutUntrackedOrigin
+    ]
+    var query_start_loc_tt: TileTensor[
+        DType.int32, Self.query_start_loc_LT, MutUntrackedOrigin
+    ]
+    var cache_indices_tt: TileTensor[
+        DType.int32, Self.cache_indices_LT, MutUntrackedOrigin
+    ]
+    var has_initial_state_tt: TileTensor[
+        DType.bool, Self.has_initial_state_LT, MutUntrackedOrigin
+    ]
+    var strides: VarlenSelectiveScanFwdStrides
+    var grid_dim: Dim
+    var block_dim: Dim
+
+    @parameter
+    def launch_gpu[d_state_val: Int](self) capturing raises:
+        comptime kernel = varlen_selective_scan_fwd_gpu[
+            Self.dtype,
+            d_state_val,
+            Self.u_LT,
+            Self.delta_LT,
+            Self.A_LT,
+            Self.B_LT,
+            Self.C_LT,
+            Self.D_LT,
+            Self.z_LT,
+            Self.delta_bias_LT,
+            Self.ssm_states_LT,
+            Self.output_LT,
+            Self.query_start_loc_LT,
+            Self.cache_indices_LT,
+            Self.has_initial_state_LT,
+        ]
+        var compiled_kernel = self.ctx.compile_function[kernel]()
+        self.ctx.enqueue_function(
+            compiled_kernel,
+            self.dim,
+            self.ngroups,
+            self.batch,
+            self.pad_slot_id,
+            self.delta_softplus_int8,
+            self.u_tt,
+            self.delta_tt,
+            self.A_tt,
+            self.B_tt,
+            self.C_tt,
+            self.D_tt,
+            self.z_tt,
+            self.delta_bias_tt,
+            self.ssm_states_tt,
+            self.output_tt,
+            self.query_start_loc_tt,
+            self.cache_indices_tt,
+            self.has_initial_state_tt,
+            self.strides.u,
+            self.strides.delta,
+            self.strides.A,
+            self.strides.B,
+            self.strides.C,
+            self.strides.D,
+            self.strides.z,
+            self.strides.delta_bias,
+            self.strides.ssm_states,
+            self.strides.output,
+            grid_dim=self.grid_dim,
+            block_dim=self.block_dim,
+        )
+
+    @parameter
+    def run_cpu[d_state_val: Int](self) capturing raises:
+        varlen_selective_scan_fwd_cpu[
+            Self.dtype,
+            d_state_val,
+        ](
+            self.dim,
+            self.ngroups,
+            self.batch,
+            self.pad_slot_id,
+            self.delta_softplus_int8,
+            self.u_tt,
+            self.delta_tt,
+            self.A_tt,
+            self.B_tt,
+            self.C_tt,
+            self.D_tt,
+            self.z_tt,
+            self.delta_bias_tt,
+            self.ssm_states_tt,
+            self.output_tt,
+            self.query_start_loc_tt,
+            self.cache_indices_tt,
+            self.has_initial_state_tt,
+            self.strides.u,
+            self.strides.delta,
+            self.strides.A,
+            self.strides.B,
+            self.strides.C,
+            self.strides.D,
+            self.strides.z,
+            self.strides.delta_bias,
+            self.strides.ssm_states,
+            self.strides.output,
+            Optional[DeviceContext](self.ctx),
+        )
+
+    def dispatch_for_d_state[
+        target: StaticString
+    ](mut self, d_state: Int) capturing raises:
+        comptime if is_cpu[target]():
+            comptime for ds in _SUPPORTED_D_STATE:
+                if d_state == ds:
+                    self.run_cpu[ds]()
+                    return
+            raise _unsupported_d_state_error(d_state)
+        elif is_gpu[target]():
+            comptime for ds in _SUPPORTED_D_STATE:
+                if d_state == ds:
+                    self.launch_gpu[ds]()
+                    return
+            raise _unsupported_d_state_error(d_state)
+        else:
+            raise Error("Unsupported target: " + target)
+
+
+@fieldwise_init
+struct VarlenSelectiveStateUpdateArgs[
+    dtype: DType,
+    state_LT: TensorLayout,
+    output_LT: TensorLayout,
+    x_LT: TensorLayout,
+    dt_LT: TensorLayout,
+    A_LT: TensorLayout,
+    B_LT: TensorLayout,
+    C_LT: TensorLayout,
+    D_LT: TensorLayout,
+    z_LT: TensorLayout,
+    dt_bias_LT: TensorLayout,
+    state_batch_indices_LT: TensorLayout,
+]:
+    var ctx: DeviceContext
+    var total_threads: Int
+    var batch: Int
+    var nheads: Int
+    var dim: Int
+    var nheads_ngroups_ratio: Int
+    var pad_slot_id: Int32
+    var dt_softplus_int8: Int8
+    var has_state_batch_indices_int8: Int8
+    var state_tt: TileTensor[
+        mut=True, Self.dtype, Self.state_LT, MutUntrackedOrigin
+    ]
+    var output_tt: TileTensor[
+        mut=True, Self.dtype, Self.output_LT, MutUntrackedOrigin
+    ]
+    var x_tt: TileTensor[Self.dtype, Self.x_LT, MutUntrackedOrigin]
+    var dt_tt: TileTensor[Self.dtype, Self.dt_LT, MutUntrackedOrigin]
+    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutUntrackedOrigin]
+    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutUntrackedOrigin]
+    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutUntrackedOrigin]
+    var D_tt: TileTensor[Self.dtype, Self.D_LT, MutUntrackedOrigin]
+    var z_tt: TileTensor[Self.dtype, Self.z_LT, MutUntrackedOrigin]
+    var dt_bias_tt: TileTensor[Self.dtype, Self.dt_bias_LT, MutUntrackedOrigin]
+    var state_batch_indices_tt: TileTensor[
+        DType.int32, Self.state_batch_indices_LT, MutUntrackedOrigin
+    ]
+    var strides: VarlenSelectiveStateUpdateStrides
+    var grid_dim: Dim
+    var block_dim: Dim
+
+    @parameter
+    def launch_gpu[d_state_val: Int](self) capturing raises:
+        comptime kernel = varlen_selective_state_update_gpu[
+            Self.dtype,
+            d_state_val,
+            Self.state_LT,
+            Self.x_LT,
+            Self.dt_LT,
+            Self.A_LT,
+            Self.B_LT,
+            Self.C_LT,
+            Self.D_LT,
+            Self.z_LT,
+            Self.output_LT,
+            Self.dt_bias_LT,
+            Self.state_batch_indices_LT,
+        ]
+        var compiled_kernel = self.ctx.compile_function[kernel]()
+        self.ctx.enqueue_function(
+            compiled_kernel,
+            self.total_threads,
+            self.batch,
+            self.nheads,
+            self.dim,
+            self.nheads_ngroups_ratio,
+            self.pad_slot_id,
+            self.dt_softplus_int8,
+            self.has_state_batch_indices_int8,
+            self.state_tt,
+            self.x_tt,
+            self.dt_tt,
+            self.A_tt,
+            self.B_tt,
+            self.C_tt,
+            self.D_tt,
+            self.z_tt,
+            self.output_tt,
+            self.dt_bias_tt,
+            self.state_batch_indices_tt,
+            self.strides.state,
+            self.strides.x,
+            self.strides.dt,
+            self.strides.dt_bias,
+            self.strides.A,
+            self.strides.B,
+            self.strides.C,
+            self.strides.D,
+            self.strides.z,
+            self.strides.output,
+            grid_dim=self.grid_dim,
+            block_dim=self.block_dim,
+        )
+
+    @parameter
+    def run_cpu[d_state_val: Int](self) capturing raises:
+        varlen_selective_state_update_cpu[
+            Self.dtype,
+            d_state_val,
+        ](
+            self.batch,
+            self.nheads,
+            self.dim,
+            self.nheads_ngroups_ratio,
+            self.pad_slot_id,
+            self.dt_softplus_int8,
+            self.has_state_batch_indices_int8,
+            self.state_tt,
+            self.x_tt,
+            self.dt_tt,
+            self.A_tt,
+            self.B_tt,
+            self.C_tt,
+            self.D_tt,
+            self.z_tt,
+            self.output_tt,
+            self.dt_bias_tt,
+            self.state_batch_indices_tt,
+            self.strides.state,
+            self.strides.x,
+            self.strides.dt,
+            self.strides.dt_bias,
+            self.strides.A,
+            self.strides.B,
+            self.strides.C,
+            self.strides.D,
+            self.strides.z,
+            self.strides.output,
+            Optional[DeviceContext](self.ctx),
+        )
+
+    def dispatch_for_d_state[
+        target: StaticString
+    ](mut self, d_state: Int) capturing raises:
+        comptime if is_cpu[target]():
+            comptime for ds in _SUPPORTED_D_STATE:
+                if d_state == ds:
+                    self.run_cpu[ds]()
+                    return
+            raise _unsupported_d_state_error(d_state)
+        elif is_gpu[target]():
+            comptime for ds in _SUPPORTED_D_STATE:
+                if d_state == ds:
+                    self.launch_gpu[ds]()
+                    return
+            raise _unsupported_d_state_error(d_state)
+        else:
+            raise Error("Unsupported target: " + target)
 
 
 @compiler.register("varlen_selective_scan_fwd")
@@ -58,12 +424,12 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
 
     Tensor Shapes:
         - output: (dim, total_length) - Output tensor (or written to z if present)
-        - ssm_states: (batch, dim, dstate) - SSM states (in/out)
+        - ssm_states: (batch, dim, d_state) - SSM states (in/out)
         - u: (dim, total_length) - Input tensor
         - delta: (dim, total_length) - Time step tensor
-        - A: (dim, dstate) - State transition matrix
-        - B: (ngroups, dstate, total_length) - Input projection
-        - C: (ngroups, dstate, total_length) - Output projection
+        - A: (dim, d_state) - State transition matrix
+        - B: (ngroups, d_state, total_length) - Input projection
+        - C: (ngroups, d_state, total_length) - Output projection
         - D: (dim,) - Skip connection (optional, can be empty)
         - z: (dim, total_length) - Gating tensor (optional, can be empty)
         - delta_bias: (dim,) - Delta bias (optional, can be empty)
@@ -93,337 +459,103 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         ctx: DeviceContext,
     ) capturing raises:
         var dim = u.dim_size(0)
-        var dstate = A.dim_size(1)
+        var d_state = A.dim_size(1)
         var ngroups = B.dim_size(0)
         var batch = query_start_loc.dim_size(0) - 1
 
-        var output_tt = output.to_tile_tensor[DType.int32]()
-        var ssm_states_tt = ssm_states.to_tile_tensor[DType.int32]()
-        var u_tt = u.to_tile_tensor[DType.int32]()
-        var delta_tt = delta.to_tile_tensor[DType.int32]()
-        var A_tt = A.to_tile_tensor[DType.int32]()
-        var B_tt = B.to_tile_tensor[DType.int32]()
-        var C_tt = C.to_tile_tensor[DType.int32]()
-        var D_tt = D.to_tile_tensor[DType.int32]()
-        var z_tt = z.to_tile_tensor[DType.int32]()
-        var delta_bias_tt = delta_bias.to_tile_tensor[DType.int32]()
-        var query_start_loc_tt = query_start_loc.to_tile_tensor[DType.int32]()
-        var cache_indices_tt = cache_indices.to_tile_tensor[DType.int32]()
-        var has_initial_state_tt = has_initial_state.to_tile_tensor[
-            DType.int32
-        ]()
+        var output_tt = output.to_tile_tensor()
+        var ssm_states_tt = ssm_states.to_tile_tensor()
+        var z_tt = z.to_tile_tensor()
+        var u_tt = u.to_tile_tensor()
+        var delta_tt = delta.to_tile_tensor()
+        var A_tt = A.to_tile_tensor()
+        var B_tt = B.to_tile_tensor()
+        var C_tt = C.to_tile_tensor()
+        var D_tt = D.to_tile_tensor()
+        var delta_bias_tt = delta_bias.to_tile_tensor()
+        var query_start_loc_tt = query_start_loc.to_tile_tensor()
+        var cache_indices_tt = cache_indices.to_tile_tensor()
+        var has_initial_state_tt = has_initial_state.to_tile_tensor()
 
-        # Get strides
-        var u_strides = Strides2D(u.strides()[0], u.strides()[1])
-        var delta_strides = Strides2D(delta.strides()[0], delta.strides()[1])
-        var A_strides = Strides2D(A.strides()[0], A.strides()[1])
-        var B_strides = Strides3D(
-            B.strides()[0], B.strides()[1], B.strides()[2]
+        var strides = VarlenSelectiveScanFwdStrides(
+            u=Strides2D(u.strides()[0], u.strides()[1]),
+            delta=Strides2D(delta.strides()[0], delta.strides()[1]),
+            A=Strides2D(A.strides()[0], A.strides()[1]),
+            B=Strides3D(B.strides()[0], B.strides()[1], B.strides()[2]),
+            C=Strides3D(C.strides()[0], C.strides()[1], C.strides()[2]),
+            D=Strides1D(D.strides()[0] if D.dim_size(0) > 0 else 1),
+            z=Strides2D(
+                z.strides()[0] if z.dim_size(0) > 0 else 1,
+                z.strides()[1] if z.dim_size(0) > 0 else 1,
+            ),
+            delta_bias=Strides1D(
+                delta_bias.strides()[0] if delta_bias.dim_size(0) > 0 else 1
+            ),
+            ssm_states=Strides3D(
+                ssm_states.strides()[0],
+                ssm_states.strides()[1],
+                ssm_states.strides()[2],
+            ),
+            output=Strides2D(output.strides()[0], output.strides()[1]),
         )
-        var C_strides = Strides3D(
-            C.strides()[0], C.strides()[1], C.strides()[2]
-        )
-        var D_strides = Strides1D(D.strides()[0] if D.dim_size(0) > 0 else 1)
-        var z_strides = Strides2D(
-            z.strides()[0] if z.dim_size(0) > 0 else 1,
-            z.strides()[1] if z.dim_size(0) > 0 else 1,
-        )
-        var delta_bias_strides = Strides1D(
-            delta_bias.strides()[0] if delta_bias.dim_size(0) > 0 else 1
-        )
-        var ssm_states_strides = Strides3D(
-            ssm_states.strides()[0],
-            ssm_states.strides()[1],
-            ssm_states.strides()[2],
-        )
-        var out_strides = Strides2D(output.strides()[0], output.strides()[1])
 
-        comptime PAD_SLOT_ID: Int32 = -1
         comptime delta_softplus_int8: Int8 = Int8(
             1
         ) if Self.delta_softplus else Int8(0)
 
-        if dstate != 4 and dstate != 8 and dstate != 16:
-            raise Error(
-                "Unsupported dstate: "
-                + String(dstate)
-                + ". Expected 4, 8, or 16."
-            )
+        _validate_d_state(d_state)
 
-        comptime if is_cpu[target]():
-            if dstate == 16:
-                varlen_selective_scan_fwd_cpu[
-                    dtype,
-                    16,
-                ](
-                    dim,
-                    ngroups,
-                    batch,
-                    PAD_SLOT_ID,
-                    delta_softplus_int8,
-                    u_tt,
-                    delta_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    delta_bias_tt,
-                    ssm_states_tt,
-                    output_tt,
-                    query_start_loc_tt,
-                    cache_indices_tt,
-                    has_initial_state_tt,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    ssm_states_strides,
-                    out_strides,
-                    Optional[DeviceContext](ctx),
-                )
-            elif dstate == 8:
-                varlen_selective_scan_fwd_cpu[
-                    dtype,
-                    8,
-                ](
-                    dim,
-                    ngroups,
-                    batch,
-                    PAD_SLOT_ID,
-                    delta_softplus_int8,
-                    u_tt,
-                    delta_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    delta_bias_tt,
-                    ssm_states_tt,
-                    output_tt,
-                    query_start_loc_tt,
-                    cache_indices_tt,
-                    has_initial_state_tt,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    ssm_states_strides,
-                    out_strides,
-                )
-            else:  # dstate == 4
-                varlen_selective_scan_fwd_cpu[
-                    dtype,
-                    4,
-                ](
-                    dim,
-                    ngroups,
-                    batch,
-                    PAD_SLOT_ID,
-                    delta_softplus_int8,
-                    u_tt,
-                    delta_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    delta_bias_tt,
-                    ssm_states_tt,
-                    output_tt,
-                    query_start_loc_tt,
-                    cache_indices_tt,
-                    has_initial_state_tt,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    ssm_states_strides,
-                    out_strides,
-                    Optional[DeviceContext](ctx),
-                )
-        elif is_gpu[target]():
-            var gpu_ctx = ctx
-            comptime BLOCK_SIZE = 128
-            var num_dim_blocks = ceildiv(dim, BLOCK_SIZE)
-
-            if dstate == 16:
-                comptime DSTATE_VAL = 16
-                var compiled_kernel = gpu_ctx.compile_function[
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_kernel,
-                    dim,
-                    ngroups,
-                    batch,
-                    PAD_SLOT_ID,
-                    delta_softplus_int8,
-                    u_tt,
-                    delta_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    delta_bias_tt,
-                    ssm_states_tt,
-                    output_tt,
-                    query_start_loc_tt,
-                    cache_indices_tt,
-                    has_initial_state_tt,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    ssm_states_strides,
-                    out_strides,
-                    grid_dim=(num_dim_blocks, batch, 1),
-                    block_dim=(BLOCK_SIZE, 1, 1),
-                )
-            elif dstate == 8:
-                comptime DSTATE_VAL = 8
-                var compiled_kernel = gpu_ctx.compile_function[
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_kernel,
-                    dim,
-                    ngroups,
-                    batch,
-                    PAD_SLOT_ID,
-                    delta_softplus_int8,
-                    u_tt,
-                    delta_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    delta_bias_tt,
-                    ssm_states_tt,
-                    output_tt,
-                    query_start_loc_tt,
-                    cache_indices_tt,
-                    has_initial_state_tt,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    ssm_states_strides,
-                    out_strides,
-                    grid_dim=(num_dim_blocks, batch, 1),
-                    block_dim=(BLOCK_SIZE, 1, 1),
-                )
-            else:  # dstate == 4
-                comptime DSTATE_VAL = 4
-                var compiled_kernel = gpu_ctx.compile_function[
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_kernel,
-                    dim,
-                    ngroups,
-                    batch,
-                    PAD_SLOT_ID,
-                    delta_softplus_int8,
-                    u_tt,
-                    delta_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    delta_bias_tt,
-                    ssm_states_tt,
-                    output_tt,
-                    query_start_loc_tt,
-                    cache_indices_tt,
-                    has_initial_state_tt,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    ssm_states_strides,
-                    out_strides,
-                    grid_dim=(num_dim_blocks, batch, 1),
-                    block_dim=(BLOCK_SIZE, 1, 1),
-                )
+        var grid_dim: Dim
+        var block_dim: Dim
+        comptime if is_gpu[target]():
+            var num_dim_blocks = ceildiv(dim, _GPU_FWD_BLOCK_SIZE)
+            grid_dim = (num_dim_blocks, batch, 1)
+            block_dim = (_GPU_FWD_BLOCK_SIZE, 1, 1)
         else:
-            raise Error("Unsupported target device")
+            grid_dim = (1, 1, 1)
+            block_dim = (1, 1, 1)
+
+        var args = VarlenSelectiveScanFwdArgs[
+            dtype,
+            output_tt.LayoutType,
+            ssm_states_tt.LayoutType,
+            z_tt.LayoutType,
+            u_tt.LayoutType,
+            delta_tt.LayoutType,
+            A_tt.LayoutType,
+            B_tt.LayoutType,
+            C_tt.LayoutType,
+            D_tt.LayoutType,
+            delta_bias_tt.LayoutType,
+            query_start_loc_tt.LayoutType,
+            cache_indices_tt.LayoutType,
+            has_initial_state_tt.LayoutType,
+        ](
+            ctx=ctx,
+            dim=dim,
+            ngroups=ngroups,
+            batch=batch,
+            pad_slot_id=_PAD_SLOT_ID,
+            delta_softplus_int8=delta_softplus_int8,
+            output_tt=output_tt,
+            ssm_states_tt=ssm_states_tt,
+            z_tt=z_tt,
+            u_tt=u_tt,
+            delta_tt=delta_tt,
+            A_tt=A_tt,
+            B_tt=B_tt,
+            C_tt=C_tt,
+            D_tt=D_tt,
+            delta_bias_tt=delta_bias_tt,
+            query_start_loc_tt=query_start_loc_tt,
+            cache_indices_tt=cache_indices_tt,
+            has_initial_state_tt=has_initial_state_tt,
+            strides=strides,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+        )
+
+        args.dispatch_for_d_state[target](d_state)
 
 
 @compiler.register_shape_function("varlen_selective_scan_fwd")
@@ -444,11 +576,6 @@ def varlen_selective_scan_fwd_shape[
     return u.shape()
 
 
-# ============================================================================
-# Varlen Selective State Update Registration
-# ============================================================================
-
-
 @compiler.register("varlen_selective_state_update")
 struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
     """Varlen selective state update for autoregressive inference.
@@ -460,13 +587,13 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         dt_softplus: If True, applies softplus activation to dt values.
 
     Tensor Shapes:
-        - state: (batch, nheads, dim, dstate) - SSM state (in/out)
+        - state: (batch, nheads, dim, d_state) - SSM state (in/out)
         - output: (batch, nheads, dim) - Output tensor
         - x: (batch, nheads, dim) - Input tensor
         - dt: (batch, nheads, dim) - Time delta tensor
-        - A: (nheads, dim, dstate) - State transition matrix
-        - B: (batch, ngroups, dstate) - Input matrix
-        - C: (batch, ngroups, dstate) - Output matrix
+        - A: (nheads, dim, d_state) - State transition matrix
+        - B: (batch, ngroups, d_state) - Input matrix
+        - C: (batch, ngroups, d_state) - Output matrix
         - D: (nheads, dim) - Skip connection (optional, can be empty)
         - z: (batch, nheads, dim) - Gating tensor (optional, can be empty)
         - dt_bias: (nheads, dim) - Time delta bias (optional, can be empty)
@@ -494,347 +621,117 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         var batch = x.dim_size(0)
         var nheads = x.dim_size(1)
         var dim = x.dim_size(2)
-        var dstate = state.dim_size(3)
+        var d_state = state.dim_size(3)
         var ngroups = B.dim_size(1)
         var nheads_ngroups_ratio = nheads // ngroups
 
-        var state_tt = state.to_tile_tensor[DType.int32]()
-        var output_tt = output.to_tile_tensor[DType.int32]()
-        var x_tt = x.to_tile_tensor[DType.int32]()
-        var dt_tt = dt.to_tile_tensor[DType.int32]()
-        var A_tt = A.to_tile_tensor[DType.int32]()
-        var B_tt = B.to_tile_tensor[DType.int32]()
-        var C_tt = C.to_tile_tensor[DType.int32]()
-        var D_tt = D.to_tile_tensor[DType.int32]()
-        var z_tt = z.to_tile_tensor[DType.int32]()
-        var dt_bias_tt = dt_bias.to_tile_tensor[DType.int32]()
-        var state_batch_indices_tt = state_batch_indices.to_tile_tensor[
-            DType.int32
-        ]()
+        var state_tt = state.to_tile_tensor()
+        var output_tt = output.to_tile_tensor()
+        var x_tt = x.to_tile_tensor()
+        var dt_tt = dt.to_tile_tensor()
+        var A_tt = A.to_tile_tensor()
+        var B_tt = B.to_tile_tensor()
+        var C_tt = C.to_tile_tensor()
+        var D_tt = D.to_tile_tensor()
+        var z_tt = z.to_tile_tensor()
+        var dt_bias_tt = dt_bias.to_tile_tensor()
+        var state_batch_indices_tt = state_batch_indices.to_tile_tensor()
 
-        # Get strides
-        var state_strides = Strides4D(
-            state.strides()[0],
-            state.strides()[1],
-            state.strides()[2],
-            state.strides()[3],
-        )
-        var x_strides = Strides3D(
-            x.strides()[0], x.strides()[1], x.strides()[2]
-        )
-        var dt_strides = Strides3D(
-            dt.strides()[0], dt.strides()[1], dt.strides()[2]
-        )
-        var dt_bias_strides = Strides2D(
-            dt_bias.strides()[0] if dt_bias.dim_size(0) > 0 else 1,
-            dt_bias.strides()[1] if dt_bias.dim_size(0) > 0 else 1,
-        )
-        var A_strides = Strides3D(
-            A.strides()[0], A.strides()[1], A.strides()[2]
-        )
-        var B_strides = Strides3D(
-            B.strides()[0], B.strides()[1], B.strides()[2]
-        )
-        var C_strides = Strides3D(
-            C.strides()[0], C.strides()[1], C.strides()[2]
-        )
-        var D_strides = Strides2D(
-            D.strides()[0] if D.dim_size(0) > 0 else 1,
-            D.strides()[1] if D.dim_size(0) > 0 else 1,
-        )
-        var z_strides = Strides3D(
-            z.strides()[0] if z.dim_size(0) > 0 else 1,
-            z.strides()[1] if z.dim_size(0) > 0 else 1,
-            z.strides()[2] if z.dim_size(0) > 0 else 1,
-        )
-        var out_strides = Strides3D(
-            output.strides()[0], output.strides()[1], output.strides()[2]
+        var strides = VarlenSelectiveStateUpdateStrides(
+            state=Strides4D(
+                state.strides()[0],
+                state.strides()[1],
+                state.strides()[2],
+                state.strides()[3],
+            ),
+            x=Strides3D(x.strides()[0], x.strides()[1], x.strides()[2]),
+            dt=Strides3D(dt.strides()[0], dt.strides()[1], dt.strides()[2]),
+            dt_bias=Strides2D(
+                dt_bias.strides()[0] if dt_bias.dim_size(0) > 0 else 1,
+                dt_bias.strides()[1] if dt_bias.dim_size(0) > 0 else 1,
+            ),
+            A=Strides3D(A.strides()[0], A.strides()[1], A.strides()[2]),
+            B=Strides3D(B.strides()[0], B.strides()[1], B.strides()[2]),
+            C=Strides3D(C.strides()[0], C.strides()[1], C.strides()[2]),
+            D=Strides2D(
+                D.strides()[0] if D.dim_size(0) > 0 else 1,
+                D.strides()[1] if D.dim_size(0) > 0 else 1,
+            ),
+            z=Strides3D(
+                z.strides()[0] if z.dim_size(0) > 0 else 1,
+                z.strides()[1] if z.dim_size(0) > 0 else 1,
+                z.strides()[2] if z.dim_size(0) > 0 else 1,
+            ),
+            output=Strides3D(
+                output.strides()[0], output.strides()[1], output.strides()[2]
+            ),
         )
 
         var has_state_batch_indices = state_batch_indices.dim_size(0) > 0
-        comptime PAD_SLOT_ID: Int32 = -1
         comptime dt_softplus_int8: Int8 = Int8(1) if Self.dt_softplus else Int8(
             0
         )
 
-        if dstate != 4 and dstate != 8 and dstate != 16:
-            raise Error(
-                "Unsupported dstate: "
-                + String(dstate)
-                + ". Expected 4, 8, or 16."
+        _validate_d_state(d_state)
+
+        var total_threads: Int
+        var grid_dim: Dim
+        var block_dim: Dim
+        comptime if is_gpu[target]():
+            total_threads = (
+                batch * nheads * ceildiv(dim, _GPU_UPDATE_BLOCK_SIZE_M)
             )
-
-        comptime if is_cpu[target]():
-            if dstate == 16:
-                varlen_selective_state_update_cpu[
-                    dtype,
-                    16,
-                ](
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
-                    PAD_SLOT_ID,
-                    dt_softplus_int8,
-                    Int8(has_state_batch_indices),
-                    state_tt,
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    output_tt,
-                    dt_bias_tt,
-                    state_batch_indices_tt,
-                    state_strides,
-                    x_strides,
-                    dt_strides,
-                    dt_bias_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    out_strides,
-                    Optional[DeviceContext](ctx),
-                )
-            elif dstate == 8:
-                varlen_selective_state_update_cpu[
-                    dtype,
-                    8,
-                ](
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
-                    PAD_SLOT_ID,
-                    dt_softplus_int8,
-                    Int8(has_state_batch_indices),
-                    state_tt,
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    output_tt,
-                    dt_bias_tt,
-                    state_batch_indices_tt,
-                    state_strides,
-                    x_strides,
-                    dt_strides,
-                    dt_bias_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    out_strides,
-                )
-            else:  # dstate == 4
-                varlen_selective_state_update_cpu[
-                    dtype,
-                    4,
-                ](
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
-                    PAD_SLOT_ID,
-                    dt_softplus_int8,
-                    Int8(has_state_batch_indices),
-                    state_tt,
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    output_tt,
-                    dt_bias_tt,
-                    state_batch_indices_tt,
-                    state_strides,
-                    x_strides,
-                    dt_strides,
-                    dt_bias_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    out_strides,
-                    Optional[DeviceContext](ctx),
-                )
-        elif is_gpu[target]():
-            var gpu_ctx = ctx
-            comptime BLOCK_SIZE_M = 4
-            var total_threads = batch * nheads * ceildiv(dim, BLOCK_SIZE_M)
-
-            if dstate == 16:
-                comptime DSTATE_VAL = 16
-                var compiled_kernel = gpu_ctx.compile_function[
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_kernel,
-                    total_threads,
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
-                    PAD_SLOT_ID,
-                    dt_softplus_int8,
-                    Int8(has_state_batch_indices),
-                    state_tt,
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    output_tt,
-                    dt_bias_tt,
-                    state_batch_indices_tt,
-                    state_strides,
-                    x_strides,
-                    dt_strides,
-                    dt_bias_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    out_strides,
-                    grid_dim=(ceildiv(dim, BLOCK_SIZE_M), batch, nheads),
-                    block_dim=(1,),
-                )
-            elif dstate == 8:
-                comptime DSTATE_VAL = 8
-                var compiled_kernel = gpu_ctx.compile_function[
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_kernel,
-                    total_threads,
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
-                    PAD_SLOT_ID,
-                    dt_softplus_int8,
-                    Int8(has_state_batch_indices),
-                    state_tt,
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    output_tt,
-                    dt_bias_tt,
-                    state_batch_indices_tt,
-                    state_strides,
-                    x_strides,
-                    dt_strides,
-                    dt_bias_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    out_strides,
-                    grid_dim=(ceildiv(dim, BLOCK_SIZE_M), batch, nheads),
-                    block_dim=(1,),
-                )
-            else:  # dstate == 4
-                comptime DSTATE_VAL = 4
-                var compiled_kernel = gpu_ctx.compile_function[
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_kernel,
-                    total_threads,
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
-                    PAD_SLOT_ID,
-                    dt_softplus_int8,
-                    Int8(has_state_batch_indices),
-                    state_tt,
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    output_tt,
-                    dt_bias_tt,
-                    state_batch_indices_tt,
-                    state_strides,
-                    x_strides,
-                    dt_strides,
-                    dt_bias_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    out_strides,
-                    grid_dim=(ceildiv(dim, BLOCK_SIZE_M), batch, nheads),
-                    block_dim=(1,),
-                )
+            grid_dim = (
+                ceildiv(dim, _GPU_UPDATE_BLOCK_SIZE_M),
+                batch,
+                nheads,
+            )
+            block_dim = (1,)
         else:
-            raise Error("Unsupported target device")
+            total_threads = 0
+            grid_dim = (1, 1, 1)
+            block_dim = (1,)
+
+        var args = VarlenSelectiveStateUpdateArgs[
+            dtype,
+            state_tt.LayoutType,
+            output_tt.LayoutType,
+            x_tt.LayoutType,
+            dt_tt.LayoutType,
+            A_tt.LayoutType,
+            B_tt.LayoutType,
+            C_tt.LayoutType,
+            D_tt.LayoutType,
+            z_tt.LayoutType,
+            dt_bias_tt.LayoutType,
+            state_batch_indices_tt.LayoutType,
+        ](
+            ctx=ctx,
+            total_threads=total_threads,
+            batch=batch,
+            nheads=nheads,
+            dim=dim,
+            nheads_ngroups_ratio=nheads_ngroups_ratio,
+            pad_slot_id=_PAD_SLOT_ID,
+            dt_softplus_int8=dt_softplus_int8,
+            has_state_batch_indices_int8=Int8(has_state_batch_indices),
+            state_tt=state_tt,
+            output_tt=output_tt,
+            x_tt=x_tt,
+            dt_tt=dt_tt,
+            A_tt=A_tt,
+            B_tt=B_tt,
+            C_tt=C_tt,
+            D_tt=D_tt,
+            z_tt=z_tt,
+            dt_bias_tt=dt_bias_tt,
+            state_batch_indices_tt=state_batch_indices_tt,
+            strides=strides,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+        )
+
+        args.dispatch_for_d_state[target](d_state)
 
 
 @compiler.register_shape_function("varlen_selective_state_update")
@@ -854,5 +751,5 @@ def varlen_selective_state_update_shape[
     var batch = x.dim_size(0)
     var nheads = x.dim_size(1)
     var dim = x.dim_size(2)
-    var dstate = A.dim_size(2)
-    return (IndexList[4](batch, nheads, dim, dstate), x.shape())
+    var d_state = A.dim_size(2)
+    return (IndexList[4](batch, nheads, dim, d_state), x.shape())
