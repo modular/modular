@@ -420,7 +420,7 @@ class TestEncodingFromExplicitWeightPath:
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(tmpdir, {"model.safetensors": {"w": "BF16"}})
             # Simulate remote: weight_path points to a non-local file, so
-            # _try_infer_encoding falls through to encoding_for_file.
+            # _infer_quantization_encoding falls through to encoding_for_file.
             explicit = [Path("model.safetensors")]
             config = _make_config(tmpdir, device_specs=[GPU_DEVICE_SPEC])
             with _resolve_mocks(weight_path_return=(explicit, None)):

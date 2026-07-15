@@ -34,6 +34,7 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
     SamplingConfig,
 )
+from max.pipelines.lib.config.model_config import _infer_weight_path
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types.task import PipelineTask
@@ -827,7 +828,7 @@ def _make_f32_only_repo() -> Mock:
 class TestFloat32WeightFallbackScoping:
     """Regression tests for the float32 -> 16-bit weight-path fallback.
 
-    ``_try_resolve_weight_path`` falls back to a repo's float32 safetensors
+    ``_infer_weight_path`` falls back to a repo's float32 safetensors
     when a float16/bfloat16 graph has no matching files. That fallback is
     scoped to diffuser sub-components (``subfolder`` set); it must NOT fire
     for architecture-validated models (LLMs, speculative-decoding draft
@@ -871,8 +872,7 @@ class TestFloat32WeightFallbackScoping:
             ),
         ):
             # Best-effort (pre-architecture) pass must not bind weight_path.
-            config._try_resolve_weight_path()
-            assert config.weight_path == []
+            assert _infer_weight_path(config) == []
 
             # Architecture-level given-encoding resolution.
             config.validate_and_resolve_quantization_encoding_weight_path(
@@ -905,9 +905,9 @@ class TestFloat32WeightFallbackScoping:
             new_callable=PropertyMock,
             return_value=_make_f32_only_repo(),
         ):
-            config._try_resolve_weight_path()
+            resolved_weight_path = _infer_weight_path(config)
 
-        assert config.weight_path == _F32_SAFETENSORS
+        assert resolved_weight_path == _F32_SAFETENSORS
         assert config.quantization_encoding == "bfloat16"
 
 
