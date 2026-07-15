@@ -80,6 +80,17 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.b200.8",
         timeout=90,
     ),
+    # DP=2 + tiered KV offload — mirrors the production M3 serving recipe and
+    # is the only config that exercises the overlap-scheduler staging race
+    # (heterogeneous_batch_tool_call_invariance scenario).
+    PipelineEntry(
+        pipeline="minimax/MiniMax-M3-MXFP8-ep-dp",
+        model_path="MiniMaxAI/MiniMax-M3-MXFP8",
+        runner="modrunner-b200-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=90,
+    ),
     PipelineEntry(
         pipeline="amd/MiniMax-M3-MXFP4-ep-tp",
         model_path="amd/MiniMax-M3-MXFP4",
