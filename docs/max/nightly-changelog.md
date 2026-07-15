@@ -272,7 +272,7 @@ This version is still a work in progress.
   `patternProperties`) are now normalized to `"type": "object"` before grammar
   compilation, matching the behavior of xgrammar-based engines. A genuinely
   empty `{}` schema is still treated as "any value".
-- Retuned the Prometheus/OpenTelemetry histogram buckets for MAX Serve metrics.
+- Retuned the Prometheus/OpenTelemetry histogram buckets for MAX metrics.
   Previously every histogram shared one millisecond-latency bucket range, which
   was inaccurate for non-latency metrics. Each histogram now uses bucket
   boundaries matched to its actual range (percentages bucket 0–100, token and
@@ -380,7 +380,7 @@ This version is still a work in progress.
   embed `InferenceSession` and fork (Python `multiprocessing` with the `fork`
   start method, pre-fork servers, or a bare `os.fork()`) — child processes
   start with the profiler disabled and can call `start()` again; the parent
-  retains its enabled state across the fork. (MAX Serve itself launches
+  retains its enabled state across the fork. (MAX itself launches
   workers with the `spawn` start method and is unaffected.)
 
 - Eager execution in `max.experimental` now routes every realization through
@@ -554,7 +554,7 @@ This version is still a work in progress.
   fused residual, FP8-quantized, and distributed all-reduce variants is now
   carried as `float32` end to end — from the graph op through the graph
   compiler to the kernel. The Python `epsilon: float` argument is unchanged.
-- Fixed MAX Serve crashing the model worker on the first host KV-cache
+- Fixed MAX crashing the model worker on the first host KV-cache
   offload/reload when run with `--kv-connector dkv`. The dKV connector had
   drifted out of sync with its client and no longer passed the required
   attention group on the load/offload path; it now supplies it, so the
