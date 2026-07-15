@@ -5087,7 +5087,6 @@ def conv_gpu[
                 def epilogue_wrapper[
                     _width: Int, alignment: Int = 1
                 ](coords: Coord) {var}:
-                    comptime align = align_of[SIMD[output_type, _width]]()
                     var idx = rebind[IndexList[4]](coord_to_index_list(coords))
                     vec = output_tmp_lt.load[width=_width](idx)
                     epilogue(idx, vec)
