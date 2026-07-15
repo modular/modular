@@ -53,8 +53,8 @@ StringAttr KGEN::applyLinkageName(StringAttr resolved, LinkageNameAttr lna,
   bool mangle = lna.getMangle().getValue();
   // First sanitize the linkage name if asked. If we're mangling the name, keep
   // all characters. Else, produce a short mangled name of 32 characters.
-  // FIXME: Perhaps split apart the concepts of sanitzation and name shortening,
-  // and stop conflating it to exclusively 'GPU' (offload) targets.
+  // FIXME: Perhaps split apart the concepts of sanitization and name
+  // shortening, and stop conflating it to exclusively offload targets.
   if (sanitize) {
     size_t charToKeep = !mangle ? 32 : std::numeric_limits<size_t>::max();
     resolved = sanitizeSymbolToUnderscores(resolved, charToKeep);
@@ -64,8 +64,8 @@ StringAttr KGEN::applyLinkageName(StringAttr resolved, LinkageNameAttr lna,
   if (!mangle)
     return resolved;
   // Else append a unique suffix derived from the symName and the printed
-  // function type. This matches the symbol produced by the GPU rename loop
-  // (renameFunctions) annd the name looked up by the host (get_linkage_name /
+  // function type. This matches the symbol produced by the offload rename loop
+  // (renameFunctions) and the name looked up by the host (get_linkage_name /
   // evaluateMangledName).
   std::string funcTypeStr;
   llvm::raw_string_ostream os(funcTypeStr);
@@ -119,9 +119,9 @@ void KGEN::renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed) {
     DebugInfo::updateSubprogram(func, newName);
 
     // On host targets, also rename the companion populate_captures stub when
-    // a host function carries an explicit linkage name. GPU kernels live only
-    // in standalone GPU modules and never have stubs in the host module, so
-    // this is a no-op for GPU targets.
+    // a host function carries an explicit linkage name. Offload kernels live
+    // only in standalone offload modules and never have stubs in the host
+    // module, so this is a no-op for offload targets.
     if (!isGPU) {
       MLIRContext *ctx = theModule.getContext();
       SmallString<128> stubOldStr(oldSym.getValue());

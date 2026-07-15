@@ -208,13 +208,13 @@ static int printSupportedCpus(StringRef userTriple) {
   return EXIT_SUCCESS;
 }
 
-/// Print the supported GPU and accelerator architectures declared by the
+/// Print the supported accelerator architectures declared by the
 /// registered `TargetTraits`.
 static int printSupportedAccelerators() {
   // The '#' characters below are intentional.
   // These delimiters allow Mojo tests to extract the architecture list
   // without needing to know specific architecture prefixes.
-  llvm::outs() << "Supported GPU and Accelerator Architectures:\n\n#\n";
+  llvm::outs() << "Supported Accelerator Architectures:\n\n#\n";
 
   // Print one section per target, name-sorted.
   llvm::SmallVector<const TargetTraits *> targets;

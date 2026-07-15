@@ -510,7 +510,7 @@ IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
   }
 
   // For a transparent thunk, look through to the wrapped function.
-  // `processCompileOffload` does the same redirect on the GPU side — the
+  // `processCompileOffload` does the same redirect on the offload side — the
   // wrapped function is what gets compiled, so its mangled name is what the
   // host needs to look up.
   if (auto thunkCallee =
@@ -543,8 +543,8 @@ IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
                          "'"});
     }
     // symName is the auto-mangled wrapper symbol used as a hash input
-    // (mangle=true). Always use mangleParameterValues so the host and GPU paths
-    // hash the same seed. renameFunctions calls applyLinkageName with
+    // (mangle=true). Always use mangleParameterValues so the host and offload
+    // paths hash the same seed. renameFunctions calls applyLinkageName with
     // func.getSymName() - the concrete function's MLIR sym - which equals
     // mangleParameterValues for both constant and parametric linkage names.
     // Using the linkage name literal here instead would produce a different
@@ -572,7 +572,7 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
   // closures as part of elaboration step.
   // We currently only support capturing closure as a parameter. So this closure
   // has to be created during elaboration time as a compile time constant.
-  // However, bundling GPU and other offload compilation means
+  // However, bundling offload compilation means
   // that the actual compilation of the offload functions will happen later
   // once all of them are seen and collected, and the actual body of this
   // closure will not be known until the offload function is compiled
@@ -594,7 +594,7 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
          "compile_offload_closure must reference a valid GeneratorOp");
 
   // If `generator` is a transparent thunk, mirror what `processCompileOffload`
-  // does and look through it to the wrapped function. The GPU-side
+  // does and look through it to the wrapped function. The offload-side
   // `writeCaptureArgs` names the populate function body after the *redirected*
   // (user-kernel) generator, so this stub must be named the same way for the
   // fill step to match them up.
@@ -629,8 +629,8 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
   // Use the auto-mangled sym_name (NOT @__name) for the stub name. Each
   // distinct closure instantiation gets its own stub keyed by the pre-rename
   // sym, even when multiple instantiations share the same @__name value
-  // (e.g. closures capturing uint32 vs uint64). writeCaptureArgs in the GPU
-  // compilation path names the populate function body using the same
+  // (e.g. closures capturing uint32 vs uint64). writeCaptureArgs in the
+  // offload compilation path names the populate function body using the same
   // pre-rename sym, so the fill step can match stub to body by name.
   std::string stubBaseName =
       mangleParameterValues(generator, closureSymbolForLookup.getParamValues());

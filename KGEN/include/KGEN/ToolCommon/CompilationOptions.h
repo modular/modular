@@ -122,14 +122,14 @@ public:
   std::string saveTempsPrefix;
   /// When set, offload kernel output files are written alongside the host
   /// output.  Each file is named <prefix>_<kernel_name><ext>.
-  /// The extension is target-specific (.ptx, .amdgcn, .ll) for ASM emission,
+  /// The extension is target-specific for ASM emission,
   /// or target-qualified .ll for LLVM IR emission (controlled by
   /// offloadOutputKind). Colliding names (same kernel, multiple instantiations)
   /// get _1/_2/...
   std::string offloadOutputPrefix;
   /// Selects the offload kernel file format written when offloadOutputPrefix is
-  /// set. EmitAs::ASM  → target-specific assembly (.ptx, .amdgcn, .ll for
-  /// Metal). EmitAs::LLVM → LLVM IR text (.ll) for all targets.
+  /// set. EmitAs::ASM  → target-specific assembly. EmitAs::LLVM → LLVM IR
+  /// text (.ll) for all targets.
   /// --emit=asm and --emit=llvm are mutually exclusive, so only one value is
   /// ever active at a time.
   EmitAs offloadOutputKind = EmitAs::ASM;

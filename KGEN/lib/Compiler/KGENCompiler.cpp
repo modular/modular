@@ -166,7 +166,7 @@ static std::tuple<OwningOpRef<FuncOp>, unsigned, mlir::DenseI64ArrayAttr>
 writeCaptureArgs(ModuleOp module, FuncOp sliced, StringAttr preRenameSym) {
   // This is held together with duct tape, so check the invariant.
   assert(sliced && sliced.isExported() && "expected a sliced function");
-  // For GPU kernels renamed by @__name, the host stub was created using the
+  // For offload kernels renamed by @__name, the host stub was created using the
   // pre-rename auto-mangled sym (in evaluateCompileOffloadClosureAttr). Pass
   // preRenameSym to use that same name so the fill step in the host elaborator
   // can match the populate function to the host stub by name.
@@ -317,7 +317,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   setTargetInfo(*module, target);
 
   // Tag the entry generator with a kernel ID so we can find the resulting
-  // FuncOp after elaboration (which may rename symbols for GPU targets).
+  // FuncOp after elaboration (which may rename symbols for offload targets).
   static constexpr uint64_t kAsmEntryKernelId = 0;
   // Capture the pre-rename sym before elaboration renames functions, so that
   // writeCaptureArgs can name populate_captures consistently with host stubs.
@@ -352,7 +352,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
 
   if (failed(pm.run(*module)))
     return Error("failed to run the pass manager");
-  // Find the entry function by kernel ID (robust against GPU name
+  // Find the entry function by kernel ID (robust against offload name
   // sanitization).
   FuncOp entryFunc = findFuncByKernelId(*module, kAsmEntryKernelId);
   if (!entryFunc)
