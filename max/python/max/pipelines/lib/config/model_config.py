@@ -770,6 +770,12 @@ class MAXModelConfig(MAXModelConfigBase):
 
         1. Validates that the provided ``device_specs`` are available.
         2. Parses the weight path and initializes ``_weights_repo_id``.
+
+        Encoding and weight_path are resolved elsewhere: diffuser
+        sub-components resolve on demand at consumption time (see
+        ``resolve_component_encoding_and_weights()``), and LLM models
+        resolve during architecture-level validation in
+        ``_validate_model_config_against_arch()``.
         """
         # Validate that the device_specs provided are available
         if not devices_exist(self.device_specs):
@@ -788,93 +794,6 @@ class MAXModelConfig(MAXModelConfigBase):
                 huggingface_model_revision=self.huggingface_model_revision,
             )
         )
-
-        # Best-effort encoding and weight_path resolution.
-        #
-        # Diffuser sub-components (subfolder set) resolve their own
-        # encoding/weight_path on demand at consumption time instead --
-        # see resolve_component_encoding_and_weights(), called from every
-        # diffuser consumer (DiffusionPipeline._load_sub_models(),
-        # MAXModelConfig.loader(), and the flux2/flux2_modulev3/wan/
-        # qwen_image_edit component builders) -- so they're skipped here.
-        # LLM models still get this best-effort pass; the
-        # architecture-level validation that finalizes them runs
-        # afterward and is idempotent regardless.
-        if self.subfolder is None:
-            self._resolve_encoding_and_weights()
-
-    # ------------------------------------------------------------------
-    # Best-effort encoding / weight resolution
-    # ------------------------------------------------------------------
-
-    def _resolve_encoding_and_weights(self) -> None:
-        """Best-effort resolution of quantization_encoding and weight_path.
-
-        Infers encoding and discovers weight files without requiring
-        architecture-level information. Only called for LLM models
-        (``resolve()`` skips this for diffuser sub-components, which
-        resolve on demand via ``resolve_component_encoding_and_weights()``
-        instead).
-
-        For LLM models that later go through
-        ``_validate_model_config_against_arch()``, the fields resolved
-        here are consumed as-is (the downstream methods are idempotent
-        when these fields are already set).
-
-        Best-effort: if encoding or weights cannot be unambiguously
-        determined, the fields are left as-is rather than raising.
-        """
-        # Stage 1: infer encoding if not already set.
-        if not self.quantization_encoding:
-            try:
-                encoding, cast_from, cast_to = _infer_quantization_encoding(
-                    self
-                )
-                if encoding:
-                    self.quantization_encoding = encoding
-                if cast_from is not None:
-                    self._applied_dtype_cast_from = cast_from
-                    self._applied_dtype_cast_to = cast_to
-            except Exception:
-                logger.debug(
-                    "Could not infer quantization_encoding for %s; "
-                    "architecture validation will handle it.",
-                    self.model_path,
-                )
-
-        # Stage 2: discover weight files if encoding is set but paths are not.
-        if self.quantization_encoding and not self.weight_path:
-            try:
-                self.weight_path = _infer_weight_path(
-                    self,
-                    self.quantization_encoding,
-                    self._applied_dtype_cast_from,
-                )
-            except Exception:
-                logger.debug(
-                    "Could not resolve weight_path for %s; "
-                    "architecture validation will handle it.",
-                    self.model_path,
-                )
-
-        # Stage 3: finalize encoding config and validate paths.
-        if self.quantization_encoding and self.weight_path:
-            try:
-                quant = _finalize_gptq_quant_config(self)
-                if quant is not None:
-                    self._quant = quant
-            except Exception:
-                logger.debug(
-                    "Could not finalize encoding config for %s.",
-                    self.model_path,
-                )
-            try:
-                self._validate_final_architecture_model_path_weight_path()
-            except Exception:
-                logger.debug(
-                    "Weight path validation deferred for %s.",
-                    self.model_path,
-                )
 
     @property
     def model_name(self) -> str:
@@ -1312,18 +1231,20 @@ class MAXModelConfig(MAXModelConfigBase):
         # If weight path is not None, infer the quantization_encoding from the weight_path.
         if self.weight_path:
             if os.path.exists(self.weight_path[0]):
-                # Not currently supported. Infer encoding from local path.
-                if self.weight_path[0].suffix == ".safetensors":
-                    raise ValueError(
-                        "If a local safetensors file is provided, please provide a quantization_encoding."
-                    )
-
+                # Try a filename hint first (mirrors the best-effort pass,
+                # which infers from the filename regardless of local/remote).
                 if encoding := parse_supported_encoding_from_file_name(
                     str(self.weight_path[0])
                 ):
                     msg = f"encoding inferred from weights file: {encoding}"
                     logger.debug(msg)
                     self.quantization_encoding = encoding
+                elif self.weight_path[0].suffix == ".safetensors":
+                    # No hint in the name and no header inspection for local
+                    # safetensors files: the user must specify explicitly.
+                    raise ValueError(
+                        "If a local safetensors file is provided, please provide a quantization_encoding."
+                    )
 
             else:
                 if encoding := self.huggingface_weight_repo.encoding_for_file(
@@ -1361,6 +1282,22 @@ class MAXModelConfig(MAXModelConfigBase):
                 msg = f"encoding not provided, using default encoding of {default_encoding}"
                 logger.debug(msg)
                 self.quantization_encoding = default_encoding
+
+        # On GPU, cast float32 -> bfloat16 (the natural GPU dtype). Mirrors
+        # the equivalent step in the best-effort pass
+        # (_infer_quantization_encoding), which normally applies this cast
+        # before architecture resolution ever runs. This is a backstop for
+        # cases where quantization_encoding is still unresolved here --
+        # e.g. resolve() wasn't called first, or the best-effort pass
+        # silently failed -- so architecture validation alone is
+        # self-sufficient rather than depending on the earlier pass.
+        if (
+            self.quantization_encoding == "float32"
+            and self.default_device_spec.device_type != "cpu"
+        ):
+            self._validate_and_resolve_dtype_casting(
+                from_encoding="float32", to_encoding="bfloat16"
+            )
 
     def _validate_quantization_encoding_device_compatibility(
         self,

@@ -890,6 +890,43 @@ class TestFloat32WeightFallbackScoping:
         assert config._applied_dtype_cast_from == "float32"
         assert config._applied_dtype_cast_to == "bfloat16"
 
+    def test_no_given_encoding_f32_only_repo_casts_to_bfloat16(self) -> None:
+        """Architecture-level resolution alone still casts f32 -> bf16.
+
+        No ``quantization_encoding`` given, repo has only float32 weights,
+        no ``subfolder``. Calls ``validate_and_resolve_quantization_encoding_weight_path``
+        directly (bypassing ``resolve()``/the best-effort pass entirely) to
+        verify the ``without-given-encoding`` path applies the same
+        float32 -> bfloat16 GPU cast the best-effort pass normally applies
+        first. Regression guard for the case where resolve() wasn't called
+        first or the best-effort pass silently failed to infer an encoding:
+        without this cast, a model whose repo ships only float32 weights
+        would silently run in float32 on GPU instead of the expected
+        bfloat16.
+        """
+        config = MAXModelConfig(model_path="test/f32-only")
+        assert config.quantization_encoding is None
+
+        with (
+            patch.object(
+                MAXModelConfig,
+                "huggingface_weight_repo",
+                new_callable=PropertyMock,
+                return_value=_make_f32_only_repo(),
+            ),
+            patch(
+                "max.pipelines.lib.config.model_config.supported_encoding_supported_on",
+                return_value=True,
+            ),
+        ):
+            config.validate_and_resolve_quantization_encoding_weight_path(
+                default_encoding="bfloat16"
+            )
+
+        assert config.quantization_encoding == "bfloat16"
+        assert config._applied_dtype_cast_from == "float32"
+        assert config._applied_dtype_cast_to == "bfloat16"
+
     def test_diffuser_subcomponent_f32_fallback_still_resolves(self) -> None:
         """A diffuser sub-component (``subfolder`` set) still gets the fallback.
 
