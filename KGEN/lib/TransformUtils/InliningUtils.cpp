@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/ToolCommon/PassManagerConfigOptions.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/IRMapping.h"
@@ -302,6 +303,9 @@ mlir::PassManager &PerThreadPassManagers::getPassManager() {
   // Initialize the pass manager.
   buildFuncPasses(pm);
   pm.enableVerifier(false);
+  PassManagerConfigOptions pmOptions;
+  pmOptions.applyPassManagerCLOptions = true; // enable print options
+  (void)pmOptions.configurePassManager(pm);
   // Enable time tracing on the nested pass manager.
   if constexpr (KGEN::kIsTracingEnabled)
     pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
