@@ -1072,7 +1072,7 @@ struct Struct_matmul_weight_only_block_scaled_apple:
         )
 
 
-@compiler.register("mo.matmul.weight.only.scaled.float8.apple")
+@extensibility.register("mo.matmul.weight.only.scaled.float8.apple")
 struct Struct_matmul_weight_only_scaled_float8_apple:
     """Apple M5 weight-only FP8 (W8A16) matmul: `out = a @ dequant(b)^T`.
 

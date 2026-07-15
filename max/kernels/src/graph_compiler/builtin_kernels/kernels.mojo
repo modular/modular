@@ -3842,7 +3842,7 @@ def causal_conv1d_varlen_fwd_shape[
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("gated_group_rmsnorm")
+@extensibility.register("gated_group_rmsnorm")
 struct GatedGroupRMSNorm[group_size: Int]:
     """Fused silu-gate + group RMSNorm + weight-scale for the Mamba-2 mixer.
 
@@ -3917,7 +3917,7 @@ struct GatedGroupRMSNorm[group_size: Int]:
             raise Error("gated_group_rmsnorm: unsupported target device")
 
 
-@compiler.register_shape_function("gated_group_rmsnorm")
+@extensibility.register_shape_function("gated_group_rmsnorm")
 def gated_group_rmsnorm_shape[
     dtype: DType,
     gate_dtype: DType,
