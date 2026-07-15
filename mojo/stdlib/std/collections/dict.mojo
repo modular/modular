@@ -1884,9 +1884,11 @@ struct Dict[
         self._order = new_order^
 
 
-struct OwnedKwargsDict[V: Movable & ImplicitlyDeletable](
+# TODO(MSTDL-2838): rename `OwnedKwargsDict` to `StringDict`.
+struct OwnedKwargsDict[V: Movable](
     Copyable where conforms_to(V, Copyable),
     Defaultable,
+    ImplicitlyDeletable where conforms_to(V, ImplicitlyDeletable),
     Iterable,
     Movable,
     Sized,
@@ -1894,9 +1896,9 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDeletable](
     """Container used to pass owned variadic keyword arguments to functions.
 
     Parameters:
-        V: The value type of the dictionary. Must be
-            `Movable & ImplicitlyDeletable`; copy-requiring operations are
-            conditionally available via `where conforms_to(V, Copyable)`.
+        V: The value type of the dictionary. Must be `Movable`. When `V` is not
+            `ImplicitlyDeletable`, the dictionary has no implicit destructor and
+            must be torn down with `deinit_with()`.
 
     This type mimics the interface of a dictionary with `String` keys, and
     should be usable more-or-less like a dictionary. Notably, however, this type
@@ -1911,7 +1913,7 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDeletable](
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[
         Self.key_type,
-        downcast[Self.V, Copyable & ImplicitlyDeletable],
+        downcast[Self.V, Copyable],
         default_comp_time_hasher,
         iterable_origin,
     ]
@@ -1931,6 +1933,39 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDeletable](
     def __init__(out self):
         """Initialize an empty keyword dictionary."""
         self._dict = Dict[Self.key_type, Self.V, default_comp_time_hasher]()
+
+    # TODO(MOCO-4228): remove this __del__ once an explicit __del__ is synthesized
+    def __del__(deinit self) where conforms_to(Self.V, ImplicitlyDeletable):
+        """Destroy all values in the dictionary and free memory.
+
+        Constraints:
+            `V` must be `ImplicitlyDeletable`. When it is not, the dictionary has
+            no implicit destructor and must be torn down with `deinit_with()`.
+        """
+        # `_dict`'s conditional destructor handles the
+        # occupied entries and frees memory.
+        pass
+
+    def deinit_with(
+        deinit self, deinit_func: Some[def(var String, var Self.V)], /
+    ):
+        """Consume the dictionary, deinitializing each key/value pair with a closure.
+
+        Use this to tear down a keyword dictionary whose values are not
+        `ImplicitlyDeletable`.
+
+        Args:
+            deinit_func: A closure called once per entry to destroy its key and
+                value.
+        """
+
+        # TODO(MOCO-4295): forwarding this *existential* (`Some[def(...)]`)
+        # closure straight to `Dict.deinit_with` doesn't compile — its `K`
+        # won't bind to `String`. Drop this wrapper once fixed.
+        def forward(var key: String, var value: Self.V) {read deinit_func}:
+            deinit_func(key^, value^)
+
+        self._dict^.deinit_with(forward)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -1954,8 +1989,15 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDeletable](
         return self._dict[key]
 
     @always_inline
-    def __setitem__(mut self, key: Self.key_type, var value: Self.V):
+    def __setitem__(
+        mut self, key: Self.key_type, var value: Self.V
+    ) where conforms_to(Self.V, ImplicitlyDeletable):
         """Set a value in the keyword dictionary by key.
+
+        Constraints:
+            `V` must be `ImplicitlyDeletable`, since assigning to an existing key
+            destroys the displaced value in place. To populate a keyword
+            dictionary with a linear `V`, use `insert()` instead.
 
         Args:
             key: The key to associate with the specified value.
@@ -2009,8 +2051,57 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDeletable](
         return self._dict.find(key)
 
     @always_inline
-    def pop(mut self, key: self.key_type, var default: Self.V) -> Self.V:
+    def insert(
+        mut self, var key: Self.key_type, var value: Self.V
+    ) -> Optional[DictEntry[Self.key_type, Self.V, default_comp_time_hasher]]:
+        """Insert a key/value pair, returning the displaced entry if the key was
+        already present.
+
+        Unlike `__setitem__`, the displaced entry is moved out and returned
+        (never destroyed in place), so this works when `V` is linear
+        (non-`ImplicitlyDeletable`). The caller is responsible for disposing of
+        the returned entry.
+
+        Args:
+            key: The key to associate with the value.
+            value: The value to store.
+
+        Returns:
+            The previous entry if `key` was already present, otherwise an empty
+            `Optional`.
+        """
+        return self._dict.insert(key^, value^)
+
+    @always_inline
+    def popitem(
+        mut self,
+    ) raises EmptyDictError -> DictEntry[
+        Self.key_type, Self.V, default_comp_time_hasher
+    ]:
+        """Remove and return a (key, value) pair from the dictionary.
+
+        The entry is moved out whole (nothing is destroyed in place), so this
+        works when `V` is linear. The caller is responsible for disposing of the
+        returned entry.
+
+        Returns:
+            The removed entry.
+
+        Raises:
+            `EmptyDictError` if the dictionary is empty.
+        """
+        return self._dict.popitem()
+
+    @always_inline
+    def pop(
+        mut self, key: self.key_type, var default: Self.V
+    ) -> Self.V where conforms_to(Self.V, ImplicitlyDeletable):
         """Remove a value from the dictionary by key.
+
+        Constraints:
+            `V` must be `ImplicitlyDeletable`, since the unused `default` is
+            discarded in place when the key is found. To remove from a keyword
+            dictionary with a linear `V`, use `pop(key)` or `popitem()`.
 
         Args:
             key: The key to remove from the dictionary.
@@ -2055,7 +2146,7 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDeletable](
         ref self,
     ) -> _DictKeyIter[
         Self.key_type,
-        downcast[Self.V, Copyable & ImplicitlyDeletable],
+        downcast[Self.V, Copyable],
         default_comp_time_hasher,
         origin_of(self._dict),
     ]:
@@ -2073,7 +2164,7 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDeletable](
         Self.V,
         default_comp_time_hasher,
         origin_of(self._dict),
-    ] where conforms_to(Self.V, Copyable & ImplicitlyDeletable):
+    ] where conforms_to(Self.V, Copyable):
         """Iterate over the keyword dict's values as references.
 
         Returns:
@@ -2088,7 +2179,7 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDeletable](
         Self.V,
         default_comp_time_hasher,
         origin_of(self._dict),
-    ] where conforms_to(Self.V, Copyable & ImplicitlyDeletable):
+    ] where conforms_to(Self.V, Copyable):
         """Iterate over the keyword dictionary's entries as immutable
         references.
 
@@ -2116,9 +2207,13 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDeletable](
         return self._dict.items()
 
     @always_inline
-    def _insert(mut self, var key: Self.key_type, var value: Self.V):
+    def _insert(
+        mut self, var key: Self.key_type, var value: Self.V
+    ) where conforms_to(Self.V, ImplicitlyDeletable):
         self._dict._insert(key^, value^)
 
     @always_inline
-    def _insert(mut self, key: StringLiteral, var value: Self.V):
+    def _insert(
+        mut self, key: StringLiteral, var value: Self.V
+    ) where conforms_to(Self.V, ImplicitlyDeletable):
         self._insert(String(key), value^)

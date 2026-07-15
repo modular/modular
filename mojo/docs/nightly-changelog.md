@@ -346,6 +346,18 @@ This version is still a work in progress.
   `take_items()`) still requires `ImplicitlyDeletable`, since it drops the
   entries it does not yield.
 
+- `OwnedKwargsDict` (the container backing variadic `**kwargs`) no longer
+  requires its value type `V` to be `ImplicitlyDeletable`. A keyword dictionary
+  whose values are linear (non-`ImplicitlyDeletable`) is itself linear and must
+  be torn down explicitly with the new `deinit_with(deinit_func)`, which hands
+  each key and value to `deinit_func`. It also gained `insert(key, value)`
+  (returns the displaced entry as an `Optional[DictEntry]` without destroying
+  it) and `popitem()` (moves out and returns a whole entry), mirroring `Dict`.
+  Operations that destroy a displaced value in place — `kwargs[key] = value` and
+  the two-argument `pop(key, default)` — still require `V` to be
+  `ImplicitlyDeletable`; use `insert`, `popitem`, or the single-argument
+  `pop(key)` for linear values.
+
 - `Coord` now conforms to `DevicePassable`, so a `Coord` embedded in a
   `DevicePassable` type (such as a `TileTensor`'s `Layout`) is encoded to the
   device through `Coord._to_device_type` instead of a raw field bit-copy, the

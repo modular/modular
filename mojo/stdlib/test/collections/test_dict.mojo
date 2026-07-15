@@ -1754,5 +1754,91 @@ def test_dict_insert_linear_key_and_value() raises:
     assert_equal(len(disposed_keys), 3)
 
 
+def _test_taking_owned_kwargs_dict_linear_popitem(
+    **kwargs: ExplicitDestroy,
+) raises:
+    var disposed_keys = List[String]()
+    var disposed_vals = List[Int]()
+
+    def dispose_kwarg(var key: String, var value: ExplicitDestroy) {mut}:
+        disposed_keys.append(key)
+        disposed_vals.append(value.value)
+        value^.destroy()
+
+    while True:
+        try:
+            var entry = kwargs.popitem()
+            entry^.deinit_with(dispose_kwarg)
+        except e:
+            break  # EmptyDictError: kwargs is now empty
+
+    kwargs^.deinit_with(dispose_kwarg)  # empty container still needs teardown
+
+    assert_equal(len(disposed_vals), 2)
+    assert_true("linear_fruit" in disposed_keys)
+    assert_true("linear_dessert" in disposed_keys)
+    assert_true(8 in disposed_vals)
+    assert_true(9 in disposed_vals)
+
+
+def _test_taking_owned_kwargs_dict_linear_insert_pop(
+    **kwargs: ExplicitDestroy,
+) raises:
+    var disposed = List[Int]()
+
+    def dispose_kwarg(var key: String, var value: ExplicitDestroy) {mut}:
+        disposed.append(value.value)
+        value^.destroy()
+
+    def dispose_entry(
+        var entry: DictEntry[String, ExplicitDestroy, default_comp_time_hasher]
+    ) {mut}:
+        entry^.deinit_with(dispose_kwarg)
+
+    var popped_val: Int
+    var len_after_pop: Int
+    try:
+        var displaced = kwargs.insert("linear_dessert", ExplicitDestroy(12))
+        displaced^.deinit_with(dispose_entry)
+
+        var popped = kwargs.pop("linear_dessert")
+        popped_val = popped.value
+        popped^.destroy()
+
+        len_after_pop = len(kwargs)
+        kwargs^.deinit_with(dispose_kwarg)  # success: consume once
+    except e:
+        kwargs^.deinit_with(dispose_kwarg)  # error: consume once
+        raise e  # then bail
+
+    assert_equal(disposed[0], 9)  # displaced old dessert
+    assert_equal(popped_val, 12)  # popped the replacement value
+    assert_equal(len_after_pop, 1)  # started 2 (fruit, dessert), popped dessert
+
+
+def test_owned_kwargs_dict_linear() raises:
+    def dispose_kwarg(var key: String, var value: ExplicitDestroy) {mut}:
+        value^.destroy()
+
+    def dispose_val(
+        var entry: DictEntry[String, ExplicitDestroy, default_comp_time_hasher]
+    ) {mut}:
+        entry^.deinit_with(dispose_kwarg)
+
+    var kw1 = OwnedKwargsDict[ExplicitDestroy]()
+    var a1 = kw1.insert("linear_fruit", ExplicitDestroy(8))
+    a1^.deinit_with(dispose_val)
+    var a2 = kw1.insert("linear_dessert", ExplicitDestroy(9))
+    a2^.deinit_with(dispose_val)
+    _test_taking_owned_kwargs_dict_linear_popitem(**kw1^)
+
+    var kw2 = OwnedKwargsDict[ExplicitDestroy]()
+    var b1 = kw2.insert("linear_fruit", ExplicitDestroy(8))
+    b1^.deinit_with(dispose_val)
+    var b2 = kw2.insert("linear_dessert", ExplicitDestroy(9))
+    b2^.deinit_with(dispose_val)
+    _test_taking_owned_kwargs_dict_linear_insert_pop(**kw2^)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
