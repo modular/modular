@@ -14,10 +14,3 @@ def debug_assert(cond: Bool):
 def debug_assert(cond: Bool, message: StringLiteral):
     if not cond:
         abort()
-
-
-@no_inline
-def abort() -> Never:
-    __mlir_op.`llvm.intr.trap`()
-    while True:
-        pass

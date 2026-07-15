@@ -227,16 +227,6 @@ struct ZBool:
     pass
 
 
-# Copied from stdlib
-@always_inline("nodebug")
-def rebind[
-    src_type: TrivialRegisterPassable,
-    //,
-    dest_type: TrivialRegisterPassable,
-](src: src_type) -> dest_type:
-    return __mlir_op.`kgen.rebind`[_type=dest_type](src)
-
-
 trait ConvertibleToZPointer:
     comptime Pointee: AnyType
 
@@ -255,7 +245,9 @@ struct ZPointer[T: AnyType](TrivialRegisterPassable):
         # generic trait instead of using an associated alias.
         # As it is, this won't catch incorrectly passing in a e.g.
         # ZDeviceBuffer[Int] into a ZPointer[Bool].
-        var z: ZPointer[Self.T] = rebind[ZPointer[Self.T]](c.to_zpointer())
+        var z: ZPointer[Self.T] = rebind[ZPointer[Self.T]](
+            c.to_zpointer()
+        )
 
 
 trait ConvertibleToZLayoutTensor:

@@ -3,5 +3,5 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-def foo():
+def foo2():
     pass
