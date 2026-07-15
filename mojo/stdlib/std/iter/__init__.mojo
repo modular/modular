@@ -823,7 +823,7 @@ struct _PeekableIterator[InnerIterator: Iterator](
                 self._next = next(self._inner)
             except:
                 return None
-        return Pointer(to=self._next.unsafe_value()).get_immutable()
+        return Pointer[mut=False](to=self._next.unsafe_value())
 
 
 def peekable(

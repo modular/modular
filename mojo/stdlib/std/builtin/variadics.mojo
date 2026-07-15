@@ -1251,9 +1251,9 @@ struct VariadicList[
     ](
         out self,
         value: Pointer[
-            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_type],
+            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_lit_ref],
             container_origin,
-        ]._mlir_type,
+        ]._mlir_lit_ref,
     ):
         """Constructs a VariadicList from a compiler-generated array of element
         pointers.

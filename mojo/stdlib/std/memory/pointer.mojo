@@ -23,6 +23,7 @@ from std._plugin import CurrentPlugin
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.builtin.simd_size import SIMDSize
 from std.memory import UnsafeMaybeUninit
+from std.memory.unsafe_pointer import Pointer as _CommonPointer
 from std.utils._nicheable import UnsafeSingleNicheable, NicheIndex
 
 # ===-----------------------------------------------------------------------===#
@@ -211,228 +212,18 @@ comptime ImmutPointer = ImmPointer
 # ===-----------------------------------------------------------------------===#
 
 
-struct Pointer[
+comptime Pointer[
     mut: Bool,
     //,
     type: AnyType,
     origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
-    """Defines a non-nullable safe pointer.
+] = _CommonPointer[type, origin, address_space=address_space, _safe=True]
+"""A non-nullable pointer to a value of `type`.
 
-    For a comparison with other pointer types, see [Intro to
-    pointers](/docs/manual/pointers/) in the Mojo Manual.
-
-    Parameters:
-        mut: Whether the pointee data may be mutated through this.
-        type: Type of the underlying data.
-        origin: The origin of the pointer.
-        address_space: The address space of the pointee data.
-    """
-
-    # Aliases
-    comptime _mlir_type = __mlir_type[
-        `!lit.ref<`,
-        Self.type,
-        `, `,
-        Self.origin._mlir_origin,
-        `, `,
-        Self.address_space._value._mlir_value,
-        `>`,
-    ]
-    comptime _with_origin = Pointer[Self.type, _, Self.address_space]
-
-    comptime Immutable = Self._with_origin[ImmutOrigin(Self.origin)]
-    """The immutable version of the `Pointer`."""
-    # Fields
-    var _value: Self._mlir_type
-    """The underlying MLIR representation."""
-
-    # ===------------------------------------------------------------------===#
-    # Initializers
-    # ===------------------------------------------------------------------===#
-
-    @doc_hidden
-    @implicit
-    @always_inline("nodebug")
-    def __init__(
-        other: Pointer,
-        out self: Pointer[
-            other.type,
-            ImmutOrigin(other.origin),
-            address_space=other.address_space,
-        ],
-    ):
-        """Implicitly cast the mutable origin of self to an immutable one.
-
-        Args:
-            other: The `Pointer` to cast.
-        """
-        self = {_mlir_value = other._value}
-
-    @doc_hidden
-    @implicit
-    @always_inline("nodebug")
-    def __init__(
-        out self, other: Pointer[address_space=Self.address_space, ...]
-    ) where Self.origin.contains[other.origin]:
-        """Implicitly cast a pointer with one origin to a another origin when
-        the result origin is a superset.
-
-        Args:
-            other: The `Pointer` to cast.
-
-        Returns:
-            A new Pointer with the same target as self and an ImmutOrigin.
-        """
-        self._value = rebind[Self._mlir_type](other._value)
-
-    @doc_hidden
-    @always_inline("nodebug")
-    def __init__(out self, *, _mlir_value: Self._mlir_type):
-        """Constructs a Pointer from its MLIR prepresentation.
-
-        Args:
-             _mlir_value: The MLIR representation of the pointer.
-        """
-        self._value = _mlir_value
-
-    @always_inline("nodebug")
-    def __init__(
-        out self,
-        *,
-        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.type,
-    ):
-        """Constructs a Pointer from a reference to a value.
-
-        Args:
-            to: The value to construct a pointer to.
-        """
-        self = Self(_mlir_value=__get_mvalue_as_litref(to))
-
-    @always_inline
-    def get_immutable(self) -> Self.Immutable:
-        """Constructs a new Pointer with the same underlying target
-        and an ImmutOrigin.
-
-        Returns:
-            A new Pointer with the same target as self and an ImmutOrigin.
-
-        Notes:
-            This does **not** copy the underlying data.
-        """
-        return rebind[Self.Immutable](self)
-
-    # ===------------------------------------------------------------------===#
-    # Operator dunders
-    # ===------------------------------------------------------------------===#
-
-    @always_inline("nodebug")
-    def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
-        """Enable subscript syntax `ptr[]` to access the element.
-
-        Returns:
-            A reference to the underlying value in memory.
-        """
-        return __get_litref_as_mvalue(self._value)
-
-    # This decorator informs the compiler that indirect address spaces are not
-    # dereferenced by the method.
-    # TODO: replace with a safe model that checks the body of the method for
-    # accesses to the origin.
-    @__unsafe_disable_nested_origin_exclusivity
-    @always_inline("nodebug")
-    def __eq__(self, rhs: Pointer[Self.type, _, Self.address_space]) -> Bool:
-        """Returns True if the two pointers are equal.
-
-        Args:
-            rhs: The value of the other pointer.
-
-        Returns:
-            True if the two pointers are equal and False otherwise.
-        """
-        return UnsafePointer(to=self[]) == UnsafePointer(to=rhs[])
-
-    @__unsafe_disable_nested_origin_exclusivity
-    @always_inline("nodebug")
-    def __ne__(self, rhs: Pointer[Self.type, _, Self.address_space]) -> Bool:
-        """Returns True if the two pointers are not equal.
-
-        Args:
-            rhs: The value of the other pointer.
-
-        Returns:
-            True if the two pointers are not equal and False otherwise.
-        """
-        return not (self == rhs)
-
-    def write_to(self, mut writer: Some[Writer]):
-        """Formats this pointer address to the provided Writer.
-
-        Args:
-            writer: The object to write to.
-        """
-        UnsafePointer(to=self[]).write_to(writer)
-
-    def write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the Pointer.
-
-        Args:
-            writer: The object to write to.
-        """
-        FormatStruct(writer, "Pointer").params(
-            Named("mut", Self.mut),
-            TypeNames[Self.type](),
-            Named("address_space", Self.address_space),
-        ).fields(self)
-
-    @always_inline("nodebug")
-    def __merge_with__[
-        other_type: type_of(Pointer[Self.type, _, Self.address_space]),
-    ](
-        self,
-        out result: Pointer[
-            type=Self.type,
-            origin=origin_of(Self.origin, other_type.origin),
-            address_space=Self.address_space,
-        ],
-    ):
-        """Returns a pointer merged with the specified `other_type`.
-
-        Parameters:
-            other_type: The type of the pointer to merge with.
-
-        Returns:
-            A pointer merged with the specified `other_type`.
-        """
-        return {_mlir_value = self._value}  # allow lit.ref to convert.
-
-    # ===------------------------------------------------------------------===#
-    # UnsafeNicheable
-    # ===------------------------------------------------------------------===#
-
-    comptime _NonNull = UnsafePointer[
-        Self.type,
-        UntrackedOrigin[mut=Self.mut],
-        address_space=Self.address_space,
-    ]
-
-    @staticmethod
-    @always_inline
-    @doc_hidden
-    def write_niche(
-        memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
-    ):
-        Self._NonNull.write_niche(
-            memory.bitcast[UnsafeMaybeUninit[Self._NonNull]]()
-        )
-
-    @staticmethod
-    @always_inline
-    @doc_hidden
-    def isa_niche(
-        memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
-    ) -> Bool:
-        return Self._NonNull.isa_niche(
-            memory.bitcast[UnsafeMaybeUninit[Self._NonNull]]()
-        )
+Parameters:
+    mut: Whether the pointee data may be mutated through this.
+    type: The type the pointer points to.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointee data.
+"""

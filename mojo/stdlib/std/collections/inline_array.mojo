@@ -913,7 +913,18 @@ struct InlineArray[ElementType: Movable, size: Int](
         comptime assert conforms_to(
             Self.ElementType, Copyable
         ), "InlineArray iteration requires the element to be `Copyable`."
-        return {0, Pointer(to=self)}
+        # TODO(MOCO-4326): Remove rebind
+        return {
+            0,
+            rebind[
+                Pointer[
+                    InlineArray[
+                        downcast[Self.ElementType, Copyable], Self.size
+                    ],
+                    origin_of(self),
+                ]
+            ](Pointer(to=self)),
+        }
 
     # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
     def __reversed__(

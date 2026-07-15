@@ -184,22 +184,6 @@ struct Optional[T: Movable](
         """
         self._value = Self._type(_NoneType())
 
-    # TODO(MSTDL-2846): Remove this constructor when `_safe` is no longer needed for UnsafePointer.
-    @implicit
-    @doc_hidden
-    def __init__(
-        other: _CommonPointer[...],
-        out self: Optional[
-            _CommonPointer[
-                other.type,
-                other.origin,
-                address_space=other.address_space,
-                _safe=False,
-            ]
-        ],
-    ):
-        self = {value = type_of(self).T(other)}
-
     @implicit
     def __init__(out self, var value: Self.T):
         """Construct an `Optional` containing a value.
@@ -261,6 +245,59 @@ struct Optional[T: Movable](
         """Implicitly cast an `OptionalReg[T]` to an `Optional[T]`."""
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         UnsafePointer(to=self).bitcast[OptionalReg[U]]()[] = optional_reg
+
+    # -------
+    # Special temporary constructors while Pointer unification is happening
+    # -------
+
+    # TODO(MSTDL-2846): Remove this constructor when `_safe` is no longer needed for UnsafePointer.
+    # Allows implicitly converting from Optional[Pointer] -> Optional[UnsafePointer]
+    @implicit
+    @doc_hidden
+    @always_inline("nodebug")
+    def __init__[
+        U: AnyType,
+        origin: Origin,
+        address_space: AddressSpace,
+    ](
+        other: Optional[Pointer[U, origin, address_space=address_space]],
+        out self: Optional[
+            UnsafePointer[U, origin, address_space=address_space]
+        ],
+    ):
+        self = UnsafePointer(to=other).bitcast[type_of(self)]()[]
+
+    # TODO(MSTDL-2846): Remove this constructor when `_safe` is no longer needed for UnsafePointer.
+    # Allows implicitly converting from Optional[UnsafePointer] -> Optional[Pointer]
+    @implicit
+    @doc_hidden
+    @always_inline("nodebug")
+    def __init__[
+        U: AnyType,
+        origin: Origin,
+        address_space: AddressSpace,
+    ](
+        other: Optional[UnsafePointer[U, origin, address_space=address_space]],
+        out self: Optional[Pointer[U, origin, address_space=address_space]],
+    ):
+        self = UnsafePointer(to=other).bitcast[type_of(self)]()[]
+
+    # TODO(MSTDL-2846): Remove this constructor when `_safe` is no longer needed for UnsafePointer.
+    # Allows `Pointer` -> `Optional[UnsafePointer]`
+    @implicit
+    @doc_hidden
+    @always_inline("nodebug")
+    def __init__(
+        other: Pointer[...],
+        out self: Optional[
+            UnsafePointer[
+                other.type,
+                other.origin,
+                address_space=other.address_space,
+            ]
+        ],
+    ):
+        self = {value = type_of(self).T(other)}
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

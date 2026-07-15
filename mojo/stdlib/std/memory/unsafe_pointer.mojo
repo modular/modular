@@ -38,7 +38,6 @@ from std.format._utils import FormatStruct, Named, TypeNames
 from std.reflection import reflect
 from std.memory import is_trivially_movable, unsafe_memcpy
 from std.memory.memory import _free, _malloc
-from std.memory.pointer import Pointer as LegacyPointer
 from std.memory import UnsafeMaybeUninit
 from std.memory._poison import _check_not_poison, _check_not_poison_masked
 from std.os import abort
@@ -488,6 +487,16 @@ struct Pointer[
 
     comptime _is_unsafe = not Self._safe
 
+    comptime _mlir_lit_ref = __mlir_type[
+        `!lit.ref<`,
+        Self.type,
+        `, `,
+        Self.origin._mlir_origin,
+        `, `,
+        Self.address_space._value._mlir_value,
+        `>`,
+    ]
+
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         Self.type,
@@ -532,6 +541,11 @@ struct Pointer[
             _mlir_value: The MLIR value of the pointer to construct with.
         """
         self._mlir_value = _mlir_value
+
+    @doc_hidden
+    @always_inline("nodebug")
+    def __init__(out self, *, _mlir_value: Self._mlir_lit_ref):
+        self = Self(_mlir_value=__mlir_op.`lit.ref.to_pointer`(_mlir_value))
 
     @always_inline
     def __init__(out self, *, unsafe_from_address: Int):
@@ -601,6 +615,20 @@ struct Pointer[
         self._mlir_value = __mlir_op.`pop.pointer.bitcast`[
             _type=type_of(self)._mlir_type
         ](other._mlir_value)
+
+    @implicit
+    @always_inline("builtin")
+    def __init__(
+        out self,
+        other: Pointer[Self.type, _, address_space=Self.address_space, _safe=_],
+    ) where Self.origin.contains[other.origin]:
+        """Implicitly casts a pointer with one origin to another origin when
+        the result origin is a superset.
+
+        Args:
+            other: The `Pointer` to cast.
+        """
+        self._mlir_value = rebind[Self._mlir_type](other._mlir_value)
 
     # TODO: Remove when the `_safe` parameter is removed from this type.
     @always_inline("builtin")
@@ -678,13 +706,8 @@ struct Pointer[
         Returns:
             A reference to the value.
         """
-
-        # We're unsafe, so we can have unsafe things.
-        comptime _ref_type = LegacyPointer[
-            Self.type, Self.origin, Self.address_space
-        ]
         return __get_litref_as_mvalue(
-            __mlir_op.`lit.ref.from_pointer`[_type=_ref_type._mlir_type](
+            __mlir_op.`lit.ref.from_pointer`[_type=Self._mlir_lit_ref](
                 self._mlir_value
             )
         )
@@ -1117,8 +1140,8 @@ struct Pointer[
     def swap_pointees[
         U: Movable
     ](
-        self: Pointer[mut=True, U, _, _safe=_],
-        other: Pointer[mut=True, U, _, _safe=_],
+        self: Pointer[mut=True, U, _, _safe=True],
+        other: Pointer[mut=True, U, _, _safe=True],
     ):
         """Swap the values at the pointers.
 
@@ -1861,6 +1884,13 @@ struct Pointer[
             A pointer with the mutability set to immutable.
         """
         return self.unsafe_mut_cast[False]()
+
+    # TODO(MSTDL-2846): Remove once `Imm` is consolidated with and
+    # once we have a single pointer type.
+    @doc_hidden
+    @always_inline
+    def get_immutable(self) -> type_of(self.as_immutable()):
+        return self.as_immutable()
 
     @always_inline("builtin")
     def as_unsafe_any_origin(
