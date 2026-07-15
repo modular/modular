@@ -44,22 +44,6 @@ if TYPE_CHECKING:
 class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
     """Ragged batching with pinned host buffers and optional DP / LoRA."""
 
-    def __init__(
-        self,
-        config: ArchConfig,
-        runtime: BatchProcessorRuntime,
-    ) -> None:
-        super().__init__(config, runtime)
-        # Cached device token/offset buffers keyed by (batch_size,
-        # total_seq_len). These are reused across steps so captured graphs
-        # replay in place: the replay copy is a no-op when the model inputs
-        # already are the captured buffers, avoiding a staging copy into an
-        # extra intermediate buffer. Only regular DeviceBuffers are cached --
-        # never pinned host buffers (see ``_stage_ragged_token_inputs``).
-        self._device_input_buffers: dict[
-            tuple[int, int], tuple[Buffer, Buffer]
-        ] = {}
-
     def _stage_ragged_token_inputs(
         self,
         context_batch: Sequence[TextContext],
@@ -67,22 +51,14 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
     ) -> tuple[Buffer, Buffer, Buffer]:
         """Stages ragged tokens/offsets into cached device buffers.
 
-        Allocates a fresh pinned host staging buffer every step and never
-        reuses it across steps. With the overlap scheduler the next step's host
-        writes would otherwise clobber a reused pinned buffer while the current
-        (still in-flight) step's asynchronous H2D copy is reading it, so the
-        current step's forward could observe the next step's tokens/offsets.
-
-        The destination device buffers are cached and reused (never pinned) so
-        captured graphs replay in place. The pinned host buffers are dropped at
-        the end of the step; the DeviceContext defers the actual free until the
-        owning stream's copy completes, so no host/device synchronization is
-        needed on a single device.
+        Fresh pinned host staging is allocated every step (never reused) so the
+        next overlap step's host writes can't clobber the in-flight H2D copy.
+        Destination device buffers are cached and reused so captured graphs
+        replay in place.
 
         Returns:
-            ``(device_tokens, device_row_offsets, host_row_offsets)``. The host
-            row offsets are returned for callers that also feed them to the
-            graph (DP) or read their numpy view (LoRA).
+            ``(device_tokens, device_row_offsets, host_row_offsets)``; the host
+            offsets are also used by DP/LoRA callers.
         """
         batch_size = len(context_batch)
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
@@ -112,21 +88,18 @@ class Llama3BatchProcessor(RaggedBatchProcessor[TextContext, "Llama3Inputs"]):
             # host buffers directly.
             return host_tokens, host_row_offsets, host_row_offsets
 
-        key = (batch_size, total_seq_len)
-        device_buffers = self._device_input_buffers.get(key)
-        if device_buffers is None:
-            device_tokens = Buffer(
-                shape=(total_seq_len,), dtype=DType.int64, device=device0
-            )
-            device_row_offsets = Buffer(
-                shape=(batch_size + 1,), dtype=DType.uint32, device=device0
-            )
-            self._device_input_buffers[key] = (
-                device_tokens,
-                device_row_offsets,
-            )
-        else:
-            device_tokens, device_row_offsets = device_buffers
+        device_tokens = self._device_input_allocator.alloc(
+            name="ragged_input_tokens",
+            dtype=DType.int64,
+            shape=(total_seq_len,),
+            device=device0,
+        )
+        device_row_offsets = self._device_input_allocator.alloc(
+            name="ragged_input_row_offsets",
+            dtype=DType.uint32,
+            shape=(batch_size + 1,),
+            device=device0,
+        )
         device_tokens.inplace_copy_from(host_tokens)
         device_row_offsets.inplace_copy_from(host_row_offsets)
         return device_tokens, device_row_offsets, host_row_offsets

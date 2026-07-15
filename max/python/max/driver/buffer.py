@@ -234,10 +234,10 @@ Buffer.from_dlpack = _from_dlpack  # type: ignore[method-assign]
 Buffer.mmap = _mmap  # type: ignore[method-assign]
 
 
-def _copy_pinned_to_devices(
+def copy_pinned_to_destinations(
     source: Buffer, destinations: Sequence[Buffer]
 ) -> None:
-    """Copies a host buffer into per-device destination buffers safely.
+    """Copies a host buffer into destination buffers safely.
 
     Copies ``source`` into each buffer in ``destinations``. When ``source`` is
     pinned and the destinations span multiple devices, its deferred free is

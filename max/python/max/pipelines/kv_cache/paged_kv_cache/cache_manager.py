@@ -25,7 +25,7 @@ from max.driver import (
     Buffer,
     Device,
     DevicePinnedBuffer,
-    _copy_pinned_to_devices,
+    copy_pinned_to_destinations,
 )
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -624,11 +624,11 @@ class PagedKVCacheManager:
         # Copy shared LUT and cache_lengths to each TP shard's device buffer.
         # The pinned host staging is dropped when this method returns; the
         # memory manager defers its free until the owning device's stream
-        # completes, and ``_copy_pinned_to_devices`` makes the owning device
-        # wait for the other TP shards so the staging is not recycled while
-        # their copies are still reading it.
-        _copy_pinned_to_devices(cache_lengths_host, cache_lengths_by_device)
-        _copy_pinned_to_devices(lut_table_host, lut_table_by_device)
+        # completes, and ``copy_pinned_to_destinations`` makes the owning
+        # device wait for the other TP shards so the staging is not recycled
+        # while their copies are still reading it.
+        copy_pinned_to_destinations(cache_lengths_host, cache_lengths_by_device)
+        copy_pinned_to_destinations(lut_table_host, lut_table_by_device)
 
         return KVCacheAssignments(
             cache_lengths_by_device=cache_lengths_by_device,

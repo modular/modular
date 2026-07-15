@@ -25,7 +25,7 @@ from max.driver import (
     Device,
     DevicePinnedBuffer,
     DLPackArray,
-    _copy_pinned_to_devices,
+    copy_pinned_to_destinations,
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -628,5 +628,5 @@ class Gemma3_MultiModalModel(
             self._scatter_buffers[n] = buffers
 
         host.to_numpy()[:] = scatter_np.astype(np.int32)
-        _copy_pinned_to_devices(host, buffers)
+        copy_pinned_to_destinations(host, buffers)
         return buffers
