@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -45,31 +45,12 @@ _SEPARATE_TARGET_TESTS = [
     "test_tile_based_fusion.py",
 ]
 
-modular_py_library(
-    name = "modular_graph_test",
-    testonly = True,
-    srcs = ["modular_graph_test.py"],
-    imports = ["."],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/tests/integration/test_common:graph_utils",
-        requirement("hypothesis"),
-        requirement("torch"),
-        requirement("numpy"),
-    ],
-)
-
 modular_py_test(
     name = "graph",
     size = "large",
     srcs = glob(
         ["*.py"],
         exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
-            "graph_error_messages_scenario.py",
-            "modular_graph_test.py",
             "test_nan_check.py",
         ],
     ),
@@ -119,7 +100,6 @@ modular_py_test(
         "gpu",
     ],
     deps = [
-        ":modular_graph_test",
         "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -128,6 +108,7 @@ modular_py_test(
         "//max/python/max/mlir",
         "//max/python/max/nn",
         "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:modular_graph_test",
         requirement("gguf"),
         requirement("hypothesis"),
         requirement("numpy"),
@@ -265,11 +246,11 @@ modular_py_test(
         "external-exclusive",  # Times out if run with too many other tests (only test_matmul_packed)
     ],
     deps = [
-        ":modular_graph_test",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/tests/integration/test_common:modular_graph_test",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
@@ -293,6 +274,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/tests/integration/test_common:reduction_graphs",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
@@ -545,20 +527,6 @@ modular_py_test(
     ],
 )
 
-modular_py_library(
-    name = "graph_error_messages_scenario",
-    testonly = True,
-    srcs = ["graph_error_messages_scenario.py"],
-    imports = ["."],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        requirement("numpy"),
-    ],
-)
-
 modular_py_test(
     name = "test_graph_error_messages",
     size = "large",
@@ -578,11 +546,11 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = [
-        ":graph_error_messages_scenario",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/tests/integration/test_common:graph_error_messages_scenario",
         requirement("numpy"),
     ],
 )

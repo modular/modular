@@ -73,7 +73,7 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/nn/hooks:print_hook",
-        "//max/tests/integration/graph:modular_graph_test",
+        "//max/tests/integration/test_common:modular_graph_test",
         requirement("numpy"),
         requirement("torch"),
         requirement("hypothesis"),

@@ -37,7 +37,7 @@ from max.nn.kernels import (
     flash_attention_ragged_gpu,
 )
 from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
-from modular_graph_test import are_all_tensor_values
+from test_common.modular_graph_test import are_all_tensor_values
 from torch.nn.functional import scaled_dot_product_attention
 
 TORCH_DTYPE = torch.bfloat16
