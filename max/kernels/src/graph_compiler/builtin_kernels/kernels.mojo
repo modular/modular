@@ -673,23 +673,23 @@ struct RandomNormal:
         seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        @parameter
         @always_inline
         def output_fn[
             _width: SIMDSize,
             _rank: Int,
-        ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
+        ](coords: IndexList[_rank], val: SIMD[dtype, _width]) {read output}:
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, _width]](val),
             )
 
-        random_normal[output_fn, target=target](
+        random_normal[target=target](
             output.shape(),
             mean,
             variance,
             seed_value.unsafe_ptr[DType.uint64](),
             ctx,
+            output_fn,
         )
 
 
@@ -723,23 +723,23 @@ struct RandomUniform:
         seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        @parameter
         @always_inline
         def output_fn[
             _width: SIMDSize,
             _rank: Int,
-        ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
+        ](coords: IndexList[_rank], val: SIMD[dtype, _width]) {read output}:
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, _width]](val),
             )
 
-        random_uniform[output_fn, target=target](
+        random_uniform[target=target](
             output.shape(),
             lower_bound,
             upper_bound,
             seed_value.unsafe_ptr[DType.uint64](),
             ctx,
+            output_fn,
         )
 
 
