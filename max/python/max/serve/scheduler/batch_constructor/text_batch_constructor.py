@@ -976,12 +976,17 @@ class TextBatchConstructor:
                 else:
                     priority_override = RequestType.TG
 
-        batches_per_replica = [
-            self._construct_replica_batch(
-                replica_idx, priority_override=priority_override
-            )
-            for replica_idx in range(self.num_replicas)
-        ]
+        # Batch construction preempts requests under KV / LoRA pressure, and
+        # each preemption emits a metric. Wrap the pass in a transaction so a
+        # preemption storm coalesces into one cross-process flush instead of
+        # one packet per preempted request.
+        with METRICS.transaction():
+            batches_per_replica = [
+                self._construct_replica_batch(
+                    replica_idx, priority_override=priority_override
+                )
+                for replica_idx in range(self.num_replicas)
+            ]
 
         inputs = TextGenerationInputs[TextContext](
             batches=[

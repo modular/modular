@@ -14,6 +14,7 @@
 import io
 import json
 import logging
+from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -21,6 +22,7 @@ from max.pipelines.lib.vision_encoder_cache import VisionEncoderMetrics
 from max.pipelines.modeling.types import BatchType, CompletedBatchStats
 from max.serve.scheduler.utils import (
     BatchMetrics,
+    SchedulerLogger,
     publish_completed_batch_metrics,
 )
 from pythonjsonlogger import jsonlogger
@@ -815,6 +817,52 @@ def test_publish_completed_batch_metrics_zero_duration_skipped() -> None:
     mock_metrics.batch_execution_time.assert_not_called()
     mock_metrics.batch_prompt_throughput.assert_not_called()
     mock_metrics.batch_generation_throughput.assert_not_called()
+
+
+def test_log_metrics_overlap_coalesces_completed_batch_into_transaction() -> (
+    None
+):
+    """Overlap path: publish_metrics and publish_completed_batch_metrics run
+    inside one transaction, so the deferred completed-batch execution metric
+    coalesces into the per-iteration packet instead of emitting on its own.
+
+    Regression: publish_completed_batch_metrics used to run outside any
+    transaction, producing extra individual cross-process packets per
+    iteration.
+    """
+    depth = 0
+    emit_depths: list[int] = []
+
+    @contextmanager
+    def _fake_txn() -> Any:
+        nonlocal depth
+        depth += 1
+        try:
+            yield
+        finally:
+            depth -= 1
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        mock_metrics.transaction.side_effect = _fake_txn
+        # In the overlap path, batch_execution_time is emitted only by
+        # publish_completed_batch_metrics; record the transaction depth when it
+        # fires (must be > 0, i.e. inside the coalescing transaction).
+        mock_metrics.batch_execution_time.side_effect = (
+            lambda *args, **kwargs: emit_depths.append(depth)
+        )
+        SchedulerLogger().log_metrics(
+            sch_config=_mock_sch_config(),
+            inputs=_mock_inputs(batch_size=2, batch_type=BatchType.TG),
+            kv_cache=None,
+            batch_creation_time_s=0.001,
+            batch_execution_time_s=0.1,
+            num_pending_reqs=0,
+            num_terminated_reqs=0,
+            total_preemption_count=0,
+            batch_execution_time_is_previous=True,
+            completed_batch_stats=_make_completed_stats(),
+        )
+    assert emit_depths == [1]
 
 
 class _ExecMetricsRecorder:

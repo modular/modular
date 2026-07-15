@@ -23,7 +23,7 @@ from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineArgs
 from max.pipelines.lib import KVCacheConfig
-from max.serve.config import MetricLevel, MetricRecordingMethod
+from max.serve.config import MetricRecordingMethod
 from max.serve.schemas.openai import CreateChatCompletionResponse
 
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
@@ -115,9 +115,6 @@ def _metric_total(metrics_text: str, name: str) -> float:
         {
             "MAX_SERVE_USE_HEARTBEAT": True,
             "MAX_SERVE_METRIC_RECORDING_METHOD": MetricRecordingMethod.PROCESS,
-            "MAX_SERVE_METRIC_LEVEL": MetricLevel.DETAILED,
-            # This ensures that batch size is sent immediately and not buffered
-            "MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR": 0,
         }
     ],
     indirect=True,
@@ -250,10 +247,7 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
     [
         {
             "MAX_SERVE_USE_HEARTBEAT": True,
-            "MAX_SERVE_METRIC_LEVEL": MetricLevel.DETAILED,
             "MAX_SERVE_METRIC_RECORDING_METHOD": MetricRecordingMethod.PROCESS,
-            # This ensures that batch size is sent immediately and not buffered
-            "MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR": 0,
         }
     ],
     indirect=True,

@@ -485,6 +485,16 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- Removed the `MAX_SERVE_METRIC_LEVEL` and
+  `MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR` environment variables along with
+  the `BASIC`/`DETAILED` metric-level distinction. MAX Serve now always emits
+  its full set of metrics, so panels that previously required `DETAILED` (for
+  example batch execution time) are populated in every deployment rather than
+  only when detailed metrics were explicitly enabled. High-volume
+  per-iteration scheduler metrics are still coalesced into a single
+  cross-process flush, so there is no change in per-metric recording overhead.
+  To record no metrics at all (previously `MAX_SERVE_METRIC_LEVEL=NONE`), set
+  `MAX_SERVE_METRIC_RECORDING_METHOD=NOOP` or `MAX_SERVE_DISABLE_TELEMETRY=1`.
 - Removed `InferenceSession.use_old_top_k_kernel()` and the
   `USE_OLD_TOP_K_KERNEL` environment variable. The legacy top-k sampling
   kernel this fallback selected has been deleted; the current two-stage

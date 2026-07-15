@@ -571,6 +571,14 @@ class BatchMetrics:
                 completed batch's type.
         """
         bt = self.batch_type.value  # "CE" (prefill) or "TG" (decode)
+        # This runs once per scheduler iteration and emits the whole batch of
+        # measurements below together. Wrap them in a transaction so the
+        # telemetry client flushes them as a single cross-process packet
+        # instead of one send per measurement.
+        with METRICS.transaction():
+            self._publish_metrics(bt, defer_execution_metrics)
+
+    def _publish_metrics(self, bt: str, defer_execution_metrics: bool) -> None:
         METRICS.batch_size(self.batch_size, batch_type=bt)
         METRICS.batch_input_tokens(self.num_input_tokens, batch_type=bt)
         METRICS.batch_context_tokens(self.num_context_tokens, batch_type=bt)
@@ -767,12 +775,16 @@ class SchedulerLogger:
         # execution time measured this iteration belongs to the previously
         # enqueued batch, so the execution-time and throughput metrics are
         # published from ``completed_batch_stats`` (labeled with the completed
-        # batch's type) instead of from ``inputs``.
-        metrics.publish_metrics(
-            defer_execution_metrics=batch_execution_time_is_previous
-        )
-        if completed_batch_stats is not None:
-            publish_completed_batch_metrics(completed_batch_stats)
+        # batch's type) instead of from ``inputs``. Wrap both emitters in one
+        # transaction so the whole per-iteration burst — including the deferred
+        # overlap metrics — coalesces into a single cross-process packet (the
+        # inner transaction opened by ``publish_metrics`` nests harmlessly).
+        with METRICS.transaction():
+            metrics.publish_metrics(
+                defer_execution_metrics=batch_execution_time_is_previous
+            )
+            if completed_batch_stats is not None:
+                publish_completed_batch_metrics(completed_batch_stats)
 
         # Only periodically log batch info to the console to avoid log spam.
         now = time.monotonic()
