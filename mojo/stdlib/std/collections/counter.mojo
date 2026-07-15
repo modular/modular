@@ -25,7 +25,6 @@ counted sets, also called bags or multisets, and extend that model by
 supporting negative counts.
 
 """
-from std.builtin.rebind import downcast
 from std.collections.dict import (
     Dict,
     _DictEntryIter,
@@ -218,7 +217,17 @@ struct Counter[
         Returns:
             An iterator of immutable references to the `Counter` values.
         """
-        return rebind[Self.IteratorType[origin_of(self)]](self._data.__iter__())
+        # TODO(MOCO-4205): origin cast only needed to retarget the origin from
+        # `origin_of(self._data)` to `origin_of(self)`.
+        return _DictKeyIter(
+            _DictEntryIter(
+                0,
+                0,
+                UnsafePointer(to=self._data).unsafe_origin_cast[
+                    origin_of(self)
+                ]()[],
+            )
+        )
 
     def __contains__(self, key: Self.V) -> Bool:
         """Check if a given key is in the `Counter` or not.
@@ -332,15 +341,13 @@ struct Counter[
             `True` if the two `Counter`s are equal, `False` otherwise.
         """
 
-        @parameter
-        @always_inline
-        def is_eq(keys: _DictKeyIter[Self.V, Int, ...]) -> Bool:
-            for e in keys:
-                if self.get(e, 0) != other.get(e, 0):
-                    return False
-            return True
-
-        return is_eq(self.keys()) and is_eq(other.keys())
+        for e in self.keys():
+            if self.get(e, 0) != other.get(e, 0):
+                return False
+        for e in other.keys():
+            if self.get(e, 0) != other.get(e, 0):
+                return False
+        return True
 
     def le(self, other: Self) -> Bool:
         """Check if all counts are less than or equal to those in the other
@@ -369,15 +376,10 @@ struct Counter[
         ```
         """
 
-        @parameter
-        @always_inline
-        def is_le(keys: _DictKeyIter[Self.V, Int, ...]) -> Bool:
-            for e in keys:
-                if self.get(e, 0) > other.get(e, 0):
-                    return False
-            return True
-
-        return is_le(self.keys())
+        for e in self.keys():
+            if self.get(e, 0) > other.get(e, 0):
+                return False
+        return True
 
     def lt(self, other: Self) -> Bool:
         """Check if all counts are less than those in the other `Counter`.
@@ -405,15 +407,10 @@ struct Counter[
         ```
         """
 
-        @parameter
-        @always_inline
-        def is_lt(keys: _DictKeyIter[Self.V, Int, ...]) -> Bool:
-            for e in keys:
-                if self.get(e, 0) >= other.get(e, 0):
-                    return False
-            return True
-
-        return is_lt(self.keys())
+        for e in self.keys():
+            if self.get(e, 0) >= other.get(e, 0):
+                return False
+        return True
 
     def gt(self, other: Self) -> Bool:
         """Check if all counts are greater than those in the other `Counter`.
@@ -759,7 +756,13 @@ struct Counter[
         print(key_list) # output: ['a', 'b', 'c', 'd']
         ```
         """
-        return self._data.keys()
+        return _DictKeyIter(
+            _DictEntryIter(
+                0,
+                0,
+                self._data,
+            )
+        )
 
     def values(
         ref self,
@@ -787,10 +790,16 @@ struct Counter[
         print(max_count) # output: 5
         ```
         """
-        return self._data.values()
+        return _DictValueIter(
+            _DictEntryIter(
+                0,
+                0,
+                self._data,
+            )
+        )
 
     def items(
-        self,
+        ref self,
     ) -> _DictEntryIter[Self.V, Int, Self.H, origin_of(self._data)]:
         """Iterate over the `Counter`'s entries as immutable references.
 
@@ -809,7 +818,11 @@ struct Counter[
         # output: 2 4
         ```
         """
-        return self._data.items()
+        return _DictEntryIter(
+            0,
+            0,
+            self._data,
+        )
 
     def clear(mut self):
         """Remove all elements from the `Counter`.
@@ -902,7 +915,7 @@ struct Counter[
         ```
         """
         var items: List[CountTuple[Self.V]] = List[CountTuple[Self.V]]()
-        for item in self._data.items():
+        for item in self.items():
             var t = CountTuple[Self.V](item.key, item.value)
             items.append(t^)
 
@@ -932,7 +945,7 @@ struct Counter[
         ```
         """
         var elements: List[Self.V] = List[Self.V]()
-        for item in self._data.items():
+        for item in self.items():
             for _ in range(item.value):
                 elements.append(item.key.copy())
         return elements^

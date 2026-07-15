@@ -142,8 +142,8 @@ This is a comptime alias for `SwissTableEntry` for backwards compatibility.
 struct _DictEntryIter[
     mut: Bool,
     //,
-    K: KeyElement & Copyable & ImplicitlyDeletable,
-    V: Copyable & ImplicitlyDeletable,
+    K: KeyElement & Copyable,
+    V: Copyable,
     H: Hasher,
     origin: Origin[mut=mut],
     forward: Bool = True,
@@ -359,8 +359,8 @@ struct _DictKeyIterOwned[
 struct _DictKeyIter[
     mut: Bool,
     //,
-    K: KeyElement & Copyable & ImplicitlyDeletable,
-    V: Copyable & ImplicitlyDeletable,
+    K: KeyElement & Copyable,
+    V: Copyable,
     H: Hasher,
     origin: Origin[mut=mut],
     forward: Bool = True,
@@ -405,8 +405,8 @@ struct _DictKeyIter[
 struct _DictValueIter[
     mut: Bool,
     //,
-    K: KeyElement & Copyable & ImplicitlyDeletable,
-    V: Copyable & ImplicitlyDeletable,
+    K: KeyElement & Copyable,
+    V: Copyable,
     H: Hasher,
     origin: Origin[mut=mut],
     forward: Bool = True,
@@ -681,8 +681,8 @@ struct Dict[
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
-        downcast[Self.V, Copyable & ImplicitlyDeletable],
+        downcast[Self.K, KeyElement & Copyable],
+        downcast[Self.V, Copyable],
         Self.H,
         iterable_origin,
     ]
@@ -932,6 +932,7 @@ struct Dict[
     def __contains__(self, key: Self.K) -> Bool:
         """Check if a given key is in the dictionary or not.
 
+
         Args:
             key: The key to check.
 
@@ -965,8 +966,8 @@ struct Dict[
             Self.V, Copyable
         ), "Dict iteration requires the key and value types to be `Copyable`."
         comptime DictCopyable = Dict[
-            downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
-            downcast[Self.V, Copyable & ImplicitlyDeletable],
+            downcast[Self.K, KeyElement & Copyable],
+            downcast[Self.V, Copyable],
             Self.H,
         ]
         return _DictKeyIter(
@@ -989,10 +990,8 @@ struct Dict[
         Self.H,
         origin_of(self),
         False,
-    ] where conforms_to(
-        Self.K, KeyElement & Copyable & ImplicitlyDeletable
-    ) and conforms_to(
-        Self.V, Copyable & ImplicitlyDeletable
+    ] where conforms_to(Self.K, KeyElement & Copyable) and conforms_to(
+        Self.V, Copyable
     ):
         """Iterate backwards over the dict keys, returning immutable references.
 
@@ -1438,8 +1437,8 @@ struct Dict[
     def keys(
         ref self,
     ) -> _DictKeyIter[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
-        downcast[Self.V, Copyable & ImplicitlyDeletable],
+        downcast[Self.K, KeyElement & Copyable],
+        downcast[Self.V, Copyable],
         Self.H,
         origin_of(self),
     ]:
@@ -1470,10 +1469,8 @@ struct Dict[
         Self.V,
         Self.H,
         origin_of(self),
-    ] where conforms_to(
-        Self.K, KeyElement & Copyable & ImplicitlyDeletable
-    ) and conforms_to(
-        Self.V, ImplicitlyDeletable & Copyable
+    ] where conforms_to(Self.K, KeyElement & Copyable) and conforms_to(
+        Self.V, Copyable
     ):
         """Iterate over the dict's values as references.
 
@@ -1496,8 +1493,8 @@ struct Dict[
     def items(
         ref self,
     ) -> _DictEntryIter[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
-        downcast[Self.V, Copyable & ImplicitlyDeletable],
+        downcast[Self.K, KeyElement & Copyable],
+        downcast[Self.V, Copyable],
         Self.H,
         origin_of(self),
     ]:
@@ -1527,8 +1524,8 @@ struct Dict[
             Self.V, Copyable
         ), "Dict iteration requires the key and value types to be `Copyable`."
         comptime DictCopyable = Dict[
-            downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
-            downcast[Self.V, Copyable & ImplicitlyDeletable],
+            downcast[Self.K, KeyElement & Copyable],
+            downcast[Self.V, Copyable],
             Self.H,
         ]
         return _DictEntryIter(

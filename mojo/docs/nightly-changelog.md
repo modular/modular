@@ -338,6 +338,14 @@ This version is still a work in progress.
   displaced = d.insert(1, 20)      # the displaced (1, 10) entry
   ```
 
+- By-reference `Dict` iteration (`for entry in dict`, `keys()`, `values()`,
+  `items()`, and `reversed()`) no longer requires the key and value types to be
+  `ImplicitlyDeletable`. These iterators only borrow references and never
+  destroy an entry, so they now work on a `Dict` whose key or value type is not
+  `ImplicitlyDeletable`. Consuming iteration (`for entry in dict^` and
+  `take_items()`) still requires `ImplicitlyDeletable`, since it drops the
+  entries it does not yield.
+
 - `Coord` now conforms to `DevicePassable`, so a `Coord` embedded in a
   `DevicePassable` type (such as a `TileTensor`'s `Layout`) is encoded to the
   device through `Coord._to_device_type` instead of a raw field bit-copy, the
