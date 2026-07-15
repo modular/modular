@@ -206,7 +206,9 @@ class Sink {
 public:
   virtual ~Sink() = default;
   virtual void write(llvm::StringRef msg) = 0;
-  // Called by the consumer thread when the ring drains and before shutdown.
+  // Called by the consumer thread when the ring drains and before shutdown,
+  // and by Logger::flush() from arbitrary caller threads — implementations
+  // that buffer must synchronize flush() against concurrent write().
   // Default is a no-op for sinks that don't buffer.
   virtual void flush() {}
 };
@@ -234,18 +236,30 @@ public:
     ostream.write('\n');
   }
 
-  void flush() override { ostream.flush(); }
+  // Locked so Logger::flush() callers can flush concurrently with the
+  // consumer thread's write() — raw_fd_ostream is not internally
+  // synchronized.
+  void flush() override {
+    std::lock_guard<std::mutex> lock(outputMutex);
+    ostream.flush();
+  }
 };
 
 class StdoutSink : public Sink {
   std::mutex outputMutex;
 
+  // Note: outputMutex only serializes accesses made through this sink.
+  // llvm::outs() is a process-global stream, so third-party writers that
+  // use it directly are outside this synchronization.
   void write(llvm::StringRef msg) override {
     std::lock_guard<std::mutex> lock(outputMutex);
     llvm::outs() << msg << "\n";
   }
 
-  void flush() override { llvm::outs().flush(); }
+  void flush() override {
+    std::lock_guard<std::mutex> lock(outputMutex);
+    llvm::outs().flush();
+  }
 };
 
 void Logger::initFromConfig(Config cfg) {
@@ -418,6 +432,14 @@ void Logger::flush() {
   SpinWaiter<> waiter;
   while (ring.consumeCount() < target)
     waiter.wait();
+  // The consume-count wait only guarantees the records were rendered into
+  // the sinks' userspace buffers; the consumer pushes those buffers to the
+  // OS on its next idle iteration, so a caller reading the log file right
+  // after flush() could still miss the data. Flush the sinks here so the
+  // documented "written to all sinks" contract holds when we return. Safe
+  // from this thread: each sink's flush() takes the same mutex as its
+  // write().
+  flushSinks();
 }
 
 void Logger::processRecord(const LogRecord &record) {
