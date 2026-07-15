@@ -963,6 +963,26 @@ struct TypeList[
         Trait=Trait, ToT=type, count, Self._SplatTypeTabulator[Trait, type, _]
     ]
 
+    comptime _TypeToTypeGenerator[ToTrait: type_of(AnyType)] = __mlir_type[
+        `!lit.generator<<"From":`, Self.Trait, `>`, ToTrait, `>`
+    ]
+
+    comptime _MapTabulator[
+        ToTrait: type_of(AnyType),
+        Mapper: Self._TypeToTypeGenerator[ToTrait],
+        idx: Int,
+    ]: ToTrait = Mapper[Self.__getitem_param__[idx]]
+
+    comptime map[
+        ToTrait: type_of(AnyType),
+        //,
+        Mapper: Self._TypeToTypeGenerator[ToTrait],
+    ] = TypeList.tabulate[
+        Trait=ToTrait,
+        Self.size,
+        Self._MapTabulator[ToTrait, Mapper, idx=_],
+    ]
+
 
 comptime _TabulateIntToTypeGeneratorType[
     Trait: type_of(AnyType), ToT: Trait

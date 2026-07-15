@@ -267,15 +267,12 @@ FailureOr<TypedAttr> LowerLITEvaluationContext::evaluateContextSpecific(
     ContextuallyEvaluatedAttrInterface attr) {
   TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
 
-  // NOTE: Downcast becomes an no-op after lower-lit. However, we should
-  // probably keep the attr till elaboration time after we preserve traits
-  // properly in KGEN for a better error message.
-  // We simply strip all downcast at the moment otherwise all downcasts will be
-  // in same (useless) form of `#downcast<T> : !kgen.type` anyway.
-  if (auto downcast = sugarDynCastIfPresent<DowncastAttr>(typedAttr)) {
-    return UpcastAttr::get(TypeType::get(downcast.getContext()),
-                           downcast.getInputTypeValue());
-  }
+  // Fold DowncastAttr when the input is a concrete struct type value. Unwrap
+  // and expose the concrete type value, which can be used to further simplify
+  // things like conforms_to.
+  if (auto downcast = sugarDynCastIfPresent<DowncastAttr>(typedAttr))
+    if (TypedAttr folded = LIT::foldDowncastToStructType(downcast))
+      return folded;
 
   return SymTabEvaluationContext::evaluateContextSpecific(attr);
 }
