@@ -1260,7 +1260,8 @@ class LinkageNameAttr(max._core.Attribute):
     Holds a name expression (string literal or DataToStr) and a boolean `mangle`
     flag. The flag is stored but not yet acted upon — both `mangle=true` and
     `mangle=false` currently use the prefix verbatim as the symbol name
-    (with PTX sanitization applied on top for GPU targets).
+    (with target-specific name sanitization applied on top for offload
+    targets).
 
     Intended future semantics: when `mangle=true`, the final symbol name will be
     derived from the prefix and a hash of the auto-mangled parameter values,
@@ -2821,7 +2822,7 @@ class CompileOffloadOp(max._core.Operation):
     Example:
 
     ```mlir
-    %0 = kgen.compile_offload<nvptx, 0, "", : ()->() @kernel> : !kgen.none
+    %0 = kgen.compile_offload<target, 0, "", : ()->() @kernel> : !kgen.none
     ```
     """
 
