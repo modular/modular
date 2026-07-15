@@ -565,6 +565,22 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
   return success();
 }
 
+/// Returns true if `candidate` is a compiler-synthesized function whose own
+/// where clause can never be satisfied (e.g. the move/copy-init synthesized
+/// for a `Movable`/`Copyable` conformance). Such a function is never actually
+/// callable, so it should not be treated as a real candidate when diagnosing a
+/// failed call.
+static bool isNeverCallableSynthesizedCandidate(ASTDecl *candidate) {
+  auto func = cast<FnOp>(candidate->getIfOperation());
+  if (!func.isSynthetic())
+    return false;
+  for (ConstraintAttr constraint :
+       func.getFullSignature().getMetadata().getBodyConstraints())
+    if (isTriviallyFalseConstraint(constraint))
+      return true;
+  return false;
+}
+
 /// Evaluate the fnDecls candidates and see if there is an unambiguous
 /// candidate that works with the specified parameter bindings and provided
 /// arguments.  If so, return the single entry that works.
@@ -628,8 +644,20 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     if (!emitDiagnosticOnFailure || isErroneous())
       return {};
 
+    // Candidates that are compiler-synthesized functions with a never-
+    // satisfiable where clause (e.g. the move-init synthesized for a
+    // `Movable where False` conformance) can never actually be called, so
+    // they aren't real candidates for diagnostic purposes -- see
+    // isNeverCallableSynthesizedCandidate.
+    SmallVector<std::pair<ASTDecl *, OverloadFitness *>,
+                kOverloadEvaluationsInlineSize>
+        realCandidates;
+    for (auto &[candidate, eval] : evaluations)
+      if (!isNeverCallableSynthesizedCandidate(candidate))
+        realCandidates.emplace_back(candidate, &eval);
+
     // Diagnose the case when there are no candidates found by lookup.
-    if (fnDecls.empty()) {
+    if (fnDecls.empty() || realCandidates.empty()) {
       auto diag = getShared().emitError(getExprLoc()) << getExpr()->getRange();
       diag << "invalid call to '" << baseName << "': no candidates found";
       return {};
@@ -639,9 +667,9 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     // primary error on the operand that failed if it is consistent, otherwise
     // fallback to the location of the call. We prefer to issue it on the
     // operand so we can know which of the 42 arguments failed.
-    auto diagLoc = evaluations[0].second.getDiag().getPrimaryLoc();
-    for (auto &[candidate, eval] : evaluations) {
-      if (eval.getDiag().getPrimaryLoc() != diagLoc) {
+    auto diagLoc = realCandidates[0].second->getDiag().getPrimaryLoc();
+    for (auto &[candidate, eval] : realCandidates) {
+      if (eval->getDiag().getPrimaryLoc() != diagLoc) {
         diagLoc = getShared().translateLocation(getExprLoc());
         break;
       }
@@ -699,7 +727,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       return {};
     }
 
-    if (fnDecls.size() == 1)
+    if (realCandidates.size() == 1)
       diag << "invalid ";
     else
       diag << "no matching " << getCalleeKind(syntax) << " in ";
@@ -723,16 +751,16 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     }
 
     // If there is a single callee, emit a specific error about the call.
-    if (fnDecls.size() == 1) {
-      diag << ": " << evaluations[0].second.takeDiag();
-      diag.attachNote(*fnDecls[0]) << "function declared here";
+    if (realCandidates.size() == 1) {
+      diag << ": " << realCandidates[0].second->takeDiag();
+      diag.attachNote(*realCandidates[0].first) << "function declared here";
       return {};
     }
 
     // Add a note for what is wrong with each candidate.
-    for (auto &[candidate, eval] : evaluations) {
+    for (auto &[candidate, eval] : realCandidates) {
       diag.attachNote(*candidate)
-          << "candidate not viable: " << eval.takeDiag();
+          << "candidate not viable: " << eval->takeDiag();
     }
 
     return {};

@@ -1025,3 +1025,29 @@ struct TestKWArgs(HasFooKw, HasBarKw):
 
     def __init__(out self, *, bar: Self):
         pass
+
+
+# MOCO-4303: a struct conforming to a trait via `where False` can still
+# define its own, differently-shaped overload of the same method name. The
+# never-callable synthesized wrapper (from taking the trait's default under
+# the unsatisfiable conformance) must not interfere with resolving a call
+# that only matches the struct's own method -- it's excluded from
+# consideration on its own merits (its own where clause always fails), not
+# because it collides with, shadows, or otherwise gets confused with the
+# real method.
+trait Greeter:
+    def greet(self, name: String) -> String:
+        return "Hello, " + name
+
+struct FriendlyGreeter(Greeter where False):
+    var x: Int
+
+    def __init__(out self, x: Int):
+        self.x = x
+
+    def greet(self) -> String:
+        return "Hi there"
+
+def friendly_greeter_own_overload_is_unaffected():
+    var s = FriendlyGreeter(1)
+    var msg = s.greet()  # Ok -- resolves to FriendlyGreeter's own `greet`.
