@@ -1272,6 +1272,18 @@ ASTType IREmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   if (innerExpr->isEmptyTuple())
     return getBuiltinTupleInstantiation(expr->getLoc(), {});
 
+  // A non-empty tuple literal is never ambiguous: unlike () and None, it has
+  // no valid reading as a type.  Diagnose this directly instead of falling
+  // through to the generic constructor-call machinery below.
+  if (isa<TupleNode>(innerExpr)) {
+    emitError(
+        expr->getLoc(),
+        "expected a type, found a tuple value; use 'Tuple[...]' to write a "
+        "tuple type")
+        << expr->getRange();
+    return {};
+  }
+
   auto value = emitExprPValue(expr, EC_Type);
   return emitType({value, expr}, allowUnbound);
 }
