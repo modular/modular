@@ -31,6 +31,9 @@ from max.pipelines.architectures.flux2.flux2_executor import (
 from max.pipelines.architectures.flux_modulev3 import Vae
 from max.pipelines.context import PixelContext
 from max.pipelines.lib import float32_array_to_buffer
+from max.pipelines.lib.config.model_config import (
+    _resolve_component_encoding_and_weights,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.weight_loader import WeightLoader, swap_prefix
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
@@ -95,7 +98,10 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
 
         # Extract transformer config for input-staging dtype.
         transformer_config = manifest["transformer"]
-        encoding = transformer_config.quantization_encoding or "bfloat16"
+        resolved_transformer_encoding, _ = (
+            _resolve_component_encoding_and_weights(transformer_config)
+        )
+        encoding = resolved_transformer_encoding or "bfloat16"
         # For NVFP4, weights are stored as FP4 but compute stays bfloat16.
         self._model_dtype: DType = (
             DType.bfloat16
@@ -114,9 +120,12 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         self._text_encoder_device: Device = load_devices(
             text_encoder_config.device_specs
         )[0]
+        resolved_te_encoding, _ = _resolve_component_encoding_and_weights(
+            text_encoder_config
+        )
         self.text_encoder = TextEncoder(
             huggingface_config=text_encoder_config.huggingface_config.to_dict(),
-            quantization_encoding=text_encoder_config.quantization_encoding,
+            quantization_encoding=resolved_te_encoding,
             device_specs=text_encoder_config.device_specs,
         )
 
@@ -124,9 +133,12 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         self._vae_device: Device = load_devices(
             vae_manifest_config.device_specs
         )[0]
+        resolved_vae_encoding, _ = _resolve_component_encoding_and_weights(
+            vae_manifest_config
+        )
         self.vae = Vae(
             huggingface_config=vae_manifest_config.huggingface_config.to_dict(),
-            quantization_encoding=vae_manifest_config.quantization_encoding,
+            quantization_encoding=resolved_vae_encoding,
             device_specs=vae_manifest_config.device_specs,
         )
         transformer_config = manifest["transformer"]
@@ -135,7 +147,7 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
         )[0]
         self.denoiser = Denoiser(
             huggingface_config=transformer_config.huggingface_config.to_dict(),
-            quantization_encoding=transformer_config.quantization_encoding,
+            quantization_encoding=resolved_transformer_encoding,
             device_specs=transformer_config.device_specs,
         )
 
