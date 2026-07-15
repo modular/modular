@@ -23,8 +23,12 @@ memory specifications, thread organization, and performance characteristics.
 # locations in this file that need to be updated.
 
 from std.math import ceildiv, floor
-from std.os import abort
-from std.sys.info import CompilationTarget, _accelerator_arch, _TargetType
+from std.sys.info import (
+    CompilationTarget,
+    Vendor,
+    _accelerator_arch,
+    _TargetType,
+)
 
 comptime _KB = 1024
 comptime _K = 1024
@@ -199,83 +203,6 @@ struct AcceleratorArchitectureFamily(TrivialRegisterPassable):
 
     var max_thread_block_size: Int
     """Maximum number of threads allowed in a thread block."""
-
-
-# ===-----------------------------------------------------------------------===#
-# Vendor
-# ===-----------------------------------------------------------------------===#
-
-
-@fieldwise_init
-struct Vendor(Equatable, TrivialRegisterPassable, Writable):
-    """Represents GPU vendors.
-
-    This struct provides identifiers for different GPU vendors and utility
-    methods for comparison and string representation.
-
-    The Vendor struct defines constants for common GPU vendors (NVIDIA, AMD)
-    and includes a NO_GPU option for systems without GPU support. It provides
-    comparison operators and string conversion methods for vendor identification.
-    """
-
-    var _value: Int8
-    """The underlying integer value representing the vendor."""
-
-    comptime NO_GPU = Self(0)
-    """Represents no GPU or CPU-only execution."""
-
-    comptime AMD_GPU = Self(1)
-    """Represents AMD GPU vendor."""
-
-    comptime NVIDIA_GPU = Self(2)
-    """Represents NVIDIA GPU vendor."""
-
-    comptime APPLE_GPU = Self(3)
-    """Represents Apple GPU vendor."""
-
-    def __eq__(self, other: Self) -> Bool:
-        """Checks if two `Vendor` instances are equal.
-
-        Args:
-            other: The `Vendor` to compare with.
-
-        Returns:
-            True if vendors are equal, False otherwise.
-        """
-        return self._value == other._value
-
-    def __ne__(self, other: Self) -> Bool:
-        """Checks if two `Vendor` instances are not equal.
-
-        Args:
-            other: The `Vendor` to compare with.
-
-        Returns:
-            True if vendors are not equal, False otherwise.
-        """
-        return not (self == other)
-
-    @no_inline
-    def write_to(self, mut writer: Some[Writer]):
-        """Writes vendor information to a writer.
-
-        Args:
-            writer: The writer to output vendor information to.
-        """
-        if self == Vendor.NO_GPU:
-            writer.write("no_gpu")
-            return
-        if self == Vendor.AMD_GPU:
-            writer.write("amd_gpu")
-            return
-        if self == Vendor.APPLE_GPU:
-            writer.write("apple_gpu")
-            return
-        if self == Vendor.NVIDIA_GPU:
-            writer.write("nvidia_gpu")
-            return
-
-        abort("unable to format unrecognized `Vendor` value")
 
 
 # ===-----------------------------------------------------------------------===#

@@ -29,6 +29,7 @@ from .compile import codegen_unreachable
 from .debug import breakpointhook
 from .info import (
     CompilationTarget,
+    Vendor,
     align_of,
     bit_width_of,
     has_accelerator,

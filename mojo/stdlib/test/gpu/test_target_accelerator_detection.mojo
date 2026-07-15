@@ -42,6 +42,11 @@
 # RUN: %mojo-build --emit object --target-triple arm64-apple-darwin \
 # RUN:   --target-accelerator metal:4  -D EXPECT=apple %s -o %t
 
+# Unknown/unrecognized accelerator: none of the vendor predicates fire (the
+# False-on-unknown contract). "wombat42" contains none of the vendor-relevant
+# substrings, so it also guards against loose-substring false positives.
+# RUN: %mojo-build --emit object --target-accelerator wombat42 -D EXPECT=none %s -o %t
+
 from std.sys import (
     get_defined_string,
     has_amd_gpu_accelerator,
@@ -81,5 +86,15 @@ def main():
         comptime assert (
             not has_nvidia_gpu_accelerator()
         ), "did not expect an NVIDIA accelerator"
+    elif expect == "none":
+        comptime assert (
+            not has_amd_gpu_accelerator()
+        ), "did not expect an AMD accelerator"
+        comptime assert (
+            not has_nvidia_gpu_accelerator()
+        ), "did not expect an NVIDIA accelerator"
+        comptime assert (
+            not has_apple_gpu_accelerator()
+        ), "did not expect an Apple accelerator"
     else:
         comptime assert False, "unknown EXPECT value"

@@ -698,6 +698,10 @@ This version is still a work in progress.
   a downstream `comptime` constraint. `amd:<arch>` is also now accepted as an
   alias for `amdgpu:<arch>`, mirroring the existing `nvidia:<arch>` prefix.
 
+- The GPU `Vendor` type can now be imported from `std.sys`
+  (`from std.sys import Vendor`). It remains importable from
+  `std.gpu.host.info` for backward compatibility.
+
 - `DeviceContext.load_function` now keys its runtime cache on the requested
   entry-point name as well as the blob. Loading two different entry points
   (for example `kernel_a` and `kernel_b`) from a single PTX/cubin blob no
