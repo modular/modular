@@ -1862,36 +1862,39 @@ class Tensor(DLPackArray, HasTensorValue):
         return np.from_dlpack(t)
 
     def argmax(self, axis: int | None = -1) -> Tensor:
-        """Finds the indices of the maximum values along an axis.
+        """Returns the indices of the maximum values along an axis.
 
-        Returns a tensor containing the indices of the maximum values along
-        the specified axis. This is useful for finding the position of the
-        largest element, such as determining predicted classes in classification.
+        It's useful for finding the position of the largest element
+        along a given dimension, such as determining predicted classes
+        in classification.
+
+        When the input contains ties (identical maximum values), behavior
+        depends on the device: CPU returns the first matching index, while
+        GPU may return any of them.
 
         .. code-block:: python
 
-            from max.experimental import tensor
+            from max.experimental import Tensor
 
-            # Create a 2x4 tensor
-            x = tensor.Tensor(
-                [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
-            )
-
-            # Find argmax along last axis (within each row)
+            x = Tensor([[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]])
             indices = x.argmax(axis=-1)
-            # Result: [1, 2] (index 1 in first row, index 2 in second row)
+            # indices has shape (2, 1): [[1], [2]]
 
-            # Find argmax over all elements
-            index = x.argmax(axis=None)
-            # Result: 6 (flattened index of maximum value 4.2)
+            # Or flatten before reducing:
+            flat_index = x.argmax(axis=None)
+            # flat_index has shape (1,): [6] (flattened index of max value 4.2)
 
         Args:
-            axis: The axis along which to find the maximum indices. Defaults
-                to -1 (the last axis). If None, finds the index of the maximum
-                value across all elements.
+            axis: The axis along which to compute the argmax. Negative
+                values index from the last dimension. When ``None``, the
+                tensor is flattened to 1-D first. Defaults to ``-1``.
 
         Returns:
-            Tensor: A tensor containing the indices of the maximum values.
+            An integer tensor of indices marking the positions of the
+            maximum values along ``axis``. For integer ``axis``, the
+            result has the same rank as the input with the ``axis``
+            dimension reduced to size ``1``. When ``axis`` is ``None``,
+            the result has shape ``(1,)``.
         """
         return F.argmax(self, axis=axis)
 
@@ -2230,36 +2233,33 @@ class Tensor(DLPackArray, HasTensorValue):
         return F.reshape(self, shape)
 
     def broadcast_to(self, shape: ShapeLike) -> Tensor:
-        """Broadcasts the tensor to the specified shape.
+        """Broadcasts the tensor to a target shape.
 
-        Returns a tensor broadcast to the target shape, following NumPy
-        broadcasting semantics. Dimensions of size 1 in the input can be
-        expanded to match larger dimensions in the target shape.
-
-        This is equivalent to PyTorch's :func:`torch.broadcast_to` and
+        Each input dimension must either equal the corresponding target
+        dimension or be ``1`` (which is then stretched to match). This
+        follows NumPy broadcasting semantics and is equivalent to
+        PyTorch's :func:`torch.broadcast_to` and
         :meth:`torch.Tensor.expand`.
 
         .. code-block:: python
 
-            from max.experimental import tensor
+            from max.experimental import Tensor
 
-            # Create a tensor with shape (3, 1)
-            x = tensor.Tensor.ones([3, 1])
-
-            # Broadcast to (3, 4) - expands the second dimension
-            y = x.broadcast_to([3, 4])
-            print(y.shape)  # (3, 4)
+            x = Tensor.ones([3, 1])
+            result = x.broadcast_to([3, 4])
+            # result has shape (3, 4)
 
             # Add a new leading dimension
-            w = x.broadcast_to([2, 3, 1])
-            print(w.shape)  # (2, 3, 1)
+            result = x.broadcast_to([2, 3, 4])
+            # result has shape (2, 3, 4)
 
         Args:
-            shape: The target shape. Each dimension must either match the input
-                dimension or be broadcastable from size 1.
+            shape: The target shape. A static shape (no dynamic
+                dimensions).
 
         Returns:
-            Tensor: A tensor broadcast to the specified shape.
+            A tensor with the same elements as ``self`` but with the
+            target shape.
         """
         return F.broadcast_to(self, shape)
 

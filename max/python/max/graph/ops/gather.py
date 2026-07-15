@@ -63,11 +63,14 @@ def gather_nd(
     indices: TensorValueLike,
     batch_dims: int = 0,
 ) -> TensorValue:
-    """Selects elements out of an input tensor by N-dimensional index.
+    """Selects elements from a tensor by N-dimensional index.
 
-    This operation performs N-dimensional indexing into ``input`` using ``indices``.
-    Unlike :func:`gather`, which indexes along a single axis, ``gather_nd()`` allows
-    indexing along multiple dimensions simultaneously.
+    Unlike :func:`gather()`, which indexes along a single axis,
+    ``gather_nd()`` indexes along multiple dimensions at once. The last
+    dimension of ``indices`` is the index vector: its values select
+    elements from ``input`` immediately after any ``batch_dims`` leading
+    dimensions. Any remaining trailing dimensions of ``input`` are sliced
+    into the output as features.
 
     .. code-block:: python
 
@@ -83,39 +86,44 @@ def gather_nd(
 
     In this example:
 
-    - ``batch_dims`` is 1, so there's 1 shared dimension at the beginning.
-    - ``indices`` has an additional dimension "f" which becomes part of the output.
-    - The last dimension of ``indices`` is the index vector; values in this vector
-      are interpreted to be indices into "b", "c", and "d".
-    - Since ``batch_dims (1) + index size (3) < input.rank (5)``, the remaining
-      dimensions (in this case "e") are sliced into the output as features.
+    - ``batch_dims`` is 1, so ``input`` and ``indices`` share the leading
+      "a" dimension.
+    - ``indices`` has an additional dimension "f" which becomes part of
+      the output.
+    - The last dimension of ``indices`` (size 3) is the index vector;
+      each value selects into "b", "c", and "d" of ``input``.
+    - Since ``batch_dims (1) + index size (3) < input.rank (5)``, the
+      remaining dimension "e" is sliced into the output.
 
     Args:
-        input: The input symbolic tensor to select elements from.
-        indices: A symbolic tensor of index values to use for selection.
-            The last dimension of this tensor must be static. This dimension
-            will be used to index or slice into ``input`` immediately following
-            ``batch_dims`` initial dimensions. The size of this index dimension
-            is the number of dimensions it specifies.
+        input: The input symbolic tensor to gather from.
+        indices: An integer tensor of multi-dimensional indices. Its last
+            dimension must be static and gives the size of the index
+            vector.
         batch_dims: The number of leading batch dimensions shared by
-            ``input`` and ``indices``; 0 by default. ``input`` and ``indices`` must
-            exactly match up to their first ``batch_dims`` dimensions. This
-            function does not broadcast.
+            ``input`` and ``indices``. The shapes must match exactly along
+            these leading dimensions. This function does not broadcast.
+            Defaults to ``0``.
 
     Returns:
-        A new symbolic tensor representing the result of the gather operation.
-        The output will have the same dtype as ``input``, and will have shape
-        depending on the inputs, in this order:
+        A symbolic tensor with the same dtype as ``input``. Its shape is
+        the concatenation of:
 
-        - ``input.shape[:batch_dims]`` -- The "broadcast" dimensions (though note
-          that this function does not broadcast). These dimensions must be
-          identical between ``input`` and ``indices``.
-        - ``indices.shape[batch_dims:-1]`` -- The "gather" dimensions; this allows
-          multi-dimensional tensors of indices. The last dimension is the index vector.
-        - ``input.shape[batch_dims + indices.shape[-1]:]`` -- The "slice" dimensions.
-          If ``batch_dims`` < ``input.rank - indices.shape[-1]`` (again, this last
-          is the index vector), then any following dimensions of the inputs are
-          taken entirely as though slicing.
+        - ``input.shape[:batch_dims]`` — the leading batch dimensions.
+        - ``indices.shape[batch_dims:-1]`` — the gather dimensions.
+        - ``input.shape[batch_dims + indices.shape[-1]:]`` — the
+          trailing sliced dimensions.
+
+    Raises:
+        ValueError: If any of the following:
+
+            - ``indices``'s last dimension is not static.
+            - ``indices`` is not an integer tensor.
+            - ``batch_dims`` is negative or greater than
+              ``indices.rank - 1``.
+            - ``batch_dims + indices.shape[-1]`` exceeds ``input.rank``.
+            - The leading ``batch_dims`` of ``input`` and ``indices``
+              don't match.
     """
     input, indices = TensorValue(input), TensorValue(indices)
     assert_same_device(input=input, indices=indices)
