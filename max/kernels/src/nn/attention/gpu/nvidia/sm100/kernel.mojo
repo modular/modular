@@ -437,6 +437,21 @@ struct SM100MHA2Q[
             + "\nsmem_used = "
             + String(Self.config.smem_used)
         )
+        # The dynamic-smem carveout reserved at launch is `config.smem_used`
+        # (`launch_smem_used()`), so it must be at least the real
+        # `SM100AttentionSMem` byte footprint that the kernel actually writes.
+        # Under-reserving (smem_used < smem_size) is an out-of-bounds __shared__
+        # write bug (the trailing mbar / tmem_addr regions overflow the carveout
+        # on init); over-reserving is safe. Equality is not required: the 2Q
+        # fused-KV path legitimately over-reserves a few bytes.
+        comptime assert (
+            Self.config.smem_used >= Self.SmemType.smem_size()
+        ), String(
+            "config.smem_used = ",
+            Self.config.smem_used,
+            " must be >= SmemType.smem_size() = ",
+            Self.SmemType.smem_size(),
+        )
         comptime assert (
             not Self.SchedulerType.may_advance
         ), "Persistent kernels not yet supported with FA4"

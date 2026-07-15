@@ -535,14 +535,21 @@ struct FA4Config[
         #   shares Q across both pipelines so no Q1Sync slot is needed —
         #   FA4MiscMBars collapses Q1SyncIdx in that mode)
         # - O producers: 2 (O consumers reuse S_consumer[0], not separate)
+        # - Split-K publish barrier: 1 (only when num_q == 1 and
+        #   splitk_partitions > 1; matches FA4MiscMBars.Publish_count and
+        #   FA4Config.splitk_dynamic()). Without it the split-K launch reserves
+        #   `smem_used` 8 bytes short of the SM100AttentionSMem layout, and the
+        #   publish-barrier init writes out of bounds (KERN-3172).
         # Total fixed = 8 + order_barrier_count + 2*num_pv_stages
         #             + (num_qk_stages if num_q == 2 else 0)
+        #             + (1 if num_q == 1 and splitk_partitions > 1 else 0)
         comptime order_barrier_count: Int = 2 if EnableForcedOrdering else 0
         misc_mbars_fixed_size = (
             8
             + order_barrier_count
             + 2 * self.num_pv_stages
             + (self.num_qk_stages if num_q == 2 else 0)
+            + (1 if num_q == 1 and splitk_partitions > 1 else 0)
         )
         smem_use += misc_mbars_fixed_size * Self.mbar_size
 
