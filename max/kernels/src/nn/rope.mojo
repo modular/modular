@@ -66,20 +66,23 @@ def get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
 def apply_rope[
     dtype: DType,
     freq_dtype: DType,
-    rank: Int,
     width: SIMDSize,
     //,
     *,
     interleaved: Bool,
     alignment: Int,
-    output_fn: def[width: SIMDSize, alignment: Int](
-        idx: IndexList[rank], val: SIMD[dtype, width]
-    ) capturing -> None,
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: SIMDSize, alignment: Int](
+        idx: IndexList[3], val: SIMD[dtype, width]
+    ) -> None,
 ](
     x: TileTensor[dtype, ...],
-    idx: IndexList[rank],
+    idx: IndexList[3],
     freq_val: SIMD[freq_dtype, width],
+    output_fn: OutputFn,
 ):
+    comptime rank = 3
     comptime assert rank - 1 >= 0
     var indices = get_safetensors_idx(idx[rank - 1], x.static_shape[rank - 1])
     var pos_re = idx
@@ -119,9 +122,11 @@ def rope_ragged[
     *,
     interleaved: Bool,
     target: StaticString,
-    output_fn: def[width: SIMDSize, alignment: Int](
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: SIMDSize, alignment: Int](
         idx: IndexList[3], val: SIMD[dtype, width]
-    ) capturing -> None,
+    ) -> None,
     mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
         Trait=CoordLike
     ](),
@@ -135,6 +140,7 @@ def rope_ragged[
     start_pos: TileTensor[DType.uint32, ...],
     freqs_cis: TileTensor[freq_dtype, ...],
     context: DeviceContext,
+    output_fn: OutputFn,
     position_ids: OptionalReg[
         TileTensor[DType.uint32, PositionIdsLayoutType, ImmutAnyOrigin]
     ] = None,
@@ -251,8 +257,7 @@ def rope_ragged[
             apply_rope[
                 interleaved=interleaved,
                 alignment=alignment,
-                output_fn=output_fn,
-            ](x, idx, f_c_temp)
+            ](x, idx, f_c_temp, output_fn)
 
     comptime compile_target = _current_target() if is_cpu[
         target

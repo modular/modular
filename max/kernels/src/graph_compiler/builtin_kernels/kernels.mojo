@@ -1292,10 +1292,9 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
             )
 
         @always_inline
-        @parameter
         def output_fn[
             width: SIMDSize, alignment: Int
-        ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
+        ](idx: IndexList[3], val: SIMD[dtype, width]) {var output} -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
                 cast_saturating[out_dtype](val),
@@ -1312,13 +1311,13 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         rope_ragged[
             interleaved=Self.interleaved,
             target=target,
-            output_fn=output_fn,
         ](
             x_tensor,
             row_offsets_tensor,
             start_tensor,
             freqs_cis_tensor,
             ctx,
+            output_fn,
         )
 
 
@@ -1361,10 +1360,9 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
             )
 
         @always_inline
-        @parameter
         def output_fn[
             width: SIMDSize, alignment: Int
-        ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
+        ](idx: IndexList[3], val: SIMD[dtype, width]) {var output} -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
                 rebind[SIMD[dtype, width]](val),
@@ -1383,13 +1381,13 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         rope_ragged[
             interleaved=Self.interleaved,
             target=target,
-            output_fn=output_fn,
         ](
             x_tensor,
             row_offsets_tensor,
             start_tensor,
             freqs_cis_tensor,
             ctx,
+            output_fn,
             position_ids=position_ids_tensor.as_unsafe_any_origin().as_immut(),
         )
 
