@@ -273,7 +273,7 @@ def test_enabled_overhead_within_sanity_ceiling(
     # the skip reflects the state after the fixture has built a session.
     # Once the wiring lands, recording additionally requires a CUDA primary
     # context current on *this* thread (the probe is ``cuCtxGetCurrent`` via
-    # the on-demand stub in ``bazel/third-party/libcuda_tracy_stub.cpp``) —
+    # the on-demand stub in ``bazel/third-party/libcuda_stub.cpp``) —
     # wiring that up is part of validating the auto-enable phase, not this
     # PR.
     if not kineto_can_record():

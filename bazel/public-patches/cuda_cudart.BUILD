@@ -77,7 +77,7 @@ EOF
 # This target exposes cuda_runtime_api.h, cuda_runtime.h, and all other
 # headers WITHOUT linking against libcudart.so.  Consumers that need
 # cudaDeviceSynchronize (e.g. Tracy) should depend on the on-demand dlopen
-# stub (libcudart_tracy_stub) instead of linking libcudart.so directly.
+# stub (libcudart_stub) instead of linking libcudart.so directly.
 cc_library(
     name = "cuda_runtime_headers",
     hdrs = glob(
