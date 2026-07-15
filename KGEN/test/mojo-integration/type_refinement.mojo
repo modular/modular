@@ -1344,7 +1344,7 @@ def rebind_manual_ref[
 ](ref x: T) -> String where conforms_to(T, Greetable):
     var _lit = __get_mvalue_as_litref(x)
     var _rebound = __mlir_op.`kgen.rebind`[
-        _type=Pointer[downcast[T, Greetable], origin_of(x)]._mlir_type
+        _type=Pointer[downcast[T, Greetable], origin_of(x)]._mlir_lit_ref
     ](_lit)
     ref y = __get_litref_as_mvalue(_rebound)
     return y.greet()
