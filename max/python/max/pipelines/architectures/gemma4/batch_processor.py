@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from max.driver import Buffer, DevicePinnedBuffer
+from max.driver import Buffer, DevicePinnedBuffer, _copy_pinned_to_devices
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputsInterface
@@ -54,10 +54,13 @@ class Gemma4BatchProcessor(
     _config: Gemma4ForConditionalGenerationConfig | None = None
     _ve_cache: VisionEncoderCache[Gemma4Context] | None = None
 
-    # Cached pinned host + device buffer pairs keyed by (batch_size, total_seq_len).
-    _execution_input_buffers: dict[
+    # Cached device token + per-device row-offset buffers keyed by
+    # (batch_size, total_seq_len). Only regular DeviceBuffers are cached --
+    # never pinned host buffers, which are freshly allocated every step (see
+    # ``prepare_initial_token_inputs``).
+    _device_input_buffers: dict[
         tuple[int, int],
-        tuple[Buffer, Buffer, list[Buffer], Buffer, Buffer],
+        tuple[Buffer, list[Buffer]],
     ]
 
     def __init__(
@@ -67,7 +70,7 @@ class Gemma4BatchProcessor(
     ) -> None:
         """Initialise with empty per-instance caches."""
         super().__init__(config, runtime)
-        self._execution_input_buffers = {}
+        self._device_input_buffers = {}
 
     def bind_model_state(
         self,
@@ -126,50 +129,46 @@ class Gemma4BatchProcessor(
 
         batch_size = len(context_batch)
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
-        buffer_key = (batch_size, total_seq_len)
-        buffers = self._execution_input_buffers.get(buffer_key)
-        host_tokens: Buffer
-        host_row_offsets: Buffer
-        if buffers is None:
-            if pinned:
-                host_tokens = DevicePinnedBuffer(
-                    dtype=DType.int64, shape=(total_seq_len,), device=dev
-                )
-                host_row_offsets = DevicePinnedBuffer(
-                    dtype=DType.uint32,
-                    shape=(batch_size + 1,),
-                    device=dev,
-                )
-            else:
-                host_tokens = Buffer(
-                    shape=(total_seq_len,), dtype=DType.int64, device=dev
-                )
-                host_row_offsets = Buffer(
-                    shape=(batch_size + 1,), dtype=DType.uint32, device=dev
-                )
-            device_tokens = host_tokens.to(dev)
-            device_row_offsets = [
-                host_row_offsets.to(device) for device in devices
-            ]
-            return_n_logits_buf = Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            )
-            buffers = (
-                host_tokens,
-                host_row_offsets,
-                device_row_offsets,
-                device_tokens,
-                return_n_logits_buf,
-            )
-            self._execution_input_buffers[buffer_key] = buffers
 
-        (
-            host_tokens,
-            host_row_offsets,
-            device_row_offsets,
-            device_tokens,
-            return_n_logits_buf,
-        ) = buffers
+        # Allocate fresh pinned host staging every step and never reuse it
+        # across steps. With the overlap scheduler the next step's host writes
+        # would clobber a reused pinned buffer while the current (in-flight)
+        # step's asynchronous H2D copy is still reading it. The destination
+        # device buffers are cached and reused (never pinned); the pinned host
+        # buffers are dropped at the end of the step and the DeviceContext
+        # defers the free until the owning stream's copy completes.
+        host_buffer_cls = DevicePinnedBuffer if pinned else Buffer
+        host_tokens: Buffer = host_buffer_cls(
+            dtype=DType.int64, shape=(total_seq_len,), device=dev
+        )
+        host_row_offsets: Buffer = host_buffer_cls(
+            dtype=DType.uint32, shape=(batch_size + 1,), device=dev
+        )
+
+        buffer_key = (batch_size, total_seq_len)
+        device_buffers = self._device_input_buffers.get(buffer_key)
+        if device_buffers is None:
+            device_tokens = Buffer(
+                shape=(total_seq_len,), dtype=DType.int64, device=dev
+            )
+            device_row_offsets = [
+                Buffer(
+                    shape=(batch_size + 1,),
+                    dtype=DType.uint32,
+                    device=device,
+                )
+                for device in devices
+            ]
+            self._device_input_buffers[buffer_key] = (
+                device_tokens,
+                device_row_offsets,
+            )
+        else:
+            device_tokens, device_row_offsets = device_buffers
+
+        return_n_logits_buf = Buffer.from_numpy(
+            np.array([return_n_logits], dtype=np.int64)
+        )
 
         row_offsets_np = host_row_offsets.to_numpy()
         np.cumsum(
@@ -185,9 +184,8 @@ class Gemma4BatchProcessor(
                 out=tokens_np,
             )
 
-        device_tokens.inplace_copy_from(host_tokens)
-        for d_offsets in device_row_offsets:
-            d_offsets.inplace_copy_from(host_row_offsets)
+        _copy_pinned_to_devices(host_tokens, [device_tokens])
+        _copy_pinned_to_devices(host_row_offsets, device_row_offsets)
 
         needs_images = (
             any(

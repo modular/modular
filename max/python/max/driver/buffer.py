@@ -234,6 +234,34 @@ Buffer.from_dlpack = _from_dlpack  # type: ignore[method-assign]
 Buffer.mmap = _mmap  # type: ignore[method-assign]
 
 
+def _copy_pinned_to_devices(
+    source: Buffer, destinations: Sequence[Buffer]
+) -> None:
+    """Copies a host buffer into per-device destination buffers safely.
+
+    Copies ``source`` into each buffer in ``destinations``. When ``source`` is
+    pinned and the destinations span multiple devices, its deferred free is
+    enqueued only on its owning device's stream, so the memory manager could
+    recycle the pinned staging while copies on the other devices' streams are
+    still reading it. Making the owning device's stream wait for the other
+    destination devices' streams closes that window. The cross-stream wait is a
+    no-op for a non-pinned ``source`` or a single device.
+
+    Args:
+        source: The host buffer to copy from (pinned for async H2D copies).
+        destinations: The per-device buffers to copy ``source`` into.
+    """
+    for destination in destinations:
+        destination.inplace_copy_from(source)
+    if not source.pinned:
+        return
+    source_device = source.device
+    source_stream = source_device.default_stream
+    for destination in destinations:
+        if destination.device.id != source_device.id:
+            source_stream.wait_for(destination.device.default_stream)
+
+
 def load_max_buffer(path: PathLike[str]) -> Buffer:
     """Experimental method for loading serialized MAX buffers.
 

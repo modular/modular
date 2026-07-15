@@ -21,7 +21,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import numpy as np
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Device,
+    DevicePinnedBuffer,
+    _copy_pinned_to_devices,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
@@ -190,10 +195,6 @@ class _ReplicaMetadata:
 
     claimed_requests: set[RequestID] = field(default_factory=set)
     """Set of request IDs claimed on this replica."""
-
-    # Store last host buffers to ensure lifetimes outlive async copies.
-    last_lut_table_host: Buffer | None = None
-    last_cache_lengths_host: Buffer | None = None
 
 
 class PagedKVCacheManager:
@@ -621,15 +622,13 @@ class PagedKVCacheManager:
             )
         )
         # Copy shared LUT and cache_lengths to each TP shard's device buffer.
-        num_tp_shards = len(replica.devices)
-        for tp_shard in range(num_tp_shards):
-            cache_lengths_by_device[tp_shard].inplace_copy_from(
-                cache_lengths_host
-            )
-            lut_table_by_device[tp_shard].inplace_copy_from(lut_table_host)
-
-        replica.last_lut_table_host = lut_table_host
-        replica.last_cache_lengths_host = cache_lengths_host
+        # The pinned host staging is dropped when this method returns; the
+        # memory manager defers its free until the owning device's stream
+        # completes, and ``_copy_pinned_to_devices`` makes the owning device
+        # wait for the other TP shards so the staging is not recycled while
+        # their copies are still reading it.
+        _copy_pinned_to_devices(cache_lengths_host, cache_lengths_by_device)
+        _copy_pinned_to_devices(lut_table_host, lut_table_by_device)
 
         return KVCacheAssignments(
             cache_lengths_by_device=cache_lengths_by_device,
