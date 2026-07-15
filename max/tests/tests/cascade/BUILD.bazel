@@ -128,28 +128,23 @@ modular_py_test(
     name = "test_max_model_worker_integration",
     size = "large",
     srcs = ["test_max_model_worker_integration.py"],
-    ignore_extra_deps = [
-        # SmolLM resolves to the llama3 architecture via string lookup in the
-        # pipeline registry, so these are runtime-only deps.
-        "//max/python/max/pipelines/architectures/llama3",
-        "//max/python/max/pipelines/architectures/llama3_modulev3",
-    ],
     tags = [
         "no-sandbox",
         "requires-network",
     ],
+    # The llama3 architecture SmolLM resolves to (via string lookup in the
+    # registry) arrives transitively through the cascade pipelines target,
+    # which depends on every architecture for the dispatcher's runfiles.
     deps = [
         "//max/python/max/driver",
         "//max/python/max/experimental/cascade",
         "//max/python/max/experimental/cascade/core",
+        "//max/python/max/experimental/cascade/pipelines",
         "//max/python/max/experimental/cascade/workers",
-        "//max/python/max/pipelines/architectures/llama3",
-        "//max/python/max/pipelines/architectures/llama3_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
         requirement("pytest-asyncio"),
-        requirement("transformers"),
     ],
 )
 

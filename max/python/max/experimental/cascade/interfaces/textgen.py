@@ -10,7 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Shared types for cascade text-generation pipelines."""
+"""Request types and interface for cascade text-generation pipelines.
+
+Kept in ``interfaces`` (below both ``workers`` and the concrete ``pipelines``)
+so workers can consume the request types and ``serve`` can route on the
+interface without either depending on concrete pipeline implementations.
+"""
 
 from __future__ import annotations
 

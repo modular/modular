@@ -12,7 +12,8 @@ modular_py_library(
     deps = [
         requirement("numpy"),
         requirement("transformers"),
-        "//max/python/max/experimental/cascade",
+        "//max/python/max/experimental/cascade/core",
+        "//max/python/max/experimental/cascade/interfaces",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",

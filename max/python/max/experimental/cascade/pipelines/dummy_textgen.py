@@ -22,8 +22,8 @@ from max.experimental.cascade.core import (
     pipeline_method,
     worker_method,
 )
-from max.experimental.cascade.pipelines import CascadePipeline
-from max.experimental.cascade.pipelines.textgen import (
+from max.experimental.cascade.interfaces.pipeline import CascadePipeline
+from max.experimental.cascade.interfaces.textgen import (
     ChatMessages,
     GenerateRequest,
     TextGenInterface,

@@ -10,4 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Concrete cascade pipeline implementations and dispatch."""
+"""Cascade pipeline interfaces and shared request types.
+
+Holds the abstractions (``CascadePipeline`` base, the text/image-gen
+interfaces, and their request DTOs) that both ``workers`` and ``serve``
+depend on, keeping them decoupled from concrete pipeline implementations.
+"""

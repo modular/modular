@@ -29,7 +29,8 @@ from collections.abc import AsyncIterator
 
 import numpy as np
 import numpy.typing as npt
-from max.experimental.cascade import GenerateRequest, Worker, worker_method
+from max.experimental.cascade.core import Worker, worker_method
+from max.experimental.cascade.interfaces.textgen import GenerateRequest
 from max.pipelines.architectures import register_all_models
 from max.pipelines.context import (
     EOSTracker,
@@ -51,7 +52,6 @@ from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 logger = logging.getLogger(__name__)
 
 Int32Array = npt.NDArray[np.int32]
-TokenIdArray = npt.NDArray[np.int64]
 
 _ModelWorkerProxy = ModelWorkerProxy[
     TextAndVisionContext | TextContext, TextGenerationOutput
@@ -152,7 +152,7 @@ class MAXModelWorker(Worker):
 
     @worker_method()
     async def decode(
-        self, req: GenerateRequest, tokens: TokenIdArray
+        self, req: GenerateRequest, tokens: Int32Array
     ) -> AsyncIterator[Int32Array]:
         """Submit a decode request and stream generated token ids.
 

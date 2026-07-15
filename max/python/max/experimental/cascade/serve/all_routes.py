@@ -13,9 +13,9 @@
 """Provide a router that exposes all supported cascade inference routes."""
 
 from fastapi import APIRouter
-from max.experimental.cascade.pipelines import CascadePipeline
-from max.experimental.cascade.pipelines.imgen import ImageGenInterface
-from max.experimental.cascade.pipelines.textgen import TextGenInterface
+from max.experimental.cascade.interfaces.imgen import ImageGenInterface
+from max.experimental.cascade.interfaces.pipeline import CascadePipeline
+from max.experimental.cascade.interfaces.textgen import TextGenInterface
 from max.experimental.cascade.serve import chat_completions, open_responses
 
 
