@@ -1997,9 +1997,6 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     if (closureExternalRefs.empty() &&
         captureSignature.parsedCaptures.empty() &&
         !captureSignature.captureAllByConvention) {
-      // The closure body needs to be completely resolved before promotion to
-      // sidestep an ordering issue.
-      resolveAllWithin(decl);
       shared.closureEmitter->promoteClosure(decl, paramCaptures);
       return success();
     }

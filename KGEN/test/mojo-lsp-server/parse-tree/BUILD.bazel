@@ -181,12 +181,7 @@ _KERNEL_PACKAGES = [
 #    to this standalone test (see _KERNEL_MOJOPKGS's comment below).
 #    "unable to locate module" is the only error; no crash, no other
 #    diagnostic.
-# 2. Genuine diagnostics on the file's own code, with no crash and no
-#    resolution failure anywhere in the output -- confirmed real via a
-#    direct `kgen -lsp` run. Needs owner triage: real bug vs. a
-#    standalone-check limitation around heavily-parameterized/generic kernel
-#    code checked outside its normal instantiation context.
-# 3. layout/__init__.mojo crashes standalone-resolving `LayoutTensor`'s
+# 2. layout/__init__.mojo crashes standalone-resolving `LayoutTensor`'s
 #    default parameter `element_layout: Layout = Layout(1, 1)`
 #    (layout_tensor.mojo:263) via `CallParamInf::inferForCall`
 #    (KGEN/lib/MojoParser/ParamInf.cpp) -- a real KGEN assertion failure
@@ -197,17 +192,7 @@ _KERNELS_NO_RUN_LIST = [
     # 1. //Kernels/lib/... visibility gap (see comment above).
     "graph_compiler/builtin_kernels/distributed.mojo",
     "graph_compiler/builtin_kernels/msa.mojo",
-    # 2. Genuine diagnostics on the file's own code; needs owner triage.
-    # "use of unknown declaration 'k_type'" at line 5530, confirmed via a
-    # direct `kgen -lsp` run. Previously hidden behind the
-    # apple_accelerate.mojo bytecode-reader crash (see comment above); needs
-    # its own triage now that the crash no longer masks it.
-    "nn/attention/gpu/mha.mojo",
-    # "use of unknown declaration 'output_type'" at line 5090, confirmed via a
-    # direct `kgen -lsp` run. Same situation as mha.mojo above -- previously
-    # hidden behind the fixed crash.
-    "nn/conv/conv.mojo",
-    # 3. LayoutTensor default-parameter resolution crash (see comment above).
+    # 2. LayoutTensor default-parameter resolution crash (see comment above).
     "layout/__init__.mojo",
 ]
 

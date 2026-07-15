@@ -1847,6 +1847,15 @@ ClosureEmitter::promoteClosure(ASTDecl &nestedFnDecl,
                                std::optional<bool> capturingOverride) {
   assert(nestedFnDecl.resolvedness == DeclResolvedness::body &&
          "nested decl must be fully resolved to promote");
+  // Mark dead unparsed code as resolved to prevent resolution dependent on
+  // the old parent scope, which is about to change below.
+  for (auto &[_, children] : nestedFnDecl.getDeclsInScope()) {
+    for (ASTDecl *child : children) {
+      if (child->getParentDecl() == &nestedFnDecl &&
+          child->resolvedness == DeclResolvedness::unparsed)
+        child->resolvedness = DeclResolvedness::body;
+    }
+  }
   MLIRContext *ctx = shared.getContext();
   FnOp function = cast<FnOp>(nestedFnDecl.getIfOperation());
   SMLoc loc = nestedFnDecl.getLoc();
