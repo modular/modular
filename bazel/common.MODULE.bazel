@@ -38,6 +38,15 @@ bazel_dep(name = "nlohmann_json", version = "3.12.0.bcr.1")
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
 
 archive_override(
+    module_name = "rules_cc",
+    integrity = "sha256-xPt/jPo70Y+LPhowjcTLhMxwtkZtw7QBwO969n7mWPo=",
+    strip_prefix = "rules_cc-ad214a9cb17d41e4e03199d61d436974a2261885",
+    urls = [
+        "https://github.com/bazelbuild/rules_cc/archive/ad214a9cb17d41e4e03199d61d436974a2261885.tar.gz",
+    ],
+)
+
+archive_override(
     module_name = "rules_mojo",
     integrity = "sha256-PvMqbvlCakQ3JczLgemNYHlPzV0ZdIW3WXBNQAQ50Mg=",
     strip_prefix = "rules_mojo-9a6a240114bd8ce0e0d3fea0dbef1d70744f7c6f",

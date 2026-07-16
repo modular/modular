@@ -33,20 +33,23 @@ readonly dsymutil="$clang_root/bin/dsymutil"
 
 ifs_input=""
 ifs_output=""
+dsym_path=""
+binary_path=""
 linker_args=()
 for arg in "$@"; do
   case "$arg" in
     --modular-ifs-input=*) ifs_input="${arg#*=}" ;;
     --modular-ifs-output=*) ifs_output="${arg#*=}" ;;
+    --modular-dsym-path=*) dsym_path="${arg#*=}" ;;
+    --modular-binary-path=*) binary_path="${arg#*=}" ;;
     *) linker_args+=("$arg") ;;
   esac
 done
 
 "$clang" "${linker_args[@]}"
 
-readonly dsym_path="${MODULAR_DSYM_PATH:-}"
 if [[ -n "$dsym_path" ]]; then
-  "$dsymutil" -o "$dsym_path" "$MODULAR_BINARY_PATH"
+  "$dsymutil" -o "$dsym_path" "$binary_path"
 fi
 
 if [[ "${BUILD_IFS:-}" == "yes" ]]; then
