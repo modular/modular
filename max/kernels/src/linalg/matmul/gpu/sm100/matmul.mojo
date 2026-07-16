@@ -62,7 +62,7 @@ from std.utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_SS
 from ....utils import elementwise_compute_lambda_type
-from .pipeline import ProducerConsumerPipeline
+from .pipeline import ProducerConsumerPipeline, MbarPtr
 
 
 @fieldwise_init
@@ -662,8 +662,10 @@ def accum_arrive[
     cta_group: Int
 ](mma_output_pipeline: ProducerConsumerPipeline, mma_output_stage: UInt32):
     comptime if cta_group == 1:
-        _ = mbarrier_arrive(mma_output_pipeline.consumer_mbar(mma_output_stage))
+        _ = mbarrier_arrive(
+            rebind[MbarPtr](mma_output_pipeline.consumer_mbar(mma_output_stage))
+        )
     else:
         umma_arrive_leader_cta(
-            mma_output_pipeline.consumer_mbar(mma_output_stage)
+            rebind[MbarPtr](mma_output_pipeline.consumer_mbar(mma_output_stage))
         )
