@@ -198,7 +198,8 @@ def matrix_multiplication(
         graph.output(output)
 
     print("Compiling...")
-    model = session.load(graph)
+    compiled = session.compile(graph)
+    model = session.init(compiled)
 
     print("Executing...")
     result = model.execute(a_tensor, b_tensor)[0]

@@ -38,7 +38,6 @@ from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
     parse_quant_config,
-    upper_bounded_default,
 )
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
@@ -134,9 +133,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     target_layer_ids: list[int] | None = None
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
-
-    def get_max_seq_len(self) -> int:
-        return self.max_seq_len
+    sliding_window: int | None = None
 
     @staticmethod
     def calculate_attention_multiplier(
@@ -178,7 +175,10 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             num_layers=cls.get_num_layers(huggingface_config),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            num_eagle_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
+            speculative_method=pipeline_config.speculative.speculative_method
+            if pipeline_config.speculative
+            else None,
+            num_draft_tokens=pipeline_config.speculative.num_speculative_tokens
             if pipeline_config.speculative
             else 0,
         )
@@ -186,29 +186,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         return huggingface_config.num_hidden_layers
-
-    # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
-    # Also, these should just be class properties since they're already made
-    # unique as a model config.
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
-    ) -> int:
-        model_config = model_config or pipeline_config.model
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=model_config.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for Llama3, the provided "
-                f"max_length ({model_config.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
 
     @override
     @classmethod
@@ -267,6 +244,15 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         rope_scaling = getattr(huggingface_config, "rope_scaling", None)
 
         if rope_scaling is not None:
+            # Only the *flat* HuggingFace rope_scaling shape is supported
+            # here, with either "type" or "rope_type" as the discriminator
+            # (e.g. {"rope_type": "llama3", "factor": 8.0, ...}). The
+            # nested per-layer-type shape used by some modern HF configs —
+            # where `rope_parameters` is keyed by layer type such as
+            # "full_attention" or "sliding_attention" — is not handled
+            # here. Architectures using that shape need a config subclass
+            # that pre-flattens the dominant layer-type's parameters
+            # before delegating to this method.
             # Since "rope_type" huggingface config is not standardized, we need
             # to check for both "type" and "rope_type" keys.
             # TODO: A better solution would be for those family of models to

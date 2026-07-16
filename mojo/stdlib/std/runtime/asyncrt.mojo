@@ -15,8 +15,7 @@
 from std.os import abort
 from std.atomic import Atomic
 from std.ffi import _CPointer, external_call
-from std.gpu.host.device_context import _DeviceContextPtr
-from std.memory.alloc import alloc, free, Layout
+from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
 from std.builtin.coroutine import (
     AnyCoroutine,
@@ -37,7 +36,7 @@ struct _Chain(Boolable, Defaultable, ImplicitlyCopyable, RegisterPassable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
-    var storage: _CPointer[Int, MutExternalOrigin]
+    var storage: _CPointer[Int, MutUntrackedOrigin]
 
     def __init__(out self):
         self.storage = {}
@@ -81,22 +80,18 @@ struct _AsyncContext(ImplicitlyCopyable, RegisterPassable):
 
 
 def _init_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
-        chain.address
-    )
+    external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](chain)
 
 
 def _del_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](
-        chain.address
-    )
+    external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](chain)
 
 
 def _async_and_then(
     hdl: AnyCoroutine, chain: UnsafePointer[mut=True, _Chain, _]
 ):
     external_call["KGEN_CompilerRT_AsyncRT_AndThen", NoneType](
-        _coro_resume_fn, chain.address, hdl
+        _coro_resume_fn, chain, hdl
     )
 
 
@@ -107,18 +102,18 @@ def _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
 
 
 def _async_wait(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain.address)
+    external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain)
 
 
 def _async_complete(chain: UnsafePointer[mut=True, _Chain, _]):
-    external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain.address)
+    external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain)
 
 
 def _async_wait_timeout(
     chain: UnsafePointer[mut=True, _Chain, _], timeout: Int
 ) -> Bool:
     return external_call["KGEN_CompilerRT_AsyncRT_Wait_Timeout", Bool](
-        chain.address, timeout
+        chain, timeout
     )
 
 
@@ -207,7 +202,7 @@ def task_id_for_device(device_id: Int) -> Int:
         if no affinity mapping is configured.
     """
     return Int(
-        external_call["KGEN_CompilerRT_TaskIdForDevice", Int32](
+        external_call["MLRT_TaskIdForDevice", Int32](
             Int32(device_id),
         )
     )
@@ -271,7 +266,7 @@ def _run(var handle: Coroutine[...], out result: handle.type):
 # ===-----------------------------------------------------------------------===#
 
 
-struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
+struct Task[type: ImplicitlyDeletable, origins: OriginSet]:
     """Represents an asynchronous task that will produce a value of the specified type.
 
     A Task encapsulates a coroutine that is executing asynchronously and will eventually
@@ -395,17 +390,18 @@ def create_raising_task[
     _async_execute[type](task._handle._handle, desired_worker_id=-1)
 
 
-@explicit_destroy
-struct RaisingTask[type: Movable, origins: OriginSet]:
+struct RaisingTask[type: Movable, origins: OriginSet](
+    ImplicitlyDeletable where False,
+):
     """Represents an async task that may raise an error upon completion.
 
     Wraps a `RaisingCoroutine` that executes asynchronously and either
     produces a result value or raises an error. The error is propagated
     to the caller when `wait()` is called.
 
-    This type uses `@explicit_destroy` because only one of the result or
-    error slots is valid after completion. The caller must call `wait()`
-    or `force_destroy()` to consume the task.
+    This type does not conform to `ImplicitlyDeletable` because only one of the
+    result or error slots is valid after completion. The caller must call
+    `wait()` or `force_destroy()` to consume the task.
 
     Parameters:
         type: The type of value produced on success.
@@ -415,10 +411,10 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
     var _handle: RaisingCoroutine[Self.type, Self.origins]
     """The underlying raising coroutine."""
 
-    var _result_ptr: UnsafePointer[Self.type, MutExternalOrigin]
+    var _result_alloc: ThinAllocation[Self.type]
     """Heap-allocated storage for the result value."""
 
-    var _error_ptr: UnsafePointer[Error, MutExternalOrigin]
+    var _error_alloc: ThinAllocation[Error]
     """Heap-allocated storage for the error value."""
 
     def __init__(
@@ -430,9 +426,11 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
             handle: The raising coroutine to execute. Ownership is transferred.
         """
         self._handle = handle^
-        self._result_ptr = alloc(Layout[Self.type].single())
-        self._error_ptr = alloc(Layout[Error].single())
-        self._handle._set_result_slot(self._result_ptr, self._error_ptr)
+        self._result_alloc = alloc(Layout[Self.type].single()).into_thin()
+        self._error_alloc = alloc(Layout[Error].single()).into_thin()
+        self._handle._set_result_slot(
+            self._result_alloc.unsafe_ptr(), self._error_alloc.unsafe_ptr()
+        )
 
     def _has_error(self) -> Bool:
         """Check whether the coroutine raised an error.
@@ -447,13 +445,35 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
             self._handle._handle
         )
 
-    def _release_coro(deinit self):
-        """Release chain and coroutine resources without touching result/error
-        slots (caller handles those).
+    def _into_result(deinit self, out result: Self.type) raises:
+        """Consumes the finished task, returning its result or raising its error.
+
+        Tears down the coroutine and the async-runtime chain, releases the heap
+        storage for both the result and error slots, and then moves the produced
+        value into `result` — or, if the coroutine failed, raises the stored
+        error. The task must already have completed; callers block or suspend
+        (via `wait` or `__await__`) before invoking this.
+
+        Returns:
+            The `result` output parameter receives the task's value on success.
+
+        Raises:
+            The error produced by the coroutine, if it raised.
         """
+        var has_error = self._has_error()
+
         var ctx = self._handle._get_ctx[_AsyncContext]()
         _del_asyncrt_chain(_AsyncContext.get_chain(ctx))
         self._handle^.force_destroy()
+
+        if has_error:
+            var err = self._error_alloc.unsafe_ptr().take_pointee()
+            dealloc(self._error_alloc^.unsafe_with_layout({count = 1}))
+            dealloc(self._result_alloc^.unsafe_with_layout({count = 1}))
+            raise err^
+        result = self._result_alloc.unsafe_ptr().take_pointee()
+        dealloc(self._error_alloc^.unsafe_with_layout({count = 1}))
+        dealloc(self._result_alloc^.unsafe_with_layout({count = 1}))
 
     @always_inline
     def __await__(deinit self, out result: Self.type) raises:
@@ -480,18 +500,7 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
             )
 
         _suspend_async[await_body]()
-        var has_error = self._has_error()
-        var rp = self._result_ptr
-        var ep = self._error_ptr
-        self^._release_coro()
-        if has_error:
-            var err = ep.take_pointee()
-            free(rp, {count = 1})
-            free(ep, {count = 1})
-            raise err^
-        result = rp.take_pointee()
-        free(ep, {count = 1})
-        free(rp, {count = 1})
+        result = self^._into_result()
 
     def wait(deinit self, out result: Self.type) raises:
         """Block until the task completes and return the result or raise.
@@ -508,21 +517,10 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
         _async_wait(
             _AsyncContext.get_chain(self._handle._get_ctx[_AsyncContext]())
         )
-        var has_error = self._has_error()
-        var rp = self._result_ptr
-        var ep = self._error_ptr
-        self^._release_coro()
-        if has_error:
-            var err = ep.take_pointee()
-            free(rp, {count = 1})
-            free(ep, {count = 1})
-            raise err^
-        result = rp.take_pointee()
-        free(ep, {count = 1})
-        free(rp, {count = 1})
+        result = self^._into_result()
 
     # TODO: Add force_destroy() when we have a trait that combines
-    # Movable and ImplicitlyDestructible. Currently, the caller must
+    # Movable and ImplicitlyDeletable. Currently, the caller must
     # call wait() to consume the task.
 
 
@@ -546,7 +544,7 @@ struct TaskGroupContext(TrivialRegisterPassable):
     var callback: Self.tg_callback_fn_type
     """Callback function to be invoked on the TaskGroup when an operation completes."""
 
-    var task_group: UnsafePointer[TaskGroup, MutExternalOrigin]
+    var task_group: UnsafePointer[TaskGroup, MutUntrackedOrigin]
     """Pointer to the TaskGroup that owns or is associated with this context."""
 
 
@@ -556,7 +554,7 @@ struct _TaskGroupBox(Copyable, RegisterPassable):
     var handle: AnyCoroutine
 
     def __init__[
-        type: ImplicitlyDestructible
+        type: ImplicitlyDeletable
     ](out self, var coro: Coroutine[type, ...]):
         self.handle = coro^._take_handle()
 
@@ -600,7 +598,7 @@ struct TaskGroup(Defaultable):
 
     @always_inline
     def _counter_decr(mut self) -> Int:
-        var prev: Int = Int(self.counter.fetch_sub(1)._mlir_value)
+        var prev: Int = self.counter.fetch_sub(1)
         return prev - 1
 
     @staticmethod
@@ -636,7 +634,7 @@ struct TaskGroup(Defaultable):
         self.counter += 1
         task._get_ctx[TaskGroupContext]()[] = TaskGroupContext(
             Self._task_complete_callback,
-            UnsafePointer(to=self).unsafe_origin_cast[MutExternalOrigin](),
+            UnsafePointer(to=self).unsafe_origin_cast[MutUntrackedOrigin](),
         )
         _async_execute[NoneType](task._handle, desired_worker_id)
         self.tasks.append(_TaskGroupBox(task^))

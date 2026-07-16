@@ -18,6 +18,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from std.testing import assert_equal, TestSuite
 
 from std.utils import IndexList
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import Index
 
 
@@ -67,20 +68,14 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     in_device.enqueue_copy_from(in_host)
 
     var shape = IndexList[2](2, 8)
-    var in_buffer = Span[Scalar[dtype]](
-        ptr=in_device.unsafe_ptr(), length=flattened_length
-    )
-    var out_buffer = Span[Scalar[dtype]](
-        ptr=out_device.unsafe_ptr(), length=flattened_length
-    )
+    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=flattened_length)
+    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=flattened_length)
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer, shape)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[2]](idx0)
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+        var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
         out_buffer.unsafe_ptr().store[width=simd_width](
             linear_idx,
@@ -88,7 +83,7 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
         )
 
     elementwise[func, pack_size, target="gpu"](
-        IndexList[2](2, 8),
+        (2, 8),
         ctx,
     )
 
@@ -145,20 +140,14 @@ def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     in_device.enqueue_copy_from(in_host)
 
     var shape = IndexList[2](3, 3)
-    var in_buffer = Span[Scalar[dtype]](
-        ptr=in_device.unsafe_ptr(), length=flattened_length
-    )
-    var out_buffer = Span[Scalar[dtype]](
-        ptr=out_device.unsafe_ptr(), length=flattened_length
-    )
+    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=flattened_length)
+    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=flattened_length)
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer, shape)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[2]](idx0)
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+        var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
         out_buffer.unsafe_ptr().store[width=simd_width](
             linear_idx,
@@ -166,7 +155,7 @@ def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
         )
 
     elementwise[func, pack_size, target="gpu"](
-        IndexList[2](3, 3),
+        (3, 3),
         ctx,
     )
     out_device.enqueue_copy_to(out_host)
@@ -206,24 +195,20 @@ def run_elementwise_exact_boundary_uses_simd[
     var out_host = Span(out_host_stack)
 
     var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
-    var out_buffer = Span[Scalar[dtype]](
-        ptr=out_device.unsafe_ptr(), length=flattened_length
-    )
+    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=flattened_length)
     var shape = IndexList[2](pack_size, pack_size + 1)
 
     @always_inline
     @__copy_capture(out_buffer, shape)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[2]](idx0)
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+        var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
         out_buffer.unsafe_ptr().store[width=simd_width](
             linear_idx, SIMD[dtype, simd_width](simd_width)
         )
 
-    elementwise[func, pack_size, target="gpu"](shape, ctx)
+    elementwise[func, pack_size, target="gpu"](Coord(shape), ctx)
     out_device.enqueue_copy_to(out_host.unsafe_ptr())
     ctx.synchronize()
 
@@ -263,20 +248,14 @@ def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     # Transposed view: logical shape (4, 2, 5) with strides (5, 20, 1)
     var in_strides = IndexList[3](5, 20, 1)
     var out_shape = IndexList[3](4, 2, 5)
-    var in_buffer = Span[Scalar[dtype]](
-        ptr=in_device.unsafe_ptr(), length=flattened_length
-    )
-    var out_buffer = Span[Scalar[dtype]](
-        ptr=out_device.unsafe_ptr(), length=flattened_length
-    )
+    var in_buffer = Span(ptr=in_device.unsafe_ptr(), length=flattened_length)
+    var out_buffer = Span(ptr=out_device.unsafe_ptr(), length=flattened_length)
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer, in_strides, out_shape)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[3]](idx0)
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+        var idx = rebind[IndexList[3]](coord_to_index_list(idx0))
 
         # We need to perform unaligned loads because the non-uniform strides
         # being used for in_buffer.
@@ -287,10 +266,7 @@ def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
             in_buffer.unsafe_ptr().load[width=simd_width, alignment=1](in_idx),
         )
 
-    elementwise[func, 1, target="gpu"](
-        IndexList[3](4, 2, 5),
-        ctx,
-    )
+    elementwise[func, 1, target="gpu"](Coord(out_shape), ctx)
 
     out_device.enqueue_copy_to(out_host)
     ctx.synchronize()
@@ -357,12 +333,8 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     var input_device_ptr = ctx.enqueue_create_buffer[dtype](1)
     var output_device_ptr = ctx.enqueue_create_buffer[dtype](1)
 
-    var input_buffer = Span[Scalar[dtype]](
-        ptr=input_device_ptr.unsafe_ptr(), length=1
-    )
-    var output_buffer = Span[Scalar[dtype]](
-        ptr=output_device_ptr.unsafe_ptr(), length=1
-    )
+    var input_buffer = Span(ptr=input_device_ptr.unsafe_ptr(), length=1)
+    var output_buffer = Span(ptr=output_device_ptr.unsafe_ptr(), length=1)
 
     # Test with zero in first dimension
     var shape = IndexList[3](0, 4, 4)
@@ -370,10 +342,8 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(input_buffer, output_buffer, shape)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[3]](idx0)
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+        var idx = rebind[IndexList[3]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
         output_buffer.unsafe_ptr().store[width=simd_width](
             linear_idx,
@@ -381,25 +351,21 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
         )
 
     elementwise[func, pack_size, target="gpu"](
-        IndexList[3](0, 4, 4),
+        (0, 4, 4),
         ctx,
     )
     ctx.synchronize()
 
     # Test with zero in second dimension
-    shape = IndexList[3](2, 0, 4)
-
     elementwise[func, pack_size, target="gpu"](
-        IndexList[3](2, 0, 4),
+        (2, 0, 4),
         ctx,
     )
     ctx.synchronize()
 
     # Test with zero in third dimension
-    shape = IndexList[3](2, 4, 0)
-
     elementwise[func, pack_size, target="gpu"](
-        IndexList[3](2, 4, 0),
+        (2, 4, 0),
         ctx,
     )
     ctx.synchronize()

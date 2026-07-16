@@ -56,6 +56,6 @@ With additional libraries:
 The component generates tabbed installation instructions for:
 
 - **pixi**: Uses conda channels with `pixi add`
-- **uv**: Uses pip with custom index URLs via `uv pip install`
+- **uv**: Uses custom index URLs via `uv add`
 - **pip**: Standard pip installation with extra index URLs
 - **conda**: Uses conda-forge and Modular's conda channels

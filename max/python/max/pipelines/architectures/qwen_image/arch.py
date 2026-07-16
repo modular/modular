@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import PixelContext
+from max.pipelines.context import PixelContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
@@ -42,7 +42,16 @@ class QwenImageArchConfig(ArchConfig):
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
     ) -> Self:
-        if len(pipeline_config.model.device_specs) != 1:
+        if model_config is None:
+            model_config = pipeline_config.models.get("transformer")
+        if model_config is None and "main" in pipeline_config.models:
+            model_config = pipeline_config.model
+        if model_config is None:
+            raise ValueError(
+                "QwenImage requires a 'transformer' model component in "
+                "pipeline_config.models."
+            )
+        if len(model_config.device_specs) != 1:
             raise ValueError("QwenImage is only supported on a single device")
         return cls(pipeline_config=pipeline_config)
 

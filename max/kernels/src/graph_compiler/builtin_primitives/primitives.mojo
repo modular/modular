@@ -13,22 +13,33 @@
 
 from std.logger import Logger
 from std.math import fma
-from std.ffi import external_call, c_size_t
+from std.ffi import external_call, c_size_t, _CPointer
 from std.sys import size_of, align_of
 
 import std.algorithm
+import std.algorithm.functional
 
 from extensibility import StaticTensorSpec
 from extensibility import (
     ComputeOutputFusion,
+    ComputeOutputFusionTile,
     ElementwiseFusion,
+    ElementwiseFusionTile,
     InputFusion,
     OutputFusion,
+    get_kernel_tile_shape,
 )
 from std.collections import InlineArray
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.host.device_context import _DeviceContextPtr
+from std.gpu import block_idx
+from std.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    DeviceGraph,
+    DeviceGraphBuilder,
+)
+from std.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
 from std.gpu.host.info import is_accelerator, is_cpu, is_gpu
+from std.memory import UnsafeMaybeUninit
 from layout import (
     Coord,
     Idx,
@@ -36,8 +47,14 @@ from layout import (
     TensorLayout,
     TileTensor,
     row_major,
+    coord_to_index_list,
 )
-from std.memory import memcpy
+from layout.tile_io import (
+    GenericToLocalTileCopier,
+    LocalToGenericTileCopier,
+)
+from layout.tile_tensor import stack_allocation
+from std.memory import unsafe_memcpy
 from std.memory.unsafe_pointer import unsafe_cast
 
 from nn.concat import concat
@@ -56,6 +73,8 @@ from extensibility import (
 
 from std.utils import Index, IndexList, StaticTuple
 
+from std.runtime.async_value import AnyAsyncValueRef, _AsyncValuePtr
+
 from .buffer_plan import BufferPlanState, BufferPlanStats
 
 comptime MutByteBuffer = DynamicTensor[DType.int8, 1]
@@ -67,41 +86,8 @@ comptime logger = Logger()
 # ===-----------------------------------------------------------------------===#
 
 
-# TODO: This struct should be deleted. Mojo and C++ should always communicate
-# with pointers. If the Mojo wants to do something with this object, we should
-# just create a C++ function for it. For the time being, this is safe because of
-# the `constrained` and `static_assert` we added to ensure the type has the
-# right byte size.
-struct StateContext(TrivialRegisterPassable):
-    """Defines a StateContext structure which holds a ptr to context and has accessors that go to external calls
-    This is currently meant as a mojo-side container for GML::StateContext."""
-
-    var num_slots: Int
-    var ctx_ptr: OpaquePointer[MutAnyOrigin]
-
-    @always_inline
-    def __init__(
-        out self, num_slots: Int, ctx_ptr: OpaquePointer[MutAnyOrigin]
-    ):
-        self.num_slots = num_slots
-        self.ctx_ptr = ctx_ptr
-
-        comptime assert size_of[StateContext]() == 16, (
-            "Expecting StateContext to be 16 bytes wide, to match the C++"
-            " equivalent"
-        )
-
-    @always_inline
-    def __getitem__(self, index: Int) -> OpaquePointer[MutAnyOrigin]:
-        assert 0 <= index < self.num_slots, "index must be within bounds"
-        return external_call[
-            "MGP_RT_GetContextPayloadPtr",
-            OpaquePointer[MutAnyOrigin],
-        ](index, self.ctx_ptr)
-
-
 def pack_string_res(
-    str_ptr: UnsafePointer[Byte, ImmutAnyOrigin], str_len: Int
+    str_ptr: UnsafePointer[mut=False, Byte, _], str_len: Int
 ) raises -> String:
     var span = Span(ptr=str_ptr, length=str_len)
     # We can not free the resource ptr embedded in MEF, create a copy
@@ -120,7 +106,9 @@ def create_index_async(value: Int, async_ptr: OpaquePointer[MutAnyOrigin]):
 
 @no_inline
 @export
-def create_si64_async(value: Int64, async_ptr: OpaquePointer[MutAnyOrigin]):
+def create_si64_async(
+    value: Int64, async_ptr: OpaquePointer[MutAnyOrigin]
+) abi("Mojo"):
     external_call["MGP_RT_CreateAsync_int64t", NoneType](value, async_ptr)
 
 
@@ -132,15 +120,198 @@ def create_i1_async(
     external_call["MGP_RT_CreateAsync_bool", NoneType](value, async_ptr)
 
 
-@no_inline
-def create_buffer_ref_async(
-    buffer: MutByteBuffer,
-    async_ptr: OpaquePointer[MutAnyOrigin],
-    call_ctx: DeviceContext,
-):
-    external_call["MGP_RT_CreateAsyncDeviceBufferRef", NoneType](
-        buffer.unsafe_ptr(), buffer.size(), async_ptr, call_ctx._handle
-    )
+struct OwnedByteBuffer(ImplicitlyCopyable, Movable):
+    """Owning composite for an `mgp.buffer` value: a non-owning `MutByteBuffer`
+    view (precomputed pointer + shape) plus an `AnyAsyncValueRef` storage handle
+    that keeps the backing memory alive.
+
+    Structurally mirrors the C++ `TensorBufferRef` (`{data, size, storageRef}`).
+    Copying shares the backing memory (retains the storage); at the pack site the
+    storage is surrendered net-zero into a real `TensorBufferRef`.
+    """
+
+    var view: MutByteBuffer
+    var storage: AnyAsyncValueRef
+
+    def __init__(out self, view: MutByteBuffer, var storage: AnyAsyncValueRef):
+        """Builds the composite from a view and its storage handle.
+
+        Args:
+            view: A non-owning `MutByteBuffer` over the memory.
+            storage: The owning storage handle that keeps the memory alive.
+        """
+        self.view = view
+        self.storage = storage^
+
+    def __init__(out self, *, copy: Self):
+        """Creates a copy sharing the same backing memory (retains the storage).
+
+        Args:
+            copy: The composite to copy.
+        """
+        self.view = copy.view
+        self.storage = copy.storage
+
+    def unsafe_ptr(self) -> UnsafePointer[Scalar[DType.int8], MutAnyOrigin]:
+        """Returns the view's raw device data pointer.
+
+        Returns:
+            The non-owning device data pointer of the view.
+        """
+        return self.view.unsafe_ptr()
+
+    def size(self) -> Int:
+        """Returns the view's size in bytes.
+
+        Returns:
+            The byte size of the view.
+        """
+        return self.view.size()
+
+    def take_storage(deinit self) -> AnyAsyncValueRef:
+        """Hands the owning storage handle to the pack site, consuming self.
+
+        Returns:
+            The storage handle moved out of the composite.
+        """
+        return self.storage^
+
+    def async_pack(self) -> AnyAsyncValueRef:
+        """Packs the buffer into a freshly allocated `AsyncValue`.
+
+        Unlike `mogg.async.pack`, which fills a runtime-provided async slot, this
+        builds a brand-new `AsyncValue` holding a `TensorBufferRef` over the same
+        backing memory -- used to register a device-graph output. The storage
+        handle is copied (retained), so the borrowed composite stays valid.
+
+        Returns:
+            An owning reference to the new `AsyncValue`.
+        """
+        var ptr = self.unsafe_ptr()
+        var n = self.size()
+        var storage = AnyAsyncValueRef(copy=self.storage)
+        # AsyncValue *MGP_RT_CreateBufferRefAsyncValue(
+        #     AsyncValue *storage, void *data, size_t size)
+        var handle = external_call[
+            "MGP_RT_CreateBufferRefAsyncValue", _AsyncValuePtr[mut=True]
+        ](storage^.take_handle(), ptr, n)
+        return AnyAsyncValueRef(handle)
+
+    def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[DType.int8]:
+        """Wraps the view's memory in a non-owning `DeviceBuffer` for a copy.
+
+        Rebuilds a fresh view from the origin-erased data pointer so the
+        (possibly immutably borrowed) composite's `view` field origin is not
+        required at the call site.
+
+        Args:
+            ctx: The device context the buffer is associated with.
+
+        Returns:
+            A non-owning `DeviceBuffer` over the view's memory.
+        """
+        return MutByteBuffer(
+            self.unsafe_ptr(), Index(self.size())
+        ).to_device_buffer(ctx)
+
+
+struct OwnedTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
+    """Owning composite for an `mgp.tensor` value: a non-owning `DynamicTensor`
+    view (precomputed pointer + shape) plus an `AnyAsyncValueRef` storage handle
+    that keeps the backing memory alive.
+
+    The tensor-typed analogue of `OwnedByteBuffer`. Copying shares the backing
+    memory (retains the storage); at the pack site the storage is surrendered
+    net-zero into a real tensor `TensorBufferRef`.
+    """
+
+    var tensor: DynamicTensor[Self.dtype, Self.rank]
+    var storage: AnyAsyncValueRef
+
+    def __init__(
+        out self,
+        tensor: DynamicTensor[Self.dtype, Self.rank],
+        var storage: AnyAsyncValueRef,
+    ):
+        """Builds the composite from a tensor view and its storage handle.
+
+        Args:
+            tensor: A non-owning `DynamicTensor` over the memory.
+            storage: The owning storage handle that keeps the memory alive.
+        """
+        self.tensor = tensor
+        self.storage = storage^
+
+    def __init__(out self, *, copy: Self):
+        """Creates a copy sharing the same backing memory (retains the storage).
+
+        Args:
+            copy: The composite to copy.
+        """
+        self.tensor = copy.tensor
+        self.storage = copy.storage
+
+    def unsafe_ptr(self) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+        """Returns the view's raw device data pointer.
+
+        Returns:
+            The non-owning device data pointer of the view.
+        """
+        return self.tensor.unsafe_ptr()
+
+    def shape(self) -> IndexList[Self.rank]:
+        """Returns the tensor view's shape.
+
+        Returns:
+            The shape of the tensor view.
+        """
+        return self.tensor.shape()
+
+    def bytecount(self) -> Int:
+        """Returns the tensor view's size in bytes.
+
+        Returns:
+            The byte size of the tensor view.
+        """
+        return self.tensor.bytecount()
+
+    def take_storage(deinit self) -> AnyAsyncValueRef:
+        """Hands the owning storage handle to the pack site, consuming self.
+
+        Returns:
+            The storage handle moved out of the composite.
+        """
+        return self.storage^
+
+    def async_pack(self) -> AnyAsyncValueRef:
+        """Packs the tensor into a freshly allocated `AsyncValue`.
+
+        The tensor analogue of `OwnedByteBuffer.async_pack`: builds a new
+        `AsyncValue` holding a tensor `TensorBufferRef` (view + spec) over the
+        same backing memory, for registering a device-graph output. The storage
+        handle is copied (retained), so the borrowed composite stays valid.
+
+        Returns:
+            An owning reference to the new `AsyncValue`.
+        """
+        var shape = self.shape()
+        var ptr = self.unsafe_ptr()
+        var n = self.bytecount()
+        var storage = AnyAsyncValueRef(copy=self.storage)
+        # AsyncValue *MGP_RT_CreateTensorRefAsyncValue(
+        #     AsyncValue *storage, void *data, size_t size, size_t rank,
+        #     const size_t *shape, DType dtype)
+        var handle = external_call[
+            "MGP_RT_CreateTensorRefAsyncValue", _AsyncValuePtr[mut=True]
+        ](
+            storage^.take_handle(),
+            ptr.bitcast[NoneType](),
+            n,
+            Self.rank,
+            UnsafePointer(to=shape.data),
+            self.dtype,
+        )
+        return AnyAsyncValueRef(handle)
 
 
 @no_inline
@@ -161,8 +332,20 @@ def create_tensor_spec_async[
 
 
 @export
-def empty_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
+def empty_destructor(ptr: UnsafePointer[UInt8, MutUntrackedOrigin]) abi("Mojo"):
     pass
+
+
+@no_inline
+def unpack_state_ctx(
+    async_ptr: OpaquePointer[MutAnyOrigin],
+) -> StateContext:
+    var ptr = external_call[
+        "MGP_RT_UnpackStateContext",
+        StateContextRef,
+    ](async_ptr)
+
+    return StateContext(ptr)
 
 
 @no_inline
@@ -180,14 +363,19 @@ def unpack_device_ctx(
 @no_inline
 def unpack_buffer_ref(
     async_ptr: OpaquePointer[MutAnyOrigin],
-) -> MutByteBuffer:
+) -> OwnedByteBuffer:
     var size: UInt64 = 0
     var data_ptr = external_call[
         "MGP_RT_GetDataFromBuffer",
         OpaquePointer[MutAnyOrigin],
     ](async_ptr, UnsafePointer(to=size))
     var shape = IndexList[1](Int(size))
-    return MutByteBuffer(data_ptr.bitcast[Int8](), shape)
+    var view = MutByteBuffer(data_ptr.bitcast[Int8](), shape)
+    # Retain the backing storage of the source async value so this composite
+    # keeps the memory alive if it (or a derivative) is re-packed as an output.
+    return OwnedByteBuffer(
+        view, AnyAsyncValueRef(retained_storage_of=async_ptr)
+    )
 
 
 @no_inline
@@ -195,7 +383,7 @@ def unpack_tensor[
     buffer_rank: Int,
     tensor_rank: Int,
     dtype: DType,
-](tensor_async_ptr: OpaquePointer[MutAnyOrigin]) -> DynamicTensor[
+](tensor_async_ptr: OpaquePointer[MutAnyOrigin]) -> OwnedTensor[
     dtype, buffer_rank
 ]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
@@ -215,8 +403,13 @@ def unpack_tensor[
     comptime if tensor_rank == 0:
         shapes[0] = 1
 
-    return DynamicTensor[dtype, buffer_rank](
+    var view = DynamicTensor[dtype, buffer_rank](
         buffer_ptr.bitcast[Scalar[dtype]](), shapes
+    )
+    # Retain the backing storage of the source async value so this composite
+    # keeps the memory alive if it (or a derivative) is re-packed as an output.
+    return OwnedTensor[dtype, buffer_rank](
+        view, AnyAsyncValueRef(retained_storage_of=tensor_async_ptr)
     )
 
 
@@ -256,24 +449,29 @@ def mgp_tensor_create[
     buffer_rank: Int,
     dtype: DType,
 ](
-    buffer: MutByteBuffer,
+    buffer: OwnedByteBuffer,
     spec: IndexList[spec_rank],
-) -> DynamicTensor[
+) -> OwnedTensor[
     dtype, buffer_rank
 ]:
+    # The tensor shares the buffer's backing memory, so it retains the buffer's
+    # storage handle (copy) to keep it alive independently.
+    var storage = AnyAsyncValueRef(copy=buffer.storage)
     comptime if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
         comptime assert buffer_rank == 1
-        return DynamicTensor[dtype, buffer_rank](
+        var view = DynamicTensor[dtype, buffer_rank](
             buffer.unsafe_ptr().bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
+        return OwnedTensor[dtype, buffer_rank](view, storage^)
     else:
         comptime assert spec_rank == buffer_rank
-        return DynamicTensor[dtype, buffer_rank](
+        var view = DynamicTensor[dtype, buffer_rank](
             buffer.unsafe_ptr().bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](spec),
         )
+        return OwnedTensor[dtype, buffer_rank](view, storage^)
 
 
 @register_internal("mgp.tensor.extract.tensor_spec")
@@ -282,13 +480,13 @@ def mgp_tensor_extract_tensor_spec[
     tensor_rank: Int,
     buffer_rank: Int,
     dtype: DType,
-](buffer: DynamicTensor[dtype, buffer_rank]) -> IndexList[tensor_rank]:
+](tensor: OwnedTensor[dtype, buffer_rank]) -> IndexList[tensor_rank]:
     comptime if tensor_rank == 0:
         comptime assert buffer_rank == 1
         return rebind[IndexList[tensor_rank]](IndexList[0]())
     else:
         comptime assert buffer_rank == tensor_rank
-        return rebind[IndexList[tensor_rank]](buffer.shape().canonicalize())
+        return rebind[IndexList[tensor_rank]](tensor.shape().canonicalize())
 
 
 @register_internal("mgp.tensor.extract.buffer")
@@ -296,11 +494,14 @@ def mgp_tensor_extract_tensor_spec[
 def mgp_tensor_extract_buffer[
     buffer_rank: Int,
     dtype: DType,
-](buffer: DynamicTensor[dtype, buffer_rank]) -> MutByteBuffer:
-    # Unwrap the tensor into a size-less buffer pointer.
-    return MutByteBuffer(
-        buffer.unsafe_ptr[DType.int8](), IndexList[1](buffer.spec().bytecount())
+](tensor: OwnedTensor[dtype, buffer_rank]) -> OwnedByteBuffer:
+    # Unwrap the tensor into a size-less buffer view, retaining the tensor's
+    # storage so the buffer keeps the backing memory alive independently.
+    var view = MutByteBuffer(
+        tensor.tensor.unsafe_ptr[DType.int8](),
+        IndexList[1](tensor.bytecount()),
     )
+    return OwnedByteBuffer(view, AnyAsyncValueRef(copy=tensor.storage))
 
 
 @register_internal("mgp.tensor.slice")
@@ -309,11 +510,15 @@ def mgp_tensor_slice[
     rank: Int,
     dtype: DType,
 ](
-    input: DynamicTensor[dtype, rank],
+    input: OwnedTensor[dtype, rank],
     output_spec: IndexList[rank],
-    start: DynamicTensor[DType.int64, 1],
-) -> DynamicTensor[dtype, rank]:
+    start: OwnedTensor[DType.int64, 1],
+) -> OwnedTensor[dtype, rank]:
     var input_shape = input.shape()
+
+    # The slice shares the input's backing memory, so it retains the input's
+    # storage handle (copy) to keep it alive independently.
+    var storage = AnyAsyncValueRef(copy=input.storage)
 
     # Find k: the first non-size-1 input dimension (the sliced dimension).
     var k = rank
@@ -334,15 +539,17 @@ def mgp_tensor_slice[
 
     # Compute the offset, normalizing negative start values.
     if start_k >= 0:
-        return DynamicTensor[dtype, rank](
+        var view = DynamicTensor[dtype, rank](
             input.unsafe_ptr() + start_k * stride_k, output_spec
         )
+        return OwnedTensor[dtype, rank](view, storage^)
     else:
         var dim_k = input_shape[k]
         var normalized = max(0, dim_k + start_k)
-        return DynamicTensor[dtype, rank](
+        var view = DynamicTensor[dtype, rank](
             input.unsafe_ptr() + normalized * stride_k, output_spec
         )
+        return OwnedTensor[dtype, rank](view, storage^)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -354,14 +561,32 @@ def mgp_tensor_slice[
 @no_inline
 def mgp_buffer_alloc(
     byte_size: Int, dev_context: DeviceContext
-) raises -> MutByteBuffer:
+) raises -> OwnedByteBuffer:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
     # alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
 
     # This primitive has a byte-size input, so always assume a byte format
     var shape = IndexList[1](byte_size)
     var buf = dev_context.enqueue_create_buffer[DType.int8](byte_size)
-    return MutByteBuffer(buf^.take_ptr(), shape)
+    # Build a non-owning view over the memory, then wrap the live owning
+    # DeviceBuffer in an AsyncValue storage handle (net-zero take of the buffer's
+    # handle). The composite carries the view + storage, mirroring the C++
+    # TensorBufferRef; the pack site later surrenders the storage net-zero.
+    var view = MutByteBuffer(buf.unsafe_ptr(), shape)
+    var storage = AnyAsyncValueRef(storage_buf=buf^)
+    return OwnedByteBuffer(view, storage^)
+
+
+@register_internal("mgp.device_graph.alloc")
+@no_inline
+def mgp_device_graph_alloc(
+    byte_size: Int, builder: DeviceGraphBuilder
+) raises -> OwnedByteBuffer:
+    # The device-graph counterpart of `mgp_buffer_alloc`: it takes the recording
+    # builder instead of a device context. For now it just allocates via the
+    # builder's device context; later the builder can track device-graph
+    # memory-pool allocations here.
+    return mgp_buffer_alloc(byte_size, builder.context())
 
 
 @register_internal("mgp.buffer.constant")
@@ -369,12 +594,15 @@ def mgp_buffer_alloc(
 def mgp_buffer_constant(
     resource_ptr: OpaquePointer[MutAnyOrigin],
     resource_bytecount: Int,
-) -> MutByteBuffer:
+) abi("Mojo") -> OwnedByteBuffer:
     # Should we keep the alignment? It seems that the static alignment is
     # dropped in the kernels anyway.
-    return MutByteBuffer(
+    # Constant memory is owned by the resource system, not refcounted, so the
+    # storage handle is the empty (non-tracked) reference.
+    var view = MutByteBuffer(
         resource_ptr.bitcast[Int8](), IndexList[1](resource_bytecount)
     )
+    return OwnedByteBuffer(view, AnyAsyncValueRef())
 
 
 @no_inline
@@ -390,7 +618,7 @@ def fill_buffer[dtype: DType](buf: MutByteBuffer, *vals: Int):
 @no_inline
 def mgp_buffer_set_with_index[
     bDevice: StaticString
-](buffer: MutByteBuffer, *vals: Int) raises:
+](buffer: OwnedByteBuffer, *vals: Int) raises:
     assert is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
     var bufSize = buffer.size()
     var numArgs = len(vals)
@@ -400,16 +628,16 @@ def mgp_buffer_set_with_index[
 
     var elSize = bufSize // numArgs
     if elSize == 4:
-        fill_buffer[DType.int32](buffer, *vals)
+        fill_buffer[DType.int32](buffer.view, *vals)
     elif elSize == 8:
-        fill_buffer[DType.int64](buffer, *vals)
+        fill_buffer[DType.int64](buffer.view, *vals)
     else:
         raise Error("unsupported element size")
 
 
 @register_internal("mgp.buffer.to_bool")
 @no_inline
-def mgp_buffer_to_bool[bDevice: StaticString](buffer: ImmutByteBuffer) -> Bool:
+def mgp_buffer_to_bool[bDevice: StaticString](buffer: OwnedByteBuffer) -> Bool:
     assert is_cpu[bDevice](), "to_bool can only work on cpu buffers"
     var bufSize = buffer.size()
     assert bufSize == 1, "buffer size must be a size of 1"
@@ -419,7 +647,7 @@ def mgp_buffer_to_bool[bDevice: StaticString](buffer: ImmutByteBuffer) -> Bool:
 @register_internal("mgp.buffer.to_index")
 @no_inline
 def mgp_buffer_to_index(
-    buffer: ImmutByteBuffer,
+    buffer: OwnedByteBuffer,
 ) raises -> Int:
     var bufSize = buffer.size()
     if bufSize == 4:
@@ -435,9 +663,12 @@ def mgp_buffer_to_index(
 @register_internal("mgp.buffer.slice")
 @no_inline
 def mgp_buffer_slice(
-    buffer: MutByteBuffer, offset: Int, size: Int
-) -> MutByteBuffer:
-    return MutByteBuffer(buffer.unsafe_ptr() + offset, Index(size))
+    buffer: OwnedByteBuffer, offset: Int, size: Int
+) -> OwnedByteBuffer:
+    # The slice shares the source's backing memory, so it retains the source's
+    # storage handle (copy) to keep it alive independently.
+    var view = MutByteBuffer(buffer.unsafe_ptr() + offset, Index(size))
+    return OwnedByteBuffer(view, AnyAsyncValueRef(copy=buffer.storage))
 
 
 @register_internal("mgp.buffer.bulk_slice")
@@ -446,10 +677,10 @@ def mgp_buffer_bulk_slice[
     N: Int,
     //,
 ](
-    base: MutByteBuffer,
+    base: OwnedByteBuffer,
     offsets: InlineArray[Int, N],
     sizes: InlineArray[Int, N],
-) -> InlineArray[MutByteBuffer, N]:
+) -> InlineArray[OwnedByteBuffer, N]:
     """Bulk slice: produce N non-overlapping sub-buffers from a pool buffer.
 
     Parameters:
@@ -461,13 +692,19 @@ def mgp_buffer_bulk_slice[
         sizes: Byte size of each slice.
 
     Returns:
-        An InlineArray of N MutByteBuffer views into the pool.
+        An InlineArray of N OwnedByteBuffer slices into the pool, each retaining
+        the pool's backing storage.
     """
-    var result = InlineArray[MutByteBuffer, N](uninitialized=True)
+    var result = InlineArray[UnsafeMaybeUninit[OwnedByteBuffer], N](
+        uninitialized=True
+    )
 
+    # Placement-initialize each uninitialized slot to avoid running the
+    # destructor.
     for i in range(N):
-        result[i] = mgp_buffer_slice(base, offsets[i], sizes[i])
-    return result
+        result[i].init_from(mgp_buffer_slice(base, offsets[i], sizes[i]))
+
+    return {unsafe_assume_initialized = result^}
 
 
 @register_internal("mgp.buffer.plan")
@@ -549,7 +786,7 @@ def mgp_buffer_plan[
 def mgp_buffer_concat[
     bDevice: StaticString
 ](
-    output: MutByteBuffer,
+    output: OwnedByteBuffer,
     inputs: StaticTuple[MutByteBuffer, ...],
     call_ctx: DeviceContext,
 ) raises:
@@ -559,7 +796,7 @@ def mgp_buffer_concat[
     )
     var input_tensors = StaticTuple[_, inputs.size](
         TileTensor(inputs[0].unsafe_ptr(), row_major(Coord(inputs[0].size())))
-        .as_any_origin()
+        .as_unsafe_any_origin()
         .as_immut()
     )
     for i in range(1, len(inputs)):
@@ -567,7 +804,7 @@ def mgp_buffer_concat[
             TileTensor(
                 inputs[i].unsafe_ptr(), row_major(Coord(inputs[i].size()))
             )
-            .as_any_origin()
+            .as_unsafe_any_origin()
             .as_immut()
         )
     concat[DType.int8, bDevice, None](
@@ -581,8 +818,8 @@ def mgp_buffer_device_to_host[
     cOtherDevice: StaticString,
     dHostDevice: StaticString,
 ](
-    dev_buf: MutByteBuffer,
-    host_buf: MutByteBuffer,
+    dev_buf: OwnedByteBuffer,
+    host_buf: OwnedByteBuffer,
     dev_ctx: DeviceContext,
 ) raises:
     comptime if is_cpu[dHostDevice]() and is_accelerator[cOtherDevice]():
@@ -603,18 +840,21 @@ def mgp_buffer_device_to_device[
     cSrcDevice: StaticString,
     dDstDevice: StaticString,
 ](
-    src_buf: MutByteBuffer,
-    dst_buf: MutByteBuffer,
+    src_buf: OwnedByteBuffer,
+    dst_buf: OwnedByteBuffer,
     src_dev_ctx: DeviceContext,
     dst_dev_ctx: DeviceContext,
 ) raises:
     comptime if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
-        dst_dev_ctx.enqueue_copy[DType.int8](
+        # The graph emits explicit mgp.device_wait ops around this copy to
+        # synchronize the source and destination streams, so the driver must
+        # not insert its own cross-stream synchronization here.
+        dst_dev_ctx.enqueue_copy_no_cross_stream_sync[DType.int8](
             dst_buf.to_device_buffer(dst_dev_ctx),
             src_buf.to_device_buffer(src_dev_ctx),
         )
     elif is_cpu[cSrcDevice]() and is_cpu[dDstDevice]():
-        memcpy(
+        unsafe_memcpy(
             dest=dst_buf.unsafe_ptr(),
             src=src_buf.unsafe_ptr(),
             count=src_buf.size(),
@@ -632,8 +872,8 @@ def mgp_buffer_host_to_device[
     cHostDevice: StaticString,
     dOtherDevice: StaticString,
 ](
-    host_buf: MutByteBuffer,
-    dev_buf: MutByteBuffer,
+    host_buf: OwnedByteBuffer,
+    dev_buf: OwnedByteBuffer,
     dev_ctx: DeviceContext,
 ) raises:
     comptime if is_accelerator[dOtherDevice]() and is_cpu[cHostDevice]():
@@ -650,23 +890,20 @@ def mgp_buffer_host_to_device[
 
 @register_internal("mgp.int.cache")
 @no_inline
-def mgp_int_cache[bIntSlot: UInt64](ctx: StateContextRef, value: Int):
-    external_call["MGP_RT_SetCachedInt", NoneType](Int(bIntSlot), ctx, value)
+def mgp_int_cache[bIntSlot: UInt64](ctx: StateContext, value: Int):
+    ctx.cache_int(Int(bIntSlot), value)
 
 
 @register_internal("mgp.int.get_cached")
 @no_inline
-def mgp_int_get_cached(ctx: StateContextRef, buffer_slot: Int) -> Int:
-    return external_call["MGP_RT_GetCachedInt", Int](
-        buffer_slot,
-        ctx,
-    )
+def mgp_int_get_cached(ctx: StateContext, buffer_slot: Int) -> Int:
+    return ctx.get_cached_int(buffer_slot)
 
 
 @register_internal("mgp.buffer.get_size")
 @no_inline
 def mgp_buffer_get_size(
-    buf: ImmutByteBuffer,
+    buf: OwnedByteBuffer,
 ) -> Int:
     return buf.size()
 
@@ -712,7 +949,7 @@ def mgp_tensor_spec_get_dim[
 
 
 @export
-def mgp_device_context_destroy(dev_ctx: DeviceContext):
+def mgp_device_context_destroy(dev_ctx: DeviceContext) abi("Mojo"):
     # DeviceContext is refcounted, we don't need to explicitly destroy it
     pass
 
@@ -721,6 +958,19 @@ def mgp_device_context_destroy(dev_ctx: DeviceContext):
 @no_inline
 def mgp_sync(ctx: StateContext, dev_ctx: DeviceContext) raises:
     dev_ctx.synchronize()
+
+
+@register_internal("mgp.device_wait")
+@no_inline
+def mgp_device_wait(
+    ctx: StateContext,
+    waiting_dev_ctx: DeviceContext,
+    signaling_dev_ctx: DeviceContext,
+) raises:
+    # Enqueue a one-directional cross-stream dependency: the waiting context's
+    # stream waits for the work already enqueued on the signaling context's
+    # stream. Non-blocking on the host (unlike mgp.sync).
+    waiting_dev_ctx.enqueue_wait_for(signaling_dev_ctx)
 
 
 @register_internal("mgp.debug.print")
@@ -752,9 +1002,9 @@ def mgp_debug_tensor_print[
     spec_rank: Int,
     dtype: DType,
 ](
-    buffer: ImmutByteBuffer,
+    buffer: OwnedByteBuffer,
     shape: IndexList[spec_rank],
-    label_ptr: UnsafePointer[Byte, ImmutAnyOrigin],
+    label_ptr: UnsafePointer[mut=False, Byte, _],
     label_len: Int,
 ) raises:
     external_call["MGP_RT_DebugTensorPrint", NoneType](
@@ -908,13 +1158,132 @@ def test_my_int_reg2_to_index(x: MyIntReg2) -> Int:
 # C++'s pointers.
 comptime AnyAsyncValueRefPtr = OpaquePointer[MutAnyOrigin]
 
-# TensorBufferRef is a C++ struct. Primitives should always manipulate a
-# reference to it. Therefore, it is modeled here as an OpaquePointer.
-comptime TensorBufferRefPtr = OpaquePointer[MutAnyOrigin]
 
-# StateContext is a C++ struct. Primitives should always manipulate a reference
-# to it. Therefore, it is modeled here as an OpaquePointer.
-comptime StateContextRef = OpaquePointer[MutAnyOrigin]
+# Opaque stand-in for the C++ `M::MLRT::TensorBufferRef` type. Mojo never sees
+# the layout of the C++ struct; this only gives the C pointer a distinct pointee
+# type so it can't be confused with other opaque handles (e.g. the async-value
+# storage handle), mirroring how `DeviceContext` uses `_DeviceContextCpp`.
+struct _TensorBufferRefCpp:
+    pass
+
+
+# Typed C pointer to the C++ tensor-buffer ref. Primitives only ever manipulate
+# a reference to it (never its layout); the default `UntrackedOrigin` marks the
+# pointee as living outside the Mojo program (its lifetime is managed by the C++
+# runtime), mirroring `_DeviceContextPtr`.
+comptime TensorBufferRefPtr[
+    mut: Bool,
+    //,
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
+] = _CPointer[_TensorBufferRefCpp, origin]
+
+
+# Opaque stand-in for the C++ `M::MLRT::StateContext` type. Mojo never sees the
+# layout of the C++ struct; this only gives the C pointer a distinct pointee
+# type, mirroring how `DeviceContext` uses `_DeviceContextCpp`.
+struct _StateContextCpp:
+    pass
+
+
+# Typed C pointer to the C++ state context. The default `UntrackedOrigin` marks
+# the pointee as living outside the Mojo program (its lifetime is managed by the
+# C++ runtime), mirroring `_DeviceContextPtr`.
+comptime _StateContextPtr[
+    mut: Bool,
+    //,
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
+] = _CPointer[_StateContextCpp, origin]
+
+# `StateContextRef` is the pointer representation passed across the FFI boundary;
+# Mojo never dereferences it directly.
+comptime StateContextRef = _StateContextPtr[mut=True]
+
+
+struct StateContext(ImplicitlyCopyable, RegisterPassable):
+    """A Mojo handle to the C++ `M::MLRT::StateContext`.
+
+    Wraps a C pointer to the C++ state context, mirroring how `DeviceContext`
+    wraps a `_DeviceContextPtr`. Mojo never dereferences the pointer directly;
+    all state-context operations are performed through external calls into the
+    runtime.
+    """
+
+    var _handle: StateContextRef
+
+    @always_inline
+    def __init__(out self, handle: StateContextRef):
+        """Builds the handle from the underlying C pointer.
+
+        Args:
+            handle: The C pointer to the C++ state context.
+        """
+        self._handle = handle
+
+    @always_inline
+    def cache_int(self, slot: Int, value: Int):
+        """Caches an integer value in the state slot at the given index.
+
+        Args:
+            slot: The index of the state slot to write.
+            value: The integer value to cache.
+        """
+        external_call["MGP_RT_SetCachedInt", NoneType](
+            slot, self._handle, value
+        )
+
+    @always_inline
+    def get_cached_int(self, slot: Int) -> Int:
+        """Returns the integer value cached in the state slot at the given index.
+
+        Args:
+            slot: The index of the state slot to read.
+
+        Returns:
+            The cached integer value.
+        """
+        return external_call["MGP_RT_GetCachedInt", Int](slot, self._handle)
+
+    @always_inline
+    def get_cached_buffer(
+        self, slot: Int
+    ) -> Tuple[MutByteBuffer, AnyAsyncValueRefPtr]:
+        """Returns a reference to the buffer cached in the given state slot.
+
+        Args:
+            slot: The index of the state slot to read.
+
+        Returns:
+            A tuple of the buffer view and the backing storage handle of the
+            cached `TensorBufferRef` (its `AnyAsyncValueRef` memory handle, not
+            the `TensorBufferRef` itself).
+        """
+        var buffer_size: UInt64 = 0
+        var buffer_data = Optional[OpaquePointer[MutAnyOrigin]]()
+
+        var mem_handle = external_call[
+            "MGP_RT_GetCachedBuffer", AnyAsyncValueRefPtr
+        ](
+            slot,
+            self._handle,
+            UnsafePointer(to=buffer_size),
+            UnsafePointer(to=buffer_data),
+        )
+
+        var buffer = MutByteBuffer(
+            buffer_data.unsafe_value().bitcast[Int8](),
+            Index(buffer_size),
+        )
+
+        return {buffer, mem_handle}
+
+    @always_inline
+    def remove_cached_buffer(self, slot: Int):
+        """Removes the buffer cached in the state slot at the given index.
+
+        Args:
+            slot: The index of the state slot to clear.
+        """
+        external_call["MGP_RT_RemoveCachedBuffer", NoneType](slot, self._handle)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -994,19 +1363,47 @@ struct MoggAsyncPackHelper:
 
     def __init__(
         out self,
-        data: MutByteBuffer,
-        device_ctx_ptr: DeviceContext,
+        var data: OwnedByteBuffer,
         async_ptr: AnyAsyncValueRefPtr,
     ):
         """
-        Packs a MutByteBuffer into the asynchronous context.
-        Calls create_buffer_ref_async to handle the packing.
+        Packs an OwnedByteBuffer into a real TensorBufferRef. The storage handle
+        is copied (retained) rather than moved out, so the composite may be
+        borrowed -- including from an `InlineArray` element (e.g. bulk_slice),
+        which cannot be moved out of. The runtime adopts the copied reference
+        net-zero; the borrowed composite releases its own reference at scope end.
         """
-        create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
+        var ptr = data.unsafe_ptr()
+        var n = data.size()
+        var storage = data^.take_storage()
+        # void MGP_RT_CreateAsyncBufferRefFromStorage(
+        #     AsyncValue *storage, void *data, size_t size, AnyAsyncValueRef *async)
+        external_call["MGP_RT_CreateAsyncBufferRefFromStorage", NoneType](
+            storage^.take_handle(), ptr, n, async_ptr
+        )
 
     def __init__(
         out self,
-        var data: Some[Movable & ImplicitlyDestructible],
+        var data: DeviceGraph,
+        async_ptr: AnyAsyncValueRefPtr,
+    ):
+        """Packs a `DeviceGraph` into an `AsyncValue[DeviceGraphRef]`.
+
+        The graph handle is surrendered net-zero (`take_handle`) and adopted by
+        the runtime, so no extra reference is created. Used to pack the graph
+        produced by `mgp.device_graph.create` so that `mgp.device_graph.execute`
+        can consume it as a first-class device-graph reference rather than an
+        opaque Mojo value.
+        """
+        # void MGP_RT_CreateAsyncDeviceGraphRefByTakingHandle(
+        #     DeviceGraph *handle, AnyAsyncValueRef *async)
+        external_call[
+            "MGP_RT_CreateAsyncDeviceGraphRefByTakingHandle", NoneType
+        ](data^.take_handle(), async_ptr)
+
+    def __init__(
+        out self,
+        var data: Some[Movable & ImplicitlyDeletable],
         async_ptr: AnyAsyncValueRefPtr,
     ):
         """
@@ -1017,21 +1414,64 @@ struct MoggAsyncPackHelper:
 
         # MGP_RT_CreateOwnedAsyncMojoValue expects a type erased destructor
         @always_inline("nodebug")
-        def erased_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
-            ptr.bitcast[Type]().destroy_pointee()
+        def erased_destructor(ptr: UnsafePointer[UInt8, MutUntrackedOrigin]):
+            ptr.bitcast[Type]().unsafe_deinit_pointee()
 
         var dst_ptr = external_call[
             "MGP_RT_MojoValueAllocateBuffer",
-            UnsafePointer[UInt8, MutExternalOrigin],
+            UnsafePointer[UInt8, MutUntrackedOrigin],
         ](size_of[Type](), align_of[Type]())
 
-        dst_ptr.bitcast[Type]().init_pointee_move(data^)
+        dst_ptr.bitcast[Type]().unsafe_write(data^)
 
         external_call["MGP_RT_CreateOwnedAsyncMojoValue", NoneType](
             dst_ptr,
             erased_destructor,
             async_ptr,
         )
+
+
+@no_inline
+def mogg_async_pack_owned_tensor[
+    spec_rank: Int,
+](var data: OwnedTensor, async_ptr: AnyAsyncValueRefPtr):
+    """Packs an `OwnedTensor` into a real tensor `TensorBufferRef`.
+
+    This is a dedicated (non-overloaded) entry point rather than a
+    `MoggAsyncPackHelper` constructor: the parametric `OwnedTensor` overload
+    would lose overload resolution to the generic `Some[Movable &
+    ImplicitlyDeletable]` constructor and get mis-packed as an opaque Mojo
+    value. The emitter calls this directly for `!mgp.tensor` pack sites.
+
+    The storage handle is copied (retained) rather than moved out, so the
+    composite may be borrowed; the runtime adopts the copied reference net-zero
+    and the borrowed composite releases its own reference at scope end.
+
+    Parameters:
+        spec_rank: The true tensor-spec rank (0 for a scalar), supplied by the
+            emitter so the packed `TensorSpec` preserves scalar-ness rather than
+            the promoted rank-1 buffer view.
+    """
+    # Read the view metadata (shape/ptr/size).
+    var shape = data.shape()
+    var ptr = data.unsafe_ptr()
+    var n = data.bytecount()
+
+    # Transfer storage ownership to the newly constructed TensorBufferRef async
+    # value.
+    var storage = data^.take_storage()
+    # void MGP_RT_CreateAsyncTensorRefFromStorage(
+    #     AsyncValue *storage, void *data, size_t size, size_t rank,
+    #     const size_t *shape, DType dtype, AnyAsyncValueRef *async)
+    external_call["MGP_RT_CreateAsyncTensorRefFromStorage", NoneType](
+        storage^.take_handle(),
+        ptr.bitcast[NoneType](),
+        n,
+        spec_rank,
+        UnsafePointer(to=shape.data),
+        data.dtype,
+        async_ptr,
+    )
 
 
 @register_internal("mogg.async.pack")
@@ -1048,86 +1488,35 @@ def mogg_async_pack(pack_helper: MoggAsyncPackHelper):
     return
 
 
-@no_inline
-def mogg_async_pack_borrow[
-    buffer_rank: Int,
-    dtype: DType,
-    //,
-    spec_rank: Int,
-    is_tensor: Bool,
-](
-    borrower: AnyAsyncValueRefPtr,
-    buffer: DynamicTensor[dtype, buffer_rank],
-    mem: Optional[TensorBufferRefPtr],
-):
-    """
-    Borrows an async value. This differs from `mogg.async.pack` which assigns a
-    value to the given async value in that it's a simple refcount increment.
-    """
-
-    comptime if is_tensor:
-        var shape = buffer.shape()
-        external_call["MGP_RT_TensorBorrowV2", NoneType](
-            borrower,
-            buffer.unsafe_ptr(),
-            buffer.bytecount(),
-            spec_rank,
-            UnsafePointer(to=shape.data),
-            dtype,
-            mem,
-        )
-    else:
-        external_call["MGP_RT_BufferBorrowV2", NoneType](
-            borrower, buffer.unsafe_ptr(), buffer.size(), mem
-        )
-
-
-@no_inline
-def mogg_async_pack_borrow[
-    spec_rank: Int,  # unused
-    is_tensor: Bool,  # unused
-](
-    borrower: AnyAsyncValueRefPtr,
-    buffer: TensorBufferRefPtr,
-    mem: Optional[TensorBufferRefPtr],
-):
-    """
-    Borrows an async value. This differs from `mogg.async.pack` which assigns a
-    value to the given async value in that it's a simple refcount increment.
-    """
-    external_call["MGP_RT_BufferBorrowForTensorRef", NoneType](
-        borrower, buffer, mem
-    )
-
-
 @register_internal("mogg.tensor.__init__")
 @always_inline
 def mogg_tensor_init[
+    LayoutType: TensorLayout,
+    //,
     dtype: DType,
     rank: Int,
     mut: Bool,
     input: IO,
-    static_layout: TensorLayout,
     alignment: Int,
-    exclusive: Bool,
 ](
-    ptr: OpaquePointer[MutAnyOrigin], shape: IndexList[rank]
+    ptr: UnsafePointer[mut=True, NoneType, _],
+    layout: LayoutType,
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
     static_spec=StaticTensorSpec[
         dtype,
         rank,
-        static_layout=static_layout,
-    ](
-        alignment,
-        AddressSpace.GENERIC,
-        exclusive,
-    ),
+        static_layout=LayoutType,
+    ](alignment, AddressSpace.GENERIC),
 ]:
     """
-    Helper for constructing a ManagedTensorSlice.
+    Helper for constructing a ManagedTensorSlice from a layout.
     """
-    return {ptr.bitcast[Scalar[dtype]](), shape}
+    return {
+        ptr.bitcast[Scalar[dtype]](),
+        layout.shape_coord(),
+        layout.stride_coord(),
+    }
 
 
 @register_internal("mogg.async.ready")
@@ -1232,11 +1621,7 @@ def reshape_contiguous_buffer[
         buffer.dtype,
         new_rank,
         static_layout=static_layout,
-    ](
-        1,
-        AddressSpace.GENERIC,
-        True,
-    ),
+    ](1, AddressSpace.GENERIC),
 ]:
     """
     Constructs a new ManagedTensorSlice with a new shape and static spec.
@@ -1252,43 +1637,28 @@ def reshape_contiguous_buffer[
 @register_internal("mgp.buffer.get_cached")
 @no_inline
 def mgp_buffer_get_cached(
-    ctx: StateContextRef,
+    ctx: StateContext,
     buffer_slot: Int,
-) -> Tuple[MutByteBuffer, TensorBufferRefPtr]:
+) -> OwnedByteBuffer:
     """
-    Get a reference to the cached tensor.
+    Get a reference to the cached buffer, retaining its backing storage.
     """
-    var buffer_size: UInt64 = 0
-    var buffer_data = Optional[OpaquePointer[MutAnyOrigin]]()
-
-    var buffer_ref = external_call[
-        "TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr
-    ](
-        buffer_slot,
-        ctx,
-        UnsafePointer(to=buffer_size),
-        UnsafePointer(to=buffer_data),
-    )
-
-    var buffer = MutByteBuffer(
-        buffer_data.unsafe_value().bitcast[Int8](),
-        Index(buffer_size),
-    )
-    var res = Tuple[MutByteBuffer, TensorBufferRefPtr](buffer, buffer_ref)
-
-    return res
+    var cached = ctx.get_cached_buffer(buffer_slot)
+    # cached is (view, mem_handle); fold the cached buffer's memory handle into
+    # the composite's storage by retaining it.
+    return OwnedByteBuffer(cached[0], AnyAsyncValueRef(retain_handle=cached[1]))
 
 
 @register_internal("mgp.buffer.remove_cached")
 @no_inline
-def mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: Int):
-    external_call["TMP_MGP_RT_RemoveCachedBuffer", NoneType](buffer_slot, ctx)
+def mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: Int):
+    ctx.remove_cached_buffer(buffer_slot)
 
 
 @register_internal("mgp.assert")
 @no_inline
 def mgp_assert(
-    cond: Bool, msg_ptr: UnsafePointer[Byte, ImmutAnyOrigin], msg_len: Int
+    cond: Bool, msg_ptr: UnsafePointer[mut=False, Byte, _], msg_len: Int
 ) raises:
     """
     Raises an error when the input condition is not true.
@@ -1302,16 +1672,6 @@ def all_zeros(indices: IndexList) -> Bool:
         if indices[i] != 0:
             return False
     return True
-
-
-def get_buffer_mem_storage_handle(
-    buffer: OpaquePointer[MutAnyOrigin],
-    type: Int,
-    memStorageHandle: OpaquePointer[MutAnyOrigin],
-):
-    external_call["MGP_RT_GetBufferMemStorageHandle", NoneType](
-        buffer, type, memStorageHandle
-    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1450,22 +1810,134 @@ def foreach[
         ctx: The call context (forward this from the custom operation).
     """
 
-    @parameter
     @always_inline
     def elementwise_fn_wrapper[
         width: Int,
-        rank: Int,
         alignment: Int = 1,
-    ](index: IndexList[rank]) capturing:
-        var val = func[width, alignment](rebind[IndexList[tensor.rank]](index))
+    ](index: Coord) {var}:
+        var idx = coord_to_index_list(index)
+        var val = func[width, alignment](rebind[IndexList[tensor.rank]](idx))
         tensor._fused_store[element_alignment=alignment](index, val)
 
     std.algorithm.functional.elementwise[
-        elementwise_fn_wrapper,
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](tensor.shape(), ctx)
+    ](elementwise_fn_wrapper, tensor.shape_coord(), ctx)
+
+
+@register_internal("mogg.elemwise_for_each")
+@no_inline
+def foreach[
+    dtype: DType,
+    rank: Int,
+    //,
+    FuncType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, element_alignment: Int](IndexList[rank]) -> SIMD[
+        dtype, width
+    ],
+    *,
+    target: StaticString = "cpu",
+    simd_width: Int = get_kernel_simd_width[dtype, target](),
+    _trace_name: StaticString = "mogg.for_each",
+](
+    var func: FuncType,
+    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
+    ctx: DeviceContext,
+) raises:
+    """Apply a `RegisterPassable` body to each element of the tensor slice.
+
+    Value-arg twin of the primary `foreach`: the body is a runtime
+    `RegisterPassable` closure passed by value rather than a comptime
+    parameter. The wrapper captures both `func` and `tensor` and routes
+    the store through `tensor._fused_store`, which preserves the fused
+    store path required by `FusedOutputTensor`.
+
+    Parameters:
+        dtype: The data type of the elements in the tensor slice.
+        rank: The rank of the tensor slice.
+        FuncType: The type of the per-element body closure.
+        target: Indicates the type of the target device (e.g. "cpu", "gpu").
+        simd_width: The SIMD width for the target.
+        _trace_name: Name of the executed operation displayed in the trace.
+
+    Args:
+        func: The body to apply per element.
+        tensor: The output tensor slice which receives the return values.
+        ctx: The call context (forward this from the custom operation).
+    """
+
+    # The wrapper captures `func` (passed by value) and `tensor` so the
+    # store can route through `_fused_store` when output-store fusion is
+    # present.
+    def wrapper[
+        width: Int, alignment: Int = 1
+    ](index: Coord) {var func^, var tensor}:
+        var idx = rebind[IndexList[rank]](coord_to_index_list(index))
+        var val = func[width, alignment](idx)
+        tensor._fused_store[element_alignment=alignment](index, val)
+
+    std.algorithm.functional.elementwise[
+        simd_width=simd_width,
+        target=target,
+        _trace_description=_trace_name,
+    ](wrapper, tensor.shape_coord(), ctx)
+
+
+@fieldwise_init
+struct _ElementwiseFusionAdapter[
+    dtype: DType,
+    rank: Int,
+    InFusion: InputFusion,
+    OutFusion: OutputFusion,
+    ComputeFusion: ComputeOutputFusion,
+    ComputeFusionTile: ComputeOutputFusionTile,
+    io_spec: IOSpec[True, _],
+    static_spec: StaticTensorSpec[
+        dtype, rank, _, InFusion, OutFusion, ComputeFusion, ComputeFusionTile
+    ],
+    //,
+    E: ElementwiseFusion,
+](
+    ImplicitlyCopyable,
+    RegisterPassable,
+    def[width: Int, alignment: Int = 1](Coord) -> None,
+):
+    """Per-element body for `foreach_fusion`, holding the fusion struct and
+    output tensor by value.
+
+    Named adapter twin of a `{var elem, var tensor}` closure: a closure over
+    the generic `E` synthesizes a parametric-witness `lit.closure.init` the
+    MOGG package loader can't resolve, so the body is a concrete
+    register-passable struct instead. Passing the instance by value to
+    `elementwise` carries `elem` (and the tensor's ptr/shape/strides) through
+    `crossDeviceCaptures` by value.
+
+    Parameters:
+        dtype: The data type of the tensor elements.
+        rank: The rank of the tensor.
+        InFusion: The tensor's input-fusion type.
+        OutFusion: The tensor's output-fusion type.
+        ComputeFusion: The tensor's compute-output-fusion type.
+        ComputeFusionTile: The tensor's compute-output-fusion-tile type.
+        io_spec: The tensor's IO spec.
+        static_spec: The tensor's static spec.
+        E: The elementwise fusion struct type.
+    """
+
+    var elem: Self.E
+    var tensor: ManagedTensorSlice[
+        io_spec=Self.io_spec, static_spec=Self.static_spec
+    ]
+
+    @always_inline
+    def __call__[width: Int, alignment: Int = 1](self, index: Coord):
+        var idx = rebind[IndexList[Self.rank]](coord_to_index_list(index))
+        var val = self.elem.compute[Self.dtype, Self.rank, width, alignment](
+            idx
+        )
+        self.tensor._fused_store[element_alignment=alignment](idx, val)
 
 
 @register_internal("mogg.call.foreach")
@@ -1481,7 +1953,7 @@ def foreach_fusion[
     _trace_name: StaticString = "mogg.for_each",
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    elem: E,
+    var elem: E,
     ctx: DeviceContext,
 ) raises:
     """Apply a pure elementwise fusion to each element of the tensor slice.
@@ -1500,19 +1972,200 @@ def foreach_fusion[
         ctx: The call context (forward this from the custom operation).
     """
 
-    @parameter
-    @always_inline
-    def wrapper[
-        width: Int, element_alignment: Int
-    ](index: IndexList[rank]) capturing -> SIMD[dtype, width]:
-        return elem.compute[dtype, rank, width, element_alignment](index)
+    # Capture `elem` by value through a named adapter struct rather than a
+    # closure. A `{var elem}` closure over the generic `E` synthesizes a
+    # `lit.closure.init` with parametric witnesses the package loader can't
+    # resolve (see functional.mojo `_IndexListToCoordAdapter`); the adapter is
+    # a concrete register-passable type, so passing it by value to
+    # `elementwise` sends `elem`'s decomposed ptr/shape/strides through
+    # `crossDeviceCaptures` by value — which the host-stack `@parameter
+    # capturing` form did not.
+    var adapter = _ElementwiseFusionAdapter[E](elem, tensor)
 
-    foreach[
-        func=wrapper,
-        target=target,
+    std.algorithm.functional.elementwise[
         simd_width=simd_width,
-        _trace_name=_trace_name,
-    ](tensor, ctx)
+        target=target,
+        _trace_description=_trace_name,
+    ](adapter, Coord(tensor.shape()), ctx)
+
+
+@fieldwise_init
+struct _ElementwiseFusionTileAdapter[
+    dtype: DType,
+    rank: Int,
+    InFusion: InputFusion,
+    OutFusion: OutputFusion,
+    ComputeFusion: ComputeOutputFusion,
+    ComputeFusionTile: ComputeOutputFusionTile,
+    io_spec: IOSpec[True, _],
+    static_spec: StaticTensorSpec[
+        dtype, rank, _, InFusion, OutFusion, ComputeFusion, ComputeFusionTile
+    ],
+    //,
+    E: ElementwiseFusionTile,
+    tile_shape: IndexList[2],
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
+    """Per-tile body for `foreach_fusion_tile`, holding the fusion struct and
+    output tensor by value.
+
+    Analogous to `_ElementwiseFusionAdapter`, but for tile-based fusion: a
+    named, register-passable struct (not a closure) so `elem` and the tensor's
+    decomposed ptr/shape/strides cross into the GPU kernel by value. Its
+    `__call__` drives one output *tile*, handing the fusion struct a load copier
+    (used by `compute` to pull its inputs into `Copier.dst_address_space`) and
+    storing the manufactured result tile via a store copier.
+
+    Parameters:
+        dtype: The data type of the tensor elements.
+        rank: The rank of the tensor.
+        InFusion: The tensor's input-fusion type.
+        OutFusion: The tensor's output-fusion type.
+        ComputeFusion: The tensor's compute-output-fusion type.
+        ComputeFusionTile: The tensor's compute-output-fusion-tile type.
+        io_spec: The tensor's IO spec.
+        static_spec: The tensor's static spec.
+        E: The tile elementwise fusion struct type.
+        tile_shape: The `(rows, cols)` shape of one output tile.
+    """
+
+    # SM100 (B200): one thread-block processes one output tile. `thread_layout`
+    # equals `tile_shape`, so each of the `tile_shape[0] * tile_shape[1]`
+    # threads owns a 1x1 fragment (`frag_layout`). This is the simplest
+    # tile-divisible mapping; a coarser thread layout (bigger per-thread
+    # fragments, fewer threads) is a tuning follow-up.
+    comptime thread_layout = row_major(
+        Idx[Self.tile_shape[0]], Idx[Self.tile_shape[1]]
+    )
+    comptime frag_layout = type_of(row_major[1, 1]())
+
+    var elem: Self.E
+    var tensor: ManagedTensorSlice[
+        io_spec=Self.io_spec, static_spec=Self.static_spec
+    ]
+
+    @always_inline
+    def __call__(self) capturing:
+        # One block per output tile: `block_idx.(y, x)` selects the tile row and
+        # column. Carried into the kernel as a closure (the adapter is not
+        # `DevicePassable`, so its captures cross via the same mechanism
+        # `functional.elementwise` uses for its body closure).
+        var tile_coords = IndexList[Self.rank](
+            Int(block_idx.y), Int(block_idx.x)
+        )
+        # NOTE(GEX-3913): we likely want to replace the adapter defining the
+        # load copier here with a `functional.tile_elementwise` primitive, so
+        # the load / tiling policy is reusable.
+        var load_copier = GenericToLocalTileCopier[Self.thread_layout]()
+
+        # Driver-owned per-thread output fragment. It is allocated in LOCAL (so
+        # the store copier's src address space lines up) and handed to `compute`
+        # as `dst`, typed GENERIC / `MutAnyOrigin` to match the trait; `dst`
+        # carries the concrete `frag_layout` so `compute` can size its own
+        # staging from `dst.layout` (no `rebind` needed on either side).
+        # TODO(GEX-3912): the LOCAL->GENERIC cast here (and GENERIC->LOCAL on
+        # the result below) is a temporary "dance" because the fusion trait
+        # pins its tile to GENERIC and returns it.
+        # TODO(GEX-3912): generalizes the trait's tile address space and makes
+        # `dst` an inout to remove this.
+        var dst_local = stack_allocation[
+            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+        ](row_major[1, 1]())
+        var dst = TileTensor(
+            dst_local.ptr.address_space_cast[
+                AddressSpace.GENERIC
+            ]().unsafe_origin_cast[MutAnyOrigin](),
+            row_major[1, 1](),
+        )
+
+        # `compute` manufactures the result tile: it loads its own inputs via
+        # `load_copier` (global -> local), fills `dst`, and returns it.
+        var res = self.elem.compute[
+            Self.dtype, Self.rank, Self.frag_layout, type_of(load_copier)
+        ](tile_coords, load_copier, dst)
+
+        # Store the result fragment into the output tile at `tile_coords`. The
+        # returned tile is typed GENERIC through the trait, so cast it back to
+        # LOCAL for the store copier.
+        var tc = Coord(Int(tile_coords[0]), Int(tile_coords[1]))
+        var out_tile = self.tensor.to_tile_tensor().tile[
+            Self.tile_shape[0], Self.tile_shape[1]
+        ](tc)
+        var res_local = res.address_space_cast[AddressSpace.LOCAL]()
+        LocalToGenericTileCopier[Self.thread_layout]().copy(out_tile, res_local)
+
+
+@register_internal("mogg.call.foreach_tile")
+@no_inline
+def foreach_fusion_tile[
+    dtype: DType,
+    rank: Int,
+    //,
+    E: ElementwiseFusionTile,
+    *,
+    target: StaticString = "cpu",
+    tile_shape: IndexList[2] = get_kernel_tile_shape[dtype, target](),
+    _trace_name: StaticString = "mogg.for_each_tile",
+](
+    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
+    var elem: E,
+    ctx: DeviceContext,
+) raises:
+    """Apply a tile-based pure elementwise fusion to each tile of the tensor.
+
+    Analogous to `foreach_fusion`, but for tile-based fusion: instead of driving
+    a per-element SIMD loop
+    via `std.algorithm.functional.elementwise`, this launches one GPU block per
+    output tile and drives the fusion struct's tile `compute` over the output.
+    The fusion struct manufactures each tile (loading its own inputs through a
+    copier the driver supplies) and the driver stores the result via a store
+    copier.
+
+    Parameters:
+        dtype: The data type of the elements in the tensor slice.
+        rank: The rank of the tensor slice.
+        E: The tile elementwise fusion struct type.
+        target: Indicates the type of the target device (e.g. "cpu", "gpu").
+        tile_shape: The `(rows, cols)` shape of one output tile.
+        _trace_name: Name of the executed operation displayed in the trace.
+
+    Args:
+        tensor: The output tensor slice which receives the computed values.
+        elem: The tile elementwise fusion struct.
+        ctx: The call context (forward this from the custom operation).
+
+    Constraints:
+        Requires a GPU target and a rank-2 tensor whose shape divides evenly
+        into `tile_shape`. Partial-tile / remainder handling and a CPU path are
+        documented follow-ups.
+    """
+    comptime assert is_accelerator[
+        target
+    ](), "foreach_fusion_tile currently supports GPU targets only"
+    comptime assert (
+        rank == 2
+    ), "foreach_fusion_tile currently supports rank-2 tensors only"
+
+    # Capture `elem` and the output tensor by value through a named adapter
+    # struct rather than a closure, mirroring `foreach_fusion`: passing the
+    # concrete register-passable adapter by value to `enqueue_function` carries
+    # `elem`'s decomposed ptr/shape/strides through to the device.
+    var adapter = _ElementwiseFusionTileAdapter[E, tile_shape](elem, tensor)
+
+    comptime TM = tile_shape[0]
+    comptime TN = tile_shape[1]
+    var shape = tensor.shape()
+    debug_assert(
+        shape[0] % TM == 0 and shape[1] % TN == 0,
+        "foreach_fusion_tile requires tile-divisible shapes",
+    )
+    var grid_m = shape[0] // TM
+    var grid_n = shape[1] // TN
+
+    ctx.enqueue_function(
+        adapter,
+        grid_dim=(grid_n, grid_m),
+        block_dim=(TM * TN),
+    )
 
 
 @register_internal("mogg.for_each.out_func")
@@ -1547,20 +2200,16 @@ def foreach_out_func[
         ctx: The call context (forward this from the custom operation).
     """
 
-    @parameter
     @always_inline
-    def out_func_shim[
-        _width: Int, _rank: Int, _alignment: Int = 1
-    ](index: IndexList[_rank]) capturing:
-        idx = rebind[IndexList[rank]](index)
+    def out_func_shim[_width: Int, _alignment: Int = 1](index: Coord) {var}:
+        idx = rebind[IndexList[rank]](coord_to_index_list(index))
         out_func[_width](idx)
 
     std.algorithm.functional.elementwise[
-        out_func_shim,
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](tensor.shape(), ctx)
+    ](out_func_shim, tensor.shape_coord(), ctx)
 
 
 # TensorCopy intrinsic used by view kernels.
@@ -1591,17 +2240,15 @@ def view_copy_impl[
     ](), "static shapes not compatible"
     assert x.shape() == z.shape(), "runtime shapes not compatible"
 
-    @parameter
     @always_inline
     def func[
         width: Int, element_alignment: Int
-    ](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
+    ](idx: IndexList[z.rank]) {var x} -> SIMD[z.dtype, width]:
         return simd_load_from_managed_tensor_slice[
             simd_width=width, element_alignment=element_alignment
         ](x, idx)
 
     foreach[
-        func,
         target=target,
         _trace_name=_trace_name,
-    ](z, ctx)
+    ](func, z, ctx)

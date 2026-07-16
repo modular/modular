@@ -28,6 +28,7 @@ from std.sys.info import has_accelerator
 from std.algorithm.functional import elementwise, IndexList
 
 from std.sys.info import has_apple_gpu_accelerator
+from std.utils.coord import Coord
 
 from op_utils import (
     _get_dtype,
@@ -39,7 +40,7 @@ from op_utils import (
 
 
 @export
-def PyInit_avg_pool_ops() -> PythonObject:
+def PyInit_avg_pool_ops() abi("C") -> PythonObject:
     """Create a Python module with avg_pool2d kernel function bindings."""
     try:
         var b = PythonModuleBuilder("avg_pool_ops")
@@ -60,8 +61,8 @@ def PyInit_avg_pool_ops() -> PythonObject:
 def avg_pool2d_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch: Int,
     in_h: Int,
     in_w: Int,
@@ -107,27 +108,8 @@ def avg_pool2d_op[
     var total = batch * out_h * out_w * channels
 
     @always_inline
-    @parameter
-    @__copy_capture(
-        out_ptr,
-        in_ptr,
-        in_h,
-        in_w,
-        channels,
-        out_h,
-        out_w,
-        kH,
-        kW,
-        stride_h,
-        stride_w,
-        dil_h,
-        dil_w,
-        pad_h_before,
-        pad_w_before,
-        count_boundary_flag,
-    )
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        var i = Int(idx[0].value())
         var rem, c = divmod(i, channels)
         var rem2, ow = divmod(rem, out_w)
         var n, oh = divmod(rem2, out_h)
@@ -157,12 +139,10 @@ def avg_pool2d_op[
             out_ptr[i] = Scalar[dtype](0)
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](IndexList[1](total), ctx)
+        elementwise[simd_width=1](func, Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), ctx
-            )
+            elementwise[simd_width=1, target="gpu"](func, Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 

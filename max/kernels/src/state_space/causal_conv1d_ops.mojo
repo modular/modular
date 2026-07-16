@@ -22,7 +22,7 @@ from std.math import ceildiv
 import extensibility as compiler
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 
 
 from state_space.causal_conv1d import (
@@ -322,16 +322,17 @@ struct CausalConv1D[activation: StaticString]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> IndexList[rank]:
-        return input.shape()
+
+@compiler.register_shape_function("causal_conv1d")
+def causal_conv1d_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    weight: InputTensor[dtype=dtype, rank=2, ...],
+    bias: InputTensor[dtype=dtype, rank=1, ...],
+) -> IndexList[rank]:
+    return input.shape()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -421,7 +422,9 @@ struct CausalConv1DUpdate[activation: StaticString]:
         var silu_activation = Self.activation == "silu"
 
         comptime if is_cpu[target]():
-            memcpy(dest=CS.ptr, src=CS_IN.ptr, count=total_state_elements)
+            unsafe_memcpy(
+                dest=CS.ptr, src=CS_IN.ptr, count=total_state_elements
+            )
             causal_conv1d_update_cpu[
                 X.dtype,
                 CS.dtype,
@@ -502,14 +505,15 @@ struct CausalConv1DUpdate[activation: StaticString]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        conv_state_in: InputTensor[dtype=dtype, rank=rank, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> Tuple[IndexList[rank], IndexList[rank]]:
-        return (input.shape(), conv_state_in.shape())
+
+@compiler.register_shape_function("causal_conv1d_update")
+def causal_conv1d_update_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    conv_state_in: InputTensor[dtype=dtype, rank=rank, ...],
+    weight: InputTensor[dtype=dtype, rank=2, ...],
+    bias: InputTensor[dtype=dtype, rank=1, ...],
+) -> Tuple[IndexList[rank], IndexList[rank]]:
+    return (input.shape(), conv_state_in.shape())

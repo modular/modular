@@ -16,15 +16,26 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Literal
+from pathlib import Path
+from typing import Annotated, Any, Literal
 
+import yaml
+from cyclopts import Parameter
 from max.config import ConfigFileModel
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .datasets import DatasetMode, DistributionParameter
 from .utils import int_or_none, parse_comma_separated
 
+# Fixed default seed for the workload generator and request sampling. Scheduled
+# and repeated benchmark runs pin this so run-to-run deltas reflect the change
+# under test rather than workload-draw variance. Pass ``--seed none`` (or
+# ``seed: null`` in YAML) to draw a fresh random seed instead.
+DEFAULT_BENCHMARK_SEED = 0x5EED  # spells "SEED" (= 24301)
+
 BaseBackend = Literal[
+    "atom",
+    "mcloud",
     "modular",
     "sglang",
     "trtllm",
@@ -32,6 +43,9 @@ BaseBackend = Literal[
 ]
 
 Backend = Literal[
+    "atom",
+    "atom-chat",
+    "mcloud",
     "modular",
     "modular-chat",
     "sglang",
@@ -53,6 +67,8 @@ Endpoint = Literal[
 ]
 
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
+    "atom": "/reset_prefix_cache",
+    "atom-chat": "/reset_prefix_cache",
     "modular": "/reset_prefix_cache",
     "modular-chat": "/reset_prefix_cache",
     "vllm": "/reset_prefix_cache",
@@ -66,12 +82,21 @@ BenchmarkTask = Literal[
     "text-to-image",
     "image-to-image",
     "text-to-video",
+    "image-to-video",
 ]
 
 PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
     "text-to-image",
     "image-to-image",
     "text-to-video",
+    "image-to-video",
+)
+
+# Pixel-generation tasks that emit video. These route to the dedicated video
+# endpoints on backends that have one (see VIDEO_GEN_DEFAULT_ENDPOINT).
+VIDEO_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
+    "text-to-video",
+    "image-to-video",
 )
 
 # Default endpoint per backend for pixel generation tasks.
@@ -82,14 +107,15 @@ PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
 PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
     "modular": "/v1/responses",
     "modular-chat": "/v1/responses",
+    "mcloud": "/v1/responses",
     "sglang": "/v1/images/generations",
     "sglang-chat": "/v1/images/generations",
     "vllm": "/v1/chat/completions",
     "vllm-chat": "/v1/chat/completions",
 }
 
-# Override endpoint per backend for text-to-video tasks. For vllm-omni
-# use the dedicated /v1/videos/sync endpoint.
+# Override endpoint per backend for video tasks (text-to-video and
+# image-to-video). For vllm-omni use the dedicated /v1/videos/sync endpoint.
 VIDEO_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
     "vllm": "/v1/videos/sync",
     "vllm-chat": "/v1/videos/sync",
@@ -106,7 +132,7 @@ PIXEL_GENERATION_ENDPOINTS: frozenset[Endpoint] = frozenset(
 
 def get_pixel_gen_endpoint(backend: Backend, task: BenchmarkTask) -> Endpoint:
     """Return the pixel-generation endpoint for a given backend and task."""
-    if task == "text-to-video" and backend in VIDEO_GEN_DEFAULT_ENDPOINT:
+    if task in VIDEO_GENERATION_TASKS and backend in VIDEO_GEN_DEFAULT_ENDPOINT:
         return VIDEO_GEN_DEFAULT_ENDPOINT[backend]
     if backend in PIXEL_GEN_DEFAULT_ENDPOINT:
         return PIXEL_GEN_DEFAULT_ENDPOINT[backend]
@@ -238,13 +264,15 @@ class BaseBenchmarkConfig(ConfigFileModel):
     )
 
     seed: int | None = Field(
-        default=None,
+        default=DEFAULT_BENCHMARK_SEED,
         description=(
-            "Random seed for reproducibility. When set, the same seed is used "
-            "for every benchmark iteration instead of drawing a fresh random "
-            "seed per concurrency level. Useful for reproducing a specific "
-            "concurrency level from a prior sweep without re-running the full "
-            "sweep."
+            "Random seed for the workload generator and request sampling. "
+            "Defaults to a fixed value so repeated and scheduled runs are "
+            "reproducible and run-to-run deltas reflect the change under test "
+            "rather than workload-draw variance. Pass ``--seed none`` (or "
+            "``seed: null`` in YAML) to draw a fresh random seed instead; the "
+            "drawn seed is logged and recorded with the results so the run "
+            "stays reproducible after the fact."
         ),
     )
 
@@ -264,17 +292,22 @@ class BaseBenchmarkConfig(ConfigFileModel):
         description="Enable detailed DEBUG logging.",
     )
 
+    @field_validator("seed", mode="before")
+    @classmethod
+    def _parse_seed_cli_string(cls, value: object) -> object:
+        """Map the CLI/YAML string ``none`` to ``None`` (draw a random seed)."""
+        if isinstance(value, str):
+            return int_or_none(value)
+        return value
+
 
 class BaseServingBenchmarkConfig(BaseBenchmarkConfig):
-    """Fields shared by every serving-style benchmark (text-gen, TTS, ...).
+    """Fields shared by every serving-style benchmark.
 
     Sits between :class:`BaseBenchmarkConfig` and the concrete
-    :class:`ServingBenchmarkConfig` / :class:`TTSServingBenchmarkConfig`
-    classes. Only holds fields whose type *and* default align across both
-    serving codepaths so downstream configs can opt into shared behavior
-    without per-codepath overrides. Fields whose semantics diverge (e.g.
-    ``request_rate`` sweep lists vs scalars on TTS) are intentionally left on
-    the concrete subclasses.
+    :class:`ServingBenchmarkConfig` class. Holds fields whose type and default
+    align across serving codepaths so downstream configs can opt into shared
+    behavior without per-codepath overrides.
     """
 
     burstiness: float = Field(
@@ -380,7 +413,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     benchmark_task: BenchmarkTask = Field(
         default="text-generation",
-        description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image, text-to-video",
+        description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image, text-to-video, image-to-video",
         json_schema_extra={"group": "Backend and API Configuration"},
     )
 
@@ -417,6 +450,17 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
             "more open sessions than active turns grows the footprint and "
             "increases the likelihood of offloading or dropping pre-computed "
             "historical KV data."
+        ),
+        json_schema_extra={"group": "Request Configuration"},
+    )
+
+    kv_block_size: int = Field(
+        default=128,
+        description=(
+            "KV cache block (page) size in tokens, used to block-align the "
+            "per-turn cache retention metric. Should match the server's "
+            "--kv-cache-page-size so retention reflects true block-aligned "
+            "cache reuse."
         ),
         json_schema_extra={"group": "Request Configuration"},
     )
@@ -512,6 +556,32 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Output Control"},
     )
 
+    # cyclopts wants scalar key=value pairs by default and can't take a single
+    # nested-JSON object or file path as one value. accepts_keys=False passes
+    # the raw token through for the validator to parse.
+    extra_body: Annotated[dict[str, Any], Parameter(accepts_keys=False)] = (
+        Field(
+            default_factory=dict,
+            description=(
+                "Extra top-level fields to add to every text-generation request "
+                "body, for fields without a dedicated flag (e.g. stop, "
+                "chat_template_kwargs). On the CLI, pass an inline JSON object "
+                '(e.g. \'{"stop": ["}"], "chat_template_kwargs": '
+                '{"reasoning_effort": "low"}}\') or a path to a YAML/JSON file; '
+                "it can also be set as a field in a --config-file YAML. Nested "
+                "objects and "
+                "arrays are kept verbatim. Applied after the dedicated flags "
+                "(--temperature, --max-output-len, --response-format, etc.), so a "
+                "key that collides with one overrides it (last-writer-wins, and "
+                "the collision is logged). Currently applied only to "
+                "text-generation requests (the chat/completions, completions, "
+                "and TensorRT-LLM generate_stream endpoints); ignored for "
+                "image/video generation tasks."
+            ),
+            json_schema_extra={"group": "Output Control"},
+        )
+    )
+
     # Image generation options (serving-specific)
     image_width: int | None = Field(
         default=None,
@@ -604,9 +674,27 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    randomize_session_start: bool = Field(
-        default=True,
-        description="Add a random sleep (0 to inter-turn delay) before each session's first measured query to spread out the initial wave of requests.",
+    warmup_delay_biased: bool = Field(
+        default=False,
+        description="Bias warmup session/turn selection by inter-turn think time (sum of delays) instead of turn count. Requires delays to be configured; falls back to turn-based when none are present.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_delay_estimated_ttft_ms: float = Field(
+        default=0.0,
+        description="Estimated time-to-first-token in milliseconds per turn. When set (with --warmup-delay-biased), warmup weights each turn by its occupancy (estimated generation time + inter-turn delay) instead of delay alone, better matching steady state for high-TPOT / long-output workloads. 0 = off.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_delay_estimated_tpot_ms: float = Field(
+        default=0.0,
+        description="Estimated time-per-output-token in milliseconds, used with --warmup-delay-estimated-ttft-ms to weight warmup by per-turn generation time (ttft + tpot * output_len). Only valid with --warmup-delay-biased. 0 = off.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_concurrency: int = Field(
+        default=128,
+        description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and steady-state warmup (--warmup-to-steady-state).",
         json_schema_extra={"group": "Traffic Control"},
     )
 
@@ -656,7 +744,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     )
     random_input_len: DistributionParameter = Field(
         default=1024,
-        description="Number of input tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
+        description="Number of input tokens per request, used by the random and artificial-analysis datasets. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
     random_max_num_unique_sys_prompt: int = Field(
@@ -671,7 +759,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     )
     random_output_len: DistributionParameter = Field(
         default=128,
-        description="Number of output tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
+        description="Number of output tokens per request, used by the random and artificial-analysis datasets. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
         json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
     random_sys_prompt_ratio: float = Field(
@@ -718,6 +806,18 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     collect_cpu_stats: bool = Field(
         default=True,
         description="Enable CPU stats collection for serving benchmarks.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    server_pids: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Explicit PIDs to monitor for CPU stats, including their children."
+            " Bypasses automatic port-based PID detection. Useful when the"
+            " server runs inside a container."
+            " Example: --server-pids $(docker inspect -f '{{.State.Pid}}'"
+            " <container_name>)"
+        ),
         json_schema_extra={"group": "Control Flags"},
     )
 
@@ -904,6 +1004,76 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
             return parse_comma_separated(value, float)
         return value
 
+    @field_validator("extra_body", mode="before")
+    @classmethod
+    def _parse_extra_body(cls, value: object) -> dict[str, Any]:
+        """Parse ``extra_body`` into a dict from one of three inputs:
+
+        - a mapping (e.g. from a ``--config-file`` YAML), used directly;
+        - an inline JSON object string (leading ``{``), parsed with ``yaml.safe_load``;
+        - any other non-empty string, treated as a YAML/JSON file path.
+
+        Raises:
+            ValueError: If the string is neither an inline object nor a readable
+                file, the content fails to parse, or it does not resolve to an
+                object.
+        """
+        if value is None:
+            return {}
+        if isinstance(value, Mapping):
+            return dict(value)
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return {}
+            if text.startswith("{"):
+                source, origin = text, "inline JSON"
+            else:
+                path = Path(text)
+                if not path.is_file():
+                    raise ValueError(
+                        f"extra_body {text!r} is not a readable file path; "
+                        "an inline value must be a JSON object starting "
+                        "with '{'."
+                    )
+                try:
+                    source = path.read_text()
+                except OSError as e:
+                    raise ValueError(
+                        f"extra_body {text!r} is not a readable file path: {e}"
+                    ) from e
+                origin = f"file {text!r}"
+            try:
+                parsed = yaml.safe_load(source)
+            except yaml.YAMLError as e:
+                raise ValueError(
+                    f"Failed to parse extra_body ({origin}): {e}"
+                ) from e
+            if not isinstance(parsed, Mapping):
+                raise ValueError(
+                    f"extra_body ({origin}) must be a mapping/object, got "
+                    f"{type(parsed).__name__}."
+                )
+            return dict(parsed)
+        raise ValueError(
+            "extra_body must be a mapping, an inline JSON string, or a path "
+            f"to a YAML/JSON file; got {type(value).__name__}."
+        )
+
+    @model_validator(mode="after")
+    def _check_warmup_runtime_estimates(self) -> ServingBenchmarkConfig:
+        """Runtime estimates only refine delay-biased warmup."""
+        if (
+            self.warmup_delay_estimated_ttft_ms > 0.0
+            or self.warmup_delay_estimated_tpot_ms > 0.0
+        ) and not self.warmup_delay_biased:
+            raise ValueError(
+                "--warmup-delay-estimated-ttft-ms /"
+                " --warmup-delay-estimated-tpot-ms require"
+                " --warmup-delay-biased to be set."
+            )
+        return self
+
     @property
     def sampling(self) -> SamplingConfig:
         """OpenAI-style completion sampling from flat ``temperature`` / ``top_p`` / ``top_k`` / ``thinking_temperature``."""
@@ -915,280 +1085,3 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
             top_p=self.top_p,
             top_k=self.top_k,
         )
-
-
-# ---------------------------------------------------------------------------
-# TTS Serving Benchmark Config
-# ---------------------------------------------------------------------------
-
-
-class TTSServingBenchmarkConfig(BaseServingBenchmarkConfig):
-    """Configuration for TTS serving benchmarks (benchmark_tts_serving.py).
-
-    Inherits shared serving fields (LoRA traffic, burstiness, GPU stats,
-    skip_test_prompt) from :class:`BaseServingBenchmarkConfig` and adds
-    TTS-specific parameters for speech LM, streaming, sampling, quality
-    evaluation, and profiling.
-    """
-
-    # -- Execution Options --------------------------------------------------
-
-    api: Literal["python", "http", "fake"] = Field(
-        default="python",
-        description="The type of inference API to benchmark.",
-        json_schema_extra={
-            "group": "Execution Options",
-            "group_description": "Controls how the benchmark is executed.",
-        },
-    )
-
-    derive_request_seeds: bool = Field(
-        default=True,
-        description=(
-            "If set, request seeds follow a pseudo-random sequence derived "
-            "from the given seed. Otherwise all request seeds equal the "
-            "given seed."
-        ),
-        json_schema_extra={"group": "Execution Options"},
-    )
-
-    min_duration_s: float | None = Field(
-        default=None,
-        description=(
-            "Minimum duration of the benchmark run in seconds. "
-            "Stops sending new requests once this duration is reached."
-        ),
-        json_schema_extra={"group": "Execution Options"},
-    )
-
-    continue_on_nan_inf: bool = Field(
-        default=False,
-        description=(
-            "Continue the benchmark run even if nan/inf is encountered "
-            "in generated audio chunks."
-        ),
-        json_schema_extra={"group": "Execution Options"},
-    )
-
-    # -- Workload Options ---------------------------------------------------
-
-    request_rate: float = Field(
-        default=float("inf"),
-        description=(
-            "Number of requests per second. If inf, all requests are sent "
-            "at time 0. Otherwise uses Poisson process for arrival times."
-        ),
-        json_schema_extra={
-            "group": "Workload Options",
-            "group_description": "Controls request generation and traffic shape.",
-        },
-    )
-
-    max_concurrency: int | None = Field(
-        default=None,
-        description="Maximum number of concurrent requests.",
-        json_schema_extra={"group": "Workload Options"},
-    )
-
-    workload_config: str = Field(
-        description="YAML file specifying the workload to benchmark.",
-        json_schema_extra={"group": "Workload Options"},
-    )
-
-    shuffle_data: bool = Field(
-        default=True,
-        description="Enable or disable shuffling data from the dataset.",
-        json_schema_extra={"group": "Workload Options"},
-    )
-
-    # -- SpeechLM Engine Options --------------------------------------------
-
-    speech_lm_model: str = Field(
-        default="meta-llama/Llama-3.2-1B-Instruct",
-        description="Name of the speech LM model.",
-        json_schema_extra={
-            "group": "SpeechLM Engine Options",
-            "group_description": "Configuration for the speech language model engine.",
-        },
-    )
-
-    speech_lm_max_model_len: int | None = Field(
-        default=None,
-        description="Maximum context length for the speech LM.",
-        json_schema_extra={"group": "SpeechLM Engine Options"},
-    )
-
-    speech_lm_max_num_batched_tokens: int = Field(
-        default=8192,
-        description="Maximum tokens per batch per forward pass through the speech LM.",
-        json_schema_extra={"group": "SpeechLM Engine Options"},
-    )
-
-    speech_lm_gpu_memory_utilization: float = Field(
-        default=0.5,
-        description="Ratio of GPU memory reserved for the speech LM.",
-        json_schema_extra={"group": "SpeechLM Engine Options"},
-    )
-
-    audio_decoder_weights: str | None = Field(
-        default=None,
-        description="Path to the audio decoder weights file.",
-        json_schema_extra={"group": "SpeechLM Engine Options"},
-    )
-
-    prepend_prompt_speech_tokens: Literal["never", "once", "rolling"] | None = (
-        Field(
-            default=None,
-            description="Whether to prepend audio prompt speech tokens when passed to decoder.",
-            json_schema_extra={"group": "SpeechLM Engine Options"},
-        )
-    )
-
-    quantization_encoding: Literal[
-        "float32",
-        "bfloat16",
-        "q4_k",
-        "q4_0",
-        "q6_k",
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-        "gptq",
-    ] = Field(
-        default="bfloat16",
-        description="Quantization encoding to use for the speech LM.",
-        json_schema_extra={"group": "SpeechLM Engine Options"},
-    )
-
-    max_queue_size_tg: int | None = Field(
-        default=None,
-        description="Maximum number of requests in the decode queue.",
-        json_schema_extra={"group": "SpeechLM Engine Options"},
-    )
-
-    min_batch_size_tg: int | None = Field(
-        default=None,
-        description="Soft floor on decode batch size.",
-        json_schema_extra={"group": "SpeechLM Engine Options"},
-    )
-
-    ce_delay_ms: float | None = Field(
-        default=None,
-        description="Delay in milliseconds before starting prefill batch.",
-        json_schema_extra={"group": "SpeechLM Engine Options"},
-    )
-
-    enable_prioritize_first_decode: bool = Field(
-        default=False,
-        description="Always run TG batch with same requests after CE.",
-        json_schema_extra={"group": "SpeechLM Engine Options"},
-    )
-
-    max_num_loras: int | None = Field(
-        default=None,
-        description="Maximum number of loadable LoRAs in GPU memory.",
-        json_schema_extra={"group": "SpeechLM Engine Options"},
-    )
-
-    # -- Streaming Options --------------------------------------------------
-
-    streaming_block_size: int = Field(
-        default=30,
-        description="Block size in tokens for streaming between speechLM and audio decoder.",
-        json_schema_extra={
-            "group": "Streaming Options",
-            "group_description": "Controls audio streaming behavior.",
-        },
-    )
-
-    audio_processor_type: str | None = Field(
-        default=None,
-        description="Which processor to use for splitting audio chunks.",
-        json_schema_extra={"group": "Streaming Options"},
-    )
-
-    enable_streaming_audio_decoder: bool | None = Field(
-        default=None,
-        description="Whether to enable streaming audio decoder.",
-        json_schema_extra={"group": "Streaming Options"},
-    )
-
-    withhold_tokens: int | None = Field(
-        default=None,
-        description="Number of tokens to withhold from each chunk.",
-        json_schema_extra={"group": "Streaming Options"},
-    )
-
-    # -- Sampling Options ---------------------------------------------------
-
-    top_k: int = Field(
-        default=75,
-        description="Top-k value for speech LM sampling.",
-        json_schema_extra={
-            "group": "Sampling Options",
-            "group_description": "Sampling parameters for the speech LM.",
-        },
-    )
-
-    top_p: float = Field(
-        default=0.9,
-        description="Top-p value for speech LM sampling.",
-        json_schema_extra={"group": "Sampling Options"},
-    )
-
-    temperature: float = Field(
-        default=1.1,
-        description="Temperature value for speech LM sampling.",
-        json_schema_extra={"group": "Sampling Options"},
-    )
-
-    frequency_penalty: float = Field(
-        default=0.1,
-        description="Frequency penalty for speech LM sampling.",
-        json_schema_extra={"group": "Sampling Options"},
-    )
-
-    repetition_penalty: float = Field(
-        default=1.1,
-        description="Repetition penalty for speech LM sampling.",
-        json_schema_extra={"group": "Sampling Options"},
-    )
-
-    # -- Quality Evaluation Options -----------------------------------------
-
-    quality_eval_batch_size: int = Field(
-        default=50,
-        description="Batch size for audio quality evaluation.",
-        json_schema_extra={
-            "group": "Quality Evaluation Options",
-            "group_description": "Controls WER and DNSMOS quality evaluation.",
-        },
-    )
-
-    wer_model: str = Field(
-        default="openai/whisper-large-v3",
-        description="Whisper model for WER evaluation. Set to 'None' to disable.",
-        json_schema_extra={"group": "Quality Evaluation Options"},
-    )
-
-    dnsmos: bool = Field(
-        default=True,
-        description="Enable noise suppression score (DNSMOS) evaluation.",
-        json_schema_extra={"group": "Quality Evaluation Options"},
-    )
-
-    # -- Profiling Options --------------------------------------------------
-
-    skip_first_n_requests: int = Field(
-        default=0,
-        description="Number of requests to skip when measuring metrics.",
-        json_schema_extra={
-            "group": "Profiling Options",
-            "group_description": "Controls profiling, output, and result saving.",
-        },
-    )
-
-    result_file: str | None = Field(
-        default=None,
-        description="Path to save benchmark results in JSON format.",
-        json_schema_extra={"group": "Profiling Options"},
-    )

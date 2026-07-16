@@ -15,12 +15,15 @@
 # Skip: nested struct error, field without type error, dynamic
 #        trait field error, fieldwise_init synthesis failure
 #        (Alpha/Color), Incomplete(Sized) missing method,
-#        Box without ImplicitlyDestructible abandoned error,
+#        Box without ImplicitlyDeletable abandoned error,
 #        Unsound(Copyable) with SomeMoveOnlyType, default
-#        method conflicts, missing self error, __init__ without
-#        out self error, recursive Node error, __del__ snippet
-#        (no standalone example), @staticmethod snippet (error
-#        pair only).
+#        method conflicts (struct S(A & B) constructed to fail),
+#        missing self error, __init__ without out self error,
+#        recursive Node error, __del__ snippet (no standalone
+#        example), @staticmethod snippet (error pair only),
+#        NotWritable example (constructed to fail), conditional
+#        conformance struct snippets (hypothetical trait names
+#        like GPUComputable/FloatMath/Printable, no def main()).
 from std.testing import assert_equal
 from std.math import sqrt
 
@@ -80,7 +83,7 @@ def test_color_manual() raises:
 
 
 @fieldwise_init
-struct Sound[T: Writable & Copyable & ImplicitlyDestructible]:
+struct Sound[T: Writable & Copyable & ImplicitlyDeletable]:
     var item: Self.T
 
 
@@ -110,7 +113,7 @@ def test_color_fieldwise() raises:
 
 
 @fieldwise_init
-struct Pair_1[T: Copyable & ImplicitlyDestructible]:
+struct Pair_1[T: Copyable & ImplicitlyDeletable]:
     var first: Self.T
     var second: Self.T
 
@@ -125,7 +128,7 @@ def test_generic_pair() raises:
 
 
 struct SplatList[
-    T: ImplicitlyCopyable & ImplicitlyDestructible,
+    T: ImplicitlyCopyable & ImplicitlyDeletable,
     *,
     fill: T,
     length: Int = 5,
@@ -163,7 +166,7 @@ def test_trait_conformance() raises:
 
 
 @fieldwise_init
-struct Pair_2[T: Copyable & ImplicitlyDestructible](
+struct Pair_2[T: Copyable & ImplicitlyDeletable](
     Equatable where conforms_to(T, Equatable)
 ):
     var first: Self.T
@@ -178,11 +181,34 @@ def test_conformance_where() raises:
     assert_equal(a == c, False)
 
 
-# --- Box with ImplicitlyDestructible ---
+# --- Mixed trait list: Equatable + Writable conditional, Copyable plain ---
 
 
 @fieldwise_init
-struct Box[T: Copyable & ImplicitlyDestructible](
+struct Pair_Mixed[T: Copyable & ImplicitlyDeletable](
+    Copyable,
+    Equatable where conforms_to(T, Equatable),
+    Writable where conforms_to(T, Writable),
+):
+    var first: Self.T
+    var second: Self.T
+
+
+def test_mixed_trait_list() raises:
+    var pair1 = Pair_Mixed(first=1, second=2)
+    var pair2 = Pair_Mixed(first=1, second=2)
+    var pair3 = Pair_Mixed(first=3, second=4)
+    assert_equal(pair1 == pair2, True)
+    assert_equal(pair1 == pair3, False)
+    var pair4 = pair1.copy()
+    _ = pair4
+
+
+# --- Box with ImplicitlyDeletable ---
+
+
+@fieldwise_init
+struct Box[T: Copyable & ImplicitlyDeletable](
     Equatable where conforms_to(T, Equatable)
 ):
     var item: Self.T
@@ -210,18 +236,35 @@ def test_point_float() raises:
     assert_equal(p.y, 4.0)
 
 
-# --- Compile-time constants ---
+# --- comptime members: constants, type aliases, parameterized aliases ---
 
 
-struct Config:
-    comptime DEFAULT_SIZE = 1024
-    comptime MAX_RETRIES = 3
-    var current_size: Int
+@fieldwise_init
+struct Matrix2D[dtype: DType, w: Int, h: Int]:
+    pass
 
 
-def test_comptime_constants() raises:
-    assert_equal(Config.DEFAULT_SIZE, 1024)
-    assert_equal(Config.MAX_RETRIES, 3)
+@fieldwise_init
+struct CompTest[dtype: DType]:
+    comptime default_size = 1024
+    comptime DefaultMatrixType = Matrix2D[
+        Self.dtype, Self.default_size, Self.default_size
+    ]
+    comptime SquareMatrixType[size: Int] = Matrix2D[Self.dtype, size, size]
+
+
+def test_comptime_members() raises:
+    # Access constants on the type and on an instance.
+    assert_equal(CompTest[DType.int32].default_size, 1024)
+    assert_equal(CompTest[DType.int32]().default_size, 1024)
+    # Type aliases via comptime resolve to concrete types.
+    var _default: CompTest[DType.int32].DefaultMatrixType = Matrix2D[
+        DType.int32, 1024, 1024
+    ]()
+    # Parameterized comptime members specialize at use site.
+    var _square: CompTest[DType.int32].SquareMatrixType[10] = Matrix2D[
+        DType.int32, 10, 10
+    ]()
 
 
 def main() raises:
@@ -234,6 +277,7 @@ def main() raises:
     test_defaulted_parameters()
     test_trait_conformance()
     test_conformance_where()
+    test_mixed_trait_list()
     test_box_implicit_destructible()
     test_point_float()
-    test_comptime_constants()
+    test_comptime_members()

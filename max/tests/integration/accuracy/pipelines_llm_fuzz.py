@@ -129,7 +129,7 @@ def _resolve_pipelines_program() -> list[str]:
         if runfiles is not None:
             for rloc in (
                 "_main/max_private/max_private",
-                "_main/max/python/max/entrypoints/pipelines",
+                "_main/max/python/max/_entrypoints/pipelines",
             ):
                 loc = runfiles.Rlocation(rloc)
                 if loc is not None and Path(loc).exists():
@@ -139,7 +139,7 @@ def _resolve_pipelines_program() -> list[str]:
                 " invoke via //max_private:pipelines-llm-fuzz or"
                 " //max/tests/integration/accuracy:pipelines-llm-fuzz"
             )
-    return ["/opt/venv/bin/python", "-m", "max.entrypoints.pipelines"]
+    return ["/opt/venv/bin/python", "-m", "max._entrypoints.pipelines"]
 
 
 def _resolve_fuzz_program() -> str:
@@ -495,6 +495,7 @@ def _run_fuzz_with_crash_detection(
 @click.option("--model-profile", type=str)
 @click.option("--scenarios", type=str, default="")
 @click.option("--k2vv-mode", type=str, default="")
+@click.option("--circuit-breaker", type=int, default=None)
 @click.option("--extra-fuzz-arg", "extra_fuzz_args", multiple=True)
 @click.option(
     "--output-dir",
@@ -520,6 +521,7 @@ def main(
     model_profile: str | None,
     scenarios: str,
     k2vv_mode: str,
+    circuit_breaker: int | None,
     extra_fuzz_args: Sequence[str],
     output_dir: Path,
     emit_only: bool,
@@ -571,6 +573,8 @@ def main(
         fuzz_cmd.extend(["--scenarios", scenarios])
     if k2vv_mode:
         fuzz_cmd.extend(["--k2vv-mode", k2vv_mode])
+    if circuit_breaker is not None:
+        fuzz_cmd.extend(["--circuit-breaker", str(circuit_breaker)])
     fuzz_cmd.extend(extra_fuzz_args)
 
     pipelines_program = _resolve_pipelines_program()

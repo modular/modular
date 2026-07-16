@@ -19,9 +19,11 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.modeling.types import RequestID
 
-from .cache_manager import KVCacheMetrics, KVCacheParams, PagedKVCacheManager
+from .cache_manager import PagedKVCacheManager
 
 
 class DummyKVCache(PagedKVCacheManager):
@@ -30,7 +32,7 @@ class DummyKVCache(PagedKVCacheManager):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initializes the dummy cache with a single replica and no host swapping."""
         self.reqs = set[RequestID]()
-        self.params = KVCacheParams(
+        self.params = MHAKVCacheParams(
             dtype=DType.float32,
             n_kv_heads=1,
             head_dim=1,
@@ -87,8 +89,8 @@ class DummyKVCache(PagedKVCacheManager):
         """Returns 1."""
         return 1
 
-    def get_metrics(self, replica_idx: int) -> KVCacheMetrics:
-        """Returns empty metrics."""
+    def get_metrics_aggregated(self) -> KVCacheMetrics:
+        """Returns empty aggregated metrics."""
         return KVCacheMetrics()
 
     def reset_metrics(self) -> None:

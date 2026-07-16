@@ -35,15 +35,15 @@ def main() raises:
 
 def compute_rms_ref[
     dtype: DType
-](
-    data_ptr: UnsafePointer[Scalar[dtype], _], size: Int, eps: Scalar[dtype]
-) -> Scalar[DType.float32]:
+](data_ptr: UnsafePointer[Scalar[dtype], _], size: Int, eps: Float32) -> Scalar[
+    DType.float32
+]:
     """Compute reference RMS value."""
     var sum_of_squares = Float32()
     for i in range(size):
         var d = data_ptr[i].cast[DType.float32]()
         sum_of_squares += d * d
-    return sqrt((sum_of_squares / Float32(size)) + eps.cast[DType.float32]())
+    return sqrt((sum_of_squares / Float32(size)) + eps)
 
 
 def run_rms_norm_fused_residual_gpu[
@@ -96,25 +96,25 @@ def run_rms_norm_fused_residual_gpu[
     # Create device LayoutTensors
     comptime layout_nd = Layout.row_major[rank]()
 
-    var input_tensor = LayoutTensor[dtype, layout_nd, MutAnyOrigin](
-        input_d.unsafe_ptr(),
+    var input_tensor = LayoutTensor[dtype, layout_nd](
+        input_d,
         RuntimeLayout[layout_nd].row_major(shape),
     )
-    var residual_tensor = LayoutTensor[dtype, layout_nd, MutAnyOrigin](
-        residual_d.unsafe_ptr(),
+    var residual_tensor = LayoutTensor[dtype, layout_nd](
+        residual_d,
         RuntimeLayout[layout_nd].row_major(shape),
     )
-    var output_tensor = LayoutTensor[dtype, layout_nd, MutAnyOrigin](
-        output_d.unsafe_ptr(),
+    var output_tensor = LayoutTensor[dtype, layout_nd](
+        output_d,
         RuntimeLayout[layout_nd].row_major(shape),
     )
-    var residual_output_tensor = LayoutTensor[dtype, layout_nd, MutAnyOrigin](
-        residual_output_d.unsafe_ptr(),
+    var residual_output_tensor = LayoutTensor[dtype, layout_nd](
+        residual_output_d,
         RuntimeLayout[layout_nd].row_major(shape),
     )
     var gamma_tensor = TileTensor(gamma_d, row_major(cols))
 
-    var epsilon = Scalar[dtype](1e-5)
+    var epsilon = Float32(1e-5)
     var weight_offset = Scalar[dtype](0.0)
 
     # Define input functions
@@ -141,7 +141,7 @@ def run_rms_norm_fused_residual_gpu[
     @always_inline
     @parameter
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_tensor.store[width=width](coords, val)
 
@@ -149,7 +149,7 @@ def run_rms_norm_fused_residual_gpu[
     @always_inline
     @parameter
     def residual_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         residual_output_tensor.store[width=width](coords, val)
 

@@ -61,6 +61,7 @@ from layout import (
     Coord,
     Idx,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -69,6 +70,7 @@ from layout import (
 from std.logger import Logger
 from std.memory import bitcast, stack_allocation
 from std.utils import IndexList
+from std.utils.coord import Coord
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -93,7 +95,7 @@ struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
 
     @always_inline("nodebug")
     def __int__(self) -> Int:
-        return Int(self._value)
+        return self._value
 
     @always_inline
     def __eq__(self, other: Self) -> Bool:
@@ -112,8 +114,8 @@ struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
         return self != other
 
     @always_inline
-    def __hash__(self) -> UInt:
-        return UInt(Int(self._value))
+    def __hash__(self) -> Int:
+        return self._value
 
     @always_inline
     def write_to(self, mut writer: Some[Writer]):
@@ -207,6 +209,9 @@ def gemv_kernel_vector[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_storage: TensorStorage,
+    a_storage: TensorStorage,
+    b_storage: TensorStorage,
     *,
     simd_width: Int,
     transpose_b: Bool = False,
@@ -215,9 +220,9 @@ def gemv_kernel_vector[
     check_bounds: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],  # m
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],  # m * k
-    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],  # 1 * k
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Storage=c_storage],  # m
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Storage=a_storage],  # m * k
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],  # 1 * k
     m: Int,
     n: Int,
     k: Int,
@@ -253,9 +258,7 @@ def gemv_kernel_vector[
         var b_tile = b.tile[1, WARP_SIZE * simd_width](0, i)
         var a_vec = a_tile.vectorize[1, simd_width]()[0, lane_id]
         var b_vec = b_tile.vectorize[1, simd_width]()[0, lane_id]
-        local_accum += rebind[local_accum_type](
-            a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
-        )
+        local_accum += a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
 
     # Last iteration: only lanes with valid K indices participate and
     # only if check_bounds is True.
@@ -267,7 +270,7 @@ def gemv_kernel_vector[
             if (lane_id + last * WARP_SIZE) * simd_width < k:
                 var a_vec = a_tile.vectorize[1, simd_width]()[0, lane_id]
                 var b_vec = b_tile.vectorize[1, simd_width]()[0, lane_id]
-                local_accum += rebind[local_accum_type](
+                local_accum += (
                     a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
                 )
 
@@ -364,6 +367,9 @@ def gemv_split_k[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_storage: TensorStorage,
+    a_storage: TensorStorage,
+    b_storage: TensorStorage,
     simd_width: Int,
     tile_m: Int,
     tile_n: Int,
@@ -371,12 +377,13 @@ def gemv_split_k[
     unroll_factor: Int = 2,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
-    check_bounds: Bool = True,
+    check_bounds_m: Bool = True,
+    check_bounds_n: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    output: TileTensor[c_type, c_layout, MutAnyOrigin],
-    act: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    output: TileTensor[c_type, c_layout, MutAnyOrigin, Storage=c_storage],
+    act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Storage=a_storage],
+    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],
     m: Int,
     n: Int,
     k: Int,
@@ -386,6 +393,13 @@ def gemv_split_k[
     implements a vector (1 x K) times a matrix (N x K).
     The impl can actually handle M > 1 but it's only optimal for tiny M. We use
     it for M = 1 only.
+
+    The launch grid covers ceildiv(m, tile_m) * tile_m rows and
+    ceildiv(n, tile_n) * tile_n columns, so the final blocks read and write
+    past the buffers unless the bounds guards are on: `check_bounds_m=False`
+    is only safe when the launcher guarantees m % tile_m == 0 (m is a runtime
+    value, so tile_m == 1 is the usual way to guarantee it), and
+    `check_bounds_n=False` is only safe when n % tile_n == 0.
     """
     comptime assert output.flat_rank == 2, "output must be of rank 2"
     comptime assert act.flat_rank == 2, "act must be of rank 2"
@@ -408,7 +422,6 @@ def gemv_split_k[
     var acc = tt_stack_allocation[
         dtype=accum_type, address_space=AddressSpace.LOCAL
     ](row_major[tile_m, tile_n]()).fill(0)
-    var output_idx = tile_id_m * n + tile_id_n
     var iteration = 0
     comptime WeightVecType = SIMD[b_type, simd_width]
 
@@ -427,22 +440,22 @@ def gemv_split_k[
         # On AMD, use non-temporal loads to avoid L1/L2 cache pollution
         # (weights are read exactly once).
         comptime for i in range(tile_n):
-            comptime if check_bounds:
+            comptime if check_bounds_n:
                 if i + tile_id_n >= n:
                     continue
             comptime if is_amd_gpu():
                 var b_vec = weight_tile.load[simd_width, non_temporal=True](
                     Coord(i, thread_idx.x * simd_width)
                 )
-                tile_w.store(Coord(i, Idx[0]), rebind[WeightVecType](b_vec))
+                tile_w.store(Coord(i, Idx[0]), b_vec)
             else:
                 var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
                 var b_vec = vec_weight_tile[i, thread_idx.x]
-                tile_w.store(Coord(i, Idx[0]), rebind[WeightVecType](b_vec))
+                tile_w.store(Coord(i, Idx[0]), b_vec)
 
         # Load activations and accumulate dot products.
         comptime for i in range(tile_m):
-            comptime if check_bounds:
+            comptime if check_bounds_m:
                 if i + tile_id_m >= m:
                     continue
             var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
@@ -501,32 +514,37 @@ def gemv_split_k[
 
         comptime for jj in range(k_warp_num):
             comptime for ni in range(tile_n):
-                vals[ni] += rebind[Scalar[accum_type]](
-                    shmem[0, jj * tile_m * tile_n + mid * tile_n + ni]
-                )
+                vals[ni] += shmem[0, jj * tile_m * tile_n + mid * tile_n + ni]
 
-        var base_idx = output_idx + mid * n
+        var row = tile_id_m + mid
+        var col = tile_id_n
 
-        comptime if check_bounds:
+        # The grid covers ceildiv(m, tile_m) * tile_m rows, so the last
+        # block's tail rows fall outside the output when m % tile_m != 0.
+        comptime if check_bounds_m:
+            if row >= m:
+                continue
+
+        comptime if check_bounds_n:
             comptime for ni in range(tile_n):
-                if base_idx + ni < n:
+                if col + ni < n:
                     comptime if elementwise_lambda_fn:
                         comptime elementwise_lambda = (
                             elementwise_lambda_fn.value()
                         )
                         elementwise_lambda(
-                            Index(0, base_idx + ni),
+                            Index(row, col + ni),
                             vals[ni].cast[c_type](),
                         )
                     else:
-                        output[0, base_idx + ni] = vals[ni].cast[c_type]()
+                        output[row, col + ni] = vals[ni].cast[c_type]()
         else:
             comptime if elementwise_lambda_fn:
                 comptime elementwise_lambda = elementwise_lambda_fn.value()
-                elementwise_lambda(Index(0, base_idx), vals.cast[c_type]())
+                elementwise_lambda(Index(row, col), vals.cast[c_type]())
             else:
                 comptime for ni in range(tile_n):
-                    output[0, base_idx + ni] = vals[ni].cast[c_type]()
+                    output[row, col + ni] = vals[ni].cast[c_type]()
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
@@ -673,6 +691,7 @@ def _amd_gemv_config[
 
 
 def _nvidia_gemv_config[
+    a_type: DType,
     simd_width: Int,
     static_K: Int,
     has_N: Bool,
@@ -685,6 +704,14 @@ def _nvidia_gemv_config[
     """
     comptime tile_k_256 = 256 * simd_width
     comptime tile_k_128 = 128 * simd_width
+
+    # FP32 (16B vectorized load -> simd_width 4 on B200). The tiny-M / small-N
+    # router GEMM (e.g. M<=16, N=128, K=6144) is HBM-bandwidth-bound on the N*K
+    # weight, so tile_n=1 maximizes the launched CTA count (one output column
+    # per block); 256 threads/block and unroll=2 are the swept winner, while
+    # tile_n>=2 and 128T regress. (KERN-3076.)
+    comptime if a_type == DType.float32:
+        return IndexList[3](256, 1, 2)
 
     var num_threads: Int
     comptime if simd_width <= 8:
@@ -750,11 +777,12 @@ def gemv_gpu_dispatch[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel.ON,
+    tile_m: Int = 1,
 ](
     kernel_func: GEMVAlgorithm,
     c: TileTensor[mut=True, ...],
-    a: TileTensor,
-    b: TileTensor,
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert c.rank == 2, "c must be of rank 2"
@@ -778,7 +806,6 @@ def gemv_gpu_dispatch[
 
     if kernel_func is GEMVAlgorithm.GEMV_SPLIT_K:
         logger.info("Executing: GEMV_SPLIT_K kernel")
-        comptime tile_m = 1
 
         @parameter
         def _gemv_split_k_dispatch[
@@ -786,7 +813,6 @@ def gemv_gpu_dispatch[
             tile_n: Int,
             unroll_factor: Int = 2,
         ]() raises:
-            comptime check_bounds = static_N % tile_n != 0
             comptime kernel = gemv_split_k[
                 c_type,
                 a_type,
@@ -794,13 +820,17 @@ def gemv_gpu_dispatch[
                 type_of(c).LayoutType,
                 type_of(a).LayoutType,
                 type_of(b).LayoutType,
+                type_of(c).Storage,
+                type_of(a).Storage,
+                type_of(b).Storage,
                 simd_width=simd_width,
                 tile_m=tile_m,
                 tile_n=tile_n,
                 num_threads=num_threads,
                 unroll_factor=unroll_factor,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-                check_bounds=check_bounds,
+                check_bounds_m=tile_m > 1,
+                check_bounds_n=static_N % tile_n != 0,
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
@@ -831,6 +861,7 @@ def gemv_gpu_dispatch[
         else:
             # NVIDIA B200: shape-dependent dispatch for FP8 and BF16.
             comptime config = _nvidia_gemv_config[
+                a_type,
                 simd_width,
                 static_K,
                 has_N,
@@ -859,6 +890,9 @@ def gemv_gpu_dispatch[
                     type_of(c).LayoutType,
                     type_of(a).LayoutType,
                     type_of(b).LayoutType,
+                    type_of(c).Storage,
+                    type_of(a).Storage,
+                    type_of(b).Storage,
                     simd_width=simd_width,
                     transpose_b=False,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -895,6 +929,9 @@ def gemv_gpu_dispatch[
                     type_of(c).LayoutType,
                     type_of(a).LayoutType,
                     type_of(b_tile_n_major).LayoutType,
+                    type_of(c).Storage,
+                    type_of(a).Storage,
+                    type_of(b_tile_n_major).Storage,
                     simd_width=simd_width,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
@@ -920,6 +957,9 @@ def gemv_gpu_dispatch[
                 type_of(c).LayoutType,
                 type_of(b).LayoutType,
                 type_of(a).LayoutType,
+                type_of(c).Storage,
+                type_of(b).Storage,
+                type_of(a).Storage,
                 simd_width=simd_width,
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1019,6 +1059,9 @@ def gemv_gpu_dispatch[
             BLOCK_DIM,
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            c_storage=type_of(c).Storage,
+            a_storage=type_of(a).Storage,
+            b_storage=type_of(b).Storage,
         ]
         ctx.enqueue_function[kernel](
             c,
@@ -1055,8 +1098,8 @@ def gemv_gpu[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor,
-    b: TileTensor,
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert c.rank == 2, "c must be of rank 2"
@@ -1096,6 +1139,7 @@ def gemv_gpu[
 
     elif m == 1 and transpose_b == True:
         comptime if a_type in (
+            DType.float32,
             DType.bfloat16,
             DType.float16,
             DType.float8_e4m3fn,
@@ -1134,8 +1178,8 @@ def gemv[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: TileTensor[mut=True, ...],
-    a_buf: TileTensor,
-    b_buf: TileTensor,
+    a_buf: TileTensor[mut=False, ...],
+    b_buf: TileTensor[mut=False, ...],
 ) raises:
     comptime c_type = c_buf.dtype
     comptime simd_width = simd_width_of[c_type]()
@@ -1179,17 +1223,17 @@ def gemv[
         input_fn,
         output_fn,
         reduce_impl,
-    ](
-        Index(M, K),
-        init=Scalar[c_type](0),
         reduce_dim=1,
+    ](
+        Coord((M, K)),
+        init=Scalar[c_type](0),
     )
 
 
 def naive_gemv(
     c_buf: TileTensor[mut=True, ...],
-    a_buf: TileTensor,
-    b_buf: TileTensor,
+    a_buf: TileTensor[mut=False, ...],
+    b_buf: TileTensor[mut=False, ...],
 ):
     comptime c_type = c_buf.dtype
     var M = Int(a_buf.dim[0]())
@@ -1207,6 +1251,8 @@ def naive_gemv(
 
 
 struct _MmaCpAsyncGmemLoaderA[
+    origin: Origin,
+    //,
     a_type: DType,
     a_layout: TensorLayout,
     tile_m: Int,
@@ -1226,7 +1272,7 @@ struct _MmaCpAsyncGmemLoaderA[
         Self.a_type, Self.tile_m, Self.tile_k, Self.stage_cnt
     ]
     comptime Barriers = SMemArray[SharedMemBarrier, Self.stage_cnt * 2]
-    comptime ActTensor = TileTensor[Self.a_type, Self.a_layout, ImmutAnyOrigin]
+    comptime ActTensor = TileTensor[Self.a_type, Self.a_layout, Self.origin]
     comptime swizzle = make_swizzle[8, Self.tile_k, 8]()
 
     @always_inline
@@ -1244,11 +1290,13 @@ struct _MmaCpAsyncGmemLoaderA[
     var local_tid: Int
     var batch_idx: Int
     var cta_m: Int
+    var gemm_m: Int
     var k_each_chunk: Int
     var stage: Int
     var phase: UInt32
     var need_wait: Bool
     var smem_offsets: InlineArray[Int, Self.vec_per_iter]
+    var preds: InlineArray[Bool, Self.vec_per_iter]
 
     def __init__(
         out self,
@@ -1258,6 +1306,7 @@ struct _MmaCpAsyncGmemLoaderA[
         local_tid: Int,
         batch_idx: Int,
         cta_m: Int,
+        gemm_m: Int,
         k_each_chunk: Int,
     ):
         self.act = act
@@ -1266,6 +1315,7 @@ struct _MmaCpAsyncGmemLoaderA[
         self.local_tid = local_tid
         self.batch_idx = batch_idx
         self.cta_m = cta_m
+        self.gemm_m = gemm_m
         self.k_each_chunk = k_each_chunk
         self.stage = 0
         self.phase = UInt32(1)
@@ -1273,6 +1323,7 @@ struct _MmaCpAsyncGmemLoaderA[
         self.smem_offsets = InlineArray[Int, Self.vec_per_iter](
             uninitialized=True
         )
+        self.preds = InlineArray[Bool, Self.vec_per_iter](fill=False)
 
     def prepare(mut self):
         comptime for v in range(Self.vec_per_iter):
@@ -1280,7 +1331,9 @@ struct _MmaCpAsyncGmemLoaderA[
                 self.local_tid * Self.VEC_ELEMS
                 + v * Self.LOAD_THREADS * Self.VEC_ELEMS
             )
+            var m_idx = linear // Self.tile_k
             self.smem_offsets[v] = Self.swizzle(linear)
+            self.preds[v] = self.cta_m + m_idx < self.gemm_m
 
     def issue_mainloop(mut self, k_iters: Int):
         var gmem_a_off = 0
@@ -1310,13 +1363,27 @@ struct _MmaCpAsyncGmemLoaderA[
                 var m_idx = linear // Self.tile_k
                 var k_idx = linear % Self.tile_k
                 var gmem_k = self._k_project(k_idx) + gmem_a_off
-                var offset = self.act._linear_offset(
-                    Index(self.batch_idx, self.cta_m + m_idx, gmem_k)
-                )
-                async_copy[16, bypass_L1_16B=True, l2_prefetch=128](
-                    gmem_base + Int(offset),
-                    smem_tile_ptr + self.smem_offsets[v],
-                )
+                if self.preds[v]:
+                    var offset = self.act._linear_offset(
+                        Index(self.batch_idx, self.cta_m + m_idx, gmem_k)
+                    )
+                    async_copy[16, bypass_L1_16B=True, l2_prefetch=128](
+                        gmem_base + Int(offset),
+                        smem_tile_ptr + self.smem_offsets[v],
+                    )
+                else:
+                    # The grid covers ceildiv(gemm_m, tile_m) * tile_m rows;
+                    # zero-fill rows past gemm_m instead of reading OOB. The
+                    # epilogue's row guard discards their results.
+                    async_copy[
+                        Self.VEC_BYTES,
+                        bypass_L1_16B=True,
+                        fill=Scalar[Self.a_type](0),
+                    ](
+                        gmem_base,
+                        smem_tile_ptr + self.smem_offsets[v],
+                        src_size=0,
+                    )
 
             async_copy_arrive[noinc=True](self.smem_barrier[self.stage * 2])
 
@@ -1326,6 +1393,8 @@ struct _MmaCpAsyncGmemLoaderA[
 
 
 struct _MmaCpAsyncGmemLoaderB[
+    weight_origin: ImmutOrigin,
+    //,
     b_type: DType,
     b_layout: TensorLayout,
     tile_n: Int,
@@ -1346,7 +1415,7 @@ struct _MmaCpAsyncGmemLoaderB[
     ]
     comptime Barriers = SMemArray[SharedMemBarrier, Self.stage_cnt * 2]
     comptime WeightTensor = TileTensor[
-        Self.b_type, Self.b_layout, ImmutAnyOrigin
+        Self.b_type, Self.b_layout, Self.weight_origin
     ]
     comptime swizzle = make_swizzle[8, Self.tile_k, 8]()
 
@@ -1465,6 +1534,8 @@ struct _MmaCpAsyncGmemLoaderB[
 
 
 struct _MmaCpAsyncMmaComputer[
+    out_origin: MutOrigin,
+    //,
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1474,6 +1545,7 @@ struct _MmaCpAsyncMmaComputer[
     tile_k: Int,
     stage_cnt: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    swapAB: Bool = False,
 ]:
     """Consumer warp group (warps 4-7) for tensor-core MMA with 4-way split-K.
     """
@@ -1494,7 +1566,7 @@ struct _MmaCpAsyncMmaComputer[
     var smem_a: Self.SmemTilesA
     var smem_b: Self.SmemTilesB
     var smem_barrier: Self.Barriers
-    var out_ptr: UnsafePointer[Scalar[Self.c_type], MutAnyOrigin]
+    var out_ptr: UnsafePointer[Scalar[Self.c_type], Self.out_origin]
     var compute_warp: Int
     var lane_idx: Int
     var warp_k_off: Int
@@ -1511,7 +1583,7 @@ struct _MmaCpAsyncMmaComputer[
         smem_a: Self.SmemTilesA,
         smem_b: Self.SmemTilesB,
         smem_barrier: Self.Barriers,
-        out_ptr: UnsafePointer[Scalar[Self.c_type], MutAnyOrigin],
+        out_ptr: UnsafePointer[Scalar[Self.c_type], Self.out_origin],
         compute_warp: Int,
         lane_idx: Int,
         warp_k_off: Int,
@@ -1576,7 +1648,13 @@ struct _MmaCpAsyncMmaComputer[
             self.stage = 0 if raw_next == Self.stage_cnt else raw_next
 
     def epi(mut self):
-        """Epilogue: reduce acc across 4 compute-warp partials, write C[gemm_m, gemm_n].
+        """Epilogue: reduce acc across 4 compute-warp partials, write the C tile.
+
+        The output buffer is always row-major `[M, N]`. When `swapAB`, the
+        launcher fed the kernel the transposed problem (A=weight, B=act, with
+        `gemm_m`/`gemm_n` = N/M), so this CTA's tile covers N in the m-direction
+        and M in the n-direction; the store transposes index order back into the
+        row-major `[M, N]` buffer (row stride = N = `gemm_m`).
         """
         var smem_epi = self.smem_a.ptr.bitcast[Scalar[Self.accum_type]]()
         var base_off = self.compute_warp * Self.tile_m * Self.tile_n
@@ -1610,18 +1688,27 @@ struct _MmaCpAsyncMmaComputer[
                     self.cta_m + m_idx < self.gemm_m
                     and self.cta_n + n_idx < self.gemm_n
                 ):
+                    # True output coordinate in the row-major [M, N] buffer.
+                    # Non-swap: (row=M, col=N) = (cta_m+m, cta_n+n), stride gemm_n.
+                    # Swap:     (row=M, col=N) = (cta_n+n, cta_m+m), stride gemm_m
+                    #           (the kernel's gemm_m == true N under swapAB).
+                    var out_row = (self.cta_n + n_idx) if Self.swapAB else (
+                        self.cta_m + m_idx
+                    )
+                    var out_col = (self.cta_m + m_idx) if Self.swapAB else (
+                        self.cta_n + n_idx
+                    )
+                    var out_stride = self.gemm_m if Self.swapAB else self.gemm_n
+                    var out_off = out_row * out_stride + out_col
+
                     comptime if Self.elementwise_lambda_fn:
                         comptime elementwise_lambda = Self.elementwise_lambda_fn.value()
                         elementwise_lambda[Self.c_type, 1](
-                            Index(self.cta_m + m_idx, self.cta_n + n_idx),
+                            Index(out_row, out_col),
                             total.cast[Self.c_type](),
                         )
                     else:
-                        self.out_ptr[
-                            (self.cta_m + m_idx) * self.gemm_n
-                            + self.cta_n
-                            + n_idx
-                        ] = total.cast[Self.c_type]()
+                        self.out_ptr[out_off] = total.cast[Self.c_type]()
 
 
 struct _MmaCpAsyncSmem[
@@ -1677,6 +1764,7 @@ def gemm_mma_cpasync_kernel[
     accum_type: DType = DType.float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    swapAB: Bool = False,
 ](
     output: TileTensor[c_type, c_layout, MutAnyOrigin],
     act: TileTensor[a_type, a_layout, ImmutAnyOrigin],
@@ -1736,10 +1824,13 @@ def gemm_mma_cpasync_kernel[
             smem_barrier[stage * 2 + 1][].init(Int32(COMPUTE_THREADS))
     barrier()
 
-    comptime if pdl_level > PDLLevel.OFF:
-        wait_on_dependent_grids()
-
+    # PDL selective gating: only the activation loader waits on the producer so
+    # the weight load streams during it. The launcher
+    # routes the activation to the A loader normally, or to the B loader under
+    # `swapAB` (where the weight becomes the free-streaming A operand).
     if warp_idx_ < 2:
+        comptime if pdl_level > PDLLevel.OFF and not swapAB:
+            wait_on_dependent_grids()
         var loader = _MmaCpAsyncGmemLoaderA[
             a_type, type_of(act).LayoutType, tile_m, tile_k, stage_cnt
         ](
@@ -1749,14 +1840,22 @@ def gemm_mma_cpasync_kernel[
             Int(a_local_tid),
             batch_idx,
             cta_m,
+            gemm_m,
             k_each_chunk,
         )
         loader.prepare()
         loader.issue_mainloop(k_iters)
 
     elif warp_idx_ < 4:
+        comptime if pdl_level > PDLLevel.OFF and swapAB:
+            wait_on_dependent_grids()
         comptime LoaderB = _MmaCpAsyncGmemLoaderB[
-            a_type, type_of(weight).LayoutType, tile_n, tile_k, stage_cnt
+            weight_origin=weight.origin,
+            a_type,
+            type_of(weight).LayoutType,
+            tile_n,
+            tile_k,
+            stage_cnt,
         ]
         var loader = LoaderB(
             rebind[LoaderB.WeightTensor](weight),
@@ -1782,6 +1881,7 @@ def gemm_mma_cpasync_kernel[
             tile_k,
             stage_cnt,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            swapAB=swapAB,
         ](
             smem_a,
             smem_b,
@@ -1806,6 +1906,7 @@ def gemm_mma_cpasync[
     pdl_level: PDLLevel = PDLLevel(),
     tile_k: Int = 128,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    swapAB: Bool = False,
 ](
     c: TileTensor[mut=True, ...],
     act: TileTensor[mut=False, ...],
@@ -1820,13 +1921,23 @@ def gemm_mma_cpasync[
 
     C[gemm_m, gemm_n] = act[gemm_m, K] x weight[gemm_n, K]^T.
 
+    The caller always passes `act`/`weight`/`c` with the same shapes regardless
+    of `swapAB`, and `c` is always written as a row-major `[gemm_m, gemm_n]`
+    (`[M, N]`) buffer. `swapAB` only changes the internal tiling: when True the
+    weight is fed to the A (free-streaming) operand slot and the activation to
+    the B slot (so the grid tiles N by `tile_m` and M by `tile_n`), and the
+    epilogue transposes the store back into the row-major `[M, N]` buffer. This
+    makes the large weight the producer-independent operand for PDL overlap at
+    small M (decode), while keeping the output layout identical.
+
     Args:
-        c:          Output, shape (gemm_m, gemm_n) or (batch, gemm_m, gemm_n).
+        c:          Output, shape (gemm_m, gemm_n) or (batch, gemm_m, gemm_n),
+                    always row-major.
         act:        Activation, shape (gemm_m, gemm_k) or (batch, gemm_m, gemm_k).
         weight:     Weight, shape (gemm_n, gemm_k) or (batch, gemm_n, gemm_k).
-        gemm_m:     Activation rows (output rows).
+        gemm_m:     Activation rows (output rows, M).
         gemm_k:     Reduction dimension.
-        gemm_n:     Weight rows (output cols).
+        gemm_n:     Weight rows (output cols, N).
         batch_size: Batch size; ignored for 2D inputs (treated as 1).
         ctx:        GPU device context.
     """
@@ -1841,9 +1952,14 @@ def gemm_mma_cpasync[
     comptime b_type = weight.dtype
 
     comptime assert a_type == b_type, "a_type and b_type must be the same"
-    comptime assert (
-        a_type == c_type == DType.bfloat16
-    ), "a_type and c_type must be bfloat16"
+    comptime assert a_type == DType.bfloat16, "a_type/b_type must be bfloat16"
+    # Output may be bfloat16 (production) or float32 (accuracy verification): the
+    # kernel always accumulates in f32 and only casts to c_type on store, so an
+    # f32 output simply skips the final bf16 rounding.
+    comptime assert c_type in (
+        DType.bfloat16,
+        DType.float32,
+    ), "c_type must be bfloat16 or float32"
     comptime assert (
         ctx.default_device_info.compute == B200.compute
     ), "This kernel is only supported on SM100"
@@ -1877,71 +1993,145 @@ def gemm_mma_cpasync[
         stage_cnt,
     )
 
-    var grid_x = ceildiv(gemm_m, tile_m)
-    var grid_y = ceildiv(gemm_n, tile_n)
+    # Kernel-facing dims: under swapAB the A operand is the weight (rows = N) and
+    # the B operand is the activation (rows = M), so the kernel sees gemm_m=N,
+    # gemm_n=M. The output buffer `c` stays row-major [M, N]; the epilogue
+    # transposes the store. Grid tiles the A-operand rows by tile_m, B by tile_n.
+    var k_gemm_m = gemm_n if swapAB else gemm_m
+    var k_gemm_n = gemm_m if swapAB else gemm_n
+    var grid_x = ceildiv(k_gemm_m, tile_m)
+    var grid_y = ceildiv(k_gemm_n, tile_n)
 
     comptime if is_batched:
-        comptime kernel = gemm_mma_cpasync_kernel[
-            c_type,
-            a_type,
-            b_type,
-            type_of(c).LayoutType,
-            type_of(act).LayoutType,
-            type_of(weight).LayoutType,
-            tile_m=tile_m,
-            tile_n=tile_n,
-            tile_k=tile_k,
-            stage_cnt=stage_cnt,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            pdl_level=pdl_level,
-        ]
-        ctx.enqueue_function[kernel, dump_asm=False](
-            c,
-            act,
-            weight,
-            gemm_m,
-            gemm_k,
-            gemm_n,
-            batch_size,
-            grid_dim=(grid_x, grid_y, batch_size),
-            block_dim=TOTAL_THREADS,
-            shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
-            attributes=pdl_launch_attributes(pdl_level),
-        )
+        comptime if swapAB:
+            comptime kernel = gemm_mma_cpasync_kernel[
+                c_type,
+                a_type,
+                b_type,
+                type_of(c).LayoutType,
+                type_of(weight).LayoutType,
+                type_of(act).LayoutType,
+                tile_m=tile_m,
+                tile_n=tile_n,
+                tile_k=tile_k,
+                stage_cnt=stage_cnt,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                pdl_level=pdl_level,
+                swapAB=True,
+            ]
+            ctx.enqueue_function[kernel, dump_asm=False](
+                c,
+                weight,
+                act,
+                k_gemm_m,
+                gemm_k,
+                k_gemm_n,
+                batch_size,
+                grid_dim=(grid_x, grid_y, batch_size),
+                block_dim=TOTAL_THREADS,
+                shared_mem_bytes=smem_size,
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    UInt32(b200_smem)
+                ),
+                attributes=pdl_launch_attributes(pdl_level),
+            )
+        else:
+            comptime kernel = gemm_mma_cpasync_kernel[
+                c_type,
+                a_type,
+                b_type,
+                type_of(c).LayoutType,
+                type_of(act).LayoutType,
+                type_of(weight).LayoutType,
+                tile_m=tile_m,
+                tile_n=tile_n,
+                tile_k=tile_k,
+                stage_cnt=stage_cnt,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                pdl_level=pdl_level,
+                swapAB=False,
+            ]
+            ctx.enqueue_function[kernel, dump_asm=False](
+                c,
+                act,
+                weight,
+                k_gemm_m,
+                gemm_k,
+                k_gemm_n,
+                batch_size,
+                grid_dim=(grid_x, grid_y, batch_size),
+                block_dim=TOTAL_THREADS,
+                shared_mem_bytes=smem_size,
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    UInt32(b200_smem)
+                ),
+                attributes=pdl_launch_attributes(pdl_level),
+            )
     else:
         var c3d = _to_batched_3d(c)
         var a3d = _to_batched_3d(act)
         var w3d = _to_batched_3d(weight)
-        comptime kernel = gemm_mma_cpasync_kernel[
-            c_type,
-            a_type,
-            b_type,
-            type_of(c3d).LayoutType,
-            type_of(a3d).LayoutType,
-            type_of(w3d).LayoutType,
-            tile_m=tile_m,
-            tile_n=tile_n,
-            tile_k=tile_k,
-            stage_cnt=stage_cnt,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            pdl_level=pdl_level,
-        ]
-        ctx.enqueue_function[kernel, dump_asm=False](
-            c3d,
-            a3d,
-            w3d,
-            gemm_m,
-            gemm_k,
-            gemm_n,
-            1,
-            grid_dim=(grid_x, grid_y, 1),
-            block_dim=TOTAL_THREADS,
-            shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
-            attributes=pdl_launch_attributes(pdl_level),
-        )
+        comptime if swapAB:
+            comptime kernel = gemm_mma_cpasync_kernel[
+                c_type,
+                a_type,
+                b_type,
+                type_of(c3d).LayoutType,
+                type_of(w3d).LayoutType,
+                type_of(a3d).LayoutType,
+                tile_m=tile_m,
+                tile_n=tile_n,
+                tile_k=tile_k,
+                stage_cnt=stage_cnt,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                pdl_level=pdl_level,
+                swapAB=True,
+            ]
+            ctx.enqueue_function[kernel, dump_asm=False](
+                c3d,
+                w3d,
+                a3d,
+                k_gemm_m,
+                gemm_k,
+                k_gemm_n,
+                1,
+                grid_dim=(grid_x, grid_y, 1),
+                block_dim=TOTAL_THREADS,
+                shared_mem_bytes=smem_size,
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    UInt32(b200_smem)
+                ),
+                attributes=pdl_launch_attributes(pdl_level),
+            )
+        else:
+            comptime kernel = gemm_mma_cpasync_kernel[
+                c_type,
+                a_type,
+                b_type,
+                type_of(c3d).LayoutType,
+                type_of(a3d).LayoutType,
+                type_of(w3d).LayoutType,
+                tile_m=tile_m,
+                tile_n=tile_n,
+                tile_k=tile_k,
+                stage_cnt=stage_cnt,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                pdl_level=pdl_level,
+                swapAB=False,
+            ]
+            ctx.enqueue_function[kernel, dump_asm=False](
+                c3d,
+                a3d,
+                w3d,
+                k_gemm_m,
+                gemm_k,
+                k_gemm_n,
+                1,
+                grid_dim=(grid_x, grid_y, 1),
+                block_dim=TOTAL_THREADS,
+                shared_mem_bytes=smem_size,
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    UInt32(b200_smem)
+                ),
+                attributes=pdl_launch_attributes(pdl_level),
+            )

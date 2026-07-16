@@ -357,7 +357,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             1,
             2,
         ), "Only support cta_group == 1 or 2"
-        comptime assert Self.BK == 128, "Only support BK = 128"
+        comptime assert Self.BK in (64, 128), "Only support BK in (64, 128)"
 
     # ========== Computed Layouts (single source of truth) ==========
 

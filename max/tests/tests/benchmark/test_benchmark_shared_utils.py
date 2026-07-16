@@ -248,7 +248,9 @@ def test_wait_for_server_ready_returns_on_200(mocker: MockerFixture) -> None:
     mocker.patch("time.monotonic", side_effect=[100.0, 101.5])
     sleep = mocker.patch("time.sleep")
 
-    elapsed = wait_for_server_ready("localhost", 8000, timeout_s=60)
+    elapsed = wait_for_server_ready(
+        "localhost", 8000, timeout_s=60, backend="modular"
+    )
 
     assert elapsed == pytest.approx(1.5)
     sleep.assert_not_called()
@@ -273,7 +275,9 @@ def test_wait_for_server_ready_polls_past_non_ready(
     mocker.patch("time.monotonic", side_effect=[100.0, 101.0, 105.0])
     sleep = mocker.patch("time.sleep")
 
-    elapsed = wait_for_server_ready("localhost", 8000, timeout_s=60)
+    elapsed = wait_for_server_ready(
+        "localhost", 8000, timeout_s=60, backend="modular"
+    )
 
     assert elapsed == pytest.approx(5.0)
     assert urlopen.call_count == 2
@@ -288,7 +292,7 @@ def test_wait_for_server_ready_raises_on_timeout(
     sleep = mocker.patch("time.sleep")
 
     with pytest.raises(RuntimeError, match="not ready"):
-        wait_for_server_ready("localhost", 8000, timeout_s=5)
+        wait_for_server_ready("localhost", 8000, timeout_s=5, backend="modular")
 
     sleep.assert_not_called()
 
@@ -316,9 +320,63 @@ def test_wait_for_server_ready_zero_timeout_tries_once(
 
     if expects_raise:
         with pytest.raises(RuntimeError):
-            wait_for_server_ready("localhost", 8000, timeout_s=0)
+            wait_for_server_ready(
+                "localhost", 8000, timeout_s=0, backend="modular"
+            )
     else:
-        wait_for_server_ready("localhost", 8000, timeout_s=0)
+        wait_for_server_ready("localhost", 8000, timeout_s=0, backend="modular")
 
     assert urlopen.call_count == 1
     sleep.assert_not_called()
+
+
+def test_wait_for_server_ready_aborts_when_liveness_fails(
+    mocker: MockerFixture,
+) -> None:
+    """A dead server aborts immediately instead of polling until timeout."""
+    urlopen = mocker.patch("urllib.request.urlopen")
+    urlopen.side_effect = ConnectionRefusedError()
+    # A long timeout: without the liveness check this would poll for ~hours.
+    mocker.patch("time.monotonic", side_effect=[100.0, 100.0])
+    sleep = mocker.patch("time.sleep")
+
+    with pytest.raises(RuntimeError, match="exited before"):
+        wait_for_server_ready(
+            "localhost",
+            8000,
+            timeout_s=120 * 60,
+            backend="modular",
+            liveness_check=lambda: False,
+        )
+
+    # Aborted on the first failed poll — no sleep, no deadline wait.
+    assert urlopen.call_count == 1
+    sleep.assert_not_called()
+
+
+def test_wait_for_server_ready_live_liveness_does_not_interfere(
+    mocker: MockerFixture,
+) -> None:
+    """A liveness check that stays True lets normal polling proceed to 200."""
+    urlopen = mocker.patch("urllib.request.urlopen")
+    urlopen.side_effect = [
+        ConnectionRefusedError(),
+        _mock_response(200),
+    ]
+    mocker.patch("time.monotonic", side_effect=[100.0, 101.0, 105.0])
+    sleep = mocker.patch("time.sleep")
+    liveness = mocker.Mock(return_value=True)
+
+    elapsed = wait_for_server_ready(
+        "localhost",
+        8000,
+        timeout_s=60,
+        backend="modular",
+        liveness_check=liveness,
+    )
+
+    assert elapsed == pytest.approx(5.0)
+    assert urlopen.call_count == 2
+    # Checked once after the first failed poll; the second poll returned 200.
+    liveness.assert_called_once_with()
+    sleep.assert_called_once_with(5.0)

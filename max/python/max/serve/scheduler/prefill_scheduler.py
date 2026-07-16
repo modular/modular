@@ -18,7 +18,7 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -33,7 +33,6 @@ from max.pipelines.modeling.types import (
     Pipeline,
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
 )
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
@@ -43,14 +42,14 @@ from max.serve.scheduler.base import (
     PrefillResponse,
 )
 from max.serve.scheduler.interface import Scheduler
-from max.serve.worker_interface.zmq_queue import ClientIdentity
+from max.serve.worker_interface._zmq_queue import ClientIdentity
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .di_dispatchers import PrefillDispatcherServer
-from .utils import SchedulerLogger, reshape_flat_kv_blocks_to_grid
+from .utils import SchedulerLogger
 
 logger = logging.getLogger("max.serve")
 
@@ -95,20 +94,6 @@ class PrefillScheduler(Scheduler):
             name=f"prefill_agent_{uuid.uuid4()}",
             kv_cache=kv_cache,
         )
-
-        # Register draft KV cache blocks for speculative decoding so that
-        # target and draft KV are bundled into a single NIXL transfer.
-        draft_kv_blocks = getattr(pipeline, "draft_kv_blocks", None)
-        if isinstance(draft_kv_blocks, list):
-            self.transfer_engine.register_tensor_group(
-                name="draft",
-                tensors=reshape_flat_kv_blocks_to_grid(
-                    draft_kv_blocks,
-                    dp=scheduler_config.data_parallel_degree,
-                    group_name="draft",
-                ),
-                total_num_pages=kv_cache.get_num_pages(replica_idx=0),
-            )
 
         self.outstanding_cancelled_requests: set[RequestID] = set()
 
@@ -413,7 +398,13 @@ class PrefillScheduler(Scheduler):
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
-        # Log batch metrics
+        # Log batch metrics. When the overlap pipeline is active, the
+        # wall-clock time measured above describes the previously enqueued
+        # batch; the pipeline reports that batch's composition and timing so
+        # telemetry is attributed to the correct batch type.
+        is_overlap_active = bool(
+            getattr(self.pipeline, "overlap_active", False)
+        )
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             inputs=inputs,
@@ -423,6 +414,13 @@ class PrefillScheduler(Scheduler):
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
+            batch_execution_time_is_previous=is_overlap_active,
+            completed_batch_stats=self.pipeline.take_completed_batch_stats()
+            if hasattr(self.pipeline, "take_completed_batch_stats")
+            else None,
+            batch_vision_metrics=self.pipeline.batch_vision_metrics()
+            if hasattr(self.pipeline, "batch_vision_metrics")
+            else None,
         )
 
         return SchedulerProgress.MADE_PROGRESS
@@ -436,12 +434,6 @@ def load_prefill_scheduler(
     # Validate speculative decoding configuration for prefill-only mode.
     spec_config = pipeline_config.speculative
     if spec_config is not None:
-        if spec_config.is_standalone():
-            raise ValueError(
-                "Standalone speculative decoding is not supported with "
-                "pipeline_role='prefill_only'. Use 'eagle' or 'mtp' "
-                "speculative methods instead."
-            )
         if not (spec_config.is_eagle() or spec_config.is_mtp()):
             raise ValueError(
                 f"Unsupported speculative method "
@@ -456,7 +448,7 @@ def load_prefill_scheduler(
 
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config
+        pipeline_config, pipeline.max_batch_size
     )
 
     return PrefillScheduler(

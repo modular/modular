@@ -25,7 +25,7 @@ from std.python._cpython import (
     Py_TPFLAGS_LIST_SUBCLASS,
 )
 from std.ffi import _CPointer
-from std.memory import alloc, free, Layout
+from std.memory import alloc, dealloc, ThinAllocation, Layout
 from std.testing import (
     assert_equal,
     assert_false,
@@ -72,7 +72,9 @@ def _test_exception_handling_api(cpy: CPython) raises:
     assert_true(cpy.PyErr_Occurred())
     cpy.PyErr_Clear()
 
-    cpy.PyErr_SetString(ValueError, msg.as_c_string_slice().unsafe_ptr())
+    cpy.PyErr_SetString(
+        ValueError, msg.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin()
+    )
     assert_true(cpy.PyErr_Occurred())
 
     if cpy.version.minor < 12:
@@ -292,9 +294,9 @@ def _test_dictionary_object_api(cpy: CPython) raises:
 
     var succ = cpy.PyDict_Next(
         d,
-        UnsafePointer(to=pos),
-        UnsafePointer(to=key),
-        UnsafePointer(to=value),
+        UnsafePointer(to=pos).as_unsafe_any_origin(),
+        UnsafePointer(to=key).as_unsafe_any_origin(),
+        UnsafePointer(to=value).as_unsafe_any_origin(),
     )
     assert_equal(pos, 1)
     assert_equal(key, b)
@@ -303,9 +305,9 @@ def _test_dictionary_object_api(cpy: CPython) raises:
 
     succ = cpy.PyDict_Next(
         d,
-        UnsafePointer(to=pos),
-        UnsafePointer(to=key),
-        UnsafePointer(to=value),
+        UnsafePointer(to=pos).as_unsafe_any_origin(),
+        UnsafePointer(to=key).as_unsafe_any_origin(),
+        UnsafePointer(to=value).as_unsafe_any_origin(),
     )
     assert_false(succ)
 
@@ -326,7 +328,12 @@ def _test_module_object_api(cpy: CPython) raises:
 
     var funcs = InlineArray[PyMethodDef, 1](fill={})
     # returns 0 on success, -1 on failure
-    assert_equal(cpy.PyModule_AddFunctions(mod, funcs.unsafe_ptr()), 0)
+    assert_equal(
+        cpy.PyModule_AddFunctions(
+            mod, funcs.unsafe_ptr().as_unsafe_any_origin()
+        ),
+        0,
+    )
     _ = funcs
 
     var n = cpy.PyLong_FromSsize_t(0)
@@ -334,7 +341,7 @@ def _test_module_object_api(cpy: CPython) raises:
     # returns 0 on success, -1 on failure
     assert_equal(
         cpy.PyModule_AddObjectRef(
-            mod, name.as_c_string_slice().unsafe_ptr(), n
+            mod, name.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(), n
         ),
         0,
     )
@@ -352,26 +359,38 @@ def _test_capsule_api(cpy: CPython) raises:
         _ = cpy.PyCapsule_GetPointer(o, "some_name")
 
     var capsule_impl_layout = Layout[UInt64].single()
-    var capsule_impl = alloc(capsule_impl_layout)
+    var capsule_impl_ptr = alloc(capsule_impl_layout).unsafe_leak()
 
     def empty_dtor(capsule: PyObjectPtr) abi("C"):
         pass
 
     var capsule = cpy.PyCapsule_New(
-        capsule_impl.bitcast[NoneType](), "some_name", empty_dtor
+        capsule_impl_ptr.bitcast[NoneType]().unsafe_origin_cast[
+            MutUntrackedOrigin
+        ](),
+        "some_name",
+        empty_dtor,
     )
     var capsule_pointer = cpy.PyCapsule_GetPointer(capsule, "some_name")
-    assert_equal(Int(capsule_impl.bitcast[NoneType]()), Int(capsule_pointer))
 
+    # The capsule holds the raw pointer but never dereferences it (its
+    # destructor is a no-op and the lookups below fail before any deref), so it
+    # is safe to release the storage now. Capture the address first because
+    # `assert_equal` can raise, and the allocation must be freed on every path.
+    var capsule_impl_addr = Int(capsule_impl_ptr)
+    dealloc(
+        ThinAllocation(
+            unsafe_assume_ownership=capsule_impl_ptr
+        ).unsafe_with_layout(capsule_impl_layout)
+    )
+    assert_equal(capsule_impl_addr, Int(capsule_pointer))
     with assert_raises(contains="called with incorrect name"):
         _ = cpy.PyCapsule_GetPointer(capsule, "some_other_name")
-
-    free(capsule_impl, capsule_impl_layout)
 
 
 def _test_memory_management_api(cpy: CPython) raises:
     var ptr = cpy.lib.call[
-        "PyObject_Malloc", _CPointer[NoneType, AnyOrigin[mut=True]]
+        "PyObject_Malloc", _CPointer[NoneType, MutUntrackedOrigin]
     ](64)
     assert_true(ptr)
 

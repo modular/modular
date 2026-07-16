@@ -84,8 +84,7 @@ from layout.tma_async import (
 )
 from linalg.arch.sm100.mma import smem_descriptor
 from linalg.matmul.gpu import matmul_kernel_naive
-from nn.attention.gpu.nvidia.sm100.mla_decode_utils import bulk_mma_ws_ts
-from nn.attention.gpu.nvidia.sm100.attention_utils import elect
+from nn.attention.gpu.nvidia.sm100.attention_utils import bulk_mma_ws_ts, elect
 from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 
@@ -236,20 +235,18 @@ def dense_mma_ws_ts_kernel[
     var q_smem_tile = LayoutTensor[
         OP_TYPE,
         Q_SMEM_LAYOUT,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](q_smem_ptr)
+    ](q_smem_ptr.as_unsafe_any_origin())
 
     # ---- K SMEM region (starts after Q) ----
     var k_smem_ptr = (smem_base + K_SMEM_OFFSET).bitcast[Scalar[OP_TYPE]]()
     var k_smem_tile = LayoutTensor[
         OP_TYPE,
         K_SMEM_LAYOUT,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](k_smem_ptr)
+    ](k_smem_ptr.as_unsafe_any_origin())
 
     # ---- Metadata region (after both SMEM tiles) ----
     var metadata_ptr = (smem_base + METADATA_OFFSET).bitcast[UInt32]()
@@ -517,10 +514,9 @@ def sparse_mma_ws_ts_kernel[
     var q_smem_tile = LayoutTensor[
         op_type,
         q_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](q_smem_ptr)
+    ](q_smem_ptr.as_unsafe_any_origin())
 
     # ---- K SMEM region (starts after Q) ----
     var k_smem_ptr = (smem_base + k_smem_offset).bitcast[Scalar[op_type]]()
@@ -606,10 +602,9 @@ def sparse_mma_ws_ts_kernel[
                 var smem_dst_tile = LayoutTensor[
                     op_type,
                     Layout.row_major(4, box_width),
-                    MutAnyOrigin,
                     address_space=AddressSpace.SHARED,
                     alignment=128,
-                ](smem_dst_ptr)
+                ](smem_dst_ptr.as_unsafe_any_origin())
 
                 k_gather4_tma.async_copy_gather4(
                     smem_dst_tile,

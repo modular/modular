@@ -28,16 +28,26 @@ Two top-level adapters correspond to the two architectures in ``arch.py``:
 
 Both adapters share :func:`_convert_merged_state_dict`, which processes
 vision and language keys in a single loop over the raw checkpoint.
+
+For MXFP4 checkpoints the model calls
+:func:`~max.pipelines.weights.mxfp4_preshuffle.preshuffle_mxfp4_b_experts`
+on the post-adapter state dict to lay expert ``B`` bytes out in
+``Shuffler.b_5d_grouped_layout`` for the AMD preb grouped-matmul kernel.
+The preshuffle is pure-numpy on CPU.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import logging
 import re
 
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
+from max.pipelines.weights._fp8 import dequantize_rowwise_fp8
 from transformers.configuration_utils import PretrainedConfig
+
+logger = logging.getLogger("max.pipelines")
 
 # ---------------------------------------------------------------------------
 # Language model rename map
@@ -115,6 +125,56 @@ def _cast_vision_weight(checkpoint_name: str, weight: Weights) -> WeightData:
     return weight_data
 
 
+_EXPERT_WEIGHT_RE = re.compile(
+    r"^(?P<prefix>.+\.layers\.\d+\.mlp\.experts)"
+    r"\.(?P<idx>\d+)"
+    r"\.(?P<proj>gate_proj|up_proj|down_proj)\.weight$"
+)
+
+
+def _dequantize_fp8_attention(
+    state_dict: dict[str, WeightData],
+) -> dict[str, WeightData]:
+    """Dequantize rowwise-FP8 attention projections to bfloat16.
+
+    Some MXFP4 Kimi checkpoints keep the MoE in MXFP4 but store the attention
+    projections as rowwise FP8. The MLA is built in bf16 when the MoE is FP4,
+    so fold each FP8 attention weight into bf16 and drop its scale. Only the
+    attention linears are FP8; the layernorms stay bf16. Runs only when the
+    checkpoint carries packed-MXFP4 experts, leaving pure-FP8 checkpoints for
+    the native FP8 path.
+    """
+    has_mxfp4_experts = any(
+        _EXPERT_WEIGHT_RE.match(name) and wd.dtype == DType.uint8
+        for name, wd in state_dict.items()
+    )
+    if not has_mxfp4_experts:
+        return state_dict
+
+    converted: dict[str, WeightData] = {}
+    n_dequant = 0
+    for name, wd in state_dict.items():
+        if ".self_attn." not in name:
+            converted[name] = wd
+        elif name.endswith(".weight_scale"):
+            # Folded into the dequantized weight, so drop it.
+            pass
+        elif wd.dtype == DType.float8_e4m3fn:
+            scale = state_dict[name.removesuffix(".weight") + ".weight_scale"]
+            converted[name] = dequantize_rowwise_fp8(
+                wd, scale, wd.name, out_dtype=DType.bfloat16
+            )
+            n_dequant += 1
+        else:
+            converted[name] = wd
+
+    if n_dequant:
+        logger.info(
+            "FP8 attention dequant: %d projections to bfloat16", n_dequant
+        )
+    return converted
+
+
 def _convert_merged_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: PretrainedConfig,
@@ -179,7 +239,7 @@ def _convert_merged_state_dict(
             data = dataclasses.replace(data, dtype=DType.float8_e8m0fnu)
         result[name] = data
 
-    return result
+    return _dequantize_fp8_attention(result)
 
 
 # ---------------------------------------------------------------------------
@@ -288,13 +348,13 @@ def convert_eagle3_draft_state_dict(
         for before, after in _EAGLE3_KEY_MAP.items():
             if name.startswith(before):
                 new_name = after + name[len(before) :]
-                result[new_name] = weight.data()
+                result[new_name] = _cast_vision_weight(name, weight)
                 mapped = True
                 break
 
         if not mapped:
             # fc.*, norm.*, lm_head.* pass through directly
-            result[name] = weight.data()
+            result[name] = _cast_vision_weight(name, weight)
 
     return result
 
@@ -303,7 +363,7 @@ def convert_eagle3_draft_state_dict(
 # Llama-style Eagle3 draft checkpoint adapter
 # ---------------------------------------------------------------------------
 
-# Llama Eagle3 checkpoint key prefix -> Eagle3MHAKimiK25 module path.
+# Llama Eagle3 checkpoint key prefix -> Eagle3MHADraft module path.
 # The MHA draft module's layer is flat (single block, no ``decoder_layer``
 # namespace), so the mapping strips the single-layer prefix and inlines
 # norms.
@@ -335,7 +395,7 @@ def convert_llama_eagle3_draft_state_dict(
     state_dict: dict[str, Weights],
     **unused_kwargs,
 ) -> dict[str, WeightData]:
-    """Convert a ``LlamaForCausalLMEagle3`` checkpoint to ``Eagle3MHAKimiK25``.
+    """Convert a ``LlamaForCausalLMEagle3`` checkpoint to ``Eagle3MHADraft``.
 
     Handles both ``model.*``-prefixed (standard HF Llama) and
     ``layers.0.*``-prefixed (EAGLE-export) checkpoints. ``fc.*``,
@@ -347,10 +407,10 @@ def convert_llama_eagle3_draft_state_dict(
         for before, after in _LLAMA_EAGLE3_KEY_MAP.items():
             if name.startswith(before):
                 new_name = after + name[len(before) :]
-                result[new_name] = weight.data()
+                result[new_name] = _cast_vision_weight(name, weight)
                 mapped = True
                 break
         if not mapped:
             # fc.*, norm.*, lm_head.* and any other top-level keys.
-            result[name] = weight.data()
+            result[name] = _cast_vision_weight(name, weight)
     return result

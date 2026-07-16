@@ -34,7 +34,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
 
@@ -106,7 +106,7 @@ def add_raw(py_self: PyObjectPtr, args: PyObjectPtr) abi("C") -> PyObjectPtr:
 @export
 def noop_raw_fastcall(
     py_self: PyObjectPtr,
-    args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+    args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
     nargs: Py_ssize_t,
 ) abi("C") -> PyObjectPtr:
     ref cpy = Python().cpython()
@@ -116,7 +116,7 @@ def noop_raw_fastcall(
 @export
 def add_raw_fastcall(
     py_self: PyObjectPtr,
-    args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+    args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
     nargs: Py_ssize_t,
 ) abi("C") -> PyObjectPtr:
     ref cpy = Python().cpython()

@@ -26,7 +26,7 @@ from std.testing import assert_almost_equal
 from std.utils import IndexList
 
 comptime epilogue_func_type = def[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
@@ -34,7 +34,7 @@ comptime epilogue_func_type = def[
 @parameter
 def elementwise_epilogue_fn[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     *,
     alignment: Int = 1,
 ](val: SIMD[dtype, width],) -> SIMD[dtype, width]:
@@ -87,7 +87,7 @@ def run_bmm_and_check_result[
     @__copy_capture(c_device)
     def epilogue_fn[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         rank: Int,
         *,
         alignment: Int = 1,
@@ -162,13 +162,7 @@ def run_bmm_and_check_result[
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     @always_inline
-    @__copy_capture(c_device_ref)
-    @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[3]](idx0)
-        var coord = Coord((idx[0], idx[1], idx[2]))
+    def func[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:
         comptime assert c_device_ref.flat_rank >= 3
         var val = c_device_ref.load[width=simd_width](coord)
         comptime element_lambda = lambda_fn.value()
@@ -180,8 +174,9 @@ def run_bmm_and_check_result[
         )
 
     comptime if lambda_fn:
-        elementwise[func, pack_size, target="gpu"](
-            IndexList[3](b, m, n),
+        elementwise[pack_size, target="gpu"](
+            func,
+            (b, m, n),
             ctx,
         )
 

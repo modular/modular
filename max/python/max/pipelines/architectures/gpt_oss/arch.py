@@ -13,7 +13,7 @@
 
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
@@ -21,6 +21,8 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import GptOssBatchProcessor
+from .memory_planner import GptOssMemoryPlanner
 from .model import GptOssModel
 from .model_config import GptOssConfig
 
@@ -37,6 +39,7 @@ gpt_oss_arch = SupportedArchitecture(
         "float4_e2m1fnx2",
     },
     pipeline_model=GptOssModel,
+    batching=GptOssBatchProcessor,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextTokenizer,
     context_type=TextContext,
@@ -47,4 +50,7 @@ gpt_oss_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=GptOssConfig,
+    memory_planner=GptOssMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

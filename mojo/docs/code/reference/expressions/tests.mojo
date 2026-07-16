@@ -26,6 +26,7 @@
 #     types per the doc; they're exercised via `where` clauses
 #     elsewhere in the test corpus
 #   - Identifier expressions section (bare names, not standalone code)
+from std.collections import Set
 from std.testing import assert_equal
 
 
@@ -117,6 +118,18 @@ def test_set_display() raises:
     assert_equal(len(primes), 4)
     assert_equal(2 in primes, True)
     assert_equal(4 in primes, False)
+
+
+def test_set_explicit_type() raises:
+    # Set displays are built-in syntax, but naming the `Set` type needs the
+    # import at the top of this file.
+    var display_set = {1, 2, 3}  # set display, no import needed
+    assert_equal(len(display_set), 3)
+
+    var empty_set = Set[Int]()  # naming Set[Int] requires the import
+    empty_set.add(4)
+    empty_set.add(4)  # adding a duplicate is a no-op
+    assert_equal(len(empty_set), 1)
 
 
 # --- Initializer lists ---
@@ -360,6 +373,7 @@ def main() raises:
     test_list_display_with_expressions()
     test_dict_display()
     test_set_display()
+    test_set_explicit_type()
     test_initializer_list_call()
     test_initializer_list_keyword()
     test_member_access()

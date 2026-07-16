@@ -53,8 +53,9 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     MBarType,
     elect,
     kv_sub_tile_rows,
+    o_store_tma_blocks_per_op,
 )
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     get_seq_info,
     KVTMATile,
     MHAPosition,
@@ -138,7 +139,7 @@ struct SM100MHADepth512[
         )
     )
     @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
-    @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
     @__name(
         t"sm100_mha_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )
@@ -167,10 +168,22 @@ struct SM100MHADepth512[
         ],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
-            Self.config.swizzle_mode,
+            # O output store is row-major SWIZZLE_NONE (decoupled from the
+            # swizzled Q/K/V/S/P buffers governed by `config.swizzle_mode`).
+            TensorMapSwizzle.SWIZZLE_NONE,
             BM=Self.config.BM,
             BN=Self.config.ov_depth,
+            middle_dim=Self.config.num_kv_heads if Self.fuse_gqa else Self.config.num_q_heads,
             group=Self.config.group if Self.fuse_gqa else 1,
+            # Single issuer, no combine (depth_splits=1): full-depth box, one
+            # batched rank-5 TMA. Must match dispatch.mojo's store.
+            tma_blocks_per_op=o_store_tma_blocks_per_op[
+                Self.output_type,
+                TensorMapSwizzle.SWIZZLE_NONE,
+                Self.config.ov_depth,
+                Self.config.group if Self.fuse_gqa else 1,
+                depth_splits=1,
+            ](),
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
@@ -237,6 +250,22 @@ struct SM100MHADepth512[
         fence_mbarrier_init()
         cluster_sync()
 
+        # Read the TMEM base from SMEM EXACTLY ONCE here, where the prologue
+        # `cluster_sync()` (preceded by `tcgen05_alloc`'s SMEM store +
+        # MEMBAR.ALL) has provably published it, and carry it in a register to
+        # every consumer warp (softmax/correction/mma) as an explicit argument.
+        # Do NOT let the consumers re-read `smem.tmem_addr_ptr()` in their
+        # bodies: SASS showed the in-body re-reads (the P@V O-operand load deep
+        # in the MMA loop) gated only on KV-pipeline barriers, not on the alloc
+        # publish, so under SM co-residency with the TP `allreduce_1stage` grid
+        # (graph capture) a re-read could observe a stale/pre-alloc slot value
+        # -> garbage TMEM base -> invalid `UTCHMMA` operand ->
+        # CUDA_ERROR_ILLEGAL_INSTRUCTION. Reading once post-barrier and passing
+        # by register (matches the proven `mha_1q` structure) removes every
+        # in-body slot reload. Value is identical to the old per-warp reads
+        # (same published base), so single-shot is bit-identical.
+        var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
+
         # ---- Warp dispatch -----------------------------------------------
 
         var cta_rank = UInt32(block_rank_in_cluster() % 2)
@@ -287,6 +316,8 @@ struct SM100MHADepth512[
                 Self.page_size,
             ](
                 smem,
+                tmem_addr,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -327,6 +358,8 @@ struct SM100MHADepth512[
                 Self.page_size,
             ](
                 smem,
+                tmem_addr,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -346,7 +379,6 @@ struct SM100MHADepth512[
             ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
-                var tmem_addr = smem.tmem_addr_ptr()[]
                 tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
                 tcgen05_dealloc[Int32(Self.cta_group)](
                     tmem_addr, UInt32(Self.config.sm100_tmem_cols)
@@ -369,6 +401,8 @@ struct SM100MHADepth512[
                 Self.page_size,
             ](
                 smem,
+                tmem_addr,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -457,9 +491,13 @@ struct SM100MHADepth512[
     @staticmethod
     @always_inline
     def mask_status(
-        mask: Self.MaskType, score_row: UInt32, kv_row: UInt32
+        mask: Self.MaskType,
+        seq_id: UInt32,
+        score_row: UInt32,
+        kv_row: UInt32,
     ) -> TileMaskStatus:
         return mask.status(
+            seq_id,
             Index[dtype=DType.int32](
                 Int(score_row),
                 Int(kv_row),

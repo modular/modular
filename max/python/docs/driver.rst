@@ -20,6 +20,7 @@ Devices
    :template: autosummary/class.rst
 
    Accelerator
+   CompletionFlag
    CPU
    Device
    DeviceEvent
@@ -72,10 +73,12 @@ Virtual devices
 
    calculate_virtual_device_count
    calculate_virtual_device_count_from_cli
+   get_virtual_cpu_target
    get_virtual_device_api
    get_virtual_device_count
    get_virtual_device_target_arch
    is_virtual_device_mode
+   set_virtual_cpu_target
    set_virtual_device_api
    set_virtual_device_count
    set_virtual_device_target_arch

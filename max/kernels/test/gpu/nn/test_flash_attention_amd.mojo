@@ -509,7 +509,7 @@ def test_context_encoding[
 
     # Long-context AMD CDNA prefill gate. seq_len=4096 with BF16-output
     # causal prefill on CDNA fires the gate in `flash_attention_dispatch`,
-    # routing through `hk_mha_prefill`. Validates that (a) the gate builds
+    # routing through `mha_prefill_v2`. Validates that (a) the gate builds
     # + launches the kernel correctly, (b) the `LayoutTensor → TileTensor`
     # adapters in the gate preserve the data, and (c) the output matches
     # the gpu_naive reference within BF16 attention tolerance. Guarded on

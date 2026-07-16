@@ -48,11 +48,11 @@ def pool_shape_ceil[
     dilations_type: DType,
     paddings_type: DType,
 ](
-    input_buf: TileTensor[input_type, ...],
-    filter_buf: TileTensor[filter_type, ...],
-    strides_buf: TileTensor[strides_type, ...],
-    dilations_buf: TileTensor[dilations_type, ...],
-    paddings_buf: TileTensor[paddings_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    filter_buf: TileTensor[mut=False, filter_type, ...],
+    strides_buf: TileTensor[mut=False, strides_type, ...],
+    dilations_buf: TileTensor[mut=False, dilations_type, ...],
+    paddings_buf: TileTensor[mut=False, paddings_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     return pool_shape_impl[
         input_type,
@@ -72,11 +72,11 @@ def pool_shape[
     dilations_type: DType,
     paddings_type: DType,
 ](
-    input_buf: TileTensor[input_type, ...],
-    filter_buf: TileTensor[filter_type, ...],
-    strides_buf: TileTensor[strides_type, ...],
-    dilations_buf: TileTensor[dilations_type, ...],
-    paddings_buf: TileTensor[paddings_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    filter_buf: TileTensor[mut=False, filter_type, ...],
+    strides_buf: TileTensor[mut=False, strides_type, ...],
+    dilations_buf: TileTensor[mut=False, dilations_type, ...],
+    paddings_buf: TileTensor[mut=False, paddings_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     return pool_shape_impl[
         input_type,
@@ -97,11 +97,11 @@ def pool_shape_impl[
     paddings_type: DType,
     ceil_mode: Bool,
 ](
-    input_buf: TileTensor[input_type, ...],
-    filter_buf: TileTensor[filter_type, ...],
-    strides_buf: TileTensor[strides_type, ...],
-    dilations_buf: TileTensor[dilations_type, ...],
-    paddings_buf: TileTensor[paddings_type, ...],
+    input_buf: TileTensor[mut=False, input_type, ...],
+    filter_buf: TileTensor[mut=False, filter_type, ...],
+    strides_buf: TileTensor[mut=False, strides_type, ...],
+    dilations_buf: TileTensor[mut=False, dilations_type, ...],
+    paddings_buf: TileTensor[mut=False, paddings_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     """
     Compute the output shape of a pooling operation, and assert the inputs are
@@ -178,11 +178,11 @@ def pool_shape_impl[
 def max_pool_cpu[
     dtype: DType, int_type: DType
 ](
-    input: TileTensor[dtype, ...],
-    filter: TileTensor[int_type, ...],
-    strides: TileTensor[int_type, ...],
-    dilations: TileTensor[int_type, ...],
-    paddings: TileTensor[int_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
 ):
@@ -357,11 +357,11 @@ def max_pool_gpu[
     dtype: DType, int_type: DType
 ](
     ctx: DeviceContext,
-    input: TileTensor[dtype, ...],
-    filter: TileTensor[int_type, ...],
-    strides: TileTensor[int_type, ...],
-    dilations: TileTensor[int_type, ...],
-    paddings: TileTensor[int_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
 ) raises:
@@ -416,7 +416,7 @@ def max_pool_gpu[
     @always_inline
     def map_fn(
         point: IndexList[stencil_rank, ...],
-    ) register_passable {
+    ) {
         var stride_h,
         var padding_h_low,
         var padding_w_low,
@@ -439,20 +439,14 @@ def max_pool_gpu[
     @always_inline
     def load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[output.rank, ...]) register_passable {
-        input,
-    } -> SIMD[
-        dtype, simd_width
-    ]:
+    ](point: IndexList[output.rank, ...]) {input,} -> SIMD[dtype, simd_width]:
         var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
             input.raw_load[width=simd_width](i)
         )
 
     @always_inline
-    def max_pool_compute_init[
-        simd_width: Int
-    ]() register_passable -> SIMD[dtype, simd_width]:
+    def max_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
         return min_or_neg_inf[dtype]()
 
     @always_inline
@@ -462,7 +456,7 @@ def max_pool_gpu[
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) register_passable -> SIMD[dtype, simd_width]:
+    ) -> SIMD[dtype, simd_width]:
         return max(val, result)
 
     @always_inline
@@ -471,14 +465,16 @@ def max_pool_gpu[
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
-    ) register_passable {output, mut}:
+    ) {
+        output, mut
+    }:
         var i = output.layout(Coord(point))
         output.raw_store(i, val)
 
     @always_inline
     def dilation_fn(
         dim: Int,
-    ) register_passable {var dilation_h, var dilation_w,} -> Int:
+    ) {var dilation_h, var dilation_w,} -> Int:
         if dim == 0:
             return dilation_h
         else:
@@ -521,11 +517,11 @@ def avg_pool_cpu[
     rank: Int = 4,
     count_boundary: Bool = False,
 ](
-    input: TileTensor[dtype, ...],
-    filter: TileTensor[int_type, ...],
-    strides: TileTensor[int_type, ...],
-    dilations: TileTensor[int_type, ...],
-    paddings: TileTensor[int_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
 ):
@@ -807,11 +803,11 @@ def avg_pool_gpu[
     count_boundary: Bool = False,
 ](
     ctx: DeviceContext,
-    input: TileTensor[dtype, ...],
-    filter: TileTensor[int_type, ...],
-    strides: TileTensor[int_type, ...],
-    dilations: TileTensor[int_type, ...],
-    paddings: TileTensor[int_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
 ) raises:
@@ -893,7 +889,7 @@ def avg_pool_gpu[
     @always_inline
     def map_fn(
         point: IndexList[stencil_rank, ...],
-    ) register_passable {
+    ) {
         var stride_h,
         var stride_w,
         var padding_h_low,
@@ -916,20 +912,14 @@ def avg_pool_gpu[
     @always_inline
     def load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[output.rank, ...]) register_passable {
-        input,
-    } -> SIMD[
-        dtype, simd_width
-    ]:
+    ](point: IndexList[output.rank, ...]) {input,} -> SIMD[dtype, simd_width]:
         var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
             input.raw_load[width=simd_width](i)
         )
 
     @always_inline
-    def avg_pool_compute_init[
-        simd_width: Int
-    ]() register_passable -> SIMD[dtype, simd_width]:
+    def avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     @always_inline
@@ -939,7 +929,7 @@ def avg_pool_gpu[
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) register_passable -> SIMD[dtype, simd_width]:
+    ) -> SIMD[dtype, simd_width]:
         return val + result
 
     @always_inline
@@ -959,7 +949,7 @@ def avg_pool_gpu[
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
-    ) register_passable {
+    ) {
         output,
         var output_height,
         var padding_h_low,
@@ -991,7 +981,7 @@ def avg_pool_gpu[
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
-    ) register_passable {
+    ) {
         output,
         var pool_window_h,
         var pool_window_w,
@@ -1004,7 +994,7 @@ def avg_pool_gpu[
     @always_inline
     def dilation_fn(
         dim: Int,
-    ) register_passable {var dilation_h, var dilation_w,} -> Int:
+    ) {var dilation_h, var dilation_w,} -> Int:
         if dim == 0:
             return dilation_h
         else:
@@ -1096,11 +1086,11 @@ def avg_pool[
     count_boundary: Bool = False,
     target: StaticString = "cpu",
 ](
-    input: TileTensor[dtype, ...],
-    filter: TileTensor[int_type, ...],
-    strides: TileTensor[int_type, ...],
-    dilations: TileTensor[int_type, ...],
-    paddings: TileTensor[int_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
     ctx: Optional[DeviceContext] = None,
@@ -1130,11 +1120,11 @@ def max_pool[
     int_type: DType,
     target: StaticString = "cpu",
 ](
-    input: TileTensor[dtype, ...],
-    filter: TileTensor[int_type, ...],
-    strides: TileTensor[int_type, ...],
-    dilations: TileTensor[int_type, ...],
-    paddings: TileTensor[int_type, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    filter: TileTensor[mut=False, int_type, ...],
+    strides: TileTensor[mut=False, int_type, ...],
+    dilations: TileTensor[mut=False, int_type, ...],
+    paddings: TileTensor[mut=False, int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
     ctx: Optional[DeviceContext] = None,

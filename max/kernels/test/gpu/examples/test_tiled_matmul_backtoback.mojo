@@ -447,7 +447,6 @@ def b2b_gemm[
         var accum_smem_warp_tile = LayoutTensor[
             accum_type,
             Layout.row_major(WM, WN),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN)
 

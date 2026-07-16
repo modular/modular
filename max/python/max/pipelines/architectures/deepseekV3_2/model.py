@@ -17,16 +17,13 @@ from __future__ import annotations
 import logging
 from typing import Any, ClassVar
 
-import numpy as np
-from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import MultiKVCacheParams
 from max.pipelines.lib import CompilationTimer, PipelineConfig
-from max.pipelines.lib.quant import parse_quant_config
+from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Model
@@ -42,7 +39,6 @@ class DeepseekV3_2Model(DeepseekV3Model):
     model_config_cls: ClassVar[type[Any]] = DeepseekV3_2Config
 
     @classmethod
-    @override
     def _ep_max_rank_send_tokens_for_pipeline(
         cls, pipeline_config: PipelineConfig
     ) -> int:
@@ -73,7 +69,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
             graph_mode = "auto"
 
         dtype = self.dtype
-        if dtype == DType.float8_e4m3fn:
+        if dtype in (DType.float8_e4m3fn, DType.uint8, DType.float4_e2m1fn):
             quant_config = parse_quant_config(config, state_dict, dtype)
         else:
             quant_config = None
@@ -108,9 +104,16 @@ class DeepseekV3_2Model(DeepseekV3Model):
             )
 
             if config.n_shared_experts == 1:
-                # Only enable shared expert fusion if the shared expert is of
-                # the same shape as routed experts.
-                ep_kwargs["fused_shared_expert"] = True
+                # Fuse into EP dispatch only when shared experts use the same
+                # quantized layout as routed experts (modelopt ``*shared_experts*``
+                # ignore leaves them bf16 → separate unfused path).
+                if quant_config is None:
+                    ep_kwargs["fused_shared_expert"] = True
+                else:
+                    ep_kwargs["fused_shared_expert"] = (
+                        quant_config.shared_experts_dtype(DType.bfloat16)
+                        == dtype
+                    )
 
             if quant_config is not None:
                 ep_kwargs["dispatch_quant_config"] = quant_config
@@ -134,7 +137,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
             correction_bias_dtype = None
 
         # Initialize config with parameters from pipeline_config
-        model_config = DeepseekV3_2Config.initialize(self.pipeline_config)
+        model_config = self.model_config_cls.initialize(self.pipeline_config)
 
         # Finalize config with state_dict-dependent parameters
         model_config.norm_dtype = norm_dtype
@@ -145,6 +148,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
         model_config.graph_mode = graph_mode
         model_config.data_parallel_degree = data_parallel_degree
         model_config.return_logits = self.return_logits
+        model_config.return_hidden_states = self.return_hidden_states
 
         if ep_size > 1:
             attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
@@ -159,27 +163,6 @@ class DeepseekV3_2Model(DeepseekV3Model):
     @override
     def load_model(self, session: InferenceSession) -> Model:
         """Load the model with the given weights."""
-
-        max_batch_size = self.pipeline_config.runtime.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        # `_host_input_row_offsets_prealloc` tensor needs to reserve space for
-        # `max_batch_size` of requests on each DP rank.
-        dp_size = self.pipeline_config.model.data_parallel_degree
-        max_batch_size *= dp_size
-
-        self._host_input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        )
-        self._device_input_row_offsets_prealloc = (
-            self._host_input_row_offsets_prealloc.to(self.devices[0])
-        )
-
-        # create batch context lengths tensor for each device
-        self._batch_context_lengths_prealloc_cpu = [
-            Buffer.zeros(shape=[1], dtype=DType.int32)
-            for _ in range(len(self.devices))
-        ]
 
         with CompilationTimer("model") as timer:
             if self.adapter:
@@ -230,28 +213,9 @@ class DeepseekV3_2Model(DeepseekV3Model):
                     for _ in range(len(self.devices))
                 ]
 
-                # Unmarshal the KV cache arguments.
-                assert isinstance(self.kv_params, MultiKVCacheParams)
-                len_of_mla_kv_inputs = len(
-                    self.kv_params.params[0].get_symbolic_inputs().flatten()
-                )
-                mla_kv_caches_per_dev = self._unflatten_kv_inputs(
-                    [
-                        next(variadic_args_iter)
-                        for _ in range(len_of_mla_kv_inputs)
-                    ],
-                    self.kv_params.params[0],
-                )
-
-                len_of_indexer_kv_inputs = len(
-                    self.kv_params.params[1].get_symbolic_inputs().flatten()
-                )
-                indexer_kv_caches_per_dev = self._unflatten_kv_inputs(
-                    [
-                        next(variadic_args_iter)
-                        for _ in range(len_of_indexer_kv_inputs)
-                    ],
-                    self.kv_params.params[1],
+                # Unflatten the whole {mla, indexer} tree.
+                mla_kv_caches_per_dev, indexer_kv_caches_per_dev = (
+                    self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
                 )
 
                 # Unmarshal the batch context lengths
@@ -280,5 +244,12 @@ class DeepseekV3_2Model(DeepseekV3Model):
 
             timer.mark_build_complete()
             model = session.load(graph, weights_registry=nn_model.state_dict())
+
+        if self._batch_processor is not None:
+            bind_ep = getattr(
+                self._batch_processor, "bind_ep_comm_initializer", None
+            )
+            if bind_ep is not None:
+                bind_ep(self.ep_comm_initializer)
 
         return model

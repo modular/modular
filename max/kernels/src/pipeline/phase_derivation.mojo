@@ -65,21 +65,21 @@ struct PhaseStep(ImplicitlyCopyable, Movable):
 
     Specifies what to emit: either infrastructure ops (BARRIER, FENCE) or
     data ops matched from the body by role and predicates (EMIT).
-
-    For EMIT steps:
-      - match_role: required OpRole of body op
-      - match_subtile: -1 = any, else specific subtile value
-      - exclude_lc: True = skip loop-carried ops (subtile == lc.selector)
-      - match_lc_only: True = emit only loop-carried ops
-      - match_all: True = emit ALL matching ops, False = first match only
     """
 
     var action: PhaseAction
+    """Action type for this step (`EMIT`, `BARRIER`, or `FENCE`)."""
     var match_role: OpRole
+    """For `EMIT` steps: required `OpRole` of the body op to match."""
     var match_subtile: Int
+    """For `EMIT` steps: `-1` = any, else a specific subtile value."""
     var exclude_lc: Bool
+    """For `EMIT` steps: skip loop-carried ops (`subtile == lc.selector`)."""
     var match_lc_only: Bool
+    """For `EMIT` steps: emit only loop-carried ops."""
     var match_all: Bool
+    """For `EMIT` steps: emit all matching ops (`True`) or first match only
+    (`False`)."""
 
     @staticmethod
     def emit(
@@ -673,12 +673,12 @@ def apply_edge_rules(
 
     # Half assignment per op.
     @always_inline
-    def _op_half(idx: Int) {mut half} -> Int:
+    def _op_half(idx: Int) {half} -> Int:
         return 0 if idx < half else 1
 
     # _in_half for Phase 1: op at idx is in the half that processes stage.
     @always_inline
-    def _in_half(idx: Int, stage: Int) {mut half} -> Bool:
+    def _in_half(idx: Int, stage: Int) {half} -> Bool:
         return (stage == 0) == (idx < half)
 
     var edges = List[DepEdge]()

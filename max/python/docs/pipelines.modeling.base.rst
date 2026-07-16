@@ -22,34 +22,4 @@ Components
    ComponentModel
    TensorStruct
 
-First-block cache
------------------
 
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   FirstBlockCache
-   FirstBlockCacheState
-
-Denoising cache
----------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   DenoisingCacheConfig
-   DenoisingCacheState
-   TaylorSeer
-   TaylorSeerState
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/function.rst
-
-   fbcache_conditional_execution
-   run_denoising_step

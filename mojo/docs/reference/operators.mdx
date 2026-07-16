@@ -8,8 +8,26 @@ description: >-
 
 ## Precedence table
 
-<!-- Source: ParserBase.h Precedence enum and -->
-<!-- ParserExprs.cpp InfixInfo::get -->
+<!-- VERIFICATION: This page contains reference claims (precedence,
+     traits, dunders) that can't be auto-tested. Verify against
+     compiler/stdlib source before editing or each release:
+
+     Precedence + associativity:
+       KGEN/lib/MojoParser/ParserBase.h (Precedence enum)
+       KGEN/lib/MojoParser/ParserExprs.cpp (InfixInfo::get)
+
+     Equatable/Comparable defaults:
+       oss/modular/mojo/stdlib/std/builtin/comparable.mojo
+
+     Identifiable defaults:
+       oss/modular/mojo/stdlib/std/builtin/identifiable.mojo
+
+     Powable trait:
+       oss/modular/mojo/stdlib/std/math/math.mojo (search "trait Powable")
+
+     Dunder existence:
+       grep stdlib for "def __<opname>__"
+-->
 
 Operator precedence and associativity. Higher-precedence operators bind
 tighter. Unless noted, operators associate left to right.
@@ -148,9 +166,6 @@ instance`, `instance OP= instance`.
 | `**`     | `__pow__()`    | `__rpow__()`      | `__ipow__()`      |
 | `@`      | `__matmul__()` | `__rmatmul__()`   | `__imatmul__()`   |
 
-`__pow__()` and `__ipow__()` accept an optional third argument
-  (modulus).
-
 In-place operators are syntactic sugar for the operator applied to the
 variable with assignment:
 
@@ -255,8 +270,8 @@ Implement the methods directly on your struct to use
 pairwise field comparison. `__ne__()` derives from `__eq__()`.
 
 [`Comparable`](/docs/std/builtin/comparable/Comparable/) provides
-`__le__()`, `__gt__()`, and `__ge__()`, all derived from `__lt__()` and
-`__eq__()`. You implement `__lt__()`.
+`__le__()`, `__gt__()`, and `__ge__()`, all derived from `__lt__()`.
+You implement `__lt__()`.
 
 `Comparable` refines `Equatable`, so conforming to
 `Comparable` requires both traits. If all your fields are

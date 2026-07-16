@@ -122,7 +122,9 @@ def constant(
     return Graph.current._add_op_generated(_mo.ConstantOp, type, attr)[0].tensor
 
 
-def constant_external(name: str, type: TensorType) -> TensorValue:
+def constant_external(
+    name: str, type: TensorType, align: int | None = None
+) -> TensorValue:
     """Registers an external constant (weight) in the graph of a given type.
 
     Two external constants with the same name and type refer to the same weight.
@@ -134,6 +136,8 @@ def constant_external(name: str, type: TensorType) -> TensorValue:
         name: The name of the external constant.
             This should be the fully-qualified weight name and must be unique.
         type: The type of the constant value.
+        align: The alignment of the constant. If not provided,
+            the default alignment for the type's dtype will be used.
 
     Returns:
         A tensor value of the specified type, representing the weight value
@@ -145,7 +149,7 @@ def constant_external(name: str, type: TensorType) -> TensorValue:
         name=name,
         align=_builtin.IntegerAttr(
             _builtin.IntegerType(64, _builtin.SignednessSemantics.unsigned),
-            type.dtype.align,
+            align or type.dtype.align,
         ),
         device=type.device,
         has_alias=False,

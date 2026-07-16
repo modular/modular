@@ -52,16 +52,14 @@ from typing import Any, cast
 from max.driver import DeviceSpec
 from max.examples.diffusion.profiler import profile_execute
 from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
-from max.pipelines.core import PixelContext
+from max.pipelines.context import PixelContext
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.diffusion.interface import DiffusionPipeline
+from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib import PixelGenerationTokenizer
-from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.pipelines.lib.pipeline_variants.pixel_generation import (
-    PixelGenerationPipeline,
-)
-from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
 from max.pipelines.modeling.types import (
     PipelineTask,
     PixelGenerationInputs,
@@ -476,6 +474,8 @@ async def generate_image(args: argparse.Namespace) -> None:
             prefer_module_v3=args.prefer_module_v3,
         ),
     )
+    # Resolve the manifest (encodings + weight paths) before use.
+    config.models.resolve()
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         config.models.main_architecture_name,
         prefer_module_v3=config.runtime.prefer_module_v3,

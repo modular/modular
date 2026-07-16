@@ -18,6 +18,7 @@ import math
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
+import numpy as np
 from max.dtype import DType
 from max.graph import (
     BufferValue,
@@ -29,6 +30,7 @@ from max.graph import (
 )
 from max.support.math import ceildiv
 
+from ..comm import Allreduce
 from ..kernels import (
     flare_mla_prefill_plan,
     mla_decode_graph,
@@ -145,6 +147,18 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         assert quant_config.input_scale.block_size is not None
         self.weight_block_size = quant_config.weight_scale.block_size
         input_k_block = quant_config.input_scale.block_size[1]
+
+        # Granularity at which every per-head K-chunk fits in a single
+        # on-disk scale block. Equals `weight_block_size[0]` when the
+        # per-head row count is a multiple of it; otherwise the GCD of
+        # the residue and the block (e.g. 64 when (Dn + Dv) % 128 != 0).
+        block_m = int(self.weight_block_size[0])
+        per_head = self.qk_nope_head_dim + self.v_head_dim
+        residue = per_head % block_m
+        if residue == 0 and self.qk_nope_head_dim % block_m == 0:
+            self._b_scale_granularity = block_m
+        else:
+            self._b_scale_granularity = math.gcd(residue, block_m)
 
         proj_dtype = DType.float8_e4m3fn
         self.q_a_proj = Weight(
@@ -307,7 +321,67 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         Args:
             strategy: The strategy describing the Module sharding.
         """
-        if strategy.is_replicate:
+        if strategy.is_tensor_parallel:
+            # Tensor parallelism: split the attention heads across devices.
+            #
+            #   fused_qkv_a_proj (q_a_proj + kv_a_proj_with_mqa)  replicated
+            #   q_b_proj                       column-parallel (rowwise on
+            #                                  [N*D_qk, Lq]) -> [N/n*D_qk, Lq]
+            #   kv_b_proj                      column-parallel (rowwise on
+            #                                  [N*(Dn+Dv), Lkv])
+            #   o_proj                         row-parallel (columnwise on
+            #                                  [H, N*Dv]) -> all-reduce over TP
+            #
+            # The per-head row layout of q_b_proj / kv_b_proj is preserved
+            # because n_heads is divisible by num_devices, so an even rowwise
+            # split lands on head boundaries. Each FP8 block-wise scale is
+            # sharded along the same axis as its weight.
+            self._sharding_strategy = strategy
+
+            if self.n_heads % strategy.num_devices != 0:
+                raise ValueError(
+                    f"Number of attention heads ({self.n_heads}) must be"
+                    f" divisible by the number of devices ({strategy.num_devices})."
+                )
+
+            n = strategy.num_devices
+
+            # q_a path (fused with kv_a) is replicated: it projects the full
+            # hidden state down to the LoRA rank before the head split.
+            self.q_a_proj.sharding_strategy = ShardingStrategy.replicate(n)
+            self.q_a_proj_scale.sharding_strategy = ShardingStrategy.replicate(
+                n
+            )
+            self.q_a_layernorm.weight.sharding_strategy = (
+                ShardingStrategy.replicate(n)
+            )
+
+            # q_b projects the LoRA rank up to per-head query dims: shard the
+            # output rows (column-parallel).
+            self.q_b_proj.sharding_strategy = ShardingStrategy.rowwise(n)
+            self.q_b_proj_scale.sharding_strategy = ShardingStrategy.rowwise(n)
+
+            # kv_a path is replicated (shared MQA latent + rope).
+            self.kv_a_proj_layernorm.sharding_strategy = (
+                ShardingStrategy.replicate(n)
+            )
+            self.kv_a_proj_with_mqa.sharding_strategy = (
+                ShardingStrategy.replicate(n)
+            )
+            self.kv_a_proj_with_mqa_scale.sharding_strategy = (
+                ShardingStrategy.replicate(n)
+            )
+
+            # kv_b projects the KV latent up to per-head K/V dims: shard the
+            # output rows (column-parallel).
+            self.kv_b_proj.sharding_strategy = ShardingStrategy.rowwise(n)
+            self.kv_b_proj_scale.sharding_strategy = ShardingStrategy.rowwise(n)
+
+            # o_proj contracts the per-head value dim back to hidden: shard the
+            # input columns (row-parallel). The Linear handles its block-wise
+            # weight scale, which is sharded along the same (K) axis.
+            self.o_proj.sharding_strategy = ShardingStrategy.columnwise(n)
+        elif strategy.is_replicate:
             # Data parallelism: replicate the entire module's weights to each device.
             self._sharding_strategy = strategy
 
@@ -336,7 +410,8 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 )
         else:
             raise ValueError(
-                "Only replicate sharding strategy is supported for LatentAttentionWithRopeFp8"
+                "Only tensor parallel or replicate sharding strategies are "
+                "supported for LatentAttentionWithRopeFp8"
             )
 
     def shard(
@@ -536,59 +611,111 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         )
         return kv_b_proj_weight
 
-    @property
-    def _qk_nope_head_scale_dim(self) -> int:
-        return self.qk_nope_head_dim // self.weight_block_size[0]
+    def _gather_per_head_scale(
+        self, start_row_offset: int, n_rows: int
+    ) -> TensorValue:
+        """Gathers per-head B-scale chunks from the flat on-disk
+        `kv_b_proj_scale` for all heads in a single op.
 
-    @property
-    def _v_head_scale_dim(self) -> int:
-        return self.v_head_dim // self.weight_block_size[0]
+        For each head `h` and chunk `k` of `g` rows, the on-disk
+        scale row is `(h * per_head_row + start_row_offset + k * g) //
+        block_m`. When `block_k > g` (finer-than-on-disk N
+        granularity), gathered cols are replicated by `block_k // g`
+        so the kernel — called with `n/k_scale_granularity = g` —
+        sees a matching block count along the on-disk K axis.
 
-    @property
-    def _kv_b_proj_weight_scale(self) -> TensorValue:
-        """Returns reshaped `kv_b_proj_scale` aligned with `_kv_b_proj_weight`."""
-        kv_b_proj_weight_scale = self.kv_b_proj_scale.transpose(0, 1)
-        kv_b_proj_weight_scale = kv_b_proj_weight_scale.reshape(
-            (self.kv_lora_rank // self.weight_block_size[0], self.n_heads, -1)
+        Returns a `[H, n_chunks, n_cols_kernel]` tensor.
+        """
+        g = self._b_scale_granularity
+        block_m = int(self.weight_block_size[0])
+        block_k = int(self.weight_block_size[1])
+        per_head_row = self.qk_nope_head_dim + self.v_head_dim
+        n_chunks = ceildiv(n_rows, g)
+        heads = np.arange(self.n_heads, dtype=np.int32)
+        chunks = np.arange(n_chunks, dtype=np.int32)
+        row_indices = (
+            (
+                heads[:, None] * per_head_row
+                + start_row_offset
+                + chunks[None, :] * g
+            )
+            // block_m
+        ).reshape(-1)
+        gathered = ops.gather(
+            self.kv_b_proj_scale,
+            ops.constant(
+                row_indices,
+                DType.int32,
+                device=self.kv_b_proj_scale.device,
+            ),
+            axis=0,
         )
-        return kv_b_proj_weight_scale
+        n_cols_on_disk = int(self.kv_b_proj_scale.shape[1])
+        gathered = gathered.reshape((self.n_heads, n_chunks, n_cols_on_disk))
+        col_repeat = block_k // g
+        if col_repeat == 1:
+            return gathered
+        col_indices = np.repeat(
+            np.arange(n_cols_on_disk, dtype=np.int32), col_repeat
+        )
+        return ops.gather(
+            gathered,
+            ops.constant(
+                col_indices,
+                DType.int32,
+                device=self.kv_b_proj_scale.device,
+            ),
+            axis=2,
+        )
 
     @property
     def w_uk(self) -> tuple[TensorValue, TensorValue]:
-        """Returns decode K-projection tensor/scale with shape [H, kv_rank, qk_nope_dim]."""
-        w_uk_base = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
-        w_uk = w_uk_base.transpose(0, 1)
+        """Decode K-up projection: weight `[H, R, Dn]`, scale
+        `[H, R/block_k_kernel, ceildiv(Dn, g)]` after transpose.
 
-        w_uk_scale_base = self._kv_b_proj_weight_scale[
-            ..., : self._qk_nope_head_scale_dim
-        ]
-        w_uk_scale = w_uk_scale_base.transpose(0, 1)
+        The batched FP8 matmul reads `b_scales` as `[H, N_blk,
+        K_blk]`. For `Q @ w_uk` the matmul has `N = R` and
+        `K = Dn`, so the gather returns `[H, K_blk, N_blk]` and we
+        transpose the trailing two axes to match the kernel layout.
+        """
+        w_uk = self._kv_b_proj_weight[..., : self.qk_nope_head_dim].transpose(
+            0, 1
+        )
+        w_uk_scale = self._gather_per_head_scale(
+            start_row_offset=0, n_rows=self.qk_nope_head_dim
+        ).transpose(1, 2)
         return (w_uk, w_uk_scale)
 
     @property
     def w_uv(self) -> tuple[TensorValue, TensorValue]:
-        """Returns decode V-projection tensor/scale with shape [H, v_dim, kv_rank]."""
-        w_uv_base = self._kv_b_proj_weight[..., self.qk_nope_head_dim :]
-        w_uv = w_uv_base.permute([1, 2, 0])
+        """Decode V-up projection: weight `[H, Dv, R]`, scale
+        `[H, ceildiv(Dv, g), R/block_k_kernel]`.
 
-        w_uv_scale_base = self._kv_b_proj_weight_scale[
-            ..., self._qk_nope_head_scale_dim :
-        ]
-        w_uv_scale = w_uv_scale_base.permute([1, 2, 0])
+        For `raw_out @ w_uv`: `N_matmul = Dv`, `K_matmul = R`.
+        The gather chunks `Dv` at granularity `g`, so the rows axis
+        is already `N_blk_matmul` and no transpose is needed.
+        """
+        w_uv = self._kv_b_proj_weight[..., self.qk_nope_head_dim :].permute(
+            [1, 2, 0]
+        )
+        w_uv_scale = self._gather_per_head_scale(
+            start_row_offset=self.qk_nope_head_dim, n_rows=self.v_head_dim
+        )
         return (w_uv, w_uv_scale)
 
     @property
     def w_k(self) -> tuple[TensorValue, TensorValue]:
-        """Returns prefill K-projection tensor/scale with shape [H*qk_nope_dim, kv_rank]."""
-        w_uk_base = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
-        w_k = w_uk_base.permute([1, 2, 0]).reshape((-1, self.kv_lora_rank))
-
-        w_uk_scale_base = self._kv_b_proj_weight_scale[
-            ..., : self._qk_nope_head_scale_dim
-        ]
-        w_k_scale = w_uk_scale_base.permute([1, 2, 0]).reshape(
-            (-1, self.kv_lora_rank // self.weight_block_size[0])
+        """Prefill K-up projection: weight `[H*Dn, R]`, scale
+        `[H*ceildiv(Dn, g), R/block_k_kernel]`."""
+        w_k = (
+            self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
+            .permute([1, 2, 0])
+            .reshape((-1, self.kv_lora_rank))
         )
+        block_k_kernel = self._b_scale_granularity
+        w_k_scale = self._gather_per_head_scale(
+            start_row_offset=0, n_rows=self.qk_nope_head_dim
+        ).reshape((-1, self.kv_lora_rank // block_k_kernel))
         return (w_k, w_k_scale)
 
     def _mla_impl(
@@ -617,6 +744,11 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             "scale": self.scale,
             "v_head_dim": self.v_head_dim,
             "quant_config": self.quant_config,
+            # When the per-head row count straddles the on-disk block,
+            # the kernel must use the finer granularity at which every
+            # per-head K-chunk fits in a single on-disk scale block
+            # instead of the on-disk `weight_scale.block_size`.
+            "scale_granularity_override": self._b_scale_granularity,
         }
 
         w_k, w_k_scale = self.w_k
@@ -650,6 +782,10 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             assert kv_collection.attention_dispatch_metadata is not None
             attn_kwargs["scalar_args"] = (
                 kv_collection.attention_dispatch_metadata
+            )
+            assert kv_collection.mla_num_partitions is not None
+            attn_kwargs["num_partitions_scalar"] = (
+                kv_collection.mla_num_partitions
             )
 
         if self.graph_mode == "prefill":
@@ -713,6 +849,110 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         )
 
         return self.o_proj(attn_out)
+
+
+class TensorParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
+    """Distributed tensor parallel implementation of FP8 Latent Attention with
+    Rope.
+
+    Attention heads are split across devices: ``q_b_proj`` / ``kv_b_proj`` are
+    column-parallel (each device owns ``num_heads / num_devices`` heads) and
+    ``o_proj`` is row-parallel, so a final all-reduce sums the per-device
+    partial outputs. ``q_a_proj`` / ``kv_a_proj_with_mqa`` and the layernorm
+    weights are replicated. Note that, as with the bf16 variant, tensor
+    parallelism duplicates the KV-cache across all devices.
+
+    When ``skip_allreduce`` is True, the final all-reduce is skipped. This is
+    intended for mixed TP-attention + EP-MoE configurations, where the
+    communication is handled explicitly by the caller.
+    """
+
+    def __init__(self, *, skip_allreduce: bool = False, **kwargs) -> None:
+        super().__init__(**kwargs)
+        num_devices = len(self.devices)
+        self.skip_allreduce = skip_allreduce
+        self.sharding_strategy = ShardingStrategy.tensor_parallel(num_devices)
+        self.allreduce = Allreduce(num_devices)
+
+        self.list_of_attentions = self.shard(self.devices)
+
+    def create_mla_prefill_metadata(  # type: ignore[override]
+        self,
+        input_row_offsets_: list[TensorValue],
+        kv_collections: list[PagedCacheValues],
+    ) -> list[MLAPrefillMetadata]:
+        """Creates per-device FP8 MLA prefill metadata for tensor-parallel execution.
+
+        Args:
+            input_row_offsets_: Per-device ragged row offset tensors.
+            kv_collections: Per-device paged KV cache values.
+
+        Returns:
+            A list of :class:`MLAPrefillMetadata` instances, one per device.
+        """
+        multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
+
+        for input_row_offsets, kv_collection in zip(
+            input_row_offsets_, kv_collections, strict=True
+        ):
+            multi_mla_prefill_metadata.append(
+                super().create_mla_prefill_metadata(
+                    input_row_offsets, kv_collection
+                )
+            )
+
+        return multi_mla_prefill_metadata
+
+    def __call__(  # type: ignore[override]
+        self,
+        layer_idx: TensorValue,
+        xs: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+        kv_collections: Sequence[PagedCacheValues],
+        freqs_cis: Sequence[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+        mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
+    ) -> list[TensorValue]:
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+        if len(input_row_offsets) != len(self.devices):
+            raise ValueError(
+                f"Expected {len(self.devices)} input_row_offsets, got {len(input_row_offsets)}"
+            )
+        if not all(isinstance(x, TensorValue) for x in input_row_offsets):
+            raise TypeError(
+                "All elements in input_row_offsets must be TensorValue instances"
+            )
+
+        n = len(self.devices)
+        inputs: list[TensorValue] = []
+        for i in range(n):
+            mla_prefill_metadata_i: MLAPrefillMetadata | None
+            if (
+                mla_prefill_metadata is not None
+                and len(mla_prefill_metadata) == n
+            ):
+                mla_prefill_metadata_i = mla_prefill_metadata[i]
+            else:
+                mla_prefill_metadata_i = None
+            inputs.append(
+                self.list_of_attentions[i](
+                    layer_idx,
+                    xs[i],
+                    kv_collections[i],
+                    freqs_cis=freqs_cis[i],
+                    input_row_offsets=input_row_offsets[i],
+                    mla_prefill_metadata=mla_prefill_metadata_i,
+                )
+            )
+
+        if self.skip_allreduce:
+            return inputs
+
+        return self.allreduce(
+            inputs=inputs,
+            signal_buffers=signal_buffers,
+        )
 
 
 class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):

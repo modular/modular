@@ -14,6 +14,7 @@
 """The module contains implementations of activation functions."""
 
 import std.math
+from std.utils.numerics import get_accum_type
 
 
 # ===----------------------------------------------------------------------=== #
@@ -173,3 +174,183 @@ def leaky_relu[
         dtype.is_floating_point()
     ), "dtype must be a floating point dtype"
     return x.ge(0).select(x, negative_slope * x)
+
+
+# ===----------------------------------------------------------------------=== #
+# sigmoid
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def sigmoid[
+    dtype: DType,
+    simd_width: SIMDSize,
+    accum: DType = get_accum_type[dtype](),
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    """Compute the sigmoid activation using the equation $1 / (1 + e^{-x})$.
+
+    The computation is performed in a higher-precision accumulation type (see
+    `get_accum_type`) for low-precision inputs and cast back to `dtype`, to
+    match the numerics of the graph-level `ops.sigmoid` implementation.
+
+    Parameters:
+        dtype: DType used for the computation.
+        simd_width: SIMD width used for the computation.
+        accum: Higher-precision accumulation dtype used internally; defaults
+            to `get_accum_type[dtype]()`.
+
+    Args:
+        x: The value to compute the sigmoid operation on.
+
+    Constraints:
+        Type must be a floating point Dtype.
+
+    Returns:
+        The result of the sigmoid operation.
+    """
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert accum.is_floating_point(), "accum must be floating point"
+    var x_cast = x.cast[accum]()
+    return (1 / (1 + std.math.exp(-x_cast))).cast[dtype]()
+
+
+# ===----------------------------------------------------------------------=== #
+# silu
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def silu[
+    dtype: DType,
+    simd_width: SIMDSize,
+    accum: DType = get_accum_type[dtype](),
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    """Compute the SiLU (Swish) activation using the equation
+    $x * sigmoid(x)$.
+
+    Parameters:
+        dtype: DType used for the computation.
+        simd_width: SIMD width used for the computation.
+        accum: Higher-precision accumulation dtype used internally; defaults
+            to `get_accum_type[dtype]()`.
+
+    Args:
+        x: The value to compute the SiLU operation on.
+
+    Constraints:
+        Type must be a floating point Dtype.
+
+    Returns:
+        The result of the SiLU operation.
+    """
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert accum.is_floating_point(), "accum must be floating point"
+    var x_cast = x.cast[accum]()
+    return (x_cast * (1 / (1 + std.math.exp(-x_cast)))).cast[dtype]()
+
+
+# ===----------------------------------------------------------------------=== #
+# gelu
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def gelu[
+    dtype: DType,
+    simd_width: SIMDSize,
+    accum: DType = get_accum_type[dtype](),
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    """Compute the exact GELU activation using the equation
+    $0.5 * x * (1 + erf(x / sqrt(2)))$.
+
+    Parameters:
+        dtype: DType used for the computation.
+        simd_width: SIMD width used for the computation.
+        accum: Higher-precision accumulation dtype used internally; defaults
+            to `get_accum_type[dtype]()`.
+
+    Args:
+        x: The value to compute the GELU operation on.
+
+    Constraints:
+        Type must be a floating point Dtype.
+
+    Returns:
+        The result of the exact GELU operation.
+    """
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert accum.is_floating_point(), "accum must be floating point"
+    var x_cast = x.cast[accum]()
+    return (
+        0.5 * x_cast * (1 + std.math.erf(x_cast / 1.4142135623730951))
+    ).cast[dtype]()
+
+
+@always_inline
+def gelu_tanh[
+    dtype: DType,
+    simd_width: SIMDSize,
+    accum: DType = get_accum_type[dtype](),
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    """Compute the tanh approximation of the GELU activation:
+    $0.5 * x * (1 + tanh(0.7978845608028654 * (x + 0.044715 * x^3)))$.
+
+    Parameters:
+        dtype: DType used for the computation.
+        simd_width: SIMD width used for the computation.
+        accum: Higher-precision accumulation dtype used internally; defaults
+            to `get_accum_type[dtype]()`.
+
+    Args:
+        x: The value to compute the tanh-GELU operation on.
+
+    Constraints:
+        Type must be a floating point Dtype.
+
+    Returns:
+        The result of the tanh-GELU operation.
+    """
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert accum.is_floating_point(), "accum must be floating point"
+    var x_cast = x.cast[accum]()
+    return (
+        x_cast
+        * 0.5
+        * (
+            1.0
+            + std.math.tanh(
+                0.7978845608028654
+                * (x_cast + 0.044715 * x_cast * x_cast * x_cast)
+            )
+        )
+    ).cast[dtype]()
+
+
+@always_inline
+def gelu_quick[
+    dtype: DType,
+    simd_width: SIMDSize,
+    accum: DType = get_accum_type[dtype](),
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    """Compute the quick (sigmoid) approximation of the GELU activation:
+    $x * sigmoid(1.702 * x)$.
+
+    Parameters:
+        dtype: DType used for the computation.
+        simd_width: SIMD width used for the computation.
+        accum: Higher-precision accumulation dtype used internally; defaults
+            to `get_accum_type[dtype]()`.
+
+    Args:
+        x: The value to compute the quick-GELU operation on.
+
+    Constraints:
+        Type must be a floating point Dtype.
+
+    Returns:
+        The result of the quick-GELU operation.
+    """
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert accum.is_floating_point(), "accum must be floating point"
+    var x_cast = x.cast[accum]()
+    return (x_cast * (1 / (1 + std.math.exp(-(1.702 * x_cast))))).cast[dtype]()

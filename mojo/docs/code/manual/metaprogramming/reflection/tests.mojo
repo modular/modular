@@ -57,7 +57,7 @@ def test_reflect_field_types() raises:
     """Returns field types iterable with reflect."""
     comptime types = reflect[Point].field_types()
     comptime first_type_name = reflect[types[0]].name()
-    assert_equal(first_type_name, "Int")
+    assert_equal(first_type_name, "SIMD[DType.int, 1]")
 
 
 # --- base_name ---
@@ -71,7 +71,7 @@ def test_base_name_parameterized() raises:
 
 def test_base_name_simple() raises:
     """Returns simple name for non-parameterized type."""
-    assert_equal(reflect[Int].base_name(), "Int")
+    assert_equal(reflect[Int].base_name(), "SIMD")
 
 
 # --- is_struct ---
@@ -108,10 +108,14 @@ def diff_fields[T: AnyType](a: T, b: T) -> List[String]:
         comptime if not conforms_to(types[idx], Equatable):
             continue
 
+        # TODO(MOCO-4206): Remove redundant assertion after type refinement
+        #   following early `continue` is fixed.
+        comptime assert conforms_to(types[idx], Equatable)
+
         ref a_val = reflect[T].field_ref[idx](a)
         ref b_val = reflect[T].field_ref[idx](b)
 
-        if trait_downcast[Equatable](a_val) != trait_downcast[Equatable](b_val):
+        if a_val != b_val:
             diffs.append(String(names[idx]))
 
     return diffs^
@@ -152,7 +156,7 @@ def test_diff_fields_single_field() raises:
     assert_equal(changes[0], "timeout")
 
 
-# --- conforms_to and trait_downcast ---
+# --- conforms_to type refinement ---
 
 
 def test_conforms_to_positive() raises:
@@ -160,29 +164,29 @@ def test_conforms_to_positive() raises:
     assert_true(conforms_to(Int, Equatable))
 
 
-def test_trait_downcast_equality() raises:
+def test_reflection_equality() raises:
     """Enables trait operations on reflected fields."""
     var p1 = Point(x=1, y=2.0)
     var p2 = Point(x=1, y=2.0)
     ref lhs = reflect[Point].field_ref[0](p1)
     ref rhs = reflect[Point].field_ref[0](p2)
-    var equal = trait_downcast[Equatable](lhs) == trait_downcast[Equatable](rhs)
+    var equal = lhs == rhs
     assert_true(equal)
 
 
-def test_trait_downcast_inequality() raises:
+def test_reflection_inequality() raises:
     """Detects differing field values."""
     var p1 = Point(x=1, y=2.0)
     var p2 = Point(x=1, y=9.0)
     ref lhs = reflect[Point].field_ref[1](p1)
     ref rhs = reflect[Point].field_ref[1](p2)
-    var equal = trait_downcast[Equatable](lhs) == trait_downcast[Equatable](rhs)
+    var equal = lhs == rhs
     assert_true(not equal)
 
 
-struct ConditionalCopyableWrapper[T: ImplicitlyDestructible & Movable](
+struct ConditionalCopyableWrapper[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     var value: Self.T
@@ -193,18 +197,16 @@ struct ConditionalCopyableWrapper[T: ImplicitlyDestructible & Movable](
 
     # Copy initializer
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
-        self.value = rebind_var[Self.T](
-            trait_downcast[Copyable](copy.value).copy()
-        )
+        self.value = copy.value.copy()
 
 
-# All structs are inherently `ImplicitlyDestructible`
+# All structs are inherently `ImplicitlyDeletable`
 @fieldwise_init
 struct NotCopyable(Movable):
     pass
 
 
-def test_trait_downcast_copy_constructor() raises:
+def test_reflection_copy_constructor() raises:
     """Rebind for conditional conformance."""
     var i = ConditionalCopyableWrapper(42)
     var i_copy = ConditionalCopyableWrapper(copy=i)
@@ -244,15 +246,19 @@ trait MakeCopyable:
 
         comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
-            comptime if not conforms_to(field_type, Copyable):
+            comptime if not conforms_to(
+                field_type, Copyable & ImplicitlyDeletable
+            ):
                 continue
 
+            # TODO(MOCO-4206): Remove redundant assertion after type refinement
+            #   following early `continue` is fixed.
+            comptime assert conforms_to(
+                field_type, Copyable & ImplicitlyDeletable
+            )
+
             ref p_value = reflect[Self].field_ref[idx](self)
-            trait_downcast[Copyable & ImplicitlyDestructible](
-                reflect[Self].field_ref[idx](other)
-            ) = trait_downcast[Copyable & ImplicitlyDestructible](
-                p_value
-            ).copy()
+            reflect[Self].field_ref[idx](other) = p_value.copy()
 
 
 @fieldwise_init
@@ -289,9 +295,9 @@ def test_copy_to_independent() raises:
 # --- Accessing fields by name ---
 
 
-def test_field_type_by_name() raises:
+def test_field_by_name() raises:
     """Returns a Reflected handle for the field; .T is usable."""
-    comptime host_handle = reflect[Config].field_type["host"]
+    comptime host_handle = reflect[Config].field["host"]
     var default_host: host_handle.T = "localhost"
     assert_equal(default_host, "localhost")
 
@@ -467,11 +473,11 @@ def main() raises:
     test_diff_fields_all_different()
     test_diff_fields_single_field()
 
-    # conforms_to and trait_downcast
+    # conforms_to type refinement
     test_conforms_to_positive()
-    test_trait_downcast_equality()
-    test_trait_downcast_inequality()
-    test_trait_downcast_copy_constructor()
+    test_reflection_equality()
+    test_reflection_inequality()
+    test_reflection_copy_constructor()
 
     # field_ref
     test_field_ref_read()
@@ -482,7 +488,7 @@ def main() raises:
     test_copy_to_independent()
 
     # Accessing fields by name
-    test_field_type_by_name()
+    test_field_by_name()
     test_field_index_by_name()
 
     # Field layout

@@ -721,7 +721,7 @@ class FunctionToolParam(BaseModel):
     name: str = Field(
         ...,
         description="The name of the function to be called. Must be a-z, A-Z, 0-9, "
-        "or contain underscores and dashes, with a maximum length of 64.",
+        "or contain underscores and dashes, with a maximum length of 1024.",
     )
     description: str | None = Field(
         None,
@@ -1565,7 +1565,7 @@ class ResponseResource(BaseModel):
             an assistant message in the output field.
 
         Example:
-            >>> from max.pipelines.modeling.types.generation import GenerationOutput
+            >>> from max.pipelines.context import GenerationOutput
             >>> from max.pipelines.request import RequestID
             >>> from max.pipelines.request.open_responses import OutputImageContent
             >>> from max.pipelines.modeling.types.status import GenerationStatus

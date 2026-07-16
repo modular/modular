@@ -20,20 +20,87 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import PIL.Image
-from max.pipelines.core import PixelContext
+from max.pipelines.context import PixelContext, TokenBuffer
+from max.pipelines.context.exceptions import InputError, PromptTooLongError
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.pixel_tokenizer import (
     PipelineClassName,
     PixelGenerationTokenizer,
     run_with_default_executor,
 )
-from max.pipelines.modeling.types import TokenBuffer
 from max.pipelines.request import OpenResponsesRequest
 from max.pipelines.request.provider_options import ImageProviderOptions
 
 from .system_messages import SYSTEM_MESSAGE, format_input, format_input_klein
 
 logger = logging.getLogger("max.pipelines")
+
+# Distilled FLUX.2-Klein is trained for exactly this many denoising steps;
+# other values produce incoherent images.
+_DISTILLED_KLEIN_NUM_STEPS: int = 4
+
+
+def tokenize_klein_text(
+    delegate: Any,
+    prompt: str,
+    max_length: int | None,
+    add_special_tokens: bool = True,
+) -> Any:
+    """Apply the FLUX.2-Klein tokenization recipe to a single prompt.
+
+    Wraps the prompt as a user-only message via ``format_input_klein``,
+    applies the Qwen3 chat template with ``add_generation_prompt=True``
+    and ``enable_thinking=False`` when supported, then encodes. When
+    ``max_length`` is set the result is padded/truncated to that length;
+    otherwise the result has the prompt's natural length.
+
+    Raises ``PromptTooLongError`` if the natural-length tokenization exceeds
+    ``max_length`` (rather than silently truncating).
+
+    Shared by ``Flux2Tokenizer.encode`` (production) and the
+    ``run_max_text_encoder`` verification harness so both paths tokenize
+    identically.
+    """
+    messages_batch = format_input_klein(prompts=[prompt], images=None)
+    kwargs = dict(
+        add_generation_prompt=True,
+        tokenize=False,
+    )
+    try:
+        prompt_text = delegate.apply_chat_template(
+            messages_batch[0],
+            enable_thinking=False,
+            **kwargs,
+        )
+    except TypeError:
+        prompt_text = delegate.apply_chat_template(
+            messages_batch[0],
+            **kwargs,
+        )
+    raw_ids = delegate.encode(
+        prompt_text, add_special_tokens=add_special_tokens
+    )
+    if max_length and len(raw_ids) > max_length:
+        raise PromptTooLongError(
+            len(raw_ids),
+            max_length,
+            limit_description="text encoder's maximum sequence length",
+        )
+
+    if max_length is None:
+        return delegate(
+            prompt_text,
+            add_special_tokens=add_special_tokens,
+            return_attention_mask=True,
+        )
+    return delegate(
+        prompt_text,
+        padding="max_length",
+        max_length=max_length,
+        truncation=True,
+        add_special_tokens=add_special_tokens,
+        return_attention_mask=True,
+    )
 
 
 class Flux2Tokenizer(PixelGenerationTokenizer):
@@ -66,6 +133,16 @@ class Flux2Tokenizer(PixelGenerationTokenizer):
             scheduler_config_overrides={"use_empirical_mu": True},
         )
         self._max_pixel_size = 1024 * 1024
+
+        self._is_distilled_klein = (
+            self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN
+            and bool(self._manifest_metadata.get("is_distilled", False))
+        )
+        # Distilled FLUX.2-Klein is trained for exactly
+        # ``_DISTILLED_KLEIN_NUM_STEPS`` steps; override the executor-level
+        # default so requests that omit ``steps`` pick up the right value.
+        if self._is_distilled_klein:
+            self._default_num_inference_steps = _DISTILLED_KLEIN_NUM_STEPS
 
     @staticmethod
     def _build_text_ids(batch_size: int, seq_len: int) -> npt.NDArray[np.int64]:
@@ -148,11 +225,10 @@ class Flux2Tokenizer(PixelGenerationTokenizer):
                     else len(precheck_ids)
                 )
                 if max_sequence_length and precheck_len > max_sequence_length:
-                    raise ValueError(
-                        f"Prompt is too long for this model's text"
-                        f" encoder: {precheck_len} tokens exceeds"
-                        f" the maximum of {max_sequence_length}"
-                        " tokens. Please shorten your prompt."
+                    raise PromptTooLongError(
+                        precheck_len,
+                        max_sequence_length,
+                        limit_description="text encoder's maximum sequence length",
                     )
 
                 return delegate.apply_chat_template(
@@ -167,44 +243,11 @@ class Flux2Tokenizer(PixelGenerationTokenizer):
                     return_overflowing_tokens=False,
                 )
             elif self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
-                messages_batch = format_input_klein(
-                    prompts=[prompt_str],
-                    images=None,
-                )
-                kwargs = dict(
-                    add_generation_prompt=True,
-                    tokenize=False,
-                )
-                try:
-                    prompt_text = delegate.apply_chat_template(
-                        messages_batch[0],
-                        enable_thinking=False,
-                        **kwargs,
-                    )
-                except TypeError:
-                    prompt_text = delegate.apply_chat_template(
-                        messages_batch[0],
-                        **kwargs,
-                    )
-                raw_ids = delegate.encode(
-                    prompt_text,
-                    add_special_tokens=add_special_tokens,
-                )
-                if max_sequence_length and len(raw_ids) > max_sequence_length:
-                    raise ValueError(
-                        f"Prompt is too long for this model's text"
-                        f" encoder: {len(raw_ids)} tokens exceeds"
-                        f" the maximum of {max_sequence_length}"
-                        " tokens. Please shorten your prompt."
-                    )
-
-                return delegate(
-                    prompt_text,
-                    padding="max_length",
+                return tokenize_klein_text(
+                    delegate,
+                    prompt_str,
                     max_length=max_sequence_length,
-                    truncation=True,
                     add_special_tokens=add_special_tokens,
-                    return_attention_mask=True,
                 )
             else:
                 raise ValueError(
@@ -269,9 +312,10 @@ class Flux2Tokenizer(PixelGenerationTokenizer):
             max_sequence_length is not None
             and input_ids_array.shape[1] > max_sequence_length
         ):
-            raise ValueError(
-                "Input string is larger than tokenizer's max length "
-                f"({input_ids_array.shape[1]} > {max_sequence_length})."
+            raise PromptTooLongError(
+                input_ids_array.shape[1],
+                max_sequence_length,
+                limit_description="text encoder's maximum sequence length",
             )
 
         encoded_prompt = input_ids_array[0].astype(np.int64, copy=False)
@@ -320,12 +364,18 @@ class Flux2Tokenizer(PixelGenerationTokenizer):
             )
 
         if self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
-            is_distilled_klein = bool(
-                self._manifest_metadata.get("is_distilled", False)
-            )
+            if (
+                self._is_distilled_klein
+                and pixel_options.steps is not None
+                and pixel_options.steps != _DISTILLED_KLEIN_NUM_STEPS
+            ):
+                raise InputError(
+                    f"FLUX.2-Klein distilled requires steps="
+                    f"{_DISTILLED_KLEIN_NUM_STEPS} (got {pixel_options.steps})."
+                )
             # for non-distilled models, CFG is enabled
             # whenever guidance_scale > 1.0; negative prompt defaults to "".
-            do_true_cfg = guidance_scale > 1.0 and not is_distilled_klein
+            do_true_cfg = guidance_scale > 1.0 and not self._is_distilled_klein
         else:
             do_true_cfg = (
                 pixel_options.true_cfg_scale > 1.0
@@ -481,4 +531,5 @@ class Flux2Tokenizer(PixelGenerationTokenizer):
             model_name=request.body.model,
             input_image=preprocessed_image_array,
             output_format=image_specific.output_format,
+            seed=request.body.seed,
         )

@@ -23,7 +23,7 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     IdentityPipelineTokenizer,
@@ -90,9 +90,7 @@ async def test_client(app: FastAPI) -> AsyncGenerator[TestClient, None]:
 @async_timeout(10)
 async def test_reset_prefix_cache(test_client: TestClient) -> None:
     # Don't use hardcoded endpoint, since it collides during parallel test runs
-    zmq_endpoint_base = (
-        test_client.application.state.pipeline_config.runtime.zmq_endpoint_base
-    )
+    zmq_endpoint_base = test_client.application.state.zmq_endpoint_base
     reset_prefix_cache_backend = ResetPrefixCacheBackend(
         zmq_endpoint_base=zmq_endpoint_base
     )

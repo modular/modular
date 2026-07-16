@@ -14,16 +14,17 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import click
 import pytest
 from click.testing import CliRunner
+from max._entrypoints.cli.config import config_to_flag, pipeline_config_options
 from max.config import ConfigFileModel
 from max.config.config_file_model import _resolve_config_file
 from max.driver import DeviceSpec
-from max.entrypoints.cli.config import config_to_flag, pipeline_config_options
 from max.pipelines.lib import PipelineConfig
 from pydantic import Field
 from pytest import MonkeyPatch
@@ -107,7 +108,7 @@ def test_implicit_devices_do_not_override_config(
 ) -> None:
     """Absent --devices leaves device_specs to config or model defaults."""
     monkeypatch.setattr(
-        "max.entrypoints.cli.config.DevicesOptionType.device_specs",
+        "max._entrypoints.cli.config.DevicesOptionType.device_specs",
         staticmethod(lambda devices: [devices]),
     )
 
@@ -122,7 +123,7 @@ def test_implicit_devices_use_default_without_config(
 ) -> None:
     """Absent --devices lets MAXModelConfig use its Pydantic default."""
     monkeypatch.setattr(
-        "max.entrypoints.cli.config.DevicesOptionType.device_specs",
+        "max._entrypoints.cli.config.DevicesOptionType.device_specs",
         staticmethod(lambda devices: [devices]),
     )
 
@@ -136,7 +137,7 @@ def test_explicit_devices_still_override_config_file(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "max.entrypoints.cli.config.DevicesOptionType.device_specs",
+        "max._entrypoints.cli.config.DevicesOptionType.device_specs",
         staticmethod(lambda devices: [devices]),
     )
 
@@ -153,7 +154,7 @@ def test_explicit_devices_inherited_by_draft_devices(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "max.entrypoints.cli.config.DevicesOptionType.device_specs",
+        "max._entrypoints.cli.config.DevicesOptionType.device_specs",
         staticmethod(lambda devices: [devices]),
     )
 
@@ -204,18 +205,91 @@ def test_cli_overrides_yaml_recipe_values(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    config = PipelineConfig(  # type: ignore[call-arg]
+    config = PipelineConfig.from_flat_kwargs(
         config_file=str(config_path),
         device_specs=[DeviceSpec(i, "gpu") for i in range(4)],
         data_parallel_degree=4,
         ep_size=4,
-        defer_resolve=True,
     )
 
     main = config.models["main"]
     assert len(main.device_specs) == 4
     assert main.data_parallel_degree == 4
     assert config.runtime.ep_size == 4
+
+
+def test_model_path_override_preserves_yaml_recipe_fields(
+    tmp_path: Path,
+) -> None:
+    """Regression: --model-path must merge into (not replace) a YAML-loaded
+    model manifest, preserving other recipe-set fields like device_specs."""
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(
+        "model:\n"
+        "  model_path: fake/original-model\n"
+        "  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]\n"
+        "  data_parallel_degree: 2\n"
+        "runtime:\n"
+        "  ep_size: 8\n",
+        encoding="utf-8",
+    )
+
+    config = PipelineConfig.from_flat_kwargs(
+        config_file=str(config_path),
+        model_path="fake/override-model",
+    )
+
+    main = config.models["main"]
+    assert main.model_path == "fake/override-model"
+    # The rest of the recipe must survive the model_path override.
+    assert len(main.device_specs) == 8
+    assert main.data_parallel_degree == 2
+    assert config.runtime.ep_size == 8
+
+
+def test_model_path_override_warns_about_mismatched_recipe(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """--model-path differing from the recipe's model_path logs a warning."""
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(
+        "model:\n  model_path: fake/original-model\n",
+        encoding="utf-8",
+    )
+
+    with caplog.at_level(logging.WARNING, logger="max.pipelines"):
+        PipelineConfig.from_flat_kwargs(
+            config_file=str(config_path),
+            model_path="fake/override-model",
+        )
+
+    assert any(
+        "fake/original-model" in rec.message
+        and "fake/override-model" in rec.message
+        for rec in caplog.records
+    )
+
+
+def test_model_path_matching_recipe_does_not_warn(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """--model-path matching the recipe's own model_path is a no-op, not a
+    mismatch, so it should not warn."""
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(
+        "model:\n  model_path: fake/same-model\n",
+        encoding="utf-8",
+    )
+
+    with caplog.at_level(logging.WARNING, logger="max.pipelines"):
+        PipelineConfig.from_flat_kwargs(
+            config_file=str(config_path),
+            model_path="fake/same-model",
+        )
+
+    assert caplog.records == []
 
 
 def test_config_file_with_builtin_recipe_prefix() -> None:

@@ -24,12 +24,7 @@ from std.sys import (
 import linalg.matmul.vendor.blas as vendor_blas
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, row_major, coord_to_index_list
 from layout._fillers import arange as arange, random
 from linalg.matmul.gpu import _matmul_gpu, multistage_gemm
 from linalg.utils_gpu import MatmulConfig
@@ -41,7 +36,7 @@ from std.utils.index import Index
 
 
 comptime epilogue_func_type = def[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
 ](IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
     dtype, width
 ]
@@ -50,7 +45,7 @@ comptime epilogue_func_type = def[
 @parameter
 @always_inline
 def epilogue_test_fn[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
 ](
     idx: IndexList[2],
     dim_space: IndexList[2],
@@ -192,7 +187,7 @@ def test[
     @__copy_capture(c_device, m, n)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -264,29 +259,25 @@ def test[
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     @always_inline
-    @__copy_capture(c_device_ref, m, n)
-    @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[2]](idx0)
-
-        var val = c_device_ref.load_linear[width=simd_width](idx)
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
+        var val = c_device_ref.load[width=simd_width](idx0)
 
         var update_val = val
 
         comptime if lambda_fn:
             comptime element_lambda = lambda_fn.value()
-            update_val = element_lambda(idx, (m, n), val)
+            update_val = element_lambda(
+                rebind[IndexList[2]](coord_to_index_list(idx0)), (m, n), val
+            )
 
-        c_device_ref.store_linear[alignment=alignment * size_of[dtype]()](
-            idx,
-            update_val,
+        c_device_ref.store[alignment=alignment * size_of[dtype]()](
+            idx0, update_val
         )
 
     comptime if lambda_fn:
-        elementwise[func, pack_size, target="gpu"](
-            IndexList[2](m, n),
+        elementwise[pack_size, target="gpu"](
+            func,
+            (m, n),
             ctx,
         )
     ctx.synchronize()

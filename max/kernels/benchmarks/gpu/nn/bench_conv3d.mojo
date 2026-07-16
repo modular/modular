@@ -30,7 +30,7 @@ Usage (kbench):
 
 from std.math import ceildiv
 from std.random import rand
-from std.sys import get_defined_dtype, get_defined_int, get_defined_string
+from std.sys import get_defined_dtype, get_defined_int
 from std.sys.info import has_amd_gpu_accelerator
 
 from std.benchmark import (
@@ -54,6 +54,7 @@ from layout import (
     row_major,
 )
 from nn.conv.conv import conv3d_gpu_naive_ndhwc_qrscf, conv3d_cudnn, conv_miopen
+from nn.conv.gpu.amd.dispatch_3d import dispatch_amd_4wave_conv3d
 from nn.conv.gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
 from nn.conv.gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
 from nn.conv.gpu.nvidia.sm100.qslice_conv3d import (
@@ -88,11 +89,11 @@ def bench_conv3d[
     filter_q: Int,
     filter_r: Int,
     filter_s: Int,
-    impl: StaticString,
 ](
     ctx: DeviceContext,
     mut b: Bench,
     label: String,
+    impl: String,
     verify: Bool,
     pad_d: Int,
     pad_h: Int,
@@ -283,7 +284,7 @@ def bench_conv3d[
     # Probe dispatcher-based impls once. On decline, raise so kbench logs
     # this (impl, shape) as failed instead of timing a no-op (which would
     # otherwise look fastest in the CSV).
-    comptime if impl == "im2col":
+    if impl == "im2col":
         var accepted = dispatch_im2col_matmul_conv3d(
             input_tt,
             filter_qrscf_tt,
@@ -316,23 +317,62 @@ def bench_conv3d[
                 "dispatch_1x1x1_matmul_conv3d declined: " + bench_input_id
             )
     elif impl == "qslice":
-        var accepted = dispatch_qslice_conv3d_sm100(
-            input_tt,
-            filter_qrscf_tt,
-            output_tt,
-            stride_idx,
-            dilation_idx,
-            pad_idx,
-            1,
-            ctx,
-        )
-        ctx.synchronize()
-        if not accepted:
-            raise Error(
-                "dispatch_qslice_conv3d_sm100 declined: " + bench_input_id
+        comptime if not has_amd_gpu_accelerator():
+            var accepted = dispatch_qslice_conv3d_sm100(
+                input_tt,
+                filter_qrscf_tt,
+                output_tt,
+                stride_idx,
+                dilation_idx,
+                pad_idx,
+                1,
+                ctx,
             )
+            ctx.synchronize()
+            if not accepted:
+                raise Error(
+                    "dispatch_qslice_conv3d_sm100 declined: " + bench_input_id
+                )
+        else:
+            raise Error(
+                "impl=qslice is SM100-only; use native_3d on AMD: "
+                + bench_input_id
+            )
+    elif impl == "native_3d":
+        comptime if has_amd_gpu_accelerator():
+            # Autotune-override knobs (0 = use the dispatcher's
+            # built-in heuristic). Pass via `-D BM_OVERRIDE=64` etc
+            # to sweep configs for the per-shape dispatch table.
+            comptime _BM_OVERRIDE = get_defined_int["BM_OVERRIDE", 0]()
+            comptime _BN_OVERRIDE = get_defined_int["BN_OVERRIDE", 0]()
+            comptime _BK_OVERRIDE = get_defined_int["BK_OVERRIDE", 0]()
+            var accepted = dispatch_amd_4wave_conv3d[
+                input_type=dtype,
+                filter_type=dtype,
+                output_type=dtype,
+                filter_is_fcqrs=False,
+                block_m_override=_BM_OVERRIDE,
+                block_n_override=_BN_OVERRIDE,
+                block_k_override=_BK_OVERRIDE,
+            ](
+                input_tt,
+                filter_qrscf_tt,
+                output_tt,
+                stride_idx,
+                dilation_idx,
+                pad_idx,
+                1,
+                ctx,
+            )
+            ctx.synchronize()
+            if not accepted:
+                raise Error(
+                    "dispatch_amd_4wave_conv3d declined: " + bench_input_id
+                )
+        else:
+            raise Error("impl=native_3d is AMD-only: " + bench_input_id)
 
-    comptime if impl == "im2col":
+    if impl == "im2col":
 
         @parameter
         @always_inline
@@ -385,31 +425,70 @@ def bench_conv3d[
             [ThroughputMeasure(BenchMetric.flops, flops)],
         )
     elif impl == "qslice":
+        comptime if not has_amd_gpu_accelerator():
 
-        @parameter
-        @always_inline
-        @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
-        def qslice_bench(mut bencher: Bencher) raises:
             @parameter
             @always_inline
-            def kernel(ctx: DeviceContext) raises:
-                _ = dispatch_qslice_conv3d_sm100(
-                    input_tt,
-                    filter_qrscf_tt,
-                    output_tt,
-                    stride_idx,
-                    dilation_idx,
-                    pad_idx,
-                    1,
-                    ctx,
-                )
+            @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
+            def qslice_bench(mut bencher: Bencher) raises:
+                @parameter
+                @always_inline
+                def kernel(ctx: DeviceContext) raises:
+                    _ = dispatch_qslice_conv3d_sm100(
+                        input_tt,
+                        filter_qrscf_tt,
+                        output_tt,
+                        stride_idx,
+                        dilation_idx,
+                        pad_idx,
+                        1,
+                        ctx,
+                    )
 
-            bencher.iter_custom[kernel](ctx)
+                bencher.iter_custom[kernel](ctx)
 
-        b.bench_function[qslice_bench](
-            BenchId("conv3d_qslice", input_id=bench_input_id),
-            [ThroughputMeasure(BenchMetric.flops, flops)],
-        )
+            b.bench_function[qslice_bench](
+                BenchId("conv3d_qslice", input_id=bench_input_id),
+                [ThroughputMeasure(BenchMetric.flops, flops)],
+            )
+    elif impl == "native_3d":
+        comptime if has_amd_gpu_accelerator():
+            comptime _BM_OVERRIDE = get_defined_int["BM_OVERRIDE", 0]()
+            comptime _BN_OVERRIDE = get_defined_int["BN_OVERRIDE", 0]()
+            comptime _BK_OVERRIDE = get_defined_int["BK_OVERRIDE", 0]()
+
+            @parameter
+            @always_inline
+            @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
+            def native_3d_bench(mut bencher: Bencher) raises:
+                @parameter
+                @always_inline
+                def kernel(ctx: DeviceContext) raises:
+                    _ = dispatch_amd_4wave_conv3d[
+                        input_type=dtype,
+                        filter_type=dtype,
+                        output_type=dtype,
+                        filter_is_fcqrs=False,
+                        block_m_override=_BM_OVERRIDE,
+                        block_n_override=_BN_OVERRIDE,
+                        block_k_override=_BK_OVERRIDE,
+                    ](
+                        input_tt,
+                        filter_qrscf_tt,
+                        output_tt,
+                        stride_idx,
+                        dilation_idx,
+                        pad_idx,
+                        1,
+                        ctx,
+                    )
+
+                bencher.iter_custom[kernel](ctx)
+
+            b.bench_function[native_3d_bench](
+                BenchId("conv3d_native_3d", input_id=bench_input_id),
+                [ThroughputMeasure(BenchMetric.flops, flops)],
+            )
     elif impl == "cudnn":
         comptime if has_amd_gpu_accelerator():
 
@@ -570,9 +649,11 @@ def main() raises:
     comptime Q = get_defined_int["Q", 3]()
     comptime R = get_defined_int["R", 3]()
     comptime S = get_defined_int["S", 3]()
-    comptime impl = get_defined_string["impl", "naive"]()
 
     var label = arg_parse("label", String("conv3d"))
+    # impl selects the kernel path at runtime so one compiled binary covers
+    # all (naive, im2col, 1x1x1, qslice, native_3d, cudnn) options.
+    var impl = arg_parse("impl", String("naive"))
     var verify = arg_parse("verify", False)
     # pad / stride flow into the kernels as runtime IndexLists, so reading
     # them via arg_parse instead of get_defined_int avoids spinning up a
@@ -607,11 +688,11 @@ def main() raises:
             Q,
             R,
             S,
-            impl,
         ](
             ctx,
             m,
             label,
+            impl,
             verify,
             pad_d,
             pad_h,

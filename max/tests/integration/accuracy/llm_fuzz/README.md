@@ -164,14 +164,15 @@ These require the `openai` Python package, which Bazel provides automatically.
 
 Run with `--model-profile kimi-k2.5` or `--model-profile glm-5.1`.
 
-| Scenario          | Model     | Tests | What it validates                                  |
-|-------------------|-----------|-------|----------------------------------------------------|
-| `kimi_battle`     | Kimi K2.5 | 15    | xgrammar edge cases, parallel TCs, structural tags |
-| `kimi_3am`        | Kimi K2.5 | 12    | Production edge cases, soak tests, precision       |
-| `kimi_production` | Kimi K2.5 | 10    | Long context, error recovery, token counting       |
-| `kimi_k2vv`       | Kimi K2.5 | 2K    | K2 Vendor Verifier benchmark (see below)           |
-| `glm_battle`      | GLM-5.1   | 12    | Schema compilation, tool calling, streaming        |
-| `glm_3am`         | GLM-5.1   | 10    | Edge cases, soak tests, concurrent stress          |
+| Scenario            | Model     | Tests | What it validates                                                       |
+|---------------------|-----------|-------|-------------------------------------------------------------------------|
+| `kimi_battle`       | Kimi K2.5 | 15    | xgrammar edge cases, parallel TCs, structural tags                      |
+| `kimi_3am`          | Kimi K2.5 | 12    | Production edge cases, soak tests, precision                            |
+| `kimi_production`   | Kimi K2.5 | 10    | Long context, error recovery, token counting                            |
+| `kimi_k2vv`         | Kimi K2.5 | 2K    | K2 Vendor Verifier benchmark (see below)                                |
+| `kimi_freeze_repro` | Kimi K2.5 | 6     | Production freeze repro: oneOf/const tool schemas under concurrent load |
+| `glm_battle`        | GLM-5.1   | 12    | Schema compilation, tool calling, streaming                             |
+| `glm_3am`           | GLM-5.1   | 10    | Edge cases, soak tests, concurrent stress                               |
 
 ### K2 Vendor Verifier (K2VV)
 
@@ -251,9 +252,9 @@ model_config.py      HuggingFace config fetch, model profiles
 __main__.py          Module entry point (python -m fuzz)
 scenarios/
   __init__.py        Base class, auto-discovery registry (recursive), CircuitBreaker
-  s01-s24_*.py       Fuzz scenarios (adversarial, crash-focused)
+  *.py               Fuzz scenarios (adversarial, crash-focused)
   validation/        Correctness validation (any OpenAI-compatible endpoint)
-    v01-v07_*.py     Tool calling, structured output, concurrency, production
+    *.py             Tool calling, structured output, concurrency, production
   models/            Model-specific test suites
     kimi_*.py        Kimi K2.5 battle, 3am edge cases, production readiness
     glm_*.py         GLM-5.1 battle, 3am edge cases
@@ -305,7 +306,7 @@ Fails if error rate degrades or p99 latency grows 3x from baseline.
 ### Fuzz scenario (raw HTTP)
 
 ```python
-# scenarios/s99_my_custom.py
+# scenarios/my_custom.py
 from scenarios import BaseScenario, register_scenario, Verdict
 
 @register_scenario
@@ -324,7 +325,7 @@ class MyCustomScenario(BaseScenario):
 ### Validation scenario (OpenAI SDK)
 
 ```python
-# scenarios/validation/v99_my_validation.py
+# scenarios/validation/my_validation.py
 import asyncio
 from scenarios import BaseScenario, register_scenario, Verdict
 from helpers import make_tool, collect_stream

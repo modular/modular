@@ -22,6 +22,7 @@ from max.driver import Buffer, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
+from max.graph import Module as GraphModule
 from max.graph.weights import Weights, load_weights
 from max.nn.layer import Module
 from max.pipelines.lib.compiled_component import CompiledComponent
@@ -51,6 +52,7 @@ class PostprocessAndDecode(Module):
         num_channels: int,
         device: DeviceRef,
         dtype: DType,
+        latents_in_dtype: DType | None = None,
     ) -> None:
         super().__init__()
         self.decoder = decoder
@@ -58,15 +60,25 @@ class PostprocessAndDecode(Module):
         self._num_channels = num_channels
         self._device = device
         self._dtype = dtype
+        # Dtype of the incoming latents.  In a uniform-precision pipeline this
+        # equals the VAE compute dtype, but a mixed-precision assembly (e.g. an
+        # NVFP4 transformer whose compute dtype is bfloat16 feeding an
+        # float32 VAE) produces latents in a different dtype than the VAE
+        # expects.  We accept latents at this dtype and cast to ``dtype`` as
+        # the first graph op; the cast is a no-op when they match.
+        self._latents_in_dtype = latents_in_dtype or dtype
 
-        self.bn_mean = Weight(
-            name="bn_mean",
+        # Named with a ``decoder_`` prefix so the FQN doesn't collide with
+        # ``PreprocessAndEncode``'s ``encoder_bn_*`` when both components
+        # are compiled together via ``session.load_all`` (MODELS-1440).
+        self.decoder_bn_mean = Weight(
+            name="decoder_bn_mean",
             dtype=dtype,
             shape=[num_channels],
             device=DeviceRef.CPU(),
         )
-        self.bn_var = Weight(
-            name="bn_var",
+        self.decoder_bn_var = Weight(
+            name="decoder_bn_var",
             dtype=dtype,
             shape=[num_channels],
             device=DeviceRef.CPU(),
@@ -78,6 +90,13 @@ class PostprocessAndDecode(Module):
         h_carrier: TensorValue,
         w_carrier: TensorValue,
     ) -> TensorValue:
+        # Reconcile the incoming latents dtype with the VAE compute dtype.
+        # No-op when they already match (uniform-precision pipeline); widens
+        # bfloat16 -> float32 for a mixed-precision assembly (NVFP4 transformer
+        # feeding a float32 VAE).
+        if latents_bsc.dtype != self._dtype:
+            latents_bsc = ops.cast(latents_bsc, self._dtype)
+
         batch = latents_bsc.shape[0]
         c = latents_bsc.shape[2]
 
@@ -93,8 +112,8 @@ class PostprocessAndDecode(Module):
         latents = ops.permute(latents_bhwc, [0, 3, 1, 2])
 
         # BN denormalization: x = x * sqrt(var + eps) + mean
-        bn_mean = self.bn_mean.to(self._device)
-        bn_var = self.bn_var.to(self._device)
+        bn_mean = self.decoder_bn_mean.to(self._device)
+        bn_var = self.decoder_bn_var.to(self._device)
         bn_mean_r = ops.reshape(bn_mean, (1, self._num_channels, 1, 1))
         bn_var_r = ops.reshape(bn_var, (1, self._num_channels, 1, 1))
         bn_std = ops.sqrt(
@@ -136,7 +155,7 @@ class PostprocessAndDecode(Module):
     def input_types(self) -> tuple[TensorType, ...]:
         return (
             TensorType(
-                self._dtype,
+                self._latents_in_dtype,
                 shape=["batch", "seq", self._num_channels],
                 device=self._device,
             ),
@@ -167,8 +186,11 @@ class VaeDecoder(CompiledComponent):
         self,
         manifest: ModelManifest,
         session: InferenceSession,
+        *,
+        graphs_module: GraphModule | None = None,
+        latents_in_dtype: DType | None = None,
     ) -> None:
-        super().__init__(manifest, session)
+        super().__init__(manifest, session, graphs_module=graphs_module)
 
         config = manifest["vae"]
         config_dict = config.huggingface_config.to_dict()
@@ -205,6 +227,7 @@ class VaeDecoder(CompiledComponent):
             num_channels=num_channels,
             device=device,
             dtype=dtype,
+            latents_in_dtype=latents_in_dtype,
         )
 
         # Load and adapt weights.
@@ -215,7 +238,7 @@ class VaeDecoder(CompiledComponent):
         # Validate BN stats are present and non-trivial.  Missing or
         # all-zero stats collapse the BN denormalization to near-zero,
         # producing washed-out images.
-        for bn_key in ("bn_mean", "bn_var"):
+        for bn_key in ("decoder_bn_mean", "decoder_bn_var"):
             if bn_key not in state_dict:
                 raise ValueError(
                     f"VaeDecoder: BatchNorm stat {bn_key!r} not found in "
@@ -239,13 +262,15 @@ class VaeDecoder(CompiledComponent):
         fused.load_state_dict(state_dict, weight_alignment=1)
 
         # Build and compile graph.
-        with Graph("vae_decode", input_types=fused.input_types()) as graph:
+        with Graph(
+            "vae_decode",
+            input_types=fused.input_types(),
+            module=self._graphs_module,
+        ) as graph:
             outputs = fused(*(v.tensor for v in graph.inputs))
             graph.output(outputs)
 
-        self._model = self._load_graph(
-            graph, weights_registry=fused.state_dict()
-        )
+        self._load_graph(graph, weights_registry=fused.state_dict())
 
     @traced(message="VaeDecoder.__call__")
     def __call__(
@@ -277,8 +302,8 @@ class VaeDecoder(CompiledComponent):
         Key mapping:
         - ``decoder.*`` -> ``decoder.*``
         - ``post_quant_conv.*`` -> ``decoder.post_quant_conv.*``
-        - ``bn.running_mean`` -> ``bn_mean``
-        - ``bn.running_var`` -> ``bn_var``
+        - ``bn.running_mean`` -> ``decoder_bn_mean``
+        - ``bn.running_var`` -> ``decoder_bn_var``
 
         Casts each weight to the dtype expected by the corresponding
         Weight in the module's raw_state_dict.
@@ -293,9 +318,9 @@ class VaeDecoder(CompiledComponent):
             elif key.startswith("post_quant_conv."):
                 module_key = f"decoder.{key}"
             elif key == "bn.running_mean":
-                module_key = "bn_mean"
+                module_key = "decoder_bn_mean"
             elif key == "bn.running_var":
-                module_key = "bn_var"
+                module_key = "decoder_bn_var"
             else:
                 continue
 

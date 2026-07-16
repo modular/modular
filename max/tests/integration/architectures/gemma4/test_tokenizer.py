@@ -17,21 +17,25 @@ from __future__ import annotations
 
 import io
 import json
-from typing import cast
 from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
 import pytest
 from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
 from max.pipelines.architectures.gemma4.video_processor import VideoMetadata
+from max.pipelines.context import (
+    SamplingParams,
+    TextGenerationResponseFormat,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.modeling.types import (
     ImageContentPart,
+    ReasoningPipelineTokenizer,
     RequestID,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-    TextGenerationResponseFormat,
     VideoContentPart,
 )
 from PIL import Image
@@ -169,14 +173,8 @@ async def test_response_format_without_json_schema_key(
     mocker: MockerFixture,
     mock_pipeline_config: MagicMock,
 ) -> None:
-    """``response_format`` without a ``json_schema`` key must yield
+    """``response_format`` without a ``json_schema`` value must yield
     ``json_schema=None`` on the context.
-
-    Regression: the old code did
-    ``json.dumps(request.response_format.get("json_schema", None))`` which
-    serialized ``None`` to the literal string ``"null"`` and handed that
-    to the grammar compiler. The fix gates the ``json.dumps`` on the
-    schema actually being present.
     """
     delegate = _make_mock_delegate()
     text_tokens = np.array([2, 100, 200, 300, 3], dtype=np.int64)
@@ -192,9 +190,7 @@ async def test_response_format_without_json_schema_key(
         ],
         request_id=RequestID("test-rf-no-schema"),
         model_name="test-model",
-        response_format=cast(
-            TextGenerationResponseFormat, {"type": "json_object"}
-        ),
+        response_format=TextGenerationResponseFormat(type="json_object"),
     )
 
     context = await tokenizer.new_context(request)
@@ -270,12 +266,44 @@ async def test_no_response_format(
     assert context.json_schema is None
 
 
+def test_gemma4_tokenizer_satisfies_reasoning_pipeline_tokenizer_protocol(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """``Gemma4Tokenizer`` exposes ``reasoning_start_token_id`` and
+    ``reasoning_end_token_id`` as instance attributes so it satisfies the
+    ``ReasoningPipelineTokenizer`` ``@runtime_checkable`` ``Protocol``.
+
+    This lets the overlap pipeline's thinking-mode temperature scaling
+    resolve the per-model delimiter ids without depending on the reasoning
+    parser registry.
+    """
+    delegate = _make_mock_delegate()
+    # Distinct ids for <|channel> vs <channel|> so we can assert the values.
+
+    def _convert(token: str) -> int:
+        if token == "<|channel>":
+            return 100
+        if token == "<channel|>":
+            return 101
+        return VIDEO_TOKEN_ID
+
+    delegate.convert_tokens_to_ids.side_effect = _convert
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    assert isinstance(tokenizer, ReasoningPipelineTokenizer)
+    assert tokenizer.reasoning_start_token_id == 100
+    assert tokenizer.reasoning_end_token_id == 101
+
+
 @pytest.mark.asyncio
 async def test_prompt_too_long(
     mocker: MockerFixture,
     mock_pipeline_config: MagicMock,
 ) -> None:
-    """Prompt exceeding max_length raises ValueError."""
+    """Prompt exceeding max_length raises PromptTooLongError."""
     delegate = _make_mock_delegate()
     delegate.model_max_length = 5
     long_tokens = list(range(10))
@@ -295,11 +323,10 @@ async def test_prompt_too_long(
         model_name="test-model",
     )
 
-    with pytest.raises(
-        ValueError,
-        match="encoded_prompt is greater than the max_length",
-    ):
+    with pytest.raises(PromptTooLongError) as exc_info:
         await tokenizer.new_context(request)
+    assert exc_info.value.num_tokens == 10
+    assert exc_info.value.max_length == 5
 
 
 @pytest.mark.asyncio
@@ -566,3 +593,189 @@ async def test_text_only_no_images_or_videos(
     assert len(context.video_frame_patches) == 0
     assert len(context.video_frame_pos_ids) == 0
     assert len(context.video_token_ranges) == 0
+
+
+@pytest.mark.asyncio
+async def test_structured_output_json_schema(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """Request with json_schema response_format sets context.json_schema."""
+    delegate = _make_mock_delegate()
+    delegate.return_value = {"input_ids": [[2, 100, 200, 3]]}
+    delegate.apply_chat_template.return_value = "Extract name and age"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    schema = {
+        "title": "Person",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"},
+        },
+        "required": ["name", "age"],
+    }
+    request = TextGenerationRequest(
+        messages=[
+            TextGenerationRequestMessage(
+                role="user", content="Extract name and age"
+            )
+        ],
+        request_id=RequestID("test-json-schema"),
+        model_name="test-model",
+        sampling_params=SamplingParams(max_new_tokens=50),
+        response_format=TextGenerationResponseFormat(
+            type="json_schema",
+            json_schema=schema,
+            grammar=None,
+        ),
+    )
+
+    context = await tokenizer.new_context(request)
+
+    assert context.json_schema is not None
+    parsed = json.loads(context.json_schema)
+    assert parsed["title"] == "Person"
+    assert "name" in parsed["properties"]
+    assert context.grammar is None
+
+
+@pytest.mark.asyncio
+async def test_structured_output_grammar(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """Request with grammar response_format sets context.grammar."""
+    delegate = _make_mock_delegate()
+    delegate.return_value = {"input_ids": [[2, 100, 200, 3]]}
+    delegate.apply_chat_template.return_value = "Generate output"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    test_grammar = r'start: "yes" | "no"'
+    request = TextGenerationRequest(
+        messages=[
+            TextGenerationRequestMessage(role="user", content="Generate output")
+        ],
+        request_id=RequestID("test-grammar"),
+        model_name="test-model",
+        sampling_params=SamplingParams(max_new_tokens=10),
+        response_format=TextGenerationResponseFormat(
+            type="grammar",
+            json_schema={},
+            grammar=test_grammar,
+        ),
+    )
+
+    context = await tokenizer.new_context(request)
+
+    assert context.grammar == test_grammar
+
+
+@pytest.mark.asyncio
+async def test_no_response_format_no_grammar(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """Request without response_format has None for json_schema and grammar."""
+    delegate = _make_mock_delegate()
+    delegate.return_value = {"input_ids": [[2, 100, 200, 3]]}
+    delegate.apply_chat_template.return_value = "Hello"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    request = TextGenerationRequest(
+        messages=[TextGenerationRequestMessage(role="user", content="Hello")],
+        request_id=RequestID("test-no-fmt"),
+        model_name="test-model",
+    )
+
+    context = await tokenizer.new_context(request)
+
+    assert context.json_schema is None
+    assert context.grammar is None
+
+
+def test_apply_chat_template_prefills_reasoning_open_when_thinking(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """With thinking enabled, the generation prompt is forced open with
+    ``<|channel>thought`` so the model reasons on *every* assistant turn --
+    including the turn after a ``tool`` result. Without it Gemma skips
+    thinking post-tool and OpenRouter's reasoning-enabled-tool-call-step-5
+    test fails, auto-disabling tools."""
+    delegate = _make_mock_delegate()
+    # Pretend the base template rendered a generation prompt that does NOT
+    # open a reasoning block.
+    delegate.apply_chat_template.return_value = "PROMPT<|model>"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    msgs = [TextGenerationRequestMessage(role="user", content="hi")]
+
+    # enable_thinking=True -> reasoning channel forced open at the tail.
+    out = tokenizer.apply_chat_template(msgs, enable_thinking=True)
+    assert out.endswith("<|channel>thought\n")
+
+    # The tokenizer keys off ``enable_thinking`` only (matching the chat
+    # template). OpenRouter's ``reasoning`` toggle is mapped to
+    # ``enable_thinking`` upstream (#89137), so the bare ``thinking`` alias
+    # alone does not force the channel open here.
+    out_thinking_alias = tokenizer.apply_chat_template(msgs, thinking=True)
+    assert "<|channel>thought" not in out_thinking_alias
+
+    # Disabled -> no prefill.
+    out_off = tokenizer.apply_chat_template(msgs, enable_thinking=False)
+    assert "<|channel>thought" not in out_off
+
+
+def test_apply_chat_template_reopens_turn_after_tool_response(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """After a tool result the chat template leaves the model mid-turn, so the
+    prompt ends with ``<tool_response|>``. The prefill must re-open a fresh
+    model turn before the channel, matching the user-turn structure that
+    actually reasons."""
+    delegate = _make_mock_delegate()
+    # Real post-tool render: turn left open, ends with the tool-response close.
+    delegate.apply_chat_template.return_value = (
+        "<|turn>model\n<|tool_call>call:f{}<tool_call|>"
+        "<|tool_response>response:f{value:42}<tool_response|>"
+    )
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    msgs = [TextGenerationRequestMessage(role="user", content="hi")]
+
+    out = tokenizer.apply_chat_template(msgs, enable_thinking=True)
+
+    # A fresh model turn is opened between the tool response and the channel,
+    # mirroring the user-turn structure (`<|turn>model\n<|channel>thought\n`).
+    assert out.endswith(
+        "<tool_response|><turn|>\n<|turn>model\n<|channel>thought\n"
+    )
+    # The bare-channel-after-tool-response shape (which doesn't reason) is gone.
+    assert not out.endswith("<tool_response|><|channel>thought\n")
+
+
+def test_apply_chat_template_no_double_prefill(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """If the base template already opened the reasoning channel, don't
+    append a second opener."""
+    delegate = _make_mock_delegate()
+    delegate.apply_chat_template.return_value = "PROMPT<|channel>thought\n"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    msgs = [TextGenerationRequestMessage(role="user", content="hi")]
+
+    out = tokenizer.apply_chat_template(msgs, enable_thinking=True)
+    assert out.count("<|channel>thought") == 1

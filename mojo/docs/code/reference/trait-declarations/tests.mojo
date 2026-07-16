@@ -17,6 +17,13 @@
 #        without initializer errors, missing method errors, missing
 #        required member errors, type mismatch errors, default
 #        method conflict errors, non-conforming argument errors.
+# Print-only tests: test_required_methods, test_provided_methods,
+#        test_able_to_say_hello, test_parameter_level_bounds, and
+#        test_fieldwise_bounds use print() rather than assertions
+#        because asserting on string representations is fragile
+#        (reflection-based output format can change). These tests
+#        still verify compilation, trait constraint satisfaction, and
+#        dispatch — successful execution without raising is the signal.
 from std.testing import assert_equal
 
 
@@ -112,7 +119,7 @@ def test_able_to_say_hello():
 
 
 trait Boxable:
-    comptime Associated: Writable & Copyable & ImplicitlyDestructible
+    comptime Associated: Writable & Copyable & ImplicitlyDeletable
 
     def unbox(self) -> Self.Associated:
         ...
@@ -137,7 +144,7 @@ def test_associated_types() raises:
 # --- Generic associated type ---
 
 
-comptime Base = Copyable & ImplicitlyDestructible & Writable
+comptime Base = Copyable & ImplicitlyDeletable & Writable
 
 
 @fieldwise_init
@@ -160,26 +167,26 @@ def test_generic_associated_type() raises:
 
 from std.sys.info import bit_width_of
 
+comptime BaseElement = Copyable & ImplicitlyDeletable & Writable
+
 
 trait Test:
     comptime Element: RegisterPassable
     comptime element_bitwidth = bit_width_of[Self.Element]()
 
-    comptime KeyElement = Copyable & ImplicitlyDestructible & Writable
-
 
 @fieldwise_init
-struct SampleStruct_4[T: KeyElement](Test):
+struct SampleStruct_4[T: BaseElement](Test):
     comptime Element = Int64
     var x: Self.T
 
-    def show_element_bitwidth(self):
-        print(Self.element_bitwidth)
+    def show_element_bitwidth(self) raises:
+        assert_equal(Self.element_bitwidth, 64)
 
 
 def test_comptime_constants() raises:
     var s = SampleStruct_4[Int64](x=42)
-    s.show_element_bitwidth()  # 64
+    s.show_element_bitwidth()
     assert_equal(s.x, 42)
 
 
@@ -228,7 +235,7 @@ trait PrettyPrintable(Printable):
 
 
 @fieldwise_init
-struct Box_2[T: Copyable & Writable & ImplicitlyDestructible](PrettyPrintable):
+struct Box_2[T: Copyable & Writable & ImplicitlyDeletable](PrettyPrintable):
     var value: Self.T
 
     def to_string(self) -> String:
@@ -267,7 +274,7 @@ def test_parameter_level_bounds():
 
 
 @fieldwise_init
-struct Pair_1[T: Writable & Copyable & ImplicitlyDestructible](Writable):
+struct Pair_1[T: Writable & Copyable & ImplicitlyDeletable](Writable):
     var first: Self.T
     var second: Self.T
 
@@ -284,7 +291,7 @@ def test_struct_level_bounds() raises:
 
 
 @fieldwise_init
-struct Pair_2[T: Copyable & ImplicitlyDestructible](
+struct Pair_2[T: Copyable & ImplicitlyDeletable](
     Writable where conforms_to(T, Writable)
 ):
     var first: Self.T

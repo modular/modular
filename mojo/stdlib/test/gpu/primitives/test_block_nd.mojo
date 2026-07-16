@@ -122,7 +122,7 @@ def test_block_min_1d() raises:
 
 def block_broadcast_1d_kernel[
     block_size: Int,
-    src_thread: UInt,
+    src_thread: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
     output[thread_idx.x] = block.broadcast[block_size=block_size](
         Float32(thread_idx.x), src_thread
@@ -132,7 +132,7 @@ def block_broadcast_1d_kernel[
 def test_block_broadcast_1d() raises:
     comptime N = WARP_SIZE * 4
     # Source thread in the second warp.
-    comptime src = UInt(WARP_SIZE + 1)
+    comptime src = WARP_SIZE + 1
 
     with DeviceContext() as ctx:
         var buf = ctx.enqueue_create_buffer[DType.float32](N)
@@ -329,7 +329,7 @@ def test_block_min_2d() raises:
 def block_broadcast_2d_kernel[
     block_dim_x: Int,
     block_dim_y: Int,
-    src_thread: UInt,
+    src_thread: Int,
 ](output: UnsafePointer[Float32, MutAnyOrigin]):
     var linear_tid = thread_idx.x + thread_idx.y * block_dim_x
     # Each thread offers its own linearized ID; only src_thread's value
@@ -344,7 +344,7 @@ def test_block_broadcast_2d() raises:
     comptime BY = 4
     comptime total = BX * BY
     # Source thread in the second row, second lane (linearized ID = 33).
-    comptime src: UInt = 33
+    comptime src: Int = 33
 
     with DeviceContext() as ctx:
         var buf = ctx.enqueue_create_buffer[DType.float32](total)

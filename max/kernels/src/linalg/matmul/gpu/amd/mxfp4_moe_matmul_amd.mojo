@@ -405,21 +405,15 @@ struct MXFP4MoERoutedMatmul[
                 comptime for ikxdl in range(Self.pack_K):
                     comptime for m in range(Self.num_m_mmas):
                         comptime for n in range(Self.num_n_mmas):
-                            var a_data = a_frags[ikxdl * Self.num_m_mmas + m]
-                            var b_data = b_frags[ikxdl * Self.num_n_mmas + n]
-                            var a_op = SIMD[DType.uint8, 32](0).insert[
-                                offset=0
-                            ](a_data)
-                            var b_op = SIMD[DType.uint8, 32](0).insert[
-                                offset=0
-                            ](b_data)
+                            var a_frag = a_frags[ikxdl * Self.num_m_mmas + m]
+                            var b_frag = b_frags[ikxdl * Self.num_n_mmas + n]
                             comptime acc_idx = m * Self.num_n_mmas + n
                             cdna4_block_scaled_mfma[
                                 Int32(ikxdl * Self.num_m_mmas + m),
                                 Int32(ikxdl * Self.num_n_mmas + n),
                                 CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
                                 CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
-                            ](c_acc[acc_idx], a_op, b_op, a_scale, b_scale)
+                            ](c_acc[acc_idx], a_frag, b_frag, a_scale, b_scale)
 
             barrier()
 
@@ -470,6 +464,9 @@ struct MXFP4MoERoutedMatmul[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(MXFP4MoERoutedMatmul[].num_threads)
     )
+)
+@__name(
+    t"mxfp4_moe_routed_{out_dtype}_BM{BM}_BN{BN}_BK{BK_ELEMS}_N{N}_KS{K_SCALES}_topk{topk}"
 )
 def _mxfp4_moe_matmul_routed_kernel[
     out_dtype: DType,

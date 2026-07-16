@@ -18,11 +18,41 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
-from .tokenizer import PipelineTokenizer
+from max.pipelines.request import RequestType
+
+from .tokenizer import PipelineTokenizer, TokenizerEncoded, UnboundContextType
 
 _T = TypeVar("_T")
+
+
+@runtime_checkable
+class ReasoningPipelineTokenizer(
+    PipelineTokenizer[UnboundContextType, TokenizerEncoded, RequestType],
+    Protocol[UnboundContextType, TokenizerEncoded, RequestType],
+):
+    """:class:`PipelineTokenizer` that exposes its reasoning-delimiter token ids.
+
+    Implemented by architecture-specific tokenizers that drive a reasoning
+    parser (Gemma 4, Kimi K2.5, MiniMax M2). The tokenizer resolves the
+    delimiter ids once at construction and exposes them as instance
+    attributes so callers — for example
+    :class:`~max.pipelines.lib.pipeline_variants.overlap_text_generation.OverlapTextGenerationPipeline`'s
+    thinking-mode temperature scaling — can read them directly without
+    re-encoding ``<think>``/``</think>`` or depending on the reasoning
+    parser registry.
+    """
+
+    @property
+    def reasoning_start_token_id(self) -> int:
+        """The token id that opens a reasoning span (e.g. ``<|channel>``)."""
+        ...
+
+    @property
+    def reasoning_end_token_id(self) -> int:
+        """The token id that closes a reasoning span (e.g. ``<channel|>``)."""
+        ...
 
 
 class ReasoningSpan:
@@ -83,22 +113,19 @@ class ReasoningSpan:
 
 @dataclass(frozen=True)
 class ParsedReasoningDelta:
-    """Result of applying reasoning parsing to a streaming delta chunk.
-
-    Attributes:
-        span: The :class:`ReasoningSpan` identifying the reasoning portion
-            of the chunk.
-        is_still_reasoning: Whether the reasoning section is still active.
-        reasoning_text_formatter: Optional callback to post-process decoded
-            reasoning text. Returns the formatted text, or ``None`` if the
-            text should be ignored.
-    """
+    """Result of applying reasoning parsing to a streaming delta chunk."""
 
     span: ReasoningSpan
+    """The ReasoningSpan identifying the reasoning portion of the chunk."""
     is_still_reasoning: bool
+    """Whether the reasoning section is still active."""
     reasoning_text_formatter: Callable[[str], str | None] | None = field(
         default=None
     )
+    """Optional callback to post-process decoded reasoning text.
+
+    Returns the formatted text, or ``None`` if the text should be ignored.
+    """
 
 
 class ReasoningParser(ABC):
@@ -132,31 +159,27 @@ class ReasoningParser(ABC):
         """
         ...
 
-    def is_prompt_in_reasoning(
+    def will_reason_after_prompt(
         self,
         prompt_token_ids: Sequence[int],
     ) -> bool:
-        """Decide whether the next generated token continues a reasoning span.
+        """Predicts whether the model will emit reasoning after this prompt.
 
-        Called once at turn initiation, given the full prompt token ids
-        (including any chat-template prefill). The result is used to seed
-        the streaming reasoning state machine before the model emits its
-        first token.
+        Called once at turn initiation to seed the streaming reasoning
+        state machine and decide whether grammar enforcement should be
+        suspended for the first generated tokens.
 
-        Multi-turn prompts can legitimately contain ``</think>`` tokens
-        from prior assistant turns. The default implementation delegates
-        to :meth:`stream`, which scans left-to-right and would treat any
-        such stale ``</think>`` as "reasoning has ended" — incorrect for
-        the *new* assistant turn. Architectures whose chat templates emit
-        reasoning delimiters per turn should override this to consider
-        only the most recent delimiter (e.g., a right-to-left scan).
+        The default implementation delegates to :meth:`stream`, which
+        scans left-to-right and returns ``is_still_reasoning``.
+        Architectures should override this when they have a more
+        reliable signal (e.g., a dedicated think-enable token).
 
         Args:
             prompt_token_ids: The full prompt token id sequence.
 
         Returns:
-            ``True`` if the next generated token should be treated as
-            part of a reasoning span; ``False`` otherwise.
+            ``True`` if the model will start with reasoning tokens;
+            ``False`` otherwise.
         """
         return self.stream(prompt_token_ids).is_still_reasoning
 

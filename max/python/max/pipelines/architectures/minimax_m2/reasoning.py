@@ -135,8 +135,8 @@ class MiniMaxM2ReasoningParser(ReasoningParser):
             is_still_reasoning=is_still_reasoning,
         )
 
-    def is_prompt_in_reasoning(self, prompt_token_ids: Sequence[int]) -> bool:
-        """Decide whether the next generated token is in a reasoning span.
+    def will_reason_after_prompt(self, prompt_token_ids: Sequence[int]) -> bool:
+        """Predicts whether the model will emit reasoning after this prompt.
 
         Only checks for ``</think>`` — not ``<minimax:tool_call>`` — because
         the chat template embeds tool-call format tokens in the system prompt

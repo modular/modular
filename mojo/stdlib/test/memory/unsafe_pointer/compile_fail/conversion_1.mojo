@@ -27,5 +27,5 @@ def main() raises:
     # FIXME: this probably should be a parameter inference error, not the type
     # conversion error.
 
-    # CHECK: invalid call to 'test_cannot_cast_immutable_to_mutable': value passed to 'p' cannot be converted from 'UnsafePointer[Int, {{.*}}]' to 'UnsafePointer[T, {{.*}}]'
+    # CHECK: invalid call to 'test_cannot_cast_immutable_to_mutable': value passed to 'p' cannot be converted from 'Pointer[Int, {{.*}}]' to 'Pointer[T, {{.*}}]'
     test_cannot_cast_immutable_to_mutable(p)

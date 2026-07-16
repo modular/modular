@@ -65,15 +65,15 @@ def test_concat() raises:
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         3,
     ](
-        x1_dyn.as_any_origin().as_immut(),
-        x2.make_dynamic[DType.int64]().as_any_origin().as_immut(),
-        x3.make_dynamic[DType.int64]().as_any_origin().as_immut(),
+        x1_dyn.as_unsafe_any_origin().as_immut(),
+        x2.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
+        x3.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
     )
 
     @parameter
     @always_inline
     def epilogue_plus_one[
-        c_type: DType, _rank: Int, width: Int, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDSize, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank
@@ -138,15 +138,15 @@ def test_concat_parallel() raises:
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         3,
     ](
-        x1_dyn.as_any_origin().as_immut(),
-        x2_dyn.as_any_origin().as_immut(),
-        x3_dyn.as_any_origin().as_immut(),
+        x1_dyn.as_unsafe_any_origin().as_immut(),
+        x2_dyn.as_unsafe_any_origin().as_immut(),
+        x3_dyn.as_unsafe_any_origin().as_immut(),
     )
 
     @parameter
     @always_inline
     def epilogue_plus_one[
-        c_type: DType, _rank: Int, width: Int, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDSize, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank
@@ -210,9 +210,9 @@ def test_concat_inner() raises:
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         3,
     ](
-        x1_dyn.as_any_origin().as_immut(),
-        x2_dyn.as_any_origin().as_immut(),
-        x3_dyn.as_any_origin().as_immut(),
+        x1_dyn.as_unsafe_any_origin().as_immut(),
+        x2_dyn.as_unsafe_any_origin().as_immut(),
+        x3_dyn.as_unsafe_any_origin().as_immut(),
     )
 
     var input_vec = _tuple_to_list(input_tuple)
@@ -220,7 +220,7 @@ def test_concat_inner() raises:
     @parameter
     @always_inline
     def epilogue_plus_one[
-        c_type: DType, _rank: Int, width: Int, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDSize, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank

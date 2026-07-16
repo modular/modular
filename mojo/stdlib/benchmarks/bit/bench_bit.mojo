@@ -68,27 +68,29 @@ def next_power_of_two_int_v4(val: Int) -> Int:
     )
 
 
-def next_power_of_two_uint_v1(val: UInt) -> UInt:
+def next_power_of_two_uint_v1(
+    val: UInt,
+) -> UInt:
     if unlikely(val == 0):
         return 1
 
     return UInt(1 << (bit_width_of[UInt]() - count_leading_zeros(Int(val - 1))))
 
 
-def next_power_of_two_uint_v2(val: UInt) -> UInt:
+def next_power_of_two_uint_v2(
+    val: UInt,
+) -> UInt:
     return UInt(
         val.eq(0).select(
-            1
-            << (
-                Scalar[DType.uint](bit_width_of[UInt]())
-                - count_leading_zeros(val - 1)
-            ),
+            1 << (UInt(bit_width_of[UInt]()) - count_leading_zeros(val - 1)),
             1,
         )
     )
 
 
-def next_power_of_two_uint_v3(val: UInt) -> UInt:
+def next_power_of_two_uint_v3(
+    val: UInt,
+) -> UInt:
     return UInt(
         1
         << (
@@ -98,7 +100,9 @@ def next_power_of_two_uint_v3(val: UInt) -> UInt:
     )
 
 
-def next_power_of_two_uint_v4(val: UInt) -> UInt:
+def next_power_of_two_uint_v4(
+    val: UInt,
+) -> UInt:
     return UInt(
         1
         << (

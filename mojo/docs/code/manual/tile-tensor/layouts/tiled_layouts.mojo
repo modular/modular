@@ -12,14 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import Coord, coord, Idx, print_layout, col_major, row_major
-from layout.tile_layout import Layout, blocked_product, zipped_divide
+from layout.tile_layout import (
+    Layout,
+    blocked_product,
+    col_major_nested,
+    row_major_nested,
+    zipped_divide,
+)
 
 
 def use_layout_constructor():
     print("layout constructor")
     var tiled_layout = Layout(
-        Coord(coord[3, 2](), coord[2, 5]()),  # shape
-        Coord(coord[1, 6](), coord[3, 12]()),  # strides
+        Coord(coord[3, 2], coord[2, 5]),  # shape
+        Coord(coord[1, 6], coord[3, 12]),  # strides
     )
     print_layout(tiled_layout.to_layout())
     print()
@@ -51,24 +57,47 @@ def use_zipped_divide():
     # Create layouts
     # start-zipped-divide-example
     var base = row_major[6, 4]()
-    var result = zipped_divide[coord[2, 2]()](base)
+    var result = zipped_divide[coord[2, 2]](base)
     print_layout(base.to_layout())
     print_layout(result.to_layout())
     # end-zipped-divide-example
-    print(result(coord[1, 1]()))
-    print(result(coord[1]()))
-    print(result(Coord(coord[1, 0](), coord[1, 0]())))
+    print(result(coord[1, 1]))
+    print(result(coord[1]))
+    print(result(Coord(coord[1, 0], coord[1, 0])))
 
 
 def minimal_repro():
     var base = row_major[6, 8]()
-    var result = zipped_divide[coord[2, 2]()](base)
-    var linear_idx = Int(result(coord[1, 1]()))
+    var result = zipped_divide[coord[2, 2]](base)
+    var linear_idx = Int(result(coord[1, 1]))
     var natural_coords = result.idx2crd(linear_idx)
     print(linear_idx, natural_coords)  # 24, ((1, 0), (1, 0))
+
+
+def use_nested_layouts():
+    print("nested layouts")
+    # start-nested-layout-example
+    # A re-nested row-major layout: a 2x2 outer grid of 3x4 inner
+    # fragments. Shape ((2, 3), (2, 4)) flattens to (2, 3, 2, 4),
+    # producing row-major strides (24, 8, 4, 1), re-nested as
+    # ((24, 8), (4, 1)).
+    var nested = row_major_nested(
+        Coord(Coord(Idx[2], Idx[3]), Coord(Idx[2], Idx[4]))
+    )
+    print_layout(nested.to_layout())
+
+    # The column-major variant re-nests col-major strides over the same
+    # flattened shape: (1, 2, 6, 12), re-nested as ((1, 2), (6, 12)).
+    var nested_col = col_major_nested(
+        Coord(Coord(Idx[2], Idx[3]), Coord(Idx[2], Idx[4]))
+    )
+    print_layout(nested_col.to_layout())
+    # end-nested-layout-example
+    print()
 
 
 def main() raises:
     use_layout_constructor()
     use_blocked_product()
     use_zipped_divide()
+    use_nested_layouts()
