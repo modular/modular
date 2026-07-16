@@ -209,6 +209,11 @@ def _compute_num_partitions_64[
     num_heads: Int,
     is_fp8_kv: Bool = False,
     half_sms: Int = 74,
+    # Read-once shared-index fold (KERN-3141): grid.y collapses to 1, so the
+    # decode relies on split-K ALONE to fill the SMs. Relax the per-split page
+    # floor for the folded shapes so the wave-aligned target_partitions
+    # survives. Default False -> byte-identical to the production path.
+    fold_shared_index: Bool = False,
 ](
     batch_size: Int,
     effective_max_cache_len: Int,
@@ -226,6 +231,8 @@ def _compute_num_partitions_64[
         num_heads: Number of Q attention heads (compile-time).
         is_fp8_kv: Whether the KV cache is FP8 (compile-time).
         half_sms: sm_count // 2 — maximum split-K partitions (compile-time).
+        fold_shared_index: Read-once shared-index fold (KERN-3141); relaxes the
+            per-split page floor to 1 for folded shapes (compile-time).
 
     Args:
         batch_size: Current batch size.
@@ -265,7 +272,18 @@ def _compute_num_partitions_64[
     # + combine-grid overhead would dominate if each CTA processed too few
     # pages).
     comptime _min_pages_per_split = 4
-    var max_np_for_min_pages = num_kv_cache_pages // _min_pages_per_split
+    # Read-once shared-index fold (KERN-3141): grid.y=1 leaves split-K as the
+    # only SM-fill lever, so drop the per-split page floor to 1 for the folded
+    # shapes (matches FlashInfer's ~18-way split of the topk domain). Off ->
+    # the production floor of 4, byte-identical.
+    # Intentionally coarser than the launch-selection gate (_fold_ok also
+    # excludes extra_kv/variable_topk/attn_sink): num_partitions is a tuning
+    # knob, so a relaxed floor on a fallen-back unfolded launch is
+    # correctness-neutral.
+    var _min_pages = 1 if (
+        fold_shared_index and fold_active
+    ) else _min_pages_per_split
+    var max_np_for_min_pages = num_kv_cache_pages // _min_pages
 
     # Policy: honor wave-aligned target_partitions, but cap np DOWN if it
     # would leave too few pages per CTA (under-utilization). Long K-loops
@@ -453,6 +471,8 @@ def _compute_num_partitions[
     num_heads: Int,
     is_fp8_kv: Bool = False,
     half_sms: Int = 74,
+    # Read-once shared-index fold (KERN-3141); relaxes the 64-head split floor.
+    fold_shared_index: Bool = False,
 ](
     batch_size: Int,
     effective_max_cache_len: Int,
@@ -470,6 +490,8 @@ def _compute_num_partitions[
         num_heads: Number of Q attention heads (compile-time).
         is_fp8_kv: Whether the KV cache is FP8 (compile-time).
         half_sms: sm_count // 2 — maximum split-K partitions (compile-time).
+        fold_shared_index: Read-once shared-index fold (KERN-3141); relaxes the
+            per-split page floor for folded shapes (compile-time).
 
     Args:
         batch_size: Current batch size.
@@ -484,7 +506,9 @@ def _compute_num_partitions[
     comptime _head_groups = ceildiv(num_heads, 64)
 
     comptime if _head_groups == 1:
-        return _compute_num_partitions_64[num_heads, is_fp8_kv, half_sms](
+        return _compute_num_partitions_64[
+            num_heads, is_fp8_kv, half_sms, fold_shared_index
+        ](
             batch_size,
             effective_max_cache_len,
             q_max_seq_len,
@@ -509,6 +533,8 @@ def compute_mla_dispatch_scalars[
     _is_cache_length_accurate: Bool = False,
     is_fp8_kv: Bool = False,
     half_sms: Int = 74,
+    # Read-once shared-index fold (KERN-3141); relaxes the split-K page floor.
+    fold_shared_index: Bool = False,
 ](
     batch_size: Int,
     max_cache_valid_length: Int,
@@ -531,7 +557,7 @@ def compute_mla_dispatch_scalars[
 
     var split_page_size = 64 if (effective <= 512 and batch_size >= 32) else 128
     var num_partitions = _compute_num_partitions[
-        num_heads, is_fp8_kv, half_sms
+        num_heads, is_fp8_kv, half_sms, fold_shared_index
     ](batch_size, effective, q_max_seq_len, split_page_size, sm_count)
 
     return (batch_size, q_max_seq_len, num_partitions)
@@ -627,6 +653,9 @@ struct MLADispatchScalarArgs[
     num_heads: Int,
     _is_cache_length_accurate: Bool = False,
     is_fp8_kv: Bool = False,
+    # Read-once shared-index fold (KERN-3141); relaxes the split-K page floor so
+    # the pre-computed num_partitions matches what the folded launch expects.
+    fold_shared_index: Bool = False,
 ]:
     """Pre-computed MLA decode args for the legacy (non-capturable) path.
 
@@ -674,6 +703,7 @@ struct MLADispatchScalarArgs[
             _is_cache_length_accurate=Self._is_cache_length_accurate,
             is_fp8_kv=Self.is_fp8_kv,
             half_sms=_half_sms,
+            fold_shared_index=Self.fold_shared_index,
         ](batch_size, max_cache_len, q_max_seq_len, sm_count)
 
         # Note: scalars[3] (effective_split_len) is only consumed by the
@@ -731,6 +761,10 @@ def mla_decode_sm100_dispatch[
     # kernel (split FP8 nope + BF16 rope, two TMAs). When False (default),
     # route to the all-FP8 sparse kernel (single 576-byte gather4 TMA).
     rope_aware_kv_sparse: Bool = False,
+    # Read-once shared-index fold (KERN-3141): when the MTP-folded positions
+    # share one identical topk list, gather it ONCE. Drives the sparse fp8
+    # kernel's fold + the split-K floor relax. False -> unchanged baseline.
+    fold_shared_index: Bool = False,
 ](
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
@@ -815,7 +849,7 @@ def mla_decode_sm100_dispatch[
     comptime _half_sms = sm_count // 2
     comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
     var num_partitions = _compute_num_partitions[
-        num_heads, _is_fp8_kv, _half_sms
+        num_heads, _is_fp8_kv, _half_sms, fold_shared_index
     ](
         batch_size,
         effective_split_len,
@@ -857,6 +891,7 @@ def mla_decode_sm100_dispatch[
             per_token_scale_rope_aware=per_token_scale_rope_aware,
             sparse=sparse,
             rope_aware_kv_sparse=rope_aware_kv_sparse,
+            fold_shared_index=fold_shared_index,
         ](
             q,
             k,
@@ -923,6 +958,8 @@ def _mla_decode_sm100_dispatch_impl[
     per_token_scale_rope_aware: Bool = False,
     sparse: Bool = False,
     rope_aware_kv_sparse: Bool = False,
+    # Read-once shared-index fold (KERN-3141); see mla_decode_sm100_dispatch.
+    fold_shared_index: Bool = False,
 ](
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
@@ -1056,6 +1093,7 @@ def _mla_decode_sm100_dispatch_impl[
                 has_attn_sink=_has_attn_sink,
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
+                fold_shared_index=fold_shared_index,
             ](
                 q,
                 k,
@@ -1304,6 +1342,7 @@ def _mla_decode_sm100_dispatch_impl[
                 has_attn_sink=_has_attn_sink,
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
+                fold_shared_index=fold_shared_index,
             ](
                 q,
                 k,
@@ -1361,6 +1400,8 @@ def mla_decode_sm100_sink_split_k[
     # route to the all-FP8 sparse kernel (single 576-byte gather4 TMA).
     # Only meaningful when `sparse=True`. Ignored for dense paths.
     rope_aware_kv_sparse: Bool = False,
+    # Read-once shared-index MTP fold (KERN-3141); see mla_decode_sm100_dispatch.
+    fold_shared_index: Bool = False,
 ](
     q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
@@ -1425,6 +1466,12 @@ def mla_decode_sm100_sink_split_k[
     comptime _dtype_size = size_of[output_type]() if _native_fp8 else size_of[
         q_type
     ]()
+    # Comptime-local aliases so the nested `_launch_sparse_kv_fp8_fold_sel`
+    # @parameter closure can read these in its `comptime if` (nested closures
+    # capture comptime locals, not the enclosing function's comptime params by
+    # bare name).
+    comptime _fold_shared_index = fold_shared_index
+    comptime _has_attn_sink = has_attn_sink
     comptime mla_config = MLA_SM100_Decode_Config(
         num_q_heads=num_heads,
         group=group,  # num_q_heads/h_k(1)
@@ -1631,7 +1678,13 @@ def mla_decode_sm100_sink_split_k[
             @parameter
             @always_inline
             def _launch_sparse_kv_fp8[
-                _has_extra_kv: Bool, _has_variable_topk: Bool
+                _has_extra_kv: Bool,
+                _has_variable_topk: Bool,
+                # Shared-index fold (KERN-3141): True packs q_len_fold * nqh
+                # rows into one CTA (grid.y=1) and gathers the ONE shared topk
+                # list once. Default False -> the unfolded per-position launch.
+                _fold_shared_index: Bool = False,
+                _q_len_fold: Int = 1,
             ]() raises:
                 if ragged:
                     comptime ValidLengthType = NonNullPointer[DType.uint32]
@@ -1651,6 +1704,8 @@ def mla_decode_sm100_sink_split_k[
                         has_attn_sink=has_attn_sink,
                         has_extra_kv=_has_extra_kv,
                         has_variable_topk=_has_variable_topk,
+                        fold_shared_index=_fold_shared_index,
+                        q_len_fold=_q_len_fold,
                     ](
                         q_tma_sparse,
                         k_gather4_tma,
@@ -1694,6 +1749,8 @@ def mla_decode_sm100_sink_split_k[
                         has_attn_sink=has_attn_sink,
                         has_extra_kv=_has_extra_kv,
                         has_variable_topk=_has_variable_topk,
+                        fold_shared_index=_fold_shared_index,
+                        q_len_fold=_q_len_fold,
                     ](
                         q_tma_sparse,
                         k_gather4_tma,
@@ -1722,7 +1779,36 @@ def mla_decode_sm100_sink_split_k[
                         ctx,
                     )
 
-            _unswitch_raises[_launch_sparse_kv_fp8](
+            # Fold selection (KERN-3141). Enter the read-once shared-index fold
+            # ONLY under the explicit index_share contract AND the supported MTP
+            # shape: q_max_seq_len in [MIN_FOLD_Q, MAX_FOLD_Q], num_q_heads*q <=
+            # BM, and no extra KV / variable topk / attn sink (conservative).
+            # Every other case -> the unfolded per-position baseline. There is
+            # NO default-on toggle and NO per-position phase-fold: the sole gate
+            # is fold_shared_index, so the disabled path is byte-identical to
+            # the pre-fold baseline (verified kernel-scoped in Phase 6).
+            @parameter
+            @always_inline
+            def _launch_sparse_kv_fp8_fold_sel[
+                _has_extra_kv: Bool, _has_variable_topk: Bool
+            ]() raises:
+                comptime _fold_ok = (
+                    _fold_shared_index
+                    and not _has_extra_kv
+                    and not _has_variable_topk
+                    and not _has_attn_sink
+                )
+                comptime if _fold_ok:
+                    comptime for n in range(MIN_FOLD_Q, MAX_FOLD_Q + 1):
+                        comptime if mla_config.num_q_heads * n <= mla_config.BM:
+                            if q_max_seq_len == n:
+                                _launch_sparse_kv_fp8[
+                                    _has_extra_kv, _has_variable_topk, True, n
+                                ]()
+                                return
+                _launch_sparse_kv_fp8[_has_extra_kv, _has_variable_topk]()
+
+            _unswitch_raises[_launch_sparse_kv_fp8_fold_sel](
                 extra_k is not None, Bool(topk_lengths)
             )
             return
@@ -3076,6 +3162,11 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
     has_attn_sink: Bool = False,
     has_extra_kv: Bool = False,
     has_variable_topk: Bool = False,
+    # Read-once shared-index fold (KERN-3141): pack q_len_fold * num_q_heads
+    # rows into the BM tile so grid.y collapses to 1 and the ONE shared topk
+    # list is gathered once. Default False -> the unfolded baseline launch.
+    fold_shared_index: Bool = False,
+    q_len_fold: Int = 1,
 ](
     q_tma: QOTMATile[
         dtype=q_type,
@@ -3171,7 +3262,9 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
         SplitAccumType=SplitAccumType,
     ](mask, valid_len, lse_accum_split_ptr, num_partitions)
     var block_x = ceildiv(config.num_q_heads, config.BM)
-    var grid_dim = (block_x, q_max_seq_len, block_z)
+    # Shared-index fold packs all q positions into one BM tile -> grid.y = 1.
+    var grid_y = 1 if fold_shared_index else q_max_seq_len
+    var grid_dim = (block_x, grid_y, block_z)
     var block_dim = (config.num_threads, 1, 1)
 
     logger.info(
@@ -3191,6 +3284,8 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
         has_attn_sink=has_attn_sink,
         has_extra_kv=has_extra_kv,
         has_variable_topk=has_variable_topk,
+        fold_shared_index=fold_shared_index,
+        q_len_fold=q_len_fold,
     ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
     # Extra SMEM beyond the BF16-rope sparse kernel's budget:

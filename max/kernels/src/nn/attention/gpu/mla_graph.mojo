@@ -1016,6 +1016,9 @@ def mla_decode_branch_fp8[
     ],
     target: StaticString = "cpu",
     sparse_mla: Bool = False,
+    # Read-once shared-index MTP fold (KERN-3141); threaded to flare_mla_decoding
+    # (fp8-KV only; on the bf16 branch it is parity plumbing, always False).
+    fold_shared_index: Bool = False,
 ](
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
@@ -1083,6 +1086,10 @@ def mla_decode_branch_fp8[
             + qk_rope_head_dim.
         target: Target device.
         sparse_mla: Whether to use sparse MLA.
+        fold_shared_index: Whether to enable the default-off read-once
+            shared-index fold on the sparse FP8 decode path, which packs the
+            folded MTP query positions into one CTA and gathers their single
+            shared top-k list once.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -1247,6 +1254,7 @@ def mla_decode_branch_fp8[
         target=target,
         mask_str=mask_str,
         sparse_mla=sparse_mla,
+        fold_shared_index=fold_shared_index,
     ](
         mla_decode_input,
         input_row_offsets,
@@ -1512,6 +1520,9 @@ def mla_prefill_decode_graph_fp8[
     target: StaticString = "cpu",
     sparse_mla: Bool = False,
     sparse_indices_stride: Int = 0,
+    # Read-once shared-index MTP fold (KERN-3141); threaded to flare_mla_decoding
+    # (fp8-KV only; on the bf16 branch it is parity plumbing, always False).
+    fold_shared_index: Bool = False,
 ](
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
@@ -1587,6 +1598,7 @@ def mla_prefill_decode_graph_fp8[
             kv_input_fn=kv_input_fn,
             target=target,
             sparse_mla=sparse_mla,
+            fold_shared_index=fold_shared_index,
         ](
             output,
             q,

@@ -215,6 +215,11 @@ def flare_mla_decoding[
     # sparse kernel. This is the production default; True is only used by
     # internal BF16-rope-kernel tests.
     rope_aware_kv_sparse: Bool = False,
+    # Read-once shared-index MTP fold (KERN-3141): set True (compile-time, from
+    # the model's index_share signal) when the folded q positions share one
+    # identical topk list, so the sparse fp8 decode gathers it ONCE. False
+    # (default) -> unchanged per-position behavior.
+    fold_shared_index: Bool = False,
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -356,6 +361,7 @@ def flare_mla_decoding[
                 per_token_scale_rope_aware=True,
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
+                fold_shared_index=fold_shared_index,
             ](
                 output,
                 q,
@@ -395,6 +401,7 @@ def flare_mla_decoding[
                 per_token_scale_rope_aware=False,
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
+                fold_shared_index=fold_shared_index,
             ](
                 output,
                 q,
@@ -509,6 +516,8 @@ def flare_mla_decoding_dispatch[
     # Sparse-only routing flag: True selects the BF16-rope sparse kernel,
     # False (default) selects the all-FP8 sparse kernel.
     rope_aware_kv_sparse: Bool = False,
+    # Read-once shared-index MTP fold (KERN-3141); see flare_mla_decoding.
+    fold_shared_index: Bool = False,
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -655,6 +664,7 @@ def flare_mla_decoding_dispatch[
                 per_token_scale_rope_aware=per_token_scale_rope_aware,
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
+                fold_shared_index=fold_shared_index,
             ](
                 q,
                 k,
@@ -695,6 +705,7 @@ def flare_mla_decoding_dispatch[
                 num_heads=num_heads_val,
                 _is_cache_length_accurate=_is_cache_length_accurate,
                 is_fp8_kv=_is_fp8_kv,
+                fold_shared_index=fold_shared_index,
             ](batch_size, max_cache_valid_length, max_prompt_len, ctx)
             mla_decode_sm100_dispatch[
                 q.dtype,
@@ -711,6 +722,7 @@ def flare_mla_decoding_dispatch[
                 per_token_scale_rope_aware=per_token_scale_rope_aware,
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
+                fold_shared_index=fold_shared_index,
             ](
                 q,
                 k,

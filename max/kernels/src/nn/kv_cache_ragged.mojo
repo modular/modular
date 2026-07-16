@@ -3426,6 +3426,8 @@ def generic_flare_mla_decode_kv_cache_ragged[
     local_window_size: Int = -1,
     per_token_scale_rope_aware: Bool = False,
     sparse_mla: Bool = False,
+    # Read-once shared-index MTP fold (KERN-3141); threaded to flare_mla_decoding.
+    fold_shared_index: Bool = False,
 ](
     q: TileTensor[mut=False, q_dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -3495,6 +3497,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
             local_window_size=local_window_size,
             per_token_scale_rope_aware=per_token_scale_rope_aware,
             sparse_mla=sparse_mla,
+            fold_shared_index=fold_shared_index,
         ](
             q,
             input_row_offsets,
@@ -3528,6 +3531,8 @@ def _flare_mla_decode_kv_cache_ragged[
     local_window_size: Int = -1,
     per_token_scale_rope_aware: Bool = False,
     sparse_mla: Bool = False,
+    # Read-once shared-index MTP fold (KERN-3141); threaded to flare_mla_decoding.
+    fold_shared_index: Bool = False,
 ](
     q: TileTensor[mut=False, q_dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -3635,6 +3640,7 @@ def _flare_mla_decode_kv_cache_ragged[
             ragged=True,
             per_token_scale_rope_aware=per_token_scale_rope_aware,
             sparse=sparse_mla,
+            fold_shared_index=fold_shared_index,
         ](
             output,
             q,

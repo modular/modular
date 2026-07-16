@@ -262,6 +262,25 @@ def run_test_sparse_kv_fp8[
     kv_type: DType,  # float8_e4m3fn
     num_heads: Int,
     use_causal: Bool = False,
+    # Read-once shared-index fold (KERN-3141): build ONE topk list shared by
+    # every q position and drive the decode with fold_shared_index=True.
+    # False -> per-position distinct scramble (baseline).
+    shared_index: Bool = False,
+    # Physical gather order of the ONE shared set {0..topk-1} (shared_index
+    # only), IDENTICAL across all q positions. 0=identity (slot i == token i,
+    # makes the slot-index causal horizon equal logical-token causal),
+    # 1=reversed, 2=coprime permutation. NullMask output must be INVARIANT to
+    # this order (permutation invariance = the Phase-4 order audit); under
+    # CausalMask the kernel's slot-index horizon only equals logical-token
+    # causal for order 0 (documented limitation).
+    order_mode: Int = 0,
+    # Phase 5 seq_len=0: make the LAST batch a 0-length (empty) ragged sequence.
+    # Under the fold (grid.y=1, block_idx.y=0) the ragged early-exit fires
+    # (block_idx.y >= seq_len) and _pdl_early_exit_all_q writes -inf LSE for
+    # every folded slot. Invariant: the empty batch does NOT hang/poison the
+    # combine and the non-empty batches stay correct. The empty batch's own
+    # output is undefined (skipped in the NaN scan + assert). Default False.
+    empty_last_batch: Bool = False,
 ](
     name: StringLiteral,
     batch_size: Int,
@@ -403,11 +422,32 @@ def run_test_sparse_kv_fp8[
     # Select topk unique tokens PER QUERY TOKEN via deterministic permutation.
     var selected_tokens = List(length=total_q_tokens * topk, fill=Int(0))
     var mult = _coprime_multiplier(num_keys)
+    # Coprime with topk => (i * perm_mult) % topk permutes the shared set
+    # {0..topk-1} (order_mode == 2): same SET, shuffled physical gather order.
+    var perm_mult = _coprime_multiplier(topk)
     for bi in range(batch_size):
         for s in range(q_max_seq_len):
             var g = bi * q_max_seq_len + s
             for i in range(topk):
-                selected_tokens[g * topk + i] = (i * mult + 1 + s) % num_keys
+                comptime if shared_index:
+                    # Index-shared MTP: every q position gets the IDENTICAL
+                    # shared list; order_mode picks its physical gather order.
+                    # NullMask output must be INVARIANT to order_mode
+                    # (permutation invariance). CausalMask matches the host
+                    # (logical-token) reference only for order_mode 0, because
+                    # the kernel masks by gather-SLOT index — the documented
+                    # order limitation (Phase 4). order_mode is a comptime
+                    # constant, so this if-chain is trivially folded.
+                    if order_mode == 1:
+                        selected_tokens[g * topk + i] = topk - 1 - i
+                    elif order_mode == 2:
+                        selected_tokens[g * topk + i] = (i * perm_mult) % topk
+                    else:
+                        selected_tokens[g * topk + i] = i
+                else:
+                    selected_tokens[g * topk + i] = (
+                        i * mult + 1 + s
+                    ) % num_keys
 
     # Build sparse reference K buffer [total_q_tokens, topk, Q_DEPTH] — one
     # selected-key set per query token.
@@ -665,6 +705,9 @@ def run_test_sparse_kv_fp8[
     )
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i * q_max_seq_len)
+    if empty_last_batch and batch_size > 1:
+        # Last batch becomes 0-length: row_offsets[bs] == row_offsets[bs-1].
+        row_offsets_host[batch_size] = row_offsets_host[batch_size - 1]
     var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
     )
@@ -679,12 +722,16 @@ def run_test_sparse_kv_fp8[
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
         is_fp8_kv=True,
+        fold_shared_index=shared_index,
     ](batch_size, cache_len, q_max_seq_len, ctx)
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count = ctx.default_device_info.sm_count
     var dispatch_scalars = compute_mla_dispatch_scalars[
-        num_heads=num_heads, is_fp8_kv=True, half_sms=sm_count // 2
+        num_heads=num_heads,
+        is_fp8_kv=True,
+        half_sms=sm_count // 2,
+        fold_shared_index=shared_index,
     ](batch_size, cache_len, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
@@ -711,6 +758,7 @@ def run_test_sparse_kv_fp8[
             config=MHAConfig[q_type](num_heads, Q_DEPTH),
             ragged=True,
             sparse=True,
+            fold_shared_index=shared_index,
         ](
             out_tt,
             q_tt,
@@ -731,6 +779,7 @@ def run_test_sparse_kv_fp8[
             config=MHAConfig[q_type](num_heads, Q_DEPTH),
             ragged=True,
             sparse=True,
+            fold_shared_index=shared_index,
         ](
             out_tt,
             q_tt,
@@ -761,6 +810,8 @@ def run_test_sparse_kv_fp8[
     var nan_count = 0
     var total_checked = 0
     for b in range(batch_size):
+        if empty_last_batch and b == batch_size - 1:
+            continue  # empty batch: output undefined (fold ragged early-exit)
         for s in range(q_max_seq_len):
             for h in range(num_heads):
                 for d in range(V_DEPTH):
@@ -820,6 +871,8 @@ def run_test_sparse_kv_fp8[
 
     # Run asserts only after NaN scan (so we see all NaNs before failing).
     for b in range(batch_size):
+        if empty_last_batch and b == batch_size - 1:
+            continue  # empty batch: output undefined (fold ragged early-exit)
         for s in range(q_max_seq_len):
             for h in range(num_heads):
                 for d in range(V_DEPTH):
@@ -2635,6 +2688,207 @@ def main() raises:
             ctx.default_device_info
         ):
             seed(42)
+
+            # =====================================================
+            # Read-once shared-index MTP fold (KERN-3141), shared_index=True.
+            # All q positions share ONE identity-ordered topk list; the fold
+            # gathers it ONCE (grid.y=1) and every BM row (q_len*nqh=48) attends
+            # the single pass. Driven by the fold_shared_index comptime param
+            # (no -D). These exercise the fold branches (NullMask + CausalMask);
+            # Phase 4 adds the order-correctness matrix (reversed / random /
+            # score-order / permuted-physical) and the different-set negative.
+            # =====================================================
+            # NullMask, single tile: bs1, nqh8, q6, cl256, topk64 (48<=BM=64).
+            run_test_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=True
+            ](
+                "shared_fold_b1_h8_cl256_topk64_seq6",
+                1,
+                256,
+                ctx,
+                topk=64,
+                q_max_seq_len=6,
+            )
+            # Multi-tile shared list: bs2, topk160 = 2.5 tiles.
+            run_test_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=True
+            ](
+                "shared_fold_b2_h8_cl1024_topk160_seq6",
+                2,
+                1024,
+                ctx,
+                topk=160,
+                q_max_seq_len=6,
+            )
+            # CausalMask tail: cl64, topk70=num_keys -> identity list includes
+            # the draft tokens (indices 64..69); position 5 sees its draft
+            # tokens, position 0 does not (per-position causal horizon). This
+            # instantiates the CausalMask fold branch.
+            run_test_sparse_kv_fp8[
+                DType.bfloat16,
+                DType.float8_e4m3fn,
+                8,
+                use_causal=True,
+                shared_index=True,
+            ](
+                "shared_fold_causal_tail_b1_h8_cl64_topk70_seq6",
+                1,
+                64,
+                ctx,
+                topk=70,
+                q_max_seq_len=6,
+            )
+            # --- Phase 4 order audit: NullMask permutation invariance. ---
+            # Same shared SET as the identity cases, but a reversed / coprime-
+            # permuted physical gather order. NullMask has no causal horizon, so
+            # every folded row attends the whole shared set: output MUST be
+            # invariant to gather order. Passing against the (order-agnostic)
+            # NullMask reference proves the read-once fold is permutation
+            # invariant where the attention semantics are order invariant.
+            run_test_sparse_kv_fp8[
+                DType.bfloat16,
+                DType.float8_e4m3fn,
+                8,
+                shared_index=True,
+                order_mode=1,
+            ](
+                "shared_fold_null_reversed_b2_h8_cl256_topk64_seq6",
+                2,
+                256,
+                ctx,
+                topk=64,
+                q_max_seq_len=6,
+            )
+            run_test_sparse_kv_fp8[
+                DType.bfloat16,
+                DType.float8_e4m3fn,
+                8,
+                shared_index=True,
+                order_mode=2,
+            ](
+                "shared_fold_null_permuted_b2_h8_cl512_topk160_seq6",
+                2,
+                512,
+                ctx,
+                topk=160,
+                q_max_seq_len=6,
+            )
+            # --- Phase 4 negative: DIFFERENT per-position sets. The fold
+            # precondition does NOT hold, so the production gate
+            # (index_share = reuse_prev_topk and not skip_topk) is False and the
+            # UNFOLDED baseline runs (shared_index=False here). Each of the 6 q
+            # positions keeps its own distinct scrambled list; matching the
+            # per-position reference proves one folded row never silently
+            # represents six different sets (the fold is NOT selected here).
+            run_test_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=False
+            ](
+                "neg_distinct_sets_unfolded_b2_h8_cl512_topk64_seq6",
+                2,
+                512,
+                ctx,
+                topk=64,
+                q_max_seq_len=6,
+            )
+            # --- Phase 5 shape matrix (NullMask, shared_index): topk tile
+            # boundaries, batch sizes, and the production split-K shape. ---
+            # topk=40: partial first tile (< BN_QK=64).
+            run_test_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=True
+            ](
+                "shared_fold_b3_h8_cl256_topk40_seq6",
+                3,
+                256,
+                ctx,
+                topk=40,
+                q_max_seq_len=6,
+            )
+            # topk=63/64/65: straddle the single-tile boundary (partial-last-tile
+            # off-by-one coverage).
+            run_test_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=True
+            ](
+                "shared_fold_b3_h8_cl256_topk63_seq6",
+                3,
+                256,
+                ctx,
+                topk=63,
+                q_max_seq_len=6,
+            )
+            run_test_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=True
+            ](
+                "shared_fold_b3_h8_cl256_topk65_seq6",
+                3,
+                256,
+                ctx,
+                topk=65,
+                q_max_seq_len=6,
+            )
+            # topk=1024 + cache=2048: multi-page, split-K active.
+            run_test_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=True
+            ](
+                "shared_fold_b3_h8_cl2048_topk1024_seq6",
+                3,
+                2048,
+                ctx,
+                topk=1024,
+                q_max_seq_len=6,
+            )
+            # Production shape: bs8, cache=2048, topk=2048 (every token), the
+            # benchmark shape; split-K over the true 2048 domain (fold relaxes
+            # the page floor -> the many-way split the Phase-7 bench measures).
+            run_test_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=True
+            ](
+                "shared_fold_prod_b8_h8_cl2048_topk2048_seq6",
+                8,
+                2048,
+                ctx,
+                topk=2048,
+                q_max_seq_len=6,
+            )
+            # --- Phase 5 unsupported-ragged FALLBACK (dispatch-negative). ---
+            # q_len=1 is BELOW MIN_FOLD_Q=2, so the dispatch fold-selection loop
+            # `for n in [2,8]` never matches even with shared_index requested ->
+            # the UNFOLDED baseline runs (grid.y=1 for a single position). This
+            # is exactly the production disjointness (Phase 8: index_share is
+            # only True at q_len=1, where the fold cannot be selected). Output
+            # matching the per-position reference proves the fold is NOT selected
+            # for an unsupported q shape; a wrong impl that folded q=1 would
+            # mis-pack. (An unsupported ragged shape falls back the same way.)
+            run_test_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=True
+            ](
+                "unsupported_q1_fallback_b3_h8_cl256_topk64_seq1",
+                3,
+                256,
+                ctx,
+                topk=64,
+                q_max_seq_len=1,
+            )
+            # --- Phase 5 seq_len=0: last batch empty under the fold. ---
+            # bs2, q6, shared-index fold; batch 1 has 0 tokens. The fold's
+            # ragged early-exit + _pdl_early_exit_all_q must write -inf LSE for
+            # the empty batch's folded slots WITHOUT hanging/poisoning the
+            # combine; batch 0 (full, 6 positions) stays correct. A missing
+            # all-q early-exit would leave uninitialized LSE -> combine reads
+            # garbage -> CUDA_ERROR_ILLEGAL_ADDRESS / wrong batch-0 output.
+            run_test_sparse_kv_fp8[
+                DType.bfloat16,
+                DType.float8_e4m3fn,
+                8,
+                shared_index=True,
+                empty_last_batch=True,
+            ](
+                "shared_fold_seqlen0_b2_h8_cl256_topk64_seq6",
+                2,
+                256,
+                ctx,
+                topk=64,
+                q_max_seq_len=6,
+            )
 
             # =====================================================
             # Base variants: NullMask, no feature flags.

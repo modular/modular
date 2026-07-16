@@ -3752,6 +3752,7 @@ def mla_decode_graph(
     sparse_topk_lengths: TensorValue | None = None,
     sparse_attn_sink: TensorValue | None = None,
     sparse_indices_stride: int | None = None,
+    index_share: bool = False,
 ) -> TensorValue:
     """This is a manually fused kernel that performs the following operations:
 
@@ -3870,6 +3871,16 @@ def mla_decode_graph(
             sparse_topk_lengths,
             sparse_attn_sink,
         ]
+        if index_share:
+            if quant_config is None:
+                raise ValueError(
+                    "index_share (read-once shared-KV MTP fold) is only"
+                    " supported on the fp8 sparse MLA decode path."
+                )
+            # Read-once shared-index fold (KERN-3141): the folded q positions
+            # share one identical top-k list, so the decode kernel gathers it
+            # once. Only emitted when True -> the off path is byte-identical.
+            parameters["index_share"] = True
 
     # Capturable-graph scalar is appended after the optional sparse
     # tensors so the input order matches the MoGG op signature
@@ -3916,6 +3927,7 @@ def mla_prefill_decode_graph(
     sparse_topk_lengths: TensorValue | None = None,
     sparse_attn_sink: TensorValue | None = None,
     sparse_indices_stride: int | None = None,
+    index_share: bool = False,
 ) -> TensorValue:
     """Fused MLA prefill/decode kernel for FP8.
 
@@ -4037,6 +4049,11 @@ def mla_prefill_decode_graph(
             sparse_topk_lengths,
             sparse_attn_sink,
         ]
+        if index_share:
+            # Read-once shared-index fold (KERN-3141); the sparse branch here
+            # already requires fp8. Only emitted when True -> off is
+            # byte-identical.
+            parameters["index_share"] = True
 
     # Capturable-graph scalar appended last (see MoGG op signature).
     input_values += [num_partitions_scalar]

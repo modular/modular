@@ -2163,6 +2163,11 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         mask_str: StaticString,
         target: StaticString,
         indices_stride: Int,
+        # Read-once shared-index MTP fold (KERN-3141). Set from the Python
+        # `index_share` op attribute (default False -> per-position path,
+        # byte-identical). Forwarded to the decode dispatch as
+        # `fold_shared_index`.
+        index_share: Bool = False,
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
@@ -2241,6 +2246,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
                 kv_input_fn=kv_input_fn,
                 target=target,
                 sparse_mla=True,
+                fold_shared_index=index_share,
             ](
                 output.to_tile_tensor[DType.int64](),
                 q.to_tile_tensor[DType.int64](),
@@ -2658,6 +2664,11 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         mask_str: StaticString,
         target: StaticString,
         indices_stride: Int,
+        # Read-once shared-index MTP fold (KERN-3141). Set from the Python
+        # `index_share` op attribute (default False -> per-position path,
+        # byte-identical). Forwarded to the decode dispatch as
+        # `fold_shared_index`.
+        index_share: Bool = False,
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
@@ -2743,6 +2754,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
                 target=target,
                 sparse_mla=True,
                 sparse_indices_stride=indices_stride,
+                fold_shared_index=index_share,
             ](
                 output.to_tile_tensor[DType.int64](),
                 q.to_tile_tensor[DType.int64](),
