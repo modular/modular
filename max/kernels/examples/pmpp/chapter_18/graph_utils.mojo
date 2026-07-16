@@ -34,8 +34,8 @@ struct CSRGraph(Copyable):
     def __init__(out self):
         self.num_vertices = 0
         self.num_edges = 0
-        self.src_ptrs = UnsafePointer[UInt32]()
-        self.dst = UnsafePointer[UInt32]()
+        self.src_ptrs = UnsafePointer[UInt32].unsafe_dangling()
+        self.dst = UnsafePointer[UInt32].unsafe_dangling()
 
     def __init__(
         out self,
@@ -61,8 +61,8 @@ struct CSCGraph(Copyable):
     def __init__(out self):
         self.num_vertices = 0
         self.num_edges = 0
-        self.dst_ptrs = UnsafePointer[UInt32]()
-        self.src = UnsafePointer[UInt32]()
+        self.dst_ptrs = UnsafePointer[UInt32].unsafe_dangling()
+        self.src = UnsafePointer[UInt32].unsafe_dangling()
 
     def __init__(
         out self,
@@ -88,8 +88,8 @@ struct COOGraph(Copyable):
     def __init__(out self):
         self.num_vertices = 0
         self.num_edges = 0
-        self.src = UnsafePointer[UInt32]()
-        self.dst = UnsafePointer[UInt32]()
+        self.src = UnsafePointer[UInt32].unsafe_dangling()
+        self.dst = UnsafePointer[UInt32].unsafe_dangling()
 
     def __init__(
         out self,
@@ -254,7 +254,7 @@ def cpu_bfs(
 def verify_levels(
     num_vertices: Int,
     expected: List[UInt32],
-    h_level: UnsafePointer[UInt32, MutAnyOrigin],
+    h_level: UnsafePointer[mut=False, UInt32, _],
 ) -> Bool:
     """Verify GPU BFS results against CPU reference.
 

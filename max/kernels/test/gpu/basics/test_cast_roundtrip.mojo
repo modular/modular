@@ -53,7 +53,7 @@ def run_vec_add(ctx: DeviceContext) raises:
     var block_dim = 32
 
     comptime kernel = id
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         in_device,
         out_device,
         length,

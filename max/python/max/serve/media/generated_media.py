@@ -27,7 +27,7 @@ from uuid import uuid4
 
 import aiofiles
 import numpy as np
-from max.interfaces.request.open_responses import (
+from max.pipelines.request.open_responses import (
     OutputImageContent,
     OutputVideoContent,
 )
@@ -37,28 +37,24 @@ logger = logging.getLogger("max.serve")
 
 @dataclass(frozen=True)
 class StoredMediaAsset:
-    """Metadata for a generated media artifact stored on local disk.
-
-    Attributes:
-        asset_id: Stable identifier used in MAX's generated-media download
-            routes.
-        kind: Media category, currently ``"image"`` or ``"video"``.
-        path: Absolute path to the saved file on local disk.
-        media_type: MIME type returned when serving the file.
-        filename: Basename exposed in the HTTP download response.
-        size_bytes: File size in bytes used for cache accounting.
-        created_at: Unix timestamp for when the asset metadata was created.
-        last_accessed_at: Unix timestamp of the most recent successful lookup.
-    """
+    """Metadata for a generated media artifact stored on local disk."""
 
     asset_id: str
+    """Stable identifier used in MAX's generated-media download routes."""
     kind: str
+    """Media category, currently ``"image"`` or ``"video"``."""
     path: Path
+    """Absolute path to the saved file on local disk."""
     media_type: str
+    """MIME type returned when serving the file."""
     filename: str
+    """Basename exposed in the HTTP download response."""
     size_bytes: int
+    """File size in bytes used for cache accounting."""
     created_at: float
+    """Unix timestamp for when the asset metadata was created."""
     last_accessed_at: float
+    """Unix timestamp of the most recent successful lookup."""
 
 
 class GeneratedMediaStorageLimitExceeded(RuntimeError):
@@ -343,7 +339,7 @@ def _encode_mp4(
 
     height, width = frames[0].shape[:2]
     container = av.open(str(output_path), mode="w")
-    stream: av.video.VideoStream = container.add_stream(  # type: ignore[assignment]
+    stream: av.video.VideoStream = container.add_stream(
         "libx264",
         rate=frames_per_second,
     )

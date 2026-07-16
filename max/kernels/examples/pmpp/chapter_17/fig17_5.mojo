@@ -20,7 +20,7 @@ from std.atomic import Atomic
 
 def spmv_coo_kernel(
     cooMatrix: COOMatrix,
-    x: UnsafePointer[Float32, MutAnyOrigin],
+    x: UnsafePointer[Float32, ImmutAnyOrigin],
     y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var i = block_idx.x * block_dim.x + thread_idx.x
@@ -101,15 +101,15 @@ def main() raises:
         numNonzeros,
         rows,
         cols,
-        d_rowIdx_buf.unsafe_ptr(),
-        d_colIdx_buf.unsafe_ptr(),
-        d_value_buf.unsafe_ptr(),
+        d_rowIdx_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_colIdx_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_value_buf.unsafe_ptr().as_unsafe_any_origin(),
     )
 
     var blockSize = 256
     var numBlocks = (numNonzeros + blockSize - 1) // blockSize
 
-    ctx.enqueue_function_experimental[spmv_coo_kernel](
+    ctx.enqueue_function[spmv_coo_kernel](
         d_cooMatrix,
         d_x_buf,
         d_y_buf,

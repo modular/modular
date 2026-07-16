@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the list strategy for generating random `List` values in property tests."""
 
+from . import Strategy
 from std.testing.prop.random import Rng
 from std.builtin.simd import SIMD
 from std.collections import List

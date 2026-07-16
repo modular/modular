@@ -22,7 +22,7 @@ from std.sys._assembly import inlined_assembly
 from layout import TileTensor
 from layout.tile_layout import row_major
 from std.memory import (
-    memcpy,
+    unsafe_memcpy,
     memset_zero,
     stack_allocation,
 )
@@ -423,8 +423,8 @@ def dot_at_b(
         num_elements, Scalar[c.dtype], alignment=128
     ]()
 
-    memcpy(dest=a_buffer, src=a_pointer, count=num_elements)
-    memcpy(dest=b_buffer, src=b_pointer, count=num_elements)
+    unsafe_memcpy(dest=a_buffer, src=a_pointer, count=num_elements)
+    unsafe_memcpy(dest=b_buffer, src=b_pointer, count=num_elements)
     memset_zero(c_buffer, num_elements)
 
     # _set() has the side effect of clearing the z tile
@@ -463,4 +463,4 @@ def dot_at_b(
 
     _clr()
 
-    memcpy(dest=c_pointer, src=c_buffer, count=num_elements)
+    unsafe_memcpy(dest=c_pointer, src=c_buffer, count=num_elements)

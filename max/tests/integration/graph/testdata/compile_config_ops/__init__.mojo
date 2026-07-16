@@ -14,10 +14,12 @@
 from std.sys import get_defined_int
 
 import compiler
+from std.gpu.host import DeviceContext
 from std.logger import Logger
-from tensor import foreach, OutputTensor, InputTensor
-from std.runtime.asyncrt import DeviceContextPtr
+from extensibility import foreach, OutputTensor, InputTensor
 
+
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 comptime logger = Logger()
@@ -53,16 +55,17 @@ struct AddOneCustom:
     ](
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         @parameter
-        def add_one[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        def add_one[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
         foreach[add_one, target=target](output, ctx)
 
-    @staticmethod
-    def shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+
+@compiler.register_shape_function("add_one_custom")
+def add_one_custom_shape(
+    x: InputTensor,
+) raises -> IndexList[x.rank]:
+    raise "NotImplemented"

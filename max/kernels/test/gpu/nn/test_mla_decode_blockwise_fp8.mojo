@@ -43,7 +43,6 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from std.memory import alloc
@@ -397,21 +396,21 @@ def run_test_blockwise_fp8[
         scale_dtype_=DType.float32,
         quantization_granularity_=quant_granularity,
     ](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -421,7 +420,7 @@ def run_test_blockwise_fp8[
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
         # Pass the scales tensor
-        LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[DType.float32, Layout.row_major[6]()](
             scales_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 scales_lt.runtime_layout.shape.value,
@@ -434,17 +433,17 @@ def run_test_blockwise_fp8[
 
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # -----------------------------------------------------------------------
@@ -456,7 +455,7 @@ def run_test_blockwise_fp8[
         1,
         ctx,
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     print("  Launching MLA decode kernel (blockwise FP8)...")
 
@@ -472,7 +471,7 @@ def run_test_blockwise_fp8[
         row_offsets_tt,
         scale,
         ctx,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_buf_tt,
         q_max_seq_len=q_max_seq_len,
     )
 
@@ -870,21 +869,21 @@ def run_bench_blockwise_fp8[
         scale_dtype_=DType.float32,
         quantization_granularity_=quant_granularity,
     ](
-        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_type, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -893,7 +892,7 @@ def run_bench_blockwise_fp8[
         ),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
-        LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[DType.float32, Layout.row_major[6]()](
             scales_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 scales_lt.runtime_layout.shape.value,
@@ -906,17 +905,17 @@ def run_bench_blockwise_fp8[
 
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # Step 7: Pre-compute scalar args and benchmark
@@ -926,7 +925,7 @@ def run_bench_blockwise_fp8[
         1,
         ctx,
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @parameter
     @always_inline
@@ -935,7 +934,7 @@ def run_bench_blockwise_fp8[
         q_tt,
         kv_cache,
         row_offsets_tt,
-        scalar_args_buf_lt,
+        scalar_args_buf_tt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[
@@ -950,7 +949,7 @@ def run_bench_blockwise_fp8[
             row_offsets_tt,
             scale,
             ctx,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_buf_tt,
             q_max_seq_len=q_max_seq_len,
         )
 

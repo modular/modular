@@ -198,7 +198,7 @@ def test_cluster_launch_control(ctx: DeviceContext) raises:
     data = ctx.enqueue_create_buffer[DType.float32](n)
 
     comptime kernel = cluster_launch_control
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         data,
         n,
         grid_dim=((n + 1023) // 1024),
@@ -217,7 +217,7 @@ def test_cluster_launch_control(ctx: DeviceContext) raises:
 
 def test_cluster_pipeline(ctx: DeviceContext) raises:
     comptime kernel = pipeline_test_kernel[1, StaticTuple[Int32, 3](2, 2, 1)]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         # Use more blocks than SMs to ensure cancel happens.
         grid_dim=(4, 4),
         block_dim=(256),

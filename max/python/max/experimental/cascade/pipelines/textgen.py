@@ -26,6 +26,8 @@ class GenerateRequest(BaseModel):
 
     num_tokens: int = 10
     ignore_eos: bool = False
+    temperature: float = 1.0
+    """Sampling temperature. Set to ``0.0`` for greedy (deterministic) decoding."""
 
 
 ChatMessages: TypeAlias = list[dict[str, str]]
@@ -35,9 +37,10 @@ class TextGenInterface(ABC):
     """Standard interface for a text-generation model."""
 
     @abstractmethod
-    def generate(
+    def generate_text(
         self,
         req: GenerateRequest,
         prompt: str | ChatMessages,
     ) -> AsyncIterator[str]:
         """Generate a streaming text response to a text prompt."""
+        ...

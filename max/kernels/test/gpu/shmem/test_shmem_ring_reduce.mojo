@@ -149,7 +149,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
 
         # Warmup iterations
         for _ in range(warmup_iters):
-            ctx.enqueue_function_collective_checked[ring_reduce, ring_reduce](
+            ctx.enqueue_function_collective_checked[ring_reduce](
                 dst,
                 src,
                 num_ints,
@@ -165,7 +165,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
 
         @parameter
         def benchmark() raises:
-            ctx.enqueue_function_collective_checked[ring_reduce, ring_reduce](
+            ctx.enqueue_function_collective_checked[ring_reduce](
                 dst,
                 src,
                 num_ints,

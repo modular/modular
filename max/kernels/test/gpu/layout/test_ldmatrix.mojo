@@ -169,7 +169,7 @@ def check_ldmatrix_transposed_bf16[
     ctx.enqueue_copy(b_device, b_host)
 
     comptime kernel_type = test_ldmatrix_transposed[input_type, output_type]
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         c_device,
         a_device,
         b_device,
@@ -181,25 +181,25 @@ def check_ldmatrix_transposed_bf16[
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     # Run naive matmul.
@@ -213,7 +213,7 @@ def check_ldmatrix_transposed_bf16[
         type_of(b_tt).LayoutType,
         BLOCK_DIM,
     ]
-    ctx.enqueue_function_experimental[kernel_naive_type](
+    ctx.enqueue_function[kernel_naive_type](
         c_ref_tt,
         a_tt,
         b_tt,
@@ -280,7 +280,7 @@ def check_ldmatrix(
     comptime MMA_K = 8
 
     comptime kernel_type = test_ldmatrix_fp32
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         c_device,
         a_device,
         b_device,
@@ -297,25 +297,25 @@ def check_ldmatrix(
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     # Run naive matmul.
@@ -331,7 +331,7 @@ def check_ldmatrix(
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function_experimental[kernel_naive_type](
+    ctx.enqueue_function[kernel_naive_type](
         c_ref_tt,
         a_tt,
         b_tt,

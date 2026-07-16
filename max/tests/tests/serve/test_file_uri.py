@@ -18,7 +18,7 @@ from unittest.mock import NonCallableMock
 
 import pytest
 from max.serve.config import Settings
-from max.serve.router.openai_routes import resolve_image_from_url
+from max.serve.router._image_resolution import resolve_image_from_url
 from PIL import Image
 from pydantic import AnyUrl
 

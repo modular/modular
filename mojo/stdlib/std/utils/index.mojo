@@ -23,7 +23,7 @@ from std.utils import IndexList
 from std.hashlib.hasher import Hasher
 from std.sys import bit_width_of
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.dtype import _int_type_of_width, _uint_type_of_width
 import std.format._utils as fmt
 
@@ -325,6 +325,19 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
         comptime for i in range(Self.size):
             res[i] = self.get[i]()
+        return res
+
+    def as_index_tuple(self) -> StaticTuple[SIMDSize, Self.size]:
+        """Converts this IndexList to a static tuple of mlir indexes.
+
+        Returns:
+            The corresponding StaticTuple object.
+        """
+        var res = StaticTuple[SIMDSize, Self.size]()
+
+        comptime for i in range(Self.size):
+            res[i] = self.get[i]()
+
         return res
 
     @always_inline("nodebug")
@@ -681,7 +694,9 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         comptime for i in range(Self.size):
             hasher.update(self.data[i])
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """
         Convert the host type object to a device_type and store it at the
         target address.
@@ -689,7 +704,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         NOTE: This should only be called by `DeviceContext` during invocation
         of accelerator kernels.
         """
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
