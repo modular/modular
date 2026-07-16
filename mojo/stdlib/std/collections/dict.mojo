@@ -909,7 +909,7 @@ struct Dict[
         """
         self._ensure_capacity()
         var entry = DictEntry[Self.K, Self.V, Self.H](key^, value^)
-        var found, slot_idx = self._table.find_slot(entry.hash, entry.key)
+        var found, slot_idx = self._table.find_slot(entry._hash, entry.key)
 
         if found:
             # Overwrite: move the displaced entry out and return it (never
@@ -919,7 +919,7 @@ struct Dict[
             return displaced^
 
         # New entry.
-        self._table.set_ctrl(slot_idx, h2(entry.hash))
+        self._table.set_ctrl(slot_idx, h2(entry._hash))
         (self._table._slots + slot_idx).unsafe_write(entry^)
         self._order.append(Int32(slot_idx))
         self._table._len += 1
@@ -1750,7 +1750,7 @@ struct Dict[
     ) and conforms_to(Self.V, ImplicitlyDeletable):
         comptime if not safe_context:
             self._ensure_capacity()
-        var found, slot_idx = self._table.find_slot(entry.hash, entry.key)
+        var found, slot_idx = self._table.find_slot(entry._hash, entry.key)
 
         if found:
             # Update existing entry: destroy old, move new in
@@ -1758,7 +1758,7 @@ struct Dict[
             (self._table._slots + slot_idx).unsafe_write(entry^)
         else:
             # New entry
-            self._table.set_ctrl(slot_idx, h2(entry.hash))
+            self._table.set_ctrl(slot_idx, h2(entry._hash))
             (self._table._slots + slot_idx).unsafe_write(entry^)
             self._order.append(Int32(slot_idx))
             self._table._len += 1

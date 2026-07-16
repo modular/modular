@@ -254,7 +254,7 @@ struct SwissTableEntry[
     """The explicit `__del__` below would otherwise mark this type
     non-trivially-destructible even when `K` and `V` are trivial."""
 
-    var hash: UInt64
+    var _hash: UInt64
     """`key.__hash__()`, stored so hashing isn't re-computed during lookup."""
     var key: Self.K
     """The unique key for the entry."""
@@ -268,7 +268,7 @@ struct SwissTableEntry[
             key: The key of the entry.
             value: The value of the entry.
         """
-        self.hash = hash[Self.H](key)
+        self._hash = hash[Self.H](key)
         self.key = key^
         self.value = value^
 
@@ -594,7 +594,7 @@ struct SwissTable[
             while match_mask != 0:
                 var bit = count_trailing_zeros(Int(match_mask))
                 var slot_idx = (pos + bit) & (self._capacity - 1)
-                if (self._slots + slot_idx)[].hash == hash and likely(
+                if (self._slots + slot_idx)[]._hash == hash and likely(
                     (self._slots + slot_idx)[].key == key
                 ):
                     return (True, slot_idx)
@@ -647,7 +647,7 @@ struct SwissTable[
             while match_mask != 0:
                 var bit = count_trailing_zeros(Int(match_mask))
                 var slot_idx = (pos + bit) & (self._capacity - 1)
-                if (self._slots + slot_idx)[].hash == hash and likely(
+                if (self._slots + slot_idx)[]._hash == hash and likely(
                     (self._slots + slot_idx)[].key == key
                 ):
                     return (True, slot_idx)
@@ -780,8 +780,8 @@ struct SwissTable[
         for i in range(old_capacity):
             if is_occupied(old_ctrl[i]):
                 var entry = (old_slots + i).take_pointee()
-                var h2_val = h2(entry.hash)
-                var new_slot = self.find_empty_slot(entry.hash)
+                var h2_val = h2(entry._hash)
+                var new_slot = self.find_empty_slot(entry._hash)
                 self.set_ctrl(new_slot, h2_val)
                 (self._slots + new_slot).unsafe_write(entry^)
                 relocations.append((i, new_slot))
@@ -841,19 +841,19 @@ struct SwissTable[
             self.set_ctrl(i, CTRL_EMPTY)
 
             var source = i
-            var target = self.find_empty_slot(entry.hash)
+            var target = self.find_empty_slot(entry._hash)
 
             while self._ctrl[target] == CTRL_DELETED:
-                self.set_ctrl(target, h2(entry.hash))
+                self.set_ctrl(target, h2(entry._hash))
                 var displaced = (self._slots + target).take_pointee()
                 (self._slots + target).unsafe_write(entry^)
                 slot_map[source] = Int32(target)
 
                 entry = displaced^
                 source = target
-                target = self.find_empty_slot(entry.hash)
+                target = self.find_empty_slot(entry._hash)
 
-            self.set_ctrl(target, h2(entry.hash))
+            self.set_ctrl(target, h2(entry._hash))
             (self._slots + target).unsafe_write(entry^)
             slot_map[source] = Int32(target)
 
