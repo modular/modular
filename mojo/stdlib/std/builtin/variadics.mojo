@@ -1171,7 +1171,7 @@ struct _VariadicListIter[
     //,
     elt_type: AnyType,
     elt_origin: Origin[mut=elt_is_mutable],
-    list_origin: ImmutOrigin,
+    list_origin: ImmOrigin,
     is_owned: Bool,
 ](RegisterPassable):
     """Iterator for VariadicList.
@@ -1247,7 +1247,7 @@ struct VariadicList[
     @always_inline
     @implicit
     def __init__[
-        size: __mlir_type.index, container_origin: ImmutOrigin
+        size: __mlir_type.index, container_origin: ImmOrigin
     ](
         out self,
         value: Pointer[
@@ -1351,7 +1351,7 @@ struct VariadicList[
 
     @always_inline
     def __getitem__[
-        self_origin: ImmutOrigin
+        self_origin: ImmOrigin
     ](ref[self_origin] self, idx: Int) -> ref[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
@@ -1426,7 +1426,7 @@ struct VariadicList[
         ).fields[FieldsFn=write_fields]()
 
     def __iter__[
-        self_origin: ImmutOrigin
+        self_origin: ImmOrigin
     ](
         ref[self_origin] self,
     ) -> _VariadicListIter[
@@ -1705,9 +1705,9 @@ struct VariadicPack[
         return __mlir_op.`kgen.struct.load_indirect`(self.get_as_kgen_pack())
 
     def _write_to[
-        O1: ImmutOrigin,
-        O2: ImmutOrigin,
-        O3: ImmutOrigin,
+        O1: ImmOrigin,
+        O2: ImmOrigin,
+        O3: ImmOrigin,
         *,
         is_repr: Bool = False,
     ](

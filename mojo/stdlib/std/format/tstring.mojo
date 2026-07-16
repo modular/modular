@@ -25,7 +25,7 @@ def _strlen(ptr: UnsafePointer[mut=False, Byte, _]) -> Int:
 
 
 struct TString[
-    origins: ImmutOrigin, //, format_string: StaticString, *Ts: Writable
+    origins: ImmOrigin, //, format_string: StaticString, *Ts: Writable
 ](Movable, Writable):
     """A template string that captures interpolated values at compile-time.
 
@@ -131,7 +131,7 @@ def __make_tstring[
 ](
     *args: *Ts,
     out tstring: TString[
-        origins=ImmutOrigin(type_of(args).origin),
+        origins=ImmOrigin(type_of(args).origin),
         StaticString(format_string),
         *Ts,
     ],

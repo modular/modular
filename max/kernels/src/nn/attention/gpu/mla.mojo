@@ -4140,7 +4140,7 @@ def mla_prefill_plan_kernel[
     input_row_offsets: TileTensor[
         DType.uint32,
         InputRowOffsetsLayoutType,
-        ImmutUntrackedOrigin,
+        ImmUntrackedOrigin,
     ],
     k_cache: cache_t,
     buffer_token_size: UInt32,

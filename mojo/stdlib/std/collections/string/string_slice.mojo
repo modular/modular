@@ -157,7 +157,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     """
 
     # Aliases
-    comptime Immutable = StringSlice[ImmutOrigin(Self.origin)]
+    comptime Immutable = StringSlice[ImmOrigin(Self.origin)]
     """The immutable version of the `StringSlice`."""
     # Fields
     var _slice: Span[Byte, Self.origin]
@@ -176,7 +176,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     @always_inline("nodebug")
     def __init__(
         other: StringSlice,
-        out self: StringSlice[ImmutOrigin(other.origin)],
+        out self: StringSlice[ImmOrigin(other.origin)],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -240,7 +240,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     @always_inline
     def __init__[
-        cstring_origin: ImmutOrigin,
+        cstring_origin: ImmOrigin,
         //,
     ](
         out self: StringSlice[cstring_origin],
@@ -1576,12 +1576,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         var total = len(self._slice)
         var prefix = Self.Immutable(
-            unsafe_from_utf8=Span[Byte, ImmutOrigin(Self.origin)](
+            unsafe_from_utf8=Span[Byte, ImmOrigin(Self.origin)](
                 ptr=self._slice.unsafe_ptr(), length=split_bytes
             )
         )
         var suffix = Self.Immutable(
-            unsafe_from_utf8=Span[Byte, ImmutOrigin(Self.origin)](
+            unsafe_from_utf8=Span[Byte, ImmOrigin(Self.origin)](
                 ptr=self._slice.unsafe_ptr() + split_bytes,
                 length=total - split_bytes,
             )
@@ -2602,7 +2602,7 @@ def get_static_string[
 
 
 def _to_string_list[
-    O: ImmutOrigin,
+    O: ImmOrigin,
     T: Copyable,
     //,
     len_fn: def(T) thin -> Int,
@@ -2626,7 +2626,7 @@ def _to_string_list[
 
 @always_inline
 def _to_string_list[
-    O: ImmutOrigin, //
+    O: ImmOrigin, //
 ](items: List[StringSlice[O]]) -> List[String]:
     """Create a list of Strings **copying** the existing data.
 
@@ -2653,7 +2653,7 @@ def _to_string_list[
 
 @always_inline
 def _to_string_list[
-    O: ImmutOrigin, //
+    O: ImmOrigin, //
 ](items: List[Span[Byte, O]]) -> List[String]:
     """Create a list of Strings **copying** the existing data.
 

@@ -197,7 +197,7 @@ def gpu_bicubic_kernel[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     InputLayoutType: TensorLayout,
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
 ](
     output: TileTensor[dtype, OutputLayoutType, output_origin],
     input: TileTensor[dtype, InputLayoutType, input_origin],
@@ -311,7 +311,7 @@ def resize_bicubic[
             output.dtype,
             output_origin=output.origin,
             OutputLayoutType=output.LayoutType,
-            input_origin=ImmutOrigin(input.origin),
+            input_origin=ImmOrigin(input.origin),
             InputLayoutType=input.LayoutType,
         ]
         ctx.enqueue_function[kernel](

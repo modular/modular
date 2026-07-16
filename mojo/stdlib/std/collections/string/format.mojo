@@ -81,7 +81,7 @@ from std.utils import Variant
 
 @fieldwise_init
 struct _PrecompiledEntries[
-    format_origin: ImmutOrigin, entry_origin: ImmutOrigin, //, *Ts: Writable
+    format_origin: ImmOrigin, entry_origin: ImmOrigin, //, *Ts: Writable
 ](ImplicitlyCopyable):
     """Holds a non-owning view of precompiled format string entries.
 
@@ -108,9 +108,9 @@ struct _PrecompiledEntries[
 
 
 @fieldwise_init
-struct _PrecompiledEntriesRuntime[
-    format_origin: ImmutOrigin, //, *Ts: Writable
-](Movable):
+struct _PrecompiledEntriesRuntime[format_origin: ImmOrigin, //, *Ts: Writable](
+    Movable
+):
     """Holds precompiled format string entries with owned runtime-allocated storage.
 
     This struct is similar to `_PrecompiledEntries` but uses a `List` to own
@@ -285,9 +285,7 @@ struct _FormatUtils:
     ](
         format: StringSlice,
     ) -> Variant[
-        _PrecompiledEntriesRuntime[
-            format_origin=ImmutOrigin(format.origin), *Ts
-        ],
+        _PrecompiledEntriesRuntime[format_origin=ImmOrigin(format.origin), *Ts],
         Error,
     ]:
         """Parses and compiles a format string without raising an error.
@@ -307,7 +305,7 @@ struct _FormatUtils:
     ](
         format: StringSlice,
     ) raises -> _PrecompiledEntriesRuntime[
-        format_origin=ImmutOrigin(format.origin), *Ts
+        format_origin=ImmOrigin(format.origin), *Ts
     ]:
         """Parses and compiles a format string at runtime.
 
@@ -330,7 +328,7 @@ struct _FormatUtils:
             An error if the format string is invalid or if replacement fields
             don't match the provided argument types.
         """
-        comptime FormatOrigin = ImmutOrigin(format.origin)
+        comptime FormatOrigin = ImmOrigin(format.origin)
         comptime EntryType = _FormatCurlyEntry[FormatOrigin]
 
         var manual_indexing_count = 0
@@ -424,7 +422,7 @@ struct _FormatUtils:
 # And going a step further it might even be worth it adding custom format
 # specification start character, and custom format specs themselves (by defining
 # a trait that all format specifications conform to)
-struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
+struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
     """The struct that handles string formatting by curly braces entries.
     This is internal for the types: `StringSlice` compatible types.
     """

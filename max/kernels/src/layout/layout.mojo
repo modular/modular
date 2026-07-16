@@ -178,7 +178,7 @@ def make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
 
 
 @fieldwise_init
-struct _LayoutIter[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
+struct _LayoutIter[origin: ImmOrigin](ImplicitlyCopyable, Iterable, Iterator):
     """Iterator for traversing Layout dimensions.
 
     This internal iterator allows traversing the dimensions of a Layout object,
@@ -186,7 +186,7 @@ struct _LayoutIter[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
     and stride for that dimension.
 
     Parameters:
-        origin: The origin type for the `Layout` pointer, must be `ImmutOrigin`.
+        origin: The origin type for the `Layout` pointer, must be `ImmOrigin`.
 
     Attributes:
         index: Current position in the iteration.
@@ -292,7 +292,7 @@ struct Layout(
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _LayoutIter[ImmutOrigin(iterable_origin)]
+    ]: Iterator = _LayoutIter[ImmOrigin(iterable_origin)]
     """The iterator type for Layout iteration.
 
     Parameters:

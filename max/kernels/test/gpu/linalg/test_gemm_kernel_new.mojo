@@ -61,8 +61,8 @@ def gemm_kernel[
     TN: Int,
 ](
     mat_c: TileTensor[c_dtype, CLayoutType, MutUntrackedOrigin],
-    mat_a: TileTensor[a_dtype, ALayoutType, ImmutUntrackedOrigin],
-    mat_b: TileTensor[b_dtype, BLayoutType, ImmutUntrackedOrigin],
+    mat_a: TileTensor[a_dtype, ALayoutType, ImmUntrackedOrigin],
+    mat_b: TileTensor[b_dtype, BLayoutType, ImmUntrackedOrigin],
 ) where (
     BM > -1
     and BN > -1
@@ -495,8 +495,8 @@ def matmul_kernel_naive[
     s_type: DType = get_accum_type[c_dtype](),
 ](
     c: TileTensor[c_dtype, CLayoutType, MutUntrackedOrigin],
-    a: TileTensor[a_dtype, ALayoutType, ImmutUntrackedOrigin],
-    b: TileTensor[b_dtype, BLayoutType, ImmutUntrackedOrigin],
+    a: TileTensor[a_dtype, ALayoutType, ImmUntrackedOrigin],
+    b: TileTensor[b_dtype, BLayoutType, ImmUntrackedOrigin],
     m: Int,
     n: Int,
     k: Int,

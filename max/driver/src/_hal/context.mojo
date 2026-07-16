@@ -32,7 +32,7 @@ from .stream import Stream
 from .status import STATUS_SUCCESS, HALError
 
 from std.memory import (
-    ImmutPointer,
+    ImmPointer,
     ArcPointer,
     UnsafePointer,
     UnsafeMaybeUninit,
@@ -243,7 +243,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         return (bundle^, compiled_info)
 
     def load_bundle[
-        asm_origin: ImmutOrigin
+        asm_origin: ImmOrigin
     ](
         self, asm: StringSlice[origin=asm_origin]
     ) raises HALError -> RuntimeBundle:
@@ -263,7 +263,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         )
 
         var opts = M_driver_bundle_compilation_options(
-            debug_level=rebind[ImmutPointer[Int8, ImmutUntrackedOrigin]](
+            debug_level=rebind[ImmPointer[Int8, ImmUntrackedOrigin]](
                 "".unsafe_ptr()
             ),
             debug_level_len=UInt64(0),

@@ -297,7 +297,7 @@ def create_unknown_int_tuple(rank: Int) -> IntTuple:
     return result
 
 
-struct _IntTupleIter[origin: ImmutOrigin](
+struct _IntTupleIter[origin: ImmOrigin](
     Iterable, Iterator, TrivialRegisterPassable
 ):
     """Iterator for traversing elements of an IntTuple."""
@@ -374,7 +374,7 @@ struct IntTuple(
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _IntTupleIter[ImmutOrigin(iterable_origin)]
+    ]: Iterator = _IntTupleIter[ImmOrigin(iterable_origin)]
     """The iterator type for IntTuple iteration.
 
     Parameters:
@@ -418,7 +418,7 @@ struct IntTuple(
     @staticmethod
     @always_inline("nodebug")
     def elements_size[
-        _origin: ImmutOrigin, n: Int
+        _origin: ImmOrigin, n: Int
     ](elements: InlineArray[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
         """Calculate the total storage size needed for IntTuples at a specific index.
 

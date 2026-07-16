@@ -16,7 +16,7 @@ from std.testing import assert_equal, assert_raises, assert_true, assert_false
 from test_utils import MoveOnly, check_write_to
 from std.math import iota
 from std.hashlib import Hasher
-from std.memory import ImmutSpan, MutSpan
+from std.memory import ImmSpan, MutSpan
 
 
 def test_span_list_int() raises:
@@ -528,13 +528,13 @@ def test_mut_span_alias() raises:
 def test_immut_span_alias() raises:
     var data: List[Int] = [1, 2, 3, 4, 5]
 
-    def sum_span(span: ImmutSpan[Int, _]) -> Int:
+    def sum_span(span: ImmSpan[Int, _]) -> Int:
         var total = 0
         for i in range(len(span)):
             total += span[i]
         return total
 
-    # ImmutSpan works with both mutable and immutable data
+    # ImmSpan works with both mutable and immutable data
     assert_equal(sum_span(data), 15)
 
 

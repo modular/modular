@@ -29,7 +29,7 @@ from std.reflection import get_function_name, call_location, SourceLocation
 from std.sys import argv
 
 
-struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
+struct _Indent[W: Writable, origin: ImmOrigin](Writable):
     """Indents the given writable by the given level."""
 
     comptime IndentStr = "  "

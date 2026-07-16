@@ -46,7 +46,7 @@ This version is still a work in progress.
 
   ```mojo
   var fp1: def(*Int) thin -> None
-  var fp2: def[a: ImmutOrigin](ref [a] x: Int) thin -> None
+  var fp2: def[a: ImmOrigin](ref [a] x: Int) thin -> None
   ...
   fp1(1, 2)
   fp2(42)
@@ -563,7 +563,7 @@ This version is still a work in progress.
   `__iter__()`.
 
 - The implicit conversion constructors that cast an `UnsafePointer` to
-  `MutUnsafeAnyOrigin` or `ImmutUnsafeAnyOrigin` are now deprecated and emit a
+  `MutUnsafeAnyOrigin` or `ImmUnsafeAnyOrigin` are now deprecated and emit a
   deprecation warning when used. `UnsafeAnyOrigin` is an unsafe escape hatch
   that silently extends unrelated lifetimes and disables exclusivity checking,
   so it should never be applied implicitly. Prefer keeping a concrete origin;

@@ -56,7 +56,7 @@ def apply_mask_kernel[
     ScoresLayoutType: TensorLayout,
     scores_origin: MutOrigin,
     VLLayoutType: TensorLayout,
-    vl_origin: ImmutOrigin,
+    vl_origin: ImmOrigin,
     CLLayoutType: TensorLayout,
 ](
     output: TileTensor[DType.float32, ScoresLayoutType, scores_origin],
@@ -95,7 +95,7 @@ def apply_mask_kernel[
 @__name(t"mla_fill_invalid_topk_{use_causal_mask}")
 def fill_invalid_topk_kernel[
     IROLayoutType: TensorLayout,
-    iro_origin: ImmutOrigin,
+    iro_origin: ImmOrigin,
     cache_lengths_layout: TensorLayout,
     use_causal_mask: Bool,
 ](
@@ -374,7 +374,7 @@ def mla_indexer_ragged_float8_paged[
                     scores_tile.LayoutType,
                     scores_tile.origin,
                     input_row_offsets.LayoutType,
-                    ImmutOrigin(input_row_offsets.origin),
+                    ImmOrigin(input_row_offsets.origin),
                     type_of(cache_lengths).LayoutType,
                 ]
 
@@ -451,7 +451,7 @@ def mla_indexer_ragged_float8_paged[
 
     comptime fill_kernel = fill_invalid_topk_kernel[
         input_row_offsets.LayoutType,
-        ImmutOrigin(input_row_offsets.origin),
+        ImmOrigin(input_row_offsets.origin),
         type_of(cache_lengths).LayoutType,
         use_causal_mask,
     ]

@@ -142,7 +142,7 @@ def test_merge() raises:
 
 def test_nicheable() raises:
     var x = 42
-    comptime PointerType = Pointer[Int, ImmutOrigin(origin_of(x))]
+    comptime PointerType = Pointer[Int, ImmOrigin(origin_of(x))]
 
     assert_equal(PointerType.niche_count(), 1)
 

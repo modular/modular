@@ -77,7 +77,7 @@ from .tmem import TmemArrayType
 
 struct TileWriter[
     # Inferred from constructor arg
-    tma_origin: ImmutOrigin,
+    tma_origin: ImmOrigin,
     c_type: DType,
     c_rank: Int,
     c_tile_shape: IndexList[c_rank],
@@ -2342,7 +2342,7 @@ struct StandardOutputWriter(OutputWriter):
     @staticmethod
     @always_inline
     def write_batched[
-        tma_origin: ImmutOrigin,
+        tma_origin: ImmOrigin,
         c_type: DType,
         c_rank: Int,
         c_tile_shape: IndexList[c_rank],

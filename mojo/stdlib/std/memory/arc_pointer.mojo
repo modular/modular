@@ -284,7 +284,7 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
     # to model the mutability and invalidation of the returned reference
     # correctly.
     def __getitem__[
-        self_life: ImmutOrigin
+        self_life: ImmOrigin
     ](ref[self_life] self) -> ref[self_life.unsafe_mut_cast[True]()] Self.T:
         """Returns a mutable reference to the managed value.
 

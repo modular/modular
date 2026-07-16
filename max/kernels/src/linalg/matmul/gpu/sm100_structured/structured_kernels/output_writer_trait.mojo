@@ -94,7 +94,7 @@ trait OutputWriter:
 
     @staticmethod
     def write_batched[
-        tma_origin: ImmutOrigin,
+        tma_origin: ImmOrigin,
         c_type: DType,
         c_rank: Int,
         c_tile_shape: IndexList[c_rank],

@@ -80,7 +80,7 @@ def _require_apple_m5(ctx: DeviceContext) raises:
 @fieldwise_init
 struct Int8DequantWriter[
     c_origin: MutOrigin,
-    s_origin: ImmutOrigin,
+    s_origin: ImmOrigin,
     //,
     c_type: DType,
     c_layout: TensorLayout,

@@ -254,7 +254,7 @@ struct TileTensor[
         comptime if Self.mut:
             return TypeList.of[
                 Self,
-                Self.OriginCastType[ImmutOrigin(Self.origin)],
+                Self.OriginCastType[ImmOrigin(Self.origin)],
             ]().contains[T]()
         else:
             return TypeList.of[Self]().contains[T]()
@@ -1787,7 +1787,7 @@ struct TileTensor[
             _StaticSplitShape[count, axis, Self.LayoutType._shape_types](),
             Self.LayoutType._stride_types,
         ],
-        ImmutOrigin(Self.origin),
+        ImmOrigin(Self.origin),
         Storage=Self.Storage.OffsetResultType[TypeList.of[Int]()],
         address_space=Self.address_space,
         linear_idx_type=Self.linear_idx_type,
@@ -1892,7 +1892,7 @@ struct TileTensor[
             ](),
             Self.LayoutType._stride_types,
         ],
-        ImmutOrigin(Self.origin),
+        ImmOrigin(Self.origin),
         Storage=Self.Storage.OffsetResultType[TypeList.of[Int]()],
         address_space=Self.address_space,
         linear_idx_type=Self.linear_idx_type,
@@ -2553,7 +2553,7 @@ struct TileTensor[
             ),
         }
 
-    comptime Immut = Self.OriginCastType[ImmutOrigin(Self.origin)]
+    comptime Immut = Self.OriginCastType[ImmOrigin(Self.origin)]
     """Type alias for an immutably-casted tensor."""
 
     comptime OriginCastType[
@@ -2607,7 +2607,7 @@ struct TileTensor[
     @always_inline
     def as_immut(
         self,
-    ) -> Self.OriginCastType[ImmutOrigin(Self.origin)]:
+    ) -> Self.OriginCastType[ImmOrigin(Self.origin)]:
         """
         Return an immutable version of this tensor.
 
@@ -2615,7 +2615,7 @@ struct TileTensor[
             A `LayoutTensor` covering the same elements, but without mutability.
         """
         return {
-            self._unsafe_storage_cast[to_origin=ImmutOrigin(Self.origin)](),
+            self._unsafe_storage_cast[to_origin=ImmOrigin(Self.origin)](),
             self.layout,
         }
 
@@ -2949,7 +2949,7 @@ struct NullableTileTensor[
         out self: NullableTileTensor[
             other.dtype,
             other.LayoutType,
-            ImmutOrigin(other.origin),
+            ImmOrigin(other.origin),
             address_space=other.address_space,
             linear_idx_type=other.linear_idx_type,
             element_size=other.element_size,
@@ -2991,7 +2991,7 @@ struct NullableTileTensor[
         out self: NullableTileTensor[
             other.dtype,
             other.LayoutType,
-            ImmutOrigin(other.origin),
+            ImmOrigin(other.origin),
             address_space=other.address_space,
             linear_idx_type=other.linear_idx_type,
             element_size=other.element_size,

@@ -71,12 +71,12 @@ values, so values aren't destroyed prematurely.
 ### Origin types
 
 Mojo supplies a struct and a set of type aliases (`comptime` values) that you
-can use to specify origin types. As the names suggest, the `ImmutOrigin` and
+can use to specify origin types. As the names suggest, the `ImmOrigin` and
 `MutOrigin` `comptime` values represent immutable and mutable origins,
 respectively:
 
 ```mojo
-struct ImmutRef[origin: ImmutOrigin]:
+struct ImmutRef[origin: ImmOrigin]:
     pass
 ```
 
@@ -134,9 +134,9 @@ few ways to specify origin values:
 - Inferred origin. You can use inferred parameters to capture the origin of a
   value passed in to a function.
 - Untracked origins. The untracked origins, `MutUntrackedOrigin` and
-  `ImmutUntrackedOrigin` represent values that are not tracked by the lifetime
+  `ImmUntrackedOrigin` represent values that are not tracked by the lifetime
   checker, such as dynamically-allocated memory.
-- Wildcard origins. The `ImmutUnsafeAnyOrigin` and `MutUnsafeAnyOrigin`
+- Wildcard origins. The `ImmUnsafeAnyOrigin` and `MutUnsafeAnyOrigin`
   `comptime` values are special cases indicating a reference that might access
   any live value.
 
@@ -230,7 +230,7 @@ inferred origin.
 
 #### Untracked origins
 
-The untracked origins, `MutUntrackedOrigin` and `ImmutUntrackedOrigin` represent
+The untracked origins, `MutUntrackedOrigin` and `ImmUntrackedOrigin` represent
 values that do not alias any existing value. That is, they point to memory that
 is not owned by any other variable, and are therefore not tracked by the
 lifetime checker. For example, the
@@ -243,7 +243,7 @@ should generally free that memory in its destructor.
 
 #### Wildcard origins
 
-The wildcard origins, `ImmutUnsafeAnyOrigin` and `MutUnsafeAnyOrigin`, are
+The wildcard origins, `ImmUnsafeAnyOrigin` and `MutUnsafeAnyOrigin`, are
 special cases indicating a reference that might access any live value. These
 were previously widely used for unsafe pointers. Using a pointer with a wildcard
 origin into a scope effectively disables Mojo's ASAP destruction for any values
@@ -316,7 +316,7 @@ specifier can be either:
   ```
 
 You can also name the origin explicitly. This is useful if you want to
-restrict the argument to either a `ImmutOrigin` or `MutOrigin`, or if
+restrict the argument to either a `ImmOrigin` or `MutOrigin`, or if
 you want to bind a function's return value to the origin of an argument.
 
 For example, the `Span` type is a non-owning view of contiguous data (like a

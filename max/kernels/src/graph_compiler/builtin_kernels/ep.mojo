@@ -1816,7 +1816,7 @@ struct Struct_ep_combine_skip_a2a:
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             context,
             topk_ids._ptr.as_immutable().unsafe_origin_cast[
-                ImmutUntrackedOrigin
+                ImmUntrackedOrigin
             ](),
         )
 

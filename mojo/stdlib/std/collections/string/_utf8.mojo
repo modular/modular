@@ -366,7 +366,7 @@ def _is_newline_char_utf8[
         return b0 == 0xE2 and b1 == 0x80 and (b2 == 0xA8 or b2 == 0xA9)
 
 
-struct UTF8Chunk[origin: ImmutOrigin](ImplicitlyCopyable):
+struct UTF8Chunk[origin: ImmOrigin](ImplicitlyCopyable):
     var valid: StringSlice[Self.origin]
     """The valid UTF-8 bytes."""
 
@@ -386,7 +386,7 @@ struct UTF8Chunk[origin: ImmutOrigin](ImplicitlyCopyable):
 
 # This is an implementation of Rust's `UTF8Chunk` iterator.
 # https://doc.rust-lang.org/src/core/str/lossy.rs.html#194
-struct UTF8Chunks[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
+struct UTF8Chunks[origin: ImmOrigin](ImplicitlyCopyable, Iterable, Iterator):
     """An iterator over valid and invalid UTF-8 chunks."""
 
     comptime IteratorType[

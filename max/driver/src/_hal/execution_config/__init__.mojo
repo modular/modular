@@ -177,7 +177,7 @@ trait ConstantMemoryMappingExecutionConfig(ExecutionConfig):
     mappings."""
 
     def get_constant_memory_mappings[
-        o: ImmutOrigin
+        o: ImmOrigin
     ](ref[o] self,) -> Span[ConstantMemoryMapping, o]:
         """Gets the constant memory mappings configured for the execution config.
 
@@ -202,7 +202,7 @@ trait LaunchAttributeHolderExecutionConfig(ExecutionConfig):
     """An `ExecutionConfig` which has the ability to hold launch attributes."""
 
     def get_launch_attributes[
-        o: ImmutOrigin
+        o: ImmOrigin
     ](ref[o] self,) -> Span[LaunchAttribute, o]:
         """Gets the launch attributes configured for kernel launch.
 

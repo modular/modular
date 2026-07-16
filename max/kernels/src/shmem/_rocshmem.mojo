@@ -169,7 +169,7 @@ struct ROCSHMEMInitAttr(ImplicitlyCopyable):
     var nranks: Int32
     var uid: SHMEMUniqueID
 
-    var mpi_comm: Optional[UnsafePointer[NoneType, ImmutUntrackedOrigin]]
+    var mpi_comm: Optional[UnsafePointer[NoneType, ImmUntrackedOrigin]]
 
     def __init__(out self):
         comptime assert (

@@ -684,7 +684,7 @@ struct _MapIterator[
 
 @always_inline
 def map[
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
     IterableType: Iterable,
     ResultType: Copyable,
     //,
@@ -817,7 +817,7 @@ struct _PeekableIterator[InnerIterator: Iterator](
 
     def peek(
         mut self,
-    ) -> Optional[Pointer[Self.Element, ImmutOrigin(origin_of(self._next[]))]]:
+    ) -> Optional[Pointer[Self.Element, ImmOrigin(origin_of(self._next[]))]]:
         if not self._next:
             try:
                 self._next = next(self._inner)

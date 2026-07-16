@@ -41,7 +41,7 @@ def _mutable_pointer(p: MutUnsafePointer[Int, ...]) raises:
     assert_equal(p[], 42)
 
 
-def _immutable_pointer(p: ImmutUnsafePointer[Int, ...]) raises:
+def _immutable_pointer(p: ImmUnsafePointer[Int, ...]) raises:
     assert_equal(p[], 42)
 
 
@@ -561,7 +561,7 @@ def test_unsafe_mut_cast() raises:
     assert_true(_mutable.mut)
 
 
-def _ref_to[origin: ImmutOrigin](ref[origin] to: String):
+def _ref_to[origin: ImmOrigin](ref[origin] to: String):
     pass
 
 
@@ -650,7 +650,7 @@ def test_write_repr_to() raises:
 
 def test_unsafe_pointer_niche() raises:
     var x = 42
-    comptime UP = UnsafePointer[Int, ImmutOrigin(origin_of(x))]
+    comptime UP = UnsafePointer[Int, ImmOrigin(origin_of(x))]
     assert_equal(size_of[UP](), size_of[Optional[UP]]())
 
     var storage = UnsafeMaybeUninit[UP]()

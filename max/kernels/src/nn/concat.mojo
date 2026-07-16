@@ -171,7 +171,7 @@ def _canonical_reshape[
 
 
 def _canonical_reshape_output[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -195,7 +195,7 @@ def _canonical_reshape_output[
 
 
 def _concat_parallel[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -342,7 +342,7 @@ def _concat_parallel[
 
 @always_inline
 def _concat[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -404,7 +404,7 @@ def _concat[
 
 @always_inline
 def _concat_inner[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -432,7 +432,7 @@ def _concat_inner[
 
 @always_inline
 def _check_input_consistency[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -450,7 +450,7 @@ def _check_input_consistency[
 
 @always_inline
 def _concat_serial[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -481,7 +481,7 @@ def _concat_serial[
 
 @always_inline
 def _concat_cpu[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -516,7 +516,7 @@ def _concat_cpu[
 
 @always_inline
 def concat_shape[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     input_type: DType,
@@ -581,7 +581,7 @@ def concat_shape[
 
 @always_inline
 def concat[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -641,7 +641,7 @@ def _concat_gpu_flat_kernel[
     output_origin: MutOrigin,
     OutputStorage: TensorStorage,
     InputLayoutType: TensorLayout,
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputStorage: TensorStorage,
     //,
     dtype: DType,
@@ -706,7 +706,7 @@ def _concat_inner_most_single_dim[
     output_origin: MutOrigin,
     OutputStorage: TensorStorage,
     InputLayoutType: TensorLayout,
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputStorage: TensorStorage,
     //,
     dtype: DType,
@@ -757,7 +757,7 @@ def _concat_inner_most_single_dim[
 
 @always_inline
 def _concat_gpu_elementwise[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     InputStorage: TensorStorage,
     //,
@@ -789,7 +789,7 @@ def _concat_gpu_elementwise[
 
 @always_inline
 def _concat_gpu_elementwise[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     InputStorage: TensorStorage,
     //,
@@ -928,7 +928,7 @@ def _concat_gpu_elementwise[
 
 @always_inline
 def _concat_gpu[
-    input_origin: ImmutOrigin,
+    input_origin: ImmOrigin,
     InputLayoutType: TensorLayout,
     InputStorage: TensorStorage,
     //,

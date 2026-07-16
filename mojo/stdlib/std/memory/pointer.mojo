@@ -190,7 +190,7 @@ Parameters:
 
 comptime ImmPointer[
     type: AnyType,
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = Pointer[type, origin, address_space=address_space]
@@ -204,6 +204,7 @@ Parameters:
 
 
 @doc_hidden
+@deprecated(use=ImmPointer)
 comptime ImmutPointer = ImmPointer
 
 

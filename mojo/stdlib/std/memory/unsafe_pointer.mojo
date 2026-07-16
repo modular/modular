@@ -254,7 +254,7 @@ Parameters:
 
 comptime ImmUnsafePointer[
     type: AnyType,
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = UnsafePointer[type, origin, address_space=address_space]
@@ -268,6 +268,7 @@ Parameters:
 
 
 @doc_hidden
+@deprecated(use=ImmUnsafePointer)
 comptime ImmutUnsafePointer = ImmUnsafePointer
 
 comptime OpaquePointer[
@@ -298,7 +299,7 @@ Parameters:
 """
 
 comptime ImmOpaquePointer[
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = OpaquePointer[origin, address_space=address_space]
@@ -311,6 +312,7 @@ Parameters:
 
 
 @doc_hidden
+@deprecated(use=ImmOpaquePointer)
 comptime ImmutOpaquePointer = ImmOpaquePointer
 
 comptime OptionalUnsafePointer[
@@ -602,7 +604,7 @@ struct Pointer[
         other: Pointer,
         out self: Pointer[
             other.type,
-            ImmutOrigin(other.origin),
+            ImmOrigin(other.origin),
             address_space=other.address_space,
             _safe=Self._safe,
         ],
@@ -1090,13 +1092,13 @@ struct Pointer[
                 Self._OriginCastType[MutAnyOrigin],
                 Self._OriginCastType[MutUntrackedOrigin],
                 Self._OriginCastType[ImmutAnyOrigin],
-                Self._OriginCastType[ImmutUntrackedOrigin],
+                Self._OriginCastType[ImmUntrackedOrigin],
             ]().contains[T]()
         else:
             return TypeList.of[
                 Self,
                 Self._OriginCastType[ImmutAnyOrigin],
-                Self._OriginCastType[ImmutUntrackedOrigin],
+                Self._OriginCastType[ImmUntrackedOrigin],
             ]().contains[T]()
 
     def _to_device_type(
@@ -2226,7 +2228,7 @@ struct Pointer[
     @always_inline("builtin")
     def as_immutable(
         self,
-    ) -> Self._OriginCastType[ImmutOrigin(Self.origin)]:
+    ) -> Self._OriginCastType[ImmOrigin(Self.origin)]:
         """Changes the mutability of a pointer to immutable.
 
         Unlike `unsafe_mut_cast`, this function is always safe to use as casting

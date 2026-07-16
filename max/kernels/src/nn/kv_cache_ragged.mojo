@@ -3963,12 +3963,12 @@ def kv_cache_row_offsets_ragged_paged_kernel[
     input_row_offsets: TileTensor[
         DType.uint32,
         InputRowOffsetsLayoutType,
-        ImmutUntrackedOrigin,
+        ImmUntrackedOrigin,
     ],
     cache_lengths: TileTensor[
         DType.uint32,
         CacheLengthsLayoutType,
-        ImmutUntrackedOrigin,
+        ImmUntrackedOrigin,
     ],
 ):
     comptime assert cache_row_offsets.flat_rank == 1

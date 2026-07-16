@@ -894,7 +894,7 @@ struct BTileGenerator[
     b_layout: TensorLayout,
     transpose_b: Bool,
     b_packed: Bool,
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
 ](ImplicitlyCopyable):
     """Struct to encapsulate a tile of B that supports prepacking.
 

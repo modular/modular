@@ -166,7 +166,7 @@ struct DenseALoader[
     comptime num_m_mmas = 2
     comptime num_n_mmas = 2
 
-    var a_slab: TileTensor[Self.dtype, Self.a_layout, ImmutUntrackedOrigin]
+    var a_slab: TileTensor[Self.dtype, Self.a_layout, ImmUntrackedOrigin]
 
     @always_inline
     def accumulate_strip[
@@ -237,7 +237,7 @@ struct Im2colALoader[
     comptime num_n_mmas = Self.num_n
     comptime NUM_ROWS = Self.num_m * 2  # 2 row-halves x num_m M-fragments
 
-    var input_ptr: UnsafePointer[Scalar[Self.dtype], ImmutUntrackedOrigin]
+    var input_ptr: UnsafePointer[Scalar[Self.dtype], ImmUntrackedOrigin]
     var h_base: InlineArray[Int32, Self.NUM_ROWS]
     var w_base: InlineArray[Int32, Self.NUM_ROWS]
     var batch_base: InlineArray[Int32, Self.NUM_ROWS]
@@ -251,7 +251,7 @@ struct Im2colALoader[
     @always_inline
     def __init__(
         out self,
-        input_ptr: UnsafePointer[Scalar[Self.dtype], ImmutUntrackedOrigin],
+        input_ptr: UnsafePointer[Scalar[Self.dtype], ImmUntrackedOrigin],
         row_base: Int32,
         rb: Int32,
         cb: Int32,
@@ -971,7 +971,7 @@ struct AppleM5MatMul[
         var sg_row_idx = Self._sg_row_base(log2_grid_m, log2_grid_n) // Int32(
             SG_M
         )
-        var a_ptr = a.ptr.unsafe_origin_cast[ImmutUntrackedOrigin]()
+        var a_ptr = a.ptr.unsafe_origin_cast[ImmUntrackedOrigin]()
         var a_mat = TileTensor(a_ptr, Layout(Coord(m, k), Coord(k, Idx[1])))
         var a_slab = a_mat.tile(Coord(Idx[SG_M], k), Coord(Int(sg_row_idx), 0))
         var loader = DenseALoader[
@@ -1061,7 +1061,7 @@ struct AppleM5MatMul[
             Self.NUM_MMA_N,
             c_aligned=c_aligned,
         ](
-            input.ptr.unsafe_origin_cast[ImmutUntrackedOrigin](),
+            input.ptr.unsafe_origin_cast[ImmUntrackedOrigin](),
             row_base,
             rb,
             cb,

@@ -216,7 +216,7 @@ def TopKMaskLogitsKernel[
     dtype: DType,
     out_idx_type: DType,
     LogitsLayoutType: TensorLayout,
-    logits_origin: ImmutOrigin,
+    logits_origin: ImmOrigin,
     MaskedLogitsLayoutType: TensorLayout,
     masked_logits_origin: MutOrigin,
 ](
@@ -425,7 +425,7 @@ def topk_mask_logits[
                 dtype,
                 out_idx_type,
                 LogitsLayoutType=logits.LayoutType,
-                logits_origin=ImmutOrigin(logits.origin),
+                logits_origin=ImmOrigin(logits.origin),
                 MaskedLogitsLayoutType=masked_logits.LayoutType,
                 masked_logits_origin=masked_logits.origin,
             ]
@@ -689,7 +689,7 @@ def _block_reduce_value_count[
 )
 def TopKSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
-    probs_origin: ImmutOrigin,
+    probs_origin: ImmOrigin,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     block_size: Int,
@@ -1119,7 +1119,7 @@ def topk_sampling_from_prob[
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
             comptime kernel = TopKSamplingFromProbKernel[
                 probs.LayoutType,
-                ImmutOrigin(probs.origin),
+                ImmOrigin(probs.origin),
                 output.LayoutType,
                 output.origin,
                 block_size,
@@ -1162,7 +1162,7 @@ def apply_min_p_mask_kernel[
     block_size: Int,
 ](
     probs: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
-    min_p_arr: UnsafePointer[Float32, ImmutUntrackedOrigin],
+    min_p_arr: UnsafePointer[Float32, ImmUntrackedOrigin],
     d: Int,
 ):
     """Zero out probabilities below the per-row min_p threshold.
@@ -1207,7 +1207,7 @@ def apply_min_p_mask_kernel[
 )
 def TopKTopPSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
-    probs_origin: ImmutOrigin,
+    probs_origin: ImmOrigin,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     block_size: Int,
@@ -1771,7 +1771,7 @@ def topk_topp_sampling_from_prob[
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
             comptime kernel = TopKTopPSamplingFromProbKernel[
                 probs.LayoutType,
-                ImmutOrigin(probs.origin),
+                ImmOrigin(probs.origin),
                 output.LayoutType,
                 output.origin,
                 block_size,
@@ -1818,7 +1818,7 @@ def topk_softmax_sample_kernel[
     dtype: DType,
     out_idx_type: DType,
     LogitsLayoutType: TensorLayout,
-    logits_origin: ImmutOrigin,
+    logits_origin: ImmOrigin,
     SampledLayoutType: TensorLayout,
     sampled_origin: MutOrigin,
 ](
@@ -2177,7 +2177,7 @@ def topk_softmax_sample[
                 dtype,
                 out_idx_type,
                 LogitsLayoutType=logits.LayoutType,
-                logits_origin=ImmutOrigin(logits.origin),
+                logits_origin=ImmOrigin(logits.origin),
                 SampledLayoutType=sampled_indices.LayoutType,
                 sampled_origin=sampled_indices.origin,
             ]

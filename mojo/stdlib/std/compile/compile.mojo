@@ -63,7 +63,7 @@ struct _Info(TrivialRegisterPassable):
     var asm: __mlir_type.`!kgen.string`
     var module_name: __mlir_type.`!kgen.string`
     var num_captures: __mlir_type.index
-    var capture_sizes: UnsafePointer[UInt64, ImmutUntrackedOrigin]
+    var capture_sizes: UnsafePointer[UInt64, ImmUntrackedOrigin]
 
 
 struct _PopulateInfo(TrivialRegisterPassable):
@@ -111,7 +111,7 @@ struct CompiledFunctionInfo[
     var num_captures: Int
     """Number of variables captured by the function closure."""
 
-    var capture_sizes: UnsafePointer[UInt64, ImmutUntrackedOrigin]
+    var capture_sizes: UnsafePointer[UInt64, ImmUntrackedOrigin]
     """Pointer to the sizes of the variables captured by the function closure."""
 
     var emission_kind: StaticString

@@ -32,7 +32,7 @@ from std.ffi import (
 
 from std.memory import (
     alloc,
-    ImmutPointer,
+    ImmPointer,
     MutPointer,
     OpaquePointer,
     UnsafePointer,
@@ -53,15 +53,15 @@ from .device import DeviceSpec
 
 
 @fieldwise_init
-struct M_driver_slice[origin: ImmutOrigin](TrivialRegisterPassable):
-    var data: ImmutPointer[UInt8, Self.origin]
+struct M_driver_slice[origin: ImmOrigin](TrivialRegisterPassable):
+    var data: ImmPointer[UInt8, Self.origin]
     var size: UInt64
 
 
 @fieldwise_init
-struct M_driver_static_bundle[origin: ImmutOrigin](TrivialRegisterPassable):
+struct M_driver_static_bundle[origin: ImmOrigin](TrivialRegisterPassable):
     var mapped_data: M_driver_slice[Self.origin]
-    var file_type: ImmutPointer[Int8, StaticConstantOrigin]
+    var file_type: ImmPointer[Int8, StaticConstantOrigin]
     var file_type_len: UInt64
 
 
@@ -102,7 +102,7 @@ struct M_driver_queue_execute_config:
 
 @fieldwise_init
 struct M_driver_bundle_compilation_options(TrivialRegisterPassable):
-    var debug_level: ImmutPointer[Int8, ImmutUntrackedOrigin]
+    var debug_level: ImmPointer[Int8, ImmUntrackedOrigin]
     var debug_level_len: UInt64
     var optimization_level: Int32
 
@@ -198,7 +198,7 @@ struct M_driver_memory_view(Copyable, Movable):
     var size: UInt64
 
 
-comptime MemoryViewHandle[origin: ImmutOrigin] = ImmutPointer[
+comptime MemoryViewHandle[origin: ImmOrigin] = ImmPointer[
     M_driver_memory_view, origin
 ]
 
@@ -548,7 +548,7 @@ struct RawDriver(Movable):
     ) raises HALError:
         var status = self._raw.queue_copy_to_device.f(
             queue,
-            ImmutPointer(to=dst),
+            ImmPointer(to=dst),
             src,
         )
         if status != STATUS_SUCCESS:
@@ -567,7 +567,7 @@ struct RawDriver(Movable):
         var status = self._raw.queue_copy_from_device.f(
             queue,
             dst,
-            ImmutPointer(to=src),
+            ImmPointer(to=src),
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -584,8 +584,8 @@ struct RawDriver(Movable):
     ) raises HALError:
         var status = self._raw.queue_copy_intra_device.f(
             queue,
-            ImmutPointer(to=dst),
-            ImmutPointer(to=src),
+            ImmPointer(to=dst),
+            ImmPointer(to=src),
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -603,8 +603,8 @@ struct RawDriver(Movable):
     ) raises HALError:
         var status = self._raw.queue_copy_inter_device.f(
             queue,
-            ImmutPointer(to=dst),
-            ImmutPointer(to=src),
+            ImmPointer(to=dst),
+            ImmPointer(to=src),
             src_context,
         )
         if status != STATUS_SUCCESS:
@@ -621,7 +621,7 @@ struct RawDriver(Movable):
         src: UnsafePointer[mut=False, UInt8, _],
     ) raises HALError:
         var status = self._raw.copy_to_device_sync.f(
-            context, ImmutPointer(to=dst), src
+            context, ImmPointer(to=dst), src
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -639,7 +639,7 @@ struct RawDriver(Movable):
         src: M_driver_memory_view,
     ) raises HALError:
         var status = self._raw.copy_from_device_sync.f(
-            context, dst, ImmutPointer(to=src)
+            context, dst, ImmPointer(to=src)
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -657,7 +657,7 @@ struct RawDriver(Movable):
         src: M_driver_memory_view,
     ) raises HALError:
         var status = self._raw.copy_intra_device_sync.f(
-            context, ImmutPointer(to=dst), ImmutPointer(to=src)
+            context, ImmPointer(to=dst), ImmPointer(to=src)
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -676,7 +676,7 @@ struct RawDriver(Movable):
         src_context: ContextHandle,
     ) raises HALError:
         var status = self._raw.copy_inter_device_sync.f(
-            context, ImmutPointer(to=dst), ImmutPointer(to=src), src_context
+            context, ImmPointer(to=dst), ImmPointer(to=src), src_context
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -695,7 +695,7 @@ struct RawDriver(Movable):
     ) raises HALError:
         var status = self._raw.queue_set_memory.f(
             queue,
-            ImmutPointer(to=dst),
+            ImmPointer(to=dst),
             value,
         )
         if status != STATUS_SUCCESS:
@@ -714,7 +714,7 @@ struct RawDriver(Movable):
     ) raises HALError:
         var status = self._raw.queue_fill.f(
             queue,
-            ImmutPointer(to=dst),
+            ImmPointer(to=dst),
             value,
             value_size,
         )
@@ -902,11 +902,11 @@ struct RawDriver(Movable):
 
     def get_api_name(self) raises HALError -> String:
         """Retrieve the plugin-reported API name (e.g. "CUDA", "Metal")."""
-        var value = UnsafeMaybeUninit[OpaquePointer[ImmutUntrackedOrigin]]()
+        var value = UnsafeMaybeUninit[OpaquePointer[ImmUntrackedOrigin]]()
         var status = self._raw.property.f(
             self._driver_handle,
             "api".as_c_string_slice(),
-            OutParam[OpaquePointer[ImmutUntrackedOrigin]](to=value),
+            OutParam[OpaquePointer[ImmUntrackedOrigin]](to=value),
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -980,7 +980,7 @@ struct RawPlugin(Movable):
     var create: HALFunction[
         "M_driver_create",
         def(
-            version: ImmutPointer[DriverVersion, _],
+            version: ImmPointer[DriverVersion, _],
             driver: OutParam[DriverHandle, _],
         ) thin -> PluginResultCode,
     ]
@@ -993,7 +993,7 @@ struct RawPlugin(Movable):
         def(
             handle: DriverHandle,
             property_name: CStringSlice[_],
-            value: OutParam[OpaquePointer[ImmutUntrackedOrigin], _],
+            value: OutParam[OpaquePointer[ImmUntrackedOrigin], _],
         ) thin -> PluginResultCode,
     ]
     var device_count: HALFunction[
@@ -1098,7 +1098,7 @@ struct RawPlugin(Movable):
     var queue_copy_to_device: HALFunction[
         "M_driver_queue_copy_to_device",
         def[
-            dst_origin: ImmutOrigin, src_origin: ImmutOrigin
+            dst_origin: ImmOrigin, src_origin: ImmOrigin
         ](
             queue: QueueHandle,
             dst: MemoryViewHandle[dst_origin],
@@ -1108,7 +1108,7 @@ struct RawPlugin(Movable):
     var queue_copy_from_device: HALFunction[
         "M_driver_queue_copy_from_device",
         def[
-            dst_origin: MutOrigin, src_origin: ImmutOrigin
+            dst_origin: MutOrigin, src_origin: ImmOrigin
         ](
             queue: QueueHandle,
             dst: UnsafePointer[UInt8, dst_origin],
@@ -1118,7 +1118,7 @@ struct RawPlugin(Movable):
     var queue_copy_intra_device: HALFunction[
         "M_driver_queue_copy_intra_device",
         def[
-            dst_origin: ImmutOrigin, src_origin: ImmutOrigin
+            dst_origin: ImmOrigin, src_origin: ImmOrigin
         ](
             queue: QueueHandle,
             dst: MemoryViewHandle[dst_origin],
@@ -1128,7 +1128,7 @@ struct RawPlugin(Movable):
     var queue_copy_inter_device: HALFunction[
         "M_driver_queue_copy_inter_device",
         def[
-            dst_origin: ImmutOrigin, src_origin: ImmutOrigin
+            dst_origin: ImmOrigin, src_origin: ImmOrigin
         ](
             queue: QueueHandle,
             dst: MemoryViewHandle[dst_origin],
@@ -1139,7 +1139,7 @@ struct RawPlugin(Movable):
     var copy_to_device_sync: HALFunction[
         "M_driver_copy_to_device_sync",
         def[
-            dst_origin: ImmutOrigin, src_origin: ImmutOrigin
+            dst_origin: ImmOrigin, src_origin: ImmOrigin
         ](
             context: ContextHandle,
             dst: MemoryViewHandle[dst_origin],
@@ -1149,7 +1149,7 @@ struct RawPlugin(Movable):
     var copy_from_device_sync: HALFunction[
         "M_driver_copy_from_device_sync",
         def[
-            dst_origin: MutOrigin, src_origin: ImmutOrigin
+            dst_origin: MutOrigin, src_origin: ImmOrigin
         ](
             context: ContextHandle,
             dst: UnsafePointer[UInt8, dst_origin],
@@ -1159,7 +1159,7 @@ struct RawPlugin(Movable):
     var copy_intra_device_sync: HALFunction[
         "M_driver_copy_intra_device_sync",
         def[
-            dst_origin: ImmutOrigin, src_origin: ImmutOrigin
+            dst_origin: ImmOrigin, src_origin: ImmOrigin
         ](
             context: ContextHandle,
             dst: MemoryViewHandle[dst_origin],
@@ -1169,7 +1169,7 @@ struct RawPlugin(Movable):
     var copy_inter_device_sync: HALFunction[
         "M_driver_copy_inter_device_sync",
         def[
-            dst_origin: ImmutOrigin, src_origin: ImmutOrigin
+            dst_origin: ImmOrigin, src_origin: ImmOrigin
         ](
             context: ContextHandle,
             dst: MemoryViewHandle[dst_origin],
@@ -1180,7 +1180,7 @@ struct RawPlugin(Movable):
     var queue_set_memory: HALFunction[
         "M_driver_queue_set_memory",
         def[
-            dst_origin: ImmutOrigin
+            dst_origin: ImmOrigin
         ](
             queue: QueueHandle,
             dst: MemoryViewHandle[dst_origin],
@@ -1190,7 +1190,7 @@ struct RawPlugin(Movable):
     var queue_fill: HALFunction[
         "M_driver_queue_fill",
         def[
-            dst_origin: ImmutOrigin
+            dst_origin: ImmOrigin
         ](
             queue: QueueHandle,
             dst: MemoryViewHandle[dst_origin],
@@ -1317,7 +1317,7 @@ struct RawPlugin(Movable):
         "M_driver_bundle_load",
         def[
             bundle_origin: MutOrigin,
-            bundle_data_origin: ImmutOrigin,
+            bundle_data_origin: ImmOrigin,
             opts_origin: MutOrigin,
         ](
             context: ContextHandle,
@@ -1433,7 +1433,7 @@ struct RawPlugin(Movable):
         )
 
         var status = self.create.f(
-            ImmutPointer(to=version),
+            ImmPointer(to=version),
             OutParam[DriverHandle](to=handle),
         )
         if status != STATUS_SUCCESS:
