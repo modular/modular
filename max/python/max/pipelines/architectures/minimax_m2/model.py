@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
 from max._core.engine import Model
-from max.driver import Buffer
+from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph
@@ -173,7 +173,11 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     ) -> None:
         assert isinstance(model_config, MiniMaxM2Config)
         self.ep_comm_initializer = None
-        if model_config.ep_config is None:
+        # Skip the EP comm allocation under a virtual device (compile-only graph
+        # dumps, e.g. the kernel-model-map sweep): ep_init allocates NVSHMEM
+        # buffers the virtual device can't service. ep_config still shapes the
+        # graph, and execution never runs in virtual mode.
+        if model_config.ep_config is None or is_virtual_device_mode():
             return
         self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
         self.ep_comm_initializer.ep_init(session)
