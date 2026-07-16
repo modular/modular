@@ -159,6 +159,7 @@ _WARM_FAMILIES = [
     "unary",
     "binary",
     "reduce_axis",
+    "shape_rearrange",
 ]
 
 # CPU fragment per family: no --target -> lane-independent (cfg=exec), shared.
