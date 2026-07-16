@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -18,11 +17,11 @@ modular_py_test(
         "TORCH_COMPILE_FORCE_DISABLE_CACHES": "True",
     },
     mojo_deps = [
-        "//max:MOGGPrimitives",
-        "//max:compiler_internal",
-        "//max:tensor",
+        "//max:builtin_primitives",
+        "//max:extensibility",
         "@mojo//:std",
     ],
+    shard_count = 4,  # QUA-331
     tags = [
         "gpu",
     ],

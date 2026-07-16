@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.os import abort
+from std.os.os import _abort_base
 
 # ===-----------------------------------------------------------------------===#
 # __MLIRType
@@ -36,7 +36,7 @@ def paramfor_has_next[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> Bool where conforms_to(
     IteratorType.Element,
-    Movable & ImplicitlyDestructible,
+    Movable & ImplicitlyDeletable,
 ):
     var result = it.copy()
     try:
@@ -51,7 +51,7 @@ def paramfor_next_iter[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> IteratorType where conforms_to(
     IteratorType.Element,
-    Movable & ImplicitlyDestructible,
+    Movable & ImplicitlyDeletable,
 ):
     # NOTE: This function is called by the compiler's elaborator only when
     # paramfor_has_next will return true. This is needed because the interpreter
@@ -64,7 +64,7 @@ def paramfor_next_iter[
         _ = elem^
         return result.copy()
     except:
-        abort()
+        _abort_base()
 
 
 def paramfor_next_value[
@@ -77,4 +77,4 @@ def paramfor_next_value[
         var result = it.copy()
         return result.__next__()
     except:
-        abort()
+        _abort_base()

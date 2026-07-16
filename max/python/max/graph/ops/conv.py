@@ -12,13 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for conv2d."""
 
-from max.mlir.dialects import rmo
+from max._core.dialects import builtin, rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
 from ..type import ConvInputLayout, FilterLayout, Shape
 from ..value import TensorValue, TensorValueLike
+from .elementwise import add
 from .validation import assert_same_device
+
+_si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
 
 
 def conv2d(
@@ -48,7 +51,7 @@ def conv2d(
     convolution, dim1 here represents H and dim2 represents W. In Python like
     syntax, padding a 2x3 spatial `input` with [0, 1, 2, 1] would yield:
 
-    .. code-block:: python
+    .. code-block:: text
 
         input = [
           [1, 2, 3],
@@ -64,6 +67,39 @@ def conv2d(
         # Shape is 3x6
 
     This op currently only supports strides and padding on the input.
+
+    Convolving a 2x2 input with an all-ones 2x2 filter sums the window:
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("conv2d_example") as graph:
+            # NHWC input: batch 1, 2x2 spatial, 1 channel.
+            x = ops.constant(
+                [[[[1.0], [2.0]], [[3.0], [4.0]]]],
+                DType.float32,
+                device=device,
+            )
+            # RSCF filter: 2x2, 1 in-channel, 1 out-channel, all ones.
+            filter = ops.constant(
+                [[[[1.0]], [[1.0]]], [[[1.0]], [[1.0]]]],
+                DType.float32,
+                device=device,
+            )
+            graph.output(ops.conv2d(x, filter))
+
+        model = InferenceSession().load(graph)
+        result = model.execute()[0]
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(result.to_numpy(), [[[[10.0]]]])
 
     Args:
         x: An NHWC input tensor to perform the convolution upon.
@@ -89,7 +125,8 @@ def conv2d(
 
         if bias.rank != 1:
             raise ValueError(
-                "bias for a 2-D convolution must be rank 1 with shape (out_channels,)"
+                "bias for a 2-D convolution must be rank 1 with shape"
+                " (out_channels,)"
             )
 
     if x.rank != 4:
@@ -106,19 +143,19 @@ def conv2d(
 
     assert_same_device(x=x, filter=filter)
 
-    conv_output = Graph.current._add_op(
-        rmo.conv,
-        x,
-        filter._with_layout(filter_layout),
-        Shape(stride).to_mlir(),
-        Shape(dilation).to_mlir(),
-        Shape(padding).to_mlir(),
-        groups,
-        input_layout=input_layout.to_mlir(),
+    conv_output = Graph.current._add_op_generated(
+        rmo.ConvOp,
+        input=x,
+        filter=filter._with_layout(filter_layout),
+        strides=Shape(stride),
+        dilations=Shape(dilation),
+        paddings=Shape(padding),
+        num_groups=builtin.IntegerAttr(_si64, groups),
+        input_layout=input_layout,
     )[0].tensor
 
     if bias is not None:
-        return Graph.current._add_op(rmo.add, conv_output, bias)[0].tensor
+        return add(conv_output, bias)
     return conv_output
 
 
@@ -148,7 +185,7 @@ def conv3d(
     convolution, dim1 here represents D, dim2 represents H and dim3 represents W. In Python like
     syntax, padding a 2x3 spatial `input` with [0, 1, 2, 1] would yield:
 
-    .. code-block:: python
+    .. code-block:: text
 
         input = [
           [1, 2, 3],
@@ -190,7 +227,8 @@ def conv3d(
 
         if bias.rank != 1:
             raise ValueError(
-                "bias for a 2-D convolution must be rank 1 with shape (out_channels,)"
+                "bias for a 2-D convolution must be rank 1 with shape"
+                " (out_channels,)"
             )
 
     if x.rank != 5:
@@ -205,17 +243,17 @@ def conv3d(
             " height, width, in_channels / num_groups, out_channels)"
         )
 
-    conv_output = Graph.current._add_op(
-        rmo.conv,
-        x,
-        filter._with_layout(filter_layout),
-        Shape(stride).to_mlir(),
-        Shape(dilation).to_mlir(),
-        Shape(padding).to_mlir(),
-        groups,
-        input_layout=input_layout.to_mlir(),
+    conv_output = Graph.current._add_op_generated(
+        rmo.ConvOp,
+        input=x,
+        filter=filter._with_layout(filter_layout),
+        strides=Shape(stride),
+        dilations=Shape(dilation),
+        paddings=Shape(padding),
+        num_groups=builtin.IntegerAttr(_si64, groups),
+        input_layout=input_layout,
     )[0].tensor
 
     if bias is not None:
-        return Graph.current._add_op(rmo.add, conv_output, bias)[0].tensor
+        return add(conv_output, bias)
     return conv_output

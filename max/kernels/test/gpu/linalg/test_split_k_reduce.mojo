@@ -75,28 +75,28 @@ def test_split_k_reduce_rank3[
     # Create TileTensors
     var c = TileTensor(
         c_device,
-        row_major(Coord(Idx(Int(M)), Idx(Int(N)))),
+        row_major(Coord(Int(M), Int(N))),
     )
     var work_space = TileTensor(
         work_space_device,
-        row_major(Coord(Idx(Int(num_partitions)), Idx(Int(M)), Idx(Int(N)))),
+        row_major(Coord(Int(num_partitions), Int(M), Int(N))),
     )
     var epilogue_buffer = TileTensor(
         epilogue_data_device,
-        row_major(Coord(Idx(Int(M)), Idx(Int(N)))),
+        row_major(Coord(Int(M), Int(N))),
     )
 
     @parameter
     @always_inline
     @__copy_capture(c, epilogue_buffer)
     def epilogue_fn[
-        _dtype: DType, _width: Int, *, alignment: Int = 1
+        _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, _width]) capturing -> None:
         var another_val = rebind[SIMD[_dtype, _width]](
-            epilogue_buffer.load[width=_width](Coord(Idx(idx[0]), Idx(idx[1])))
+            epilogue_buffer.load[width=_width](Coord(idx[0], idx[1]))
         )
         c.store(
-            Coord(Idx(idx[0]), Idx(idx[1])),
+            Coord(idx[0], idx[1]),
             rebind[SIMD[c_type, _width]](val + another_val),
         )
 

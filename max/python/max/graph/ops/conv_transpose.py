@@ -12,12 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for conv2d."""
 
-from max.mlir.dialects import rmo
+from max._core.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
 from ..type import ConvInputLayout, FilterLayout, Shape
 from ..value import TensorValue, TensorValueLike
+from .elementwise import add
 from .permute import permute
 from .validation import assert_same_device
 
@@ -59,7 +60,7 @@ def conv2d_transpose(
     python like syntax, padding a 2x4 spatial `output` with [0, 1, 2, 1] would
     yield:
 
-    .. code-block:: python
+    .. code-block:: text
 
         output = [
           [1, 2, 3, 4],
@@ -71,6 +72,26 @@ def conv2d_transpose(
           [3],
         ]
         # Shape is 1x1
+
+    Building a deconvolution graph (filter is RSCF, with ``out_channels`` and
+    ``in_channels`` w.r.t. the original convolution):
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, ops
+
+        device = DeviceRef.CPU()
+        with Graph("conv2d_transpose_example") as graph:
+            # NHWC input: batch 1, 1x1 spatial, 1 channel.
+            x = ops.constant([[[[3.0]]]], DType.float32, device=device)
+            # RSCF filter: 2x2 kernel, 1 out-channel, 1 in-channel, all ones.
+            filter = ops.constant(
+                [[[[1.0]], [[1.0]]], [[[1.0]], [[1.0]]]],
+                DType.float32,
+                device=device,
+            )
+            graph.output(ops.conv2d_transpose(x, filter))
 
     Args:
         x: An NHWC input tensor to perform the deconvolution upon.
@@ -99,13 +120,14 @@ def conv2d_transpose(
 
         if bias.rank != 1:
             raise ValueError(
-                "bias for a 2-D deconvolution must be rank 1 with shape (out_channels,)"
+                "bias for a 2-D deconvolution must be rank 1 with shape"
+                " (out_channels,)"
             )
 
     if x.rank != 4:
         raise ValueError(
-            "input to a 2-D deconvolution must be rank 4 with shape (batch_size,"
-            " height, width, in_channels)"
+            "input to a 2-D deconvolution must be rank 4 with shape"
+            " (batch_size, height, width, in_channels)"
         )
 
     if filter.rank != 4:
@@ -115,7 +137,8 @@ def conv2d_transpose(
         )
     if output_paddings[0] >= stride[0] or output_paddings[1] >= stride[1]:
         raise ValueError(
-            f"output padding must be smaller than either stride or dilation, but got output_padding = {output_paddings}"
+            "output padding must be smaller than either stride or dilation,"
+            f" but got output_padding = {output_paddings}"
         )
 
     # TODO(GEX-2043): Add support for GPU kernel for conv_transpose and remove manual transfers
@@ -125,15 +148,15 @@ def conv2d_transpose(
 
     assert_same_device(x=x, filter=filter)
 
-    out = Graph.current._add_op(
-        rmo.conv_transpose,
+    out = Graph.current._add_op_generated(
+        rmo.ConvTransposeOp,
         input=x,
         filter=filter._with_layout(filter_layout),
-        strides=Shape(stride).to_mlir(),
-        dilations=Shape(dilation).to_mlir(),
-        paddings=Shape(padding).to_mlir(),
-        output_paddings=Shape(output_paddings).to_mlir(),
-        input_layout=input_layout.to_mlir(),
+        strides=Shape(stride),
+        dilations=Shape(dilation),
+        paddings=Shape(padding),
+        output_paddings=Shape(output_paddings),
+        input_layout=input_layout,
     )[0].tensor
 
     # out = out.to(original_device)
@@ -142,8 +165,7 @@ def conv2d_transpose(
         # Convert from NCHW to NHWC for bias broadcasting.
         # TODO: There should be a better way without transpose.
         out = permute(out, [0, 2, 3, 1])
-        out = Graph.current._add_op(rmo.add, out, bias)[0].tensor
+        out = add(out, bias)
         # Convert back from NHWC to NCHW.
         return permute(out, [0, 3, 1, 2])
-        # return Graph.current._add_op(rmo.add, out, bias)[0].tensor
     return out

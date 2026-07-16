@@ -10,8 +10,6 @@ _CRASH_TESTS = [
     "test_uninit_check_float16_poison.mojo",
     "test_uninit_check_bfloat16_poison.mojo",
     "test_uninit_check_float64_poison.mojo",
-    "test_uninit_check_float8_e4m3fn_poison.mojo",
-    "test_uninit_check_float8_e5m2_poison.mojo",
     "test_uninit_check_simd_vector_poison.mojo",
     "test_uninit_check_masked_load_poison.mojo",
     "test_uninit_check_gather_poison.mojo",

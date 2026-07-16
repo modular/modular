@@ -105,7 +105,7 @@ def grouped_matmul_1d2d_blockwise_fp8[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    comptime assert BK == 128, "Only support BK = 128"
+    comptime assert BK in (64, 128), "Only support BK in (64, 128)"
 
     comptime num_experts = type_of(b_device).LayoutType.static_shape[0]
     comptime N = type_of(c_device).LayoutType.static_shape[1]
@@ -190,7 +190,7 @@ def grouped_matmul_1d2d_blockwise_fp8[
     comptime mma_warps = 1
     comptime epilogue_warps = 4
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         a_scales_tma_op,

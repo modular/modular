@@ -51,8 +51,8 @@ struct RuntimeLayout[
     """A runtime-configurable layout that uses `RuntimeTuple` for storage.
 
     This struct provides a layout implementation that can be modified at runtime,
-    unlike the static [`Layout`](/mojo/layout/layout/Layout) type. It
-    uses [`RuntimeTuple`](/mojo/layout/runtime_tuple/RuntimeTuple) for
+    unlike the static [`Layout`](/docs/layout/layout/Layout) type. It
+    uses [`RuntimeTuple`](/docs/layout/runtime_tuple/RuntimeTuple) for
     shape and stride storage.
 
     Parameters:

@@ -146,6 +146,9 @@ struct AMDMatmul[
             Int32(Self.config.num_threads())
         )
     )
+    @__name(
+        t"amd_matmul_{Self.a_type}_{Self.b_type}_{Self.c_type}_BM{Self.BM}_BN{Self.BN}_BK{Self.BK}_WM{Self.WM}_WN{Self.WN}"
+    )
     @staticmethod
     def run[
         c_layout: TensorLayout,

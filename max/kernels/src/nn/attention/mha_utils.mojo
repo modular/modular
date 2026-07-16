@@ -17,6 +17,7 @@ from std.collections import OptionalReg
 from std.sys import (
     CompilationTarget,
     align_of,
+    get_defined_bool,
     get_defined_int,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
@@ -43,10 +44,12 @@ from nn.attention.mha_mask import (
     MHAMask,
     NullMask,
     SlidingWindowCausalMask,
+    SlidingWindowNonCausalMask,
 )
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import min_or_neg_inf
+from std.gpu.primitives.grid_controls import PDLLevel
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -57,6 +60,16 @@ comptime is_sm90 = "sm_90" in _accelerator_arch()
 comptime is_sm100 = "sm_100" in _accelerator_arch() or "sm_103" in _accelerator_arch()
 comptime is_sm90or100 = is_sm90 or is_sm100
 
+# Programmatic Dependent Launch level for the split-K decode producer/consumer
+# (the split-K attention kernels and `mha_splitk_reduce`).  On by default so
+# back-to-back grids in the stream overlap launch/prologue latency; disable
+# with `-D MHA_PDL=false`.  When > OFF, those kernels emit
+# `wait_on_dependent_grids()` / `launch_dependent_grids()` and their dispatches
+# attach the PROGRAMMATIC_STREAM_SERIALIZATION launch attribute.
+comptime MHA_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
+    "MHA_PDL", True
+]() else PDLLevel.OFF
+
 
 @always_inline
 def as_dynamic_row_major_1d[
@@ -66,12 +79,12 @@ def as_dynamic_row_major_1d[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ) -> LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]:
-    return LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin](
-        tensor.ptr,
+    return {
+        tensor.ptr.as_immutable().as_unsafe_any_origin(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             tensor.get_shape()
         ),
-    )
+    }
 
 
 struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
@@ -104,7 +117,13 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
     def init(self, dtype: DType) -> Self:
         if self._value == -1:
             comptime if is_sm90or100:
-                return FlashAttentionAlgorithm(2 + Int(dtype.is_half_float()))
+                return FlashAttentionAlgorithm(
+                    2
+                    + Int(
+                        dtype.is_half_float()
+                        or (is_sm100 and dtype.is_float8())
+                    )
+                )
             else:
                 return FlashAttentionAlgorithm(2)
         else:
@@ -274,7 +293,10 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         # Currently, all are `OptionalReg` for consistency.
         if (
             is_sm90or100
-            and Self.dtype.is_half_float()
+            and (
+                Self.dtype.is_half_float()
+                or (is_sm100 and Self.dtype.is_float8())
+            )
             and self.algorithm == FlashAttentionAlgorithm(3)
         ):
             # BM
@@ -427,11 +449,11 @@ def _copy_frag_to_smem_nvidia[
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
+        mut=False,
         p_smem_iter.dtype,
         Layout.row_major(BM, BN),
-        ImmutAnyOrigin,
         address_space=AddressSpace.SHARED,
-    ](p_smem_iter.ptr.as_immutable())
+    ](p_smem_iter.ptr)
     var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
     var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
 
@@ -521,11 +543,11 @@ def _copy_frag_to_smem_amd[
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
     var p_smem_tile = LayoutTensor[
+        mut=False,
         p_smem_iter.dtype,
         Layout.row_major(BM, BN),
-        ImmutAnyOrigin,
         address_space=AddressSpace.SHARED,
-    ](p_smem_iter.ptr.as_immutable())
+    ](p_smem_iter.ptr)
 
     var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
     var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
@@ -606,6 +628,10 @@ def get_start_and_end_for_partitions[
 ](num_keys: Int, num_partitions: Int, partition_idx: Int) -> Tuple[Int, Int]:
     """Calculate start and end indices for a partition.
 
+    Non-empty partitions are packed at low indices `0..N-1` with
+    `partition_size = max(tile_size, align_up(ceildiv(num_keys, num_partitions),
+    tile_size))`; partitions `>= N` are empty (start == end == num_keys).
+
     Args:
         num_keys: Total number of keys (sequence length).
         num_partitions: Number of partitions to split keys into.
@@ -615,24 +641,14 @@ def get_start_and_end_for_partitions[
         Tuple of (start_idx, end_idx) for the partition, aligned to tile_size.
     """
     var num_keys_per_partition = ceildiv(num_keys, num_partitions)
-
-    # Align start to tile_size
-    var start = align_up(num_keys_per_partition * partition_idx, tile_size)
-    # If start is already beyond num_keys, return empty range
+    var partition_size = max(
+        tile_size, align_up(num_keys_per_partition, tile_size)
+    )
+    var start = partition_idx * partition_size
     if start >= num_keys:
         return (num_keys, num_keys)
-    var next_start = align_up(
-        num_keys_per_partition * (partition_idx + 1), tile_size
-    )
-    var end = min(num_keys, next_start)
+    var end = min(num_keys, start + partition_size)
     return (start, end)
-
-    # ^ may lead to non-uniform distribution of keys across partitions because of alignment requirement,
-    # we may want to use the following instead for non-paged kvcache but then we will have to know which cache is being used.
-    # Keep this here for now, can remove it later if we are only using paged kvcache.
-    # var start = num_keys_per_partition * partition_idx
-    # var end = min(num_keys, start + num_keys_per_partition)
-    # return (start, end)
 
 
 comptime callback_fn_type = def[mask_t: MHAMask](
@@ -666,6 +682,11 @@ def dispatch_mask[
             local_window_size > 0
         ), "You must specify local_window_size for SlidingWindowCausalMask"
         return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
+    elif MaskName.SLIDING_WINDOW_NONCAUSAL == mask_type:
+        comptime assert (
+            local_window_size > 0
+        ), "You must specify local_window_size for SlidingWindowNonCausalMask"
+        return outer_wrapper(SlidingWindowNonCausalMask[local_window_size]())
     elif MaskName.CHUNKED_CAUSAL == mask_type:
         comptime assert (
             local_window_size > 0
@@ -755,6 +776,15 @@ trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
     def num_partitions(self) -> UInt32:
         ...
 
+    # The number of partition CTAs the decode grid is launched with. This is an
+    # upper bound on num_partitions() that is independent of num_keys, so the
+    # launched grid shape is stable across num_keys (one CUDA graph per batch
+    # size). CTAs with partition index >= num_partitions() early-return. Equal
+    # to num_partitions() when the scheme does not over-launch.
+    @always_inline
+    def max_num_partitions(self) -> UInt32:
+        ...
+
     @always_inline
     def get_exp_sum_qk_max_pointer(
         self,
@@ -777,6 +807,10 @@ struct NoPartition[dtype: DType](
         return 1
 
     @always_inline
+    def max_num_partitions(self) -> UInt32:
+        return 1
+
+    @always_inline
     def get_exp_sum_qk_max_pointer(
         self,
     ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
@@ -790,21 +824,30 @@ struct SplitKPartition[dtype: DType](
 ):
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
+
+    @__allow_legacy_any_origin_fields
     var ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]
     var num_partitions_value: UInt32
+    var max_num_partitions_value: UInt32
 
     @always_inline
     def __init__(
         out self,
         ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
+        max_num_partitions_value: UInt32,
     ):
         self.ptr = ptr
         self.num_partitions_value = num_partitions_value
+        self.max_num_partitions_value = max_num_partitions_value
 
     @always_inline
     def num_partitions(self) -> UInt32:
         return self.num_partitions_value
+
+    @always_inline
+    def max_num_partitions(self) -> UInt32:
+        return self.max_num_partitions_value
 
     @always_inline
     def get_exp_sum_qk_max_pointer(

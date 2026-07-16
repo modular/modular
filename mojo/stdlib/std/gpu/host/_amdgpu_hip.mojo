@@ -35,9 +35,9 @@ struct _ihipModule_t:
     pass
 
 
-comptime hipDevice_t = _CPointer[_ihipDevice_t, ExternalOrigin[mut=True]]
-comptime hipStream_t = _CPointer[_ihipStream_t, ExternalOrigin[mut=True]]
-comptime hipModule_t = _CPointer[_ihipModule_t, ExternalOrigin[mut=True]]
+comptime hipDevice_t = _CPointer[_ihipDevice_t, UntrackedOrigin[mut=True]]
+comptime hipStream_t = _CPointer[_ihipStream_t, UntrackedOrigin[mut=True]]
+comptime hipModule_t = _CPointer[_ihipModule_t, UntrackedOrigin[mut=True]]
 
 
 # Accessor function to get access to the underlying hipDevice_t from an abstract DeviceContext.
