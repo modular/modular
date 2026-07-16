@@ -606,4 +606,14 @@ This version is still a work in progress.
   config is now built with a bfloat16 dispatch dtype instead of constructing an
   invalid `EPConfig`.
 
+- Fixed over-provisioned KV cache offload configurations bringing the server
+  down mid-startup instead of failing fast. The `local` and `tiered`
+  connectors reserved their full host (pinned DRAM) and disk budgets eagerly,
+  so an impossible `host_kvcache_swap_space_gb` grew the pinned buffer until
+  the process was OOM-killed, and an impossible `disk_offload_max_gb` filled
+  the filesystem. They now run a startup preflight that checks the host budget
+  against available memory (including the process cgroup limit) and the disk
+  budget against filesystem free space, raising an actionable error before
+  allocating.
+
 ## Mojo language

@@ -34,6 +34,20 @@ def _make_block(block_nbytes: int, seed: int = 0) -> npt.NDArray[np.uint8]:
     return rng.randint(0, 256, size=(block_nbytes,), dtype=np.uint8)
 
 
+# -- Startup capacity preflight --
+
+
+def test_init_rejects_budget_over_disk_capacity(cache_dir: str) -> None:
+    # A 1 EiB budget cannot fit on any real filesystem, so construction must
+    # fail fast rather than filling the disk until it is exhausted.
+    with pytest.raises(RuntimeError, match="disk_offload_max_gb"):
+        DiskTier(
+            cache_dir=cache_dir,
+            block_nbytes=16,
+            max_disk_size_bytes=1 << 60,
+        )
+
+
 # -- Write/read round-trip correctness --
 
 

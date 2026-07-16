@@ -40,6 +40,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+import psutil
 from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.profiler import Tracer
 
@@ -217,6 +218,21 @@ class DiskTier:
         self._verify_or_record_algo()
 
         self._load_existing()
+
+        # Blocks already indexed by the warm-start scan reuse the budget, so add
+        # them back to the free-space headroom rather than double-counting them.
+        reusable_bytes = len(self._saved_hashes) * self._block_nbytes
+        available_bytes = (
+            psutil.disk_usage(str(self._cache_dir)).free + reusable_bytes
+        )
+        if self._max_disk_size_bytes > available_bytes:
+            raise RuntimeError(
+                "disk_offload_max_gb requests "
+                f"{self._max_disk_size_bytes / (1024**3):.1f} GiB at "
+                f"{self._cache_dir} but only "
+                f"{available_bytes / (1024**3):.1f} GiB is available. Reduce "
+                "disk_offload_max_gb or free space on the target filesystem."
+            )
 
     @property
     def num_blocks(self) -> int:

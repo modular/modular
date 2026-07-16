@@ -20,6 +20,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import psutil
 from max._distributed_ops import batched_copy_d2h, batched_copy_h2d
 from max.driver import (
     Buffer,
@@ -63,6 +64,26 @@ class DeviceEventBundle:
 
 
 _GIB = 1024**3
+
+
+def _check_host_memory_capacity(requested_bytes: int) -> None:
+    """Raises when a pinned host allocation exceeds host availability."""
+    try:
+        available_bytes = psutil.virtual_memory().available
+    except (OSError, RuntimeError) as error:
+        _logger.warning(
+            "Unable to determine available host memory; skipping KV cache "
+            "host capacity preflight: %s",
+            error,
+        )
+        return
+    if requested_bytes > available_bytes:
+        raise RuntimeError(
+            "KV cache host offload buffer requires "
+            f"{requested_bytes / _GIB:.1f} GiB of pinned host memory but only "
+            f"{available_bytes / _GIB:.1f} GiB is available. Reduce "
+            "host_kvcache_swap_space_gb or provision more host memory."
+        )
 
 
 @dataclass
@@ -140,6 +161,10 @@ class BlockOffloadEngine:
         # by all replicas; row ``bid`` is block ``bid``. Not GC-freed --
         # close() releases it.
         total_bytes = total_num_host_blocks * bytes_per_page
+        # Fail fast on an over-provisioned host budget: the pinned allocation
+        # below faults page by page and would otherwise OOM-kill the process
+        # instead of surfacing an actionable error.
+        _check_host_memory_capacity(total_bytes)
         total_gib = total_bytes / _GIB
         # Large allocations take minutes; log before so the wait is explained.
         _logger.info(
