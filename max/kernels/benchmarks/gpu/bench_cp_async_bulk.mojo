@@ -70,10 +70,10 @@ from layout.tma_async import SharedMemBarrier
 def _smem_ptr[
     BYTES_PER_COPY: Int, S: Int
 ](
-    base: UnsafePointer[UInt8, MutAnyOrigin, address_space=AddressSpace.SHARED],
+    base: UnsafePointer[UInt8, _, address_space=AddressSpace.SHARED],
     warp: Int,
     slot: Int,
-) -> UnsafePointer[UInt8, MutAnyOrigin, address_space=AddressSpace.SHARED]:
+) -> type_of(base):
     return base + (warp * S + slot) * BYTES_PER_COPY
 
 
@@ -81,14 +81,10 @@ def _smem_ptr[
 def _mbar_ref[
     S: Int
 ](
-    base: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ],
+    base: UnsafePointer[SharedMemBarrier, _, address_space=AddressSpace.SHARED],
     warp: Int,
     slot: Int,
-) -> UnsafePointer[
-    SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
-]:
+) -> type_of(base):
     return base + warp * S + slot
 
 
@@ -239,7 +235,7 @@ def main() raises:
             @parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises:
-                ctx.enqueue_function_experimental[
+                ctx.enqueue_function[
                     bulk_memcpy_kernel[NUM_THREADS, BYTES_PER_COPY, S, PREFETCH]
                 ](
                     src_dev,

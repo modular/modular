@@ -37,7 +37,7 @@ def test_argsort[
     var input_host_ptr = ctx.enqueue_create_host_buffer[dtype](N)
     var input_host = TileTensor(
         input_host_ptr,
-        row_major(Idx(N)),
+        row_major(N),
     )
 
     for i in range(N):
@@ -51,11 +51,11 @@ def test_argsort[
     # Create device LayoutTensors
     var device_indices_tensor = TileTensor(
         device_indices,
-        row_major(Idx(N)),
+        row_major(N),
     )
     var device_input_tensor = TileTensor(
         device_input,
-        row_major(Idx(N)),
+        row_major(N),
     )
 
     argsort[ascending=ascending, target="gpu"](
@@ -71,7 +71,7 @@ def test_argsort[
     var expected_indices_ptr = ctx.enqueue_create_host_buffer[DType.int64](N)
     var expected_indices = TileTensor(
         expected_indices_ptr,
-        row_major(Idx(N)),
+        row_major(N),
     )
     argsort[ascending=ascending](expected_indices, input_host)
 

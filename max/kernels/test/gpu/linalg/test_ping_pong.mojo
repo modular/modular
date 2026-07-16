@@ -25,7 +25,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal
 from std.random import random_float64
 from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
-    structured_ping_pong_matmul as ping_pong_matmul,
+    amd_ping_pong_matmul as ping_pong_matmul,
 )
 
 # Compile-time test configuration

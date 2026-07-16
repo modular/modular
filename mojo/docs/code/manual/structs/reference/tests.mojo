@@ -17,7 +17,7 @@ comptime ListNode = Node[Element]  # Constructing a LinkedList
 
 
 struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
-    comptime NodePointer = UnsafePointer[Self, MutExternalOrigin]
+    comptime NodePointer = UnsafePointer[Self, MutUntrackedOrigin]
 
     var value: Optional[Self.ElementType]  # The `Node`'s value
     var next: Optional[Self.NodePointer]  # Pointer to the next `Node`
@@ -33,7 +33,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
     @staticmethod
     def make_node(value: Self.ElementType) -> Self.NodePointer:
         var node_ptr = alloc[Self](1)
-        node_ptr.init_pointee_move(Self(value))
+        node_ptr.unsafe_write(Self(value))
         return node_ptr
 
     # Constructs a `Node` with allocated memory, assigns a value, appends
@@ -43,7 +43,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
         if self.next:
             var next_ptr = self.next.value()
             next_ptr[].free_chain()
-            next_ptr.destroy_pointee()
+            next_ptr.unsafe_deinit_pointee()
             next_ptr.free()
 
         self.next = Self.make_node(value)
@@ -72,7 +72,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
         while current:
             var current_ptr = current.value()
             next_node = current_ptr[].next
-            current_ptr.destroy_pointee()
+            current_ptr.unsafe_deinit_pointee()
             current_ptr.free()
             current = next_node
 
@@ -91,5 +91,5 @@ def main():
     # Demonstrates cleanup. In short-lived programs, the OS reclaims memory
     # at exit
     list_head[].free_chain()
-    list_head.destroy_pointee()
+    list_head.unsafe_deinit_pointee()
     list_head.free()

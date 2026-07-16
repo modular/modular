@@ -5,7 +5,7 @@ description: Standard Mojo data types.
 ---
 
 All values in Mojo have an associated data type. Most of the types are
-*nominal* types, defined by a [`struct`](/docs/manual/structs). These types are
+*nominal* types, defined by a [`struct`](/docs/manual/structs/). These types are
 nominal (or "named") because type equality is determined by the type's *name*,
 not its *structure*.
 
@@ -18,8 +18,8 @@ There are some types that aren't defined as structs:
 Mojo comes with a standard library that provides a number of useful types and
 utility functions. These standard types aren't privileged. Each of the standard
 library types is defined just like user-defined types—even basic types like
-[`Int`](/docs/std/builtin/int/Int) and
-[`String`](/docs/std/collections/string/string/String). But these standard
+[`Int`](/docs/std/builtin/int/Int/) and
+[`String`](/docs/std/collections/string/string/String/). But these standard
 library types are the building blocks you'll use for most Mojo programs.
 
 The most common types are *built-in types*, which are always available and
@@ -45,19 +45,19 @@ All numeric types support the usual numeric and bitwise operators. The
 
 ### Integers and unsigned integers
 
-Mojo supports both signed (`Int`) and unsigned (`UInt`) integer types. These
-include both fixed-size and general types:
+Mojo's general-purpose integer type is the signed `Int`. For a specific bit
+width, or for an unsigned integer, use the fixed-size integer types:
 
 - If you need a fixed-size integer, Mojo provides explicit-width integer types
-  such as `Int8`, `Int16`, `UInt32`, and `UInt64`. These fixed-precision integer
-  types are aliases to the [`SIMD`](/docs/std/builtin/simd/SIMD) type.
+  such as `Int8`, `Int16`, `UInt32`, and `UInt64`.
 
-- Use the general `Int` or `UInt` types when you don't require a specific bit
-  width.
+- Use the general `Int` type when you don't require a specific bit width.
+
+These general and fixed-precision integer types are aliases to the
+[`SIMD`](/docs/std/builtin/simd/SIMD/) type.
 
 `Int` represents a signed integer that uses the system's native word size,
-typically 64 bits on 64-bit CPUs and 32 bits on 32-bit CPUs. Similarly, `UInt`
-represents an unsigned integer that uses the system's default word size.
+typically 64 bits on 64-bit CPUs and 32 bits on 32-bit CPUs.
 
 You may wonder when to use `Int` and when to use the other integer
 types. In general, `Int` is a good safe default when you need an integer type
@@ -143,7 +143,7 @@ Exponent values of all zeros or all ones represent special cases. These
 patterns allow floating-point numbers to encode positive and negative
 infinity, signed zeros, and not-a-number (NaN). These values are available
 as static constants provided by
-[`FloatLiteral`](/docs/std/builtin/float_literal/FloatLiteral):
+[`FloatLiteral`](/docs/std/builtin/float_literal/FloatLiteral/):
 
 ```mojo
 from std.math import copysign
@@ -198,7 +198,7 @@ True
 
 Comparison operators (such as `<` and `>=`) work as expected with floating-point
 values. To test whether two values are equal within a tolerance,
-use the [`math.isclose()`](/docs/std/math/math/isclose) function to
+use the [`math.isclose()`](/docs/std/math/math/isclose/) function to
 compare whether two floating-point numbers are equal within a
 specified tolerance.
 
@@ -279,8 +279,8 @@ where accuracy can be traded for maximum throughput.
 
 In addition to these numeric types, the standard libraries provides integer and
 floating-point literal types,
-[`IntLiteral`](/docs/std/builtin/int_literal/IntLiteral) and
-[`FloatLiteral`](/docs/std/builtin/float_literal/FloatLiteral).
+[`IntLiteral`](/docs/std/builtin/int_literal/IntLiteral/) and
+[`FloatLiteral`](/docs/std/builtin/float_literal/FloatLiteral/).
 
 These literal types are used at compile time to represent literal numbers that
 appear in the code. In general, you should never instantiate these types
@@ -301,14 +301,24 @@ Table 5 summarizes the literal formats you can use to represent numbers.
 
 </figure>
 
-At compile time, the literal types are arbitrary-precision (also called
-infinite-precision) values, so the compiler can perform compile-time
-calculations without overflow or rounding errors.
+At compile-time, Mojo treats numeric literals as arbitrary-precision values, so
+the compiler can perform compile-time calculations without overflow or rounding
+errors.
 
-At runtime the values are converted to finite-precision types—`Int` for
-integer values, and `Float64` for floating-point values. (This process of
-converting a value that can only exist at compile time into a runtime value is
-called *materialization*.)
+At runtime the values are converted to finite-precision types. `IntLiteral` can
+convert to any finite-precision integer type, defaulting to `Int` if the type is
+unspecified. And `FloatLiteral` converts to any finite-precision floating-point
+type, defaulting to `Float64`.
+
+```mojo
+var float1 = 3.3  # float1 is type Float64
+var float2: Float32 = 7.5
+var int1 = 5  # int1 is type Int
+var int2: Int8 = 4
+```
+
+This process of converting a value that can only exist at compile time into a
+runtime value is called *materialization*.
 
 The following code sample shows the difference between an arbitrary-precision
 calculation and the same calculation done using `Float64` values at runtime,
@@ -329,7 +339,7 @@ print(arbitrary_precision, finite_precision)
 ### `SIMD` and `DType`
 
 To support high-performance numeric processing, Mojo uses the
-[`SIMD`](/docs/std/builtin/simd/SIMD) type as the basis for its numeric
+[`SIMD`](/docs/std/builtin/simd/SIMD/) type as the basis for its numeric
 types. SIMD (single instruction, multiple data) is a processor technology that
 allows you to perform an operation on an entire set of operands at once. Mojo's
 `SIMD` type abstracts SIMD operations. A `SIMD` value represents a SIMD
@@ -365,20 +375,21 @@ print(product)
 
 The `SIMD` module defines several
 [`comptime` values](/docs/manual/metaprogramming/comptime-evaluation/#comptime-values)
-that function as *type aliases*—shorthand names for different types of `SIMD`
-vectors. In particular, the `Scalar` type is just a `SIMD` vector with a single
-element. The numeric types listed in [Table 1](#table-1), like `Int8` and
-`Float32` are actually type aliases for different types of scalar values:
+that function as *type aliases*—shorthand names for different `SIMD` vector
+types. The `Scalar` type is a `SIMD` vector with a single element. The numeric
+types listed in [Table 1](#table-1), like `Int`, `Int8`, and `Float32`, are type
+aliases for scalar values:
 
 ```mojo
 comptime Scalar = SIMD[size=1]
+comptime Int = Scalar[DType.int]
 comptime Int8 = Scalar[DType.int8]
 comptime Float32 = Scalar[DType.float32]
 ```
 
-This may seem a little confusing at first, but it means that whether you're
-working with a single `Float32` value or a vector of float32 values,
-the math operations go through exactly the same code path.
+This means that whether you're working with a single `Float32` value or a
+vector of float32 values, the math operations go through exactly the same
+code path.
 
 #### The `DType` type
 
@@ -386,7 +397,7 @@ The `DType` struct describes the different data types that a `SIMD` vector can
 hold, and defines a number of utility functions for operating on those data
 types. The `DType` struct defines a set of
 [`comptime` members](/docs/manual/parameters/#comptime-members) that act as
-identifiers for the different data types, like `DType.int8` and `DType.float32`.
+identifiers for the different data types, like `DType.uint` and `DType.float32`.
 You use these `comptime` members when declaring a `SIMD` vector:
 
 ```mojo
@@ -422,14 +433,13 @@ the `DType` abstraction.
 
 ### Numeric type conversion
 
-[Constructors and implicit conversion](/docs/manual/lifecycle/life/#constructors-and-implicit-conversion)
-documents the circumstances in which Mojo automatically converts a value from
-one type to another. Importantly, numeric [operators](/docs/manual/operators)
-**don't** automatically narrow or widen operands to a common type.
+In Mojo, numeric [operators](/docs/manual/operators/) **don't** automatically
+narrow or widen operands to a common type. You need to explicitly convert the
+operands to the desired type.
 
-You can explicitly convert a `SIMD` value to a different `SIMD` type either
-by invoking its [`cast()`](/docs/std/builtin/simd/SIMD#cast) method or by
-passing it as an argument to the constructor of the target type. For example:
+You can explicitly convert a `SIMD` value to a different `SIMD` type either by
+invoking its [`cast()`](/docs/std/builtin/simd/SIMD/#cast) method or by passing
+it as an argument to the constructor of the target type. For example:
 
 ```mojo
 simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
@@ -460,16 +470,11 @@ Result: 9.0
 ```
 
 You can convert a scalar value of any numeric type to `Int` by passing the value
-to the [`Int()`](/docs/std/builtin/int/Int#__init__) constructor method.
+to the [`Int()`](/docs/std/builtin/int/Int/#__init__) constructor method.
 Additionally, you can pass an instance of any struct that implements the
-[`Intable`](/docs/std/builtin/int/Intable) trait or
-[`IntableRaising`](/docs/std/builtin/int/IntableRaising) trait to the `Int()`
+[`Intable`](/docs/std/builtin/int/Intable/) trait or
+[`IntableRaising`](/docs/std/builtin/int/IntableRaising/) trait to the `Int()`
 constructor to convert that instance to an `Int`.
-
-You can convert an `Int` or `IntLiteral` value to the `UInt` type by passing the
-value to the [`UInt()`](/docs/std/builtin/uint/UInt#__init__) constructor.
-You can't convert other numeric types to `UInt` directly, though you can first
-convert them to `Int` and then to `UInt`.
 
 ## Strings
 
@@ -488,11 +493,11 @@ print(s) # Testing Mojo strings
 ### Construction
 
 Many standard library types conform to the
-[`Writable`](/docs/std/format/Writable) trait, which indicates
+[`Writable`](/docs/std/format/Writable/) trait, which indicates
 that a value can be converted into a `String` using the `String(...)`
 constructor.
 
-The built-in [`print()`](/docs/std/io/io/print) function accepts values
+The built-in [`print()`](/docs/std/io/io/print/) function accepts values
 that conform to the `Writable` trait.
 
 Use `String(value)` to explicitly convert a value to a `String`:
@@ -510,35 +515,75 @@ var s = String("Items in list: ", 5)
 print(s) # Items in list: 5
 ```
 
-### Emoji
+### Emoji and grapheme clusters
 
-Mojo strings provide Unicode-aware emoji support. You can count the number
-of bytes, code points, and graphemes in a string using the `byte_length()`,
-`codepoints()`, and `count_graphemes()` methods, respectively:
+Mojo source files are UTF-8, letting you write emoji and other non-ASCII
+characters directly inside string literals.
+
+```mojo
+var wave = "👋"
+```
+
+The standard library counts emoji three different ways, and the answers
+usually disagree:
+
+- `byte_length()` returns the number of UTF-8 bytes.
+- `count_codepoints()` counts the Unicode code points.
+- `count_graphemes()` returns the number of user-perceived characters
+  (grapheme clusters), following
+  [UAX #29](https://www.unicode.org/reports/tr29/).
+
+The grapheme count is what matches what a human would tell you if you
+asked them to "count characters." A family emoji, a flag, and a waving
+hand with a skin tone are each one grapheme, even though each is built
+from several joined code points:
 
 ```mojo
 def show(label: StaticString, s: StringSlice):
     print(
         label,
         "bytes=", s.byte_length(),
-        "codepoints=", len(s.codepoints()),
+        "codepoints=", s.count_codepoints(),
         "graphemes=", s.count_graphemes(),
     )
-```
 
-Mojo uses colon-delimited
-[emoji shortcodes](https://www.unicode.org/emoji/charts/full-emoji-list.html),
-also known as the "CLDR Short Name", which are human-readable names for
-emoji:
-
-```mojo
 def main():
-    show("family    ", ":man-woman-girl-boy:")  # 🧑‍🧑‍🧒‍🧒
-    show("flag      ", ":us:")  # 🇺🇸
-    show("wave      ", ":wave::skin-tone-4:")  # 👋🏽
-    show("café      ", "café")   # NFD: e + U+0301
+    show("family    ", "👨‍👩‍👧‍👦")
+    show("flag      ", "🇺🇸")
+    show("wave      ", "👋🏽")
     show("namaste   ", "नमस्ते")
 ```
+
+Output:
+
+```text
+family     bytes=25  codepoints=7  graphemes=1
+flag       bytes=8   codepoints=2  graphemes=1
+wave       bytes=8   codepoints=2  graphemes=1
+namaste    bytes=18  codepoints=6  graphemes=3
+```
+
+If you'd rather not embed non-ASCII bytes in your source, for example, in
+ASCII-only codebases, you can spell the code point with a hex escape or
+`chr()`:
+
+```mojo
+var wave = "\U0001F44B"   # 8-digit hex escape
+var wave2 = chr(0x1F44B)  # chr() function
+
+var copy   = "\u00A9"   # 4-digit hex escape, ©
+var euro   = "\u20AC"   # 4-digit hex escape, €
+```
+
+Mojo's 4-digit `\uHHHH` escape spells code points up to U+FFFF. The
+8-digit `\U` form extends to U+10FFFF, Unicode's upper limit, covering
+emoji like 👋 (U+1F44B) and other characters above the Basic Multilingual
+Plane. The `chr()` function works for the full range too.
+
+Both forms reject surrogate code points (U+D800 to U+DFFF). Surrogates
+are reserved for UTF-16 encoding and aren't valid on their own. To
+escape a character above U+FFFF, write its full code point with `\U`.
+Don't use a UTF-16 surrogate pair.
 
 ### String formatting
 
@@ -555,7 +600,7 @@ the `format()` method with direct expressions and better
 performance characteristics.
 
 `TString`s work like `format()`, but they insert
-[`Writable`](/docs/std/format/Writable) representations of expressions
+[`Writable`](/docs/std/format/Writable/) representations of expressions
 into replacement fields. This provides safe and flexible string
 processing:
 
@@ -673,16 +718,18 @@ False True
 ```
 
 Many types have a boolean representation. Any type that implements the
-[`Boolable`](/docs/std/builtin/bool/Boolable) trait has a boolean
+[`Boolable`](/docs/std/builtin/bool/Boolable/) trait has a boolean
 representation. As a general principle, collections evaluate as True if they
 contain any elements, False if they are empty; strings evaluate as True if they
 have a non-zero length.
 
 ## Tuples
 
-Mojo's `Tuple` type represents an immutable tuple consisting of zero or more
-values, separated by commas. Tuples can consist of multiple types and you can
-index into tuples in multiple ways.
+Mojo's `Tuple` is a lightweight, fixed-size, heterogeneous collection with
+value semantics. A tuple contains zero or more comma-separated values,
+which may have different types. Although a tuple's structure (its size and
+element types) is fixed, individual elements can be mutated. Tuples support
+several forms of indexing:
 
 ```mojo
 # Tuples are immutable and can hold multiple types
@@ -719,13 +766,13 @@ Example
 The Mojo standard library also includes a set of basic collection types that
 can be used to build more complex data structures:
 
-- [`List`](/docs/std/collections/list/List), a dynamically-sized array of
+- [`List`](/docs/std/collections/list/List/), a dynamically-sized array of
   items.
-- [`Dict`](/docs/std/collections/dict/Dict), an associative array of
+- [`Dict`](/docs/std/collections/dict/Dict/), an associative array of
   key-value pairs.
-- [`Set`](/docs/std/collections/set/Set), an unordered collection of unique
+- [`Set`](/docs/std/collections/set/Set/), an unordered collection of unique
   items.
-- [`Optional`](/docs/std/collections/optional/Optional)
+- [`Optional`](/docs/std/collections/optional/Optional/)
   represents a value that may or may not be present.
 
 The collection types are *generic types*: while a given collection can only
@@ -748,19 +795,19 @@ var l1 = [1, 2, 3, 4]
 ```
 
 Where you need a more flexible collection, the
-[`Variant`](/docs/std/utils/variant/Variant) type can hold different types
+[`Variant`](/docs/std/utils/variant/Variant/) type can hold different types
 of values. For example, a `Variant[Int32, Float64]` can hold either an `Int32`
 *or* a `Float64` value at any given time. (Using `Variant` is not covered in
-this section, see the [API docs](/docs/std/utils/variant/Variant) for more
+this section, see the [API docs](/docs/std/utils/variant/Variant/) for more
 information.)
 
 The following sections give brief introduction to the main collection types.
 
 ### List
 
-[`List`](/docs/std/collections/list/List) is a dynamically-sized array of
+[`List`](/docs/std/collections/list/List/) is a dynamically-sized array of
 elements. List elements need to conform to the
-[`Copyable`](/docs/std/builtin/value/Copyable) trait. Most of the common
+[`Copyable`](/docs/std/builtin/value/Copyable/) trait. Most of the common
 standard library primitives, like `Int`, `String`, and `SIMD` conform to this
 trait. You can create a `List` by passing the element type as a parameter, like
 this:
@@ -819,10 +866,10 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
   ```
 
   As shown above, you can print the individual elements in a list as long as
-  they're a [`Writable`](/docs/std/format/Writable) type.
+  they're a [`Writable`](/docs/std/format/Writable/) type.
 
 - Iterating a `List` returns an immutable
-  [reference](/docs/manual/values/lifetimes#working-with-references) to each
+  [reference](/docs/manual/values/lifetimes/#working-with-references) to each
   item:
 
 ```mojo
@@ -855,7 +902,7 @@ You can see that the original loop entries were modified.
 
 ### Dict
 
-The [`Dict`](/docs/std/collections/dict/Dict) type is an associative array
+The [`Dict`](/docs/std/collections/dict/Dict/) type is an associative array
 that holds key-value pairs. You can create a `Dict` by specifying the key type
 and value type as parameters and using dictionary literals:
 
@@ -875,13 +922,13 @@ var values = Dict[String, Float64]()
 
 The dictionary's key type must conform to the
 [`KeyElement`](/docs/std/collections/dict/#keyelement) trait, and value elements
-must conform to the [`Copyable`](/docs/std/builtin/value/Copyable) trait.
+must conform to the [`Copyable`](/docs/std/builtin/value/Copyable/) trait.
 
 You can insert and remove key-value pairs, update the value assigned to a key,
 and iterate through keys, values, or items in the dictionary.
 
 The `Dict` iterators all yield
-[references](/docs/manual/values/lifetimes#working-with-references), which are
+[references](/docs/manual/values/lifetimes/#working-with-references), which are
 copied into the declared name by default, but you can use the `ref` marker to
 avoid the copy:
 
@@ -906,7 +953,7 @@ working with types that aren't `Copyable`.
 
 ### Set
 
-The [`Set`](/docs/std/collections/set/Set) type represents a set of unique
+The [`Set`](/docs/std/collections/set/Set/) type represents a set of unique
 values. You can add and remove elements from the set, test whether a value
 exists in the set, and perform set algebra operations, like unions and
 intersections between two sets.
@@ -934,10 +981,10 @@ We both like:
 
 ### Optional
 
-An [`Optional`](/docs/std/collections/optional/Optional) represents a
+An [`Optional`](/docs/std/collections/optional/Optional/) represents a
 value that may or may not be present. Like the other collection types, it is
 generic, and can hold any type that conforms to the
-[`Copyable`](/docs/std/builtin/value/Copyable) trait.
+[`Copyable`](/docs/std/builtin/value/Copyable/) trait.
 
 ```mojo
 # Two ways to initialize an Optional with a value

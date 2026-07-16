@@ -2,6 +2,13 @@ load("//bazel:api.bzl", "mojo_library")
 
 package(default_visibility = ["//max:consumers"])
 
+# Raw sources for the LSP parse-smoke test.
+filegroup(
+    name = "srcs",
+    srcs = glob(["**/*.mojo"]),
+    visibility = ["//KGEN/test/mojo-lsp-server/parse-tree:__pkg__"],
+)
+
 mojo_library(
     name = "shmem",
     srcs = glob(["**/*.mojo"]),
@@ -28,6 +35,7 @@ mojo_library(
         ],
         "//conditions:default": [],
     }),
+    use_production_compiler_for_asan = True,
     validate_missing_docs = False,
     deps = [
         "//max:layout",

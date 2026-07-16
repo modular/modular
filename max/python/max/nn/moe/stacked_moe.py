@@ -84,20 +84,28 @@ class GateUpFormat(Enum):
     """
 
 
-def silu_activation(gate: TensorValue, up: TensorValue) -> TensorValue:
-    """Computes a SiLU gated activation as ``up * silu(gate)``.
+def make_stacked_gated_activation_fn(
+    activation_fn: Callable[[TensorValue], TensorValue],
+) -> Callable[[TensorValue, TensorValue], TensorValue]:
+    """Builds a gated activation for split ``(gate, up)`` projections.
 
-    This is the default activation used by most MoE implementations
-    including Llama4 and Qwen3VL.
+    The returned callable applies ``activation_fn`` to the gate tensor
+    and multiplies with the up tensor:
+    ``activation_fn(gate) * up``.
 
     Args:
-        gate: The gate projection tensor.
-        up: The up projection tensor.
+        activation_fn: Pointwise activation to apply to the gate tensor.
 
     Returns:
-        The element-wise product of ``up`` and ``silu(gate)``.
+        A callable ``(gate, up) -> activated``.
     """
-    return up * ops.silu(gate)
+
+    def _stacked_gated_activation_fn(
+        gate: TensorValue, up: TensorValue
+    ) -> TensorValue:
+        return activation_fn(gate) * up
+
+    return _stacked_gated_activation_fn
 
 
 def _gate_up_scale_sharding_strategy(
@@ -240,7 +248,7 @@ class StackedMoE(Module, Shardable):
             moe_dim=14336,
             gate_cls=GptOssMoEGate,
             gate_up_format=GateUpFormat.INTERLEAVED,
-            activation_fn=my_custom_activation,
+            gated_activation_fn=my_custom_activation,
             has_bias=True,
         )
 
@@ -255,9 +263,10 @@ class StackedMoE(Module, Shardable):
             ``DType.bfloat16``.
         gate_up_format: The format of the combined gate/up weights. Defaults
             to ``GateUpFormat.CONCATENATED``.
-        activation_fn: The activation function taking ``(gate, up)`` and
-            returning the activated output. Defaults to
-            :func:`silu_activation`.
+        gated_activation_fn: Activation applied to the split
+            ``(gate, up)`` projections. ``None`` (default) uses SiLU
+            gating; use :func:`make_stacked_gated_activation_fn` for
+            custom activations.
         has_bias: Whether to include bias for projections. Defaults to
             ``False``.
         has_shared_experts: Whether to use shared experts. Defaults to
@@ -285,9 +294,8 @@ class StackedMoE(Module, Shardable):
         gate_cls: Callable[..., MoEGate],
         dtype: DType = DType.bfloat16,
         gate_up_format: GateUpFormat = GateUpFormat.CONCATENATED,
-        activation_fn: Callable[
-            [TensorValue, TensorValue], TensorValue
-        ] = silu_activation,
+        gated_activation_fn: Callable[[TensorValue, TensorValue], TensorValue]
+        | None = None,
         has_bias: bool = False,
         has_shared_experts: bool = False,
         shared_experts_dim: int = 0,
@@ -304,7 +312,9 @@ class StackedMoE(Module, Shardable):
         self.gate_cls = gate_cls
         self.dtype = dtype
         self.gate_up_format = gate_up_format
-        self.activation_fn = activation_fn
+        self.gated_activation_fn = (
+            gated_activation_fn or make_stacked_gated_activation_fn(ops.silu)
+        )
         self.has_bias = has_bias
         self.has_shared_experts = has_shared_experts
         self.shared_experts_dim = shared_experts_dim
@@ -371,18 +381,27 @@ class StackedMoE(Module, Shardable):
         # FP8 scales (only for non-MXFP4 float8)
         if self.quant_config and self.quant_config.format != QuantFormat.MXFP4:
             block_size = self.quant_config.weight_scale.block_size
-            assert block_size is not None, "FP8 MoE requires block scaling"
+            if self.quant_config.weight_scale.is_rowwise:
+                # Per-output-channel (rowwise) scales, e.g. compressed-tensors
+                # FP8-dynamic: one scale per expert output channel. Stored in
+                # the same [E, out_features, 1] layout the matmul transposes to
+                # a per-N scale. ``gate_up`` output is the concatenated
+                # 2 * moe_dim; ``down`` output is hidden_dim.
+                gate_up_scale_shape = [self.num_experts, 2 * self.moe_dim, 1]
+                down_scale_shape = [self.num_experts, self.hidden_dim, 1]
+            else:
+                assert block_size is not None, "FP8 MoE requires block scaling"
 
-            gate_up_scale_shape = [
-                self.num_experts,
-                ceildiv(self.hidden_dim, block_size[0]),
-                ceildiv(2 * self.moe_dim, block_size[1]),
-            ]
-            down_scale_shape = [
-                self.num_experts,
-                ceildiv(self.moe_dim, block_size[0]),
-                ceildiv(self.hidden_dim, block_size[1]),
-            ]
+                gate_up_scale_shape = [
+                    self.num_experts,
+                    ceildiv(self.hidden_dim, block_size[0]),
+                    ceildiv(2 * self.moe_dim, block_size[1]),
+                ]
+                down_scale_shape = [
+                    self.num_experts,
+                    ceildiv(self.moe_dim, block_size[0]),
+                    ceildiv(self.hidden_dim, block_size[1]),
+                ]
 
             self._gate_up_scale = Weight(
                 name="experts.gate_up_proj_scale",
@@ -530,7 +549,7 @@ class StackedMoE(Module, Shardable):
             raise ValueError("Gate+Up output must be BF16 for activation")
 
         gate, up = self._split_gate_up(gate_up_output)
-        return self.activation_fn(gate, up)
+        return self.gated_activation_fn(gate, up)
 
     def _prepare_routing(self, router_idx: TensorValue) -> RoutingInfo:
         """Computes token-to-expert routing indices.
@@ -639,7 +658,7 @@ class StackedMoE(Module, Shardable):
             self.gate_up_proj_transposed,
             routing.expert_start_indices,
             routing.expert_ids,
-            routing.expert_usage_stats.to(DeviceRef.CPU()),
+            routing.expert_usage_stats,
         )
 
         gated_output = self._apply_gated_activation(gate_up_output, routing)
@@ -649,7 +668,7 @@ class StackedMoE(Module, Shardable):
             self.down_proj_transposed,
             routing.expert_start_indices,
             routing.expert_ids,
-            routing.expert_usage_stats.to(DeviceRef.CPU()),
+            routing.expert_usage_stats,
         )
 
         if self.has_bias:
@@ -887,7 +906,7 @@ class StackedMoE(Module, Shardable):
             gate_cls=self.gate_cls,
             dtype=self.dtype,
             gate_up_format=self.gate_up_format,
-            activation_fn=self.activation_fn,
+            gated_activation_fn=self.gated_activation_fn,
             has_bias=self.has_bias,
             has_shared_experts=self.has_shared_experts,
             shared_experts_dim=sharded_shared_dim,

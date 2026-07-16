@@ -30,10 +30,14 @@ class KVCacheMetrics:
     """Number of cache blocks copied from host to device."""
     d2h_blocks_copied: int = 0
     """Number of cache blocks copied from device to host."""
+    cross_replica_blocks_copied: int = 0
+    """Number of cache blocks copied device-to-device across DP replicas."""
     disk_blocks_written: int = 0
     """Number of cache blocks written to disk."""
     disk_blocks_read: int = 0
     """Number of cache blocks read from disk."""
+    inflight_disk_ops: int = 0
+    """Number of in-flight disk operations."""
     nixl_read_blocks: int = 0
     """Number of cache blocks read via NIXL (dKV GET)."""
     nixl_write_blocks: int = 0
@@ -156,9 +160,12 @@ class KVCacheMetrics:
             cache_tokens=self.cache_tokens + other.cache_tokens,
             h2d_blocks_copied=self.h2d_blocks_copied + other.h2d_blocks_copied,
             d2h_blocks_copied=self.d2h_blocks_copied + other.d2h_blocks_copied,
+            cross_replica_blocks_copied=self.cross_replica_blocks_copied
+            + other.cross_replica_blocks_copied,
             disk_blocks_written=self.disk_blocks_written
             + other.disk_blocks_written,
             disk_blocks_read=self.disk_blocks_read + other.disk_blocks_read,
+            inflight_disk_ops=self.inflight_disk_ops + other.inflight_disk_ops,
             nixl_read_blocks=self.nixl_read_blocks + other.nixl_read_blocks,
             nixl_write_blocks=self.nixl_write_blocks + other.nixl_write_blocks,
             nixl_read_latency_total_ms=self.nixl_read_latency_total_ms

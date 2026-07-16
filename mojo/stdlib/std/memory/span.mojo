@@ -23,7 +23,12 @@ from std.builtin.builtin_slice import ContiguousSlice
 from std.reflection import call_location, reflect
 from std.bit.mask import splat
 from std.bit import pop_count
-from std.memory import pack_bits, uninit_copy_n
+from std.memory import (
+    is_trivially_copyable,
+    is_trivially_deletable,
+    pack_bits,
+    uninit_copy_n,
+)
 from std.collections import check_bounds
 from std.builtin.rebind import downcast
 from std.sys import align_of
@@ -31,7 +36,7 @@ from std.sys.info import simd_width_of
 
 from std.algorithm import vectorize
 from std.hashlib import Hasher
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 import std.format._utils as fmt
 
 
@@ -51,7 +56,7 @@ Parameters:
     origin: The origin of the span.
 """
 
-comptime ImmutSpan[
+comptime ImmSpan[
     T: AnyType,
     origin: ImmutOrigin,
 ] = Span[T, origin]
@@ -63,6 +68,10 @@ Parameters:
 """
 
 
+@doc_hidden
+comptime ImmutSpan = ImmSpan
+
+
 @fieldwise_init
 struct _SpanIter[
     mut: Bool,
@@ -70,7 +79,7 @@ struct _SpanIter[
     T: Copyable,
     origin: Origin[mut=mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, IterableOwned, Iterator):
+](ImplicitlyCopyable, Iterable, IterableOwned, Iterator, Sized):
     """Iterator for Span.
 
     Parameters:
@@ -123,11 +132,36 @@ struct _SpanIter[
             self.index -= 1
             return self.src._data[self.index]
 
+    @always_inline
+    def __len__(self) -> Int:
+        """Returns the number of elements remaining in this iterator.
 
+        Returns:
+            The number of elements remaining in this iterator.
+        """
+        comptime if Self.forward:
+            return len(self.src) - self.index
+        else:
+            return self.index
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        """Returns bounds `[lower, upper]` for the remaining iterator length.
+
+        Returns:
+            The lower and upper bound of this iterator. For `_SpanIter` both
+            bounds are exact and equal to `len(self)`.
+        """
+        var n = len(self)
+        return (n, {n})
+
+
+@stable(since="1.0")
 struct Span[
     mut: Bool,
     //,
     T: AnyType,
+    /,
     origin: Origin[mut=mut],
 ](
     Boolable,
@@ -178,9 +212,11 @@ struct Span[
     comptime device_type: AnyType = Self
     """The device-side type for this `Span`."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device type mapping is the identity function."""
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -193,7 +229,7 @@ struct Span[
         """
         return String(
             "Span[",
-            reflect[Self.T]().name(),
+            reflect[Self.T].name(),
             "]",
         )
 
@@ -210,9 +246,7 @@ struct Span[
     @doc_hidden
     @implicit
     @always_inline("nodebug")
-    def __init__(
-        other: Span, out self: Span[other.T, ImmutOrigin(other.origin)]
-    ):
+    def __init__(other: Span, out self: ImmutSpan[other.T, other.origin]):
         """Implicitly cast the mutable origin of self to an immutable one.
 
         Args:
@@ -236,7 +270,7 @@ struct Span[
     @always_inline
     @implicit
     def __init__(
-        out self, ref[Self.origin] list: List[downcast[Self.T, Copyable]]
+        out self, ref[Self.origin] list: List[downcast[Self.T, Movable]]
     ):
         """Construct a `Span` from a `List`.
 
@@ -354,19 +388,19 @@ struct Span[
     @always_inline
     def __reversed__(
         self,
-    ) -> _SpanIter[downcast[Self.T, Copyable], Self.origin, forward=False,]:
+    ) -> _SpanIter[
+        Self.T,
+        Self.origin,
+        forward=False,
+    ] where conforms_to(
+        Self.T, Copyable
+    ):
         """Iterate backwards over the `Span`.
 
         Returns:
             A reversed iterator of the `Span` elements.
         """
-        comptime assert conforms_to(
-            Self.T, Copyable
-        ), "Span iteration requires the element to be `Copyable`"
-        return _SpanIter[forward=False](
-            len(self),
-            rebind[Span[downcast[Self.T, Copyable], Self.origin]](self),
-        )
+        return _SpanIter[forward=False](len(self), self)
 
     # ===------------------------------------------------------------------===#
     # Trait implementations
@@ -550,15 +584,11 @@ struct Span[
         return Pointer[Self.T, Self.origin](to=self._data[0])
 
     @always_inline
-    def copy_from[
-        _T: Copyable & ImplicitlyDestructible, _origin: MutOrigin, //
-    ](self: Span[_T, _origin], other: Span[_T, _]):
+    def copy_from(
+        self, other: Span[Self.T, _]
+    ) where Self.mut and conforms_to(Self.T, Copyable & ImplicitlyDeletable):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
-
-        Parameters:
-            _T: List element type that supports implicit destruction.
-            _origin: The inferred mutable origin of the data within the Span.
 
         Args:
             other: The `Span` to copy all elements from.
@@ -568,15 +598,19 @@ struct Span[
         # needed). For non-trivial types, we keep the single-pass assignment
         # loop rather than destroy_n + uninit_copy_n, which would be two
         # passes over memory with worse cache locality.
-        comptime if _T.__copy_ctor_is_trivial and _T.__del__is_trivial:
+        comptime if is_trivially_copyable[Self.T]() and is_trivially_deletable[
+            Self.T
+        ]():
             uninit_copy_n[overlapping=False](
-                dest=self.unsafe_ptr(),
+                # TODO(MOCO-4220) once fixed remove the unsafe_mut_cast
+                dest=self.unsafe_ptr().unsafe_mut_cast[True](),
                 src=other.unsafe_ptr(),
                 count=len(self),
             )
         else:
             for i in range(len(self)):
-                self[i] = other[i].copy()
+                # TODO(MOCO-4220) once fixed this is self[i] = other[i].copy()
+                self.unsafe_ptr().unsafe_mut_cast[True]()[i] = other[i].copy()
 
     def __bool__(self) -> Bool:
         """Check if a span is non-empty.
@@ -591,15 +625,10 @@ struct Span[
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
-    def __eq__[
-        _T: Equatable,
-        //,
-    ](self: Span[_T, Self.origin], rhs: Span[_T, _]) -> Bool:
+    def __eq__(
+        self, rhs: Span[Self.T, _]
+    ) -> Bool where conforms_to(Self.T, Equatable):
         """Verify if span is equal to another span.
-
-        Parameters:
-            _T: The type of the elements must implement the
-              traits `Equatable`, `Copyable`.
 
         Args:
             rhs: The span to compare against.
@@ -621,14 +650,10 @@ struct Span[
         return True
 
     @always_inline
-    def __ne__[
-        _T: Equatable, //
-    ](self: Span[_T, Self.origin], rhs: Span[_T, _]) -> Bool:
+    def __ne__(
+        self, rhs: Span[Self.T, _]
+    ) -> Bool where conforms_to(Self.T, Equatable):
         """Verify if span is not equal to another span.
-
-        Parameters:
-            _T: The type of the elements in the span. Must implement the
-              traits `Equatable`, `Copyable`.
 
         Args:
             rhs: The span to compare against.
@@ -638,20 +663,20 @@ struct Span[
         """
         return not self == rhs
 
-    def fill[
-        _T: Copyable & ImplicitlyDestructible, //
-    ](self: Span[mut=True, _T, _], value: _T):
+    def fill(
+        self, value: Self.T
+    ) where Self.mut and conforms_to(Self.T, Copyable & ImplicitlyDeletable):
         """
         Fill the memory that a span references with a given value.
-
-        Parameters:
-            _T: Span element type that supports implicit destruction.
 
         Args:
             value: The value to assign to each element.
         """
         for ref element in self:
-            rebind[_T](element) = value.copy()
+            # TODO(MOCO-4220) once fixed update body to:
+            # element = value.copy()
+            var p = UnsafePointer(to=element).unsafe_mut_cast[True]()
+            p[] = value.copy()
 
     def fill[
         dtype: DType, _origin: MutOrigin, //
@@ -681,13 +706,10 @@ struct Span[
             ptr[processed + i] = value
 
     @always_inline
-    def unsafe_swap_elements[
-        U: Movable
-    ](self: Span[mut=True, U, _], a: Int, b: Int):
+    def unsafe_swap_elements(
+        self, a: Int, b: Int
+    ) where Self.mut and conforms_to(Self.T, Movable):
         """Swap the values at indices `a` and `b` without performing bounds checking.
-
-        Parameters:
-            U: Span element type that must be `Movable`.
 
         Args:
             a: The first element's index.
@@ -706,20 +728,18 @@ struct Span[
             "Index `b` out of bounds: ",
             b,
         )
-        var ptr = self.unsafe_ptr()
+        # TODO(MOCO-4220) once fixed remove unsafe_mut_cast
+        var ptr = self.unsafe_ptr().unsafe_mut_cast[True]()
 
         # `a` and `b` may be equal, so we cannot use `swap` directly.  The
         # unsafe_origin_cast silence the (correct) exclusivity error.
         (ptr + a).unsafe_origin_cast[MutAnyOrigin]().swap_pointees(ptr + b)
 
-    def swap_elements[
-        U: Movable
-    ](self: Span[mut=True, U, _], a: Int, b: Int) raises:
+    def swap_elements(
+        self, a: Int, b: Int
+    ) raises where Self.mut and conforms_to(Self.T, Movable):
         """
         Swap the values at indices `a` and `b`.
-
-        Parameters:
-            U: Span element type that must be `Movable`.
 
         Args:
             a: The first argument index.
@@ -728,8 +748,8 @@ struct Span[
         Raises:
             If a or b are larger than the length of the span.
         """
-        var length = UInt(len(self))
-        if a > Int(length) or b > Int(length):
+        var length = len(self)
+        if a > length or b > length:
             raise Error(
                 "index out of bounds (length: ",
                 length,
@@ -801,7 +821,7 @@ struct Span[
                 MutAnyOrigin
             ]()
             (ptr + middle + 1).init_pointee_move_from(middle_prev)
-            middle_prev.init_pointee_move(value)
+            middle_prev.unsafe_write(value)
 
     def apply[
         dtype: DType,
@@ -830,7 +850,7 @@ struct Span[
                     processed += w
 
         for i in range(length - processed):
-            (ptr + processed + i).init_pointee_move(func(ptr[processed + i]))
+            (ptr + processed + i).unsafe_write(func(ptr[processed + i]))
 
     def apply[
         dtype: DType,
@@ -866,13 +886,13 @@ struct Span[
         for i in range(length - processed):
             var vec = ptr[processed + i]
             if cond(vec):
-                (ptr + processed + i).init_pointee_move(func(vec))
+                (ptr + processed + i).unsafe_write(func(vec))
 
     def count[
         dtype: DType,
         //,
         F: def[w: SIMDSize](v: SIMD[dtype, w]) -> SIMD[DType.bool, w],
-    ](self: Span[Scalar[dtype], _], func: F) -> UInt:
+    ](self: Span[Scalar[dtype], _], func: F) -> Int:
         """Count the amount of times the function returns `True`.
 
         Parameters:
@@ -887,7 +907,7 @@ struct Span[
         """
 
         comptime simdwidth = simd_width_of[dtype]()
-        var ptr = self.unsafe_ptr()
+        var ptr = self.unsafe_ptr().as_immutable()
         var length = len(self)
         var count = 0
 
@@ -896,7 +916,7 @@ struct Span[
             count += mask.reduce_bit_count()
 
         vectorize[simdwidth](length, do_count)
-        return UInt(count)
+        return count
 
     @always_inline
     def unsafe_subspan(self, *, offset: Int, length: Int) -> Self:
@@ -924,7 +944,7 @@ struct Span[
     def _binary_search_index[
         dtype: DType,
         //,
-    ](self: Span[Scalar[dtype], _], needle: Scalar[dtype]) -> Optional[UInt]:
+    ](self: Span[Scalar[dtype], _], needle: Scalar[dtype]) -> Optional[Int]:
         """Finds the index of `needle` with binary search.
         Args:
             needle: The value to binary search for.
@@ -944,7 +964,7 @@ struct Span[
             value = self.unsafe_get(cursor + half - 1)
             cursor += UInt(splat(value < needle)) & half
 
-        return Optional(cursor) if value == needle else None
+        return Optional(Int(cursor)) if value == needle else None
 
     def binary_search_by[
         func: def(Self.T) thin -> Int,

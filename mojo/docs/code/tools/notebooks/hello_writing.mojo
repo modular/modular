@@ -29,7 +29,7 @@ def main() raises:
         out.enqueue_fill(`❌`)
 
         # Run it
-        ctx.enqueue_function[kernel, kernel](out, grid_dim=1, block_dim=1)
+        ctx.enqueue_function[kernel](out, grid_dim=1, block_dim=1)
 
         # Report the result
         with out.map_to_host() as out_host:

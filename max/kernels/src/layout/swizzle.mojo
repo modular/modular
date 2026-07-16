@@ -39,7 +39,7 @@ from std.math.uutils import udivmod
 from std.bit import log2_floor
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 
-from .int_tuple import flatten
+from .int_tuple import flatten, IntTuple
 from .layout import Layout
 
 # ===-----------------------------------------------------------------------===#
@@ -306,7 +306,7 @@ def shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
 
 
 struct Swizzle(
-    Copyable, ImplicitlyDestructible, TrivialRegisterPassable, Writable
+    Copyable, ImplicitlyDeletable, TrivialRegisterPassable, Writable
 ):
     """Swizzle functor for memory access pattern optimization.
 

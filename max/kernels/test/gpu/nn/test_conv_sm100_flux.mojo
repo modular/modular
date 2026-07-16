@@ -118,14 +118,12 @@ def test_flux_conv_layer[
     ctx.enqueue_copy(filter_fcrs_dev, filter_nchw_host_ptr)
 
     # SM100 path: conv_gpu with RSCF filter (dispatches to SM100 on B200)
-    comptime input_tt_layout = row_major(
-        (Idx[N](), Idx[H](), Idx[W](), Idx[C_in]())
-    )
+    comptime input_tt_layout = row_major((Idx[N], Idx[H], Idx[W], Idx[C_in]))
     comptime filter_rscf_tt_layout = row_major(
-        (Idx[R](), Idx[S](), Idx[C_in](), Idx[C_out]())
+        (Idx[R], Idx[S], Idx[C_in], Idx[C_out])
     )
     comptime output_tt_layout = row_major(
-        (Idx[N](), Idx[Hout](), Idx[Wout](), Idx[C_out]())
+        (Idx[N], Idx[Hout], Idx[Wout], Idx[C_out])
     )
     var input_tt = TileTensor(input_dev, input_tt_layout)
     var filter_rscf_tt = TileTensor(filter_rscf_dev, filter_rscf_tt_layout)
@@ -148,7 +146,7 @@ def test_flux_conv_layer[
 
     # cuDNN reference
     comptime filter_fcrs_tt_layout = row_major(
-        (Idx[C_out](), Idx[C_in](), Idx[R](), Idx[S]())
+        (Idx[C_out], Idx[C_in], Idx[R], Idx[S])
     )
     var input_tt_ref = TileTensor(input_dev, input_tt_layout)
     var filter_fcrs_tt = TileTensor(filter_fcrs_dev, filter_fcrs_tt_layout)
