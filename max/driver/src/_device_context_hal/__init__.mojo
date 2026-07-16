@@ -17,6 +17,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.gpu.host.device_context import DefaultDeviceTypeEncoder
 from std.builtin.rebind import downcast
 from std.collections.optional import OptionalReg
+from std.ffi import c_size_t
 from std.compile import CompiledFunctionInfo
 from std.math import align_up
 from std.memory import (
@@ -292,6 +293,85 @@ struct DeviceContext(
             The unique device ID as an `Int64`.
         """
         return self._device[].id
+
+    @always_inline
+    def get_memory_info(self) raises -> Tuple[c_size_t, c_size_t]:
+        """Returns the free and total memory size for this device.
+
+        This method queries the current state of device memory, providing information
+        about how much memory is available and the total memory capacity of the device.
+        This is useful for memory management and determining if there's enough space
+        for planned operations.
+
+        Returns:
+            A tuple of (free memory, total memory) in bytes.
+
+        Raises:
+            If there's an error retrieving the memory information.
+
+        Example:
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+        try:
+            (free, total) = ctx.get_memory_info()
+            print("Free memory:", free / (1024*1024), "MB")
+            print("Total memory:", total / (1024*1024), "MB")
+        except:
+            print("Failed to get memory information")
+        ```
+        """
+        var info = self._context[].get_memory_info()
+        return (c_size_t(info[0]), c_size_t(info[1]))
+
+    def set_as_current(self) raises:
+        """For use with libraries that require a specific GPU context to be
+        active. Sets the current device to the one associated with this
+        DeviceContext.
+
+        Example:
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+        var ctx = DeviceContext(device_id=1)
+        ctx.set_as_current()
+        ```
+
+        Raises:
+            If there's an error setting the current device.
+        """
+        self._context[].set_current()
+
+    def push_context(self) raises -> _DeviceContextScopeHAL:
+        """Returns a context manager that ensures this device's driver context is active.
+
+        This method returns a context manager that pushes this device's driver
+        context as the current context on entry and restores the previous context
+        on exit. This is useful for operations that require a specific GPU context
+        to be active, such as cuDNN operations on multi-GPU systems.
+
+        Returns:
+            A context manager that manages the driver context stack.
+
+        Raises:
+            If there's an error switching contexts.
+
+        Example:
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+
+        var ctx = DeviceContext(device_id=1)
+        # Ensure GPU 1's context is active for these operations.
+        with ctx.push_context():
+            # All GPU operations here will use GPU 1's context.
+            ...  # call external stateful APIs, such as cudnn.
+        # Previous context is automatically restored
+        ```
+        """
+        return _DeviceContextScopeHAL(self)
 
     def stream(self) -> DeviceStream:
         return DeviceStream(self)
@@ -1247,6 +1327,44 @@ struct DeviceContext(
             "destination span length must be >= source buffer length",
         )
         self.enqueue_copy(dst.unsafe_ptr(), src_buf)
+
+
+struct _DeviceContextScopeHAL(Movable):
+    var _device_context: DeviceContext
+    # Driver-context handle to restore on exit; only meaningful when `_active`
+    # (any value, including zero, can be a live handle).
+    var _prev_driver_ctx: Int
+    var _active: Bool
+
+    def __init__(out self, device_context: DeviceContext):
+        self._device_context = device_context
+        self._prev_driver_ctx = 0
+        self._active = False
+
+    def __del__(deinit self):
+        # Ensure restoration in all cases.
+        if self._active:
+            try:
+                self._device_context._context[].set_current_driver_context(
+                    self._prev_driver_ctx
+                )
+            except e:
+                print("warning: restoring driver context failed:", e)
+
+    def __enter__(mut self) raises -> DeviceContext:
+        self._prev_driver_ctx = (
+            self._device_context._context[].get_current_driver_context()
+        )
+        self._device_context._context[].set_current()
+        self._active = True
+        return self._device_context
+
+    def __exit__(mut self) raises:
+        if self._active:
+            self._device_context._context[].set_current_driver_context(
+                self._prev_driver_ctx
+            )
+            self._active = False
 
 
 # ===-----------------------------------------------------------------------===#

@@ -400,6 +400,29 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
         )
 
     # ===-------------------------------------------------------------------===#
+    # Current-context state
+    # ===-------------------------------------------------------------------===#
+
+    def set_current(self) raises HALError:
+        """Sets this context as the calling thread's current context."""
+        self._raw[].set_context_current(self._handle)
+
+    def get_current_driver_context(self) raises HALError -> Int:
+        """Returns the calling thread's active driver-level context as an
+        opaque handle."""
+        return self._raw[].get_current_driver_context(self._handle)
+
+    def set_current_driver_context(self, driver_context: Int) raises HALError:
+        """Installs a handle previously obtained from
+        `get_current_driver_context` as the calling thread's current context.
+        """
+        self._raw[].set_current_driver_context(self._handle, driver_context)
+
+    def get_memory_info(self) raises HALError -> Tuple[UInt64, UInt64]:
+        """Returns the free and total device memory, in bytes."""
+        return self._raw[].get_context_memory_info(self._handle)
+
+    # ===-------------------------------------------------------------------===#
     # Function execution
     # ===-------------------------------------------------------------------===#
 

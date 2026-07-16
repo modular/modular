@@ -343,6 +343,66 @@ struct RawDriver(Movable):
                 message=String(t"failed to destroy context: {err.message}"),
             )
 
+    def set_context_current(self, context: ContextHandle) raises HALError:
+        var status = self._raw.context_set_current.f(context)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to set context current: {err.message}"),
+            )
+
+    def get_current_driver_context(
+        self, context: ContextHandle
+    ) raises HALError -> Int:
+        var driver_context = UnsafeMaybeUninit[Int]()
+        var status = self._raw.context_get_current_driver_context.f(
+            context, OutParam[Int](to=driver_context)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to get current driver context: {err.message}"
+                ),
+            )
+        return driver_context.unsafe_assume_init_ref()
+
+    def set_current_driver_context(
+        self, context: ContextHandle, driver_context: Int
+    ) raises HALError:
+        var status = self._raw.context_set_current_driver_context.f(
+            context, driver_context
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to set current driver context: {err.message}"
+                ),
+            )
+
+    def get_context_memory_info(
+        self, context: ContextHandle
+    ) raises HALError -> Tuple[UInt64, UInt64]:
+        var free = UnsafeMaybeUninit[UInt64]()
+        var total = UnsafeMaybeUninit[UInt64]()
+        var status = self._raw.context_memory_info.f(
+            context, OutParam[UInt64](to=free), OutParam[UInt64](to=total)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to get memory info: {err.message}"),
+            )
+        return (
+            free.unsafe_assume_init_ref(),
+            total.unsafe_assume_init_ref(),
+        )
+
     # ===-------------------------------------------------------------------===#
     # Bundle lifecycle
     # ===-------------------------------------------------------------------===#
@@ -1020,6 +1080,30 @@ struct RawPlugin(Movable):
         "M_driver_context_destroy",
         def(context: ContextHandle) thin -> PluginResultCode,
     ]
+    var context_set_current: HALFunction[
+        "M_driver_context_set_current",
+        def(context: ContextHandle) thin -> PluginResultCode,
+    ]
+    var context_get_current_driver_context: HALFunction[
+        "M_driver_context_get_current_driver_context",
+        def(
+            context: ContextHandle, driver_context: OutParam[Int, _]
+        ) thin -> PluginResultCode,
+    ]
+    var context_set_current_driver_context: HALFunction[
+        "M_driver_context_set_current_driver_context",
+        def(
+            context: ContextHandle, driver_context: Int
+        ) thin -> PluginResultCode,
+    ]
+    var context_memory_info: HALFunction[
+        "M_driver_context_memory_info",
+        def(
+            context: ContextHandle,
+            free: OutParam[UInt64, _],
+            total: OutParam[UInt64, _],
+        ) thin -> PluginResultCode,
+    ]
     var memory_alloc_pinned: HALFunction[
         "M_driver_memory_alloc_pinned",
         def(
@@ -1353,6 +1437,18 @@ struct RawPlugin(Movable):
         self.device_get = type_of(self.device_get)(handle, so_path)
         self.context_create = type_of(self.context_create)(handle, so_path)
         self.context_destroy = type_of(self.context_destroy)(handle, so_path)
+        self.context_set_current = type_of(self.context_set_current)(
+            handle, so_path
+        )
+        self.context_get_current_driver_context = type_of(
+            self.context_get_current_driver_context
+        )(handle, so_path)
+        self.context_set_current_driver_context = type_of(
+            self.context_set_current_driver_context
+        )(handle, so_path)
+        self.context_memory_info = type_of(self.context_memory_info)(
+            handle, so_path
+        )
         self.memory_alloc_pinned = type_of(self.memory_alloc_pinned)(
             handle, so_path
         )
