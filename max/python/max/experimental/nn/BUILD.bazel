@@ -22,6 +22,7 @@ modular_py_library(
         "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/profiler",
         "//max/python/max/support",
     ],
 )

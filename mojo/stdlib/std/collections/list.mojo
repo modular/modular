@@ -16,7 +16,6 @@ These APIs are imported automatically, just like builtins.
 """
 
 
-from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 import std.format._utils as fmt
 from std.hashlib import Hasher
@@ -27,9 +26,15 @@ from std.collections._asan_annotations import (
 )
 from std.os import abort
 from std.sys import size_of
-from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
-from std.memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
+from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
+from std.memory import (
+    Pointer,
+    destroy_n,
+    unsafe_memcpy,
+    uninit_copy_n,
+    uninit_move_n,
+)
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
@@ -96,7 +101,9 @@ struct _ListIter[
 
 
 @fieldwise_init
-struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
+struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
+    IterableOwned, Iterator, Movable
+):
     """An owning iterator for List.
 
     Parameters:
@@ -111,24 +118,13 @@ struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
 
     @always_inline
     def __del__(deinit self):
-        _constrained_conforms_to[
-            conforms_to(Self.T, ImplicitlyDestructible),
-            Parent=Self,
-            Element=Self.T,
-            ParentConformsTo="ImplicitlyDestructible",
-        ]()
-        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
-
         # Destroy the remaining elements that have not yet been
         # iterated over.
         destroy_n(
-            self._list.unsafe_ptr().bitcast[TDestructible]() + self._index,
+            self._list.unsafe_ptr() + self._index,
             count=len(self._list) - self._index,
         )
         self._list._len = 0
-
-        # Make sure the list frees its memory!
-        _ = self._list^
 
     @always_inline
     def __iter__(var self) -> Self.IteratorOwnedType:
@@ -146,14 +142,21 @@ struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
         return (iter_len, {iter_len})
 
 
-struct List[T: Copyable](
+@explicit_destroy(
+    "Use `deinit_with()` to explicitly destroy a `List` of"
+    " non-`ImplicitlyDeletable` elements"
+)
+@stable(since="1.0")
+struct List[T: Movable, /](
     Boolable,
-    Copyable,
+    Copyable where conforms_to(T, Copyable),
     Defaultable,
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
-    IterableOwned,
+    IterableOwned where conforms_to(T, ImplicitlyDeletable),
+    Movable,
     Sized,
     Writable where conforms_to(T, Writable),
 ):
@@ -192,7 +195,7 @@ struct List[T: Copyable](
       ```
 
       However, you can get around this by defining your list type as
-      [`Variant`](/docs/std/utils/variant/Variant). This is a discriminated
+      [`Variant`](/docs/std/utils/variant/Variant/). This is a discriminated
       union type, meaning it can store any number of different types that can
       vary at runtime.
 
@@ -241,11 +244,12 @@ struct List[T: Copyable](
       ```
 
     - **Out of bounds access**: Accessing elements with invalid indices will
-      cause undefined behavior:
+      abort:
 
       ```mojo
       var my_list = [1, 2, 3]
-      # print(my_list[5])  # Undefined behavior (out of bounds)
+      print(my_list[5])  # Aborts with an Assert Error: index 5 is
+                         # out of bounds, valid range is 0 to 2
       ```
 
       For safe access, you should manually check bounds or use methods that
@@ -324,7 +328,7 @@ struct List[T: Copyable](
         T: The type of elements stored in the list.
     """
 
-    comptime _UnsafePointerType = UnsafePointer[Self.T, MutExternalOrigin]
+    comptime _UnsafePointerType = UnsafePointer[Self.T, MutUntrackedOrigin]
 
     # Fields
     var _data: Self._UnsafePointerType
@@ -336,15 +340,17 @@ struct List[T: Copyable](
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _ListIter[Self.T, iterable_origin, True]
-    """The borrowed iterator type for this list.
+    ]: Iterator = _ListIter[downcast[Self.T, Copyable], iterable_origin, True]
+    """The iterator type for this list.
 
     Parameters:
         iterable_mut: Whether the iterable is mutable.
         iterable_origin: The origin of the iterable.
     """
 
-    comptime IteratorOwnedType: Iterator = _ListIterOwned[Self.T]
+    comptime IteratorOwnedType: Iterator = _ListIterOwned[
+        downcast[Self.T, ImplicitlyDeletable]
+    ]
     """The owned iterator type for this list."""
 
     # asan annotation methods
@@ -384,12 +390,14 @@ struct List[T: Copyable](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
+    @stable(since="1.0")
     def __init__(out self):
         """Constructs an empty list."""
         self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
         self.capacity = 0
 
+    @stable(since="1.0")
     def __init__(out self, *, capacity: Int):
         """Constructs a list with the given capacity.
 
@@ -397,14 +405,16 @@ struct List[T: Copyable](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._data = alloc[Self.T](capacity)
+            self._data = alloc(Layout[Self.T](count=capacity)).unsafe_leak()
         else:
             self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
         self.capacity = capacity
         self._annotate_new()
 
-    def __init__(out self, *, length: Int, fill: Self.T):
+    def __init__(
+        out self, *, length: Int, fill: Self.T
+    ) where conforms_to(Self.T, Copyable):
         """Constructs a list with the given length.
 
         Args:
@@ -427,11 +437,10 @@ struct List[T: Copyable](
         self._annotate_increase(length)
 
         # Transfer all of the elements into the List.
-        @parameter
-        def init_elt(idx: Int, var elt: Self.T):
-            (self._data + idx).init_pointee_move(elt^)
+        def init_elt(idx: Int, var elt: Self.T) {ref}:
+            (self._data + idx).unsafe_write(elt^)
 
-        values^.consume_elements[init_elt]()
+        values^.consume_elements(init_elt)
 
         # Remember how many values we have.
         self._len = length
@@ -440,11 +449,7 @@ struct List[T: Copyable](
         IterableType: Iterable,
     ](
         ref iterable: IterableType,
-        out self: List[
-            downcast[
-                IterableType.IteratorType[origin_of(iterable)].Element, Copyable
-            ]
-        ],
+        out self: List[IterableType.IteratorType[origin_of(iterable)].Element],
     ) where conforms_to(
         IterableType.IteratorType[origin_of(iterable)].Element, Copyable
     ):
@@ -475,7 +480,8 @@ struct List[T: Copyable](
         self._annotate_increase(unsafe_uninit_length)
         self._len = unsafe_uninit_length
 
-    def __init__(out self, *, copy: Self):
+    @stable(since="1.0")
+    def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         """Creates a deep copy of the given list.
 
         Args:
@@ -484,28 +490,52 @@ struct List[T: Copyable](
         self = Self(capacity=copy.capacity)
         self.extend(Span(copy))
 
-    def __del__(deinit self):
-        """Destroy all elements in the list and free its memory."""
-
-        _constrained_conforms_to[
-            conforms_to(Self.T, ImplicitlyDestructible),
-            Parent=Self,
-            Element=Self.T,
-            ParentConformsTo="ImplicitlyDestructible",
-        ]()
-        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
-
-        destroy_n(self._data.bitcast[TDestructible](), count=len(self))
+    def _unsafe_assume_destroyed_and_deallocate(deinit self):
+        """Assumes self's values are already destroyed and deallocate the backing storage.
+        """
         if self.capacity > 0:
             self._annotate_delete()
-            self._data.free()
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._data
+                ).unsafe_with_layout(Layout[Self.T](count=self.capacity))
+            )
+
+    @stable(since="1.0")
+    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+        """Destroy all elements in the list and free its memory."""
+        destroy_n(
+            self._data,
+            count=len(self),
+        )
+        self^._unsafe_assume_destroyed_and_deallocate()
+
+    def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
+        """Consumes this list and deinitializes its values using the provided closure.
+
+        This can be used to destroy a `List` of non-`ImplicitlyDeletable` values.
+
+        Args:
+            deinit_func: The deinitializing closure called on each `List` element.
+        """
+        for i in range(len(self)):
+            # TODO(MOCO-4111): `deinit_func` cannot convert to UnsafePointer.destroy_pointee_with
+            # `deinit_func` type since UP is bound on `T: AnyType` but List has `T: Movable`.
+            deinit_func(
+                __get_address_as_owned_value(
+                    (self.unsafe_ptr() + i)._get_kgen_pointer()
+                )
+            )
+        self^._unsafe_assume_destroyed_and_deallocate()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    def __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
+    def __eq__(
+        self, other: Self, /
+    ) -> Bool where conforms_to(Self.T, Equatable):
         """Checks if two lists are equal.
 
         Args:
@@ -547,7 +577,7 @@ struct List[T: Copyable](
             element.__hash__(hasher)
 
     def __contains__(
-        self, value: Self.T
+        self, value: Self.T, /
     ) -> Bool where conforms_to(Self.T, Equatable):
         """Verify if a given value is present in the list.
 
@@ -598,7 +628,7 @@ struct List[T: Copyable](
 
     def __mul__(
         self, x: Int
-    ) -> Self where conforms_to(Self.T, ImplicitlyDestructible):
+    ) -> Self where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
         """Multiplies the list by x and returns a new list.
 
         Args:
@@ -616,7 +646,9 @@ struct List[T: Copyable](
 
     def __imul__(
         mut self, x: Int
-    ) where conforms_to(Self.T, ImplicitlyDestructible):
+    ) where conforms_to(Self.T, ImplicitlyDeletable & Copyable) and conforms_to(
+        Self, ImplicitlyDeletable & Copyable
+    ):
         """Appends the original elements of this list x-1 times or clears it if
         x is <= 0.
 
@@ -636,7 +668,9 @@ struct List[T: Copyable](
         for _ in range(x - 1):
             self.extend(Span(orig))
 
-    def __add__(self, var other: Self) -> Self:
+    def __add__(
+        self, var other: Self
+    ) -> Self where conforms_to(Self.T, Copyable):
         """Concatenates self with other and returns the result as a new list.
 
         Args:
@@ -650,7 +684,7 @@ struct List[T: Copyable](
         result.extend(other^)
         return result^
 
-    def __iadd__(mut self, var other: Self):
+    def __iadd__(mut self, var other: Self) where conforms_to(Self.T, Copyable):
         """Appends the elements of other into self.
 
         Args:
@@ -658,13 +692,18 @@ struct List[T: Copyable](
         """
         self.extend(other^)
 
-    def __iter__(var self) -> Self.IteratorOwnedType:
+    def __iter__(
+        var self,
+    ) -> Self.IteratorOwnedType where conforms_to(Self.T, ImplicitlyDeletable):
         """Consume `self`, returning an owned iterator over its elements.
 
         Returns:
             An iterator of owned elements.
         """
-        return {self^, 0}
+        return {
+            rebind_var[List[downcast[Self.T, ImplicitlyDeletable]]](self^),
+            0,
+        }
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
@@ -672,18 +711,32 @@ struct List[T: Copyable](
         Returns:
             An iterator of immutable references to the list elements.
         """
-        return _ListIter(index=0, src=self.unsafe_ptr(), length=self._len)
+        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
+        comptime assert conforms_to(
+            Self.T, Copyable
+        ), "List iteration requires the element to be `Copyable`."
+        return _ListIter(
+            index=0,
+            src=rebind[
+                UnsafePointer[downcast[Self.T, Copyable], origin_of(self)]
+            ](self.unsafe_ptr()),
+            length=self._len,
+        )
 
     def __reversed__(
         ref self,
-    ) -> _ListIter[Self.T, origin_of(self), False]:
+    ) -> _ListIter[Self.T, origin_of(self), False] where conforms_to(
+        Self.T, Copyable
+    ):
         """Iterate backwards over the list, returning immutable references.
 
         Returns:
             A reversed iterator of immutable references to the list elements.
         """
         return _ListIter[forward=False](
-            index=len(self), src=self.unsafe_ptr(), length=self._len
+            index=len(self),
+            src=self.unsafe_ptr(),
+            length=self._len,
         )
 
     # ===-------------------------------------------------------------------===#
@@ -763,7 +816,7 @@ struct List[T: Copyable](
 
     @no_inline
     def _realloc(mut self, new_capacity: Int):
-        var new_data = alloc[Self.T](new_capacity)
+        var new_data = alloc(Layout[Self.T](count=new_capacity)).unsafe_leak()
 
         uninit_move_n[overlapping=False](
             dest=new_data, src=self._data, count=len(self)
@@ -771,7 +824,11 @@ struct List[T: Copyable](
 
         if self.capacity > 0:
             self._annotate_delete()
-            self._data.free()
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._data
+                ).unsafe_with_layout(Layout[Self.T](count=self.capacity))
+            )
         self._data = new_data
         self.capacity = new_capacity
         self._annotate_new()
@@ -800,9 +857,10 @@ struct List[T: Copyable](
         if self._len >= self.capacity:
             self._realloc(self.capacity * 2 | Int(self.capacity == 0))
         self._annotate_increase()
-        self._unsafe_next_uninit_ptr().init_pointee_move(value^)
+        self._unsafe_next_uninit_ptr().unsafe_write(value^)
         self._len += 1
 
+    @always_inline
     def insert(mut self, i: Int, var value: Self.T):
         """Inserts a value to the list at the given index.
         `a.insert(len(a), value)` is equivalent to `a.append(value)`.
@@ -819,11 +877,12 @@ struct List[T: Copyable](
         print(list) # ['one', 'two', 'three']
         ```
         """
-        assert i <= len(self), "insert index out of range"
-
         var normalized_idx = i
         if i < 0:
             normalized_idx = max(len(self) + i, 0)
+        # Bounds-check after normalizing, since `check_bounds` rejects
+        # negatives; the valid range is `[0, len(self)]` (`len(self)` appends).
+        check_bounds(normalized_idx, len(self) + 1)
 
         var earlier_idx = len(self)
         var later_idx = len(self) - 1
@@ -835,12 +894,12 @@ struct List[T: Copyable](
 
             var tmp = earlier_ptr.take_pointee()
             earlier_ptr.init_pointee_move_from(later_ptr)
-            later_ptr.init_pointee_move(tmp^)
+            later_ptr.unsafe_write(tmp^)
 
             earlier_idx -= 1
             later_idx -= 1
 
-    def extend(mut self, var other: List[Self.T, ...]):
+    def extend(mut self, var other: Self):
         """Extends this list by consuming the elements of `other`.
 
         Args:
@@ -872,11 +931,13 @@ struct List[T: Copyable](
 
         # Update the size now since all elements have been moved into this list.
         self._len = final_size
-        # The elements of `other` are now consumed, so we mark it as empty so
-        # they don't get destroyed when it goes out of scope.
-        other._len = 0
+        # `other` only needs to deallocate its underlying buffer and not destroy
+        # its elements as they were moved into `self`.
+        other^._unsafe_assume_destroyed_and_deallocate()
 
-    def extend(mut self, elements: Span[Self.T, _]):
+    def extend(
+        mut self, elements: Span[Self.T, _]
+    ) where conforms_to(Self.T, Copyable):
         """Extend this list by copying elements from a `Span`.
 
         The resulting list will have the length `len(self) + len(elements)`.
@@ -911,7 +972,7 @@ struct List[T: Copyable](
 
     def extend[
         dtype: DType, //
-    ](mut self: List[Scalar[dtype], ...], value: SIMD[dtype, _]):
+    ](mut self: List[Scalar[dtype]], value: SIMD[dtype, _]):
         """Extends this list with the elements of a vector.
 
         Parameters:
@@ -942,12 +1003,7 @@ struct List[T: Copyable](
 
     def extend[
         dtype: DType, //
-    ](
-        mut self: List[Scalar[dtype], ...],
-        value: SIMD[dtype, _],
-        *,
-        count: Int,
-    ):
+    ](mut self: List[Scalar[dtype]], value: SIMD[dtype, _], *, count: Int):
         """Extends this list with `count` number of elements from a vector.
 
         Parameters:
@@ -977,7 +1033,9 @@ struct List[T: Copyable](
         self.reserve(self._len + count)
         self._annotate_increase(count)
         var v_ptr = UnsafePointer(to=value).bitcast[Scalar[dtype]]()
-        memcpy(dest=self._unsafe_next_uninit_ptr(), src=v_ptr, count=count)
+        unsafe_memcpy(
+            dest=self._unsafe_next_uninit_ptr(), src=v_ptr, count=count
+        )
         self._len += count
 
     def pop(mut self) -> Self.T:
@@ -1040,18 +1098,18 @@ struct List[T: Copyable](
         self._realloc(new_capacity)
 
     def resize(
-        mut self, new_size: Int, value: Self.T
-    ) where conforms_to(Self.T, ImplicitlyDestructible):
-        """Resizes the list to the given new size.
+        mut self, new_length: Int, fill: Self.T
+    ) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
+        """Resizes the list to the given new length.
 
         Args:
-            new_size: The new size.
-            value: The value to use to populate new elements.
+            new_length: The new length.
+            fill: The value to use to populate new elements.
 
         Notes:
-            If the new size is smaller than the current one, elements at the end
-            are discarded. If the new size is larger than the current one, the
-            list is appended with new values elements up to the requested size.
+            If the new length is smaller than the current one, elements at the end
+            are discarded. If the new length is larger than the current one, the
+            list is appended with new values elements up to the requested length.
 
         Examples:
 
@@ -1063,23 +1121,25 @@ struct List[T: Copyable](
         print(list)                  # ['z', 'y', 'x', 'v', 'v', 'v']
         ```
         """
-        if new_size <= self._len:
-            self.shrink(new_size)
+        if new_length <= self._len:
+            self.shrink(new_length)
         else:
-            self._unchecked_grow(new_size, value)
+            self._unchecked_grow(new_length, fill)
 
-    def _unchecked_grow(mut self, new_size: Int, value: Self.T):
-        assert new_size >= self._len
+    def _unchecked_grow(
+        mut self, new_length: Int, fill: Self.T
+    ) where conforms_to(Self.T, Copyable):
+        assert new_length >= self._len
 
-        self.reserve(new_size)
-        self._annotate_increase(new_size - self._len)
-        for i in range(self._len, new_size):
-            (self._data + i).init_pointee_copy(value)
-        self._len = new_size
+        self.reserve(new_length)
+        self._annotate_increase(new_length - self._len)
+        for i in range(self._len, new_length):
+            (self._data + i).unsafe_write(copy=fill)
+        self._len = new_length
 
     def resize(
         mut self, *, unsafe_uninit_length: Int
-    ) where conforms_to(Self.T, ImplicitlyDestructible):
+    ) where conforms_to(Self.T, ImplicitlyDeletable):
         """Resizes the list to the given new size leaving any new elements
         uninitialized.
 
@@ -1108,15 +1168,15 @@ struct List[T: Copyable](
             self._len = unsafe_uninit_length
 
     def shrink(
-        mut self, new_size: Int
-    ) where conforms_to(Self.T, ImplicitlyDestructible):
-        """Resizes to the given new size which must be <= the current size.
+        mut self, new_length: Int
+    ) where conforms_to(Self.T, ImplicitlyDeletable):
+        """Resizes to the given new length which must be <= the current size.
 
         Args:
-            new_size: The new size.
+            new_length: The new length.
 
         Notes:
-            With no new value provided, the new size must be smaller than or
+            With no new value provided, the new length must be smaller than or
             equal to the current one. Elements at the end are discarded.
 
         Examples:
@@ -1127,25 +1187,19 @@ struct List[T: Copyable](
         # numbers.shrink(8)               # Error: new size is bigger than current
         ```
         """
-        if len(self) < new_size:
+        if len(self) < new_length:
             abort(
-                "You are calling List.resize with a new_size bigger than the"
+                "You are calling List.shrink with a new_size bigger than the"
                 " current size. If you want to make the List bigger, provide a"
                 " value to fill the new slots with. If not, make sure the new"
                 " size is smaller than the current size."
             )
 
-        # TODO(MOCO-3679): Use `destroy_n(self._data + new_size, ...)`
-        # directly once where clause bounds propagate to callee inference.
-        var data = self._data.bitcast[
-            downcast[Self.T, ImplicitlyDestructible]
-        ]()
-        destroy_n(data + new_size, count=len(self) - new_size)
+        destroy_n(self._data + new_length, count=len(self) - new_length)
 
-        var old_size: Int = self._len
-        self._len = new_size
-        self._annotate_shrink(old_size)
-        self.reserve(new_size)
+        var old_length: Int = self._len
+        self._len = new_length
+        self._annotate_shrink(old_length)
 
     def reverse(mut self):
         """Reverses the elements of the list.
@@ -1171,7 +1225,7 @@ struct List[T: Copyable](
 
             var tmp = earlier_ptr.take_pointee()
             earlier_ptr.init_pointee_move_from(later_ptr)
-            later_ptr.init_pointee_move(tmp^)
+            later_ptr.unsafe_write(tmp^)
 
             earlier_idx += 1
             later_idx -= 1
@@ -1229,7 +1283,7 @@ struct List[T: Copyable](
 
     def clear(
         mut self,
-    ) where conforms_to(Self.T, ImplicitlyDestructible):
+    ) where conforms_to(Self.T, ImplicitlyDeletable):
         """Clears the elements in the list.
 
         Examples:
@@ -1241,17 +1295,12 @@ struct List[T: Copyable](
         print(len(list))  # 0
         ```
         """
-        # TODO(MOCO-3679): Use `destroy_n(self._data, ...)` directly once
-        # where clause bounds propagate to callee inference.
-        var data = self._data.bitcast[
-            downcast[Self.T, ImplicitlyDestructible]
-        ]()
-        destroy_n(data, count=self._len)
+        destroy_n(self._data, count=self._len)
         var old_size: Int = self._len
         self._len = 0
         self._annotate_shrink(old_size)
 
-    def steal_data(mut self) -> UnsafePointer[Self.T, MutExternalOrigin]:
+    def steal_data(mut self) -> UnsafePointer[Self.T, MutUntrackedOrigin]:
         """Take ownership of the underlying pointer from the list.
 
         Returns:
@@ -1277,7 +1326,9 @@ struct List[T: Copyable](
         self.capacity = 0
         return ptr
 
-    def __getitem__(self, slice: StridedSlice) -> Self:
+    def __getitem__(
+        self, slice: StridedSlice
+    ) -> Self where conforms_to(Self.T, Copyable):
         """Gets the sequence of elements at the specified positions.
 
         Args:
@@ -1298,6 +1349,7 @@ struct List[T: Copyable](
 
         return res^
 
+    @stable(since="1.0")
     def __getitem__[
         origin: Origin, //
     ](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:
@@ -1372,7 +1424,7 @@ struct List[T: Copyable](
     @always_inline
     def unsafe_set(
         mut self, idx: Int, var value: Self.T
-    ) where conforms_to(Self.T, ImplicitlyDestructible):
+    ) where conforms_to(Self.T, ImplicitlyDeletable):
         """Write a value to a given location without checking index bounds.
 
         Args:
@@ -1390,12 +1442,8 @@ struct List[T: Copyable](
             the list. Instead, do `my_list.unsafe_set(len(my_list) - 1, value)`.
         """
         check_bounds[cpu_default=False](idx, len(self))
-        # TODO(MOCO-3679): Use `(self._data + idx).destroy_pointee()`
-        # directly once where clause bounds propagate to callee inference.
-        (self._data + idx).bitcast[
-            downcast[Self.T, ImplicitlyDestructible]
-        ]().destroy_pointee()
-        (self._data + idx).init_pointee_move(value^)
+        (self._data + idx).unsafe_deinit_pointee()
+        (self._data + idx).unsafe_write(value^)
 
     def count(self, value: Self.T) -> Int where conforms_to(Self.T, Equatable):
         """Counts the number of occurrences of a value in the list.

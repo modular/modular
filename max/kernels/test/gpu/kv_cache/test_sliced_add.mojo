@@ -77,7 +77,7 @@ def test_sliced_add[
         a_device_tensor,
         b_device_tensor,
         lora_end_idx_host,
-        Optional(ctx),
+        ctx,
     )
 
     # Pull device results back via managed host view.

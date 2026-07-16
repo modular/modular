@@ -20,7 +20,7 @@ from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
 @always_inline
 def _validate_bytes(slice: Span[Byte, _]) raises:
-    var length = Int(_unsafe_strlen(slice.unsafe_ptr(), UInt(len(slice))))
+    var length = Int(_unsafe_strlen(slice.unsafe_ptr(), Int(len(slice))))
     if length == len(slice) - 1:
         return
     elif length == 0 or length == len(slice):
@@ -32,8 +32,8 @@ def _validate_bytes(slice: Span[Byte, _]) raises:
 struct CStringSlice[origin: ImmutOrigin](
     Equatable,
     ImplicitlyCopyable,
-    RegisterPassable,
     Sized,
+    TrivialRegisterPassable,
     UnsafeNicheable,
     Writable,
 ):
@@ -247,6 +247,10 @@ struct CStringSlice[origin: ImmutOrigin](
             ptr=self._data.bitcast[Byte](),
             length=len(self) + 1,
         )
+
+    @doc_hidden
+    def as_unsafe_any_origin(self) -> CStringSlice[ImmutAnyOrigin]:
+        return {unsafe_from_ptr = self._data.as_unsafe_any_origin()}
 
     @staticmethod
     @doc_hidden

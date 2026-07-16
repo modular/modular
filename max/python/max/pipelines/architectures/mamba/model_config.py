@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
@@ -29,8 +29,8 @@ from max.pipelines.lib import (
     parse_quant_config,
     upper_bounded_default,
 )
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces import ArchConfigWithKVCache
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -125,7 +125,7 @@ class MambaConfig(ArchConfigWithKVCache):
         and PagedKVCacheManager initialization.  The tiny dimensions
         (1 head, 1 dim, 1 layer) make the allocation negligible.
         """
-        return KVCacheParams(
+        return MHAKVCacheParams(
             dtype=self.dtype,
             n_kv_heads=1,
             head_dim=1,

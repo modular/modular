@@ -79,15 +79,15 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
         t" swapAB={swapAB} k_group_size={k_group_size}"
     )
 
-    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
             batch,
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(batch, m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(batch, m, Idx[NType.static_value]))
 
     var a_size = Int(batch.value()) * Int(m.value()) * Int(k.value())
     var b_size = Int(batch.value()) * Int(n.value()) * Int(k.value())
@@ -116,17 +116,15 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
         for b in range(B):
             for mi in range(M):
                 for ki in range(K):
-                    comptime assert a_host.flat_rank >= 3
-                    a_host[(Idx(b), Idx(mi), Idx(ki))] = Float32(ki).cast[
-                        a_type
-                    ]()
+                    comptime assert a_host.flat_rank == 3
+                    a_host[b, mi, ki] = Float32(ki).cast[a_type]()
         for b in range(B):
             for ni in range(N):
                 for ki in range(K):
-                    comptime assert b_host.flat_rank >= 3
-                    b_host[(Idx(b), Idx(ni), Idx(ki))] = Float32(
-                        1 if ni == ki else 0
-                    ).cast[b_type]()
+                    comptime assert b_host.flat_rank == 3
+                    b_host[b, ni, ki] = Float32(1 if ni == ki else 0).cast[
+                        b_type
+                    ]()
     else:
         rand(a_host.ptr, a_host.num_elements())
         rand(b_host.ptr, b_host.num_elements())
@@ -156,15 +154,15 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     for b in range(B):
         var a_2d = TileTensor(
             a_tensor.ptr + b * M * K,
-            row_major((Idx(M), Idx(K))),
+            row_major((M, K)),
         )
         var b_2d = TileTensor(
             b_tensor.ptr + b * N * K,
-            row_major((Idx(N), Idx(K))),
+            row_major((N, K)),
         )
         var c_ref_2d = TileTensor(
             c_ref_tensor.ptr + b * M * N,
-            row_major((Idx(M), Idx(N))),
+            row_major((M, N)),
         )
 
         vendor_blas.matmul(
@@ -224,10 +222,10 @@ def main() raises:
                     cta_group=cta_group,
                 ](
                     ctx,
-                    Idx(Int(2)),
-                    Idx(Int(128)),
-                    Idx[128](),
-                    Idx[128](),
+                    Int(2),
+                    Int(128),
+                    Idx[128],
+                    Idx[128],
                 )
 
                 # Medium
@@ -241,10 +239,10 @@ def main() raises:
                     cta_group=cta_group,
                 ](
                     ctx,
-                    Idx(Int(4)),
-                    Idx(Int(256)),
-                    Idx[512](),
-                    Idx[256](),
+                    Int(4),
+                    Int(256),
+                    Idx[512],
+                    Idx[256],
                 )
 
                 # Large, non-aligned M
@@ -259,10 +257,10 @@ def main() raises:
                     block_swizzle_size=8,
                 ](
                     ctx,
-                    Idx(Int(2)),
-                    Idx(Int(1000)),
-                    Idx[1024](),
-                    Idx[1040](),
+                    Int(2),
+                    Int(1000),
+                    Idx[1024],
+                    Idx[1040],
                 )
 
                 # Large batch
@@ -277,10 +275,10 @@ def main() raises:
                     block_swizzle_size=4,
                 ](
                     ctx,
-                    Idx(Int(16)),
-                    Idx(Int(256)),
-                    Idx[128](),
-                    Idx[512](),
+                    Int(16),
+                    Int(256),
+                    Idx[128],
+                    Idx[512],
                 )
 
                 # Multi-cluster
@@ -295,10 +293,10 @@ def main() raises:
                     block_swizzle_size=1,
                 ](
                     ctx,
-                    Idx(Int(3)),
-                    Idx(Int(500)),
-                    Idx[2048](),
-                    Idx[4096](),
+                    Int(3),
+                    Int(500),
+                    Idx[2048],
+                    Idx[4096],
                 )
 
         # swapAB tests (2SM)
@@ -317,10 +315,10 @@ def main() raises:
                 swapAB=True,
             ](
                 ctx,
-                Idx(Int(2)),
-                Idx(Int(128)),
-                Idx[128](),
-                Idx[128](),
+                Int(2),
+                Int(128),
+                Idx[128],
+                Idx[128],
             )
 
             test_blackwell_batched_matmul_tma_umma_warp_specialized[
@@ -335,8 +333,8 @@ def main() raises:
                 block_swizzle_size=4,
             ](
                 ctx,
-                Idx(Int(4)),
-                Idx(Int(256)),
-                Idx[512](),
-                Idx[256](),
+                Int(4),
+                Int(256),
+                Idx[512],
+                Idx[256],
             )

@@ -28,9 +28,7 @@ from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnLogits
 
@@ -249,12 +247,11 @@ class Gemma3(Module[..., tuple[Tensor, ...]]):
         *variadic_args,
     ) -> tuple[Tensor, ...]:
         kv_inputs = iter(x._graph_value for x in variadic_args)
-        kv_collections = (
-            self.kv_params.get_symbolic_inputs().unflatten(kv_inputs).inputs
-        )
+        kv_collections = self.kv_params.unflatten_kv_inputs(kv_inputs)
+        assert isinstance(kv_collections, KVCacheInputs)
 
         kv_collection = PagedCacheValues.from_upstream(
-            kv_collections, tokens.mapping
+            kv_collections.inputs, tokens.mapping
         )
         return self.language_model(
             tokens, kv_collection, return_n_logits, input_row_offsets

@@ -90,7 +90,10 @@ def sum_kernel[
 
 
 struct SumKernelBenchmarkParams:
+    @__allow_legacy_any_origin_fields
     var out_ptr: UnsafePointer[Int32, MutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
     var a_ptr: UnsafePointer[Int32, MutAnyOrigin]
 
     def __init__(
@@ -98,8 +101,8 @@ struct SumKernelBenchmarkParams:
         out_ptr: UnsafePointer[mut=True, Int32, _],
         a_ptr: UnsafePointer[mut=True, Int32, _],
     ):
-        self.out_ptr = out_ptr
-        self.a_ptr = a_ptr
+        self.out_ptr = out_ptr.as_unsafe_any_origin()
+        self.a_ptr = a_ptr.as_unsafe_any_origin()
 
 
 # Benchmark function for sum_kernel
@@ -116,7 +119,7 @@ def sum_kernel_benchmark(
         var a_ptr = input_data.a_ptr
         var out_buffer = DeviceBuffer[dtype](ctx, out_ptr, 1, owning=False)
         var a_buffer = DeviceBuffer[dtype](ctx, a_ptr, SIZE, owning=False)
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             out_buffer,
             a_buffer,
             grid_dim=NUM_BLOCKS,
@@ -143,7 +146,7 @@ def main() raises:
             randint[dtype](a_host.as_span(), low=0, high=10)
 
         # Call the kernel
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             out,
             a,
             grid_dim=NUM_BLOCKS,

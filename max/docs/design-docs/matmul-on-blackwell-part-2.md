@@ -339,9 +339,9 @@ store matmul results which has a few issues:
 1. Register space is scarce, with only 64k registers per SM. Thus there was a
    contention between the Tensor Cores and the general purpose ALUs.
 2. Registers are thread-private while MMAs were wrap-level operations in pre
-    Blackwell GPUs. Thus the warps launching an MMA operation needed to wait
-    for its completion and continue tasks that depended on the MMA result e.g.
-        epilogue.
+   Blackwell GPUs. Thus the warps launching an MMA operation needed to wait
+   for its completion and continue tasks that depended on the MMA result e.g.
+   epilogue.
 
 TMEM addresses these issues, separating the concerns between the registers
 used by the ALU from the ones required by the Tensor Cores.

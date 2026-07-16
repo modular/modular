@@ -15,7 +15,7 @@
 from multiprocessing.reduction import ForkingPickler
 
 import numpy
-from max.interfaces import RequestID, TextGenerationRequest
+from max.pipelines.modeling.types import RequestID, TextGenerationRequest
 
 
 def test_reductions() -> None:

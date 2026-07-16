@@ -44,16 +44,19 @@ struct AMDStructuredConfig[
 
     @staticmethod
     @always_inline
+    def heads_per_tile() -> Int:
+        # MLA: tile spans `BM` heads of the single latent kv (block_idx.y is
+        # the tile idx). MHA: tile spans `group` heads of one kv head
+        # (block_idx.y is the kv-head idx).
+        return Self.config.block_m() if Self.mla_mode else Self.group
+
+    @staticmethod
+    @always_inline
     def q_head_idx() -> Int:
         comptime if Self.token_gen:
-            comptime if Self.mla_mode:
-                # MLA decode: tile-level head idx (masks are head-agnostic
-                # because all heads share the same latent KV cache).
-                return Int(block_idx.y)
-            else:
-                comptime mma_shape = Self.get_mma_shape()
-                var group_idx = umod(lane_id(), mma_shape[0])
-                return block_idx.y * Self.group + group_idx
+            comptime mma_shape = Self.get_mma_shape()
+            var lane_in_row = umod(lane_id(), mma_shape[0])
+            return Int(block_idx.y) * Self.heads_per_tile() + lane_in_row
         else:
             return block_idx.x
 
@@ -81,8 +84,15 @@ struct AMDStructuredConfig[
     def get_mma_shape() -> IndexList[3]:
         comptime if Self.config.dtype.is_float8():
             comptime if Self.token_gen:
-                # FP8 decode: 16x16x128 when depth%128==0, else 32x32x64.
-                comptime if Self.config.depth % 128 == 0:
+                # MLA decode with `num_heads <= 16` packs at most one MFMA
+                # row group, so `16x16x128` with `BM=WM=16` puts one warp
+                # on one full tile with no wasted M lanes (Kimi-K2.5
+                # per-GPU under TP=4 lands at exactly 16 query heads).
+                # Otherwise prefer `16x16x128` when `depth % 128 == 0`
+                # and fall back to `32x32x64` for full M-dim utilization.
+                comptime if (
+                    Self.mla_mode and Self.config.num_heads <= 16
+                ) or Self.config.depth % 128 == 0:
                     return IndexList[3](16, 16, 128)
                 return IndexList[3](32, 32, 64)
             # FP8 prefill: 32x32x64.

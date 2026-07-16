@@ -59,7 +59,7 @@ def test_barrier[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(output_buffer, output_host)
     ctx.enqueue_copy(shared_buffer, shared_host)
 
-    ctx.enqueue_function_experimental[kernel[dtype]](
+    ctx.enqueue_function[kernel[dtype]](
         input_buffer,
         output_buffer,
         shared_buffer,

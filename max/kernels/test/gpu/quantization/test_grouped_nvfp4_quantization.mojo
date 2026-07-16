@@ -47,6 +47,7 @@ def test_grouped_nvfp4_quantization[
     comptime K_tiles = ceildiv(N, SF_VECTOR_SIZE * SF_ATOM_K)
     comptime output_N = ceildiv(N, 2)
     comptime scales_per_m_tile = K_tiles * SF_MN_GROUP_SIZE * SF_ATOM_K
+    comptime SENTINEL = 0xEE
 
     # Derive row_offsets, tile_starts, scales_offsets from expert_counts.
     var row_offsets_host = alloc[Scalar[DType.uint32]](num_experts + 1)
@@ -75,14 +76,24 @@ def test_grouped_nvfp4_quantization[
     # --- Grouped kernel buffers ---
     var host_input = alloc[Scalar[dtype]](total_tokens * N)
     var host_input_tensor = TileTensor(
-        host_input, row_major(Coord(Idx(total_tokens), Idx[N]()))
+        host_input, row_major(Coord(total_tokens, Idx[N]))
     )
     random(host_input_tensor, min=-1.0, max=1.0)
 
     var dev_input = ctx.enqueue_create_buffer[dtype](max(total_tokens * N, 1))
+    # One slack row past the payload, sentinel-filled: any kernel write there
+    # is an out-of-bounds payload store. The last k_idx block covers a full
+    # SF_K_GROUP_SIZE column block, so an N that is not a multiple of 64 used
+    # to spill the tail columns into the next row.
     var dev_output = ctx.enqueue_create_buffer[out_dtype](
-        max(total_tokens * output_N, 1)
+        max(total_tokens * output_N, 1) + output_N
     )
+    var sentinel_host = alloc[Scalar[out_dtype]](
+        total_tokens * output_N + output_N
+    )
+    for i in range(total_tokens * output_N + output_N):
+        sentinel_host[i] = SENTINEL
+    ctx.enqueue_copy(dev_output, sentinel_host)
     var dev_scales = ctx.enqueue_create_buffer[scales_dtype](
         max(total_scales, 1)
     )
@@ -101,30 +112,30 @@ def test_grouped_nvfp4_quantization[
     ctx.enqueue_copy(dev_expert_ids, expert_ids_host)
     ctx.enqueue_copy(dev_sf_tensor, sf_tensor_host)
 
-    var input_shape = Coord(Idx(total_tokens), Idx[N]())
-    var output_shape = Coord(Idx(total_tokens), Idx[output_N]())
+    var input_shape = Coord(total_tokens, Idx[N])
+    var output_shape = Coord(total_tokens, Idx[output_N])
     var scales_shape = Coord(
-        Idx(total_m_tiles),
-        Idx[K_tiles](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        total_m_tiles,
+        Idx[K_tiles],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var input_tensor = TileTensor(dev_input, row_major(input_shape))
     var output_tensor = TileTensor(dev_output, row_major(output_shape))
     var scales_tensor = TileTensor(dev_scales, row_major(scales_shape))
     var row_offsets_tensor = TileTensor(
-        dev_row_offsets, row_major(Coord(Idx[num_experts + 1]()))
+        dev_row_offsets, row_major(Coord(Idx[num_experts + 1]))
     )
     var scales_offsets_tensor = TileTensor(
-        dev_scales_offsets, row_major(Coord(Idx[num_experts]()))
+        dev_scales_offsets, row_major(Coord(Idx[num_experts]))
     )
     var expert_ids_tensor = TileTensor(
-        dev_expert_ids, row_major(Coord(Idx[num_experts]()))
+        dev_expert_ids, row_major(Coord(Idx[num_experts]))
     )
     var sf_tensor_device = TileTensor(
-        dev_sf_tensor, row_major(Coord(Idx[num_experts]()))
+        dev_sf_tensor, row_major(Coord(Idx[num_experts]))
     )
 
     grouped_quantize_dynamic_scaled_fp4_async(
@@ -139,12 +150,18 @@ def test_grouped_nvfp4_quantization[
     )
 
     # --- Copy grouped results back to host ---
-    var host_output = alloc[Scalar[out_dtype]](max(total_tokens * output_N, 1))
+    var host_output = alloc[Scalar[out_dtype]](
+        total_tokens * output_N + output_N
+    )
     var host_scales = alloc[Scalar[scales_dtype]](max(total_scales, 1))
 
     ctx.enqueue_copy(host_output, dev_output)
     ctx.enqueue_copy(host_scales, dev_scales)
     ctx.synchronize()
+
+    # The slack row past the last token must still hold the sentinel.
+    for i in range(output_N):
+        assert_equal(Int(host_output[total_tokens * output_N + i]), SENTINEL)
 
     # --- Per-expert reference and comparison ---
     for expert_i in range(num_experts):
@@ -162,14 +179,14 @@ def test_grouped_nvfp4_quantization[
 
         ctx.enqueue_copy(ref_input, host_input + row_start * N)
 
-        var ref_input_shape = Coord(Idx(count), Idx[N]())
-        var ref_output_shape = Coord(Idx(count), Idx[output_N]())
+        var ref_input_shape = Coord(count, Idx[N])
+        var ref_output_shape = Coord(count, Idx[output_N])
         var ref_scales_shape = Coord(
-            Idx(m_tiles_i),
-            Idx[K_tiles](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            m_tiles_i,
+            Idx[K_tiles],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
 
         var ref_input_tensor = TileTensor(ref_input, row_major(ref_input_shape))
@@ -207,10 +224,10 @@ def test_grouped_nvfp4_quantization[
         for row_idx in range(count):
             for col_idx in range(0, output_N, SF_VECTOR_SIZE // 2):
                 var vec = grouped_out.load[width=SF_VECTOR_SIZE // 2](
-                    Coord(Idx(row_idx), Idx(col_idx))
+                    Coord(row_idx, col_idx)
                 )
                 var vec_ref = ref_out.load[width=SF_VECTOR_SIZE // 2](
-                    Coord(Idx(row_idx), Idx(col_idx))
+                    Coord(row_idx, col_idx)
                 )
                 var fp32 = cast_uint_to_fp4e2m1[
                     out_dtype=DType.float32, out_width=SF_VECTOR_SIZE
@@ -234,11 +251,11 @@ def test_grouped_nvfp4_quantization[
                     for a1 in range(SF_ATOM_M[1]):
                         for ak in range(SF_ATOM_K):
                             var c = Coord(
-                                Idx(mi),
-                                Idx(ki),
-                                Idx(a0),
-                                Idx(a1),
-                                Idx(ak),
+                                mi,
+                                ki,
+                                a0,
+                                a1,
+                                ak,
                             )
                             assert_equal(
                                 grouped_scales[c].cast[DType.float64](),
@@ -251,6 +268,7 @@ def test_grouped_nvfp4_quantization[
     host_input.free()
     host_output.free()
     host_scales.free()
+    sentinel_host.free()
     row_offsets_host.free()
     scales_offsets_host.free()
     expert_ids_host.free()
@@ -295,3 +313,15 @@ def main() raises:
             N=23 * 128,
             num_experts=3,
         ](ctx, [256, 128, 256], [0.43, 1.0, 0.5])
+
+        # Column count that is not a multiple of SF_VECTOR_SIZE * SF_ATOM_K
+        # (64). Gemma 4 26B-A4B has moe_dim 704, so a 2-way tensor-parallel
+        # shard quantizes the 352-column SiLU output; the last k_idx block
+        # covers columns 320-383 and must mask the 352-383 tail.
+        test_grouped_nvfp4_quantization[
+            DType.bfloat16,
+            NVFP4_SF_DTYPE,
+            SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
+            N=352,
+            num_experts=2,
+        ](ctx, [100, 60], [1.0, 0.5])

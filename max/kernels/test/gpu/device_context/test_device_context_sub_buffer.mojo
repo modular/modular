@@ -52,7 +52,7 @@ def test(ctx: DeviceContext) raises:
     var block_dim = 32
     var supplement = 5
 
-    ctx.enqueue_function_experimental[vec_func](
+    ctx.enqueue_function[vec_func](
         in0_device,
         in1_device,
         out_device,

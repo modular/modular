@@ -66,7 +66,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
                 num_clc_pipeline_stages=0,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 is_small_bn=True,
-            ](ctx, Idx(1), Idx[2304](), Idx[16384]())
+            ](ctx, Idx[1], Idx[2304], Idx[16384])
 
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 dtype,
@@ -85,7 +85,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
                 num_clc_pipeline_stages=0,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 is_small_bn=True,
-            ](ctx, Idx(1), Idx[16384](), Idx[2048]())
+            ](ctx, Idx[1], Idx[16384], Idx[2048])
 
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 dtype,
@@ -104,7 +104,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
                 num_clc_pipeline_stages=0,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 is_small_bn=True,
-            ](ctx, Idx(1), Idx[6656](), Idx[16384]())
+            ](ctx, Idx[1], Idx[6656], Idx[16384])
 
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 dtype,
@@ -123,7 +123,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
                 num_clc_pipeline_stages=0,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 is_small_bn=True,
-            ](ctx, Idx(1), Idx[16384](), Idx[6656]())
+            ](ctx, Idx[1], Idx[16384], Idx[6656])
 
             # Larger cluster shapes
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -143,7 +143,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
                 num_clc_pipeline_stages=0,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 is_small_bn=True,
-            ](ctx, Idx(1), Idx[2304](), Idx[16384]())
+            ](ctx, Idx[1], Idx[2304], Idx[16384])
 
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 dtype,
@@ -162,7 +162,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
                 num_clc_pipeline_stages=0,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 is_small_bn=True,
-            ](ctx, Idx(1), Idx[6656](), Idx[16384]())
+            ](ctx, Idx[1], Idx[6656], Idx[16384])
 
         # Kimi-K2.5 shape that triggered race condition
         comptime kimi_block_tile = Index(128, 8, BK)
@@ -184,7 +184,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
             num_clc_pipeline_stages=0,
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             is_small_bn=True,
-        ](ctx, Idx(1), Idx[36864](), Idx[128 * 28]())
+        ](ctx, Idx[1], Idx[36864], Idx[128 * 28])
 
         # Epilogue fusion tests: verify TileWriter's elementwise_lambda_fn path
         # with 2SM (cta_group=2).
@@ -211,7 +211,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_suite[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 is_small_bn=True,
                 normal_epilogue=True,
-            ](ctx, Idx(1), Idx[2304](), Idx[16384]())
+            ](ctx, Idx[1], Idx[2304], Idx[16384])
 
 
 def main() raises:

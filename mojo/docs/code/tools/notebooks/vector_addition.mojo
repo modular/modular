@@ -71,7 +71,7 @@ def main() raises:
     _ = right_buffer.enqueue_fill(1)
 
     # Launch GPU kernel
-    ctx.enqueue_function[vector_addition, vector_addition](
+    ctx.enqueue_function[vector_addition](
         left_tensor,
         right_tensor,
         output_tensor,
