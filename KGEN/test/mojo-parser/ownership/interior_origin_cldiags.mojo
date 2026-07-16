@@ -140,3 +140,17 @@ def test_dominance_lifetime2(cond: Bool):
     # This is an error because the ref is invalidated.
     # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
     elt_ref += 4
+
+
+# This verifies we're handling hlcf.elif dominance correctly.
+def test_rederive_in_controlled_block(list: MyListInterior[Int]) -> Int:
+    if list[] > 0:
+        return list[]
+    return 0
+
+def test_rederive_after_mutation_in_block(cond: Bool, mut list: MyListInterior[Int]):
+    ref r = list[]
+    if cond:
+        list.mutate() # expected-note {{origin was invalidated here}}
+        # expected-error @+1 {{use of invalidated interior reference}}
+        r += 1

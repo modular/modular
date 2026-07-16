@@ -1654,14 +1654,8 @@ public:
   /// Mark the given interior origin as live in the given bitvector.
   void markInteriorOriginLive(InteriorOriginAttr o,
                               TrackedAndInteriorLiveness &liveness,
-                              Operation &op) const {
-    // If the entry was previously invalid, mark it as now live.
-    auto &entry = liveness.interior[getInteriorOriginID(o)];
-    if (!entry.getInt()) {
-      entry.setInt(true);
-      entry.setPointer(&op);
-    }
-  }
+                              Operation &op,
+                              const mlir::DominanceInfo &domInfo) const;
 
   bool originHasInteriorOrigins(TypedAttr origin) const {
     return originWithInteriorOrigins.count(origin);
@@ -1883,6 +1877,43 @@ void InteriorOriginTracker::dump() const {
     }
   }
   os << "\n";
+}
+
+/// Mark the given interior origin as live in the given bitvector.
+void InteriorOriginTracker::markInteriorOriginLive(
+    InteriorOriginAttr o, TrackedAndInteriorLiveness &liveness, Operation &op,
+    const mlir::DominanceInfo &domInfo) const {
+  // If the entry was previously invalid, mark it as now live.
+  auto &entry = liveness.interior[getInteriorOriginID(o)];
+  if (!entry.getInt()) {
+    entry.setInt(true);
+    entry.setPointer(&op);
+    return;
+  }
+
+  // Otherwise the entry was already live.  We prefer to keep track of the first
+  // definition so the liveness scope of the reference is maximized:
+  //    ref a = list[i]
+  //    ...
+  //    ref b = list[j]
+  //    ...
+  //    use(a) # This is valid even though "b" also marked it live.
+  //
+  // However, there are cases where the live reference doesn't SSA dominate the
+  // new reference, like:
+  //    if cond:
+  //       ref a = list[i]
+  //       use(a)
+  //    else:
+  //       abort()
+  //    ref b = list[j]   # Here.
+  //    use(b)
+  //
+  // In these cases, we use the location of 'b' as the highest live reference,
+  // because otherwise we'd reject the use of 'a' because it doesn't dominate
+  // the use of 'b'.
+  if (!domInfo.dominates(entry.getPointer(), &op))
+    entry.setPointer(&op);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2116,7 +2147,8 @@ void UninitializedValueScan::establishInteriorOriginsFromDef(Type type,
     return;
 
   for (InteriorOriginAttr origin : findInteriorOriginsInType(type))
-    interiorOriginTracker.markInteriorOriginLive(origin, liveness, op);
+    interiorOriginTracker.markInteriorOriginLive(origin, liveness, op,
+                                                 valueSet.domInfo);
 }
 
 void UninitializedValueScan::invalidateInteriorOriginsForOperand(
@@ -2257,7 +2289,8 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
 
   // Mark any defined interior origins as live.
   for (auto origin : interiorOrigins)
-    interiorOriginTracker.markInteriorOriginLive(origin, liveness, op);
+    interiorOriginTracker.markInteriorOriginLive(origin, liveness, op,
+                                                 valueSet.domInfo);
 }
 
 void UninitializedValueScan::checkConsume(Value value, Operation &op,
