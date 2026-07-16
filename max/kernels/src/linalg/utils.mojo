@@ -313,6 +313,34 @@ def is_valid_epilogue[T: AnyType]() -> Bool:
     return not (T == NullTileOperation or T == NullTileConsumer)
 
 
+@always_inline
+def lora_qkv_plane_row_offset[
+    splits: IndexList[2]
+](out_col: Int, plane_stride: Int) -> Int:
+    """Additive row offset into a 3-plane row-stacked activation `[3*M, K]`.
+
+    Lets a grouped matmul read a *different* plane of the activation per
+    output-column region within a single launch, without a capturing closure
+    (which the warp-specialized kernel's GPU slicer cannot handle in the load
+    path). Used by the LoRA-B QKV expand to select the matching plane of the
+    planar shrink output `P [3, M, R]` for the Q / K / V output regions.
+
+    For output column `out_col`, the plane is 0 when `out_col < splits[0]`, 1
+    when `out_col < splits[1]`, else 2; the returned offset is
+    `plane * plane_stride`. `splits == (0, 0)` disables it (returns 0), so the
+    default is a no-op for every other caller.
+    """
+    comptime if splits[0] <= 0:
+        return 0
+    else:
+        var plane = 2
+        if out_col < splits[0]:
+            plane = 0
+        elif out_col < splits[1]:
+            plane = 1
+        return plane * plane_stride
+
+
 @fieldwise_init
 struct KernelConfig:
     """Static configuration of the matmul inner kernel."""

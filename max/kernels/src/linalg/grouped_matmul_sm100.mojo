@@ -24,7 +24,7 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from std.gpu import (
@@ -78,7 +78,7 @@ from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 from .arch.sm100 import MmaOpSM100_SS
-from .utils import elementwise_epilogue_type
+from .utils import elementwise_epilogue_type, lora_qkv_plane_row_offset
 from .utils_gpu import MatmulConfig
 from .grouped_matmul_tile_scheduler import TileScheduler
 
@@ -147,6 +147,7 @@ def load_AB[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cta_group: Int = 1,
+    a_plane_splits: IndexList[2] = Index(0, 0),
 ](
     expert_ids: UnsafePointer[mut=False, Scalar[DType.int32], _],
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
@@ -171,6 +172,7 @@ def load_AB[
     iter_idx: UInt32,
     elect_one_cta: Bool,
     scheduler: TileScheduler,
+    qkv_plane_stride: Int = 0,
 ):
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -202,6 +204,17 @@ def load_AB[
         peer_cta_coord[1] * b_tma_rows
         + peer_cta_coord[0] * BN
         + work_tile_coord[1]
+    )
+
+    # Activation-operand (post-swapAB `b`) plane select: shift the gmem row by a
+    # function of the output-column tile base (`work_tile_coord[0]`, the kernel's
+    # M dim after swapAB) and the per-plane row stride. Lets one launch read a
+    # different slice of the activations per output-column region (LoRA-B QKV
+    # expand: pick the Q/K/V plane of the planar shrink output). The descriptor
+    # must cover the full activation extent (see `b_desc_rows` in the launcher)
+    # so the shifted rows are in bounds. `a_plane_splits == (0, 0)` disables it.
+    b_gmem_slice_coord += lora_qkv_plane_row_offset[a_plane_splits](
+        work_tile_coord[0], qkv_plane_stride
     )
 
     var a_smem_tile = a_smem_tiles[stage]
@@ -256,6 +269,7 @@ def load_AB_cuda_core[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_32B,
     a_gmem_layout: Layout = Layout.row_major(1, 1),
     b_gmem_layout: Layout = Layout.row_major(1, 1),
+    a_plane_splits: IndexList[2] = Index(0, 0),
 ](
     a_gmem: LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
     b_gmem: LayoutTensor[b_type, b_gmem_layout, ImmutAnyOrigin],
@@ -277,6 +291,7 @@ def load_AB_cuda_core[
     work_tile_coord: Tuple[Int, Int],
     iter_idx: UInt32,
     scheduler: TileScheduler,
+    qkv_plane_stride: Int = 0,
 ):
     """CUDA core fallback for load_AB when K*sizeof < 16 bytes.
 
@@ -302,6 +317,12 @@ def load_AB_cuda_core[
         peer_cta_coord[1] * (BN // cta_group)
         + peer_cta_coord[0] * BN
         + work_tile_coord[1]
+    )
+    # Activation-operand plane select (see `load_AB`).
+    b_row0 += Int32(
+        lora_qkv_plane_row_offset[a_plane_splits](
+            work_tile_coord[0], qkv_plane_stride
+        )
     )
     var b_col0 = Int32(iter_idx) * Int32(BK)
 
@@ -839,6 +860,92 @@ def zero_output[
             ptr += c_stride
 
 
+@always_inline
+def zero_output_epilogue[
+    c_type: DType,
+    /,
+    *,
+    c_smem_layout: Layout,
+    block_tile_shape: IndexList[3],
+    mma_shape: IndexList[3],
+    c_static_N: Int,
+    c_swizzle: TensorMapSwizzle,
+    cta_group: Int,
+    num_output_warps: Int,
+    elementwise_lambda_fn: elementwise_epilogue_type,
+    transpose_c: Bool,
+](work_tile_coord: Tuple[Int, Int], group_end_idx: UInt32,):
+    """Zero an inactive group's output THROUGH the elementwise epilogue.
+
+    Mirror of the epilogue (unaligned/`elementwise_lambda_fn`) branch of
+    `multi_stage_store_C`, but with a zero accumulator: for an inactive group
+    (`expert_id < 0`) there is no MMA, so this walks the same output-tile
+    coordinate mapping and calls `elementwise_lambda_fn` with a zero vector at
+    each `(n, m)`. It deliberately does NOT wait on `accum_full_mbar` or read
+    TMEM: the main-load and MMA warps skip inactive groups entirely (they never
+    arrive on that barrier), so waiting would deadlock. Matches the naive
+    grouped matmul, which likewise runs the epilogue with `accum == 0` for
+    `expert == -1` instead of storing zeros directly to C -- so callers whose
+    real output lives behind the epilogue (e.g. the LoRA-B QKV expand's
+    `route_qkv`) get their `-1` tokens zeroed without a separate memset.
+    """
+    comptime MMA_M = mma_shape[0]
+    comptime MMA_N = mma_shape[1]
+    comptime simd_size = simd_width_of[c_type]()
+
+    comptime N_dim = 0 if transpose_c else 1
+    comptime stageN = c_smem_layout.shape[N_dim].value()
+    comptime num_stages = MMA_N // stageN if (
+        MMA_M == 256 or cta_group == 1
+    ) else MMA_N // stageN // 2
+
+    comptime assert (
+        transpose_c
+    ), "zero_output_epilogue only supports transpose_c (epilogue path)"
+    comptime assert (
+        MMA_M == 256 or cta_group == 1
+    ), "zero_output_epilogue only supports MMA_M == 256 or cta_group == 1"
+
+    # `M` here is the tile's contiguous (row) extent, matching
+    # `c_smem_tile.layout.shape[1]` in `multi_stage_store_C`.
+    comptime M = c_smem_layout.shape[1].value()
+    comptime chunkM = c_swizzle.bytes() // size_of[c_type]()
+    comptime vec_chunkM = chunkM // simd_size
+    comptime chunk_num = M // chunkM
+    comptime logical_c_layout = Layout.row_major(chunk_num, stageN, vec_chunkM)
+    comptime thread_num = num_output_warps * WARP_SIZE
+    comptime assert logical_c_layout.size() % thread_num == 0
+    comptime value_shape = logical_c_layout.size() // thread_num
+    comptime cN = c_static_N
+    comptime alignment = align_of[SIMD[c_type, simd_size]]()
+    comptime elementwise_lambda = elementwise_lambda_fn
+    var zero_vec = SIMD[c_type, simd_size](0)
+
+    comptime for stage in range(num_stages):
+        # Only the M==256/cta_group==1 coord form is reachable here (asserted
+        # above); `coord_n` matches `coord_n_mma_m256` in `multi_stage_store_C`.
+        var coord_n = work_tile_coord[1] + stage * stageN
+        var n_inbound_size = group_end_idx - UInt32(coord_n)
+
+        comptime for v in range(value_shape):
+            comptime thread_offset = v * thread_num
+            var thread_index = UInt32(thread_idx.x) + UInt32(thread_offset)
+            var vec_chunkM_idx = thread_index % UInt32(vec_chunkM)
+            var rest = thread_index // UInt32(vec_chunkM)
+            var n_idx = rest % UInt32(stageN)
+            if n_idx >= min(n_inbound_size, UInt32(stageN)):
+                continue
+            var chunk_idx = rest // UInt32(stageN)
+            var n = UInt32(coord_n) + n_idx
+            var m = UInt32(work_tile_coord[0]) + (
+                chunk_idx * UInt32(vec_chunkM) + vec_chunkM_idx
+            ) * UInt32(simd_size)
+            if m < UInt32(cN):
+                elementwise_lambda[c_type, simd_size, alignment=alignment](
+                    Index(n, m), zero_vec
+                )
+
+
 # Important deviation from the normal SM100 matmul: The coordinate returned by
 # the tile scheduler is not necessarily aligned to `MMA_N` because of group
 # splitting. Thus, we simply take the `work_tile_coord` without scaling it
@@ -876,6 +983,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 2,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    a_plane_splits: IndexList[2] = Index(0, 0),
     transpose_c: Bool = False,
     use_tma: Bool = True,
     K_actual: Int = 0,
@@ -1126,6 +1234,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
                         cta_group=cta_group,
+                        a_plane_splits=a_plane_splits,
                     ](
                         expert_ids,
                         a_tma_op,
@@ -1142,6 +1251,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         i,
                         elect_one_cta,
                         scheduler,
+                        Int(mnk[0]),
                     )
                 else:
                     load_AB_cuda_core[
@@ -1151,6 +1261,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         b_swizzle=b_swizzle,
                         a_gmem_layout=a_gmem_layout,
                         b_gmem_layout=b_gmem_layout,
+                        a_plane_splits=a_plane_splits,
                     ](
                         a_gmem,
                         b_gmem,
@@ -1164,6 +1275,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         (Int(work_info.m), Int(work_info.n)),
                         i,
                         scheduler,
+                        Int(mnk[0]),
                     )
                 producer_phase.step()
 
@@ -1254,20 +1366,47 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 continue
 
             if expert_ids[Int(scheduler.current_group_idx)] < 0:
-                # c_stride == c_N == expert_m for contiguous row-major C.
-                zero_output[
-                    output_tile_shape=output_tile_shape,
-                    c_stride=expert_m,
-                    c_N=expert_m,
-                ](
-                    c_ptr,
-                    (work_info.m, work_info.n),
-                    rebind[Scalar[DType.uint32]](
-                        scheduler.group_offsets[
-                            Int(scheduler.current_group_idx + 1)
-                        ]
-                    ),
-                )
+                comptime if elementwise_lambda_fn:
+                    # An epilogue owns every store and `c_ptr` may be dangling,
+                    # so zero the inactive group THROUGH the epilogue (accum==0)
+                    # rather than storing zeros straight to C. Matches the naive
+                    # path; see `zero_output_epilogue`.
+                    zero_output_epilogue[
+                        c_type,
+                        c_smem_layout=Layout.row_major(
+                            output_tile_shape[0], output_tile_shape[1]
+                        ),
+                        block_tile_shape=block_tile_shape,
+                        mma_shape=mma_shape,
+                        c_static_N=expert_m,
+                        c_swizzle=c_swizzle,
+                        cta_group=cta_group,
+                        num_output_warps=num_output_warps,
+                        elementwise_lambda_fn=elementwise_lambda_fn.value(),
+                        transpose_c=transpose_c,
+                    ](
+                        work_tile_coord=(Int(work_info.m), Int(work_info.n)),
+                        group_end_idx=rebind[Scalar[DType.uint32]](
+                            scheduler.group_offsets[
+                                Int(scheduler.current_group_idx + 1)
+                            ]
+                        ),
+                    )
+                else:
+                    # c_stride == c_N == expert_m for contiguous row-major C.
+                    zero_output[
+                        output_tile_shape=output_tile_shape,
+                        c_stride=expert_m,
+                        c_N=expert_m,
+                    ](
+                        c_ptr,
+                        (work_info.m, work_info.n),
+                        rebind[Scalar[DType.uint32]](
+                            scheduler.group_offsets[
+                                Int(scheduler.current_group_idx + 1)
+                            ]
+                        ),
+                    )
                 work_info = scheduler.fetch_next_work()
                 continue
             # WAIT FOR MMA TO FINISH AND STORE RESULT
@@ -1327,6 +1466,7 @@ def grouped_matmul_sm100_persistent[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    a_plane_splits: IndexList[2] = Index(0, 0),
 ](
     c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
@@ -1364,6 +1504,9 @@ def grouped_matmul_sm100_persistent[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         elementwise_lambda_fn=elementwise_lambda_fn,
+        # Plane-split boundaries (output-column element offsets) for the optional
+        # activation plane select, forwarded unchanged across the swapAB boundary.
+        a_plane_splits=a_plane_splits,
     ](
         c.ptr.as_unsafe_any_origin(),
         b.ptr.as_unsafe_any_origin(),  # weights (a after swapAB)
@@ -1372,6 +1515,10 @@ def grouped_matmul_sm100_persistent[
         a_offsets.ptr.as_unsafe_any_origin(),
         expert_usage_stats.ptr.as_unsafe_any_origin(),
         Int(c.dim[0]()),
+        # Activation descriptor row extent (`b_desc_rows`): the activation's own
+        # row count. Equals `c.dim[0]` for a normal grouped matmul; the LoRA-B
+        # QKV expand passes a `[3M, R]` activation so this is `3M`.
+        Int(a.dim[0]()),
         ctx,
     )
 
@@ -1392,6 +1539,7 @@ def _grouped_matmul_sm100_persistent[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    a_plane_splits: IndexList[2] = Index(0, 0),
 ](
     c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     a_ptr: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
@@ -1400,6 +1548,7 @@ def _grouped_matmul_sm100_persistent[
     b_offsets: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
     expert_usage_stats: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
     M_runtime: Int,
+    b_desc_rows: Int,
     ctx: DeviceContext,
 ) raises:
     comptime assert transpose_b, "Only support transposed B"
@@ -1436,7 +1585,7 @@ def _grouped_matmul_sm100_persistent[
     var a_gmem = LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin](a_ptr)
     var b_gmem = LayoutTensor[b_type, b_gmem_layout, ImmutAnyOrigin](
         b_ptr,
-        RuntimeLayout[b_gmem_layout](Index(M_runtime, K), Index(K, 1)),
+        RuntimeLayout[b_gmem_layout](Index(b_desc_rows, K), Index(K, 1)),
     )
 
     # TMA layouts with tma_K (may be padded when use_tma=False).
@@ -1452,16 +1601,40 @@ def _grouped_matmul_sm100_persistent[
 
     # TMA descriptor creation uses tma_K layouts.
     var a_device = LayoutTensor[a_type, a_tma_layout, ImmutAnyOrigin](a_ptr)
+    # The activation (post-swapAB `b`) descriptor is sized from the activation's
+    # own row extent `b_desc_rows`, not `M_runtime`. For a normal grouped matmul
+    # the two are equal; the LoRA-B QKV expand passes a `[3M, R]` planar activation
+    # (`b_desc_rows == 3M`) so the `a_plane_splits` plane shifts stay in bounds.
     var b_device = LayoutTensor[b_type, b_tma_layout, ImmutAnyOrigin](
         b_ptr,
-        RuntimeLayout[b_tma_layout](Index(M_runtime, tma_K), Index(tma_K, 1)),
+        RuntimeLayout[b_tma_layout](Index(b_desc_rows, tma_K), Index(tma_K, 1)),
     )
+    # When an elementwise epilogue owns every store, the kernel never writes to
+    # `c_ptr` through the C TMA descriptor (see `multi_stage_store_C` /
+    # `zero_output_epilogue`), so the caller is allowed to pass a dangling
+    # `c_ptr`. But `create_tensor_tile` below still calls `cuTensorMapEncodeTiled`
+    # on the descriptor's base address, which rejects a dangling global pointer
+    # with `CUDA_ERROR_INVALID_VALUE`. Point the descriptor at a valid 1-element
+    # scratch allocation in that case: the descriptor only needs a valid,
+    # aligned base to encode (its extent is never dereferenced). The descriptor
+    # type is identical in both branches (only the runtime base pointer differs),
+    # so this does not create the scoped-reference issue that branching the
+    # descriptor's static type would.
+    # No-epilogue callers (e.g. MoE `grouped_matmul_ragged`) emit NO extra host
+    # op here: `c_desc_scratch` stays `None` and the descriptor uses `c_ptr`
+    # directly, exactly as before this change.
+    comptime has_epilogue = Bool(elementwise_lambda_fn)
+    var c_desc_scratch = Optional[DeviceBuffer[c_type]](None)
+    var c_desc_ptr = c_ptr
+    comptime if has_epilogue:
+        c_desc_scratch = ctx.enqueue_create_buffer[c_type](1)
+        c_desc_ptr = c_desc_scratch.value().unsafe_ptr().as_unsafe_any_origin()
     var c_device = LayoutTensor[
         c_type,
         c_layout,
         MutAnyOrigin,
     ](
-        c_ptr,
+        c_desc_ptr,
         RuntimeLayout[c_layout](Index(M_runtime, expert_m), Index(expert_m, 1)),
     )
 
@@ -1609,6 +1782,7 @@ def _grouped_matmul_sm100_persistent[
         a_gmem_layout=a_gmem_layout,
         b_gmem_layout=b_gmem_layout,
         elementwise_lambda_fn=elementwise_lambda_fn,
+        a_plane_splits=a_plane_splits,
     ]
 
     comptime assert (
@@ -1642,3 +1816,9 @@ def _grouped_matmul_sm100_persistent[
             UInt32(smem_size)
         ),
     )
+
+    # Keep the C-descriptor scratch buffer alive until the kernel launch above
+    # has been enqueued (`c_device`/`c_tma_op` alias its pointer when an
+    # epilogue owns all stores). Only exists in the epilogue case.
+    comptime if has_epilogue:
+        _ = c_desc_scratch^

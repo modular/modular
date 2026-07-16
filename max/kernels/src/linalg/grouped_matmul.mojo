@@ -60,7 +60,7 @@ from .arch.sm100 import MmaOpSM100_SS
 from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
 from .matmul.gpu.sm90.grouped_matmul import grouped_matmul_sm90
 from .matmul.vendor.blas import matmul as vendor_matmul
-from .utils import elementwise_epilogue_type
+from .utils import elementwise_epilogue_type, lora_qkv_plane_row_offset
 from .utils_gpu import MatmulConfig, _bk_base
 from .grouped_matmul_sm100 import grouped_matmul_sm100_persistent
 
@@ -95,6 +95,7 @@ def naive_grouped_matmul_kernel[
     ExpertIdsLayout: TensorLayout,
     *,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    a_plane_splits: IndexList[2] = Index(0, 0),
 ](
     c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],
     a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin],
@@ -117,7 +118,6 @@ def naive_grouped_matmul_kernel[
     K = Int(b.dim[2]())
 
     a_start_row = a_offsets[block_idx.z]
-    a_by_expert = a.ptr + Int64(a_start_row) * Int64(K)
 
     expert = expert_ids[block_idx.z]
     b_by_expert = b.ptr + Int64(expert) * Int64(N) * Int64(K)
@@ -128,6 +128,17 @@ def naive_grouped_matmul_kernel[
 
     if n >= N or m >= M:
         return
+
+    # Per-output-column-region activation row offset. Default 0; the LoRA-B QKV
+    # expand uses it to pick the matching Q/K/V plane of the `[3M, R]` planar
+    # shrink output. `a` is then `[3 * M_total, K]`, so the per-plane row stride
+    # is `a.dim[0] // 3`; the offset is `plane(n) * stride`.
+    var a_row_off = 0
+    comptime if a_plane_splits[0] > 0:
+        a_row_off = lora_qkv_plane_row_offset[a_plane_splits](
+            Int(n), Int(a.dim[0]()) // 3
+        )
+    a_by_expert = a.ptr + Int64(Int(a_start_row) + a_row_off) * Int64(K)
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -973,6 +984,7 @@ def grouped_matmul_amd[
 def grouped_matmul[
     *,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    a_plane_splits: IndexList[2] = Index(0, 0),
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[address_space=AddressSpace.GENERIC, ...],
@@ -1019,10 +1031,31 @@ def grouped_matmul[
         and a.static_shape[1] != UNKNOWN_VALUE
         and c.static_shape[1] != UNKNOWN_VALUE
     )
-    comptime is_sm90_kernel_applicable = ctx.default_device_info == H100 and is_expert_shape_static
-    comptime is_sm100_kernel_applicable = _is_sm10x_gpu(
-        ctx.default_device_info
-    ) and is_expert_shape_static
+    # The SM90 and SM100 TMA/UMMA warp-specialized kernels only support a
+    # 16-bit (or smaller) C output: their TMA store path is sized for the
+    # 16-bit output tile and `blackwell_tma_umma_warp_specialized_kernel`
+    # hard-asserts `c_type != float32`. A float32 C output (e.g. an
+    # un-quantized float32 model running LoRA, where the LoRA grouped matmul
+    # inherits the float32 activation dtype) must fall through to the naive
+    # path, which accumulates in float32 and supports a float32 store + epilogue.
+    comptime c_is_fp32 = c_type == DType.float32
+    # The activation plane select (per-output-column-region) is implemented in
+    # the SM100 persistent load stage and the naive kernel only. When it is set
+    # (`a_plane_splits[0] > 0`), disable the SM90 and AMD paths so dispatch falls
+    # through to naive on those targets (the same generic behavior as before this
+    # feature existed).
+    comptime a_plane_select_on = a_plane_splits[0] > 0
+    comptime is_sm90_kernel_applicable = (
+        ctx.default_device_info == H100
+        and is_expert_shape_static
+        and not c_is_fp32
+        and not a_plane_select_on
+    )
+    comptime is_sm100_kernel_applicable = (
+        _is_sm10x_gpu(ctx.default_device_info)
+        and is_expert_shape_static
+        and not c_is_fp32
+    )
 
     # `grouped_matmul_amd` is only valid when `K` is aligned to `BK` and
     # at least `2 * BK`. If there's only a single K tile,
@@ -1035,6 +1068,7 @@ def grouped_matmul[
         and is_expert_shape_static
         and static_K >= 2 * amd_bk
         and static_K % amd_bk == 0
+        and not a_plane_select_on
     )
 
     # Apple weight-only FP8 (W8A16) MoE: bf16 activation x float8_e4m3fn weight.
@@ -1165,6 +1199,7 @@ def grouped_matmul[
                 a_swizzle=a_swizzle,
                 b_swizzle=b_swizzle,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                a_plane_splits=a_plane_splits,
             ](
                 c,
                 a,
@@ -1242,7 +1277,10 @@ def grouped_matmul[
             var stats = resolve_usage_stats()
             var max_num_tokens_per_expert = stats[0]
             var num_active_experts = stats[1]
-            naive_grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn](
+            naive_grouped_matmul[
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                a_plane_splits=a_plane_splits,
+            ](
                 c,
                 a,
                 b,
@@ -1258,6 +1296,7 @@ def grouped_matmul[
 def grouped_matmul[
     *,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    a_plane_splits: IndexList[2] = Index(0, 0),
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[address_space=AddressSpace.GENERIC, ...],
@@ -1287,7 +1326,10 @@ def grouped_matmul[
         host[0] = UInt32(max_num_tokens_per_expert)
         host[1] = UInt32(num_active_experts)
     var expert_usage_stats = TileTensor(usage_stats_buf, row_major(Coord(2)))
-    grouped_matmul[elementwise_lambda_fn=elementwise_lambda_fn](
+    grouped_matmul[
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        a_plane_splits=a_plane_splits,
+    ](
         c,
         a,
         b,
@@ -1305,6 +1347,7 @@ def naive_grouped_matmul[
     *,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    a_plane_splits: IndexList[2] = Index(0, 0),
 ](
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
@@ -1337,6 +1380,7 @@ def naive_grouped_matmul[
         type_of(a_offsets).LayoutType,
         type_of(expert_ids).LayoutType,
         elementwise_lambda_fn=elementwise_lambda_fn,
+        a_plane_splits=a_plane_splits,
     ]
     ctx.enqueue_function[kernel](
         c,
