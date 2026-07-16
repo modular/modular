@@ -319,6 +319,13 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `comb(n, k)` and `perm(n, k)` to `std.math`, matching Python's
+  `math.comb()` and `math.perm()`. `comb(n, k)` computes the binomial
+  coefficient C(n, k) without computing full factorials, returning 0 when
+  `k > n`. `perm(n, k)` computes permutations P(n, k); omitting `k` (default
+  `-1`) returns `n!`. `factorial()`, `comb()`, and `perm()` also accept
+  `Scalar[dtype]` arguments for any integer dtype (e.g. `Int32`, `Int64`,
+  `UInt32`).
 - Added `Dict.clear_with(destroy_func)`, the closure counterpart of `clear()`.
   Instead of destroying each entry in place, it hands the key and value to
   `destroy_func`, so it can clear a `Dict` whose key or value type is not
