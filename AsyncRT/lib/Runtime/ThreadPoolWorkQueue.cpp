@@ -20,6 +20,7 @@
 #include "Support/Configuration.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
+#include "Support/Profiling/internal/Range.h"
 #if MODULAR_ASYNCRT_MAX_PROFILING_LEVEL != 0
 #include "Support/Profiling/internal/Tracy.h"
 #else
@@ -440,6 +441,11 @@ struct WorkQueueThread {
 #if ASYNCRT_WORKER_STATS
     auto start = std::chrono::high_resolution_clock::now();
 #endif
+    // Register this worker with the profiler so its GPU-driver activity is
+    // attributed to a named thread track in the trace. The first call after
+    // enable() does the registration; subsequent calls are one TLS read.
+    M::Profiling::registerCurrentThreadIfEnabled();
+
     // Do the work.
     {
       TimeTraceScope scope(AllWorkItemsProfilerEntry::create(
