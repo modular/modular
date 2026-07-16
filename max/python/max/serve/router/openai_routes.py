@@ -129,6 +129,7 @@ from max.serve.schemas.openai import (
 )
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
+from max.serve.worker_interface import RequestQueueFull
 from openai.types.chat.chat_completion_chunk import (
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
@@ -2148,6 +2149,10 @@ async def openai_create_embeddings(
     except _ClientDisconnectedError:
         logger.info("Client disconnected for request %s", request_id)
         return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
+    except RequestQueueFull:
+        # Admission was rejected (full worker queue); let the central handler
+        # map it to HTTP 429 rather than the generic 500 below.
+        raise
     except Exception as e:
         logger.exception(
             "Exception during response generation in request %s", request_id

@@ -146,6 +146,34 @@ def test_paged_scheduler_basic_chunked_prefill() -> None:
     assert_batch_info_equal(actual, expected)
 
 
+def test_paged_scheduler_max_pending_requests_caps_drain() -> None:
+    """The M cap (max_pending_requests) bounds how many requests the scheduler
+    pulls into its pending CE queue, leaving the rest in the request queue so it
+    backs up and exerts backpressure."""
+    scheduler, request_queue = create_paged_scheduler(
+        max_batch_size=999,
+        max_pending_requests=2,
+    )
+
+    for _ in range(5):
+        enqueue_request(request_queue, prompt_len=10, max_seq_len=15)
+
+    # First drain pulls at most M=2 into the pending CE queue; the other 3 stay
+    # queued in the request queue.
+    scheduler._retrieve_pending_requests()
+    assert len(scheduler.batch_constructor.all_ce_reqs) == 2
+
+    # Still at capacity: a second drain pulls nothing more.
+    scheduler._retrieve_pending_requests()
+    assert len(scheduler.batch_constructor.all_ce_reqs) == 2
+
+    # Raising the cap lets the 3 still-queued requests drain in, proving they
+    # had been held in the request queue rather than dropped.
+    scheduler.max_pending_requests = 5
+    scheduler._retrieve_pending_requests()
+    assert len(scheduler.batch_constructor.all_ce_reqs) == 5
+
+
 def test_basic_ce_scheduling() -> None:
     num_prompts = 3
     prompt_len = 10

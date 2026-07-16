@@ -104,6 +104,38 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_METRICS_ENDPOINT_PORT",
     )
 
+    max_queue_size: int | None = Field(
+        description=(
+            "Cap (N) on the request queue to the model worker. The queue to "
+            "the worker is bounded to roughly this many in-transit requests; "
+            "once full, new requests are rejected immediately with HTTP 429 "
+            "instead of being enqueued, giving a self-calibrating backpressure "
+            "mechanism to keep latency within SLAs. Enforced approximately via "
+            "the ZeroMQ high-water mark. Pair with 'max_pending_requests' so "
+            "the worker stops draining the queue under load and it actually "
+            "backs up. Defaults to None (unbounded)."
+        ),
+        default=None,
+        ge=0,
+        alias="MAX_SERVE_MAX_QUEUE_SIZE",
+    )
+    max_pending_requests: int | None = Field(
+        description=(
+            "Cap (M) on the scheduler's pending (context-encoding / prefill) "
+            "queue depth. When set, the model worker stops pulling new requests "
+            "from the request queue once it already holds this many "
+            "not-yet-running requests, so excess backlog stays in the bounded "
+            "request queue and exerts backpressure rather than growing the "
+            "worker's unbounded pending pool. Long requests that hold batch/KV "
+            "space keep this queue full and shed new admissions sooner. Should "
+            "be at least 'max_batch_size' to keep the scheduler fed. Defaults "
+            "to None (unbounded)."
+        ),
+        default=None,
+        ge=1,
+        alias="MAX_SERVE_MAX_PENDING_REQUESTS",
+    )
+
     # File URI configuration
     allowed_image_roots: list[str] = Field(
         description="List of allowed root directories for file:// URI access",
@@ -351,6 +383,14 @@ class Settings(BaseSettings):
         logger.info(f"    metrics_port           : {self.metrics_port}")
         logger.info(f"    api_types              : {api_types_str}")
         logger.info(f"    operation_mode         : {mode_str}")
+        logger.info(
+            f"    max_queue_size         : "
+            f"{self.max_queue_size if self.max_queue_size is not None else 'unbounded'}"
+        )
+        logger.info(
+            f"    max_pending_requests   : "
+            f"{self.max_pending_requests if self.max_pending_requests is not None else 'unbounded'}"
+        )
         logger.info("")
 
         # File System Configuration

@@ -61,6 +61,7 @@ from max.serve.router import (
 from max.serve.schemas.openai import Error, ErrorResponse
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
+from max.serve.worker_interface import RequestQueueFull
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
@@ -156,6 +157,9 @@ async def lifespan(
                 override_architecture=override_architecture,
                 task=serving_settings.task,
             ),
+            # Cap the in-transit request backlog to the model worker (HTTP 429
+            # when full). ``None`` keeps the queue unbounded.
+            request_queue_size=settings.max_queue_size,
         )
         model_worker = await exit_stack.enter_async_context(
             start_model_worker(
@@ -315,6 +319,29 @@ async def _openai_validation_exception_handler(
     )
 
 
+async def _request_queue_full_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Map a full model-worker request queue to HTTP 429.
+
+    ``RequestQueueFull`` is raised at admission (the push to the worker, awaited
+    before any response status is committed) by any endpoint that submits to the
+    worker, so it is handled centrally here rather than per route. Returns the
+    OpenAI ``rate_limit_error`` envelope with a ``Retry-After`` hint; the
+    rejection rate is observable via ``maxserve.request_count{code="429"}``.
+    """
+    assert isinstance(exc, RequestQueueFull)
+    request_id = getattr(request.state, "request_id", "<unknown>")
+    logger.warning("Request queue full for request %s", request_id)
+    return JSONResponse(
+        status_code=429,
+        content=_openai_error_body(
+            429, "Server is at capacity. Please retry later."
+        ),
+        headers={"Retry-After": "1"},
+    )
+
+
 def fastapi_app(
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
@@ -423,6 +450,9 @@ def fastapi_app(
     app.add_exception_handler(HTTPException, _openai_http_exception_handler)
     app.add_exception_handler(
         RequestValidationError, _openai_validation_exception_handler
+    )
+    app.add_exception_handler(
+        RequestQueueFull, _request_queue_full_exception_handler
     )
 
     return app

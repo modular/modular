@@ -240,6 +240,31 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         help="Path to a snapshot JSON from /max_internal/eplb_stats. "
         "Triggers an EPLB rebalance at startup.",
     )
+    @click.option(
+        "--max-queue-size",
+        type=int,
+        default=None,
+        help=(
+            "Cap (N) on the request queue to the model worker. Once this many "
+            "requests are in transit to the worker, new requests are rejected "
+            "with HTTP 429 instead of being enqueued, providing "
+            "self-calibrating backpressure to keep latency within SLAs. Pair "
+            "with --max-pending-requests. Defaults to unbounded."
+        ),
+    )
+    @click.option(
+        "--max-pending-requests",
+        type=int,
+        default=None,
+        help=(
+            "Cap (M) on the scheduler's pending (prefill) queue depth. The "
+            "worker stops pulling from the request queue once it holds this "
+            "many not-yet-running requests, so the request queue backs up and "
+            "exerts backpressure (see --max-queue-size) instead of growing an "
+            "unbounded pending pool. Should be at least --max-batch-size. "
+            "Defaults to unbounded."
+        ),
+    )
     @functools.wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         return func(*args, **kwargs)
@@ -266,6 +291,8 @@ def cli_serve(
     headless: bool,
     log_prefix: str | None,
     eplb_stats: str | None,
+    max_queue_size: int | None,
+    max_pending_requests: int | None,
     task_arg: tuple[str, ...],
     pretty_print_config: bool,
     **config_kwargs: Any,
@@ -297,6 +324,12 @@ def cli_serve(
     if eplb_stats is not None:
         os.environ["MAX_SERVE_EPLB_STATS"] = eplb_stats
         setting_kwargs["MAX_SERVE_EPLB_STATS"] = eplb_stats
+
+    if max_queue_size is not None:
+        setting_kwargs["MAX_SERVE_MAX_QUEUE_SIZE"] = max_queue_size
+
+    if max_pending_requests is not None:
+        setting_kwargs["MAX_SERVE_MAX_PENDING_REQUESTS"] = max_pending_requests
 
     settings = Settings(**setting_kwargs)
 

@@ -119,6 +119,17 @@ This version is still a work in progress.
   failure at submission time (for example, a dead model worker) maps to an HTTP
   5xx (or 4xx for input errors). Errors that occur mid-stream, after the first
   chunk has been sent, are still serialized as an error event within the stream.
+- Added request-queue backpressure to MAX serve via two cooperating caps. The
+  `--max-queue-size` flag (env var `MAX_SERVE_MAX_QUEUE_SIZE`, cap *N*) bounds
+  the request queue to the model worker; once it is full, new requests are
+  rejected immediately with HTTP 429 instead of being enqueued. The
+  `--max-pending-requests` flag (env var `MAX_SERVE_MAX_PENDING_REQUESTS`, cap
+  *M*) stops the worker from draining the request queue once its pending
+  (prefill) queue is *M* deep, so the request queue actually backs up under
+  load. Together they form a self-calibrating mechanism that sheds load to keep
+  latency within SLAs and naturally accounts for long requests holding batch
+  space. Both default to unbounded. Rejections are observable via the existing
+  `maxserve.request_count` metric with `code="429"`.
 - Added `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` to control how long the server
   waits for in-flight requests to finish after receiving `SIGTERM` before
   exiting (default 5 seconds). Raise it so long-running requests are drained
