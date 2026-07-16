@@ -16,12 +16,12 @@
 # Skip (compile-error demonstrations and timing-only side effects):
 #   - "Could not infer capture convention" diagnostic for `{}` and
 #     omitted capture list referencing outer values.
-#   - "'^' requires 'var' convention" for `{mut x^}`, `{read x^}`,
+#   - "'^' requires 'var' convention" for `{mut x^}`, `{imm x^}`,
 #     `{ref x^}`.
 #   - "default capture convention was already specified" for
-#     `{mut, read}`.
+#     `{mut, imm}`.
 #   - "must be mutable for in-place operator destination" for
-#     writing to a `read`-captured name (bare-name default case).
+#     writing to an `imm`-captured name (bare-name default case).
 #   - "register passible value can not be captured by 'mut'" for
 #     `{mut name}` on an immutable register-passable arg.
 #   - "cannot capture <name> by copy or move because it is not
@@ -34,25 +34,25 @@
 from std.testing import assert_equal, assert_true
 
 
-# --- Intro example: read capture ---
+# --- Intro example: imm capture ---
 
 
-def test_read_intro() raises:
+def test_imm_intro() raises:
     var multiplier = 3
 
-    def scale(x: Int) {read multiplier} -> Int:
+    def scale(x: Int) {imm multiplier} -> Int:
         return x * multiplier
 
     assert_equal(scale(5), 15)
 
 
-# --- read: live updates ---
+# --- imm: live updates ---
 
 
-def test_read_live_updates() raises:
+def test_imm_live_updates() raises:
     var limit = 10
 
-    def check(x: Int) {read limit} -> Bool:
+    def check(x: Int) {imm limit} -> Bool:
         return x < limit
 
     assert_equal(check(5), True)
@@ -60,23 +60,23 @@ def test_read_live_updates() raises:
     assert_equal(check(5), False)
 
 
-# --- read: implicit form ---
+# --- imm: implicit form ---
 
 
-def test_read_implicit() raises:
+def test_imm_implicit() raises:
     var a = 1
     var b = 2
 
-    def sum_ab() {read} -> Int:
+    def sum_ab() {imm} -> Int:
         return a + b
 
     assert_equal(sum_ab(), 3)
 
 
-# --- bare name defaults to read ---
+# --- bare name defaults to imm ---
 
 
-def test_bare_name_default_read() raises:
+def test_bare_name_default_imm() raises:
     var x = 10
 
     def show() {x} -> Int:
@@ -205,7 +205,7 @@ def parametric_returns_mut(ref x: List[Int]) -> Bool:
     return borrow()
 
 
-def call_with_immut(read x: List[Int]) -> Bool:
+def call_with_immut(imm x: List[Int]) -> Bool:
     return parametric_returns_mut(x)
 
 
@@ -247,7 +247,7 @@ def test_mixed_conventions() raises:
     var count = 0
     var label: String = "run-1"
 
-    def process() {read config, mut count, var label} -> String:
+    def process() {imm config, mut count, var label} -> String:
         count += 1
         return config + ":" + String(count) + ":" + label
 
@@ -319,7 +319,7 @@ def test_parametric_closure_basic() raises:
 def test_parametric_closure_with_capture() raises:
     var factor = 4
 
-    def scale_to[T: Intable](x: T) {read factor} -> Int:
+    def scale_to[T: Intable](x: T) {imm factor} -> Int:
         return Int(x) * factor
 
     assert_equal(scale_to[Int](3), 12)
@@ -402,10 +402,10 @@ def test_nested_capture_closure_value() raises:
 
 
 def main() raises:
-    test_read_intro()
-    test_read_live_updates()
-    test_read_implicit()
-    test_bare_name_default_read()
+    test_imm_intro()
+    test_imm_live_updates()
+    test_imm_implicit()
+    test_bare_name_default_imm()
     test_mut_explicit()
     test_mut_implicit()
     test_var_explicit_snapshot()

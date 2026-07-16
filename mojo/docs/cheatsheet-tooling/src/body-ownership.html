@@ -66,7 +66,7 @@ print(data) # [9, 2, 3]</pre>
           <h2>Argument conventions on self</h2>
           <div class="body">
             <table>
-              <tr><td>self</td><td>read (immutable)</td></tr>
+              <tr><td>self</td><td>imm (immutable)</td></tr>
               <tr><td class="k">mut self</td><td>modify the instance</td></tr>
               <tr><td class="k">out self</td><td>build it (in __init__())</td></tr>
               <tr><td class="k">deinit self</td><td>destroy the instance</td></tr>
@@ -105,7 +105,7 @@ exclaim(g^) # transfer: g uninitialized
               <tr><td>f(x.copy())</td><td>explicit copy</td></tr>
               <tr><td>f(x^)</td><td>transfer; x uninitialized after</td></tr>
             </table>
-            <p class="note">A borrowing argument (<b>read</b>, <b>mut</b>, <b>ref</b>) has no <b>^</b> lever:
+            <p class="note">A borrowing argument (<b>imm</b>, <b>mut</b>, <b>ref</b>) has no <b>^</b> lever:
               you write <b>f(x)</b>, and it views the value in place.</p>
           </div>
         </section>
@@ -134,7 +134,7 @@ ref x = first(xs) # len(xs) known to be > 0</pre>
             <th>Convention</th><th>Owns it?</th><th>Mutable?</th>
             <th>Caller keeps it?</th><th>Reach for it when</th>
           </tr>
-          <tr><td>(read)</td><td class="no">no</td><td class="no">no</td><td class="yes">yes</td>
+          <tr><td>(imm)</td><td class="no">no</td><td class="no">no</td><td class="yes">yes</td>
             <td>reading a value without changing it (the default)</td></tr>
           <tr><td>mut</td><td class="no">no</td><td class="yes">yes</td><td class="yes">yes</td>
             <td>changing the caller's value in place</td></tr>

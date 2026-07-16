@@ -221,7 +221,7 @@ def test[
     @parameter
     def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
-        def body1[width: Int](idx: Int) {read}:
+        def body1[width: Int](idx: Int) {imm}:
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 

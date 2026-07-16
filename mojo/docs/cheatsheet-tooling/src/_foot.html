@@ -3,7 +3,7 @@
 
 <script>
 (function(){
-  var KW=new Set("def struct trait var ref comptime if elif else for while break continue pass return raise try except finally with as from import and or not in is mut out deinit read raises where assert thin abi".split(" "));
+  var KW=new Set("def struct trait var ref comptime if elif else for while break continue pass return raise try except finally with as from import and or not in is mut out deinit imm raises where assert thin abi".split(" "));
   var LIT=new Set("True False None".split(" "));
   var TY=new Set("Int UInt Int8 Int16 Int32 Int64 Int128 Int256 UInt8 UInt16 UInt32 UInt64 UInt128 UInt256 Byte Float16 Float32 Float64 BFloat16 Float8_e4m3fn Float8_e5m2 Float4_e2m1fn Bool String List Dict Optional SIMD Scalar DType Error NoneType StaticString Comparable Copyable Movable Writable Writer ImplicitlyCopyable ImplicitlyDestructible AnyType Equatable Sized Printable PrettyPrintable Identifiable Powable Intable TrivialRegisterPassable RegisterPassable Container Shape Box Pair MyInt Color Point Bag Buffer Matrix Test ValueError Self".split(" "));
   var BI=new Set("print len range reflect type_of".split(" "));

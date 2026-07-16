@@ -233,7 +233,7 @@ def test_assert_equal_stringslice() raises:
         )
 
     def _build(
-        read value: String, start: Int, end: Int
+        imm value: String, start: Int, end: Int
     ) -> StringSlice[origin_of(value)]:
         return StringSlice[origin_of(value)](
             unsafe_from_utf8=Span(

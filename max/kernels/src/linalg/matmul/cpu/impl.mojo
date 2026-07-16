@@ -89,7 +89,7 @@ def elementwise_epilogue_c_tile[
     c: TileTensor[mut=False, c_type, address_space=AddressSpace.GENERIC, ...],
 ):
     @always_inline
-    def activation_on_col_chunk[col_chunk_size: Int](idx_n: Int) {read}:
+    def activation_on_col_chunk[col_chunk_size: Int](idx_n: Int) {imm}:
         var n_coord = idx_n + offset.N
         for idx_m in range(tile_len.M):
             var m_coord = idx_m + offset.M

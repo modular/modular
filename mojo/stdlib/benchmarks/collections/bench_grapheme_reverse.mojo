@@ -55,7 +55,7 @@ def bench_grapheme_iter_forward[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         var count = 0
         for _ in black_box(items).graphemes():
             count += 1
@@ -71,7 +71,7 @@ def bench_grapheme_iter_reversed[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         var count = 0
         for _ in black_box(items).graphemes_reversed():
             count += 1
@@ -87,7 +87,7 @@ def bench_grapheme_iter_alternating[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         var count = 0
         var iter = black_box(items).graphemes()
         while True:

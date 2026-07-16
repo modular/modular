@@ -31,7 +31,7 @@ struct Box(ImplicitlyCopyable, Movable):
         self.v = v
 
 
-def take_read(read x: Int) -> Int:  # read = immutable borrow
+def take_read(imm x: Int) -> Int:  # read = immutable borrow
     return x
 
 

@@ -224,7 +224,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     for tok in range(n_tokens_per_rank):
         var base = host_topk + tok * top_k
 
-        def dup() {read} -> Int:
+        def dup() {imm} -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if base[i] == base[j]:

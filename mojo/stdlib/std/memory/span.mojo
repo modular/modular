@@ -885,7 +885,7 @@ struct Span[
         var length = len(self)
         var count = 0
 
-        def do_count[width: Int](idx: Int) {mut count, read ptr, read func}:
+        def do_count[width: Int](idx: Int) {mut count, imm ptr, imm func}:
             var mask = func[width](ptr.load[width=width](idx))
             count += mask.reduce_bit_count()
 

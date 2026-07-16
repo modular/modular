@@ -682,7 +682,7 @@ struct RandomNormal:
         def output_fn[
             _width: SIMDSize,
             _rank: Int,
-        ](coords: IndexList[_rank], val: SIMD[dtype, _width]) {read output}:
+        ](coords: IndexList[_rank], val: SIMD[dtype, _width]) {imm output}:
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, _width]](val),
@@ -732,7 +732,7 @@ struct RandomUniform:
         def output_fn[
             _width: SIMDSize,
             _rank: Int,
-        ](coords: IndexList[_rank], val: SIMD[dtype, _width]) {read output}:
+        ](coords: IndexList[_rank], val: SIMD[dtype, _width]) {imm output}:
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, _width]](val),

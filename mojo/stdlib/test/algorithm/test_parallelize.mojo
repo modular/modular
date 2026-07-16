@@ -128,7 +128,7 @@ def test_parallelize_unified() raises:
     @always_inline
     def parallel_fn(
         thread_id: Int,
-    ) {read vector, read chunk_size,}:
+    ) {imm vector, imm chunk_size,}:
         var start = thread_id * chunk_size
         var end = min(start + chunk_size, len(vector))
 
@@ -155,7 +155,7 @@ def test_sync_parallelize_unified() raises:
     @always_inline
     def add_two_parallel(
         thread_id: Int,
-    ) {read vector, read chunk_size,}:
+    ) {imm vector, imm chunk_size,}:
         var start = thread_id * chunk_size
         var end = min(start + chunk_size, len(vector))
 

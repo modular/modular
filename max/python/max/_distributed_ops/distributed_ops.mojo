@@ -122,12 +122,12 @@ def _do_broadcast[
     def launch_broadcast[
         index: Int
     ]() raises {
-        read in_tile,
-        read rank_sigs,
-        read out_ptrs,
-        read dev_ctxs,
-        read n,
-        read root_v,
+        imm in_tile,
+        imm rank_sigs,
+        imm out_ptrs,
+        imm dev_ctxs,
+        imm n,
+        imm root_v,
     }:
         var out_tile = TileTensor(out_ptrs[index], row_major(n))
         # use_multimem=False: the multicast-store path needs an SM90+ build

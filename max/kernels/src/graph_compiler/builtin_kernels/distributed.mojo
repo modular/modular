@@ -171,10 +171,10 @@ struct DistributedAllReduceSum:
             def launch_vendor_allreduce[
                 index: Int
             ]() raises {
-                read in_tensors,
-                read rank_sigs,
-                read dev_ctxs_input,
-                read outputs,
+                imm in_tensors,
+                imm rank_sigs,
+                imm dev_ctxs_input,
+                imm outputs,
             }:
                 # _get_global_comms has a check-then-create race: two
                 # threads seeing null simultaneously would both call
@@ -216,10 +216,10 @@ struct DistributedAllReduceSum:
         def launch_allreduce[
             index: Int
         ]() raises {
-            read in_tensors,
-            read rank_sigs,
-            read dev_ctxs_input,
-            read outputs,
+            imm in_tensors,
+            imm rank_sigs,
+            imm dev_ctxs_input,
+            imm outputs,
         }:
             var out_buf = outputs[index].to_tile_tensor[DType.int64]()
             allreduce[
@@ -289,10 +289,10 @@ struct DistributedReduceScatterSum:
         def launch_reducescatter[
             index: Int
         ]() raises {
-            read inputs,
-            read signal_buffers,
-            read dev_ctxs_input,
-            read outputs,
+            imm inputs,
+            imm signal_buffers,
+            imm dev_ctxs_input,
+            imm outputs,
         }:
             comptime group_id, local_rank = divmod(index, group_size)
             comptime group_start = group_id * group_size
@@ -407,10 +407,10 @@ struct DistributedAllGather:
         def launch_allgather[
             index: Int
         ]() raises {
-            read inputs,
-            read outputs,
-            read signal_buffers,
-            read dev_ctxs_input,
+            imm inputs,
+            imm outputs,
+            imm signal_buffers,
+            imm dev_ctxs_input,
         }:
             comptime group_id, local_rank = divmod(index, group_size)
             comptime group_start = group_id * group_size
@@ -552,10 +552,10 @@ struct DistributedBroadcast:
         def launch_broadcast[
             index: Int
         ]() raises {
-            read in_buf,
-            read rank_sigs,
-            read dev_ctxs_input,
-            read outputs,
+            imm in_buf,
+            imm rank_sigs,
+            imm dev_ctxs_input,
+            imm outputs,
         }:
             var out_buf = TileTensor[mut=True](
                 outputs[index]
@@ -647,10 +647,10 @@ struct DistributedScatter:
         def launch_scatter[
             index: Int
         ]() raises {
-            read in_tensors,
-            read rank_sigs,
-            read dev_ctxs_input,
-            read outputs,
+            imm in_tensors,
+            imm rank_sigs,
+            imm dev_ctxs_input,
+            imm outputs,
         }:
             var out_buf = outputs[index].to_tile_tensor[DType.int64]()
             scatter[ngpus=ngpus, dp_size=ngpus](
@@ -756,17 +756,17 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         def launch_fused_allreduce[
             index: Int
         ]() raises {
-            read in_tensors,
-            read rank_sigs,
-            read dev_ctxs,
-            read gammas,
-            read epsilons,
-            read weight_offsets,
-            read scales_ub,
-            read outputs,
-            read outputs_scales,
-            read outputs_residual,
-            read residuals,
+            imm in_tensors,
+            imm rank_sigs,
+            imm dev_ctxs,
+            imm gammas,
+            imm epsilons,
+            imm weight_offsets,
+            imm scales_ub,
+            imm outputs,
+            imm outputs_scales,
+            imm outputs_residual,
+            imm residuals,
         }:
             # Marshal per-device outputs and residual as TileTensors.
             var out_buf = outputs[index].to_tile_tensor[DType.int64]()

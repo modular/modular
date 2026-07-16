@@ -313,7 +313,7 @@ def run_mha_prefill_v2_paged[
 
             b.iter_custom[_kernel_launch](ctx)
 
-        def compute_flops() {read} -> Int:
+        def compute_flops() {imm} -> Int:
             # Causal: half the tiles. Matches `bench_mha_prefill_v2`'s
             # formula (`2 * B * H * N * NK * D`).
             return 2 * batch_size * num_heads * seq_len * num_keys * depth

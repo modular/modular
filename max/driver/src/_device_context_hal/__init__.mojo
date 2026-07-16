@@ -1509,7 +1509,7 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         ContextT: _HALFunctionEnqueuer,
     ](
-        read self,
+        imm self,
         ctx: ContextT,
         *args: *Ts,
         grid_dim: Dim,
@@ -1562,7 +1562,7 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         ContextT: _HALFunctionEnqueuer,
     ](
-        read self,
+        imm self,
         ctx: ContextT,
         mut execution_config: ExecutionConfigType,
         *args: *Ts,
@@ -1704,7 +1704,7 @@ struct DeviceFunction[
         *Ts: AnyType,
         ContextT: _HALFunctionEnqueuer,
     ](
-        read self,
+        imm self,
         ctx: ContextT,
         *args: *Ts,
         grid_dim: Dim,
@@ -1827,7 +1827,7 @@ struct DeviceFunction[
         *Ts: AnyType,
         ContextT: _HALFunctionEnqueuer,
     ](
-        read self,
+        imm self,
         ctx: ContextT,
         mut execution_config: ExecutionConfigType,
         *args: *Ts,
@@ -1979,7 +1979,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         *Ts: AnyType,
         ContextT: _HALFunctionEnqueuer,
     ](
-        read self,
+        imm self,
         ctx: ContextT,
         *args: *Ts,
         grid_dim: Dim,
@@ -2057,7 +2057,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         *Ts: AnyType,
         ContextT: _HALFunctionEnqueuer,
     ](
-        read self,
+        imm self,
         ctx: ContextT,
         mut execution_config: ExecutionConfigType,
         *args: *Ts,

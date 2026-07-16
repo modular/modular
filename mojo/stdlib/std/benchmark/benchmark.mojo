@@ -564,7 +564,7 @@ def run[
     @always_inline
     def benchmark_fn(num_iters: Int) raises -> Int:
         @always_inline
-        def iter_fn() raises {read num_iters}:
+        def iter_fn() raises {imm num_iters}:
             for _ in range(num_iters):
                 func1()
 
@@ -619,7 +619,7 @@ def run[
     @always_inline
     def benchmark_fn(num_iters: Int) raises -> Int:
         @always_inline
-        def iter_fn() raises {read num_iters}:
+        def iter_fn() raises {imm num_iters}:
             for _ in range(num_iters):
                 func2()
 
@@ -674,7 +674,7 @@ def run[
     @always_inline
     def benchmark_fn(num_iters: Int) raises -> Int:
         @always_inline
-        def iter_fn() raises {read num_iters}:
+        def iter_fn() raises {imm num_iters}:
             for _ in range(num_iters):
                 func3()
 
@@ -729,7 +729,7 @@ def run[
     @always_inline
     def benchmark_fn(num_iters: Int) raises -> Int:
         @always_inline
-        def iter_fn() raises {read num_iters}:
+        def iter_fn() raises {imm num_iters}:
             for _ in range(num_iters):
                 func4()
 

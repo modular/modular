@@ -210,7 +210,7 @@ struct DeviceGraph(ImplicitlyCopyable):
         with DeviceContext() as ctx:
             var compiled_fn = ctx.compile_function[kernel]()
 
-            def build(mut builder: DeviceGraphBuilder) raises {read}:
+            def build(mut builder: DeviceGraphBuilder) raises {imm}:
                 _ = builder.add_function(
                     compiled_fn, grid_dim=1, block_dim=1, dependencies=[]
                 )
@@ -268,7 +268,7 @@ struct DeviceGraph(ImplicitlyCopyable):
         with DeviceContext() as ctx:
             var compiled_fn = ctx.compile_function[kernel]()
 
-            def build(mut builder: DeviceGraphBuilder) raises {read}:
+            def build(mut builder: DeviceGraphBuilder) raises {imm}:
                 _ = builder.add_function(
                     compiled_fn, 42, grid_dim=1, block_dim=1, dependencies=[]
                 )
@@ -326,7 +326,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     with DeviceContext() as ctx:
         var compiled_fn = ctx.compile_function[kernel]()
 
-        def build(mut builder: DeviceGraphBuilder) raises {read}:
+        def build(mut builder: DeviceGraphBuilder) raises {imm}:
             _ = builder.add_function(
                 compiled_fn, 42, grid_dim=1, block_dim=1, dependencies=[]
             )
@@ -587,7 +587,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
                 var i = global_idx.x
                 ptr[i] = Float32(i) * scale
 
-            def build(mut builder: DeviceGraphBuilder) raises {read}:
+            def build(mut builder: DeviceGraphBuilder) raises {imm}:
                 _ = builder.add_function(
                     scale_kernel, grid_dim=1, block_dim=256, dependencies=[]
                 )
@@ -714,7 +714,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             print("Value:", x)
 
         with DeviceContext() as ctx:
-            def build(mut builder: DeviceGraphBuilder) raises {read}:
+            def build(mut builder: DeviceGraphBuilder) raises {imm}:
                 _ = builder.add_function[kernel](
                     42, grid_dim=1, block_dim=1, dependencies=[]
                 )
@@ -1088,8 +1088,8 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             var buf_c = ctx.enqueue_create_buffer[DType.uint8](100)
             var host_src = ctx.enqueue_create_host_buffer[DType.uint8](100)
 
-            def build(mut builder: DeviceGraphBuilder) raises {read}:
-                def add_producers(mut b: DeviceGraphBuilder) raises {read} -> None:
+            def build(mut builder: DeviceGraphBuilder) raises {imm}:
+                def add_producers(mut b: DeviceGraphBuilder) raises {imm} -> None:
                     _ = b.add_memset(buf_a, UInt8(1), dependencies=[])
                     _ = b.add_memset(buf_b, UInt8(2), dependencies=[])
 

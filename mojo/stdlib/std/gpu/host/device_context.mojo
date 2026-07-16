@@ -2783,7 +2783,7 @@ struct DeviceFunction[
         self._handle = result
 
     def _copy_to_constant_memory(
-        read self, mapping: ConstantMemoryMapping
+        imm self, mapping: ConstantMemoryMapping
     ) raises:
         # const char *AsyncRT_DeviceFunction_copyToConstantMemory(
         #     const DeviceFunction *func,
@@ -2853,14 +2853,14 @@ struct DeviceFunction[
             .replace("\t;;#ASMEND\n", "")
         )
 
-    def _expand_path(read self, path: Path) -> Path:
+    def _expand_path(imm self, path: Path) -> Path:
         """If the path contains a `%` character, it is replaced with the module
         name. This allows one to dump multiple kernels which are disambiguated
         by the module name.
         """
         return String(path).replace("%", self._func_impl.module_name)
 
-    def _expand_path(read self, path: StaticString) -> Path:
+    def _expand_path(imm self, path: StaticString) -> Path:
         """If the path contains a `%` character, it is replaced with the module
         name. This allows one to dump multiple kernels which are disambiguated
         by the module name.
@@ -2872,7 +2872,7 @@ struct DeviceFunction[
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
-    ](read self) raises:
+    ](imm self) raises:
         """Dumps various representations of the compiled device function.
 
         This method dumps the assembly, LLVM IR, and/or SASS code for the compiled
@@ -2995,7 +2995,7 @@ struct DeviceFunction[
         *Ts: AnyType,
         ContextT: _FunctionEnqueuer,
     ](
-        read self,
+        imm self,
         ctx: ContextT,
         *args: *Ts,
         grid_dim: Dim,
@@ -3230,7 +3230,7 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         ContextT: _FunctionEnqueuer,
     ](
-        read self,
+        imm self,
         ctx: ContextT,
         *args: *Ts,
         grid_dim: Dim,
@@ -3645,7 +3645,7 @@ struct DeviceExternalFunction:
 
     @always_inline
     def _copy_to_constant_memory(
-        read self, mapping: ConstantMemoryMapping
+        imm self, mapping: ConstantMemoryMapping
     ) raises:
         """Copies data to constant memory for use by the device function.
 
@@ -3682,7 +3682,7 @@ struct DeviceExternalFunction:
     def _call_with_pack[
         *Ts: AnyType
     ](
-        read self,
+        imm self,
         ctx: DeviceContext,
         *args: *Ts,
         grid_dim: Dim,
@@ -6467,7 +6467,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
         def to_device_buffer(
             pointer: UnsafePointer[Scalar[dtype], _]
-        ) {read} -> DeviceBuffer[dtype]:
+        ) {imm} -> DeviceBuffer[dtype]:
             return DeviceBuffer[dtype](
                 self,
                 pointer,

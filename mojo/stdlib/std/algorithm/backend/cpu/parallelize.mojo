@@ -230,7 +230,7 @@ def _parallelize_impl[
     @always_inline
     def coarse_grained_func(
         thread_idx: Int,
-    ) {read func, read chunk_size, read extra_items,}:
+    ) {imm func, imm chunk_size, imm extra_items,}:
         # Calculate the consecutive range of work items this invocation is
         # responsible for.
         var start_idx = thread_idx * chunk_size + min(thread_idx, extra_items)
@@ -337,7 +337,7 @@ def parallelize_over_rows[
     @always_inline
     def task_func(
         task_id: Int,
-    ) {read func, read chunk_size, read num_rows,}:
+    ) {imm func, imm chunk_size, imm num_rows,}:
         var start_row = task_id * chunk_size
         var end_row = min((task_id + 1) * chunk_size, num_rows)
 

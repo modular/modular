@@ -1100,20 +1100,20 @@ struct DistributedEPDispatchBlockScaledNV:
         def launch_dispatch[
             index: Int
         ]() raises {
-            read output_tokens,
-            read output_scales,
-            read row_offsets,
-            read scales_offsets,
-            read expert_ids,
-            read src_info,
-            read atomic_counters,
-            read input_tokens,
-            read topk_ids,
-            read send_ptrs,
-            read recv_ptrs,
-            read recv_count_ptrs,
-            read input_scales,
-            read gpu_ctxs,
+            imm output_tokens,
+            imm output_scales,
+            imm row_offsets,
+            imm scales_offsets,
+            imm expert_ids,
+            imm src_info,
+            imm atomic_counters,
+            imm input_tokens,
+            imm topk_ids,
+            imm send_ptrs,
+            imm recv_ptrs,
+            imm recv_count_ptrs,
+            imm input_scales,
+            imm gpu_ctxs,
         }:
             var out_tokens = output_tokens[index].to_tile_tensor[DType.int64]()
             var out_scales = output_scales[index].to_tile_tensor[DType.int64]()
@@ -1209,18 +1209,18 @@ struct DistributedEPDispatchMXFP4:
         def launch_dispatch[
             index: Int
         ]() raises {
-            read output_tokens,
-            read output_scales,
-            read row_offsets,
-            read expert_ids,
-            read src_info,
-            read atomic_counters,
-            read input_tokens,
-            read topk_ids,
-            read send_ptrs,
-            read recv_ptrs,
-            read recv_count_ptrs,
-            read gpu_ctxs,
+            imm output_tokens,
+            imm output_scales,
+            imm row_offsets,
+            imm expert_ids,
+            imm src_info,
+            imm atomic_counters,
+            imm input_tokens,
+            imm topk_ids,
+            imm send_ptrs,
+            imm recv_ptrs,
+            imm recv_count_ptrs,
+            imm gpu_ctxs,
         }:
             var out_tokens = output_tokens[index].to_tile_tensor[DType.int64]()
             var out_scales = output_scales[index].to_tile_tensor[DType.int64]()
@@ -1294,17 +1294,17 @@ struct DistributedEPDispatch:
         def launch_dispatch[
             index: Int
         ]() raises {
-            read output_tokens,
-            read row_offsets,
-            read expert_ids,
-            read src_info,
-            read atomic_counters,
-            read input_tokens,
-            read topk_ids,
-            read send_ptrs,
-            read recv_ptrs,
-            read recv_count_ptrs,
-            read gpu_ctxs,
+            imm output_tokens,
+            imm row_offsets,
+            imm expert_ids,
+            imm src_info,
+            imm atomic_counters,
+            imm input_tokens,
+            imm topk_ids,
+            imm send_ptrs,
+            imm recv_ptrs,
+            imm recv_count_ptrs,
+            imm gpu_ctxs,
         }:
             var out_tokens = output_tokens[index].to_tile_tensor[DType.int64]()
             var format_handler = BF16TokenFormat[hidden_size, top_k](out_tokens)
@@ -1378,18 +1378,18 @@ struct DistributedEPDispatchFP8:
         def launch_dispatch[
             index: Int
         ]() raises {
-            read output_tokens,
-            read output_scales,
-            read row_offsets,
-            read expert_ids,
-            read src_info,
-            read atomic_counters,
-            read input_tokens,
-            read topk_ids,
-            read send_ptrs,
-            read recv_ptrs,
-            read recv_count_ptrs,
-            read gpu_ctxs,
+            imm output_tokens,
+            imm output_scales,
+            imm row_offsets,
+            imm expert_ids,
+            imm src_info,
+            imm atomic_counters,
+            imm input_tokens,
+            imm topk_ids,
+            imm send_ptrs,
+            imm recv_ptrs,
+            imm recv_count_ptrs,
+            imm gpu_ctxs,
         }:
             var out_tokens = output_tokens[index].to_tile_tensor[DType.int64]()
             var out_scales = output_scales[index].to_tile_tensor[DType.int64]()
@@ -1464,15 +1464,15 @@ struct DistributedEPCombine:
         def launch_combine[
             index: Int
         ]() raises {
-            read output_tokens,
-            read input_tokens,
-            read src_info,
-            read send_ptrs,
-            read recv_ptrs,
-            read recv_count_ptrs,
-            read router_weights,
-            read atomic_counters,
-            read gpu_ctxs,
+            imm output_tokens,
+            imm input_tokens,
+            imm src_info,
+            imm send_ptrs,
+            imm recv_ptrs,
+            imm recv_count_ptrs,
+            imm router_weights,
+            imm atomic_counters,
+            imm gpu_ctxs,
         }:
             var rw_tensor = router_weights[index].to_tile_tensor[DType.int64]()
 

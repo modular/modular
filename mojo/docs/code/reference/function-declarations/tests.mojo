@@ -363,7 +363,7 @@ def test_square() raises:
 
 
 def outer(x: Int) -> Int:
-    def inner() {read} -> Int:
+    def inner() {imm} -> Int:
         return x + 1
 
     return inner()

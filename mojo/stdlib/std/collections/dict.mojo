@@ -1961,7 +1961,7 @@ struct StringDict[V: Movable](
         # TODO(MOCO-4295): forwarding this *existential* (`Some[def(...)]`)
         # closure straight to `Dict.deinit_with` doesn't compile — its `K`
         # won't bind to `String`. Drop this wrapper once fixed.
-        def forward(var key: String, var value: Self.V) {read deinit_func}:
+        def forward(var key: String, var value: Self.V) {imm deinit_func}:
             deinit_func(key^, value^)
 
         self._dict^.deinit_with(forward)

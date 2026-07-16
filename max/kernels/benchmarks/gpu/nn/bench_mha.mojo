@@ -157,7 +157,7 @@ def run_mha[
 
             b.iter_custom[_kernel_launch](ctx)
 
-        def compute_flops() {read} -> Int:
+        def compute_flops() {imm} -> Int:
             # Using causal mask, skip half of tiles.
             return 2 * batch_size * num_heads * seq_len * num_keys * depth
 

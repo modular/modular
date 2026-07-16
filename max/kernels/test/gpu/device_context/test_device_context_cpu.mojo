@@ -44,7 +44,7 @@ def test_func_closure_writes_to_memory(ctx: DeviceContext) raises:
     ptr[] = 0
     var expected = 42
 
-    def write_val() {read}:
+    def write_val() {imm}:
         ptr[] = expected
 
     ctx.enqueue_cpu_function(write_val)
