@@ -344,8 +344,7 @@ struct TypeDeclInfo {
   /// move, or destructor members.
   bool isRegisterPassableTrivial(Type type) const;
 
-  SpecialMemberInfo getDestructorForType(Type type,
-                                         FuncTypeGeneratorType fnContext,
+  SpecialMemberInfo getDestructorForType(Type type, FunctionLikeOp fnContext,
                                          Location loc) const;
   TypedAttr getMoveInitForType(Type type, Location loc) const;
 
@@ -423,8 +422,8 @@ static SpecialMemberInfo getSpecialMemberForType(
 
 /// Given a function context, return the constraints known from the context.
 static SmallVector<ConstraintAttr>
-getConstraintsFromContext(FuncTypeGeneratorType fnContext) {
-  PogListAttr paramList = fnContext.getParamListAttrs();
+getConstraintsFromContext(FunctionLikeOp fnContext) {
+  PogListAttr paramList = fnContext.getFuncTypeGenerator().getParamListAttrs();
   SmallVector<ConstraintAttr> assumptions(paramList.getBodyConstraints());
   return assumptions;
 }
@@ -432,7 +431,7 @@ getConstraintsFromContext(FuncTypeGeneratorType fnContext) {
 /// Refine a generic trait-bound type parameter using where-clause constraints
 /// from the enclosing function signature.
 static TraitType refineWithContextualWhereClauses(
-    ParamType genericOfTraitType, FuncTypeGeneratorType fnContext,
+    ParamType genericOfTraitType, FunctionLikeOp fnContext,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
   // We know this is a parameter of trait type. If we can't refine it, then that
   // will be the default result:
@@ -472,9 +471,9 @@ static TraitType refineWithContextualWhereClauses(
 
 /// Given the RValue type for a value that needs to be destroyed, return the
 /// destructor the invoke, or null if there is none.
-SpecialMemberInfo
-TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
-                                   Location loc) const {
+SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type,
+                                                     FunctionLikeOp fnContext,
+                                                     Location loc) const {
 
   // If all the types in the trait composition are linear, then the trait
   // itself is linear.  If any of them is ImplicitlyDeletable, then the
@@ -1008,6 +1007,9 @@ struct ValueSet {
   ValueSet(PerThreadCache &perThreadCache, FunctionLikeOp func,
            bool extendTrivialDebugLifetimes = false);
 
+  /// Return the function/closure we're analyzing.
+  FunctionLikeOp getFunc() const { return func; }
+
   /// Return the number of values we are tracking.
   MutableArrayRef<ValueInfo> getValueInfos() { return valueInfos; }
   ValueInfo &getValueInfo(size_t idx) { return valueInfos[idx]; }
@@ -1077,8 +1079,7 @@ struct ValueSet {
   /// past their last use.  Without the kill marker, the -O0
   /// dbg.value→dbg.declare conversion gives them stable stack slots,
   /// keeping them visible for the whole scope.
-  bool shouldSuppressDebugKill(const ValueInfo &info,
-                               FuncTypeGeneratorType fnContext) const {
+  bool shouldSuppressDebugKill(const ValueInfo &info) const {
     if (!extendTrivialDebugLifetimes || !info.debugVariable)
       return false;
     if (!info.value)
@@ -1094,7 +1095,7 @@ struct ValueSet {
       eltType = info.value.getType();
     }
     SpecialMemberInfo dtorInfo =
-        perThreadCache.typeDeclInfo.getDestructorForType(eltType, fnContext,
+        perThreadCache.typeDeclInfo.getDestructorForType(eltType, func,
                                                          info.value.getLoc());
     // Suppress kill when no non-trivial destructor will be emitted.
     return dtorInfo.isUnavailable() || !dtorInfo.getMember();
@@ -3001,10 +3002,8 @@ namespace {
 class DestructorInserter {
 public:
   DestructorInserter(ImplicitLocOpBuilder builder, ValueSet &valueSet,
-                     std::vector<InFlightDiagnostic> &diagsToEmit,
-                     FuncTypeGeneratorType fnSignature)
-      : builder(builder), valueSet(valueSet), fnSignature(fnSignature),
-        diagsToEmit(diagsToEmit) {}
+                     std::vector<InFlightDiagnostic> &diagsToEmit)
+      : builder(builder), valueSet(valueSet), diagsToEmit(diagsToEmit) {}
 
   /// This method indicates that the specified value needs to be destroyed after
   /// this operation.  If 'fieldsToDestroy' is non-empty then it specifies which
@@ -3065,9 +3064,6 @@ public:
 
 private:
   ValueSet &valueSet;
-
-  /// This is the signature of the current function we're emitting into.
-  FuncTypeGeneratorType fnSignature;
 
   /// This is a set of warnings to emit from this pass.  We buffer them and then
   /// emit them at the end of the pass, because dtor insertion is "bottom up"
@@ -3191,7 +3187,7 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
       if (info.debugVariable &&
           (consumedValues.empty() ||
            valueRef.getNumBits() == consumedValues.size()) &&
-          !valueSet.shouldSuppressDebugKill(info, fnSignature)) {
+          !valueSet.shouldSuppressDebugKill(info)) {
         DebugInfo::KillOp::create(builder, info.debugVariable);
       }
     }
@@ -3261,7 +3257,7 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
       ValueRef::getDereferencedType(value.getType(), valueRef.isIndirect);
 
   SpecialMemberInfo dtorInfo = valueSet.getTypeDeclInfo().getDestructorForType(
-      destroyedType, fnSignature, builder.getLoc());
+      destroyedType, valueSet.getFunc(), builder.getLoc());
 
   // If there is no destructor, then this is either a trivial type or a
   // linear type.  If linear, emit the error message.
@@ -3428,7 +3424,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   // predictably generate an error message when an implicit destructor (such as
   // what we're processing in this code) is needed.
   auto dtorInfo = valueSet.getTypeDeclInfo().getDestructorForType(
-      cast<RefType>(copySrcMem.getType()).getElementType(), fnSignature,
+      cast<RefType>(copySrcMem.getType()).getElementType(), valueSet.getFunc(),
       opWithUse->getLoc());
   if (dtorInfo.isUnavailable())
     return DtorEmissionResult::KeepOp;
@@ -3833,11 +3829,10 @@ struct DestructorInsertion {
     result.breakSet = existing.breakSet;
     result.continueSet = existing.continueSet;
     result.dryRun = existing.dryRun;
-    result.fnSignature = existing.fnSignature;
     return result;
   }
 
-  void scanFunction(FunctionLikeOp func);
+  void scanFunction();
   void scanBlock(Block &body);
 
   LLVM_DUMP_METHOD void dump() const;
@@ -3871,9 +3866,6 @@ private:
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
-
-  /// This is the signature of the current function being analyzed.
-  FuncTypeGeneratorType fnSignature;
 
   /// This is the set of values known to be used below this point, so they
   /// should not be destroyed if there are uses.  Any use of a value /not/ in
@@ -3937,15 +3929,14 @@ private:
   os.flush();
 }
 
-void DestructorInsertion::scanFunction(FunctionLikeOp func) {
-  fnSignature = func.getFuncTypeGenerator();
-
+void DestructorInsertion::scanFunction() {
   consumedValues.resize(valueSet.getNumTotalBits());
   // Slot 0 indicates this block is reachable.  This will be cleared if an
   // 'unreachable' operation is noticed.
   consumedValues.set(0);
 
   // Scan the body of the function.
+  FunctionLikeOp func = valueSet.getFunc();
   Block &funcBody = func.getBodyRegion().front();
   scanBlock(funcBody);
 
@@ -3968,8 +3959,7 @@ void DestructorInsertion::scanFunction(FunctionLikeOp func) {
         loc = FusedLoc::get(loc.getContext(), {loc}, scope);
 
       ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
-      DestructorInserter dtorInserter(builder, valueSet, diagsToEmit,
-                                      fnSignature);
+      DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
       checkUse(argValue, /*isDeref=*/isIndirect, dtorInserter);
       dtorInserter.emitDestructors();
     }
@@ -4030,8 +4020,7 @@ void DestructorInsertion::scanBlock(Block &block) {
     // they are for values used by it.
     ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(),
                                  std::next(Block::iterator(&op)));
-    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit,
-                                    fnSignature);
+    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
 
     assert((resultEffects.size() == op.getNumResults() ||
             overall == OverallOpValueEffect::ifLikeOp) &&
@@ -4242,8 +4231,7 @@ void DestructorInsertion::checkIfLikeOp(
     // Insert any dtors after the 'if'.
     ImplicitLocOpBuilder builder(ifElseOp.getLoc(), ifElseOp.getBlock(),
                                  std::next(Block::iterator(&ifElseOp)));
-    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit,
-                                    fnSignature);
+    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
     for (auto [result, effect] :
          llvm::zip(ifElseOp.getResults(), resultEffects)) {
       switch (effect) {
@@ -4618,7 +4606,7 @@ void DestructorInsertion::checkConsume(Value value, Operation &op, bool isDeref,
     const ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
     if (info.debugVariable && valueRef.startBit == info.startValueBit &&
         valueRef.endBit == info.endValueBit &&
-        !valueSet.shouldSuppressDebugKill(info, fnSignature)) {
+        !valueSet.shouldSuppressDebugKill(info)) {
       DebugInfo::KillOp::create(builder, info.debugVariable);
     }
 
@@ -4725,8 +4713,7 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
 
     // Destructor call goes ahead of the mutation, not after.
     ImplicitLocOpBuilder builder(op.getLoc(), &op);
-    DestructorInserter beforeDtorInserter(builder, valueSet, diagsToEmit,
-                                          fnSignature);
+    DestructorInserter beforeDtorInserter(builder, valueSet, diagsToEmit);
     beforeDtorInserter.add(value, /*Just do it*/ ValueRef(0, 0, 0, isDeref));
     beforeDtorInserter.emitDestructors();
   }
@@ -5031,8 +5018,7 @@ void DestructorInsertion::destroyValuesAtEntryIfNeeded(
 
   // Any dtor calls will be emitted at the start of the block.
   DestructorInserter dtorInserter(
-      ImplicitLocOpBuilder(loc, &block, block.begin()), valueSet, diagsToEmit,
-      fnSignature);
+      ImplicitLocOpBuilder(loc, &block, block.begin()), valueSet, diagsToEmit);
 
   int nextToDestroy = entriesToDestroy.find_first();
   while (nextToDestroy != -1) {
@@ -5137,7 +5123,7 @@ LogicalResult CheckLifetimes::processFunction(FunctionLikeOp func,
 
   // Walk #3: Scan the function bottom-up, inserting destructor calls, inserting
   // lifetime markers, and eliding temporaries.
-  DestructorInsertion(valueSet).scanFunction(func);
+  DestructorInsertion(valueSet).scanFunction();
 
   // Now that we've transformed the function, look for any vardecls that only
   // have lifetime markers.  They can be removed, because all their uses got
