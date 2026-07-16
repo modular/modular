@@ -158,6 +158,7 @@ _WARM_FAMILIES = [
     "matmul",
     "unary",
     "binary",
+    "reduce_axis",
 ]
 
 # CPU fragment per family: no --target -> lane-independent (cfg=exec), shared.

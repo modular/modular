@@ -45,10 +45,6 @@ EXTRA_DEPS = {
         "//max:nn",
         "//max:extensibility",
     ],
-    "softmax_ops": [
-        "//max:nn",
-        "//max:layout",
-    ],
     "select_ops": [
         "//max:builtin_kernels",
     ],

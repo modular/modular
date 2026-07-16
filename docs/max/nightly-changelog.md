@@ -408,6 +408,15 @@ This version is still a work in progress.
   float16/bfloat16 CPU inputs the Mojo path accepted are no longer supported
   and raise.
 
+- The eager interpreter's reduce-along-axis ops (`max`/`min`/`add`/`mul`/`mean`
+  reductions, `softmax`/`logsoftmax`, `argmax`/`argmin`, and `cumsum`) now run
+  through pre-compiled graph-compiler models instead of hand-written Mojo
+  bindings. On CPU the reduction/argmax family runs float32/float64: the
+  float16/bfloat16 CPU inputs the Mojo path accepted are no longer supported
+  and raise. On accelerators it narrows to 32/64-bit integers (CUDA's reduce
+  kernels don't compile 8/16-bit int reduction). An unsupported dtype raises
+  immediately instead of silently falling back.
+
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
   machine's devices and drops a stamp. A later lazy eager process on the same
