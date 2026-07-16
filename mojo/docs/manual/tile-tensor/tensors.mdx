@@ -54,9 +54,9 @@ different order. These views all access the same data, so changing the stored
 data in one view changes the data seen by all of the views.
 
 Each element in a tensor can be either a single (scalar) value or a SIMD vector
-of values. This is determined by the `element_size` parameter on the tensor.
-For more information,
-see [Vectorizing tensors](#vectorizing-tensors).
+of values. This is reflected by the tensor's `element_size`, which is derived
+from its `Storage` parameter (`PointerStorage[element_width=N]`). For more
+information, see [Vectorizing tensors](#vectorizing-tensors).
 
 :::note TileTensor and LayoutTensor
 
@@ -124,12 +124,15 @@ paths for loading and storing data.
 The `__getitem__()` method returns a SIMD vector of elements, where the size of
 the vector is equal to the `element_size` of the tensor (default 1). As long
 as the `element_size` is known to be 1 at the call site, you can treat the
-return value as a scalar value. For example, the following function takes a
-`TileTensor` with `element_size=1`, so you can cast the element value directly
-to an `Int`.
+return value as a scalar value. For example, the following function constrains
+its parameter to a non-vectorized tensor using the default storage
+(`Storage=PointerStorage[element_width=1]`), so you can cast the element value
+directly to an `Int`.
 
 ```mojo
-def takes_scalar_tensor(tensor: TileTensor[DType.int32, element_size=1, ...]) -> Int:
+def takes_scalar_tensor(
+    tensor: TileTensor[DType.int32, Storage=PointerStorage[element_width=1], ...]
+) -> Int:
     comptime assert tensor.flat_rank == 2
     return Int(tensor[1, 1])
 ```

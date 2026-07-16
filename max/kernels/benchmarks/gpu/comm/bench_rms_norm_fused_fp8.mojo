@@ -87,7 +87,7 @@ def bench_rms_norm_fused_fp8[
     # Create TileTensor for gamma
     var gamma_tensor = TileTensor(gamma_d, row_major(Coord(param_shape)))
 
-    var epsilon = Scalar[in_dtype](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[in_dtype](0.0)
 
     # Copy data to device (initialize the whole buffer when cache busting)
@@ -148,7 +148,13 @@ def bench_rms_norm_fused_fp8[
 
             rms_norm_gpu[
                 rank, input_fn, rms_output_fn, multiply_before_cast=True
-            ](Coord(shape), gamma_tensor, epsilon, weight_offset, ctx)
+            ](
+                Coord(shape),
+                gamma_tensor,
+                epsilon,
+                weight_offset,
+                ctx,
+            )
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -327,7 +333,13 @@ def bench_rms_norm_fused_fp8[
     # Run RMS norm
     rms_norm_gpu[
         rank, input_fn_verify, rms_output_fn_verify, multiply_before_cast=True
-    ](Coord(shape), gamma_tensor, epsilon, weight_offset, ctx)
+    ](
+        Coord(shape),
+        gamma_tensor,
+        epsilon,
+        weight_offset,
+        ctx,
+    )
 
     # Run FP8 quantization on RMS norm output
     @always_inline

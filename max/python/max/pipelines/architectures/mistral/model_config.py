@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
@@ -117,6 +117,7 @@ class MistralConfig(
             cache_dtype=cache_dtype,
         )
 
+        assert isinstance(kv_params, MHAKVCacheParams)
         return cls(
             hidden_size=huggingface_config.hidden_size,
             num_attention_heads=huggingface_config.num_attention_heads,

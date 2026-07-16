@@ -4,7 +4,7 @@ sidebar_label: Function declarations
 sidebar_position: 7
 description: >
   Reference for Mojo function declaration syntax. Covers
-  signatures, passing conventions, markers, variadic
+  signatures, argument conventions, markers, variadic
   arguments, effects, return types, and special methods.
 ---
 
@@ -131,13 +131,11 @@ PEP 3102.
 compiler deduces inferred parameters from call-site arguments:
 
 ```mojo
-from std.reflection import reflect
-
 def inferred_type[T: Writable, //](value: T):
     print(t"Value is {value}. Type is {reflect[T].name()}.")
 
 def main():
-    inferred_type(5)       # Value is 5. Type is Int.
+    inferred_type(5)       # Value is 5. Type is SIMD[DType.int, 1].
     inferred_type("Hello") # Value is Hello. Type is String.
 ```
 
@@ -325,10 +323,10 @@ def wrong(x: Int where x > 0):
     pass
 ```
 
-## Argument passing conventions
+## Argument conventions
 
-A *passing convention* controls how a value passes to a
-function. It appears before the argument name.
+An *argument convention* controls how an argument value passes to a function. It
+appears before the argument name.
 
 ### `mut`
 
@@ -510,7 +508,7 @@ error type can follow `raises`:
 def parse(text: String) raises -> Int:
     # ...
 
-def parse_strict(text: String) raises ValueError -> Int:
+def parse_strict(text: String) raises SomeError -> Int:
     # ...
 ```
 
@@ -555,6 +553,7 @@ def main() raises:
         "sqrt"
     )
     print(sqrt(4.0))  # 2.0
+    _ = lib  # Keep the library handle alive until the call is done
 ```
 
 :::caution
@@ -624,15 +623,15 @@ constructor.
 ### Move constructor
 
 A move constructor is an `__init__` with a single
-keyword-only argument named `take`:
+keyword-only argument named `move`:
 
 ```mojo
-def __init__(out self, *, deinit take: Self):
-    self.x = take.x
-    self.y = take.y
+def __init__(out self, *, deinit move: Self):
+    self.x = move.x
+    self.y = move.y
 ```
 
-The `take` argument must use the `deinit` convention. Move
+The `move` argument must use the `deinit` convention. Move
 constructors can't raise.
 
 :::note

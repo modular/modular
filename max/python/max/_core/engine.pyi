@@ -382,6 +382,54 @@ class DebugConfig:
     @op_log_level.setter
     def op_log_level(self, arg: str, /) -> None: ...
     @property
+    def profiling_enabled(self) -> bool:
+        """
+        A boolean master switch for the libkineto-backed HTA/Dynolog profiler. Defaults to ``False``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_ENABLED`` environment variable. Currently a no-op; takes effect once ``session.profiling.start()`` drives trace collection.
+        """
+
+    @profiling_enabled.setter
+    def profiling_enabled(self, arg: bool, /) -> None: ...
+    @property
+    def profiling_output_path(self) -> str:
+        """
+        Where to write the Chrome-trace JSON. Accepts a file path; supports ``{pid}`` and ``{rank}`` template substitution and directory mode (existing-directory paths auto-generate ``trace_rank<rank>_<pid>_<unix-ts>_<seq>.json`` inside). An empty value lets ``Range.cpp`` fall back to its built-in default. Mirrored by ``MODULAR_MAX_DEBUG_PROFILING_OUTPUT_PATH``.
+        """
+
+    @profiling_output_path.setter
+    def profiling_output_path(self, arg: str, /) -> None: ...
+    @property
+    def profiling_dynolog_enabled(self) -> bool:
+        """
+        Whether the Dynolog IPC listener is active. Defaults to ``True``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_DYNOLOG_ENABLED`` environment variable. Currently a no-op; takes effect once Dynolog integration is available.
+        """
+
+    @profiling_dynolog_enabled.setter
+    def profiling_dynolog_enabled(self, arg: bool, /) -> None: ...
+    @property
+    def profiling_warmup_steps(self) -> int:
+        """
+        Number of ``model.execute()`` iterations to skip before active trace recording begins. Defaults to ``0``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_WARMUP_STEPS`` environment variable. Currently a no-op; takes effect once ``session.profiling.start()`` drives trace collection.
+        """
+
+    @profiling_warmup_steps.setter
+    def profiling_warmup_steps(self, arg: int, /) -> None: ...
+    @property
+    def profiling_active_steps(self) -> int:
+        """
+        Number of ``model.execute()`` iterations to record once warmup completes. Defaults to ``10``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_ACTIVE_STEPS`` environment variable. Currently a no-op; takes effect once ``session.profiling.start()`` drives trace collection.
+        """
+
+    @profiling_active_steps.setter
+    def profiling_active_steps(self, arg: int, /) -> None: ...
+    @property
+    def profiling_periodic_flush_seconds(self) -> int:
+        """
+        Cadence (in seconds) at which in-flight trace chunks are flushed to disk. Defaults to ``60``. Mirrored by the ``MODULAR_MAX_DEBUG_PROFILING_PERIODIC_FLUSH_SECONDS`` environment variable. Currently a no-op; today the trace is written synchronously when profiling stops.
+        """
+
+    @profiling_periodic_flush_seconds.setter
+    def profiling_periodic_flush_seconds(self, arg: int, /) -> None: ...
+    @property
     def assert_level(self) -> str:
         r"""
         A string that sets the Mojo assertion level for compiled kernels. One of ``\'\'``, ``'none'``, ``'warn'``, ``'safe'``, ``'all'``. Higher levels enable more runtime checks (e.g. LayoutTensor bounds) at a performance cost. Takes effect at model build time.
@@ -479,6 +527,7 @@ class InferenceSession:
         model: types.CapsuleType,
         custom_extensions: Sequence[str | os.PathLike],
         pipeline_name: str,
+        tile_based_fusion: bool = False,
     ) -> max._core.mlrt.AsyncValue[CompiledModels]:
         """
         Compiles a model from an in-memory capsule object.
@@ -487,6 +536,8 @@ class InferenceSession:
             model: A capsule containing the compiled model object.
             custom_extensions: Paths to custom Mojo extension libraries.
             pipeline_name: Name identifier for the compiled pipeline.
+            tile_based_fusion: When ``True``, compile the graph under the
+                tile-based programming model. Defaults to ``False``.
 
         Returns:
             CompiledModels: The compiled artifact, ready to be initialized

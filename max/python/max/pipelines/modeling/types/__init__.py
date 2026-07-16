@@ -39,6 +39,7 @@ from .pipeline import (
 )
 from .pipeline_variants import (
     BatchType,
+    CompletedBatchStats,
     EmbeddingsContext,
     EmbeddingsGenerationContextType,
     EmbeddingsGenerationInputs,
@@ -72,6 +73,8 @@ from .utils import (
     SharedMemoryArray,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
+    msgpack_numpy_oob_decoder,
+    msgpack_numpy_oob_encoder,
 )
 
 PipelinesFactory = Callable[
@@ -83,6 +86,7 @@ __all__ = [
     "BatchLogitsProcessor",
     "BatchProcessorInputs",
     "BatchType",
+    "CompletedBatchStats",
     "EmbeddingsContext",
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",
@@ -126,4 +130,6 @@ __all__ = [
     "VideoContentPart",
     "msgpack_numpy_decoder",
     "msgpack_numpy_encoder",
+    "msgpack_numpy_oob_decoder",
+    "msgpack_numpy_oob_encoder",
 ]

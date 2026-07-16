@@ -494,7 +494,7 @@ struct IntervalTree[
             Self._del_helper(node[].left().value())
         if node[].right():
             Self._del_helper(node[].right().value())
-        node.destroy_pointee()
+        node.unsafe_deinit_pointee()
         dealloc(
             ThinAllocation(unsafe_assume_ownership=node).unsafe_with_layout(
                 {count = 1}
@@ -659,7 +659,7 @@ struct IntervalTree[
         var new_node = alloc(
             Layout[_IntervalNode[Self.T, Self.U]].single()
         ).unsafe_leak()
-        new_node.init_pointee_move(_IntervalNode(interval, data))
+        new_node.unsafe_write(_IntervalNode(interval, data))
         self._len += 1
 
         # If the tree is empty, set the root to the new node and color it black.

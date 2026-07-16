@@ -172,7 +172,7 @@ struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
     ):
         (memory.bitcast[Byte]() + Self._LineByteOffset).bitcast[
             Int
-        ]().init_pointee_move(Self._LineNiche)
+        ]().unsafe_write(Self._LineNiche)
 
     @staticmethod
     @always_inline

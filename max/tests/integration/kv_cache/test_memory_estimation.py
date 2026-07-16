@@ -18,6 +18,8 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
+    MHAKVCacheParams,
+    MLAKVCacheParams,
     compute_num_device_blocks,
     compute_num_host_blocks,
     estimated_memory_size,
@@ -34,7 +36,7 @@ def create_params(
     dtype: DType = DType.float32,
     quantization_config: KVCacheQuantizationConfig = KVCacheQuantizationConfig(),
 ) -> KVCacheParams:
-    return KVCacheParams(
+    return MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -213,7 +215,7 @@ def test_bytes_per_block() -> None:
     page_size = 128
     data_parallel_degree = 1
 
-    params = KVCacheParams(
+    params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -267,20 +269,20 @@ def test_quantized_kv_cache() -> None:
 
 def _create_mla_params(tp: int, is_mla: bool = True) -> KVCacheParams:
     """Create KVCacheParams for MLA with local connector and host swap space."""
-    return KVCacheParams(
+    shared_kwargs = dict(
         dtype=DType.float32,
-        n_kv_heads=8,
         head_dim=128,
         num_layers=1,
         page_size=128,
         data_parallel_degree=1,
         devices=[DeviceRef.GPU(i) for i in range(tp)],
-        is_mla=is_mla,
-        num_q_heads=32 if is_mla else None,
         enable_prefix_caching=True,
         kv_connector=KVConnectorType.local,
         host_kvcache_swap_space_gb=1,
     )
+    if is_mla:
+        return MLAKVCacheParams(num_q_heads=32, **shared_kwargs)  # type: ignore[arg-type]
+    return MHAKVCacheParams(n_kv_heads=8, **shared_kwargs)  # type: ignore[arg-type]
 
 
 def test_host_blocks_mla_tp_scaling() -> None:

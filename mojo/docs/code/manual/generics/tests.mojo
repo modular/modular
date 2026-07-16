@@ -28,7 +28,7 @@
 # Renamed to coexist in one file (the page names both `Pair`):
 #   - Generic types -> `Pair`; parts conformance -> `HashablePair`.
 from std.testing import assert_equal, assert_false, assert_true
-
+from std.sys.info import is_64bit
 
 # --- Intro: value parameter alongside a type parameter ---
 # The page bounds `T` as `Comparable & ImplicitlyCopyable & ImplicitlyDeletable`
@@ -102,7 +102,7 @@ struct SomeStruct:
 
 def represent[T: AnyType](v: T) -> String:
     comptime if conforms_to(T, Writable):
-        return String(trait_downcast[Writable](v))
+        return String(v)
     else:
         return String(t"{reflect[T].name()}")
 
@@ -244,7 +244,7 @@ def test_mixing_type_and_value() raises:
     assert_equal(ExampleStruct().example[Int, 3]("x:", 7), "x:777")
 
 
-# --- Downcasting safely: `conforms_to` + `trait_downcast()` ---
+# --- Type refinement: `conforms_to` ---
 # The page prints the result; this returns a String so it can be asserted.
 
 
@@ -252,15 +252,12 @@ def process[T: AnyType](value: T) -> String:
     comptime if conforms_to(
         T, Writable & ImplicitlyCopyable & ImplicitlyDeletable
     ):
-        var w = trait_downcast[
-            Writable & ImplicitlyCopyable & ImplicitlyDeletable
-        ](value)
-        return String(w)
+        return String(value)
     else:
         return "<not writable>"
 
 
-def test_downcasting() raises:
+def test_type_refinement() raises:
     assert_equal(process(42), "42")
     assert_equal(process("Hello, Mojo!"), "Hello, Mojo!")
     assert_equal(process(3.14), "3.14")
@@ -316,7 +313,7 @@ struct Wrapper[T: BaseTraits](
     var value: Self.T
 
     def __bool__(self) -> Bool where conforms_to(Self.T, Boolable):
-        return trait_downcast[Boolable](self.value).__bool__()
+        return self.value.__bool__()
 
 
 @fieldwise_init
@@ -411,6 +408,50 @@ def test_value_param_conformance() raises:
     assert_true(conforms_to(type_of(s), Writable))
 
 
+# Gate a function on a trait with a where clause.
+def describe[T: AnyType](value: T) -> String where conforms_to(T, Writable):
+    return String(value)
+
+
+# Combine checks with `and`.
+def describe_copyable[
+    T: AnyType
+](value: T) -> String where conforms_to(T, Writable) and conforms_to(
+    T, Copyable
+):
+    return String(value)
+
+
+# A numeric fact on a parameter: a power-of-two width.
+def block[w: Int]() -> Int where w.is_power_of_two():
+    return w
+
+
+# A DType kind predicate on a parameter.
+def float_only[dt: DType]() -> Bool where dt.is_floating_point():
+    return True
+
+
+def test_where_clauses() raises:
+    assert_equal(describe(2), "2")  # Int is Writable
+    assert_equal(describe("hello"), "hello")  # String is Writable
+    assert_equal(describe_copyable(7), "7")  # Writable and Copyable
+    assert_equal(block[8](), 8)  # 8 is a power of two
+    assert_true(float_only[DType.float32]())  # float32 is floating point
+    # process(non_writable) would be a COMPILE error (fails the where);
+    # a runtime test can't assert a compile error.
+
+
+# Contrast: is_64bit() works in `comptime if`, NOT in a `where` clause.
+def test_comptime_if_machine() raises:
+    var w: Int
+    comptime if is_64bit():
+        w = 64
+    else:
+        w = 32
+    assert_equal(w, 64)
+
+
 def main() raises:
     test_count_above()
     test_all_equal()
@@ -420,11 +461,13 @@ def main() raises:
     test_where_some_wont_work()
     test_generic_types()
     test_mixing_type_and_value()
-    test_downcasting()
+    test_type_refinement()
     test_make_filled()
     test_conditional_conformance()
     test_parts_conformance()
     test_value_param_conformance()
+    test_where_clauses()
+    test_comptime_if_machine()
 
     # Compile-only examples: confirm the signature-only snippets build.
     my_generic_fn(42)

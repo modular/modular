@@ -16,19 +16,20 @@ from std.math import align_down, ceildiv, iota
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target
 
-from std.algorithm import elementwise, parallel_memcpy, sync_parallelize
+from std.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
 from std.algorithm.functional import tile
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
 from layout import (
     Coord,
     Idx,
+    PointerStorage,
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
     row_major,
 )
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from extensibility import ManagedTensorSlice
@@ -329,7 +330,14 @@ def gather[
         comptime assert indices_coords.flat_rank == indices.flat_rank
         comptime assert input_coords.flat_rank == input.flat_rank
 
-        comptime if prefetch_offset > 0:
+        # `ptr_at_offset` (the software index-prefetch below) is only defined
+        # for `PointerStorage`-backed tiles; skip the prefetch hint for other
+        # storages (e.g. `DevicePointerStorage`). Correctness is unaffected.
+        comptime if (
+            prefetch_offset > 0
+            and indices.Storage == PointerStorage[element_width=1]
+            and input.Storage == PointerStorage[element_width=1]
+        ):
             var indices_ptr = indices.ptr_at_offset(indices_coords)
             var indices_remaining = (
                 Int(end_indices_ptr) - Int(indices_ptr)
@@ -781,7 +789,7 @@ def scatter_nd_generator[
             )
 
         comptime if is_cpu[target]():
-            memcpy(
+            unsafe_memcpy(
                 dest=output_flat.ptr,
                 src=data_flat.ptr,
                 count=output_flat.num_elements(),
@@ -1214,12 +1222,15 @@ def gather_shape[
 
 @always_inline
 def scatter_elements[
-    reduce_fn: def[dtype: DType, width: SIMDSize](
-        SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing -> SIMD[dtype, width],
     rank: Int,
     input_type: DType,
     indices_type: DType,
+    *,
+    ReduceFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[dtype: DType, width: SIMDSize](
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) -> SIMD[dtype, width],
 ](
     input: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     indices: ManagedTensorSlice[dtype=indices_type, rank=rank, ...],
@@ -1227,6 +1238,7 @@ def scatter_elements[
     _axis: Int,
     output: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     ctx: DeviceContext,
+    reduce_fn: ReduceFn,
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
@@ -1252,16 +1264,16 @@ def scatter_elements[
 
     var axis = _axis if _axis >= 0 else _axis + rank
 
-    # Do serial or parallel memcpy depending on output size.
-    parallel_memcpy(
+    # Do serial or parallel unsafe_memcpy depending on output size.
+    unsafe_parallel_memcpy(
         dest=output.unsafe_ptr(), src=input.unsafe_ptr(), count=output.size()
     )
 
     var input_ax_dim = input.dim_size(axis)
 
-    @__copy_capture(axis, input_ax_dim)
-    @parameter
-    def update_func[simd_width: Int, alignment: Int = 1](indices_coords: Coord):
+    def update_func[
+        simd_width: Int, alignment: Int = 1
+    ](indices_coords: Coord) {var}:
         var idx_on_axis = indices.to_tile_tensor()[indices_coords]
         var output_coords = coord_to_index_list(indices_coords)
         output_coords[axis] = Int(
@@ -1269,11 +1281,11 @@ def scatter_elements[
         )
         var curr = output.to_tile_tensor()[Coord(output_coords)]
         output.to_tile_tensor()[Coord(output_coords)] = reduce_fn[
-            input_type, 1
+            dtype=input_type, width=1
         ](curr, updates.to_tile_tensor()[indices_coords])
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[update_func, 1](indices.shape_coord(), ctx)
+    elementwise[1](update_func, indices.shape_coord(), ctx)
 
 
 @always_inline
@@ -1368,9 +1380,9 @@ def gather_elements[
 
     var input_ax_dim = Int(input.dim(axis))
 
-    @__copy_capture(input_ax_dim, axis)
-    @parameter
-    def gather_func[simd_width: Int, alignment: Int = 1](output_coords: Coord):
+    def gather_func[
+        simd_width: Int, alignment: Int = 1
+    ](output_coords: Coord) {var}:
         comptime assert indices.flat_rank >= output_coords.flat_rank
         comptime assert output.flat_rank >= output_coords.flat_rank
         var idx_on_axis = indices.load[width=1](output_coords)
@@ -1383,7 +1395,7 @@ def gather_elements[
         output.store(output_coords, input.load[width=1](input_coords))
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[gather_func, 1](output.layout.shape_coord(), ctx)
+    elementwise[1](gather_func, output.layout.shape_coord(), ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1500,10 +1512,9 @@ def gather_nd[
 
     # This is modeled as an elementwise function mapping an index in the
     # output to an index in the input
-    @parameter
     def gather_nd_elementwise_fn[
         simd_width: Int, alignment: Int = 1
-    ](output_idx_arg: Coord):
+    ](output_idx_arg: Coord) {var}:
         var output_idx = coord_to_index_list(output_idx_arg)
         var data_idx = IndexList[data.rank]()
         var indices_idx = IndexList[indices.rank]()
@@ -1570,18 +1581,16 @@ def gather_nd[
 
     if use_simd:
         elementwise[
-            gather_nd_elementwise_fn,
             target_simd_width,
             target=target,
             _trace_description="gather_nd",
-        ](output.layout.shape_coord(), ctx)
+        ](gather_nd_elementwise_fn, output.layout.shape_coord(), ctx)
     else:
         elementwise[
-            gather_nd_elementwise_fn,
             1,
             target=target,
             _trace_description="gather_nd",
-        ](output.layout.shape_coord(), ctx)
+        ](gather_nd_elementwise_fn, output.layout.shape_coord(), ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1641,19 +1650,19 @@ def scatter_set_constant[
         raise Error("scatter_set: indices must have shape [total_seq_len, 2]")
 
     @always_inline
-    @parameter
-    def scatter_set_constant_fn[width: Int, alignment: Int = 1](idx: Coord):
+    def scatter_set_constant_fn[
+        width: Int, alignment: Int = 1
+    ](idx: Coord) {var}:
         comptime assert idx.rank == 1, "scatter_set_constant_fn: rank must be 1"
 
         data[Int(indices[idx[0], 0]), Int(indices[idx[0], 1])] = fill_value
 
     var dispatch_shape = Coord(Int(indices.dim[0]()))
     elementwise[
-        func=scatter_set_constant_fn,
         simd_width=1,
         target=target,
         _trace_description="scatter_set_constant",
-    ](dispatch_shape, ctx)
+    ](scatter_set_constant_fn, dispatch_shape, ctx)
 
 
 def apply_packed_bitmask[
@@ -1690,8 +1699,9 @@ def apply_packed_bitmask[
     comptime assert packed.flat_rank == 2, "apply_packed_bitmask: packed rank 2"
 
     @always_inline
-    @parameter
-    def apply_packed_bitmask_fn[width: Int, alignment: Int = 1](idx: Coord):
+    def apply_packed_bitmask_fn[
+        width: Int, alignment: Int = 1
+    ](idx: Coord) {var}:
         comptime assert idx.rank == 2, "apply_packed_bitmask_fn: rank must be 2"
         # A `width`-wide block can straddle a 32-bit word boundary (elementwise
         # may emit an unaligned tail block), but spans at most two consecutive
@@ -1719,8 +1729,7 @@ def apply_packed_bitmask[
     comptime simd_width = simd_width_of[dtype]()
     var dispatch_shape = Coord(Int(output.dim[0]()), Int(output.dim[1]()))
     elementwise[
-        func=apply_packed_bitmask_fn,
         simd_width=simd_width,
         target=target,
         _trace_description="apply_packed_bitmask",
-    ](dispatch_shape, ctx)
+    ](apply_packed_bitmask_fn, dispatch_shape, ctx)

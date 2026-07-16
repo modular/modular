@@ -2182,7 +2182,7 @@ def test_decode_request_ttl_propagates_from_pipeline_config() -> None:
     pipeline_config.speculative = None
 
     config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config
+        pipeline_config, max_batch_size=1
     )
 
     assert config.decode_request_ttl_s == 42.0
