@@ -530,11 +530,11 @@ two forms:
    This is not currently supported in Python Mojo bindings.
 2. [Variadic keyword arguments](/docs/manual/functions/#variadic-keyword-arguments):
    `def foo(**kwargs: Int)` This is supported in Python Mojo bindings when used
-   in the unsugared form: `def foo(kwargs: OwnedKwargsDict)`. (The `**kwargs`
-   syntax limitation will be removed in the future.)
+   in the unsugared form: `def foo(kwargs: StringDict)`. (The `**kwargs` syntax
+   limitation will be removed in the future.)
 
 You can define Mojo functions that accept variadic keyword arguments using
-[`OwnedKwargsDict[PythonObject]`](/docs/std/collections/dict/OwnedKwargsDict/)
+[`StringDict[PythonObject]`](/docs/std/collections/dict/StringDict/)
 as the last argument. A simple example looks like:
 
 ```python
@@ -544,9 +544,9 @@ result = mojo_module.sum_kwargs_ints(a=10, b=20, c=30)  # returns 60
 ```
 
 ```mojo
-from std.collections import OwnedKwargsDict
+from std.collections import StringDict
 
-def sum_kwargs_ints(kwargs: OwnedKwargsDict[PythonObject]) raises -> PythonObject:
+def sum_kwargs_ints(kwargs: StringDict[PythonObject]) raises -> PythonObject:
     var total = 0
     for entry in kwargs.items():
         total += Int(entry.value)
@@ -555,15 +555,15 @@ def sum_kwargs_ints(kwargs: OwnedKwargsDict[PythonObject]) raises -> PythonObjec
 
 Keyword arguments are also supported following normal positional arguments.
 Additionally, getting specific keyword arguments is a dictionary lookup on the
-`OwnedKwargsDict`:
+`StringDict`:
 
 ```mojo
-from std.collections import OwnedKwargsDict
+from std.collections import StringDict
 
 def duration_in_seconds(
     hours_obj: PythonObject,
     minutes_obj: PythonObject,
-    kwargs: OwnedKwargsDict[PythonObject]
+    kwargs: StringDict[PythonObject]
 ) raises -> PythonObject:
     var hours = Int(hours_obj)
     var minutes = Int(minutes_obj)
@@ -703,7 +703,7 @@ be lifted over time.
 
 - **Keyword arguments syntax.**
   Currently, Mojo functions called from Python only accept keyword arguments
-  when using a trailing `kwargs: OwnedKwargsDict[PythonObject]` argument.
+  when using a trailing `kwargs: StringDict[PythonObject]` argument.
   Support for native `**kwargs` syntax will be added in the future.
 
 - **Mojo package dependencies.**

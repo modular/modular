@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import align_of
+from std.sys import align_of, simd_width_of
 from std.gpu import WARP_SIZE
 from std.gpu.compute.mma import mma
 from std.itertools import product

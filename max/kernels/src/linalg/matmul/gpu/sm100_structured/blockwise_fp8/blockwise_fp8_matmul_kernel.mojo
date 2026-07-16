@@ -43,7 +43,7 @@ from std.gpu.memory import (
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import named_barrier
 from std.gpu.compute.arch.tcgen05 import *
-from layout import TensorLayout, TileTensor
+from layout import Layout, TensorLayout, TileTensor
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple

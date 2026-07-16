@@ -71,8 +71,8 @@ def run_rms_norm_fused_residual_add_gpu[
     var result_unfused_buf = result_unfused_h
     var unfused_intermediate_buf = unfused_intermediate_h
     var residual_fused_output_buf = residual_fused_output_h
-    var epsilon1 = Scalar[dtype](0.001)
-    var epsilon2 = Scalar[dtype](0.002)
+    var epsilon1 = Float32(0.001)
+    var epsilon2 = Float32(0.002)
     var weight_offset1 = Scalar[dtype](0.0)
     var weight_offset2 = Scalar[dtype](0.0)
 
@@ -148,10 +148,8 @@ def run_rms_norm_fused_residual_add_gpu[
         shape, gamma1, epsilon1, weight_offset1
     )
 
-    @parameter
     @always_inline
-    @__copy_capture(unfused_intermediate_buf, data_buf)
-    def sum_fn[width: Int, alignment: Int = 1](coords: Coord):
+    def sum_fn[width: Int, alignment: Int = 1](coords: Coord) {var}:
         var data_buf_idx = data_buf.layout(coords)
         var residual_val = data_buf.raw_load[width=width](data_buf_idx)
         var unfused_intermediate_buf_idx = unfused_intermediate_buf.layout(
@@ -166,7 +164,8 @@ def run_rms_norm_fused_residual_add_gpu[
             unfused_intermediate_buf_idx, residual_add_val
         )
 
-    elementwise[sum_fn, simd_width_of[dtype](), target="cpu"](
+    elementwise[simd_width_of[dtype](), target="cpu"](
+        sum_fn,
         unfused_intermediate_buf.layout.shape_coord(),
         DeviceContext(api="cpu"),
     )

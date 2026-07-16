@@ -19,6 +19,7 @@ handling negative values requires additional instructions.
 """
 
 from std.builtin.dtype import _unsigned_integral_type_of
+from std.math import align_up, align_down
 
 
 @always_inline

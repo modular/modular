@@ -22,7 +22,7 @@ Two-phase QK matmul per tile:
 
 from std.math.uutils import ufloordiv
 from std.sys import align_of, simd_width_of
-from std.sys.intrinsics import readfirstlane, _type_is_eq
+from std.sys.intrinsics import readfirstlane
 from std.gpu import warp_id as get_warp_id
 from std.memory import bitcast, stack_allocation
 from layout.swizzle import Swizzle
@@ -261,9 +261,7 @@ __extension Attention:
         _ = k_rope_buffer.load_from_dram[0]()
         _ = v_buffer.load_from_dram[0]()
 
-        comptime has_interior_full_mask = not _type_is_eq[
-            Self.mask_t, CausalMask
-        ]()
+        comptime has_interior_full_mask = Self.mask_t != CausalMask
 
         @always_inline
         @parameter

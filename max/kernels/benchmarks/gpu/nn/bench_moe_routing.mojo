@@ -18,7 +18,158 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.gpu.host import DeviceContext
 
 from layout import TileTensor, row_major
-from nn.moe import moe_create_indices, router_group_limited, single_group_router
+from nn.moe import (
+    eplb_remap,
+    moe_create_indices,
+    router_group_limited,
+    single_group_router,
+    single_group_router_eplb,
+)
+
+
+def bench_single_group_router_eplb[
+    num_tokens: Int,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    max_replicas: Int,
+    num_layers: Int,
+    hash_decorrelate: Bool,
+](ctx: DeviceContext, mut b: Bench) raises:
+    comptime dtype = DType.float32
+    comptime num_log = n_routed_experts
+    var scores_h = List(
+        length=num_tokens * n_routed_experts, fill=Scalar[dtype](0)
+    )
+    var bias_h = List(length=n_routed_experts, fill=Scalar[dtype](0))
+    rand[dtype](scores_h)
+    rand[dtype](bias_h)
+    var logcnt_h = List(length=num_layers * num_log, fill=Int32(0))
+    var log2phy_h = List(
+        length=num_layers * num_log * max_replicas, fill=Int32(0)
+    )
+    for L in range(num_layers):
+        for log in range(num_log):
+            var cnt = 2 if (log & 1) == 0 else 1
+            logcnt_h[L * num_log + log] = Int32(cnt)
+            for r in range(max_replicas):
+                log2phy_h[(L * num_log + log) * max_replicas + r] = Int32(
+                    (L * num_log + log + r) % (num_log * max_replicas)
+                )
+    var scores_d = ctx.enqueue_create_buffer[dtype](
+        num_tokens * n_routed_experts
+    )
+    var bias_d = ctx.enqueue_create_buffer[dtype](n_routed_experts)
+    var phy_d = ctx.enqueue_create_buffer[DType.int32](
+        num_tokens * n_experts_per_tok
+    )
+    var log_d = ctx.enqueue_create_buffer[DType.int32](
+        num_tokens * n_experts_per_tok
+    )
+    var w_d = ctx.enqueue_create_buffer[dtype](num_tokens * n_experts_per_tok)
+    var logcnt_d = ctx.enqueue_create_buffer[DType.int32](num_layers * num_log)
+    var log2phy_d = ctx.enqueue_create_buffer[DType.int32](
+        num_layers * num_log * max_replicas
+    )
+    var layer_idx_d = ctx.enqueue_create_buffer[DType.int32](1)
+    ctx.enqueue_copy(scores_d, scores_h)
+    ctx.enqueue_copy(bias_d, bias_h)
+    ctx.enqueue_copy(logcnt_d, logcnt_h)
+    ctx.enqueue_copy(log2phy_d, log2phy_h)
+    var layer_idx_h = ctx.enqueue_create_host_buffer[DType.int32](1)
+    layer_idx_h[0] = Int32(num_layers // 2)
+    ctx.enqueue_copy(layer_idx_d, layer_idx_h)
+    var expert_indices = TileTensor(
+        phy_d, row_major[num_tokens, n_experts_per_tok]()
+    )
+    var expert_indices_log = TileTensor(
+        log_d, row_major[num_tokens, n_experts_per_tok]()
+    )
+    var expert_weights = TileTensor(
+        w_d, row_major[num_tokens, n_experts_per_tok]()
+    )
+    var expert_scores = TileTensor(
+        scores_d, row_major[num_tokens, n_routed_experts]()
+    )
+    var expert_bias = TileTensor(bias_d, row_major[n_routed_experts]())
+    var logcnt = TileTensor(logcnt_d, row_major[num_layers, num_log]())
+    var log2phy = TileTensor(
+        log2phy_d, row_major[num_layers, num_log, max_replicas]()
+    )
+    var layer_idx = TileTensor(layer_idx_d, row_major[1]())
+    var routed_scaling_factor = Float32(1.0)
+
+    @always_inline
+    @__copy_capture(
+        expert_indices,
+        expert_indices_log,
+        expert_weights,
+        expert_scores,
+        expert_bias,
+        logcnt,
+        log2phy,
+        layer_idx,
+        routed_scaling_factor,
+    )
+    @parameter
+    def bench_fn(mut b: Bencher) raises:
+        @parameter
+        @always_inline
+        def kernel_launch(ctx: DeviceContext) raises:
+            single_group_router_eplb[
+                scores_type=dtype,
+                bias_type=dtype,
+                n_routed_experts=n_routed_experts,
+                n_experts_per_tok=n_experts_per_tok,
+                norm_weights=True,
+                num_log=num_log,
+                max_replicas=max_replicas,
+                hash_decorrelate=hash_decorrelate,
+                target="gpu",
+            ](
+                expert_indices,
+                expert_indices_log,
+                expert_weights,
+                expert_scores.as_immut(),
+                expert_bias.as_immut(),
+                logcnt.as_immut(),
+                log2phy.as_immut(),
+                layer_idx.as_immut(),
+                routed_scaling_factor,
+                ctx,
+            )
+
+        b.iter_custom[kernel_launch](ctx)
+
+    b.bench_function[bench_fn](
+        BenchId(
+            "single_group_router_eplb",
+            input_id=String(
+                num_tokens,
+                "tok/",
+                n_routed_experts,
+                "exp/",
+                n_experts_per_tok,
+                "per_tok/r",
+                max_replicas,
+                "/h",
+                Int(hash_decorrelate),
+            ),
+        )
+    )
+    ctx.synchronize()
+    _ = scores_d
+    _ = bias_d
+    _ = phy_d
+    _ = log_d
+    _ = w_d
+    _ = logcnt_d
+    _ = log2phy_d
+    _ = layer_idx_d
+    _ = layer_idx_h
+    _ = scores_h^
+    _ = bias_h^
+    _ = logcnt_h^
+    _ = log2phy_h^
 
 
 def bench_moe_create_indices[
@@ -56,8 +207,6 @@ def bench_moe_create_indices[
     var expert_usage_stats = TileTensor(expert_usage_stats_d, row_major[2]())
     var topk_ids = TileTensor(topk_d, row_major[num_tokens]())
 
-    var context = ctx
-
     @always_inline
     @__copy_capture(
         token_expert_order,
@@ -79,7 +228,7 @@ def bench_moe_create_indices[
                 expert_ids,
                 expert_usage_stats,
                 topk_ids,
-                context,
+                ctx,
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -147,8 +296,6 @@ def bench_router_group_limited[
     var expert_bias = TileTensor(bias_d, row_major[n_routed_experts]())
     var routed_scaling_factor = Float32(1.0)
 
-    var context = ctx
-
     @always_inline
     @__copy_capture(
         expert_indices,
@@ -177,7 +324,7 @@ def bench_router_group_limited[
                 expert_scores.as_immut(),
                 expert_bias.as_immut(),
                 routed_scaling_factor,
-                context,
+                ctx,
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -246,8 +393,6 @@ def bench_single_group_router[
     var expert_bias = TileTensor(bias_d, row_major[n_routed_experts]())
     var routed_scaling_factor = Float32(1.0)
 
-    var context = ctx
-
     @always_inline
     @__copy_capture(
         expert_indices,
@@ -274,7 +419,7 @@ def bench_single_group_router[
                 expert_scores.as_immut(),
                 expert_bias.as_immut(),
                 routed_scaling_factor,
-                context,
+                ctx,
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -303,6 +448,112 @@ def bench_single_group_router[
     _ = scores_h^
 
 
+def bench_eplb_remap[
+    num_tokens: Int,
+    num_log: Int,
+    K: Int,
+    max_replicas: Int,
+    num_layers: Int,
+    hash_decorrelate: Bool,
+](ctx: DeviceContext, mut b: Bench) raises:
+    # Host buffers ---------------------------------------------------------
+    var router_h = List(length=num_tokens * K, fill=Int32(0))
+    var logcnt_h = List(length=num_layers * num_log, fill=Int32(0))
+    var log2phy_h = List(
+        length=num_layers * num_log * max_replicas, fill=Int32(0)
+    )
+    # Fill router_idx with a uniform random logical id in [0, num_log).
+    for i in range(num_tokens * K):
+        router_h[i] = Int32(i % num_log)
+    # Realistic logcnt: half the experts have 2 replicas, rest have 1.
+    for L in range(num_layers):
+        for log in range(num_log):
+            var cnt = 2 if (log & 1) == 0 else 1
+            logcnt_h[L * num_log + log] = Int32(cnt)
+            for r in range(max_replicas):
+                log2phy_h[(L * num_log + log) * max_replicas + r] = Int32(
+                    (L * num_log + log + r) % (num_log * max_replicas)
+                )
+
+    # Device buffers + TileTensors ----------------------------------------
+    var router_d = ctx.enqueue_create_buffer[DType.int32](num_tokens * K)
+    var phy_d = ctx.enqueue_create_buffer[DType.int32](num_tokens * K)
+    var logcnt_d = ctx.enqueue_create_buffer[DType.int32](num_layers * num_log)
+    var log2phy_d = ctx.enqueue_create_buffer[DType.int32](
+        num_layers * num_log * max_replicas
+    )
+    var layer_idx_d = ctx.enqueue_create_buffer[DType.int32](1)
+
+    ctx.enqueue_copy(router_d, router_h)
+    ctx.enqueue_copy(logcnt_d, logcnt_h)
+    ctx.enqueue_copy(log2phy_d, log2phy_h)
+
+    # Pick a middle layer for the bench.
+    var layer_idx_h = ctx.enqueue_create_host_buffer[DType.int32](1)
+    layer_idx_h[0] = Int32(num_layers // 2)
+    ctx.enqueue_copy(layer_idx_d, layer_idx_h)
+
+    var phy = TileTensor(phy_d, row_major[num_tokens, K]())
+    var router_idx = TileTensor(router_d, row_major[num_tokens, K]())
+    var logcnt = TileTensor(logcnt_d, row_major[num_layers, num_log]())
+    var log2phy = TileTensor(
+        log2phy_d, row_major[num_layers, num_log, max_replicas]()
+    )
+    var layer_idx = TileTensor(layer_idx_d, row_major[1]())
+
+    @always_inline
+    @__copy_capture(phy, router_idx, logcnt, log2phy, layer_idx)
+    @parameter
+    def bench_fn(mut b: Bencher) raises:
+        @parameter
+        @always_inline
+        def kernel_launch(ctx: DeviceContext) raises:
+            eplb_remap[
+                num_log=num_log,
+                max_replicas=max_replicas,
+                K=K,
+                hash_decorrelate=hash_decorrelate,
+                target="gpu",
+            ](
+                phy,
+                router_idx.as_immut(),
+                logcnt.as_immut(),
+                log2phy.as_immut(),
+                layer_idx.as_immut(),
+                ctx,
+            )
+
+        b.iter_custom[kernel_launch](ctx)
+
+    b.bench_function[bench_fn](
+        BenchId(
+            "eplb_remap",
+            input_id=String(
+                num_tokens,
+                "tok/",
+                num_log,
+                "exp/",
+                K,
+                "topk/",
+                max_replicas,
+                "rep/h",
+                Int(hash_decorrelate),
+            ),
+        )
+    )
+
+    ctx.synchronize()
+    _ = router_d
+    _ = phy_d
+    _ = logcnt_d
+    _ = log2phy_d
+    _ = layer_idx_d
+    _ = layer_idx_h
+    _ = router_h^
+    _ = logcnt_h^
+    _ = log2phy_h^
+
+
 def main() raises:
     comptime num_tokens = get_defined_int["num_tokens", 4096]()
     comptime num_experts = get_defined_int["num_experts", 256]()
@@ -314,7 +565,12 @@ def main() raises:
     comptime sg_n_experts = get_defined_int["sg_n_experts", 384]()
     comptime sg_n_experts_per_tok = get_defined_int["sg_n_experts_per_tok", 8]()
 
-    var m = Bench(BenchConfig(num_repetitions=1))
+    var m = Bench(
+        BenchConfig(
+            num_repetitions=1,
+            max_iters=10000,
+        )
+    )
     with DeviceContext() as ctx:
         bench_moe_create_indices[num_tokens, num_experts](ctx, m)
         bench_router_group_limited[
@@ -323,6 +579,33 @@ def main() raises:
 
         bench_single_group_router[
             num_tokens, sg_n_experts, sg_n_experts_per_tok
+        ](ctx, m)
+
+        bench_eplb_remap[
+            num_tokens=num_tokens,
+            num_log=num_experts,
+            K=n_experts_per_tok,
+            max_replicas=4,
+            num_layers=58,
+            hash_decorrelate=False,
+        ](ctx, m)
+
+        bench_eplb_remap[
+            num_tokens=num_tokens,
+            num_log=num_experts,
+            K=n_experts_per_tok,
+            max_replicas=4,
+            num_layers=58,
+            hash_decorrelate=True,
+        ](ctx, m)
+
+        bench_single_group_router_eplb[
+            num_tokens=num_tokens,
+            n_routed_experts=sg_n_experts,
+            n_experts_per_tok=sg_n_experts_per_tok,
+            max_replicas=4,
+            num_layers=58,
+            hash_decorrelate=False,
         ](ctx, m)
 
     m.dump_report()

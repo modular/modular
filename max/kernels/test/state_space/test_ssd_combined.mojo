@@ -167,7 +167,7 @@ def run_ssd_combined[
     for i in range(dim):
         gamma_h.ptr[i] = abs(gamma_h.ptr[i]) + Scalar[dtype](0.1)
 
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[dtype](0.0)
 
     # Call kernel
@@ -206,7 +206,7 @@ def run_ssd_combined[
         z_h,
         delta_bias_h,
         gamma_h,
-        epsilon,
+        epsilon.cast[dtype](),
         weight_offset,
     )
 
