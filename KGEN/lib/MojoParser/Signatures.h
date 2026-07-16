@@ -87,7 +87,7 @@ struct ParsedConstraint {
 /// argument           ::= "/" | "*"
 /// argument           ::= [argument_convention] [argument_variadic] identifier
 ///                        [argument_type] ["=" expression]
-/// argument_convention ::= "var" | "read" | "mut" | "out" | "deinit"
+/// argument_convention ::= "var" | "imm" | "mut" | "out" | "deinit"
 /// argument_variadic  ::= "*" | "**"
 /// argument_type      ::= ":" star_expression
 ///
@@ -101,7 +101,7 @@ struct ParsedArgument {
     kConventionUnspec = 0,      // Nothing specified
     kConventionMut = 1,         // mut x
     kConventionVar = 2,         // var x
-    kConventionRead = 3,        // read x
+    kConventionImm = 3,         // imm x
     kConventionRef = 4,         // ref [origin, addrspace] x
     kConventionOut = 5,         // out [addrspace] x
     kConventionDeinit = 6,      // deinit self

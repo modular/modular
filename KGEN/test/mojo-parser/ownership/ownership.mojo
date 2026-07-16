@@ -608,6 +608,17 @@ def def_borrowed(a: MemExample) raises -> None:
   pass
 
 
+# An explicit `imm` argument produces the same immutable-reference IR as the
+# implicit default above.
+# CHECK-LABEL: lit.fn @"def_imm
+# CHECK-SAME: %a: !lit.ref<!MemExample, imm {{.*}}> read_mem
+def def_imm(imm a: MemExample) raises -> None:
+  # CHECK: lit.ref.store %none, %__result__
+  # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
+  # CHECK-NEXT: return [[FALSE]]
+  pass
+
+
 # https://github.com/modularml/modular/issues/24161
 struct AddrSpace(TrivialRegisterPassable):
     var _value: __mlir_type.index

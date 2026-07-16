@@ -26,10 +26,10 @@ def mut_ship_function(mut x: MemType):
     ...
 
 
-# We can convert from def(read MemType)->None to def(mut MemType)->None but not
+# We can convert from def(imm MemType)->None to def(mut MemType)->None but not
 # vice versa (see TTSMFS).
 # expected-error @below {{cannot implicitly convert 'def mut_ship_function(mut x: MemType) thin -> None' value to 'def(MemType) thin -> None' in comptime initializer}}
-comptime read_ship_fn_alias: def(read MemType) thin -> None = mut_ship_function
+comptime read_ship_fn_alias: def(imm MemType) thin -> None = mut_ship_function
 
 
 # // -----
@@ -372,7 +372,7 @@ def test_abi_c_capturing():
     var x: Int = 1
 
     # expected-error @below {{a abi("C") function cannot capture variables}}
-    def captures_x(y: Int) abi("C") {read} -> Int:
+    def captures_x(y: Int) abi("C") {imm} -> Int:
         return x + y
 
     _ = captures_x(2)

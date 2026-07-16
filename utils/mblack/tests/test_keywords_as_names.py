@@ -36,6 +36,7 @@ KEYWORDS = [
     "fn",  # Used to be a keyword
     "global",
     "if",
+    "imm",
     "import",
     "in",
     "is",
@@ -150,5 +151,3 @@ def test_keyword_as_mlir_region_name(kw):
         f'    __mlir_op.`co.suspend`[_region="{kw}".value]()\n'
     )
     assert_mojo_format(source, expected)
-
-

@@ -11,7 +11,7 @@ from tests.util import assert_mojo_format
 
 # Bare capture modes (no name). `ref` always requires a name, so it's
 # covered by `test_raises_mixed_capture_list` instead.
-CAPTURE_MODES = ["var", "var^", "read", "mut"]
+CAPTURE_MODES = ["var", "var^", "read", "imm", "mut"]
 
 # Type expressions accepted after `raises` in a closure. `Foo.Bar` requires a
 # `struct Foo` prelude.

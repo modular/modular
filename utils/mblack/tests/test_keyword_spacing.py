@@ -69,6 +69,17 @@ def test_contextual_keyword_spacing():
     assert_mojo_format(source, expected)
 
 
+def test_imm_keyword_spacing():
+    """`imm` is a contextual keyword and must be spaced like other argument conventions."""
+    source = "struct Foo:\n    def __init__(out self, mut v:Int, imm x:Int): pass"
+    expected = (
+        "struct Foo:\n"
+        "    def __init__(out self, mut v: Int, imm x: Int):\n"
+        "        pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
 def test_contextual_keyword_spacing_variadics():
     source = (
         "struct Foo:\n"

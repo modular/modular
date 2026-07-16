@@ -38,7 +38,7 @@ struct Impl2(Trait):
 
 # COM: Ensure parametric closures are supported
 def captureParams[X: Trait, Y: Trait](impl2: X, mut impl3: Y):
-    def hasParams[U: Trait](impl: U) {read} -> Int:
+    def hasParams[U: Trait](impl: U) {imm} -> Int:
         return impl.get() + impl2.get() + impl3.get()
 
     takeItParams(hasParams, impl2)
@@ -60,7 +60,7 @@ def takeIt[f: def() -> None](impl: f):
 
 def captureIt(p: Parameter[...]):
     @no_inline
-    def closure() {read p}:
+    def closure() {imm p}:
         p.useIt()
 
     takeIt(closure)

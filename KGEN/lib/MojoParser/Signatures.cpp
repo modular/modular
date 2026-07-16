@@ -247,7 +247,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     }
   };
 
-  // Any var/read/mut/ref keyword sets convention.
+  // Any var/read/imm/mut/ref keyword sets convention.
   if (p.consumeIf(Token::kw_var)) {
     convention = kConventionVar;
   } else if (p.consumeIf(Token::kw_ref)) {
@@ -259,8 +259,10 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
       (void)p.parseRefSpecifier(refOriginExpr);
   } else if (p.consumeIfSoftIdentifier("mut")) {
     handleContextualArgConvention("mut", kConventionMut);
+  } else if (p.consumeIfSoftIdentifier("imm")) {
+    handleContextualArgConvention("imm", kConventionImm);
   } else if (p.consumeIfSoftIdentifier("read")) {
-    handleContextualArgConvention("read", kConventionRead);
+    handleContextualArgConvention("read", kConventionImm);
   } else if (p.consumeIfSoftIdentifier("deinit")) {
     handleContextualArgConvention("deinit", kConventionDeinit);
     if (convention == kConventionDeinit && kind != ArgListKind::kArgList) {
@@ -1331,6 +1333,8 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
         return CaptureConvention::kConventionCopy;
     } else if (p.consumeIfSoftIdentifier("mut")) {
       return CaptureConvention::kConventionMut;
+    } else if (p.consumeIfSoftIdentifier("imm")) {
+      return CaptureConvention::kConventionRead;
     } else if (p.consumeIfSoftIdentifier("read")) {
       return CaptureConvention::kConventionRead;
     } else if (p.consumeIf(Token::kw_ref)) {
@@ -1707,7 +1711,7 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
 
   ParamBindings bindings(emitter.declScope, arg.typeExpr);
   // The reference is immutable when borrowing, mutable otherwise.
-  bool isMutable = arg.convention != ParsedArgument::kConventionRead &&
+  bool isMutable = arg.convention != ParsedArgument::kConventionImm &&
                    arg.convention != ParsedArgument::kConventionUnspec;
   bindings.add(arg.typeExpr,
                SIMDAttr::getScalarBool(emitter.getContext(), isMutable),
@@ -1777,7 +1781,7 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
 
   ParamBindings bindings(emitter.declScope, arg.typeExpr);
   // The reference is immutable when borrowing, mutable otherwise.
-  bool isMutable = arg.convention != ParsedArgument::kConventionRead &&
+  bool isMutable = arg.convention != ParsedArgument::kConventionImm &&
                    arg.convention != ParsedArgument::kConventionUnspec;
   // See typeCheckVariadicPack above for why we use scalar<bool> instead of i1.
   bindings.add(arg.typeExpr,
@@ -1918,12 +1922,12 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     }
   }
 
-  // If no convention was explicitly specified, default to 'read'.
+  // If no convention was explicitly specified, default to 'imm'.
   if (arg.convention == ParsedArgument::kConventionUnspec) {
     // TODO: enable other conventions for **kwargs.
     arg.convention = arg.variadicKind == VariadicKind::KwVarArg
                          ? ParsedArgument::kConventionVar
-                         : ParsedArgument::kConventionRead;
+                         : ParsedArgument::kConventionImm;
   }
 
   // Emit default argument values if present. An error would have been emitted
@@ -1969,7 +1973,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
       arg.isErroneous = true;
     break;
   }
-  case ParsedArgument::kConventionRead: {
+  case ParsedArgument::kConventionImm: {
     arg.kgenConvention = ArgConvention::ReadMem;
     TypeConvention conv = type.getRegisterPassability(arg.loc, shared);
     // FIXME(MOCO-725): Borrows of non-trivial register-passable values don't
@@ -2016,7 +2020,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
       arg.variadicArgConvention = ArgConvention::OwnedMem;
       arg.kgenConvention = ArgConvention::OwnedMem;
       break;
-    case ParsedArgument::kConventionRead:
+    case ParsedArgument::kConventionImm:
       arg.variadicArgConvention = ArgConvention::ReadMem;
       arg.kgenConvention = ArgConvention::ReadMem;
       break;
@@ -2672,7 +2676,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
     break;
   case SpecialFunctionKind::kCopyCtor: {
     assert(parsedArgs.size() == 1 && "arg count already checked above");
-    if (parsedArgs[kSelfArgNo].convention == ParsedArgument::kConventionRead) {
+    if (parsedArgs[kSelfArgNo].convention == ParsedArgument::kConventionImm) {
       // ok.
     } else if (parsedArgs[kSelfArgNo].convention ==
                ParsedArgument::kConventionRef) {
@@ -2684,7 +2688,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
       }
     } else {
       emitErrorLoc(parsedArgs[kSelfArgNo].loc,
-                   "existing value argument must be passed as 'read'");
+                   "existing value argument must be passed as 'imm'");
     }
     break;
   }

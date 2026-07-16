@@ -95,7 +95,7 @@ def testCapturedParamFromFn[T: Coord, R: Coord](t: T, r: R):
 def funcWithNestedCall[
     T: Coord, R: Coord, C: def(arg: T) -> R
 ](impl: C, state: T) -> R:
-    def kernel() {read} -> R:
+    def kernel() {imm} -> R:
         return impl(state)
 
     return kernel()
@@ -205,7 +205,7 @@ struct _NestedCapHasParam[T: _NestedCapPrintable](
 
 
 def _testNestedCapture[A: _NestedCapPrintable]():
-    def closure[C: _NestedCapHasParam[A]]() {read}:
+    def closure[C: _NestedCapHasParam[A]]() {imm}:
         var m = materialize[C]()
         m.foo()
 

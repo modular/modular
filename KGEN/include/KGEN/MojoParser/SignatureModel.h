@@ -33,7 +33,7 @@ class SharedState;
 /// User-facing convention with which a function argument is passed. Mirrors
 /// the keyword that gets emitted before the argument's name.
 enum class ArgumentConvention {
-  kRead, // implicit `read`, the default - no keyword emitted
+  kImm, // implicit `imm`, the default - no keyword emitted
   kDeinit,
   kInOut,
   kOwned,

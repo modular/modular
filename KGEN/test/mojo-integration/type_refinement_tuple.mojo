@@ -183,7 +183,7 @@ def test_ref_pass_through_unpack[
 # Store into a tuple held in a list: `for ref row` + `row[i]=` (tuple
 # subscript preserves mutability; unpacked `ref (a,b)` does not allow this
 # whole-value assign today). Checks post-loop list contents too.
-def test_mutable_tuple_ref_unpack(read left_dog: Dog, read right_dog: Dog):
+def test_mutable_tuple_ref_unpack(imm left_dog: Dog, imm right_dog: Dog):
     var pairs = List[Tuple[Dog, Dog]]()
     pairs.append((left_dog.copy(), right_dog.copy()))
     for ref row in pairs:

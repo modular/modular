@@ -202,3 +202,38 @@ def longCaptureLists(
         callIt(something, something2, something3, something4, something5)
 
     takeIt(closure)
+
+# // -----
+
+# COM: `imm` marks a capture as an immutable reference - no mutability cast
+# COM: should be inserted, for a named capture or a capture-all-by-convention.
+
+def takeIt[T: def () -> None, //](state: T):
+    state()
+
+def takesImmut(str: String):
+    pass
+
+# CHECK: lit.fn @"no_castsImm({{.*}})"[imm *"byRef`"
+def no_castsImm(byRef:String):
+    # CHECK-NEXT: %byRef[ref: imm *"byRef`"]
+    def myclosure() {imm byRef}:
+        takesImmut(byRef)
+
+    takeIt(myclosure)
+
+# // -----
+
+def use(a: String, b: String):
+    pass
+
+def takeIt[T: def () -> String, //](state: T):
+    _ = state()
+
+# CHECK-LABEL:  lit.fn @"toyImm
+def toyImm(A: String, B: String):
+    # CHECK: (%A[ref: imm *"A`"], %B[ref: imm *"B`1"])
+    def immAll() {imm} -> String:
+        use(A, B)
+        return A
+    takeIt(immAll)

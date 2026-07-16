@@ -69,7 +69,7 @@ def main() raises:
 
     var byRef: String = String(unsafe_from_utf8=argv()[3].as_bytes())
 
-    def immRef() {read byRef} -> String:
+    def immRef() {imm byRef} -> String:
         return byRef
 
     # CHECK: captures: CC

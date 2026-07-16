@@ -79,7 +79,7 @@ void populateArgumentInfos(SharedState &shared, FnTypeGeneratorType signature,
 
     std::string prefix;
     auto passingKind = pogAttr.getPassingKind();
-    auto declConvention = ArgumentConvention::kRead;
+    auto declConvention = ArgumentConvention::kImm;
     switch (convention) {
     case ArgConvention::ByRefError:
       continue;
@@ -200,8 +200,8 @@ std::string mergeConformsToConstraints(ArrayRef<ConstraintAttr> constraints,
 
 StringRef getConventionString(ArgumentConvention conv) {
   switch (conv) {
-  case ArgumentConvention::kRead:
-    return "read";
+  case ArgumentConvention::kImm:
+    return "imm";
   case ArgumentConvention::kDeinit:
     return "deinit";
   case ArgumentConvention::kInOut:
@@ -227,7 +227,7 @@ void renderParameterInfo(const ParameterInfo &p, SharedState &shared,
 
 void renderArgumentInfo(const ArgumentInfo &a, SharedState &shared,
                         raw_ostream &os) {
-  if (a.convention != ArgumentConvention::kRead) {
+  if (a.convention != ArgumentConvention::kImm) {
     os << getConventionString(a.convention);
     // Don't add a space after `ref` if a `[origin]` prefix follows - the
     // prefix supplies its own trailing space.
